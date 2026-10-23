@@ -520,18 +520,33 @@ def project (S : Separation) (m : PointClaims.Mapping) (count : Nat) : Separatio
   norm count (S.facts.flatMap fun a => (levels a.slot).map fun x =>
     (⟨x, a.fields, a.partners.flatMap fun p => (levels p.1).map fun y => (y, p.2)⟩ : Fact))
 
-/-- What every state establishes: each fact of the first state, keeping the
-partner fields whose pairs every other state justifies. States at different
-depths share nothing. -/
+/-- What every state establishes: the pairs of the first state every other
+state justifies, in either orientation. A fact of every own location keeps
+the partner fields every state justifies for it whole; for a pair another
+state justifies only for some of the subject's fields, it keeps those fields
+as residual facts, one per field. An explicit fact keeps each of its fields'
+justified pairs. States at different depths share nothing. -/
 def meet : List Separation → Separation
   | [] => {}
   | s :: ss =>
     if ss.all (·.depth == s.depth) then
       let others := ss.map fun o => (Std.HashSet.ofList (pairs o) : Std.HashSet Pair)
-      norm s.depth (s.facts.map fun a => { a with
-        partners := (a.partners.map fun p =>
-          (p.1, p.2.filter fun g => others.all fun P => justified P a.slot a.fields p.1 g)).filter
-            (!·.2.isEmpty) })
+      let every := fun (x : Nat) (F : Option (List PropKey)) (y : Nat) (g : PropKey) =>
+        others.all fun P => justified P x F y g
+      -- The fields the other states name of each level: the candidates of a
+      -- whole-object fact's residual.
+      let named : Std.HashMap Nat (List PropKey) := ss.foldl (fun acc o => (pairs o).foldl (fun acc q =>
+          let acc := match q.2.1 with
+            | some f => acc.alter q.1 fun l => some (f :: l.getD [])
+            | none => acc
+          acc.alter q.2.2.1 fun l => some (q.2.2.2 :: l.getD [])) acc) ∅
+      let keep := fun (a : Fact) (F : Option (List PropKey)) (apartWhole : Option (Option (List PropKey))) =>
+        (⟨a.slot, F, a.partners.map fun p => (p.1, p.2.filter fun g =>
+          (apartWhole.all fun U => !every a.slot U p.1 g) && every a.slot F p.1 g)⟩ : Fact)
+      norm s.depth ((s.facts.flatMap fun a => match a.fields with
+        | none => keep a none none :: ((named.getD a.slot []).eraseDups.map fun f => keep a (some [f]) (some none))
+        | some fs => fs.map fun f => keep a (some [f]) none).map fun a =>
+          { a with partners := a.partners.filter (!·.2.isEmpty) })
     else {}
 
 /-- Both separations' facts, where both are at one depth or one is empty;

@@ -197,9 +197,9 @@ partners are mapped to every target slot the mapping takes from their slot
 $`|\Gamma_{\mathrm{target}}|`$. **Join** (`meet`, the producer's), of
 projections at one depth: each fact of the first state keeps the partner
 keys whose pairs every other state justifies, by the edge rule's pair test
-at the identity mapping; where the first state's fact has fields
-$`\star`$ and another state's has explicit fields $`F'`$ for the same
-subject, the join states the fact with $`F'`$, a residual. A fact left without partners is removed. Both are
+at the identity mapping; a pair of a whole-object fact that another state
+justifies only for some fields of the subject is kept for each field
+another state names of it, one residual fact per field. A fact left without partners is removed. Both are
 untrusted: every edge is checked by the edge rule.
 
 **Cut**: the lowering's assertion states, for each private cell `i`, the
@@ -280,22 +280,16 @@ producer's propagation, projection and join, the encoder's interning, and the
 content of each proposed assertion, which every incoming edge proves. No
 assumption is added.
 
-## 8. Expected size
+## 8. Size
 
-**Cited (computed from `collect`'s and `closeStatements`' evidence at ec59551,
-regrouping their distinct links by knowledge entry and subject and
-addressing them by level; scripts and inputs in the measurement's scratch
-directory).** `collect`'s 2.8 million distinct-link references become 3,940
-fact references over 402 distinct facts, 1.23 MB in a compact array spelling;
-`closeStatements`' 1.8 million become 4,836 references over 477 facts,
-0.78 MB. This regrouping models the representation, not the propagation of
-§3; the implementation's evidence is measured on the five slices before and
-after. **Conjectured:** with JSON field names, the evidence of `collect` and
-`closeStatements` falls from 77.5 and 51.5 MB to about 5 MB each. An edge
-check builds the source's pair set once, by hashing, and looks each target
-pair up: `collect`'s pairs number 1,004,979 in all, where its edge checks
-hash 2,798,774 link references now. A write's query scans the facts once per
-cell fact it keeps.
+**Cited (measured, 2026-10-23).** The five census slices before and after
+are in the Certificate size row of [WORK](../../WORK.md#status): `collect`'s
+evidence falls from 77.50 to 4.35 MB and `closeStatements`' from 51.50 to
+3.87 MB, their search and check CPU and check memory with them;
+`collect`'s 2,798,774 distinct-link references are 3,940 references to 402
+separation facts (1.24 MB), the counts the regrouping of its distinct links
+by level predicted. An edge check hashes the source's pairs once and looks
+each target pair up; a write's query scans the facts once per cell fact.
 
 ## 9. Tests
 
@@ -313,8 +307,11 @@ Forged-document controls (`pipeline/test.mts`, the separation control): an
 argument stated fresh (a fact no allocation states), a fact naming a level
 at its depth, and a separation at a depth one off (a stale slot map) are
 each refused by heap knowledge at the edge entering the node and accepted
-with the separation check bypassed; a cut without its cell's explicit fact
-is refused; a knowledge entry naming a position past the separations table
+with the separation check bypassed; the cell's explicit fact removed from
+every node of the body, the knowledge consistent from edge to edge, is
+refused at a node whose stated output it established; a knowledge entry naming a position past the separations table
 is refused by the decoder. The second orientation of the edge rule is
 exercised by every cut asserting a cell's explicit fact after an
-allocation.
+allocation. The producer's join, which no source case reaches with a
+whole-object and an explicit fact for one pair, is exercised by
+`Tests/SeparationControls.lean`.

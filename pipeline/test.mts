@@ -5139,9 +5139,8 @@ mutationControl(async (): Promise<void> => {
   // Separation facts (HeapSeparation): an argument stated fresh, a level at
   // its depth, and a separation at a depth one off (its levels naming other
   // slots) are each refused by heap knowledge at the edge entering the node,
-  // and accepted with that check bypassed (`separation`). A cut's knowledge
-  // is its statement entry's exact assertion: a cut without a cell's fact is
-  // refused.
+  // and accepted with that check bypassed (`separation`). Without the cell's
+  // explicit fact, the body's evidence is refused.
   const artifacts = run("fresh-separation");
   const honest = readClaims(artifacts);
   const object = (value: unknown): value is Record<string, unknown> =>
@@ -5191,18 +5190,23 @@ mutationControl(async (): Promise<void> => {
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
     assert.ok(checked.includes("evidence fails heap knowledge"), `${name}: ${checked}`);
   }
-  // A cut without the cell's explicit fact: the statement entry's assertion
-  // is the cut's knowledge exactly.
+  // The cell's explicit fact, the residual the lowering states at each
+  // statement entry, removed from every node of the body: the knowledge
+  // stays consistent from edge to edge, and a node's stated output keeps
+  // what the separation left no longer establishes.
   {
     const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
-    const cut = must(certificate(evidence, "loopCells").find(n => n.knowledge.separation.facts.some(f => f.fields !== null)),
-      "a statement entry stating a cell's explicit fact");
-    cut.knowledge.separation.facts = cut.knowledge.separation.facts.filter(f => f.fields === null);
-    const path = join(artifacts, "forged-separation-cut-evidence.json");
+    const c = certificate(evidence, "loopCells");
+    const explicit = (f: Fact): boolean => f.fields !== null;
+    assert.ok(c.some(n => n.knowledge.separation.facts.some(explicit)), "a cell's explicit fact");
+    for (const n of c)
+      for (const k of [n.knowledge, n.output]) k.separation.facts = k.separation.facts.filter(f => !explicit(f));
+    const path = join(artifacts, "forged-separation-residual-evidence.json");
     writeFileSync(path, tabledEvidence(evidence));
-    invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.match(checked, /source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's/);
   }
-  process.stdout.write("separation: an argument stated fresh, a level at its depth and a stale depth isolate the separation check; a cut without its cell's fact is refused\n");
+  process.stdout.write("separation: an argument stated fresh, a level at its depth and a stale depth isolate the separation check; without its cell's explicit fact the body's evidence is refused\n");
 });
 
 mutationControl(async (): Promise<void> => {
