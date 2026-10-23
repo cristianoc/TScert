@@ -63,7 +63,9 @@ text in UTF-8, and every string it holds, key or value, is well-formed
 Unicode: a `\u` escape of a surrogate is one of a pair. Each reader refuses a
 document breaking either before it reads a value: Lean (`RequestCli.readJson`
 refuses bytes that are not UTF-8, and `RequestCli.loneSurrogate` a lone
-surrogate escape, which Lean's JSON parser would read as U+FFFD), the
+surrogate escape, which Lean's JSON parser would read as U+FFFD; it reads the
+text's characters only where its bytes hold a backslash, `u` and `d` or `D`
+in a row, the start of every surrogate escape, `RequestCli.wireSurrogate_eq`), the
 producer (`Json.parse`), and the TypeScript tools (`wireText` for the bytes,
 `requireWellFormed` for the strings). A writer refuses such a string before
 writing it: the parser's gate a source string holding a lone surrogate

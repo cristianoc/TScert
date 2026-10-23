@@ -22,4 +22,11 @@ open RequestCli
 -- Outside a string nothing is an escape, and a closed string ends one.
 #guard (loneSurrogate "[\"a\", \"\\u00e9\"]".toList).isNone
 
+-- The byte pre-scan reads the characters where a surrogate escape starts,
+-- and agrees with the scan of the characters (`wireSurrogate_eq`).
+#guard (wireSurrogate "\"\\ud800\"").isSome
+#guard (wireSurrogate "\"\\uDC00\"").isSome
+#guard (wireSurrogate "\"\\uD83D\\uDE00\"").isNone
+#guard (wireSurrogate "[\"\u00e9\", \"\\u00e9\", \"\\\\ud800\"]").isNone
+
 end Verification.WireTextControls
