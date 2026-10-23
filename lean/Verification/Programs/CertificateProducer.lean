@@ -850,7 +850,6 @@ came from a different context. No execution budget is inspected. -/
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
-          let sub ← subtypeUsing G images B A
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
           -- A rest that is a packed binder takes one spread of the store of
           -- one of its values, after the fixed actuals.
@@ -858,6 +857,7 @@ came from a different context. No execution budget is inspected. -/
               (parts, P.find? fun l => G.parameterKinds l == some .packed) then
             if key == CallArguments.arrayStoreField && omitted.isEmpty then
               let ea ← ((Γ ++ pool).filter fun C => decide (PackedBy G C q)).findSearch? fun C => recur Γ a C
+              let sub ← subtypeUsing G images B A
               let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
                 (.callPacked effect k q P) (ef :: er :: eas ++ [ea])
               return ← (checkTreeS G images e).map fun _ => coerceBy sub e A
@@ -870,6 +870,7 @@ came from a different context. No execution budget is inspected. -/
             else do
               let [.pack T []] := expand G P | none
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
+          let sub ← subtypeUsing G images B A
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
           (checkTreeS G images e).map fun _ => coerceBy sub e A

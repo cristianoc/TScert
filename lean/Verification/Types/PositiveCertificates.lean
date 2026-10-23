@@ -1559,8 +1559,9 @@ theorem mem_structureFirst [DecidableEq ι] {G : NormalGraph ι}
   (List.mem_mergeSort).mp h
 
 /-- The premises of an instance: every bound, then, for each target
-signature, the premises of the first scheme signature in declaration order
-whose premises hold (`sigPremises`, `restPremises`). -/
+signature, the premises of the first scheme signature whose premises hold
+(`sigPremises`, `restPremises`), the signatures tried structure first
+(`structureFirst`). -/
 @[nospecialize] def instPremisesState [DecidableEq ι] (G : NormalGraph ι)
     (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
     (s : SchemeRow ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) (state : σ) :
