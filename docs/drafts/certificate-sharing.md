@@ -243,8 +243,9 @@ twice is checked at each use: storage sharing is no checking cache. The
 
 **Cited — what is interned.** Search writes its bundle through
 `EvidenceWire.encode`, which interns each type, context (by its types'
-positions), link, heap knowledge (by its facts and its links' positions)
-and derivation node (by its claim, rule and premises' positions), comparing
+positions), link, separation fact, heap knowledge (by its facts, its
+links' positions, its depth and its separation facts' positions) and
+derivation node (by its claim, rule and premises' positions), comparing
 keys in full on a hash collision. A sequent is written inside its
 derivation node, its context and type by reference: in the measured
 certificates distinct sequents and distinct derivation nodes nearly
