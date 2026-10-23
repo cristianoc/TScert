@@ -159,8 +159,13 @@ locations below the heap the body started in; the runs compose by
   fresh store, or $`\Phi`$ lets everything change
   (`Effect.within_below`).
 
-A node with an exceptional handler is refused: a handler could turn a
-throwing call into a normal return after mutation the bound does not track.
+A node with an exceptional handler is within the bound on a throw as well,
+since its handler turns the throw into a normal path: the node's throw is an
+inspection, a typed write, or a call whose signature bounds its throws
+(`onThrow`), and the handler's facts follow from the node's, the thrown value
+never fresh (proved: `GraphCode.throwsWithin_sound`, `handlerFresh_sound`).
+A signature stating `onThrow` bounds the throws leaving the invocation too
+([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)).
 A function's guarantee comes only from its checked body: a declaration's
 claimed footprint is checked against its graph (proved:
 `SourceExtraction.checkRequests_footprint_at`), a closure's against its code
@@ -351,29 +356,14 @@ and through trusted native contracts (audited).
 ## Deferred: extra precision
 
 The rule separates arrays only by fresh storage, so it refuses safe
-callbacks that change another array beyond `grow`: `pop` on an array literal
-the callback allocated, on an array a callback parameter names that is not
-the mapped one, or `push` then `pop`. Admitting them needs
-footprints over regions rooted at a call's operands (`own(x)`, `store(x)`,
-`elems(x)`), effects relative to operands, allocation-sensitive summaries, composition of regional
-footprints along a graph (transport to the entry heap), and framing of the
-caller's knowledge by a call's footprint. The regional lemmas proved so far
-are in `Footprints.lean` (`Post`, `Post.compose`, `transport_sound`) and
-`FootprintStability.lean` (`stable_sound`, `frame_sound`). None of the seven
-programs, nor the repository code measured, needs them; a retained program
-refused for this reason is the trigger.
+callbacks that change another array beyond `grow`, such as `pop` on an array
+literal the callback allocated. Admitting them needs footprints over regions
+rooted at a call's operands (`own(x)`, `store(x)`, `elems(x)`), composed
+along a graph and framing the caller's knowledge; the regional lemmas are
+proved (`Post.compose`, `transport_sound`,
+`stable_sound`, `frame_sound`, namespace `Footprints`).
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
-`before` stamps, `stamps_separate`) are the candidate replacement for the
-distinct links the checker keeps between pairs of fields, which grow
-quadratically with the fresh objects a body allocates. A version that
-replaces them must keep the separation the pairwise links keep at two
-points:
-
-- a join intersects stamps by literal mark number, which loses separation
-  pairwise links keep;
-- a step treating a slot copy `.var i` as a shift only loses separation
-  through copied slots.
-
-The motivating program is one allocating many fresh objects, whose distinct
-links grow quadratically.
+`before` stamps, proved: `stamps_separate`) are a candidate replacement for
+the pairwise distinct links between fields, which grow quadratically with the
+fresh objects a body allocates. [WORK](../WORK.md#footprints) tracks both.
