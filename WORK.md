@@ -15,6 +15,8 @@ design, not its progress.
 
 | Item | State | Closed when |
 | --- | --- | --- |
+| [Coverage of tools/](docs/DESIGN.md#statement-coverage) | open: the census of 3a6d2c0 at a 300 s step limit verifies 156 of 441 functions, 1158 of 12150 statements (9.5%), where e9dfc1a's at 60 s verified 140 of 436, 948 of 12034 (7.9%); no timeouts (2026-10-23) | every function of tools/ verifies |
+| Three slices lost between e9dfc1a and 3a6d2c0 | open: an investigation, cause unknown: `unchecked.mts#valued`, `written-applications.mts#admitted` and `#literal`, whose sources did not change, are refused at a source incoming edge obligation (2026-10-23) | the three verify again, or their refusal is shown to be required |
 | [A connection to ECMA-262](#a-connection-to-ecma-262) | open | the host's stated types are lemmas of a mechanized specification |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
