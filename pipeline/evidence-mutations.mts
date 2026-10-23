@@ -65,7 +65,7 @@ export function mutationVerifier(): string {
   const toolchain = command("lean", ["--print-prefix"]);
   const clang = join(toolchain, "bin", "clang");
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
-  const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks",
+  const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks", "Semantics/HeapSeparation",
     "Semantics/HeapKnowledge", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer"];
   for (const module of modules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
@@ -76,6 +76,8 @@ export function mutationVerifier(): string {
     }
     if (module === "Semantics/HeapLinks")
       text = inject(text, "HeapLinks_check", () => 'if (mutation("links")) return 1;');
+    if (module === "Semantics/HeapSeparation")
+      text = inject(text, "HeapSeparation_check", () => 'if (mutation("separation")) return 1;');
     if (module === "Semantics/HeapKnowledge") {
       // Only the heap-cell conjunct; immutable value facts remain checked.
       const pattern = /(v_\w+) = (lp_verification_List_all___at___00Verification_HeapFacts_check_spec__1\(v_\w+, v_cells_\w+, v_cells_\w+\));/g;
@@ -90,10 +92,12 @@ export function mutationVerifier(): string {
     }
     if (module === "Programs/ControlFlow")
       text = inject(text, "ControlFlow_handlerFacts", a => `if (mutation("handler")) {
-        lean_object *k = lean_alloc_ctor(0, 3, 0);
+        lean_object *k = lean_alloc_ctor(0, 4, 0);
         lean_ctor_set(k, 0, lean_box(0));
         lean_object *values = lean_ctor_get(${a[0]}, 1), *links = lean_ctor_get(${a[0]}, 2);
-        lean_inc(values); lean_inc(links); lean_ctor_set(k, 1, values); lean_ctor_set(k, 2, links);
+        lean_object *separation = lean_ctor_get(${a[0]}, 3);
+        lean_inc(values); lean_inc(links); lean_inc(separation);
+        lean_ctor_set(k, 1, values); lean_ctor_set(k, 2, links); lean_ctor_set(k, 3, separation);
         return ${prefix}HeapKnowledge_shift(k);
       }`);
     if (module === "Programs/ControlFlow") {

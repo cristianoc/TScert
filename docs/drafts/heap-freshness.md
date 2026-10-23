@@ -213,7 +213,7 @@ constants allocated after the cell.
 **Conjectured.** A fact with explicit fields $`F`$ is the residual form. Any
 set of distinct links has a representation with the same meaning, one
 explicit fact per link: $`x.f\neq y.g`$ is the fact
-$`(\ell_x,\{f\},[(\ell_y,\{g\})])`$ (`Separation.ofPairs_iff`). The
+$`(\ell_x,\{f\},[(\ell_y,\{g\})])`$ (`HeapSeparation.ofPairs_iff`). The
 lowering's cut assertions keep this form, grouped by cell. Allocation states
 the compact form. Separation is never inferred: a slot obtained after an
 allocation (a read, a call's result, an imported object read later) is no
@@ -222,35 +222,33 @@ copies; distinct slots are separated only where a fact says so.
 
 ## 5. Lemmas
 
-**Conjectured; each is a Lean proof of this stage.**
+**Proved** ([HeapSeparation.lean](../../lean/Verification/Semantics/HeapSeparation.lean),
+namespace `HeapSeparation`, unless named otherwise; the rules are stated in
+[separation facts](../PROGRAM-TYPING.md#separation-facts)).
 
-1. `Separation.norm_holds`, `shift_holds`, `drop_holds`, `rebase_holds`,
-   `copy_holds`: each operation preserves the meaning for the environment it
-   produces; out-of-range slots contribute nothing.
-2. `Separation.alloc_holds`: after an allocation of a fresh object at the
-   heap's end, the output separation holds.
-3. `Separation.apart_sound`: $`\mathrm{apart}_S(i.f,s.g)`$ and
-   $`⟦S⟧\rho`$ give $`l\neq l'`$ for the locations of $`\rho(i).f`$ and
-   $`\rho(s).g`$, the inequality `HeapLinks.distinct_sound` gives now;
-   `write_sound` uses it in place.
-4. `Separation.check_sound`: an accepted edge transports the meaning to
-   $`\mathrm{mapEnv}\;m\;\rho`$; `HeapKnowledge.check_sound` gains the
+1. `norm_holds`, `shift_holds`, `drop_holds`, `rebase_holds`, `copy_holds`:
+   each operation preserves the meaning for the environment it produces; a
+   slot without a level contributes nothing (`copy` of such a slot is the
+   push, `apart` of it is false).
+2. `allocate_holds`, with `HeapExpressionRules.fresh_apart`: after an
+   allocation of a fresh object at the heap's end, the output separation
+   holds; `alloc_sound`, `fresh_holds`, `merge_alloc_sound` and
+   `makeKey_alloc_sound` use it.
+3. `apart_sound`: $`\mathrm{apart}_S(i.f,s.g)`$ and $`⟦S⟧\rho`$ give
+   $`l\neq l'`$ for the locations of $`\rho(i).f`$ and $`\rho(s).g`$;
+   `write_sound` uses it.
+4. `check_sound`: an accepted edge transports the meaning to
+   $`\mathrm{mapEnv}\;m\;\rho`$; `HeapKnowledge.check_sound` has the
    component, and with it `checkGraphAssertions` and every edge check.
-5. Heap independence: the meaning takes no heap, so the separation is
-   carried unchanged by `stable_holds`, `alloc_frames`, `handlerFacts_holds`,
-   `ordinaryOutput_holds` and the call and promise rules, across writes,
-   calls, normal and exceptional edges.
-6. Representation: `Separation.ofPairs_iff` (§4), and
-   `Separation.alloc_apart`, the allocation's completeness against the
-   current rule: after an allocation, $`\mathrm{apart}`$ answers true for
-   every pair of a field of the fresh object and a pair of
-   $`\mathrm{contractFields}(\Gamma)`$, which is every distinct link
-   `allocOutput` states now.
+5. Heap independence: the meaning takes no heap, so `ordinaryOutput_holds`,
+   `handlerFacts_holds`, `withStable_sound` and the call and promise rules
+   carry it across writes, calls, normal and exceptional edges.
+6. Representation: `ofPairs_iff` (§4), and `allocate_apart`, the
+   allocation's completeness against the pairwise rule: after an
+   allocation, $`\mathrm{apart}`$ answers true for every field of the fresh
+   object and every pair of $`\mathrm{contractFields}(\Gamma)`$.
 7. Reassignment: the separation operations mention the graph only through
-   `contractFields`, which the existing reassignment lemmas cover;
-   `checkStep`'s, the graph checks' and the qualified bodies' reassignment
-   proofs extend to the new output, which is the same function of the
-   context in both graphs.
+   `contractFields`; the existing reassignment proofs hold unchanged.
 
 `SourceClaimJson.checkJson_safe` keeps its premise and conclusion: knowledge
 holds at every node by `checkStep_sound` and the edge lemmas, extended by the
@@ -301,24 +299,22 @@ cell fact it keeps.
 
 ## 9. Tests
 
-Pipeline cases, positive and negative, each run against today's outcome:
+Pipeline cases: `fresh-separation` (positive): a captured `let`, a heap
+cell, allocated by each loop iteration, at a join, before a call and before
+a throwing call, written while a parameter's tested field is read after
+the write, in the loop body, after the call and in the handler; every
+write keeps the field's fact through a separation fact.
+`invalid-fresh-copy-write` and `invalid-fresh-loop-alias` (negative): a
+write through a copy of a fresh object, and through an older variable the
+fresh object was stored in, forgets the tested field (each returns null
+under Node where TypeScript reads a number).
 
-- repeated allocations: an object allocated in a loop body, written, keeps a
-  fact about an outer cell and about the object the previous iteration
-  allocated (positive); the same object reached through a loop-carried
-  alias is no partner (negative: a write through the alias forgets);
-- an alias by assignment, a join of two allocations, a call and a write
-  between the allocation and the use (positive where today's links
-  sufficed);
-- a throw inside `try` after an allocation: the handler keeps the separation
-  established before the throwing node (positive), and none of the
-  interrupted expression's.
-
-Forged-document controls (`pipeline/test.mts`): a separation fact or a
-partner no allocation justifies; normal-output freshness carried on an
-exceptional edge; a fact naming a level at or past its depth (an
-out-of-range slot) and a target separation with its depth shifted by one (a
-stale slot map); a grouped target pair whose source orientation is reversed
-(accepted) and one with no source pair (refused); a cut whose assertion
-drops a private cell's explicit fact, with a write that needs it; a
-knowledge entry naming a position past the separations table.
+Forged-document controls (`pipeline/test.mts`, the separation control): an
+argument stated fresh (a fact no allocation states), a fact naming a level
+at its depth, and a separation at a depth one off (a stale slot map) are
+each refused by heap knowledge at the edge entering the node and accepted
+with the separation check bypassed; a cut without its cell's explicit fact
+is refused; a knowledge entry naming a position past the separations table
+is refused by the decoder. The second orientation of the edge rule is
+exercised by every cut asserting a cell's explicit fact after an
+allocation.

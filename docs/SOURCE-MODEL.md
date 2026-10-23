@@ -127,7 +127,10 @@ must still satisfy the Boolean contract.
 Each statement entry supplies a local interface: binding types and current
 heap observations. Every incoming edge, including a loop back edge, must
 establish that interface. The calculus can also retain relationships such as
-two slots denoting the same value or two private cells being distinct.
+two slots denoting the same value or two private cells being distinct: a
+private cell's separation from the slots allocated before it and the cells
+allocated after it is one [separation fact](PROGRAM-TYPING.md#separation-facts)
+of its field `value`.
 The source-entry rules determine which of these facts cross a checkpoint.
 
 An unrestricted call invalidates heap observations because the callee may write

@@ -364,6 +364,8 @@ proved (`Post.compose`, `transport_sound`,
 `stable_sound`, `frame_sound`, namespace `Footprints`).
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
-`before` stamps, proved: `stamps_separate`) are a candidate replacement for
-the pairwise distinct links between fields, which grow quadratically with the
-fresh objects a body allocates. [WORK](../WORK.md#footprints) tracks both.
+`before` stamps, proved: `stamps_separate`) state a slot's separation against
+heap marks rather than against each older slot, as
+[separation facts](PROGRAM-TYPING.md#separation-facts) do; they need a mark
+valuation below the current heap's length, carried through every heap
+change. [WORK](../WORK.md#footprints) tracks both.

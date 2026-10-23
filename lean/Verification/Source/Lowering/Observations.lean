@@ -79,17 +79,18 @@ it, from the allocation or from the cut before. What the allocation proves is
 about the fields the older slots' records named then (`apart`), whatever a
 later test narrowed them to, and about the objects allocated after it, other
 cells and fresh constants; an object a later call returned may be any
-object. -/
-@[nospecialize] def distinctLinks (G : Verification.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
-    (Γ : List (Ty ι)) : HeapLinks.Links :=
-  scope.zipIdx.flatMap fun (b,i) =>
+object. One separation fact per cell, its field `value` apart from each
+listed slot's fields, addressed by level at the context's depth. -/
+@[nospecialize] def separationFacts (G : Verification.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) : HeapSeparation.Separation :=
+  HeapSeparation.norm Γ.length <| scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
     | .cell .. | .early .. =>
       -- A captured cell was allocated before the closure's entry, which
       -- knows nothing of that allocation.
-      if b.captured then [] else
-      Γ.zipIdx.flatMap fun (A,j) =>
-        if i == j then [] else
+      if b.captured || Γ.length ≤ i then [] else
+      [⟨Γ.length - 1 - i, some [valueField], Γ.zipIdx.filterMap fun (A,j) =>
+        if i == j then none else
         let other := scope[j]?
         let isCell := other.any fun o => match o.storage with | .cell .. | .early .. => true | .value | .slot _ => false
         let fields :=
@@ -104,7 +105,7 @@ object. -/
             | none => commonFields G A
           else if isCell || other.any (·.fresh) then commonFields G A
           else []
-        fields.map fun f => (⟨i,j,false,valueField,true,f,false⟩ : HeapLinks.Link)
+        if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
     | .value | .slot _ => []
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
@@ -113,10 +114,10 @@ justify its supplied current-heap assertion, including backedges. -/
     (next : Target) (entry : Option Nat := none) (scope : List (ScopeBinding Tree) := []) :
     Compiler Target := do
   let G := SourceTypes.graph (← table)
-  let links := if entry.isSome then distinctLinks G scope Γ else []
-  if facts.isEmpty && links.isEmpty then return next
+  let separation := if entry.isSome then separationFacts G scope Γ else {}
+  if facts.isEmpty && separation.facts.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [Labels.nul] "heap-observation" entry scope
-  recordAssertion t ⟨facts,[],links⟩
+  recordAssertion t ⟨facts,[],[],separation⟩
   return t
 
 @[nospecialize] def contents (A : Ty Tree) : Compiler (List HeapFacts.Atom) := do
@@ -238,7 +239,7 @@ with the witness's context type. -/
         let some _ ← witnessClaimHere fc pos root path.dropLast | return none
         return scope.findIdx? (·.witness == some (root, path.dropLast)) : Compiler (Option Nat))
       | return none
-    return some ⟨r,j,false,field,false,valueField,
+    return some ⟨r,j,false,field,
       !(HeapExpressionRules.fieldOperand (PositiveRules.expand G (Γ[r]?.getD [])) field)⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.

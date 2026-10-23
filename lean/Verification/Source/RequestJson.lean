@@ -231,6 +231,8 @@ deriving instance ToJson, FromJson for ReadSummary
 deriving instance ToJson, FromJson for HeapFacts.Atom
 deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
+deriving instance ToJson, FromJson for HeapSeparation.Fact
+deriving instance ToJson, FromJson for HeapSeparation.Separation
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for PromiseCalls.Implication
 deriving instance ToJson, FromJson for PromiseCalls.Yield

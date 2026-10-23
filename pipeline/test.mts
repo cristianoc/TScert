@@ -173,7 +173,7 @@ const jsonIndex = (v: JsonValue | undefined): number => {
 };
 /** The kinds of an evidence bundle's tables, in the order each names only
  * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
-const evidenceTables = ["types", "contexts", "links", "knowledge", "proofs"] as const;
+const evidenceTables = ["types", "contexts", "links", "separations", "knowledge", "proofs"] as const;
 /** Every bundle of an evidence document: the main one, then each module's. */
 const evidenceBundles = (document: JsonValue): JsonObject[] => [jsonObject(jsonObject(document).main),
   ...jsonArray(jsonObject(document).modules).map((m) => jsonObject(jsonObject(m).evidence))];
@@ -186,11 +186,12 @@ function unfoldedEvidence(path: string): JsonValue {
   for (const b of evidenceBundles(document)) {
     const at = (table: JsonValue[], k: JsonValue | undefined): JsonValue =>
       structuredClone(must(table[jsonIndex(k)], "an entry of its table"));
-    const types = jsonArray(b.types), links = jsonArray(b.links);
+    const types = jsonArray(b.types), links = jsonArray(b.links), separations = jsonArray(b.separations);
     const contexts = jsonArray(b.contexts).map((c) => jsonArray(c).map((t) => at(types, t)));
     const knowledge = jsonArray(b.knowledge).map((k): JsonValue => {
       const e = jsonObject(k);
-      return { cells: e.cells ?? null, values: e.values ?? null, links: jsonArray(e.links).map((l) => at(links, l)) };
+      return { cells: e.cells ?? null, values: e.values ?? null, links: jsonArray(e.links).map((l) => at(links, l)),
+        separation: { depth: e.depth ?? null, facts: jsonArray(e.separation).map((a) => at(separations, a)) } };
     });
     const sequent = (s: JsonValue): JsonValue => {
       const e = jsonObject(s);
@@ -260,8 +261,10 @@ function tabledEvidence(document: unknown): string {
     };
     const knowledge = (k: JsonValue | undefined): number => {
       const e = jsonObject(k);
+      const separation = jsonObject(e.separation);
       return add("knowledge", { cells: e.cells ?? null, values: e.values ?? null,
-        links: jsonArray(e.links).map((l) => add("links", l)) });
+        links: jsonArray(e.links).map((l) => add("links", l)), depth: separation.depth ?? null,
+        separation: jsonArray(separation.facts).map((a) => add("separations", a)) });
     };
     const node = (n: JsonValue): JsonValue => {
       const e = jsonObject(n);
@@ -4583,6 +4586,9 @@ control(async (): Promise<void> => {
       /a reference to type \d+, not among the type entries it may name/],
     ["proof-as-knowledge", (b) => { jsonArray(b.proofs)[0] = must(jsonArray(b.knowledge)[0], "a knowledge entry"); },
       /Document\.proofs: Verification\.EvidenceWire\.ProofEntry\./],
+    ["separation-past-table", (b) => {
+      must(jsonObject(jsonArray(b.knowledge)[0]), "a knowledge entry").separation = [jsonArray(b.separations).length];
+    }, /a reference to separation fact \d+, not among the separation fact entries it may name/],
     ["knowledge-as-link", (b) => { jsonArray(b.links)[0] = must(jsonArray(b.knowledge)[0], "a knowledge entry"); },
       /Document\.links: Verification\.HeapLinks\.Link\./],
     ["premise-itself", (b) => { const [p, k] = withPremises(b); jsonArray(p.premises)[0] = k; },
@@ -4636,7 +4642,7 @@ control(async (): Promise<void> => {
       jsonArray(b.proofs).push(must(proofs(b)[k], "its derivation"));
       jsonObject(jsonObject(n.ordinary).proof).tree = jsonArray(b.proofs).length - 1;
     }],
-    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [] }); }],
+    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [], depth: 0, separation: [] }); }],
   ];
   for (const [name, change] of accepted) {
     const checked = check(name, change);
@@ -5049,8 +5055,7 @@ mutationControl(async (): Promise<void> => {
   // is added at a non-cut return node, so the source entry's exact interface
   // stays intact. Its output carries the same added link in the pushed frame.
   // Only the incoming read-link obligation can reject this evidence.
-  type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
-    field: string; other: string; optional: boolean };
+  type Link = { cell: number; value: number; alias: boolean; field: string; optional: boolean };
   type WitnessNode = WireNode & { knowledge: { links: Link[] }; output: { links: Link[] } };
   for (const name of ["receiver", "field"]) {
     const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
@@ -5066,12 +5071,12 @@ mutationControl(async (): Promise<void> => {
     assert.ok(object(unit) && Array.isArray(unit.certificate));
     const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
     const node = must(certificate.find(c => {
-      const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
+      const links = c.knowledge.links.filter(l => !l.alias);
       return JSON.stringify(nodeSequent(c).term) === JSON.stringify({ var: { i: 0 } }) &&
         links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
         JSON.stringify(nodeSequent(c).context[links[0].value]) === JSON.stringify(nodeSequent(c).context[links[1].value]);
     }), `${name}: two refined witnesses at a non-cut return`);
-    const [first, second] = node.knowledge.links.filter(l => !l.alias && !l.distinct);
+    const [first, second] = node.knowledge.links.filter(l => !l.alias);
     if (name === "receiver") {
       assert.notEqual(first.cell, second.cell);
       assert.equal(first.field, second.field);
@@ -5103,7 +5108,7 @@ mutationControl(async (): Promise<void> => {
     assert.ok(object(unit) && Array.isArray(unit.certificate));
     const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
     const aliased = (node: WitnessNode, i: number, j: number): boolean =>
-      node.knowledge.links.some(l => l.alias && !l.distinct && ((l.cell === i && l.value === j) || (l.cell === j && l.value === i)));
+      node.knowledge.links.some(l => l.alias && ((l.cell === i && l.value === j) || (l.cell === j && l.value === i)));
     // A slot copy's output is its knowledge past the result, so the forged
     // link's image there is the link one slot on, for slots other than the
     // copied one.
@@ -5118,7 +5123,7 @@ mutationControl(async (): Promise<void> => {
         i < j && t === u && i !== slot && j !== slot && !aliased(node, i, j) ? [{ node, i, j }] : []));
     });
     const { node, i, j } = must(pairs[0], "receiver: two unaliased slots of one type");
-    const forged: Link = { cell: i, value: j, alias: true, distinct: false, field: "value", other: "value", optional: false };
+    const forged: Link = { cell: i, value: j, alias: true, field: "value", optional: false };
     node.knowledge.links.push(forged);
     node.output.links.push({ ...forged, cell: i + 1, value: j + 1 });
     const path = join(artifacts, "forged-mapped-alias-evidence.json");
@@ -5128,6 +5133,76 @@ mutationControl(async (): Promise<void> => {
     assert.ok(checked.includes("evidence fails heap knowledge"), checked);
   }
   process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage, an alias of slots from two sources isolates links\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // Separation facts (HeapSeparation): an argument stated fresh, a level at
+  // its depth, and a separation at a depth one off (its levels naming other
+  // slots) are each refused by heap knowledge at the edge entering the node,
+  // and accepted with that check bypassed (`separation`). A cut's knowledge
+  // is its statement entry's exact assertion: a cut without a cell's fact is
+  // refused.
+  const artifacts = run("fresh-separation");
+  const honest = readClaims(artifacts);
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  type Fact = { slot: number; fields: string[] | null; partners: [number, string[]][] };
+  type Separation = { depth: number; facts: Fact[] };
+  type SeparationNode = WireNode & { knowledge: { separation: Separation }; output: { separation: Separation } };
+  const certificate = (evidence: unknown, name: string): SeparationNode[] => {
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const unit: unknown = evidence.main.functions[honest.functions.findIndex(f => f.name === name)];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    return unit.certificate as SeparationNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+  };
+  // A node pushing a sum past a separation, whose output is its knowledge
+  // one push deeper: the same facts.
+  const pushing = (c: SeparationNode[]): SeparationNode => must(c.find(n => {
+    const term = nodeSequent(n).term;
+    return n.knowledge.separation.facts.length > 0 && n.effect !== null && "pure" in n.effect &&
+      object(term) && "arith" in term && n.output.separation.depth === n.knowledge.separation.depth + 1;
+  }), "a sum pushed past a separation");
+  const edits: [string, (n: SeparationNode) => void][] = [
+    // The argument `x` (level 1) as if fresh, apart from its own field: no
+    // allocation states it.
+    ["argument-fresh", (n) => {
+      const fact: Fact = { slot: 1, fields: null, partners: [[1, ["value"]]] };
+      n.knowledge.separation.facts.push(fact);
+      n.output.separation.facts.push(fact);
+    }],
+    // A level at the depth names no slot.
+    ["out-of-range", (n) => {
+      const fact: Fact = { slot: n.knowledge.separation.depth, fields: null, partners: [[0, ["value"]]] };
+      n.knowledge.separation.facts.push(fact);
+      n.output.separation.facts.push(fact);
+    }],
+    // One deeper, every level names the slot below the one it named.
+    ["stale-depth", (n) => {
+      n.knowledge.separation.depth += 1;
+      n.output.separation.depth += 1;
+    }],
+  ];
+  for (const [name, edit] of edits) {
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
+    edit(pushing(certificate(evidence, "loopCells")));
+    const path = join(artifacts, `forged-separation-${name}-evidence.json`);
+    writeFileSync(path, tabledEvidence(evidence));
+    checkMutation(artifacts, join(artifacts, "claims.json"), path, "separation");
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.ok(checked.includes("evidence fails heap knowledge"), `${name}: ${checked}`);
+  }
+  // A cut without the cell's explicit fact: the statement entry's assertion
+  // is the cut's knowledge exactly.
+  {
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
+    const cut = must(certificate(evidence, "loopCells").find(n => n.knowledge.separation.facts.some(f => f.fields !== null)),
+      "a statement entry stating a cell's explicit fact");
+    cut.knowledge.separation.facts = cut.knowledge.separation.facts.filter(f => f.fields === null);
+    const path = join(artifacts, "forged-separation-cut-evidence.json");
+    writeFileSync(path, tabledEvidence(evidence));
+    invoke(join(artifacts, "claims.json"), path, artifacts);
+  }
+  process.stdout.write("separation: an argument stated fresh, a level at its depth and a stale depth isolate the separation check; a cut without its cell's fact is refused\n");
 });
 
 mutationControl(async (): Promise<void> => {
@@ -5169,8 +5244,7 @@ mutationControl(async (): Promise<void> => {
   // A second-segment link, from a prefix's witness to the path's, added at
   // a non-cut return node beside the honest ones: of the other prefix's
   // witness (`receiver`), or through the prefix's other field (`field`).
-  type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
-    field: string; other: string; optional: boolean };
+  type Link = { cell: number; value: number; alias: boolean; field: string; optional: boolean };
   type WitnessNode = WireNode & { knowledge: { links: Link[] }; output: { links: Link[] } };
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -5189,7 +5263,7 @@ mutationControl(async (): Promise<void> => {
     const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
     // The second segments: links whose receiver is the value of another link.
     const segments = (c: WitnessNode): Link[] => {
-      const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
+      const links = c.knowledge.links.filter(l => !l.alias);
       return links.filter(l => links.some(r => r.value === l.cell));
     };
     const node = must(certificate.find(c => {

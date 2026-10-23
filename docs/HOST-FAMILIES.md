@@ -947,8 +947,9 @@ reads `m.name` three times, and the second and third reads are the first
 one's slot, at the union of the two guards' arms where the condition holds.
 
 A cell fact ($`x.f\mapsto R`$, read by `read-sliced`) states a predicate of a
-location's current value, which survives a write a distinct link separates
-from the location; a read link states the value itself, whose every
+location's current value, which survives a write a
+[separation fact](PROGRAM-TYPING.md#separation-facts) separates from the
+location; a read link states the value itself, whose every
 refinement a linked read sees.
 
 #### A guard on any argument

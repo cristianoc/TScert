@@ -7,7 +7,7 @@ A **fact kind** has a meaning at a heap and a **support**: the regions it
 reads, each with the largest change it tolerates. Its support lemma says that
 it survives every change within its support. **Separation** of a support
 region from a footprint region is derived from three sources of knowledge:
-the class of a field's contents, provenance stamps, and distinct links. The
+the class of a field's contents, provenance stamps, and distinct pairs. The
 **stability check** of a fact under a footprint accepts when every footprint
 entry either changes the support's regions within their tolerance or is
 apart from them; its soundness theorem gives the support's premise from the
@@ -21,7 +21,7 @@ namespace Verification.Footprints
 inductive FactKind where
   /-- An observation of a field's current contents (`HeapFacts.Fact`). -/
   | cell (f : HeapFacts.Fact)
-  /-- A link: alias, distinct, or a read of a field (`HeapLinks.Link`). -/
+  /-- A link: alias or a read of a field (`HeapLinks.Link`). -/
   | link (g : HeapLinks.Link)
   /-- A primitive predicate of a slot's value. -/
   | value (f : HeapFacts.Fact)
@@ -36,7 +36,7 @@ def FactKind.Holds : FactKind → Env → Heap → Prop
 
 def FactKind.support : FactKind → Footprint
   | .cell f => [(.field f.slot f.field, .keep)]
-  | .link g => if g.distinct || g.alias then [] else [(.field g.cell g.field, .keep)]
+  | .link g => if g.alias then [] else [(.field g.cell g.field, .keep)]
   | .value _ => []
   | .dense x _ => [(.field x arrayStoreKey, .grow)]
 
@@ -72,23 +72,21 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
     simp only [List.mem_singleton] at hg'
     subst hg'
     have hg := hF g' (List.mem_singleton_self _)
-    by_cases hd : g'.distinct = true
-    · simpa [hd] using hg
-    · by_cases ha : g'.alias = true
-      · simpa [hd, ha] using hg
-      · have hs' : Supported [(.field g'.cell g'.field, .keep)] ρ h h' := by
-          simpa [FactKind.support, hd, ha] using hs
-        simp only [hd, ha, if_false, Bool.false_eq_true] at hg ⊢
-        by_cases ho : g'.optional = true
-        · simp only [ho, if_true] at hg ⊢
-          obtain ⟨flds, c, oid, hx, hr⟩ := hg
-          exact ⟨flds, c, oid, hx, readGave_support (by simp [hx, fieldsOf]) hs' hr⟩
-        · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
-          obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
-          obtain ⟨v', hv', hk⟩ := hs' _ (List.mem_singleton_self _) l _
-            (by simp [Region.mem, hx, fieldsOf, hl]) hv
-          simp only [Change.Holds] at hk
-          exact ⟨flds, c, oid, l, hx, hl, by rw [← hk]; exact hv'⟩
+    by_cases ha : g'.alias = true
+    · simpa [ha] using hg
+    · have hs' : Supported [(.field g'.cell g'.field, .keep)] ρ h h' := by
+          simpa [FactKind.support, ha] using hs
+      simp only [ha, if_false, Bool.false_eq_true] at hg ⊢
+      by_cases ho : g'.optional = true
+      · simp only [ho, if_true] at hg ⊢
+        obtain ⟨flds, c, oid, hx, hr⟩ := hg
+        exact ⟨flds, c, oid, hx, readGave_support (by simp [hx, fieldsOf]) hs' hr⟩
+      · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
+        obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
+        obtain ⟨v', hv', hk⟩ := hs' _ (List.mem_singleton_self _) l _
+          (by simp [Region.mem, hx, fieldsOf, hl]) hv
+        simp only [Change.Holds] at hk
+        exact ⟨flds, c, oid, l, hx, hl, by rw [← hk]; exact hv'⟩
 
 /-! ## Separation -/
 

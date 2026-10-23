@@ -186,7 +186,7 @@ promised argument in one is in the other. -/
 
 /-- The slots alias links relate, both ways. -/
 def aliasPairs (links : HeapLinks.Links) : List (Nat × Nat) :=
-  links.flatMap fun g => if g.alias && !g.distinct then [(g.cell, g.value), (g.value, g.cell)] else []
+  links.flatMap fun g => if g.alias then [(g.cell, g.value), (g.value, g.cell)] else []
 
 theorem aliasPairs_holds {links : HeapLinks.Links} {ρ h} (hl : HeapLinks.Holds links ρ h) :
     ∀ q ∈ aliasPairs links, ρ q.1 = ρ q.2 := by
@@ -195,8 +195,7 @@ theorem aliasPairs_holds {links : HeapLinks.Links} {ρ h} (hl : HeapLinks.Holds 
   have hh := hl g hg
   split at hq
   · rename_i hc
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
-    simp only [hc.2, Bool.false_eq_true, ↓reduceIte, hc.1] at hh
+    simp only [hc, ↓reduceIte] at hh
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hq
     rcases hq with rfl | rfl
     · exact hh
@@ -292,7 +291,7 @@ slot's value, and the object's arms whose field answers the test so
 @[nospecialize] def fieldYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
     (links : HeapLinks.Links) (y : Yield ι) (i : Nat) (tag : Tag) (q : Bool) : Bool :=
   (Γ[i]?).isSome &&
-  links.any fun g => !g.distinct && !g.alias && !g.optional && g.value == i && g.cell == y.target &&
+  links.any fun g => !g.alias && !g.optional && g.value == i && g.cell == y.target &&
     match Γ[g.cell]?, y.evidence with
     | some A, some p => PositiveCertificates.checkUsing G images (fieldSlice G A g.field tag q) y.type p
     | _, _ => false
@@ -305,11 +304,11 @@ theorem fieldYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {�
   simp only [Bool.and_eq_true] at hf
   obtain ⟨g, hg, hc⟩ := List.any_eq_true.mp hf.2
   simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, beq_iff_eq] at hc
-  obtain ⟨⟨⟨⟨⟨hd, ha⟩, ho⟩, hv⟩, hcell⟩, hp⟩ := hc
+  obtain ⟨⟨⟨⟨ha, ho⟩, hv⟩, hcell⟩, hp⟩ := hc
   split at hp
   · rename_i A p hA _
     have hlink := hl g hg
-    simp only [hd, ha, ho, Bool.false_eq_true, ite_false] at hlink
+    simp only [ha, ho, Bool.false_eq_true, ite_false] at hlink
     obtain ⟨flds, c, oid, l, hobj, hlk, hu⟩ := hlink
     have hs := fieldSlice_sound (he.2 g.cell A hA) hh hobj hlk hu
       (tagHolds_of_heap (hv ▸ htag))
@@ -400,7 +399,7 @@ is conditional; one of `false` is stated of that answer (`onFalse`). -/
     (y.target == i && match Γ[i]? with
       | some A => PositiveCertificates.checkUsing G images (memberSlotSlice G A ts !y.onFalse) y.type p
       | none => false) ||
-    links.any fun g => !g.distinct && !g.alias && !g.optional && g.value == i && g.cell == y.target &&
+    links.any fun g => !g.alias && !g.optional && g.value == i && g.cell == y.target &&
       match Γ[g.cell]? with
       | some A => PositiveCertificates.checkUsing G images
           (memberFieldSlice G A g.field ts (!y.onFalse) y.type) y.type p
@@ -605,11 +604,11 @@ theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · cases hc
     · obtain ⟨g, hg, hc⟩ := List.any_eq_true.mp hc
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, beq_iff_eq] at hc
-      obtain ⟨⟨⟨⟨⟨hd, ha⟩, ho⟩, hv⟩, hcell⟩, hp'⟩ := hc
+      obtain ⟨⟨⟨⟨ha, ho⟩, hv⟩, hcell⟩, hp'⟩ := hc
       split at hp'
       · rename_i A hA
         have hlink := hl g hg
-        simp only [hd, ha, ho, Bool.false_eq_true, ite_false] at hlink
+        simp only [ha, ho, Bool.false_eq_true, ite_false] at hlink
         obtain ⟨flds, c, oid, l, hobj, hlk, hu⟩ := hlink
         have hs := memberSlice_sound (slice := fun B t q => fieldSlice G B g.field t q)
           (M := fun B => meaning G B (m+1) W (ρ g.cell))
@@ -786,7 +785,8 @@ def promiseYields (G : NormalGraph ι) (A : Ty ι) (effect : Effect) (a : Nat) (
 theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnowledge.Holds k ρ h)
     (v : Tm) (h' : Heap) : HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) (push v ρ) h' :=
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
-    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
+    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
 
 /-- **A call at a promise signature** returns where the promise holds: its
 callee meets the promise signature it holds beside the one the call is

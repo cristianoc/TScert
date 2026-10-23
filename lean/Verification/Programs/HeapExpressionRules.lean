@@ -63,12 +63,13 @@ def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
 
 def copy (k : Knowledge) (i : Nat) : Knowledge :=
   ⟨copyFacts k.cells i,copyFacts k.values i,
-    ⟨0,i+1,true,valueField,false,valueField,false⟩ :: HeapLinks.pull k.links (copySlots i)⟩
+    ⟨0,i+1,true,valueField,false⟩ :: HeapLinks.pull k.links (copySlots i),
+    HeapSeparation.copy k.separation i⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
   have shifted := HeapKnowledge.shift_holds (v := ρ i) hk
-  refine ⟨?_,?_,?_⟩
+  refine ⟨?_,?_,?_,HeapSeparation.copy_holds hk.2.2.2⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -85,7 +86,7 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
   · intro g hg
     rcases List.mem_cons.mp hg with rfl | hg
     · rfl
-    · have hp := HeapLinks.pull_holds (pre := copySlots i) (τ := push (ρ i) ρ) hk.2.2 (by
+    · have hp := HeapLinks.pull_holds (pre := copySlots i) (τ := push (ρ i) ρ) hk.2.2.1 (by
         intro j v hv
         unfold copySlots at hv
         split at hv
@@ -201,7 +202,7 @@ theorem includes_sound {G : NormalGraph ι} {A R v} (hc : includes G A R = true)
   · contradiction
 
 def withResult (k : Knowledge) (R : List Atom) : Knowledge :=
-  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links⟩
+  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links,k.separation⟩
 
 theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
     (hr : ∃ a ∈ R, a.holds v) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
@@ -215,7 +216,7 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
 came from. This does not claim the cell had any particular contents beforehand. -/
 def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := false) : Knowledge :=
   let out := HeapKnowledge.shift k
-  let fresh := (HeapLinks.aliases k.links i).map fun j => (⟨j+1,0,false,fld,false,valueField,optional⟩ : HeapLinks.Link)
+  let fresh := (HeapLinks.aliases k.links i).map fun j => (⟨j+1,0,false,fld,optional⟩ : HeapLinks.Link)
   {out with links := fresh ++ out.links}
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
@@ -240,13 +241,13 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
   · intro h' u hp
     rw [hp.1]
     have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) ⟨a,ha,by simpa [hp.2] using hav⟩
-    refine ⟨hout.1,hout.2.1,?_⟩
+    refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-      have he := HeapLinks.aliases_eq hk.2.2 hj
+      have he := HeapLinks.aliases_eq hk.2.2.1 hj
       exact ⟨flds,c,oid,he.trans hl,by simpa [push,hp.2] using hrd⟩
-    · exact hout.2.2 link hm
+    · exact hout.2.2.1 link hm
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
@@ -336,13 +337,13 @@ theorem presentRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld R Re
     · intro h' u hp
       rw [hp.1]
       have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) ⟨a,ha,by simpa [hp.2] using hav⟩
-      refine ⟨hout.1,hout.2.1,?_⟩
+      refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
       intro link hm
       rcases List.mem_append.mp hm with hm | hm
       · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-        have he := HeapLinks.aliases_eq hk.2.2 hj
+        have he := HeapLinks.aliases_eq hk.2.2.1 hj
         exact ⟨flds,c,oid,l,he.trans hl,hfd,by simpa [push,hp.2] using hlv⟩
-      · exact hout.2.2 link hm
+      · exact hout.2.2.1 link hm
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref A ρ n W h}
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
@@ -363,12 +364,12 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     rw [hl] at hs ⊢
     apply one_step rfl hval (.readField hfd hv) _ hs
     have hout := HeapKnowledge.shift_holds (v := v) hk
-    refine ⟨hout.1,hout.2.1,?_⟩
+    refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-      exact ⟨flds,code,oidb,l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hfd,hv⟩
-    · exact hout.2.2 link hm
+      exact ⟨flds,code,oidb,l,(HeapLinks.aliases_eq hk.2.2.1 hj).trans hl,hfd,hv⟩
+    · exact hout.2.2.1 link hm
 
 /-- A completed read whose value meets an observation belongs to every type
 the observation refines its type to, at every step count. -/
@@ -513,13 +514,13 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
         HeapKnowledge.Holds (readFrame k i fld true) (push u ρ) h := by
       intro u hu
       have hout := HeapKnowledge.shift_holds (v := u) hk
-      refine ⟨hout.1,hout.2.1,?_⟩
+      refine ⟨hout.1,hout.2.1,?_,hout.2.2.2⟩
       intro link hm
       rcases List.mem_append.mp hm with hm | hm
       · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
         simp only [Bool.false_eq_true, ite_false, ite_true]
-        exact ⟨flds, .absent, oid, (HeapLinks.aliases_eq hk.2.2 hj).trans hl, hu⟩
-      · exact hout.2.2 link hm
+        exact ⟨flds, .absent, oid, (HeapLinks.aliases_eq hk.2.2.1 hj).trans hl, hu⟩
+      · exact hout.2.2.1 link hm
     cases hlk : flds.lookup fld with
     | some l =>
       obtain ⟨c, hc, hvals⟩ := hpres l hlk
@@ -546,7 +547,7 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
 `fld` to `y`: the link a read records. -/
 def linksField (k : Knowledge) (i y : Nat) (fld : PropKey) : Bool :=
   k.links.any fun g => (HeapLinks.aliases k.links i).contains g.cell && g.value == y &&
-    !g.alias && !g.distinct && g.field == fld
+    !g.alias && g.field == fld
 
 /-- **A linked read.** Where a read link says the object in `i` holds the
 value of `y` at its field, the read gives that value, which has `y`'s type. -/
@@ -558,10 +559,10 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
       (fun h' v => HeapKnowledge.Holds (copy k y) (push v ρ) h') n W h (.readAt fld (ρ i)) := by
   obtain ⟨g,hg,hm⟩ := List.any_eq_true.mp hl
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.contains_iff_mem] at hm
-  obtain ⟨⟨⟨⟨hal,hv⟩,ha⟩,hd⟩,hf⟩ := hm
-  have hc : ρ g.cell = ρ i := HeapLinks.aliases_eq hk.2.2 hal
-  have hgl := hk.2.2 g hg
-  simp only [hd, ha, Bool.false_eq_true, if_false] at hgl
+  obtain ⟨⟨⟨hal,hv⟩,ha⟩,hf⟩ := hm
+  have hc : ρ g.cell = ρ i := HeapLinks.aliases_eq hk.2.2.1 hal
+  have hgl := hk.2.2.1 g hg
+  simp only [ha, Bool.false_eq_true, if_false] at hgl
   have hread : ∃ flds c oid, ρ i = .objAt flds c oid ∧ ReadGave flds fld h (ρ y) := by
     split at hgl
     · obtain ⟨flds,c,oid,ho,hr⟩ := hgl
@@ -581,7 +582,8 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
-def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
+def ordinaryOutput (k : Knowledge) : Knowledge :=
+  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation⟩
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -590,7 +592,9 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) (push v ρ) h') n W h (instantiate 0 ρ t) := by
   apply of_value_property _ (ht.sound n W h ρ he hw hh)
   intro _ _ heap v _
-  exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
+  exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
+    HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
 
 /-- The named fields of every record-typed slot: the locations a fresh
 allocation is known to differ from, read off the context's contracts. A slot
@@ -617,14 +621,38 @@ theorem contractFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
 
 /-- Allocation retains facts about old cells and records the fresh object: one
 assertion per field whose initializer is known to hold a supported primitive
-predicate (`Rs`). Its locations are fresh, so each of its fields (`fields`, by
-default those of `Rs`) is distinct from every contract field of every
-record-typed slot, whatever it holds. -/
-def allocOutput (k : Knowledge) (Rs : List (PropKey × List Atom))
-    (others : List (Nat × PropKey) := []) (fields : List PropKey := Rs.map Prod.fst) : Knowledge :=
+predicate (`Rs`). Its locations are fresh, so every own location of it is
+separated from every contract field (`others`) of the context's `n` slots,
+whatever it holds: one separation fact (`HeapSeparation.allocate`). -/
+def allocOutput (k : Knowledge) (Rs : List (PropKey × List Atom)) (n : Nat)
+    (others : List (Nat × PropKey)) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
-    (fields.flatMap fun p => others.map fun q =>
-      (⟨0,q.1+1,false,p,true,q.2,false⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
+    (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others⟩
+
+theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
+    l ∈ (slots base ns).map Prod.snd → base ≤ l
+  | _, [], _, h => by simp [slots] at h
+  | base, f :: fs, l, h => by
+    simp only [slots, List.map_cons, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact Nat.le_refl _
+    · exact Nat.le_trans (Nat.le_succ base) (slots_snd_ge h)
+
+/-- A fresh object's own locations lie past the old heap's end; a contract
+field of a slot holds a heap value, so it lies below it. -/
+theorem fresh_apart [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns : List PropKey} {code : CallCode} {oid : Nat}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) :
+    ∀ s g, (s, g) ∈ contractFields G Γ →
+      HeapSeparation.Apart (push (.objAt (slots h.length ns) code oid) ρ) 0 none (s + 1) g := by
+  intro s g hm l l' hl hl'
+  obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hm
+  obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 s Ref hidx)
+  obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+  have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
+  have hge : h.length ≤ l := slots_snd_ge (by simpa [push, HeapSeparation.At] using hl)
+  simp only [push, hl0, HeapSeparation.At, List.mem_singleton, exists_eq_left] at hl'
+  have : l' = l1 := Option.some.inj (hl'.symm.trans hfd1)
+  omega
 
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a
@@ -687,7 +715,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds
-        (allocOutput k (allocationFacts G Γ k parts) (contractFields G Γ) (parts.map Prod.fst))
+        (allocOutput k (allocationFacts G Γ k parts) Γ.length (contractFields G Γ))
         (push v ρ) h')
       n W h (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2)) := by
   have hval : ∀ p ∈ parts, isVal (ρ p.2) = true := fun p hp =>
@@ -721,30 +749,9 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
       obtain ⟨flds,c,oid,v,hl,hrd,b,hb,hv'⟩ := hk.1 g hg
       exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,b,hb,hv'⟩
-  · intro g hg
-    simp only [allocOutput] at hg
-    rcases List.mem_append.mp hg with hg | hg
-    · -- A fresh field sits at or beyond the old heap's end; a contract field of
-      -- an existing object holds a heap value, so it sits below it.
-      obtain ⟨fld,hfld,hg⟩ := List.mem_flatMap.mp hg
-      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
-      obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hfld
-      obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
-      obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
-      obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
-      have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
-      simp only [ite_true]
-      intro flds c oid l flds' c' oid' l' h0 hfl hs' hfl'
-      simp only [push] at h0 hs'
-      cases h0
-      have hsl : (slots h.length (parts.map Prod.fst)).lookup fld = some (h.length + i) := by
-        rw [← hpi]; exact lookup_slots hnd hi
-      have hleq : l = h.length + i := Option.some.inj (hfl.symm.trans hsl)
-      rw [hl0] at hs'
-      cases hs'
-      have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
-      omega
-    · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2) g hg
+  · simp only [allocOutput]
+    exact ⟨HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1),
+      HeapSeparation.allocate_holds hk.2.2.2 (fresh_apart he hh)⟩
 
 theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
     (h : (slots base ns).lookup f = some l) : base ≤ l := by
@@ -757,50 +764,32 @@ theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
     · have := ih h; omega
 
 /-- An object allocated past the heap's end keeps what was known of the old
-heap, and each of its fields, whichever keys it has, is distinct from every
-contract field of the context's record-typed slots. -/
+heap, and its own locations are separated from every contract field of the
+context's record-typed slots. -/
 theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
-    (ns : List PropKey) (vs : List Val) (code : CallCode) (fields : List PropKey) :
-    HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields)
+    (ns : List PropKey) (vs : List Val) (code : CallCode) :
+    HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ))
       (push (.objAt (slots h.length ns) code oid) ρ) (h ++ vs ++ [.nul]) := by
   have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code oid) hk
-  refine ⟨?_, hshift.2.1, ?_⟩
-  · intro f hf
-    simp only [allocOutput, List.map_nil, List.nil_append] at hf
-    obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-    obtain ⟨flds,c,oid,v,hl,hrd,b,hb,hv'⟩ := hk.1 g hg
-    exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,b,hb,hv'⟩
-  · intro g hg
-    simp only [allocOutput] at hg
-    rcases List.mem_append.mp hg with hg | hg
-    · obtain ⟨fld,_,hg⟩ := List.mem_flatMap.mp hg
-      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
-      obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
-      obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
-      obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
-      have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
-      simp only [ite_true]
-      intro flds c oid l flds' c' oid' l' h0 hfl hs' hfl'
-      simp only [push] at h0 hs'
-      cases h0
-      have hge : h.length ≤ l := slots_lookup_ge hfl
-      rw [hl0] at hs'
-      cases hs'
-      have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
-      omega
-    · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2) g hg
+  refine ⟨?_, hshift.2.1, HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2.1),
+    HeapSeparation.allocate_holds hk.2.2.2 (fresh_apart he hh)⟩
+  intro f hf
+  simp only [allocOutput, List.map_nil, List.nil_append] at hf
+  obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+  obtain ⟨flds,c,oid,v,hl,hrd,b,hb,hv'⟩ := hk.1 g hg
+  exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,b,hb,hv'⟩
 
 /-- A merge of two values reads the heap and allocates a fresh object: what
 was known of the heap stays known, and the new object's fields are distinct
 from the context's contract fields, as a literal's are (`alloc_sound`). -/
 theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h}
-    {d : List PropKey} {a b : Tm} (fields : List PropKey)
+    {d : List PropKey} {a b : Tm}
     (hva : isVal a = true) (hvb : isVal b = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (.merge d a b)) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
+      (fun h' v => HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ)) (push v ρ) h')
       n W h (.merge d a b) := by
   cases n with
   | zero => trivial
@@ -816,7 +805,7 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
       | mergeC2 _ s => exact absurd s (value_no_step hvb)
       | mergeV _ _ hparts =>
         refine Or.inr ⟨U, h, _, hx, hu, .mergeV hva hvb hparts, hh1, ?_⟩
-        refine one_step rfl rfl (.makeFields ?vals (by simp)) (fresh_holds he hk hh _ _ _ fields) hs1
+        refine one_step rfl rfl (.makeFields ?vals (by simp)) (fresh_holds he hk hh _ _ _) hs1
         case vals =>
           intro v hv
           obtain ⟨e, hm, rfl⟩ := List.mem_map.mp hv
@@ -829,12 +818,12 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
 object: what was known of the heap stays known, and the new object's field is
 distinct from the context's contract fields, as a literal's are. -/
 theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h}
-    {a b : Tm} (fields : List PropKey)
+    {a b : Tm}
     (hva : isVal a = true) (hvb : isVal b = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (.makeKey a b)) :
     SafePost (excOf G) (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (allocOutput k [] (contractFields G Γ) fields) (push v ρ) h')
+      (fun h' v => HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ)) (push v ρ) h')
       n W h (.makeKey a b) := by
   cases n with
   | zero => trivial
@@ -851,7 +840,7 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
       | makeKeyV _ hf =>
         refine Or.inr ⟨U, h, _, hx, hu, .makeKeyV hvb hf, hh1, ?_⟩
         exact one_step rfl rfl (.makeFields (by simpa using hvb) (by simp))
-          (fresh_holds he hk hh _ _ _ fields) hs1
+          (fresh_holds he hk hh _ _ _) hs1
 
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents where the
@@ -859,10 +848,10 @@ written value is a known primitive (`R`), and retains immutable values
 already read into slots. -/
 def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option (List Atom)) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
-      (k.cells.filter fun f => (f.slot,f.field) ∈ HeapLinks.distinctFrom k.links i fld).map
+      (k.cells.filter fun f => HeapSeparation.apart k.separation i fld f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,[.nul],valueField⟩ :: HeapFacts.shift k.values,
-    HeapLinks.stable (HeapKnowledge.shift k).links⟩
+    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation⟩
 
 theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
@@ -900,7 +889,8 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     · obtain ⟨flds,c,oid,l,hl,hfd,hlt,_,_⟩ := write_inv hiv hvv step
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
-      refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
+      refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
+        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
         · cases hR : R with
@@ -909,7 +899,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             rw [hR] at hf
             obtain ⟨a,ha,hv⟩ := valuesAt_sound (hR ▸ hr) he hk
             obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp (by simpa using hf)
-            have heq := HeapLinks.aliases_eq hk.2.2 hs
+            have heq := HeapLinks.aliases_eq hk.2.2.1 hs
             exact ⟨flds,c,oid,ρ j,heq.trans hl,ReadGave.present hfd (write_new hlt),a,ha,hv⟩
         · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
           have hg := List.mem_filter.mp hg
@@ -921,7 +911,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             | none => rw [hfd0] at hrd; exact hrd
             | some l0 =>
               rw [hfd0] at hrd
-              have hne : l ≠ l0 := HeapLinks.distinct_sound hk.2.2 (of_decide_eq_true hg.2) hl hfd hs0 hfd0
+              have hne : l ≠ l0 := HeapSeparation.apart_sound hg.2 hk.2.2.2 hl hfd hs0 hfd0
               simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
@@ -1191,13 +1181,6 @@ theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
   one_step rfl rfl (.arrAlloc hvals)
     (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)) hs
 
-/-- The keys a claimed object type names: the fields a fresh object's
-distinctness is stated at, since a later claim can name no other. -/
-def namedKeys [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : List PropKey :=
-  ((expand G A).flatMap fun c => match c with
-    | .refs fs rs vs os _ _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
-    | _ => []).eraseDups
-
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
     t = .writeAt f (.var i) (.var v) := by
   unfold writeSlots at h
@@ -1292,12 +1275,12 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     | some slots =>
       checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
         (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length))
-        (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context) (slots.map Prod.fst)) codes sums tree
+        (allocOutput k (allocationFacts G j.context k slots) j.context.length (contractFields G j.context)) codes sums tree
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>
         checkedOutput G images e (decide (claim e = j ∧ a < j.context.length ∧ b < j.context.length))
-          (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) codes sums tree
+          (allocOutput k [] j.context.length (contractFields G j.context)) codes sums tree
       | none =>
         match storeSlots j.term with
         | some slots =>
@@ -1387,13 +1370,13 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     | some slots =>
       if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes sums = true ∧
           (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length
-      then some (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context)
-        (slots.map Prod.fst)) else none
+      then some (allocOutput k (allocationFacts G j.context k slots) j.context.length
+        (contractFields G j.context)) else none
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>
         if claim e = j ∧ checkTreeUsing G images e codes sums = true ∧ a < j.context.length ∧ b < j.context.length
-        then some (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) else none
+        then some (allocOutput k [] j.context.length (contractFields G j.context)) else none
       | none =>
         match storeSlots j.term with
         | some slots =>
@@ -1618,11 +1601,11 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           · rw [term] at typed ⊢
             have hs := typed.sound n W h ρ he hw hh
             simp only [instantiate] at hs ⊢
-            exact merge_alloc_sound _ hva hvb he hk hh hs
+            exact merge_alloc_sound hva hvb he hk hh hs
           · rw [term] at typed ⊢
             have hs := typed.sound n W h ρ he hw hh
             simp only [instantiate] at hs ⊢
-            exact makeKey_alloc_sound _ hva hvb he hk hh hs
+            exact makeKey_alloc_sound hva hvb he hk hh hs
         · contradiction
       · split at hc
         · rename_i slots hstore
@@ -1683,7 +1666,7 @@ theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
 member every clause of the receiver's type states stable, optional links
 among them. -/
 def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
-  k.links.filter fun g => !g.alias && !g.distinct &&
+  k.links.filter fun g => !g.alias &&
     match Γ[g.cell]? with
     | some A => stableField G A g.field
     | none => false
@@ -1749,10 +1732,10 @@ private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Know
     have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
     have hg := hS g List.mem_cons_self
     simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg
-    obtain ⟨hmem, ⟨ha, hd⟩, hty⟩ := hg
+    obtain ⟨hmem, ha, hty⟩ := hg
     have hlink : LinkAt ρ h g := by
-      have := hk.2.2 g hmem
-      simp only [hd, ha, Bool.false_eq_true, if_false] at this
+      have := hk.2.2.1 g hmem
+      simp only [ha, Bool.false_eq_true, if_false] at this
       unfold LinkAt
       exact this
     obtain ⟨flds, c, oid, hcell, hr⟩ := hlink.read
@@ -1823,20 +1806,20 @@ theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowl
     intro g hg
     have hg' := hg
     simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg'
-    obtain ⟨-, ⟨ha, hd⟩, -⟩ := hg'
-    simp only [hd, ha, Bool.false_eq_true, if_false]
+    obtain ⟨-, ha, -⟩ := hg'
+    simp only [ha, Bool.false_eq_true, if_false]
     have := hall g hg
     unfold LinkAt at this
     exact this
   have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
     (fun i j hj => by simp at hj; subst hj; rfl)
   have hshift := HeapFacts.shift_holds (v := v) hcells
-  refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_⟩
+  refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_, hout.2.2.2⟩
   · rcases List.mem_append.mp hf with hf | hf
     · exact hout.1 f hf
     · exact hshift f (List.mem_filter.mp hf).1
   rcases List.mem_append.mp hg with hg | hg
-  · exact hout.2.2 g hg
+  · exact hout.2.2.1 g hg
   · exact hpull g (List.mem_filter.mp hg).1
 
 /-- A checker whose every step also keeps its input's stable links and

@@ -121,7 +121,7 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
     (C : ControlFlow.Certificate ι) : Bool :=
   (cuts.all fun l => match C[l]? with
     | none => false
-    | some n => n.knowledge == (assertions.lookup l).getD ⟨[],[],[]⟩) &&
+    | some n => n.knowledge == (assertions.lookup l).getD {}) &&
   (assertions.all fun (l,k) => match C[l]? with
     | none => false
     | some n => HeapKnowledge.check n.knowledge k none)
