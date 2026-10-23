@@ -72,6 +72,13 @@ readonly storage, array presence and callback effects.
 - **Request** and **Evidence** are interpreted by Lean for acceptance. Tests
   and the diagnostic tools inspect selected fields, but do not provide a second
   acceptance checker or a complete TypeScript schema.
+- **A call signature's effect** has one JSON form inside three documents,
+  the declaration document, the claims and the evidence. One Lean file reads
+  and writes it, [EffectJson.lean](../lean/Verification/Source/EffectJson.lean),
+  re-encoding what it read so that any other field is refused; `CallEffect`
+  in [declaration-types.mts](../tools/declaration-types.mts) declares it for
+  TypeScript, [type-graph.mts](../tools/type-graph.mts) decodes it, and the
+  producer reads and writes it in `source.ml` and `claims.ml`.
 - **span.mts** mirrors only half of `Decode.lean`. TypeScript has no shared JSON
   accessors, because each language file validates its own shapes.
 

@@ -18,7 +18,7 @@ and Systems 23(5):657–683, 2001.
 [doi:10.1145/504709.504712](https://doi.org/10.1145/504709.504712).
 
 **Used for** the step-indexed model: a type is a family indexed by a budget,
-`Safe A n` asks for safety only for $n$ steps, and a recursive type reads its
+`Safe A n` asks for safety only for $`n`$ steps, and a recursive type reads its
 operands only at lower indices. This is the budget of `Safe`, `SafeGraph` and
 every `Fam`.
 **Discussed in** [SEMANTICS: computations and recursive types](SEMANTICS.md#computations-and-recursive-types),
@@ -148,7 +148,7 @@ types.* Journal of the ACM 55(4):19:1–19:64, 2008; conference version LICS
 2002. [doi:10.1145/1391289.1391293](https://doi.org/10.1145/1391289.1391293).
 
 **Used as the contrast** for subtyping in a model with state. The
-set-theoretic arrow decomposition $(A\to B)\wedge(A\to C)\le A\to(B\wedge C)$
+set-theoretic arrow decomposition $`(A\to B)\wedge(A\to C)\le A\to(B\wedge C)`$
 holds in semantic subtyping and fails here: an allocating function meets both
 arrows by choosing different cell contracts. The development therefore keeps
 a clause-to-clause rule and refuses that law.
@@ -176,7 +176,7 @@ type equality and subtyping.* Fundamenta Informaticae 33(4):309–338, 1998;
 conference version TLCA 1997.
 
 **Used for** the coinductive rule over an assumption set that the
-certificate checker's table $\Delta$ follows.
+certificate checker's table $`\Delta`$ follows.
 **Discussed in** [POSITIVE-TYPES: notation](POSITIVE-TYPES.md#positive-types),
 [RECURSIVE-EQUATIONS: related work](RECURSIVE-EQUATIONS.md#7-related-work).
 
@@ -487,10 +487,10 @@ rescript-lang/rescript issue #5707, opened 2022-09-29.
 
 Cited as ReScript #5707 in [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
 
-**Used for** the notion of a flattening constructor, $c\langle
-c\langle t\rangle\rangle = c\langle t\rangle$ at run time (nullable values,
+**Used for** the notion of a flattening constructor,
+$`c\langle c\langle t\rangle\rangle = c\langle t\rangle`$ at run time (nullable values,
 promises), and the conclusion that a generic signature is truthful at
-$c\langle T\rangle$ only for $T$ outside $c$'s image.
+$`c\langle T\rangle`$ only for $`T`$ outside $`c`$'s image.
 
 ### ReScript 5709
 
