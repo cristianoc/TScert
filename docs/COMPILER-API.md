@@ -532,7 +532,7 @@ a host type is read as a readonly view:
   rejects a node, because the importer checks the argument against the
   declared parameter.
 - *Narrowing.* A field test on a view drops the arms whose view answers the
-  other way (`if-field`, [guards](SOURCE-CONTRACTS.md#guards); Lean's
+  other way (`if-field`, [guards](SOURCE-ELABORATION.md#guards); Lean's
   `fieldSlice` and `fieldSlice_sound`, which take a view's location from
   `viewsT_at`). The exclusion concerns the object's label, which the stored
   contract fixes for the object's lifetime. A view of `length`, which an
@@ -664,7 +664,7 @@ in the syntax. `isLeftHandSideExpression` and `isUnaryExpression`
 
 On a binding of a `SyntaxKind` (`isAdditiveOperator(op)`) the test refines
 to the literals $`K_g`$ by `if-singleton`
-([guards](SOURCE-CONTRACTS.md#guards)). So `isTypeAliasDeclaration(n)`
+([guards](SOURCE-ELABORATION.md#guards)). So `isTypeAliasDeclaration(n)`
 refines `n` to `TypeAliasDeclaration`'s shape or `JSTypeAliasDeclaration`'s
 base shape, and reading `n.name` after it is refused; `isExpression(n)`
 refines `n` to the 46 kinds the implementation accepts.

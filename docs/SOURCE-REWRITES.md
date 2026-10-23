@@ -71,7 +71,7 @@ A method of the gate held as a field (`Gate.abrupt: typeof
 statements.abrupt`) and called in a `findIndex` callback, `list.findIndex((s)
 => gate.abrupt(s))`, is read at the field's contract, its annotation, an
 ordinary arrow, which states no effect
-([calls through a location](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)).
+([calls through a location](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 A `Gate` whose `abrupt` shrinks the list through another reference is a
 value of the type, so the callback is `findIndex`'s unrestricted one, its
 element `Statement | undefined`. Only the module function the field is

@@ -99,7 +99,7 @@ receiver label 5. Every signature carries `effect: {"footprint": f, "promise": p
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)),
 and `b`, `c` and `o` Booleans: a fresh result, the receiver's store excepted
 from the footprint, and the footprint stated on a throw too
-([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)); omission
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)); omission
 of any field is refused. Host-relative method
 signatures use the same record with `receiver: {}`. A record clause's
 `methods` lists its members as `{"key","calls","rests","schemes","receivers"}`:

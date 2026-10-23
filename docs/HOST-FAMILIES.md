@@ -266,7 +266,7 @@ the residual admits every shape it replaces.
 
 One selection per run makes two modules' readings of a family declaration
 the same definitions, which the structural comparison of a
-[qualified import](SOURCE-MODEL.md#certified-imports) requires; with
+[qualified import](SOURCE-CONTRACTS.md#certified-imports) requires; with
 different selections their residuals would differ in meaning, not only in
 form. A run's own selection is a fact of the front end, so no producer
 proposal and no checker premise states it.
@@ -293,7 +293,7 @@ package author's statement, and it is false: the function also accepts
 `JSTypeAliasDeclaration`, a JSDoc `@typedef`, whose kind is 345 where
 `TypeAliasDeclaration`'s is 266. Read at that predicate, as an imported
 guard's declared type is
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)), the program
+([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)), the program
 `isTypeAliasDeclaration(n) ? n.kind : undefined` typed
 `SyntaxKind.TypeAliasDeclaration | undefined` verifies and returns 345 under
 Node. No guard of a family is read at its declared predicate: a guard the
@@ -529,7 +529,7 @@ and no store, $`\bigcup_{t\in K_g} S_t`$ the union of the root's arms under
 the run's selection whose tags meet $`K_g`$ (the family's definition
 `guard.g`, of one arm per tag of $`K_g`$ where the selection gives each its
 own, an arm covering several tags otherwise), and the promise signature of
-[user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards), which
+[user-defined guards](SOURCE-ELABORATION.md#user-defined-guards), which
 narrows the `true` edge. The parameter is the domain: a callback receives
 the guard only where its argument type is within $`A`$ (or $`P`$), so its
 marker is established at every call; the entry states that further
@@ -562,7 +562,7 @@ the trusted base; the table and its review are.
 ### Stable members
 
 A test refines the slot holding the value it tests, and the narrowing rules
-([guards](SOURCE-CONTRACTS.md#guards)) refine every slot known to hold that
+([guards](SOURCE-ELABORATION.md#guards)) refine every slot known to hold that
 value. A **path** $`p = x.f_1\cdots f_n`$, $`n\ge 0`$, is a root binding
 $`x`$ held in the activation's environment and member reads: an immutable
 binding, or a `let` or assigned parameter held in a slot
@@ -855,7 +855,7 @@ a fact of its `catch`.
 
 A footprint that preserves a location's contents is another sufficient
 condition for keeping a link through a call
-([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)); it holds
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)); it holds
 of the calls whose footprint is checked, where stability holds of every
 admitted call.
 

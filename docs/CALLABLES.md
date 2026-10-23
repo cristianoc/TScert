@@ -12,7 +12,7 @@ The prerequisites are the ordinary and state judgments in
 [Positive types](POSITIVE-TYPES.md). Types are finite unions of graph labels;
 $`\Gamma`$ assigns types to variables, and $`\Gamma\vdash_G t:A`$ is the ordinary
 term judgment. Declaration lowering and native contracts are specified in
-[Reading the source](SOURCE-CONTRACTS.md); source closure evidence in
+[Source contracts](SOURCE-CONTRACTS.md); source closure evidence in
 [Source elaboration](SOURCE-ELABORATION.md).
 
 ## What a function is, and what the calculus has

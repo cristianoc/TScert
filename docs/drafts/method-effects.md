@@ -10,7 +10,7 @@ here is implemented. Claims are labelled **proved** (with the Lean name),
 ## 1. The problem, at the level of the judgment
 
 A call `e.m(v⃗)` consumes the contract of the location the callee is read
-from ([calls through a location](../SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification);
+from ([calls through a location](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
 cited): a member found along `e`'s prototype chain (`bindMember`,
 `MethodMembers.memberT`) or a field (`field-call`). The effect of the call is
 the effect that contract states. A class member's contract is its
@@ -52,7 +52,7 @@ ways to fix it:
   Lean certifies every statement from the body it describes.
 - **(b) Certified in every run that reads it.** The run reading `C` at
   member effects certifies `C`'s members from their code, as a
-  [certified import](../SOURCE-MODEL.md#certified-imports) is
+  [certified import](../SOURCE-CONTRACTS.md#certified-imports) is
   certified (cited). No new trust within a run. For `Gate` the members'
   code is the whole lowering (`fragment-{parse,expressions,statements,classes,support}.mts`,
   `type-term.mts`, about 9,000 lines) and its modules import each other,
@@ -99,7 +99,7 @@ declaration, a class or static method, an object-literal method, an arrow
 or function expression, an arrow or function type, an interface's or a
 type literal's method or call signature. `typeof f` reads
 `f`'s declaration, so it reads the statement too
-([calls through a location](../SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+([calls through a location](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 already says `typeof f` names `f`'s declared signature; cited).
 
 **Refusals** (each located, each a negative case in §9):
@@ -130,7 +130,7 @@ already says `typeof f` names `f`'s declared signature; cited).
   it builds for the external binding, which `typeQuery`
   (`tools/computed-types.mts`) already follows to its declaration. An
   external implementation's effect is an audited overlay entry or nothing
-  ([elaboration](../SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification);
+  ([elaboration](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
   cited). The one exception is a statement inside a program class's
   instance type (an external function returning a `Gate`): the instance is
   the program's value, whose conformance §8's row assumes;

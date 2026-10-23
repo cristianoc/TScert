@@ -1,4 +1,4 @@
-# Producer-independent claims documents
+# Source claims
 
 A source-claims document proposes types for one parsed TypeScript file. The
 verifier checks those proposals against the source's declarations and runtime
@@ -47,7 +47,7 @@ is a separate boundary, specified below.
 The top-level object has required fields `file`, `sourceSha256`, `types`,
 `functions`, `modules` and `qualified`, and optional `init`. Unknown fields
 are rejected. `qualified` lists the imports the document's functions read at
-a [certified import](SOURCE-MODEL.md#certified-imports)'s signature, each by
+a [certified import](SOURCE-CONTRACTS.md#certified-imports)'s signature, each by
 its declaration identity (`module`, `name`, `span`). `modules` holds claims
 documents of fragment modules, each over the module's own `types`, its
 `file` the module's `location` and its `sourceSha256` the module's, with
@@ -237,13 +237,13 @@ normal return, the locations of the entry heap holding a value change at most
 by `v`, those holding an array store at most by `s`. The promise `p` is `null`,
 `{"guards":{"param":i}}` or `{"asserts":{"param":i}}`: `guards` and `asserts`
 promise the `i`-th actual a value of the result, on a `true` result or a
-normal return ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+normal return ([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)).
 `fresh` states that a normal return's value has an array store the call
 allocated; `receiverStore` that the footprint bounds every location but the
 receiver's array store, which the call may change arbitrarily
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
 `onThrow` that the footprint also bounds the heap a throw leaves
-([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)).
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:
@@ -501,15 +501,11 @@ exclusions; each read must independently prove the requested result from the
 storage contract and those observations. Other nonprimitive assertions require
 a persistent consequence of the contracts.
 
-Entry assertions form the graph node's interface. Each incoming normal or
-exceptional edge must justify it, including loop backedges. Each entry resets
-to its supplied types and contents predicates. Expression observations are
-checked at the evaluated result; modeled effects determine which facts survive.
-A closure's entry assumes its captured storage contracts; creation-time
-contents supply no later entry assumption. Checked operations within its
-body can establish observations at later graph points. The exact obligations
-are in
-[Source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints).
+Entry assertions form the graph node's interface, and expression
+observations are checked at the evaluated result: their meaning is in
+[current-content assertions](SOURCE-MODEL.md#current-content-assertions), and
+the exact obligations in
+[source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints).
 A failed observation is a located proof obligation.
 
 ## Record alternative absorption

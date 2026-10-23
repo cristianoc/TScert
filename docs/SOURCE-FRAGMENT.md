@@ -1,4 +1,4 @@
-# Source fragment boundary
+# Source fragment
 
 The source fragment is the subset of TypeScript admitted by the parser and
 source elaborator. The tables distinguish restrictions required by the
@@ -59,7 +59,7 @@ obstacle named. A search failure is neither.
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
 | A class in the checked module merged with an interface whose member its constructor does not give | A class merged with interfaces is one instance contract, every part's members: a value consumed at it reads them all (`merged-class-consumer-value-import`). The class's constructor must establish that contract, and is checked where the class is defined in the checked module: TypeScript assumes the interface's members on instances the constructor does not create, so `class C {} interface C { m: number }` types `new C().m`, `undefined`, as a number, and is refused at `C`'s definition (`invalid-merged-augmented`). An imported class's constructor is a trusted declaration, as every imported contract is. |
-| A contract read through an unannotated declaration, whose type is inferred from its code: a declaration a type reaches (`typeof`, a member selection, a named type, a whole class, namespace or module) whose written annotations do not determine its exposed type ([the table below](#types-stated-by-annotations)) | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-whole-class-value-import`, `invalid-written-unannotated-field-value-import`). The client's own values carry annotations by the same requirement. |
+| A contract read through an unannotated declaration, whose type is inferred from its code: a declaration a type reaches (`typeof`, a member selection, a named type, a whole class, namespace or module) whose written annotations do not determine its exposed type ([the table below](SOURCE-CONTRACTS.md#types-stated-by-annotations)) | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-whole-class-value-import`, `invalid-written-unannotated-field-value-import`). The client's own values carry annotations by the same requirement. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
 | A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `node-runs.mts`). |
 | A type parameter typing a rest parameter and anything else, in a module function (`<T extends readonly string[]>(...args: T): T`, a parameter `mutator: (arr: T) => void`, `const x: T = args`) or in a generic function or constructor type (`<T extends [string, number]>(...args: T) => T`) | The array a call collects is fresh: it holds the actuals and none of `T`'s other members, so it is no value of `T`. TypeScript admits `T := string[] & { tag: string }`, inferred from a spread of a tagged array, at which a body returning `args` gives a value whose `tag` is `undefined` typed `string` (`invalid-rest-pack-value`). In a generic type the instance `T := X` gives the rest the element lists of `X`'s members, `[string, number] & { tag: string }` included. Admitting it would need the element lists related to arrays a world extension holds (an array-allocation lemma whose statement is open: an array's `[[proto]]` holds a member of the built-in prototype type, which the model never shows inhabited), linked binder positions, quantified subtyping across binder counts and rest-bound reasoning: substantial machinery for a form rarely useful in real programs. A declaration's or a class's own type parameter typing a rest and a value is a [packed binder](PROGRAM-TYPING.md#packed-binders), whose instances are array or tuple types with no other members. |
@@ -81,52 +81,6 @@ obstacle named. A search failure is neither.
 | A write of a namespace member (`ns.x = e`, `ns.x++`, `delete ns.x`, a destructuring target) | A member is an import binding, which a module namespace object's [[Set]] and [[Delete]] refuse: JavaScript throws a `TypeError` (`invalid-namespace-member-write-value-import`, run under Node). |
 | A use of a guard's argument that relies on the guard's `false` outcome (`if (isPositive(v)) …; v.toUpperCase()` with `v: number \| string`) | The promise states the `true` outcome only. TypeScript also narrows the `false` one to the arms outside `T`, wrong for a guard answering `false` for some values of `T`: `isPositive(-1)` is `false` for a number, and `shout(-1)` calls `toUpperCase` on it (`invalid-type-guard-false-branch`, executed under Node by `node-runs.mts`). |
 
-#### Types stated by annotations
-
-The written annotations that determine a declaration's exposed type, by its
-kind. These, and only these, are read for a declaration a type reaches; no
-function body, initializer's code or static block is read. A declaration
-without them is refused (above). The structure is the checker's symbols, not
-syntax: what a name or a selection denotes is one symbol, its annotations
-the union over its declarations (an overload set's, an accessor pair's, a
-merged entity's); a class's members are its instance and static member
-symbols, apart; a module's or namespace's are its exported symbols,
-`export =`, a default export and ambient members included. A member under
-a computed name, which the checker binds late, counts by its declaration,
-and its name's entity is swept. A name path, `typeof E.p₁…pₙ` (a qualified name, a property access, a
-`typeof` or import type), contributes the determining annotations of every
-declared entity on it: the root, which must have them, and each later step
-with a declaration, with everything those annotations name. A step the
-checker synthesises (a mapped type's member, an instantiation's) has no
-declaration and needs none: its type is computed from annotations already
-swept. A module or namespace a further step selects from contributes
-nothing itself.
-
-| Declaration | Determined by |
-| --- | --- |
-| Interface, type alias | Its whole syntax |
-| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
-| Property declaration or signature | Its annotation |
-| Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
-| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations; a function's or method's defaulted parameter is optional to its callers |
-| Accessor | The symbol's getter result or setter parameter, either for the pair |
-| Constructor | Its parameter annotations, or its overloads' with the implementation's parameter properties |
-| Class | Its type parameters, its heritage, and every instance and static member symbol |
-| Namespace, module | Every exported symbol, `export =` and a default export included |
-| Enum, enum member | Its value |
-
-The standard library's `BuiltinIteratorReturn`, an alias TypeScript
-declares `intrinsic`, is `undefined` in the interfaces of ECMA-262's
-iterators, `ArrayIterator`, `MapIterator`, `SetIterator`, `StringIterator`
-and `RegExpStringIterator`: they complete with
-`CreateIterResultObject(undefined, true)`, as `strictBuiltinIteratorReturn`,
-which `strict` sets, reads it (`builtin-iterator-return-value-import`,
-`invalid-builtin-iterator-return-value-import`, run under Node). Anywhere
-else, Intl's and the DOM's iterator interfaces among them, it is refused:
-another specification states those iterators' done value. An imported
-`Intl.SegmentIterator` is refused before it, as a qualified type reference,
-so no case reaches this refusal.
-
 ### Model limits
 
 Sound JavaScript that TypeScript accepts, refused because the model or its
@@ -146,8 +100,8 @@ representation cannot state it yet; the paths are in
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with a static method or a private static | No term of the fragment states it exactly: a static method is a binding of its own, which no member of the class value's type states. |
 | An intersection with a union holding a type parameter, `(T \| null) & A`; a function type met with a record of readonly or optional fields, methods or an index | It distributes into meets known only at an instance; no clause states such a callable. |
 | An imported constant initialized by an array literal, or by an object literal `as const` or holding one | The table below admits them; the declaration reader reads an imported constant's literal as the type TypeScript infers for it, which it states for a primitive literal, `as const` or not, and a record of such whose properties are no `as const` (`literal-array-constant-value-import`). |
-| A binding read before its initialization in an environment the model does not represent: an early `let` or `const` declared by a pattern, in a `switch` case block, a class declaration's binding, in a generator, a parameter default mentioning its own or a later parameter (a closure's mention included), a loop head's binding mentioned in its own head; an early binding without a stated type (an annotation, or a function literal's annotations), and an early `let`'s compound assignment, update, logical assignment or assignment in closure term code | JavaScript throws a `ReferenceError` there; the model's early bindings are one-name `let` and `const` cells of function bodies and blocks with a stated type ([lexical bindings before initialization](SOURCE-MODEL.md#lexical-bindings-before-initialization); `invalid-early-pattern-binding`, `invalid-loop-head-own-name`, `shadowed-local-before-declaration`). |
-| `declare let`, `declare var`, a module-level `var`, an exported module `let` (`export let`, or an export list naming it) | Outside code may write an ambient binding, a `var` exists from the module's entry at `undefined`, and an importer reads an exported `let`'s current contents, a live binding; a module `let` the module does not export is a [module cell](SOURCE-MODEL.md#module-cells) (`invalid-exported-module-let`). |
+| A binding read before its initialization in an environment the model does not represent: an early `let` or `const` declared by a pattern, in a `switch` case block, a class declaration's binding, in a generator, a parameter default mentioning its own or a later parameter (a closure's mention included), a loop head's binding mentioned in its own head; an early binding without a stated type (an annotation, or a function literal's annotations), and an early `let`'s compound assignment, update, logical assignment or assignment in closure term code | JavaScript throws a `ReferenceError` there; the model's early bindings are one-name `let` and `const` cells of function bodies and blocks with a stated type ([lexical bindings before initialization](SOURCE-ELABORATION.md#lexical-bindings-before-initialization); `invalid-early-pattern-binding`, `invalid-loop-head-own-name`, `shadowed-local-before-declaration`). |
+| `declare let`, `declare var`, a module-level `var`, an exported module `let` (`export let`, or an export list naming it) | Outside code may write an ambient binding, a `var` exists from the module's entry at `undefined`, and an importer reads an exported `let`'s current contents, a live binding; a module `let` the module does not export is a [module cell](SOURCE-ELABORATION.md#module-cells) (`invalid-exported-module-let`). |
 | A NaN or infinite member; a reverse key naming a member; an empty enum | A NaN or infinite value has no literal type; the reverse entry would replace the member; an empty object leaves no record. |
 | A `this` read in sloppy code whose receiver type may hold a value other than an object (`this: unknown`, `this: string`, no `this` annotation, a type parameter) | A sloppy call converts such a receiver (the global object, a wrapper), which the model has no step for ([graph code](SEMANTICS.md#graph-code)). |
 | A library class other than `Array` and `Error` as a base (`extends Map`, `extends TypeError`) | Construction allocates an ordinary object at the class's fields; a library constructor's instance has no construction rule. |
