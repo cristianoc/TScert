@@ -697,7 +697,7 @@ it ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 The certificate is `bindMember` with no proofs, at a type of no clauses, the
 scheme row. A scheme's own receivers are the forwarding function's, which
 ignores them, so a member's scheme admits every receiver; an instance may
-state a narrower one, the call's object (`instSig`).
+state a narrower one, the call's object (`sigPremises`, `receiverUniverse`).
 
 The member read from $`v=\rho(i)`$ meets $`m`$'s signatures with receiver $`\{v\}`$
 where $`v`$ is in each of $`m.\mathsf{this}`$ (`memberOf_at`,
@@ -2837,7 +2837,12 @@ arm partly covered is kept. `BranchRefinement.uncovered_sound`,
 `uncoveredField_sound` and `restricts_sound` prove the removal and the
 split, and `memberYield_sound` composes them with the tag slices
 (`memberSlotSlice`, `memberFieldSlice`); the search reads the split arm's
-label from the claims. The rule:
+label from the claims. The candidates are unfolded once per slice, not once
+per arm (`candidateRows`, `restrictionIn_eq`), and an arm reads only the
+candidates whose record clause has its own first operand and views but at
+the tested key, by a hash of these under the graph's label hash
+(`restrictKey`, `restricts_key`, `restrictionAt_eq`); search answers a slice
+asked again from its first answer (`fieldSliceS`). The rule:
 
 ```math
 \frac{

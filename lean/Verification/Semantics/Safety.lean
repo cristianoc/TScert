@@ -526,6 +526,15 @@ theorem ArgsShort_mono {Qs Ps : List Fam} (h : ArgsLe Qs Ps) {j W args}
   obtain ⟨htk, hdr⟩ := ArgsLe_take_drop h args.length
   exact ⟨by omega, ArgsT_mono htk ht, ArgsLe_all hdr hd⟩
 
+/-- Pointwise wider fixed parameters and a wider rest admit every list the
+narrower ones do. -/
+theorem ArgsRest_mono {Qs Ps : List Fam} {E E' : ArgFam} {j : Nat} {W : WorldT j} (h : ArgsLe Qs Ps)
+    (he : ∀ vs, E j W vs → E' j W vs) {args : List Tm}
+    (ha : ArgsRest Qs E j W args) : ArgsRest Ps E' j W args := by
+  obtain ⟨hs, hr⟩ := ha
+  rw [ArgsLe_length h] at hs hr
+  exact ⟨ArgsShort_mono h hs, he _ hr⟩
+
 theorem ArgsAgree_take_drop {n : Nat} {As Bs : List Fam} (h : ArgsAgree n As Bs) : ∀ m : Nat,
     ArgsAgree n (As.take m) (Bs.take m) ∧ ArgsAgree n (As.drop m) (Bs.drop m) := by
   induction h with

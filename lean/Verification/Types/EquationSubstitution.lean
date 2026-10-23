@@ -335,39 +335,4 @@ theorem Equations.substitutionTable_instanceImages (equations : Equations)
   rw [he]
   exact mixedMeaning_union equations.graph η T n W x
 
-/-- A table whose every image is its label's structural substitution, or a
-type `equiv` proves to mean the same at every assignment. -/
-def substitutionTableOkUpTo (equiv : List (Label sig) → List (Label sig) → Bool)
-    (tbl : InstTable (Label sig)) : Bool :=
-  tbl.all fun (l, κ, image) =>
-    decide (l.substitute (parameterReplacement κ) = image) ||
-      equiv (l.substitute (parameterReplacement κ)) image
-
-/-- Images up to proved equivalence discharge the same obligation: an image
-means what the substitution means. -/
-theorem Equations.substitutionTableUpTo_instanceImages (equations : Equations)
-    (equiv : List (Label equations.signature) → List (Label equations.signature) → Bool)
-    (hequiv : ∀ X Y, equiv X Y = true → ∀ η, mixedMeaning equations.graph η X = mixedMeaning equations.graph η Y)
-    (η : MixedAssignment (Label equations.signature)) (bs) (θs)
-    (tbl : InstTable (Label equations.signature))
-    (hlen : θs.length = bs.length) (kinds : instKinds equations.graph bs θs = true)
-    (checked : substitutionTableOkUpTo equiv tbl = true) :
-    InstanceImages equations.graph η bs θs tbl := by
-  have images := equations.assignment_parameterImages η bs θs hlen kinds
-  intro S S' hS
-  funext n W x
-  apply propext
-  rw [mixedMeaning_union, mixedMeaning_union]
-  apply tyImg_iff hS
-  intro l hl T hT
-  have entry := List.all_eq_true.mp checked _ (entryImg_mem hT)
-  simp only [Bool.or_eq_true, decide_eq_true_eq] at entry
-  have he := Label.substitute_meaning equations _ η _ images l
-  rcases entry with entry | entry
-  · rw [entry] at he
-    rw [he]
-    exact mixedMeaning_union equations.graph η T n W x
-  · rw [he, hequiv _ _ entry η]
-    exact mixedMeaning_union equations.graph η T n W x
-
 end Verification.EquationGraphs

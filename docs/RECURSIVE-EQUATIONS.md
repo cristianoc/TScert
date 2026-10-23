@@ -197,12 +197,6 @@ The same premise gives $`A\subseteq A\cap J`$. The checked source-membership
 test recognizes clause restrictions and quantified callables
 (`sourceTy_sound`); `meet_target_value` proves intersection introduction.
 
-Substitution images are compared at two levels: structural equivalence uses
-the subtype rules without proposing quantified instances, and general image
-equivalence may instantiate signatures using those structural equalities.
-Each accepted respelling proves equality in both directions
-(`structuralEquivalent_sound`, `equivalent_sound`).
-
 ### 4.1 Quantified signatures
 
 Two quantified signatures are compared up to renaming of bound variables,
@@ -384,11 +378,14 @@ The judgment has one more rule, standard in F<:
 each instance of it within its bounds,
 
 ```math
-\frac{\vec\tau\le\vec\rho[\vec\tau/\vec\alpha]\qquad \sigma[\vec\tau/\vec\alpha]\doteq\sigma'}
+\frac{\vec\tau\le\vec\rho[\vec\tau/\vec\alpha]\qquad \sigma[\vec\tau/\vec\alpha]\le\sigma'}
 {\forall\vec\alpha\le\vec\rho.\,\sigma\ \le\ \sigma'}\ \textsf{Inst}_\forall
 ```
 
-where $`\doteq`$ is equality up to the order of union members. Each bound
+where $`\sigma[\vec\tau/\vec\alpha]\le\sigma'`$ is signature subsumption: receiver
+and arguments contravariant, result covariant, effect subsuming
+([POSITIVE-TYPES](POSITIVE-TYPES.md#instances-of-a-scheme-row)). The instance's
+images are the substitution itself. Each bound
 premise is decided by the judgment itself. A table's coverage may use such an
 instance as a known row: a prototype's quantified member, at the object as
 receiver, covering a target's method. Soundness is Lemma 3 with the bound
@@ -415,8 +412,8 @@ structural coverage uses them. A bound query repeated on the current instance
 path may use a checked structural derivation; it cannot assume its unfinished
 instance. Its structural recurrence requires the guarded family rule.
 
-Instance inference supplies alternatives from syntactic substitution,
-equivalent spellings and structural matching. A binder matching does not
+Instance inference supplies alternatives from unification, unification of the
+arguments without the results, and structural matching. A binder matching does not
 determine is proposed at the empty union where no target operand mentions it
 (`filter`'s `S` at a plain predicate), and stands for itself where one does;
 the substitution, bound and image checks decide either proposal. Its constructor receives the
@@ -541,12 +538,10 @@ verifier.
   assumptions between different definitions, tables and instances. An
   instance is found by matching the scheme's signatures against the
   target's terms, two applications of different heads through one step of
-  each unfolding; an image the target spells otherwise (a callback literal
-  the claim states as a definition of its own) is proposed as that
-  spelling.
+  each unfolding; its images are the substitution.
 - **Checked:** the definitions' well-formedness (scoping, arity,
   contractiveness), every instantiation by substitution, each image being
-  the substitution or proved equal to it by subtyping both ways, and every
+  the substitution, each target signature covered by an image's, and every
   assumption by the conditions of Theorem 1.
 - **Computed by the checker:** variances (4.3).
 

@@ -386,6 +386,9 @@ structure NormalGraph (ι : Type) where
   reader checks the label's row before reading it so; nothing else depends on
   this lookup. -/
   literal : LitKey → Option ι := fun _ => none
+  /-- A hash of labels, for lookups that compare by equality within the
+  bucket it names: any function serves, meaning reads none. -/
+  labelHash : ι → UInt64 := fun _ => 0
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/

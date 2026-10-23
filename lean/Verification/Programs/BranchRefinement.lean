@@ -1,5 +1,7 @@
 import Verification.Programs.PointClaims
 import Verification.Semantics.HeapFacts
+-- Std.Data.HashMap.Lemmas reads a map built by insertion; without it the keyed restriction index has no proof.
+import Std.Data.HashMap.Lemmas
 
 /-! Refinement of immutable environment slots under observed Boolean or tag outcomes.
 Heap contents are not refined: the witness concerns the tested value,
@@ -417,14 +419,158 @@ theorem restriction_sound [DecidableEq ι] {G : NormalGraph ι} {a b : ι} {f : 
     · cases hfound
   · cases hb
 
+/-- The candidates of one clause each, with that clause, unfolded once. -/
+@[nospecialize] def candidateRows (G : NormalGraph ι) (candidates : Ty ι) : List (ι × Clause (Ty ι)) :=
+  candidates.filterMap fun b => match expand G [b] with
+    | [c'] => some (b, c')
+    | _ => none
+
+/-- `restriction` over candidates unfolded once (`candidateRows`). -/
+@[nospecialize] def restrictionIn [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (rows : List (ι × Clause (Ty ι))) : Option ι :=
+  match expand G [a] with
+  | [c] => (rows.find? fun r => r.1 != a && restricts G c r.2 f ts).map (·.1)
+  | _ => none
+
+theorem find?_filterMap_fst {g : β → Option (β × γ)} (hg : ∀ b x, g b = some x → x.1 = b)
+    (P : β × γ → Bool) : ∀ cs : List β,
+    ((cs.filterMap g).find? P).map Prod.fst = cs.find? (fun b => (g b).any P)
+  | [] => rfl
+  | b :: bs => by
+    rw [List.filterMap_cons, List.find?_cons]
+    cases h : g b with
+    | none => simpa only [h, Option.any_none] using find?_filterMap_fst hg P bs
+    | some x =>
+      simp only [List.find?_cons, Option.any_some]
+      cases hp : P x with
+      | true => simp [hg b x h]
+      | false => simpa only using find?_filterMap_fst hg P bs
+
+theorem restrictionIn_eq [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (candidates : Ty ι) :
+    restrictionIn G a f ts (candidateRows G candidates) = restriction G a f ts candidates := by
+  unfold restrictionIn restriction candidateRows
+  split
+  · rename_i c _
+    rw [find?_filterMap_fst]
+    · congr 1
+      funext b
+      split <;> simp
+    · intro b x hx
+      split at hx
+      · cases hx; rfl
+      · cases hx
+  · rfl
+
+/-- A type's hash by the graph's label hash. -/
+@[nospecialize] def tyHash (G : NormalGraph ι) (T : Ty ι) : UInt64 := T.foldl (fun x l => mixHash x (G.labelHash l)) 7
+
+/-- One view's step of `viewsHash`: its key, and its type unless the key is
+`f`, which `restricts` changes. -/
+@[nospecialize] def viewStep (G : NormalGraph ι) (f : PropKey) (acc : UInt64) (v : PropKey × Ty ι) : UInt64 :=
+  mixHash acc (mixHash (hash v.1) (if v.1 == f then 0 else tyHash G v.2))
+
+/-- The views' hash with the views of `f` at no type. -/
+@[nospecialize] def viewsHash (G : NormalGraph ι) (f : PropKey) (vs : List (PropKey × Ty ι)) : UInt64 :=
+  vs.foldl (viewStep G f) 13
+
+/-- The key `restricts` keeps: a record clause's first invariant operand and
+its views but at `f`, hashed by the graph's label hash. A candidate
+`restricts` accepts has its source's key (`restricts_key`). -/
+@[nospecialize] def restrictKey (G : NormalGraph ι) (f : PropKey) : Clause (Ty ι) → UInt64
+  | .refs a _ vs _ _ _ _ => mixHash (a.foldl (fun acc p => mixHash acc (mixHash (hash p.1) (tyHash G p.2))) 11)
+      (viewsHash G f vs)
+  | _ => 0
+
+theorem viewsHash_foldl [DecidableEq ι] {G : NormalGraph ι} {f : PropKey} :
+    ∀ {vs vs' : List (PropKey × Ty ι)} (acc : UInt64), vs.length = vs'.length →
+      (∀ x ∈ vs.zip vs', x.1.1 = x.2.1 ∧ (x.1.2 = x.2.2 ∨ x.1.1 = f)) →
+      vs.foldl (viewStep G f) acc = vs'.foldl (viewStep G f) acc
+  | [], [], _, _, _ => rfl
+  | [], _ :: _, _, h, _ => by simp at h
+  | _ :: _, [], _, h, _ => by simp at h
+  | (k, T) :: vs, (k', T') :: vs', acc, hl, h => by
+    obtain ⟨hk, ht⟩ := h ((k, T), (k', T')) (by simp)
+    simp only at hk ht
+    subst hk
+    have hstep : viewStep G f acc (k, T) = viewStep G f acc (k, T') := by
+      rcases ht with rfl | rfl
+      · rfl
+      · simp [viewStep]
+    simp only [List.foldl_cons, hstep]
+    exact viewsHash_foldl _ (by simpa using hl) fun x hx => h x (by simp [hx])
+
+theorem viewsHash_eq [DecidableEq ι] {G : NormalGraph ι} {f : PropKey} {vs vs' : List (PropKey × Ty ι)}
+    (hl : vs.length = vs'.length) (h : ∀ x ∈ vs.zip vs', x.1.1 = x.2.1 ∧ (x.1.2 = x.2.2 ∨ x.1.1 = f)) :
+    viewsHash G f vs = viewsHash G f vs' :=
+  viewsHash_foldl 13 hl h
+
+theorem restricts_key [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty ι)} {f : PropKey} {ts : List Tag}
+    (h : restricts G c c' f ts = true) : restrictKey G f c' = restrictKey G f c := by
+  cases c <;> cases c' <;> simp only [restricts, Bool.false_eq_true] at h
+  case refs.refs a _ vs _ _ _ _ a' _ vs' _ _ _ _ =>
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨⟨ha, -⟩, -⟩, -⟩, hl⟩, hall⟩ := h
+    subst ha
+    have hv : ∀ x ∈ vs.zip vs', x.1.1 = x.2.1 ∧ (x.1.2 = x.2.2 ∨ x.1.1 = f) := by
+      intro x hx
+      have := List.all_eq_true.mp hall x hx
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at this
+      obtain ⟨hk, hv | hf⟩ := this
+      · exact ⟨hk, .inl hv⟩
+      · exact ⟨hk, .inr hf.1.1.1⟩
+    simp only [restrictKey]
+    rw [viewsHash_eq hl hv]
+
+/-- Unfolded candidates by key, each key's in list order. -/
+@[nospecialize] def rowIndex (G : NormalGraph ι) (f : PropKey) (rows : List (ι × Clause (Ty ι))) :
+    Std.HashMap UInt64 (List (ι × Clause (Ty ι))) :=
+  rows.foldr (fun r m => m.insert (restrictKey G f r.2) (r :: m.getD (restrictKey G f r.2) [])) {}
+
+theorem rowIndex_getD (G : NormalGraph ι) (f : PropKey) (rows : List (ι × Clause (Ty ι))) (k : UInt64) :
+    (rowIndex G f rows).getD k [] = rows.filter (fun r => restrictKey G f r.2 == k) := by
+  induction rows with
+  | nil => simp [rowIndex, Std.HashMap.getD_empty]
+  | cons r rs ih =>
+    simp only [rowIndex, List.foldr_cons] at ih ⊢
+    rw [Std.HashMap.getD_insert]
+    by_cases hk : restrictKey G f r.2 = k
+    · subst hk; simp [ih]
+    · simp [hk, ih]
+
+/-- `restrictionIn` reading only the candidates of the source's key. -/
+@[nospecialize] def restrictionAt [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (idx : Std.HashMap UInt64 (List (ι × Clause (Ty ι)))) : Option ι :=
+  match expand G [a] with
+  | [c] => ((idx.getD (restrictKey G f c) []).find? fun r => r.1 != a && restricts G c r.2 f ts).map (·.1)
+  | _ => none
+
+theorem restrictionAt_eq [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (rows : List (ι × Clause (Ty ι))) :
+    restrictionAt G a f ts (rowIndex G f rows) = restrictionIn G a f ts rows := by
+  unfold restrictionAt restrictionIn
+  split
+  · rename_i c _
+    rw [rowIndex_getD, List.find?_filter]
+    congr 2
+    funext r
+    cases hr : (r.1 != a && restricts G c r.2 f ts)
+    · simp
+    · simp only [Bool.and_eq_true] at hr
+      simp [restricts_key hr.2]
+  · rfl
+
 /-- The labels of `A` an object may still have once every tag of `ts`
 answered `false` of the value of its field `f`: a label each of whose clauses
 fixes `f` at a covered type is dropped, and a label of one record clause a
-label of `candidates` restricts (`restriction`) is read as that label. -/
+label of `candidates` restricts (`restriction`) is read as that label. The
+candidates are unfolded once for all of `A`'s labels and read by key
+(`restrictionAt_eq`). -/
 def uncoveredField [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (ts : List Tag) (candidates : Ty ι) : Ty ι :=
+  let idx := rowIndex G f (candidateRows G candidates)
   A.flatMap fun a =>
     if G.plain a && (expand G [a]).all (fieldCovered G · f ts) then []
-    else [(restriction G a f ts candidates).getD a]
+    else [(restrictionAt G a f ts idx).getD a]
 
 theorem uncoveredField_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {f : PropKey} {ts : List Tag} {candidates : Ty ι}
     {n W h v flds code oid l u}
@@ -452,7 +598,7 @@ theorem uncoveredField_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {
     | _ => simp [fieldCovered] at hans
   | false =>
     have hmem : (restriction G a f ts candidates).getD a ∈ uncoveredField G A f ts candidates :=
-      List.mem_flatMap.mpr ⟨a, ha, by simp [hd]⟩
+      List.mem_flatMap.mpr ⟨a, ha, by simp [hd, restrictionAt_eq, restrictionIn_eq]⟩
     cases hr : restriction G a f ts candidates with
     | none =>
       simp only [hr, Option.getD_none] at hmem

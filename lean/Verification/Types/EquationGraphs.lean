@@ -895,7 +895,8 @@ theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equation
     cases l.view <;> simp only [Equations.baseRowCached_eq]
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
-  NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal
+  { NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal with
+    labelHash := fun l => hash l.1 }
 
 /-- The form of a label's row that is not a meet, read from its head's
 template without instantiating it (`Equations.baseForm_eq`). -/
@@ -940,12 +941,13 @@ theorem Equations.form_eq (equations : Equations) (label : Label equations.signa
 from the form: a test of a row's form instantiates no template. The
 compiler runs it in place of `graph` (`graph_eq_forms`). -/
 def Equations.graphForms (equations : Equations) : NormalGraph (Label equations.signature) :=
-  NormalGraph.ofRowMapForms equations.row equations.form equations.builtins equations.domain
-    equations.literal
+  { NormalGraph.ofRowMapForms equations.row equations.form equations.builtins equations.domain
+      equations.literal with labelHash := fun l => hash l.1 }
 
 @[csimp] theorem Equations.graph_eq_forms : @Equations.graph = @Equations.graphForms := by
   funext E
-  exact (NormalGraph.ofRowMapForms_eq E.form_eq _ _ _).symm
+  unfold Equations.graph Equations.graphForms
+  rw [NormalGraph.ofRowMapForms_eq E.form_eq]
 
 /-- A bound parameter has the kind declared at its own lexical owner. -/
 @[simp] theorem Equations.kind_bound (equations : Equations) (scope : Scope equations.signature)

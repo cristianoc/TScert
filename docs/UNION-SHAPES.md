@@ -455,8 +455,10 @@ default:
 - table growth adds only the demand pairs of candidate clause pairs
   (`demandPairs`), and the greatest fixed point's coverage test reads only
   candidates (`coveredIn`);
-- the table check reads the candidates first and then every target clause
+- the table check first accepts a source clause that is a target clause
+  (`Same`), then reads the candidates and then every target clause
   (`checkEntries`, its existential over `candidates ++ clausesOf`);
+- a source clause that is a target clause demands no pair (`demandPairs`);
 - a structural comparison or a comparison step not established with
   selection is redone with selection off (`InstanceImageCheck.general`, in
   `compareStructural` and `compareStepState`), so the restricted search
@@ -472,7 +474,12 @@ it.
 
 **Answered requests.** The producer's candidate search asks the same subtype
 requests many times: for an expression it tries the claimed type and then
-every type of the unit's pool, coercing each to the target. The producer
+every type of the unit's pool, coercing each to the target; for a receiver,
+an array or an index it tries first the type the part synthesizes (a
+variable's slot type, a field's type read from a record), then the pool
+(`synthesizedFirst`). Within a rule it establishes the parts (receiver,
+callee, arguments) before comparing the rule's result with the claimed type,
+so a wrong guess fails at its parts. The producer
 answers a request asked again from its first answer: a table from source and
 target to `subtypeSearch`'s whole result, an exhaustion included
 (`CertificateProducer.Answered`), threaded through every search of a

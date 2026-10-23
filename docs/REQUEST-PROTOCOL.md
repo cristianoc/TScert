@@ -710,12 +710,11 @@ presence is not a proof.
 
 The source path accepts an instance image when either proved image check
 holds: the finite table check, or the substitution check
-`EquationStore.imagesUpTo`, which requires every claimed image to be the
-structural substitution image or a type proved equal to it, each below the
-other by a subtype proof the checker searches for and checks
-(`EquationStore.eitherImages`). Search proposes the substitution images
-first (`CertificateProducer.Instantiates`), and, for a scheme's result the
-target spells otherwise, the target's result as its image.
+`EquationStore.exactImages`, which requires every claimed image to be the
+structural substitution image (`EquationStore.eitherImages`). Search
+proposes the substitution images (`CertificateProducer.Instantiates`); a
+target signature the claim spells otherwise is related to its image by the
+instance rule's inclusion premises.
 
 **`Var`.** Two applications of one head are related by the checker using the
 head's validated variance. Each argument premise is discharged by label

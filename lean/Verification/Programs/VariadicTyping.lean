@@ -94,15 +94,6 @@ theorem argsAcceptedUsing [DecidableEq ι] {G : NormalGraph ι}
     (hv : argMeaning G S n W vs) : argMeaning G T n W vs :=
   PositiveCertificates.checkUsing_sound h G.env n W (.inr vs) hv
 
-/-- Pointwise wider fixed parameters and a wider rest admit every list the
-narrower ones do. -/
-theorem ArgsRest_mono {Qs Ps : List Fam} {E E' : ArgFam} {j : Nat} {W : WorldT j} (h : ArgsLe Qs Ps)
-    (he : ∀ vs, E j W vs → E' j W vs) {args : List Tm}
-    (ha : ArgsRest Qs E j W args) : ArgsRest Ps E' j W args := by
-  obtain ⟨hs, hr⟩ := ha
-  rw [ArgsLe_length h] at hs hr
-  exact ⟨ArgsShort_mono h hs, he _ hr⟩
-
 /-- A member of a host's type is found by the member's key on the host, whose
 contract implies the member's signatures invoked on that host. -/
 theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}

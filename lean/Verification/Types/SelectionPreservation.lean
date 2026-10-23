@@ -51,15 +51,17 @@ theorem valid_selected [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Rena
       ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     {f : Entry ι} (hf : f ∈ F) (hclosed : f.hypotheses = []) :
     ∀ p ∈ f.pairs, ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
+      a ∈ clausesOf G p.2 ∨
       (∃ b ∈ ClauseSelection.candidates G a p.2, Covers G sub (Prem G sub look gen f) known p.1 a b) ∨
       ∀ e ∈ a.elements, ∃ b ∈ ClauseSelection.candidates G e p.2,
         Covers G sub (Prem G sub look gen f) known p.1 e b := by
   intro p hp a ha
   have hR := prem_sound_closed hvalid hvars hlook hk hf hclosed (ParameterAssignment.empty .mixed)
-  rcases (hvalid f hf p hp).2.2 a ha with ⟨b, hb, hcov⟩ | he
-  · refine .inl ⟨b, List.mem_filter.mpr ⟨hb, ?_⟩, hcov⟩
+  rcases (hvalid f hf p hp).2.2 a ha with hsame | ⟨b, hb, hcov⟩ | he
+  · exact .inl hsame
+  · refine .inr (.inl ⟨b, List.mem_filter.mpr ⟨hb, ?_⟩, hcov⟩)
     simp [ClauseSelection.covers_candidate G hR hcov]
-  · refine .inr fun e he' => ?_
+  · refine .inr (.inr fun e he' => ?_)
     obtain ⟨b, hb, hcov⟩ := he e he'
     refine ⟨b, List.mem_filter.mpr ⟨hb, ?_⟩, hcov⟩
     simp [ClauseSelection.covers_candidate G hR hcov]
