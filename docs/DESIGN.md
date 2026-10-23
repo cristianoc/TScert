@@ -600,16 +600,16 @@ owner; other documents link to them and give only the context their readers need
 | [STAGE-STORE](STAGE-STORE.md) | The stage store: keys, observed stages, entries, publication, replay's trust, controls and timing. |
 | [WORK](../WORK.md) | Open work, its reasons and completion conditions; the one place progress is recorded. |
 | [Drafts](drafts/) | Designs kept for the owner's decision ([method effects](drafts/method-effects.md), [verification server](drafts/verification-server.md)); their status is WORK's. |
-| [SOURCE-MODEL](SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
-| [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
+| [SOURCE-MODEL](SOURCE-MODEL.md) | Source values, the heap and host assumptions, and how values map to the calculus. |
+| [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | The refusal index: every refused construct with its reason, owning section and cases. |
 | [SOURCE-REWRITES](SOURCE-REWRITES.md) | Changes made to TScert's own source so that it verifies, each with the property the original lacked and the general rewrite. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering and acceptance statement. |
 | [UNION-SHAPES](UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas, and the structural engine that implements them. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
-| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
-| [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
+| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | The lowering of every source form (statements, guards, iteration, mutable bindings, closures, inferred effects) and the checklist for adding one. |
+| [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Reading types, declarations and annotations; library contracts and their audits; certified imports. |
 | [CALLABLES](CALLABLES.md) | What a function is in the calculus: callable values, their call and code rules and their proof scope. |
 | [FOOTPRINTS](FOOTPRINTS.md) | Footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas and natives as its instances. |
 | [HOST-FAMILIES](HOST-FAMILIES.md) | The mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
