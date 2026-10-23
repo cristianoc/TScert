@@ -52,7 +52,7 @@ export type CallCode =
       mode: "construct" | "sloppy" | null; rest: boolean };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
-  "lt", "le", "gt", "ge", "eq"] as const;
+  "lt", "le", "gt", "ge", "eq", "looseEq"] as const;
 type Operator = (typeof OPERATORS)[number];
 export type Term =
   | { kind: "nul" }
