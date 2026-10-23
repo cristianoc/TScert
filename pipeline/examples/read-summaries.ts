@@ -1,8 +1,8 @@
 // Reads of a slot holding a union: a readonly view each member states is
 // read through one checked summary of the request (`readSummary`), a view
 // of `length` at a type excluding a number included; a writable field, an
-// optional field, a dictionary's index, a callable object's field, a
-// receiver coerced to its base, an array's or a string's `length` and a
+// optional field, a dictionary's index, a callable object's field, a class
+// value's readonly static field, a receiver coerced to its base, an array's or a string's `length` and a
 // primitive's member read through its wrapper's prototype keep their own
 // rules. The read-summary controls of pipeline/test.mts forge summaries
 // beside these reads.
@@ -26,6 +26,12 @@ type L = { readonly length: "l" };
 type M = { readonly length: "m" };
 type F = { (): number; tag: "f" };
 type G = { (): number; tag: "g" };
+class P {
+  static readonly tag = "p";
+}
+class Q {
+  static readonly tag = "q";
+}
 
 export function kindOf(x: A | B): "a" | "b" {
   return x.k;
@@ -75,6 +81,10 @@ export function indexOf(x: D | E): string | undefined {
 }
 
 export function tagOfCallable(x: F | G): "f" | "g" {
+  return x.tag;
+}
+
+export function classTag(x: typeof P | typeof Q): "p" | "q" {
   return x.tag;
 }
 
