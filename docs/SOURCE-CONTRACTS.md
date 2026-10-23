@@ -536,15 +536,15 @@ except that a record of invariant fields met with a function type is the
 callable carrying them (`sourceMeetLists`, [below](#intersections-of-functions-and-records)),
 and any other intersection (a scheme, a union holding a binder) is refused
 rather than an operand being dropped. A function's own annotation lowers its
-intersections so (`annotationClaim`), each binder read as the row the unit
+intersections so, each binder read as the row the unit
 reads it as, its parameter row met with a ground bound or with the binder
 bounding it (`binderRows`): `T & U`, `T & "fixed"`, `T & object` and
 `A<U> & B<V>` are meet rows or meets of application rows over the binders'
 rows. An operand whose row is not yet filled, a declaration being lowered or
 a recursive application met inside its own equation
 (`TreeNode<T> & TreeLeaf<T>` in `TreeLeaf<T>`'s field), makes the meet a row
-of its own that waits for it (`waitingMeet`), filled once every operand is
-(`settle`); a nullary declaration an intersection names is lowered first, so
+of its own that waits for it, a pending row filled once every operand is
+(`Equations/Core.lean`); a nullary declaration an intersection names is lowered first, so
 the declarations' order does not matter. No lowering ends with a meet left
 waiting. A meet row is below each of its parameters, so
 it establishes what each does. At an instance $`p_1:=U_1,\ldots,p_k:=U_k`$ it
@@ -627,7 +627,7 @@ declared: a function declaration's type parameter bounded by the verifier's
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which the project of a lone
 source lists (`verify-source.mts`), and the parser recognizes the bound by
 that declaration, which TypeScript binds the name to, not shadowed by a type
-parameter (`resolvableBound`). A program's own alias of that name is an
+parameter (`qualificationBound` in `fragment-parse.mts`). A program's own alias of that name is an
 ordinary bound. `Awaited<T>` in a declared-qualified signature reads
 $`R_T`$. The parser refuses the marker on another type parameter ("qualify
 a type parameter of a function declaration's signature") and in a signature

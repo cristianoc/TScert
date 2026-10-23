@@ -1011,8 +1011,6 @@ refer to their original outer bindings. The source statement at $`k`$ supplies
 an environment whose types must be justified from this context. Arm-local
 bindings and singleton refinements cannot become assumptions at the join.
 The continuation occurs once, so nested branching does not duplicate its term.
-`shared_continuation_trace` ties the extracted graph to a 44-step execution in
-which the selected arm writes true before the shared read returns true.
 
 An early-return branch with one fully returning arm and one return-free arm
 uses the same conditional rules. For example, `if (c) { return r; } else { s; } k`
@@ -1027,9 +1025,7 @@ Here $`s`$ completes with administrative null, and its local bindings stay insid
 $`s`$. Both $`r`$ and the surviving sequence check at the supplied function result
 type. When $`c`$ tests an immutable Boolean variable, the surviving sequence uses
 the justified false refinement; it does not have to discard this fact as a
-shared join would. `early_return_trace` checks both outcomes of an extracted
-closure: an early return skips the later write, while the other arm executes it.
-General partially returning nested arms remain gated.
+shared join would.
 
 A block closure that does not return on every terminal arm completes, which in
 JavaScript returns `undefined`; its body ends with $`\mathsf{return}\ \mathsf{undefined}`$ at the closing brace, so that the shapes above apply
@@ -1072,7 +1068,7 @@ A pattern binds names from one value, in pattern order, and has no rule of its
 own: it is reads, a tag dispatch and lets. Write
 $`\Gamma\vdash p\Leftarrow(t{:}R)\dashv\Delta`$ when binding pattern $`p`$ to the
 value term $`t`$ reads at $`R`$ under $`\Gamma`$ extends the scope by $`\Delta`$
-(`bindTarget` in the graph lowering, `closureBind` in a closure body). A name
+(`bindPattern` in `BindingPlan.lean`). A name
 binds the read; a nested pattern holds it in an anonymous slot and binds its
 own elements over it:
 
@@ -1777,8 +1773,7 @@ may hand it to code that replaces its member or gives the function an own
 
 ## Certifying inferred call effects
 
-**Definition certification and initial producer inference are implemented;
-native overloads and graph composition, including fixed qualified calls, are implemented.** The semantic foundation is
+The semantic foundation is
 [the qualified arrow equation](SEMANTICS.md#effect-qualified-call-contracts).
 Definition checking and application both carry the effect;
 changing only the native `map` declaration would introduce a trusted assumption
@@ -1906,20 +1901,20 @@ unrestricted results. `PromiseWith.bound` is the common forwarding proof for
 fixed and variadic binding: saving a receiver and prefix changes the admitted
 arguments, not the forwarded call's heap guarantee.
 
-This checker is wired into source acceptance, including
-`SourceClaimJson.checkJson_safe`. One contract record carries receiver,
+Source acceptance runs this checker, and `SourceClaimJson.checkJson_safe`
+states its conclusion. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for
 closure bodies of reads, element reads, fresh allocations, patterns without a
 rest, and fixed calls and method calls whose callee's signatures all state it
-(`heap_preserving_expr`), retaining it through symbolic claims and substitution.
-Broader composition remains implementation work. Evidence production adds a
+(`footprint_expr` in `source.ml`), retaining it through symbolic claims and
+substitution. Evidence production adds a
 code entry to its search table only after the complete body/effect check passes.
 A forged effect thus fails at the defining callable's located typing obligation.
 All code certificates remain in the submitted response, and final acceptance
-independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims can
-already be submitted and certified through the ordinary source pipeline.
+independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims are
+submitted and certified through the ordinary source pipeline.
 
 **Function declarations.** A declaration's claim states the closed
 footprint $`\Phi`$ proposed for its signature (`footprint` in the

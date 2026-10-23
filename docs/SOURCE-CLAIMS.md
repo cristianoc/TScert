@@ -23,14 +23,20 @@ The protocol has three documents:
 
 ```sh
 lean/.lake/build/bin/verifier --lower-control-flow ast.json
+lean/.lake/build/bin/verifier --lower-program ast.json source-claims.json file-key
 lean/.lake/build/bin/verifier --produce-source-claims \
-  ast.json source-claims.json input.ts evidence.json 10
+  ast.json source-claims.json file-key evidence.json 10
 lean/.lake/build/bin/verifier --check-source-claims \
-  ast.json source-claims.json input.ts evidence.json
+  ast.json source-claims.json file-key evidence.json
 ```
 
+`file-key` is the Fragment's `file` field, the checked file's identity
+(`sourceKey` in `verify-source.mts`). `--lower-control-flow` prints the
+execution document; `--lower-program` prints the program graph each unit
+lowers to under the claims (`make lowering`).
 `--produce-source-claims` searches for evidence of the reconstructed obligations.
 `--check-source-claims` checks supplied evidence against those obligations.
+Any mode may be preceded by `--subtype-rounds n`.
 `SourceClaimJson.checkJson_safe` proves calculus safety for every accepted
 function, at every permitted interpretation of its type parameters. The
 theorem concerns the extracted calculus graph; correspondence with the source

@@ -970,7 +970,7 @@ The first guarantee preserves existing heap contents on normal return and
 allows fresh allocation. A call that throws supplies no heap postcondition.
 Consequently, a body checker cannot carry this guarantee through a caught
 exception: it must check the handler with the possibly changed heap, or have
-a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The current pure-body
+a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The pure-body
 checker does not admit such calls. Graph composition checks normal-return
 postconditions node by node and refuses handlers; the independent pure-graph
 rule can still certify pure handlers. Qualified-call composition retains
@@ -999,11 +999,12 @@ requires; the import's TypeScript declaration still supplies none.
 
 **Eligibility.** A read may be qualified only where its binding's value is
 stable: a named import of an exported function declaration that no code of
-its module reassigns. Its terminal declaration identity is the one
-TypeScript resolves the import to, through re-exports; a re-exporting
-module's own execution is part of the runtime module graph below. Default
-imports stay refused, as the parser refuses them. Any other import is read
-at its ordinary signature. Lean refuses a unit whose module's document writes
+its module reassigns, or a default import of an `export default function`,
+which is the named import of `default`
+([default imports](SOURCE-ELABORATION.md#derived-source-forms)). Its terminal
+declaration identity is the one TypeScript resolves the import to, through
+re-exports; a re-exporting module's own execution is part of the runtime
+module graph below. Any other import is read at its ordinary signature. Lean refuses a unit whose module's document writes
 its binding, and the parser lists no module whose code it leaves unlowered
 writes one.
 
@@ -1041,7 +1042,7 @@ from its module, with the parser's reason, and its module's other functions
 stay. A module whose declarations or top-level code cannot be lowered is
 absent: its imports are read at their ordinary signatures. An import read
 at its ordinary signature is refused where that signature is not
-representable in full, as today.
+representable in full.
 
 **What a unit's certification covers.** A unit is checked in its module's
 run, as a run of that file alone checks it but for the run's tag selection,
@@ -1109,12 +1110,10 @@ importer again, and the import is read at its ordinary signature. The final chec
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
-`record-render`'s `parseRecord` is proposed and certified at
-`{value: any, store: grow}`, in that set.
 
 **What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
-the importer's document, what it states today, and the same of each module
-document's certified set, each over its own frozen store: safety and its
+the importer's document and for each module document's certified set, each
+over its own frozen store: safety and its
 footprint for every certified unit, and safety for the importer's
 functions, each under `EnvOk` of its own inputs, the qualified import among
 the importer's, and under `WorldAdm` and `HeapOk`.
@@ -1168,9 +1167,9 @@ effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
 $`h_0`$, the exceptional postcondition
 $`R\,h \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
 $`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
-reads them. Without `onThrow`, $`R`$ is `True`. Coverage
-(`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
-without, and not the other way.
+reads them. Without `onThrow`, $`R`$ is `True`. In coverage
+(`Effect.Covers`), an effect with `onThrow` covers one without, and not the
+other way.
 
 **Combining effects.** Two guarantees of one call combine
 (`Effect.meet`) into the meet of their footprints, with `onThrow` the
@@ -1195,7 +1194,7 @@ receives no current-content fact ([handler facts](#exceptional-footprints)).
 invariant from the body's entry heap $`h_0`$, with $`b`$ the body's
 freshness cutoff, the length of $`h_0`$: a node's run is bounded on the
 locations below $`b`$, so a node may change storage the body allocated
-before it, a receiver among them. The extension keeps that cutoff:
+before it, a receiver among them. Throws keep that cutoff:
 
 - a node with a handler is admitted when its term's run is `SafePostExc`
   whose exceptional postcondition relates the node's entry heap to the heap
@@ -1207,9 +1206,8 @@ before it, a receiver among them. The extension keeps that cutoff:
 - the `handle` transition also establishes the handler target's
   `FreshOk`, through the handler's slot mapping with the thrown slot
   non-fresh;
-- each node's term is checked by the form that admits it today (an
-  inspection, a typed write, a call at a selected signature), now also on
-  its throws.
+- each node's term is checked, on its throws too, by the form that admits
+  it (an inspection, a typed write, a call at a selected signature).
 
 **Handler facts.** Ordinary graph certification checks a handler edge
 (`HandlerOk`) with facts that hold in every heap: `handlerFacts` drops heap
@@ -1247,12 +1245,11 @@ prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
 type no value meets is never entered, so it is within any bound
 (`GraphCode.unreachableEntry`; `never-parameter-calls`).
 
-**What `checkJson_safe` states.** Its second conclusion, for each accepted
-request with a footprint other than `top`, becomes a `SafePostExc` whose
-exceptional postcondition is the footprint from the run's entry heap where
-the request's effect states `onThrow`, and `True` elsewhere. Its premise
-stays the exact CLI success condition. The first conclusion, plain safety,
-is unchanged.
+**What `checkJson_safe` states.** Its premise is the exact CLI success
+condition. Its first conclusion is plain safety; its second, for each
+accepted request with a footprint other than `top`, is a `SafePostExc`
+whose exceptional postcondition is the footprint from the run's entry heap
+where the request's effect states `onThrow`, and `True` elsewhere.
 
 **Natives.** A native signature states `onThrow` only where its audit
 covers every throw: validation errors, failures of the host, and the
