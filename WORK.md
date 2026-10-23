@@ -61,6 +61,8 @@ each item's design and evidence, not its progress.
 | [Selected discovery and the rerun](#union-shapes-discovery) | open | the selected search is proved to find every certificate the full search finds, and the rerun is removed where that theorem applies |
 | [Selection rules the data names](#union-shapes-candidates) | open | R6, R7, open target arms and shared literals each have a rule with its lemma, or a measurement shows it unneeded |
 | [Observed stages beyond macOS](#observed-stages-beyond-macos) | open: the parse and TypeScript's diagnostics replay on macOS only | the compiler's reads are confined and observed on Linux, and the stages replay there |
+| [Certificate size](docs/drafts/certificate-sharing.md) | open: design approved (2026-10-23); stage 1, the node header without its duplicate expression and a linear decoder, under way | the five stages land, each with its proofs and controls, and `moduleFunction`, `inertRead`, `resolve`, `collect` and `closeStatements` verify with their search and check CPU measured before and after |
+| [Declaration session reuse](docs/drafts/session-reuse.md) | open: design approved (2026-10-23); the first step under way | census and case workers reuse declaration compiler sessions with byte-identical outputs in every order, per-attempt CPU accounting, and the parse CPU of a cold census measured before and after |
 | [Verification server](docs/drafts/verification-server.md) | a draft; D1–D7 open, kept as a draft by the owner (2026-10-23) | per-function verdicts on real files over the stage store, replacing census slicing |
 
 ## Open work
