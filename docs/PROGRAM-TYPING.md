@@ -2855,7 +2855,22 @@ The observation and read rules are:
 ```
 
 `linkFacts_holds` proves observation transfer through a live read link;
-`read_sound` proves the read rule and preservation of the heap.
+`read_sound` proves the read rule and preservation of the heap. The read
+links its result $`r`$ to the receiver: a read of the field or of an absent
+key's `undefined`, and a link to the field's location where every clause of
+the receiver's type states the field, as a typed read's link is:
+
+```math
+\frac{(x,f,R)\in\Delta\quad R\subseteq A\quad
+      \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A
+      \dashv\Pi;\ \Sigma,\ x.f\mapsto r,\ r\in R}\ \textsf{read-observed-present}
+```
+
+(`presentRead_sound`). A test of the result then refines the receiver
+through that link on a branch edge: after failed tests of a node's `kind`,
+a compiler-API guard reading `kind` again narrows the node on its true edge
+(`compiler-api-guard-after-kind-tests`).
 `observeTyped_holds` also derives a supported predicate from the tested value's
 ordinary type restricted by the observed tag. For example, the falsy branch of
 an object-or-undefined type supplies the predicate `{undefined}`, and its

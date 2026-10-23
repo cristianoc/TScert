@@ -1624,3 +1624,14 @@ for (const [file, call] of [
 ]) assert.equal(runExample(file, call), undefined, file);
 // Accessors lie outside the plain-data caller contract of structural records.
 assert.equal(runExample("path-witness-record", `(() => { let reads = 0; return read({ get value() { return ++reads === 1 ? { kind: "text", text: "ok" } : { kind: "empty" }; } }); })()`), undefined);
+
+// Repeated undefined reads leave the field absent, despite the required
+// `kind` field in each function's result contract.
+for (const [file, argument] of [
+  ["invalid-guard-after-kind-optional", "{}"],
+  ["invalid-guard-after-kind-index", "{}"],
+  ["invalid-guard-after-kind-missing", "{ other: 1 }"],
+]) {
+  assert.equal(runExample(file, `"kind" in wrong(${argument})`), false,
+    `${file}: the returned object lacks its required kind field`);
+}

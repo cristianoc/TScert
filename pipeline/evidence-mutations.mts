@@ -82,8 +82,12 @@ export function mutationVerifier(): string {
       assert.equal([...text.matchAll(pattern)].length, 1);
       text = text.replace(pattern, '$1 = mutation("cells") ? 1 : $2;');
     }
-    if (module === "Programs/HeapExpressionRules")
+    if (module === "Programs/HeapExpressionRules") {
       text = inject(text, "HeapExpressionRules_stableLinks___redArg", a => `if (mutation("stable")) { lean_object *r = lean_ctor_get(${a[2]}, 2); lean_inc(r); return r; }`);
+      // A read a cell fact answers: its link optional whatever the receiver's
+      // type states (`read-observed-present` withheld).
+      text = inject(text, "HeapExpressionRules_readOutput", a => `if (mutation("absent")) ${a[4]} = 1;`);
+    }
     if (module === "Programs/ControlFlow")
       text = inject(text, "ControlFlow_handlerFacts", a => `if (mutation("handler")) {
         lean_object *k = lean_alloc_ctor(0, 3, 0);
