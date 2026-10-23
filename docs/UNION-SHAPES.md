@@ -457,7 +457,11 @@ default:
   candidates (`coveredIn`);
 - the table check first accepts a source clause that is a target clause
   (`Same`), then reads the candidates and then every target clause
-  (`checkEntries`, its existential over `candidates ++ clausesOf`);
+  (`checkEntries`, its existential over `candidates ++ clausesOf`); it reads
+  a pair's target clauses once, finds a source clause among them through
+  their index under the graph's label hash (`ClauseIndex.has_of`), and
+  decides its opaque rows reading the target's clauses at most once
+  (`opaqueFamilyWith_iff`);
 - a source clause that is a target clause demands no pair (`demandPairs`);
 - a pair one of whose source clauses is no target clause and has no
   candidate, nor has one of its elements, is in no valid closed family

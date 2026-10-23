@@ -798,26 +798,19 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 9.0 s, `inertRead` 21.1 → 6.6,
-`resolve` 20.4 → 6.0, `forOfPattern` 115.0 → 9.0, `pattern` 15.1 → 3.3,
+measured: `moduleFunction` 29.1 → 8.4 s, `inertRead` 21.1 → 6.0,
+`resolve` 20.4 → 5.5, `forOfPattern` 115.0 → 7.0, `pattern` 15.1 → 3.2,
 `patternDefaults` 0.8 → 0.6, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
-check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
-3.4 → 2.3. Each lies within its expected interval. The width series, 0.88 /
-7.55 / 18.6 / 54.6 / 137.6 → 0.56 / 1.08 / 1.65 / 3.24 / 6.31 s, misses its
-criterion. At width 136, of 4.7 sampled seconds, reading and writing the
-documents takes 1.24, which the input's own growth sets, search re-checking
-its comparisons 0.87, and the comparisons 2.35, whose remaining cost is the
-kernel's list scans: `TabRen` reading every table row for each premise
-(`premTable`), label containment across lists of different orders
-(`subsetIn`'s fallback), a meet row read against every label of a target
-(`meetBelow`), and clause equality in the validator's `Same` test. Each is
-linear per premise and quadratic per row. The criterion is revised to the
-part the design acts on: the sampled time outside reading and writing the
-documents, measured at each width of the series, at width 136 within 12
-times its time at width 5 (the widths' ratio, 136/5, is 27), and within 1.5
-times its time at width 87 scaled by 136/87. That the hashed lookups of §8's
-first step reach it is conjectured; bucket scans, structural equality and
-the number of premises remain, and the step's measurement decides.
+check CPU `moduleFunction` 5.0 → 2.8, `inertRead` 3.6 → 2.5, `resolve`
+3.4 → 2.3. Each lies within its expected interval. The width series is
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.53 / 0.94 / 1.26 / 2.14 / 3.53 s. The
+width criterion is on the part the design acts on: the sampled time outside
+the front end (reading the fragment and the claims, lowering and freezing
+them) and the evidence write, at width 136 within 12 times its time at
+width 5 (the widths' ratio, 136/5, is 27), and within 1.5 times its time at
+width 87 scaled by 136/87. Measured at widths 5 / 30 / 87 / 136 it is
+0.12 / 0.22 / 0.65 / 1.17 s, within both bounds (1.44 and 1.52); the front
+end takes 0.22 / 0.47 / 1.00 / 1.61 s, which the input's own growth sets.
 
 ## 8. Migration
 
@@ -836,15 +829,17 @@ Landed, in order: instantiation by inclusion; narrowing's candidates
 unfolded once and search's slice memo; typing by synthesis; `Same` with
 linear containment and renamed-member pairs once; hashed deduplication of
 search's candidates; parts before the claim with bucketed `Same` lookups in
-search; the keyed narrowing index. Each step's measurement is WORK's row.
+search; the keyed narrowing index; no table grown from a pair no valid
+family covers; clause membership by an index under the label hash, in
+search and in the validator, which reads a pair's target clauses once, as
+its opaque rows do. Each step's measurement is WORK's row.
 
 Remaining:
 
 1. **Hashed kernel lookups.** Under the graph's label hash, `TabRen`'s rows
    bucketed by their source labels, label containment through a hash set
-   where the orders differ, a meet row's parts read once per premise, and
-   the validator's `Same` test by bucket; each with its equality lemma to
-   the list form it replaces.
+   where the orders differ, and a meet row's parts read once per premise;
+   each with its equality lemma to the list form it replaces.
 2. **One memo for search and its check** (§3.8).
 3. **Validator and discovery read the candidate index** (§3.3), with
    `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.

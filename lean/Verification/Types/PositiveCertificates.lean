@@ -1,5 +1,6 @@
 import Verification.Types.PairFamilies
 import Verification.Types.ClauseSelection
+import Std.Data.HashMap.Lemmas
 
 /-! Executable certificates for PositiveRules. Completeness concerns existence
 of accepted evidence for a declarative derivation, not semantic completeness or
@@ -499,9 +500,94 @@ set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (a b : ι) :
+    Decidable (SchemeCoversAlpha G sub R known arrows a b) := by
+  unfold SchemeCoversAlpha; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (a b : ι) :
+    Decidable (PartCovers G sub R known arrows hyps a b) := by
+  unfold PartCovers; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+/-- `OpaqueFamily`, decided with the target's clauses `cl` (`clausesOf G T`)
+read at most once, by the first row that reads them. -/
+@[nospecialize] def opaqueFamilyWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (R : List ι → List ι → Prop) [DecidableRel R] (known : Known ι)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
+    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι)
+    (cl : Thunk (List (Clause (List ι)))) : Bool :=
+  S.all fun i => G.plain i || decide (i ∈ T) ||
+    decide (.top ∈ cl.get ∨ (.source ∈ cl.get ∧ G.params i = false ∧ (G.schemes i).isSome = true)) ||
+    decide (MeetOpaque G (PartCovers G sub R known arrows hyps)
+      (fun a => ∃ b ∈ cl.get, CoversWith G sub R known arrows S a b) T i) ||
+    decide (∃ y ∈ T, (i, y) ∈ hyps) || decide (∃ j ∈ T, SchemeCoversAlpha G sub R known arrows i j)
+
+theorem opaqueFamilyWith_iff [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] {hyps : List (ι × ι)} {S T : List ι}
+    {cl : Thunk (List (Clause (List ι)))} (hcl : cl.get = clausesOf G T) :
+    opaqueFamilyWith G sub R known arrows hyps S T cl = true ↔
+      OpaqueFamily G sub R known arrows hyps S T := by
+  simp only [opaqueFamilyWith, OpaqueFamily, OpaqueUniverse, hcl, List.all_eq_true, Bool.or_eq_true,
+    decide_eq_true_eq, or_assoc]
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι) :
-    Decidable (OpaqueFamily G sub R known arrows hyps S T) := by
-  unfold OpaqueFamily PartCovers SchemeCoversAlpha; infer_instance
+    Decidable (OpaqueFamily G sub R known arrows hyps S T) :=
+  decidable_of_iff _ (opaqueFamilyWith_iff (cl := Thunk.mk fun _ => clausesOf G T) rfl)
+
+/-- A bucket of a clause for membership tests: its constructor, the literal it
+names, and a record's keys with their operands under the graph's label hash.
+Any function of the clause serves; lookups compare by equality within the
+bucket (`ClauseIndex.has_of`). -/
+@[nospecialize] def clauseBucket (G : NormalGraph ι) (c : Clause (List ι)) : UInt64 :=
+  let fields (a : List (PropKey × List ι)) : UInt64 :=
+    a.foldl (fun h (k, ls) => ls.foldl (fun h l => mixHash h (G.labelHash l)) (mixHash h (hash k))) 11
+  let operands (a : List (PropKey × List ι)) (r : List (List (PropKey × List ι))) (v : List (PropKey × List ι)) :=
+    r.foldl (fun h x => mixHash h (fields x)) (mixHash (fields a) (fields v))
+  mixHash (hash c.ctorIdx) (match c with
+    | .refs a r v _ _ _ _ | .dict a r v _ _ _ _ _ _ => operands a r v
+    | .callable a r _ _ => operands a r []
+    | .numLit b => hash b
+    | .strLit v => hash v
+    | .boolLit b => hash b
+    | .symbolLit i => hash i
+    | _ => 0)
+
+/-- A type's clauses by bucket, for membership tests. -/
+abbrev ClauseIndex (ι : Type) := Std.HashMap UInt64 (List (Clause (List ι)))
+
+@[nospecialize] def ClauseIndex.of (G : NormalGraph ι) (cs : List (Clause (List ι))) : ClauseIndex ι :=
+  cs.foldr (fun c m => let k := clauseBucket G c; m.insert k (c :: m.getD k [])) {}
+
+@[nospecialize] def ClauseIndex.has [DecidableEq ι] (G : NormalGraph ι) (m : ClauseIndex ι) (c : Clause (List ι)) : Bool :=
+  (m.getD (clauseBucket G c) []).contains c
+
+theorem ClauseIndex.of_getD (G : NormalGraph ι) (cs : List (Clause (List ι))) (k : UInt64) :
+    (ClauseIndex.of G cs).getD k [] = cs.filter (fun c => clauseBucket G c == k) := by
+  induction cs with
+  | nil => simp [ClauseIndex.of, Std.HashMap.getD_empty]
+  | cons c cs ih =>
+    simp only [ClauseIndex.of, List.foldr_cons] at ih ⊢
+    rw [Std.HashMap.getD_insert]
+    by_cases hk : clauseBucket G c = k
+    · subst hk; simp [ih]
+    · simp [hk, ih]
+
+/-- Membership read through the index is membership. -/
+theorem ClauseIndex.has_of [DecidableEq ι] (G : NormalGraph ι) (cs : List (Clause (List ι)))
+    (c : Clause (List ι)) : (ClauseIndex.of G cs).has G c = cs.contains c := by
+  rw [ClauseIndex.has, ClauseIndex.of_getD, Bool.eq_iff_iff]
+  simp
+
 
 set_option synthInstance.maxSize 1024 in
 /-- The entries' core conditions, premises read in each entry, arrows by
@@ -509,28 +595,35 @@ checked evidence. -/
 @[nospecialize] def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (look : Lookup ι) (F : List (Entry ι))
     (arrows : Evidence ι) : Bool :=
-  decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
-    OpaqueFamily G sub (Prem G sub look gen f) known
-      (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
-      a ∈ clausesOf G p.2 ∨
-      (∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
-        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true) ∨
-      ∀ e ∈ a.elements, ∃ b ∈ clausesOf G p.2,
-        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b = true)
+  F.all fun f => f.pairs.all fun p =>
+    -- The target's clauses, read once for the pair; a source clause among
+    -- them is found through their index.
+    let cl := clausesOf G p.2
+    let own := ClauseIndex.of G cl
+    SameKind G p.1 p.2 &&
+    opaqueFamilyWith G sub (Prem G sub look gen f) known
+      (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 (Thunk.pure cl) &&
+    (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses).all fun a =>
+      own.has G a ||
+      (ClauseSelection.candidates G a p.2 ++ cl).any
+        (fun b => checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b) ||
+      a.elements.all fun e => cl.any fun b =>
+        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
     {F : List (Entry ι)}
     {arrows : Evidence ι} (h : checkEntries G sub known gen look F arrows = true) :
     FamilyValid G sub known gen look F := by
-  simp only [checkEntries, decide_eq_true_eq] at h
+  simp only [checkEntries, ClauseIndex.has_of, List.all_eq_true, Bool.and_eq_true, Bool.or_eq_true,
+    List.any_eq_true, List.contains_iff_mem] at h
   intro f hf p hp
-  obtain ⟨hk, ho, hc⟩ := h f hf p hp
+  obtain ⟨⟨hk, ho⟩, hc⟩ := h f hf p hp
+  have ho := (opaqueFamilyWith_iff rfl).mp ho
   refine ⟨hk, OpaqueFamily.mono (fun L S M hs q hq => ?_) ho, fun a ha => ?_⟩
   · obtain ⟨e, _, _, _, he⟩ := hs q hq
     exact checkArrowWith_sound he
-  · rcases hc a ha with hsame | ⟨b, hb, hcb⟩ | he
+  · rcases hc a ha with (hsame | ⟨b, hb, hcb⟩) | he
     · exact .inl hsame
     · have hb : b ∈ clausesOf G p.2 := by
         rcases List.mem_append.mp hb with hb | hb
@@ -1106,35 +1199,14 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 @[nospecialize] def schemeComponents [DecidableEq ι] (G : NormalGraph ι) (X : List ι) : List ι :=
   (X ++ (X.filter G.meetRow).flatMap (meetParts G)).filter (fun i => (G.schemes i).isSome) |>.eraseDups
 
-/-- A bucket of a clause for search's lookups: its constructor and the keys
-or the literal it names. Any function of the clause serves; lookups compare
-by equality within the bucket. Search only. -/
-@[nospecialize] def clauseBucket (c : Clause α) : UInt64 :=
-  mixHash (hash c.ctorIdx) (match c with
-    | .refs a _ _ _ _ _ _ | .dict a _ _ _ _ _ _ _ _ | .callable a _ _ _ => hash (a.map (·.1))
-    | .numLit b => hash b
-    | .strLit v => hash v
-    | .boolLit b => hash b
-    | .symbolLit i => hash i
-    | _ => 0)
-
-/-- A type's clauses by bucket, for search's membership tests. -/
-abbrev ClauseIndex (ι : Type) := Std.HashMap UInt64 (List (Clause (List ι)))
-
-@[nospecialize] def ClauseIndex.of (cs : List (Clause (List ι))) : ClauseIndex ι :=
-  cs.foldl (fun m c => m.insert (clauseBucket c) (c :: m.getD (clauseBucket c) [])) {}
-
-@[nospecialize] def ClauseIndex.has [DecidableEq ι] (m : ClauseIndex ι) (c : Clause (List ι)) : Bool :=
-  (m.getD (clauseBucket c) []).contains c
-
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
 @[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
     (select : Bool := false) : List (List ι × List ι) :=
   -- A clause the target holds itself is covered as it is (`Same`): it
   -- demands no pair.
-  let own := ClauseIndex.of (clausesOf G Y)
-  (clausesOf G X).flatMap (fun a => if own.has a then [] else
+  let own := ClauseIndex.of G (clausesOf G Y)
+  (clausesOf G X).flatMap (fun a => if own.has G a then [] else
     (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
@@ -1286,9 +1358,9 @@ searched for its rows. The check decides (`compareUsing`). -/
     PositiveRules.SameKind G p.1 p.2 &&
     decide (OpaqueFamily G images.sub R known
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
-    let own := ClauseIndex.of (clausesOf G p.2)
+    let own := ClauseIndex.of G (clausesOf G p.2)
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      own.has a ||
+      own.has G a ||
       (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
         (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
       -- A tag set is covered between several target clauses, element by
@@ -1302,8 +1374,8 @@ the pair, since every covering it chooses is by a candidate
 (`SelectionPreservation.valid_selected`). Search does not grow a table for
 such a pair, nor expand such a row's demand, with or without selection. -/
 @[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
-  let own := ClauseIndex.of (clausesOf G T)
-  (sourceClauses G S).any fun a => !own.has a && (ClauseSelection.candidates G a T).isEmpty &&
+  let own := ClauseIndex.of G (clausesOf G T)
+  (sourceClauses G S).any fun a => !own.has G a && (ClauseSelection.candidates G a T).isEmpty &&
     a.elements.any fun e => (ClauseSelection.candidates G e T).isEmpty
 
 /-- Grow the table from its frontier: each row adds the pairs its coverage
