@@ -472,7 +472,10 @@ it.
 
 **Answered requests.** The producer's candidate search asks the same subtype
 requests many times: for an expression it tries the claimed type and then
-every type of the unit's pool, coercing each to the target. The producer
+every type of the unit's pool, coercing each to the target; for a receiver,
+an array or an index it tries first the type the part synthesizes (a
+variable's slot type, a field's type read from a record), then the pool
+(`synthesizedFirst`). The producer
 answers a request asked again from its first answer: a table from source and
 target to `subtypeSearch`'s whole result, an exhaustion included
 (`CertificateProducer.Answered`), threaded through every search of a

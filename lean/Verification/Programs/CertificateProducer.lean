@@ -639,6 +639,25 @@ def decidedChain [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm 
     | none => ([], t)
   | t => ([], t)
 
+/-- The type a term's parts determine (typing by synthesis): a variable's
+slot type, and a field's or view's type read from a receiver whose
+synthesized type is one record clause. None for any other term. Search tries
+it before the pool's types. Untrusted: it only orders alternatives. -/
+@[nospecialize] def synthesized [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm → Option (Ty ι)
+  | .var i => Γ[i]?
+  | .readAt f a => (synthesized G Γ a).bind fun R => match expand G R with
+    | [.refs fs [] vs _ _ _ _] => (fs.lookup f).orElse fun _ => vs.lookup f
+    | _ => none
+  | _ => none
+
+/-- Candidate types for a term's part: the synthesized one first, then the
+pool's, each once. -/
+@[nospecialize] def synthesizedFirst [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι))
+    (a : Tm) (pool : List (Ty ι)) : List (Ty ι) :=
+  match synthesized G Γ a with
+  | some R => R :: pool.filter (· != R)
+  | none => pool
+
 /-- Search ordinary typing rules. Every recursive expression request decreases
 search fuel, including implicit let typing. Suggestions only prioritize candidate
 types; every premise is proved in the actual context, even when the suggestion
@@ -890,7 +909,7 @@ came from a different context. No execution budget is inspected. -/
       -- A key of a class within an index's reads through it: a string
       -- through a string index, a number through a number or string index, a
       -- symbol through a symbol index.
-      return (A :: pool).findSearch? fun R => do
+      return (synthesizedFirst G Γ a (A :: pool)).findSearch? fun R => do
         let [.dict _ [] _ ix _ _ _ _ _] := expand G R | none
         ix.findSearch? fun (Kx, E) =>
         [IndexKeys.strings, .numeric, .symbols].findSearch? fun KK => do
@@ -905,7 +924,7 @@ came from a different context. No execution budget is inspected. -/
               let ek ← recur Γ key K
               pure (coerceBy sub (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A)
     | .readAt f a =>
-      let direct := pool.findSearch? fun R => do
+      let direct := (synthesizedFirst G Γ a pool).findSearch? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
         -- an optional field, writable or readonly, at its type or `undefined`; a key a
         -- bound does not admit at the prototype's field or view.
@@ -946,7 +965,7 @@ came from a different context. No execution budget is inspected. -/
         pure (.node ⟨Γ,t,A⟩ (.readSummary k) [])
       return summarized.orElse fun _ => direct.orElse fun _ => splitReceiver a
     | .writeAt f a b =>
-      let direct := pool.findSearch? fun R => do
+      let direct := (synthesizedFirst G Γ a pool).findSearch? fun R => do
         let (fs,r) ← match expand G R with
           | [.refs fs [] _ _ _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
@@ -1005,10 +1024,10 @@ came from a different context. No execution budget is inspected. -/
         (checkTreeS G images e).bind fun _ => coerce G images aliases e A
     | .elemAt a i =>
       -- A store read through a union of array objects splits the receiver.
-      let direct := pool.findSearch? fun L => do
+      let direct := (synthesizedFirst G Γ a pool).findSearch? fun L => do
         let [.list T []] := expand G L | none
         let ea ← recur Γ a L
-        pool.findSearch? fun I => do
+        (synthesizedFirst G Γ i pool).findSearch? fun I => do
           let ei ← recur Γ i I
           match expand G I with
           | [.numLit b] => do
@@ -1042,10 +1061,10 @@ came from a different context. No execution budget is inspected. -/
         let .readAt _ receiver := a | none
         splitReceiver receiver
     | .setElem a i v =>
-      return pool.findSearch? fun L => do
+      return (synthesizedFirst G Γ a pool).findSearch? fun L => do
         let [.list T []] := expand G L | none
         let ea ← recur Γ a L
-        pool.findSearch? fun I => do
+        (synthesizedFirst G Γ i pool).findSearch? fun I => do
           let [.numLit b] := expand G I | none
           let ei ← recur Γ i I
           let k ← indexOfBits b
@@ -1054,7 +1073,7 @@ came from a different context. No execution budget is inspected. -/
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
           (checkTreeS G images e).bind fun _ => coerce G images aliases e A
     | .lenOf a =>
-      let store := pool.findSearch? fun L => do
+      let store := (synthesizedFirst G Γ a pool).findSearch? fun L => do
         let [.list _ []] := expand G L | none
         let ea ← recur Γ a L
         (A :: pool).findSearch? fun N =>
