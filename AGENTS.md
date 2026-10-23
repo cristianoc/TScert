@@ -109,8 +109,13 @@ its path. `SHARD=i/n` runs every n-th slice from the i-th, so n processes
 or agents split a census and share the stage store; a later run replays
 what an earlier one computed. `node dev/census.mts report <before>
 <after>` compares two censuses, each one record or its shards' records
-separated by commas: slices gained and lost, timeouts, changed outcomes
-and each stage's time. A census rerun with a longer `TSCERT_STEP_LIMIT`
+separated by commas: slices gained and lost, timeouts, changed outcomes,
+each stage's time and the movement of
+[statement coverage](docs/DESIGN.md#statement-coverage). `report <record>`
+prints a census's verified statement coverage per directory and file
+(`--per-function` adds each function), and `coverage <record>
+[--sources checkout|commit]` computes it for a record from the sources of
+the record's commit or of the checkout, running no slice. A census rerun with a longer `TSCERT_STEP_LIMIT`
 executes the stages that timed out again and replays the finished ones.
 
 A branch is ready to merge when `make test` and
