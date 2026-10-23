@@ -20,9 +20,9 @@ t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\m
 \mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.
 ```
 
-Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
-and $k$ a shape test
-drawn from $\{\mathsf{isNul},\mathsf{isUndef},\mathsf{isNullish},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}$.
+Here $`x_i`$ is a variable, given as a de Bruijn position, $`\ell`$ a heap location,
+and $`k`$ a shape test
+drawn from $`\{\mathsf{isNul},\mathsf{isUndef},\mathsf{isNullish},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}`$.
 The nullish test accepts null or undefined; the others recognize individual value shapes. Values are
 the subset
 
@@ -30,37 +30,37 @@ the subset
 v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),
 ```
 
-where $c ::= \mathsf{absent}\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)$ is a separate invocation
+where $`c ::= \mathsf{absent}\mid\mathsf{bound}(f,r,\vec p)\mid\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)`$ is a separate invocation
 descriptor, the call code. `bound` is the forwarding descriptor `.bind`
 creates: the target, the receiver and the argument prefix it saved, values
-that no field holds and no write can reach. $\mathsf{graph}$ is code whose
+that no field holds and no write can reach. $`\mathsf{graph}`$ is code whose
 body is a control-flow graph, as a program's is: a declared parameter count
-$m$, node expressions $E$, each node's continuation and handler $K$, an entry
-label $s$ and the captured values $\vec c$, invoked by a call or,
-construct-only, by `new` ($\kappa$), collecting a rest or not ($\varrho$)
+$`m`$, node expressions $`E`$, each node's continuation and handler $`K`$, an entry
+label $`s`$ and the captured values $`\vec c`$, invoked by a call or,
+construct-only, by `new` ($`\kappa`$), collecting a rest or not ($`\varrho`$)
 ([graph code](#graph-code)). Every closure the source creates, a class and a
 callable object included, is graph code; there is no other code. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value and one
-identity cell holding $\mathsf{null}$ to the heap and returns `obj h.length c`,
+identity cell holding $`\mathsf{null}`$ to the heap and returns `obj h.length c`,
 where `h.length` is the length before appending. Every allocation ends with
-its identity cell: an object value $\mathsf{objAt}(\mathit{fs},c,i)$ carries the
-locations $\mathit{fs}$ of its fields, its call code $c$ and the location $i$
+its identity cell: an object value $`\mathsf{objAt}(\mathit{fs},c,i)`$ carries the
+locations $`\mathit{fs}`$ of its fields, its call code $`c`$ and the location $`i`$
 of that cell, its identity, which no field names and no write reaches.
 `alloc a` abbreviates `make absent a`; creating code is `make (graph …) a`.
 Both use the same constructor and the same allocation step, `Step.makeV`.
 The code is not run during creation. There is no bare lambda value.
 
 Since that kernel, the values also include numbers (the bit pattern of the
-double), strings, bigints $\mathsf{bigint}(i)$ with $i\in\mathbb Z$ (a bigint is
-its integer, as a number is its double) and symbols $\mathsf{sym}(i)$ (a symbol
+double), strings, bigints $`\mathsf{bigint}(i)`$ with $`i\in\mathbb Z`$ (a bigint is
+its integer, as a number is its double) and symbols $`\mathsf{sym}(i)`$ (a symbol
 is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property
-keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
-$\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$,
-$\mathsf{isArray}$, $\mathsf{typeofObject}$, $\mathsf{hasKey}(\kappa)$, the singleton equalities of every primitive kind that carries a value
-($\mathsf{numEq}(b)$ by `Number::equal`, $\mathsf{strEq}(s)$, $\mathsf{boolEq}(q)$,
-$\mathsf{bigintEq}(i)$, each false on every other kind) and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
+keys $`\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)`$; and the tests include
+$`\mathsf{isNum}`$, $`\mathsf{isStr}`$, $`\mathsf{isBigint}`$, $`\mathsf{isSymbol}`$,
+$`\mathsf{isArray}`$, $`\mathsf{typeofObject}`$, $`\mathsf{hasKey}(\kappa)`$, the singleton equalities of every primitive kind that carries a value
+($`\mathsf{numEq}(b)`$ by `Number::equal`, $`\mathsf{strEq}(s)`$, $`\mathsf{boolEq}(q)`$,
+$`\mathsf{bigintEq}(i)`$, each false on every other kind) and $`\mathsf{truthy}`$, JavaScript's `ToBoolean`:
 
 ```math
 \mathsf{truthy}(v)=\mathsf{false}\iff v\in\{\mathsf{null},\mathsf{undefined},\mathsf{false},
@@ -68,17 +68,17 @@ $\mathsf{bigintEq}(i)$, each false on every other kind) and $\mathsf{truthy}$, J
 ```
 
 (`numberTruthy`: a number is falsy where it equals zero or is not equal to
-itself); every object, function, class, symbol and store is truthy. $\mathsf{isArray}$ holds of a
-plain object owning the array store key $\sigma$, which no source property
+itself); every object, function, class, symbol and store is truthy. $`\mathsf{isArray}`$ holds of a
+plain object owning the array store key $`\sigma`$, which no source property
 names, so it holds of exactly the arrays, as `Array.isArray` does of
 JavaScript's Array exotic objects:
-$\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\mathrm{dom}\mathit{fs}$,
-and false of every other value. $\mathsf{typeofObject}$ holds of
-$\mathsf{null}$ and of an object without call code, which is where `typeof`
-answers `"object"`: $\mathsf{typeofObject}(v)\iff v=\mathsf{null}\lor v=\mathsf{obj}(\mathit{fs},\mathsf{absent})$.
-$\mathsf{hasKey}(\kappa)$ is `in`: it holds of an object owning the key
-$\kappa$, whatever its code, or lacking it and holding under the prototype key
-$\pi$ an object of which it holds, as far as the heap reaches, and of no other
+$`\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\mathrm{dom}\mathit{fs}`$,
+and false of every other value. $`\mathsf{typeofObject}`$ holds of
+$`\mathsf{null}`$ and of an object without call code, which is where `typeof`
+answers `"object"`: $`\mathsf{typeofObject}(v)\iff v=\mathsf{null}\lor v=\mathsf{obj}(\mathit{fs},\mathsf{absent})`$.
+$`\mathsf{hasKey}(\kappa)`$ is `in`: it holds of an object owning the key
+$`\kappa`$, whatever its code, or lacking it and holding under the prototype key
+$`\pi`$ an object of which it holds, as far as the heap reaches, and of no other
 value. It is the one test that reads the heap (`tagHoldsIn`, `keyInChain`):
 
 ```math
@@ -90,17 +90,17 @@ bounded by the heap's length, so a chain the heap makes cyclic, which no
 JavaScript object has, answers false. Keys are fixed at allocation and no
 source writes a prototype, so its answer never changes. It is `in` for the
 keys the lowering admits ([SOURCE-MODEL](SOURCE-MODEL.md#guards)); JavaScript's `in`
-throws on a primitive. For $\kappa_C$, the key only class `C`'s prototype
+throws on a primitive. For $`\kappa_C`$, the key only class `C`'s prototype
 object owns, it is `instanceof C`: an object along whose chain that
 prototype is, and `false` of a primitive, as JavaScript's `instanceof`
 answers. Where the object owns the key or holds no prototype
-(`protoFree`) the answer is the heap-free $\kappa\in\mathrm{dom}\mathit{fs}$
+(`protoFree`) the answer is the heap-free $`\kappa\in\mathrm{dom}\mathit{fs}`$
 (`tagHoldsIn_of_protoFree`), which is what a type's answer states. Graph code
-records which invocation it admits, $\kappa\in\{\mathsf{call},\mathsf{construct}\}$:
+records which invocation it admits, $`\kappa\in\{\mathsf{call},\mathsf{construct}\}`$:
 JavaScript gives a function object `[[Call]]` and `[[Construct]]` separately,
 an arrow has only the first and a class only the second. A plain call
 dispatches only call code (`CallCode.callable` is false of construct code), and
-$\mathsf{new}\,f(\vec a)$ is its own term, which evaluates the callee, then
+$`\mathsf{new}\,f(\vec a)`$ is its own term, which evaluates the callee, then
 the actuals left to right, and runs only construct code, with `undefined` for
 the receiver:
 
@@ -119,31 +119,31 @@ the construct step's result is safe at the signature's result, one level below
 the budget, and its normal return meets the signature's effect, as a call's
 body does.
 
-**Allocation from parts.** $\mathsf{merge}_\delta(a,b)$ (`Tm.merge`)
-evaluates $a$, then $b$ (`mergeC1`, `mergeC2`), then reads, in the heap as it
-is, the fields $a$'s object owns but the array store $\sigma$, and the own
-enumerable data properties $b$ has, less the keys in $\delta$, and steps to
-the allocation of both, $b$'s over $a$'s:
+**Allocation from parts.** $`\mathsf{merge}_\delta(a,b)`$ (`Tm.merge`)
+evaluates $`a`$, then $`b`$ (`mergeC1`, `mergeC2`), then reads, in the heap as it
+is, the fields $`a`$'s object owns but the array store $`\sigma`$, and the own
+enumerable data properties $`b`$ has, less the keys in $`\delta`$, and steps to
+the allocation of both, $`b`$'s over $`a`$'s:
 
 ```math
 \frac{\mathsf{own}_h(v_a)=P\quad\mathsf{data}_h(v_b)=Q}
      {h,\ \mathsf{merge}_\delta(v_a,v_b)\to h,\ \mathsf{makeAt}(\mathsf{absent},\ P\lhd(Q\setminus\delta))}\ (\texttt{mergeV})
 ```
 
-where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$, of an
-object whose $\mathit{fs}$ lacks the host key $\kappa_{\mathsf{host}}$, is each key of
-$\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
-finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},c))$, of an object with
-any call code $c$ but a host object, is each string key of $\mathit{fs}$ but $\sigma$, $\pi$,
-the code field $\kappa_{\mathsf{code}}$ and $\kappa_{\mathsf{host}}$ at its value, then, for an array, each
-element under its index's decimal spelling; $\mathsf{data}_h$ of a string is
+where $`\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))`$, of an
+object whose $`\mathit{fs}`$ lacks the host key $`\kappa_{\mathsf{host}}`$, is each key of
+$`\mathit{fs}`$ but $`\sigma`$ at its value (the first entry of a key, as a read
+finds it); $`\mathsf{data}_h(\mathsf{obj}(\mathit{fs},c))`$, of an object with
+any call code $`c`$ but a host object, is each string key of $`\mathit{fs}`$ but $`\sigma`$, $`\pi`$,
+the code field $`\kappa_{\mathsf{code}}`$ and $`\kappa_{\mathsf{host}}`$ at its value, then, for an array, each
+element under its index's decimal spelling; $`\mathsf{data}_h`$ of a string is
 each code unit, a one-unit string as `elemAt` reads it, under its index's
 decimal spelling, as JavaScript's string wrapper owns them enumerable
-(`stringData`); $\mathsf{data}_h$ of
-$\mathsf{null}$, $\mathsf{undefined}$, a Boolean, a number, a bigint or a symbol
-is empty; and $P\lhd Q$ keeps $P$'s entries whose key $Q$ lacks, then $Q$'s
+(`stringData`); $`\mathsf{data}_h`$ of
+$`\mathsf{null}`$, $`\mathsf{undefined}`$, a Boolean, a number, a bigint or a symbol
+is empty; and $`P\lhd Q`$ keeps $`P`$'s entries whose key $`Q`$ lacks, then $`Q`$'s
 (`mergeParts`, `ownAll`, `ownData`, `mergeData`). A function the program
-creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`, spelled
+creates holds one field, under $`\kappa_{\mathsf{code}}`$ (`codeField`, spelled
 `[[code]]`, which no source key spells), which gives it a location; a copy
 takes none of it, as JavaScript's function owns no enumerable property. A
 class value the program creates holds that field and its static fields, which
@@ -156,7 +156,7 @@ value the heap lacks, or a term that is not a value there, reads as
 nothing itself; the `makeAt` it steps to does, as a literal's. Symbol-keyed
 fields are not read ([SOURCE-MODEL](SOURCE-MODEL.md#object-literals)).
 
-**Binary operators.** $a\mathbin{op}b$ (`Tm.arith`) evaluates $a$, then $b$
+**Binary operators.** $`a\mathbin{op}b`$ (`Tm.arith`) evaluates $`a`$, then $`b`$
 (`arithC1`, `arithC2`), then takes one step where the operator answers for the
 two values, or throws where JavaScript throws, and is stuck otherwise:
 
@@ -167,25 +167,25 @@ two values, or throws where JavaScript throws, and is stuck otherwise:
 \qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},\mathbin{\&},\mathbin{|},\ll,\gg,\ggg,<,\le,>,\ge,\equiv\}.
 ```
 
-$\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
-$\mathsf{binopThrows}$ is where JavaScript throws with no code of the
-program's run first, and $\mathit{err}_i$ the error object (`thrownError`, an
-object without fields whose identity cell the step appends at $i$, standing
+$`\mathsf{binop}`$ is JavaScript's operation on the operand kinds it models;
+$`\mathsf{binopThrows}`$ is where JavaScript throws with no code of the
+program's run first, and $`\mathit{err}_i`$ the error object (`thrownError`, an
+object without fields whose identity cell the step appends at $`i`$, standing
 for the `TypeError` or `RangeError` instance). Neither answers where JavaScript converts through code or
 coercions the calculus does not have:
 
-| Operands | Arithmetic ($+,-,*,/,\%,{*}{*},\hat{},\&,\vert,\ll,\gg,\ggg$) | Relational ($<,\le,>,\ge$) |
+| Operands | Arithmetic ($`+,-,*,/,\%,{*}{*},\hat{},\&,\vert,\ll,\gg,\ggg`$) | Relational ($`<,\le,>,\ge`$) |
 | --- | --- | --- |
-| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$, $\&$ and $\vert$ are exclusive or, and and or after `ToInt32` on both; $\ll$ and $\gg$ shift the left operand's `ToInt32` left (modulo $2^{32}$, read as signed) or right (sign-propagating) by the right operand's `ToUint32` modulo 32, and $\ggg$ shifts its `ToUint32` right by that count, zero-filling; $\%$ is `Number::remainder`, exact: $n-d\cdot q$ for $q$ the quotient truncated toward zero, with $n$'s sign (so `-4 % 2` is $-0$), NaN for a NaN or infinite $n$ or a NaN or zero $d$, and $n$ itself for an infinite $d$ or a zero $n$ | the IEEE order: false when either is NaN, the two zeros equal |
-| two bigints | the integer operation; $/$ truncates toward zero and $\%$ is the remainder it leaves, with the dividend's sign; throws for $/$ or $\%$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`); none for $\&,\vert,\ll,\gg,\ggg$ (`numberOnly`) | the integer order |
+| two numbers | the IEEE-754 double operation; $`{*}{*}`$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $`\hat{}`$, $`\&`$ and $`\vert`$ are exclusive or, and and or after `ToInt32` on both; $`\ll`$ and $`\gg`$ shift the left operand's `ToInt32` left (modulo $`2^{32}`$, read as signed) or right (sign-propagating) by the right operand's `ToUint32` modulo 32, and $`\ggg`$ shifts its `ToUint32` right by that count, zero-filling; $`\%`$ is `Number::remainder`, exact: $`n-d\cdot q`$ for $`q`$ the quotient truncated toward zero, with $`n`$'s sign (so `-4 % 2` is $`-0`$), NaN for a NaN or infinite $`n`$ or a NaN or zero $`d`$, and $`n`$ itself for an infinite $`d`$ or a zero $`n`$ | the IEEE order: false when either is NaN, the two zeros equal |
+| two bigints | the integer operation; $`/`$ truncates toward zero and $`\%`$ is the remainder it leaves, with the dividend's sign; throws for $`/`$ or $`\%`$ by $`0`$ and $`{*}{*}`$ by a negative exponent (a `RangeError`); none for $`\&,\vert,\ll,\gg,\ggg`$ (`numberOnly`) | the integer order |
 | a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
-| two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
-| a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
-| a Boolean, `null` or `undefined` and a number, bigint, Boolean, `null` or `undefined`, either order | none | the order of the two after `ToNumeric` (`relNumeric`): `undefined` is NaN, `null` and `false` are $+0$, `true` is $1$; so false where `undefined` is an operand |
+| two strings | $`+`$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
+| a string and a number, bigint, Boolean, `null` or `undefined`, either order | $`+`$ concatenates the string with $`\mathsf{str}`$ of the other, in operand order; others none | none |
+| a Boolean, `null` or `undefined` and a number, bigint, Boolean, `null` or `undefined`, either order | none | the order of the two after `ToNumeric` (`relNumeric`): `undefined` is NaN, `null` and `false` are $`+0`$, `true` is $`1`$; so false where `undefined` is an operand |
 | a symbol and a primitive, either order | throws (a `TypeError`: `ToString` or `ToNumeric` of a symbol) | throws |
 | anything else | none | none |
 
-Strict equality $\equiv$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
+Strict equality $`\equiv`$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
 except on two stores:
 
 ```math
@@ -197,13 +197,13 @@ i_1=i_2 & v_k=\mathsf{objAt}(\mathit{fs}_k,c_k,i_k)\\
 \end{cases}
 ```
 
-$\mathsf{sameValue}$ is false across kinds, `Number::equal` on two numbers
+$`\mathsf{sameValue}`$ is false across kinds, `Number::equal` on two numbers
 (NaN equals nothing, the zeros each other), and equality of the string, the
 bigint, the Boolean or the symbol, `null` and `undefined` each only to itself.
 An object's identity is the location of its identity cell, which only its
 allocation creates, fresh (`makeFields`): two objects are one object exactly
 when their identities are, with or without fields. Strict equality converts
-nothing, so it never throws ($\mathsf{binopThrows}$ is false for $\equiv$).
+nothing, so it never throws ($`\mathsf{binopThrows}`$ is false for $`\equiv`$).
 
 Loose equality (`==`, `Arith.looseEq`; `looseEquals`) follows
 [ECMA-262's `IsLooselyEqual`](REFERENCES.md#ecma-262) on these operand pairs;
@@ -237,26 +237,26 @@ Arrays need that audit too: default-hint conversion tries `valueOf` before
 standard string conversion. The host boundary excludes `document.all` and
 its browser-only `[[IsHTMLDDA]]` behavior.
 
-$\mathsf{str}(v)$ (`primString`) is JavaScript's `ToString` of a primitive
+$`\mathsf{str}(v)`$ (`primString`) is JavaScript's `ToString` of a primitive
 other than a symbol, which runs no code: a string is itself, `true`, `false`,
 `null` and `undefined` their names, a bigint its decimal integer with a leading
 `-` when negative, and a number `Number::toString` in radix 10
 (`numberToString`): `NaN`, `Infinity` with its sign, `0` for both zeros, and
-otherwise the fewest decimal digits $s$ whose value $s\cdot10^{d}$ rounds to
+otherwise the fewest decimal digits $`s`$ whose value $`s\cdot10^{d}`$ rounds to
 the double, the one closest to it where several have that length (the even one
 on a tie, as the specification's note recommends and engines do), written
 plainly up to 21 integer digits, as `0.` and up to six zeros below one, else
 in exponent form `d.ddde±x`. A symbol converts by throwing a `TypeError`,
-which $+$ with it does (`binopThrows`), and an object through its own
-`toString`/`valueOf`, which is code: $+$ with one is stuck.
+which $`+`$ with it does (`binopThrows`), and an object through its own
+`toString`/`valueOf`, which is code: $`+`$ with one is stuck.
 
 So the operation never computes on a value it would convert through code or a
 coercion it does not define: a string compared with a number, a Boolean in
 arithmetic and an object (whose `valueOf` is code) all leave the term stuck,
 which the typing rule rules out. The unary operators are this one with a
 constant right operand of the operand's family ([source
-forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
-and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
+forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $`-x=x*(-1)`$, $`+x=x*1`$
+and $`\sim x=x\mathbin{\hat{}}(-1)`$, exact on doubles (a sign flip, the identity,
 `ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`, `remBits`, `intAnd`, `intOr`, `toUint32`,
 `bigintArith`, `doubleIntOrder`, `utf16Units`, `primString`, `numberToString`
 (`Semantics/Calculus.lean`); their agreement with node's values rests on
@@ -271,8 +271,8 @@ review.
 \frac{}{h,\ \mathsf{elemAt}\;\mathsf{str}(s)\;\mathsf{num}(b)\ \to\ h,\ \mathit{codeUnitAt}(s,b)}\ (\texttt{elemStr})
 ```
 
-where $\mathit{units}(s)$ is $s$'s UTF-16 code units (`utf16Units`) and
-$\mathit{codeUnitAt}(s,b)$ is the one-unit string at the array index $b$
+where $`\mathit{units}(s)`$ is $`s`$'s UTF-16 code units (`utf16Units`) and
+$`\mathit{codeUnitAt}(s,b)`$ is the one-unit string at the array index $`b`$
 denotes (`indexOfBits`, so `-0` is index 0) below the length, and
 `undefined` at any other number: past the end, negative, fractional, NaN or
 infinite, JavaScript finds no own property and the built-in `String.prototype`
@@ -288,7 +288,7 @@ Every other member of a primitive is its wrapper prototype's: JavaScript's
 `String.prototype` (`Number.prototype`, `BigInt.prototype`,
 `Boolean.prototype`), and the read continues there. The calculus writes that
 wrapper as it is: a fresh object owning only `[[proto]]`,
-$\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]$ with $P$ the built-ins'
+$`\mathsf{makeAt}\;\mathsf{absent}\;[\mathsf{proto}]\;[P]`$ with $`P`$ the built-ins'
 prototype, from which `readProto` reads the member. No step is added.
 
 `make_fields_rule` proves heap and world extension once, with a result
@@ -365,7 +365,7 @@ $`k`$'s value converts to, holding $`a`$'s value; it is JavaScript's
 It is stuck on a key of no other kind; the key's conversion runs no code.
 
 and `indexProto`, `indexMissing` as `readProto`, `readMissing` at
-$\mathsf{key}(v)$:
+$`\mathsf{key}(v)`$:
 
 ```math
 \frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=l\quad h(l)=p}
@@ -418,10 +418,10 @@ mutually recursive types. The comparisons inspect every constructor field,
 including descriptor arity.
 
 Two different things are named here, and both run through the whole development.
-A **binding** lives in the environment $\rho$; a **location** $\ell$ is an address
-in the heap $h$. This is the usual store/heap pair of an ML-style operational
-semantics. A binding may *hold* an object: $\rho(x)=\mathsf{obj}(\ell,c)$. Below,
-$\ell$ abbreviates the plain-object value $\mathsf{obj}(\ell,\mathsf{absent})$.
+A **binding** lives in the environment $`\rho`$; a **location** $`\ell`$ is an address
+in the heap $`h`$. This is the usual store/heap pair of an ML-style operational
+semantics. A binding may *hold* an object: $`\rho(x)=\mathsf{obj}(\ell,c)`$. Below,
+$`\ell`$ abbreviates the plain-object value $`\mathsf{obj}(\ell,\mathsf{absent})`$.
 A function object carries graph code at the same kind of heap identity;
 [callable contracts](CALLABLES.md#callables) additionally constrain that code.
 
@@ -435,9 +435,9 @@ genuinely carries them — a certificate's binding transfer, and the wire format
 
 Assertions are attached to bindings, because bindings are what a checker can
 name; locations arise only during execution and never appear in a program. So
-$x\mapsto R$ is not a claim about $x$'s value but about the
-location that value *is*: there exist $\ell$ and $v$ with $\rho(x)=\ell$,
-$h(\ell)=v$ and $v\in R$. That one indirection is where aliasing enters, and it
+$`x\mapsto R`$ is not a claim about $`x`$'s value but about the
+location that value *is*: there exist $`\ell`$ and $`v`$ with $`\rho(x)=\ell`$,
+$`h(\ell)=v`$ and $`v\in R`$. That one indirection is where aliasing enters, and it
 is why the checked rules have
 [no frame rule](PROGRAM-TYPING.md#the-reference-operations): two names can hold
 the same location, and no assertion can say they do not.
@@ -447,7 +447,7 @@ arises only at run time and takes its contract from the world, never from a
 typing rule. A shape test is typed only in the guard of a conditional, by
 `ifTag`; it has no standalone rule. The source fragment uses a singleton test
 for a strict comparison with a singleton operand, the nullish test for `??` and
-for `== null`, and strict equality $\equiv$ for any other strict comparison. Every test is total on values.
+for `== null`, and strict equality $`\equiv`$ for any other strict comparison. Every test is total on values.
 
 Substitution operates on closed substituted values. `Bindings.lean` supplies
 scope and simultaneous closing substitution, which entering a node of graph
@@ -456,10 +456,10 @@ typing theorem uses semantic environments of closed values.
 
 ### Graph code
 
-A run of graph code is a term of its own: $\mathsf{goto}(E,K,l,\rho)$, about to
-enter node $l$ in the environment $\rho$, and
-$\mathsf{frame}(E,K,t,\rho,k,x)$, evaluating node expression $t$, then
-continuing by $k$, a throw out of $t$ going to the handler $x$. Neither is
+A run of graph code is a term of its own: $`\mathsf{goto}(E,K,l,\rho)`$, about to
+enter node $`l`$ in the environment $`\rho`$, and
+$`\mathsf{frame}(E,K,t,\rho,k,x)`$, evaluating node expression $`t`$, then
+continuing by $`k`$, a throw out of $`t`$ going to the handler $`x`$. Neither is
 source syntax (`sourceTerm` refuses both). An environment is a list of slots
 and the value every slot past it holds (`envOf`). Invocation enters the code
 with the receiver, the parameters padded as a closure's are, then the
@@ -467,7 +467,7 @@ captures, then the invoked object itself, the code's self entry (a recursive
 closure's read of itself, [recursive constants](SOURCE-MODEL.md#recursive-constants));
 entering a node instantiates its expression in the environment; the
 node's value then leaves the run or moves along an edge, whose slot map
-$\mu$ acts on the pushed environment as a program's does:
+$`\mu`$ acts on the pushed environment as a program's does:
 
 ```math
 \frac{r,\vec a\ \text{values}\quad\mathrm{binds}(\kappa,r)}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)),r,\vec a)\to h,\mathrm{entry}^{o}_\varrho(r,\vec a)}\ (\texttt{callGraph})
@@ -492,16 +492,17 @@ safe run calls sloppy code with objects only.
 \frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\mathrm{entry}^{o}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
 ```
 
-where $o$ is the invoked object, and code without a rest enters at once,
-$\mathrm{entry}^o_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c,o])$,
-and code with one first allocates the actuals past its $m$ parameters as a
+where $`o`$ is the invoked object, and code without a rest enters at once,
+$`\mathrm{entry}^o_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c,o])`$,
+and code with one first allocates the actuals past its $`m`$ parameters as a
 fresh store, found in slot 0, below the receiver,
-$\mathrm{entry}^o_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c,o])$
+$`\mathrm{entry}^o_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c,o])`$
 (`CallArguments.graphEntry`). Padding never enters the store. Code with
-$\kappa=\mathsf{construct}$ has no call step: a plain call of a class value
-throws. `new` on code with a rest is not yet a construction
-(`CallArguments.construction`): padding omitted actuals would change its
-store.
+$`\kappa=\mathsf{construct}`$ has no call step: a plain call of a class value
+throws. Construction runs construct code without a rest
+(`CallArguments.construction`), where padding omitted actuals constructs the
+same (`construction_pad`); a constructor with a rest parameter is refused
+([constructor rests](../WORK.md#constructor-rests)).
 
 ```math
 \frac{E_l=e\quad K_l=(k,x)}{h,\mathsf{goto}(E,K,l,\rho)\to h,\mathsf{frame}(E,K,e[\rho],\rho,k,x)}\ (\texttt{gotoEnter})
@@ -535,8 +536,8 @@ signature (`GraphCode.goto_safe`).
 ## One meaning for callable contracts
 
 The core equation is a behavioral promise, shared by fixed signatures, rest
-signatures, overloads and callable objects. Let $R_c$ be the receiver family,
-$\mathcal A$ describe the admitted lists of actual values and $R$ the result
+signatures, overloads and callable objects. Let $`R_c`$ be the receiver family,
+$`\mathcal A`$ describe the admitted lists of actual values and $`R`$ the result
 family. Then
 
 ```math
@@ -552,10 +553,10 @@ f\in\mathcal F(R_c,\mathcal A,R)(n,W)\iff
 ```
 
 This is `Invocable` together with `Safety.Promise`. The receiver is not an
-actual: it changes no arity, optional position or rest, and $\mathcal A$
+actual: it changes no arity, optional position or rest, and $`\mathcal A`$
 never sees it. A plain call passes `undefined`; a method call, the object the
 method was read from; `.call`, its first argument. A signature indifferent to
-its receiver states top. Weakening is contravariant in $R_c$ as in each
+its receiver states top. Weakening is contravariant in $`R_c`$ as in each
 domain: a function that ignores its receiver meets any receiver requirement,
 and one that reads its receiver cannot be widened to accept arbitrary ones. `Invoke` dispatches the
 saved code and yields a term; `Safe` describes its execution, including any
@@ -564,9 +565,9 @@ this lower-budget guarantee. Safety permits nontermination. Neither the
 contract nor the equation requires a particular parameter-binding descriptor.
 
 An imported interface method `m(P): R` is lowered to a writable `m` field
-whose function contract is $\mathcal F(I,P,R)$, where $I$ is the containing
+whose function contract is $`\mathcal F(I,P,R)`$, where $`I`$ is the containing
 interface's recursive graph node. Thus a call through `value.m` passes the
-required $I$ receiver; copying the function and calling it plainly passes
+required $`I`$ receiver; copying the function and calling it plainly passes
 `undefined` and cannot use that promise. This uses the same field and call
 rules as an explicitly function-valued property. It is a client contract
 relative to the imported declaration, not a proof of the method's implementation.
@@ -630,21 +631,26 @@ created, from its graph's check at each signature (`GraphCodeSpec`):
 
 [CallEffects.lean](../lean/Verification/Semantics/CallEffects.lean) extends exactly the callable equation above;
 graph code, expression effects and equation lowering read its contracts.
-For a signature effect $\epsilon$, replace
+For a signature effect $`\epsilon`$, replace
 its conclusion `Safe` with
 
 ```math
 \exists t.\;\mathrm{Invoke}(f,r,\vec v,t)\land
-\mathrm{SafePost}(R,Q_\epsilon(h),j,U,h,t).
+\mathrm{SafePostExc}(R,Q_\epsilon(r,h),X_\epsilon(r,h),j,U,h,t),
 ```
+
+where $`\mathrm{SafePostExc}`$ is `SafePost` with a postcondition
+$`X_\epsilon(r,h)`$ also on the heap a throw is raised in
+([throws](#computations-and-recursive-types)).
 
 All quantifiers and premises are unchanged: the guarantee holds at every future
 world and compatible entry heap, for every receiver and actual list admitted
 by that signature. Write the resulting family
-$\mathcal F_\epsilon(R_c,\mathcal A,R)$. An effect $`\epsilon = (\Phi, \pi, \varphi, \sigma)`$ is
+$`\mathcal F_\epsilon(R_c,\mathcal A,R)`$. An effect $`\epsilon = (\Phi, \pi, \varphi, \sigma, \theta)`$ is
 a [closed footprint](FOOTPRINTS.md#changes-and-footprints) $`\Phi`$, an
-optional promise $`\pi`$, and two Booleans: $`\varphi`$, a fresh result, and
-$`\sigma`$, the receiver's store excepted. Its postcondition, for a call
+optional promise $`\pi`$, and three Booleans: $`\varphi`$, a fresh result,
+$`\sigma`$, the receiver's store excepted, and $`\theta`$, the footprint
+bounding a throw as well (`Effect`). Its postcondition, for a call
 with receiver $`r`$, is the footprint's, on every old location but $`r`$'s
 array store where $`\sigma`$, and the result's store allocated by the call
 where $`\varphi`$ (`Effect.post`):
@@ -656,10 +662,15 @@ Q_{\epsilon}(r,h)(h',v)=\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(
 
 where $`\mathsf{Post}_\Phi^{P}`$ is the footprint's postcondition on the old
 locations $`l`$ satisfying $`P`$ (`Closed.HoldsOn`) and $`\mathsf{store}(v)`$
-the location of $`v`$'s array store (`storeOf`).
+the location of $`v`$'s array store (`storeOf`). On a throw, the footprint
+holds where $`\theta`$ is set (`Effect.excPost`):
+
+```math
+X_{\epsilon}(r,h)(h')=\theta\Rightarrow\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(r)}(h,h').
+```
 
 Two footprints are its extremes: the empty one, $`Q_{(\emptyset,\pi)}(h)(h',v)=(h\preceq h')`$,
-where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
+where $`h\preceq h'`$ means that $`h'`$ extends the heap list $`h`$ without changing
 any existing entry (`Closed.holds_empty`), and the one letting every location
 change, $`Q_{(\top,\pi)}(h)(h',v)=(|h|\le|h'|)`$, which every run meets
 (`Closed.holds_top`, `Closed.top_safe`).
@@ -677,16 +688,18 @@ Membership of $`v_p`$ is taken at the world and heap of the return. One
 signature covers another when its footprint is within the other's, their
 promises are the same, it states a fresh result where the other does, and it
 excepts the receiver's store only where the other does or lets everything
-change (`Effect.covers`); a conjunction of signatures with the same promise
-and exception meets their footprints (`Effect.meet`). A bound function
+change, and bounds a throw where the other does (`Effect.covers`); a
+conjunction of signatures with the same promise and exception meets their
+footprints and bounds a throw where both do (`Effect.meet`). A bound function
 forwards to its target with a saved receiver: its signature keeps the fresh
 result and lets everything change where the target's excepts the receiver's
 store (`Effect.drop`). The promises state a type
 guard's and an assertion function's promise
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. This is a guarantee at normal
-return, not a ban on intermediate writes, a termination claim, or preservation
-on an exceptional exit. A caller catching an exception cannot recover entry
-heap facts from this effect. A callback that temporarily mutates and restores
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. The effect
+bounds the heap at a normal return, and at a throw where $`\theta`$ is set;
+it does not bound intermediate writes or claim termination. Where
+$`\theta`$ is unset, a caller catching an exception recovers no entry heap
+fact from the effect. A callback that temporarily mutates and restores
 state must still satisfy ordinary safety for all intermediate execution.
 
 `PromiseWith` formalizes this equation; `PromiseWith.erase` forgets the
@@ -698,8 +711,10 @@ the qualified promise without access to the body.
 [GraphCode.lean](../lean/Verification/Programs/GraphCode.lean) checks ordinary
 graph evidence and the effect together in `codeCheckedUsing`; `codeChecked_sound`
 establishes the semantic contract used by fixed and variadic closure introduction.
-The positive type graph carries the effect on every signature. Source export
-and inference still need integration.
+The positive type graph carries the effect on every signature; the source
+side proposes and certifies effects as
+[inferred call effects](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
+states.
 
 This remains a value type, despite mentioning heaps: membership quantifies over
 **all** eligible entry heaps. It does not store an observation about the current
@@ -718,7 +733,8 @@ traversal and hence result density. An unrestricted callback justifies only a
 sparse result. The host premise is explicit in the
 [boundary](SOURCE-MODEL.md#exact-contracts-and-native-effects); custom species are
 outside this semantics. Native compliance remains a separate review obligation,
-not a consequence of `PromiseWith`'s Lean proofs. The [planned typing rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
+not a consequence of `PromiseWith`'s Lean proofs. The
+[typing rules for inferred effects](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
 state where the callback guarantee is established and consumed.
 
 ## Argument-list preparation
@@ -758,9 +774,9 @@ turns `invoke (bound f r₀ p⃗) r a⃗` into `invoke f r₀ (p⃗ ++ a⃗)`, d
 receiver `r` it was given, so binding a bound function forwards to it, which
 forwards with the first saved receiver.
 `CallEffects.callsT_bound` proves the residual contract: a target meeting
-$(R_t, \vec P \mathbin{+\!\!+} \vec D, R)$ with a saved receiver in $R_t$ and a
-saved prefix in $\vec P$ gives an object meeting $(R_c, \vec D, R)$ for any
-$R_c$, and `CallEffects.restsT_bound` the same for a variadic target, whose residual keeps
+$`(R_t, \vec P \mathbin{+\!\!+} \vec D, R)`$ with a saved receiver in $`R_t`$ and a
+saved prefix in $`\vec P`$ gives an object meeting $`(R_c, \vec D, R)`$ for any
+$`R_c`$, and `CallEffects.restsT_bound` the same for a variadic target, whose residual keeps
 its rest, when the rest admits the prefix's values past the fixed positions in
 front of any pack it admits, as an element rest does. There is no forwarding wrapper closure: construction and
 `new.target` are not modelled, and a bound function has no own fields.
@@ -851,8 +867,10 @@ exception family holds (`ErrorsIn`, `builtinExc_errors`).
 Every composition lemma takes, beside its context's step rule, the context's
 throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
 `HeapObservations.bind`); `thrown_safe` makes a term throwing a value of
-$`\Xi`$ safe at every type. `SafePost` is the same with no postcondition on a throw: the facts it
-states describe the heap a value is produced in.
+$`\Xi`$ safe at every type. `SafePost` adds a postcondition on the heap a
+value is produced in, and none on a throw; `SafePostExc` adds one on the heap
+a throw is raised in too
+([ExceptionalPosts.lean](../lean/Verification/Semantics/ExceptionalPosts.lean)).
 
 `SafeGraph` is the same predicate one level up, for the machine that runs a
 control-flow graph rather than a single term. Its states are
@@ -861,19 +879,19 @@ control-flow graph rather than a single term. Its states are
 s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k,x)\mid\mathsf{done}(v)\mid\mathsf{raised}(v),
 ```
 
-where $p$ is a program point (a node label, not a location), $\rho$ an
-environment of closed values, $k$ a
-[continuation](PROGRAM-TYPING.md#checked-control-flow-graphs) and $x$ the
+where $`p`$ is a program point (a node label, not a location), $`\rho`$ an
+environment of closed values, $`k`$ a
+[continuation](PROGRAM-TYPING.md#checked-control-flow-graphs) and $`x`$ the
 node's handler, if it has one. Entering a node
-instantiates its term against $\rho$; the term then steps as usual; a value meets
+instantiates its term against $`\rho`$; the term then steps as usual; a value meets
 the node's continuation, which either finishes the run or moves to the next label
 with a transformed environment; a throw goes to the handler, the thrown value
-bound, or without one ends the run in $\mathsf{raised}(v)$. `SafeGraph Ξ P T n W h s`
-says that at a positive budget the state is $\mathsf{done}(v)$ with $v\in T$,
-or $\mathsf{raised}(v)$ with $v$ closed and in $`\Xi`$, or it can take one
+bound, or without one ends the run in $`\mathsf{raised}(v)`$. `SafeGraph Ξ P T n W h s`
+says that at a positive budget the state is $`\mathsf{done}(v)`$ with $`v\in T`$,
+or $`\mathsf{raised}(v)`$ with $`v`$ closed and in $`\Xi`$, or it can take one
 graph transition, spending a budget and preserving heap satisfaction in an
 admissible future, and remain safe there. `Safe` is the special case with no
-graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
+graph. Starting a graph means starting at $`\mathsf{at}(p,\rho)`$ for the entry
 point and the input environment.
 
 `CallableConjunctions.objectsT` combines invariant field requirements and
@@ -901,17 +919,19 @@ in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 
 ## The array invariant
 
-`Array.isArray` holds of an object owning the store key $\sigma$
+`Array.isArray` holds of an object owning the store key $`\sigma`$
 ([operational language](#operational-language)); what makes such an object an
 array of `Array.prototype` is an **invariant** of every object the program
 receives or allocates: it holds a possibly sparse store and the built-in prototype, and
 owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
-which a type describes. With $\mathcal B$ the graph's built-ins (`ArrayBuiltins`: the
-row of `ArrayProto`, $P_{\mathcal B}$; the row of `unknown`, $U_{\mathcal B}$;
-and $N_{\mathcal B}$, `ArrayProto`'s declared keys plus `constructor` and
-`then`):
+which a type describes. With $`\mathcal B`$ the graph's built-ins (`ArrayBuiltins`: the
+row of `ArrayProto`, $`P_{\mathcal B}`$; the row of `unknown`, $`U_{\mathcal B}`$;
+and $`N_{\mathcal B}`$, `ArrayProto`'s declared keys plus `constructor`,
+`then` and `toJSON`, `RequestJson.arrayExcludedKeys`; the three keep species
+construction standard, keep an array no thenable during promise resolution,
+and keep `JSON.stringify` from calling a hook of an array):
 
 ```math
 \mathsf{Arr}_{\mathcal B}{}_n(W,v)\iff\forall\mathit{flds}.\;
@@ -954,9 +974,9 @@ built-ins' `unknown` is
 ```
 
 (`builtinExc`), the graph's exception family ([throws](#computations-and-recursive-types)).
-The invariant reads the world only: the contract of $\sigma$'s location
+The invariant reads the world only: the contract of $`\sigma`$'s location
 implies a store of values of `unknown` in every world and heap to come, and
-the contract of $\mathsf{proto}$'s implies `ArrayProto`; $`U_{\mathcal B}`$
+the contract of $`\mathsf{proto}`$'s implies `ArrayProto`; $`U_{\mathcal B}`$
 and $`P_{\mathcal B}`$ are read below the level, through those contracts, so
 the recursion through `unknown`'s own meaning is guarded. A world grows only
 by appending contracts and never replaces one, so the invariant is admissible
@@ -966,18 +986,18 @@ by appending contracts and never replaces one, so the invariant is admissible
 fixed at its allocation, so only allocation creates a value the invariant is
 about:
 
-- an allocation from named fields (`HasTyUsing.alloc`) owning $\sigma$ is typed only
+- an allocation from named fields (`HasTyUsing.alloc`) owning $`\sigma`$ is typed only
   as a built-in array: its store field at a store type whose positions
   are of JavaScript values, each of which is a value of `unknown`
   (`sourceTy_exc`, `unknownTy_sound`), its prototype field at
-  $P_{\mathcal B}$, no name among $N_{\mathcal B}$ (`allocBuiltins`,
-  `allocBuiltins_sound`); every other allocation owns no $\sigma$
+  $`P_{\mathcal B}`$, no name among $`N_{\mathcal B}`$ (`allocBuiltins`,
+  `allocBuiltins_sound`); every other allocation owns no $`\sigma`$
   (`builtinInvariant_of_lookup`);
-- a literal allocated at a dictionary names neither $\sigma$ nor the prototype
+- a literal allocated at a dictionary names neither $`\sigma`$ nor the prototype
   key (`HasTyUsing.allocDict`);
 - a merge, the copy a spread or a key-adding write is, allocates the
   accumulator's fields but its store and the source's copied keys and index
-  keys, never $\sigma$ (`ObjectMerge.mergeParts_store`);
+  keys, never $`\sigma`$ (`ObjectMerge.mergeParts_store`);
 - closures, bound functions and class values carry code, and `isArray` is false
   of them;
 - a write stores a value at an existing location and adds no key; the heap is
@@ -1078,20 +1098,20 @@ An observation of the result excluding `undefined` proves presence for an
 optional key. An observation admitting it retains both possibilities.
 The [predicate vocabulary](POSITIVE-TYPES.md#state-assertion-grammar) includes
 numeric singletons and the whole number family.
-The $=$ atoms mention only $\rho$; the $\mapsto$ atoms mention $h$ as well, and
-that is the only difference that matters. $x=R$ abbreviates membership in the
-disjunction of predicates in $R$. For constant predicates this is a disjunction
+The $`=`$ atoms mention only $`\rho`$; the $`\mapsto`$ atoms mention $`h`$ as well, and
+that is the only difference that matters. $`x=R`$ abbreviates membership in the
+disjunction of predicates in $`R`$. For constant predicates this is a disjunction
 of equalities; the numeric-family predicate also admits any numeric value.
-Write $\Pi$ for a list of them. The remaining forms mention $h$ as
-well. Write $\Sigma$ for a list of those. Both are read as the conjunction of
-their atoms and extended with a comma, exactly as $\Gamma$ is; neither carries
+Write $`\Pi`$ for a list of them. The remaining forms mention $`h`$ as
+well. Write $`\Sigma`$ for a list of those. Both are read as the conjunction of
+their atoms and extended with a comma, exactly as $`\Gamma`$ is; neither carries
 ownership or disjointness, and the atoms are duplicable, so there is no
 separating conjunction to write.
 
 That division is the whole state discipline. No write and no call can disturb
-$\Pi$, because nothing in $\Pi$ speaks about the heap: two copied references remain
+$`\Pi`$, because nothing in $`\Pi`$ speaks about the heap: two copied references remain
 the same location after any write, and a constant a variable is equal to does not
-change when a cell does. Everything in $\Sigma$ is a claim about the heap as it is
+change when a cell does. Everything in $`\Sigma`$ is a claim about the heap as it is
 now, so a write to an unknown location or a call to an unknown function can
 falsify any of it. Allocation is the exception that proves it: a fresh cell
 cannot be one an existing fact names, so allocation preserves both. The
@@ -1100,12 +1120,12 @@ checked `allocated` rule applies to both plain and callable objects through
 kinds of bag and retain their actual descriptor in the read links. Closure
 bodies may mutate when called; allocating their code does not execute them.
 
-`ValueHolds` and the alias branch of the links in [HeapLinks.lean](../lean/Verification/Semantics/HeapLinks.lean) interpret $\Pi$;
-`HeapFacts.Holds` and the read branch interpret $\Sigma$. The implementation stores
+`ValueHolds` and the alias branch of the links in [HeapLinks.lean](../lean/Verification/Semantics/HeapLinks.lean) interpret $`\Pi`$;
+`HeapFacts.Holds` and the read branch interpret $`\Sigma`$. The implementation stores
 them as three lists — cell facts, value facts, and links carrying an `alias`
 flag — so the links list straddles the division: the flag is what says which side
 a link is on. [Program typing](PROGRAM-TYPING.md#the-reference-operations) states
-the rules over $\Pi$ and $\Sigma$; the
+the rules over $`\Pi`$ and $`\Sigma`$; the
 [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) owns the notation
 for what a source claim may say.
 
@@ -1127,30 +1147,30 @@ current contents.
 the operation and composition rules using this predicate;
 [SOURCE-MODEL](SOURCE-MODEL.md#current-content-assertions) owns the graph-integration plan.
 
-## What the checked development establishes
+## Lean files
 
-- [Rules.lean](../lean/Verification/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
-  testing and branching.
-- `ProgramTyping.lean` proves safety by induction on syntactic typing
-  derivations (`HasTyUsing.sound`).
-- `ProgramCertificates.lean` checks finite program evidence and proves an
-  accepted tree a derivation (`checkTreeUsing_sound`).
-- `PointClaims.lean` checks supplied environment claims against individual
-  incoming edges and proves environment transfer (`checkEdge_sound`,
-  `checkMapped_sound`).
-- `ControlFlow.lean` enumerates every actual node and outgoing edge, handler
-  edges included, then proves that every run from an accepted entry is safe:
-  it returns at the result type, ends in a throw of the exception family, or
-  takes a transition (`accepted_inputs_safe`), including cyclic graphs. It
-  reuses expression steps and adds explicit dispatch, transfer and handler
-  steps.
-- `PositiveNormalization.lean` proves the clause meet sound (`meet_sound`).
-- `PositiveRules.lean` defines declarative subtype rules and proves their
-  semantic soundness; `SchemeInstances.lean` adds instances of a scheme row and
-  `PairFamilies.lean` families of pairs.
-- `PositiveCertificates.lean` proves checker soundness for those rules
-  (`checkUsing_sound`) and transports accepted subtyping to value
-  subsumption (`acceptedUsing`).
+The modules of `lean/Verification/Semantics/` not introduced above:
+
+- [Rules.lean](../lean/Verification/Semantics/Rules.lean) proves the semantic
+  typing rules for calls, heap operations, shape tests and branching, which
+  program safety proofs are assembled from.
+- [AllocationWorlds.lean](../lean/Verification/Semantics/AllocationWorlds.lean)
+  proves allocation safe at the successor world its field contracts determine
+  (`allocation_safe`), over a fixed choice of world annotations for an
+  execution (`OperationWorlds.Policy`, `SafeWith`, erased to `Safe` by
+  `OperationWorlds.erase`) and the configurations of
+  [OperationResults.lean](../lean/Verification/Semantics/OperationResults.lean).
+- [Purity.lean](../lean/Verification/Semantics/Purity.lean) and
+  [HeapKnowledge.lean](../lean/Verification/Semantics/HeapKnowledge.lean):
+  executable purity checks and primitive heap facts for expression
+  postconditions ([the checked callback contract](FOOTPRINTS.md#the-checked-callback-contract)).
+- `Footprints.lean`, `ClosedFootprints.lean`, `FootprintProvenance.lean`,
+  `FootprintStability.lean` and `FootprintNatives.lean` are specified in
+  [FOOTPRINTS](FOOTPRINTS.md).
+
+The program layer (syntactic typing, certificates, control-flow graphs) is
+specified with its Lean files in [Program typing](PROGRAM-TYPING.md#lean-files-and-adding-a-rule),
+the type layer in [Positive types](POSITIVE-TYPES.md#lean-files-and-validation).
 
 ## A design constraint
 
@@ -1167,22 +1187,15 @@ Lean proof. The maintained combination rule uses a conservative shape
 condition instead. The law holds in set-theoretic semantic subtyping
 ([Frisch, Castagna and Benzaken 2008](REFERENCES.md#frisch-castagna-and-benzaken-2008)), which has no state.
 
-## Remaining scope
+## Model limits
 
-The source adapter and graph consumer are connected; their guarantees are in
-[Program typing](PROGRAM-TYPING.md) and the
-[request protocol](REQUEST-PROTOCOL.md). Source-to-graph correspondence is
-not proved: the lowering is a trusted step
-([trust surface](DESIGN.md#trust-surface)). Generic bodies are graph requests
-over parameter rows, certified at every assignment of those rows
-([generic bodies](DESIGN.md#generic-bodies)); general difference and negation
-types are not in the calculus. A receiver is bound unchanged: sloppy
-code's global-object substitution and primitive boxing have no step
+Source-to-graph correspondence is not proved: the lowering is a trusted step
+([trust surface](DESIGN.md#trust-surface)). General difference and negation
+types are not in the calculus. A receiver is bound unchanged: sloppy code's
+global-object substitution and primitive boxing have no step
 ([graph code](#graph-code)); `new.target` and a bound function's reflective
 properties (`name`, `length`) are not modelled, and the source forms that
-would need them are refused. What the source
-fragment admits is summarised in the
-[README](../README.md#status); what it refuses, on principle or
-as a model limit, is the [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary),
-and the open work is
-[next steps](../WORK.md#next-steps).
+would need them are refused ([fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary)).
+Generic bodies are certified at every assignment of their parameter rows
+([generic bodies](DESIGN.md#generic-bodies)). Open work is in
+[WORK](../WORK.md#next-steps).
