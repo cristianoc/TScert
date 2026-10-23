@@ -337,6 +337,13 @@ def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Do
     T, functions, init⟩
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
+  -- A statement entry's current contents name a field of every record arm
+  -- of the binding's type: the first such claim that does not is located.
+  for f in d.functions do
+    for e in f.entries do
+      for b in e.bindings do
+        if validType d.types b.type && !validCurrent d.types b.type b.current (paths := true) then
+          throw s!"invalid source claims: invalid current-contents field of '{b.name}' at the entry at {e.start}: a field some arm of its type does not name, or an invalid path"
   if !d.functions.all (validFunction d.types) then
     throw "invalid source claims: duplicate identity, span, binding or type labels"
   if (d.functions.map (fun f => (f.name,f.namePos))).eraseDups.length != d.functions.length then
