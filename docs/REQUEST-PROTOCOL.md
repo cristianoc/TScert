@@ -362,7 +362,9 @@ each seeing the codes before it; the program is then checked seeing them
 all. The request's expression obligations in the
 [bundle](#source-evidence-bundle) use the same summaries.
 
-A node's evidence (`NodeEvidence`) has the fields:
+A node's evidence (`NodeEvidence`) has the fields below, given here as the
+values they denote; the [evidence document](#evidence-document) writes each
+sequent, derivation and heap knowledge by reference to its tables:
 
 - `ordinary`: the ordinary typing derivation of its expression, whose root
   is the node's sequent: `{"proof": {"tree": d}}`, a derivation tree `d`,
@@ -744,12 +746,65 @@ determine this evidence order.
 declares the bundle and checks its graph interfaces and expression
 obligations.
 [SourceClaimJson.checkJson](../lean/Verification/Source/Claims/Json.lean)
-reconstructs the plans from Fragment and SourceClaims, strictly decodes the
-bundles and checks every certified request.
+reconstructs the plans from Fragment and SourceClaims, decodes the bundles
+(`EvidenceWire.decode`) and checks every certified request.
+
+### Evidence document
+
+A bundle is written as typed tables and the responses and obligations that
+name their entries by position
+([EvidenceWire.lean](../lean/Verification/Source/EvidenceWire.lean)):
+
+```json
+{ "types": [T, …], "contexts": [[t, …], …], "links": [link, …],
+  "knowledge": [{"cells": [...], "values": [...], "links": [l, …]}, …],
+  "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
+  "functions": [response, …], "obligations": [[p, …], …] }
+```
+
+`T` is a type (a list of labels), `link` a [heap link](#heap-facts) and
+`r` a [rule](#rules); `t`, `c`, `l` and `p` are positions in `types`,
+`contexts`, `links` and `proofs`. A response is as in [evidence](#evidence),
+its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
+`"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
+`null`; `knowledge` and `output` are positions in `knowledge`; a step's
+`proof` is a position in `proofs`. Edges, handlers, promise facts and read
+summaries are written in full. An obligation list names its derivations in
+`proofs`.
+
+A document $`D`$ denotes the bundle its references unfold to, each
+derivation's premises earlier entries of `proofs`:
+
+```math
+\begin{aligned}
+\mathit{type}(t) &= D.\mathit{types}[t] \qquad
+\mathit{context}(c) = [\,\mathit{type}(t) \mid t \in D.\mathit{contexts}[c]\,] \\
+\mathit{knowledge}(k) &= \langle \vec f, \vec g, [\,D.\mathit{links}[l] \mid l \in \vec l\,]\rangle
+  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l\rangle \\
+\mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), m, \mathit{type}(t)\rangle, r,
+  [\,\mathit{proof}(p) \mid p \in \vec p\,])
+  \quad\text{where } D.\mathit{proofs}[k] = \langle \langle c, m, t\rangle, r, \vec p\rangle
+  \text{ and } p < k \text{ for every } p \in \vec p
+\end{aligned}
+```
+
+A document is refused when its shape is not this one (strictly, as every
+document), when a reference is no entry of its table, and when a
+derivation names a premise at or after its own position, so a document has
+no cycle. A document may state an entry twice or not use it: the bundle it
+denotes is the same. The decoder builds each table in order, each entry
+from the entries it names, so an entry named twice is one value of the
+decoded bundle (`EvidenceWire.decode`). Given the types and contexts it
+built, the derivations table satisfies the equation of $`\mathit{proof}`$
+above (`EvidenceWire.proofs_unfold`), which has one solution
+(`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
+direct lookups, trusted code. Search writes each type, context, link,
+knowledge and derivation once (`EvidenceWire.encode`), an untrusted
+choice.
 
 ## Proved boundary and validation
 
-`checkJson_safe` proves that acceptance yields the strictly decoded bundle
+`checkJson_safe` proves that acceptance yields the decoded bundle
 and a successful `checkRequests` over the requests reconstructed from the
 source and claims. Each request's check is `verify`, which binds the
 certificate to the requested point annotations (`verify_eq`, through

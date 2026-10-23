@@ -215,36 +215,58 @@ targets repeated proof construction in the larger search stage.
 
 ## Stage 3: hash-consed wire structure
 
-**Conjectured.** Intern types, contexts, sequents, knowledge and existing proof
-nodes during construction. Encode typed arrays with backward references;
-check kind, bounds and acyclicity. Compare full structure on hash collisions.
-Decode into shared structures and retain sharing through equality, traversal
-and serialization. Mathematical unfolding supports proofs; executable
-decoding must not expand a small DAG into a large tree.
+**Proved and cited — the document.** A bundle is written as typed tables
+of types, contexts, links, heap knowledge and derivation nodes, and the
+responses and obligations naming their entries by position
+([evidence document](../REQUEST-PROTOCOL.md#evidence-document),
+[EvidenceWire.lean](../../lean/Verification/Source/EvidenceWire.lean)). A
+derivation's premises are earlier entries of its table; a reference is a
+position in the table its field's kind gives. The decoder reads the shape
+strictly, then builds each table in order, each entry from the entries it
+names: a reference past its table, or a premise at or after its
+derivation, is refused, so kind, bounds and acyclicity are checked. Given
+the types and contexts it built, the derivations table satisfies the
+unfolding equations (`proofs_unfold`), which have one solution
+(`unfold_unique`): resolution of derivations preserves the unfolded
+structure. Types, contexts, knowledge and nodes are resolved by direct
+lookups, audited trusted code. An entry named twice is one value of the decoded bundle.
 
-Begin with exact contexts. Context deltas require separate measurement and
-`resolveContext_sound` for sequential `push`/`set`, bounds and slot order.
-They confer no logical weakening.
+**Cited — checking.** The checker reads the decoded bundle, the bundle the
+references unfold to, through the existing checks: reference-aware checking
+is the existing checking of that bundle, its transport under reassignment
+the existing one, and every inspector, promises and footprints included,
+reads the same rules and premises. `checkJson_safe` keeps its premise and
+its safety conclusions; `DocumentSafe` names the decoder,
+`EvidenceWire.decode`. A derivation named
+twice is checked at each use: storage sharing is no checking cache. The
+`Answered` subtype-search cache is unchanged.
 
-Storage sharing is independent of semantic checked-once reuse. Any checking
-cache additionally keys the exact judgment and reconstructed scope described
-below. Image comparison reuse does not discharge instance admissibility,
-bounds, kinds, signatures or effects.
+**Cited — what is interned.** Search writes its bundle through
+`EvidenceWire.encode`, which interns each type, context (by its types'
+positions), link, heap knowledge (by its facts and its links' positions)
+and derivation node (by its claim, rule and premises' positions), comparing
+keys in full on a hash collision. A sequent is written inside its
+derivation node, its context and type by reference: in the measured
+certificates distinct sequents and distinct derivation nodes nearly
+coincide (`moduleFunction`, 3,823 and 3,822). Contexts are exact: their table holds
+0.08 MB of `moduleFunction`'s 5.8 MB, so context deltas are not taken.
+Edges, handlers, promise facts and read summaries are written in full: of
+`moduleFunction`'s 5.8 MB, edges hold 1.25 MB, yields 0.33 MB, read
+summaries 0.10 MB and handlers 0.01 MB; the value facts inside knowledge
+entries hold 1.4 MB.
 
-**Required lemmas.** Reference resolution preserves the unfolded structure;
-reference-aware checking implies existing checking and transports under
-reassignment. Every proof-sensitive inspector, including promises and
-footprints, observes the same rule and premise judgments.
+**Trust.** The reference decoder is trusted code; its resolution of
+derivations is proved to unfold, its lookups of the other tables audited. The shape of the tables is read by `decodeStrict`, whose
+`fromJson`/`sameJson` round trip stays as trusted as before. Interning and
+hashing are untrusted; collision resistance is not assumed.
 
-**Trust.** Reference decoding and reference-aware checking change trusted code.
-Interning and hashing in search remain untrusted; collision resistance is
-not an assumption.
-
-**Conjectured gain.** Six-byte-reference modeling gives 154.4→5.5 MB and
-410.7→68.2 MB before earlier stages. These are total baseline estimates,
-not incremental savings. The approximately 3.2% reduction in counted
-`moduleFunction` checks makes this primarily a wire, memory and decoding
-optimization. Preserve the existing `Answered` subtype-search cache.
+**Cited — measured, 2026-10-23.** See the
+[Certificate size](../../WORK.md#status) row: certificate bytes fall by
+roughly five times on the three `fragment-expressions.mts` slices and the
+two heap-knowledge slices, check memory with them. The residual bytes of
+`collect` and `closeStatements` are their distinct links (55.7 MB of
+`collect`'s 77.5 MB), Stage 4's target. Checking proper dominates
+`moduleFunction`'s check after this stage.
 
 ## Stage 4: allocation freshness and slot-relative heap knowledge
 
