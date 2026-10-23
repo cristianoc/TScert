@@ -1182,7 +1182,7 @@ code's global-object substitution and primitive boxing have no step
 properties (`name`, `length`) are not modelled, and the source forms that
 would need them are refused. What the source
 fragment admits is summarised in the
-[README](../README.md#current-source-fragment); what it refuses, on principle or
+[README](../README.md#status); what it refuses, on principle or
 as a model limit, is the [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary),
 and the open work is
 [next steps](../WORK.md#next-steps).

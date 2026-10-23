@@ -352,5 +352,5 @@ Start with a motivating source and its negative control, registered in
 [cases.mts](../pipeline/cases.mts). Candidate inference belongs in OCaml;
 acceptance obligations belong in Lean. The
 [agent rules](../AGENTS.md#iterating-run-what-the-change-touches) set the
-checks to run, and [documentation ownership](../README.md#documentation-ownership)
+checks to run, and [documentation ownership](../docs/DESIGN.md#documentation-map)
 the document each fact belongs in.
