@@ -34,34 +34,41 @@ it, in this order:
 - The producer's explanation: `producer --explain fragment.json` runs the
   ordinary inference and prints, instead of claims, the forms it met whose
   failure has a stated reason, each at its source span
-  (`Proposal.explain`). The one whose span meets the failed obligation's,
-  the innermost, names it. The forms and their reasons: a `for...of` loop
-  or a spread over a union of iterable kinds, an arm of which is no array
-  (one host kind's iteration is stated, `%Iterate:K%`, where the whole
-  iterable is of it; an iterable the program defines, or a union with one,
-  runs the iterator protocol); an open record or `unknown` that
-  `Array.isArray` or `instanceof Array` found an array, used as one (the
-  object owns an array's store, not a proven array of `Array.prototype`);
-  an array used as a record naming `length`, a mutable tuple's `length` at
-  its arity; where a signature binding more parameters is expected, a
-  function value known only by its type, a module function with a rest
-  parameter, or a generic one; a named function where a signature
-  indifferent to the receiver it requires is expected (its type is its
-  annotated signature); an instance of a declaration with
-  generic methods at an instance of another declaring them otherwise
-  (quantified signatures are related binding the same rows); a record at
-  an index signature (TypeScript's implicit index signature); a mutable array or a writable field at a wider one
-  (invariance); a `typeof` test, `??` or strict
-  equality on a value of a type parameter or `unknown`; a cell read at its
-  contract (contents are stated only for primitives, and forgotten across a
-  step that may write them); a write adding a dictionary's key, a spread of
-  a dictionary, a read of a key `in` found in a dictionary; an optional key
-  found `undefined` read at `undefined`; a non-null assertion on a read at
-  a `for...in` key.
-- With `verify-source.mts --typescript-errors` (it loads the project again), for code TypeScript refuses, the TypeScript error
-  nearest the failed obligation: `reject: TypeScript refuses this code too
-  (line L, col C: <message>); the pipeline follows TypeScript's types`. A refusal of the parser's gate or of the producer, which names no
-  obligation, is named the same way by the file's first TypeScript error.
+  (`Proposal_diagnostics.explain`). The innermost one whose span meets the
+  failed obligation's names it. The forms and their reasons:
+  - a `for...of` loop or a spread over a union of iterable kinds, an arm of
+    which is no array: one host kind's iteration is stated (`%Iterate:K%`)
+    where the whole iterable is of it; an iterable the program defines, or a
+    union with one, runs the iterator protocol;
+  - an open record or `unknown` that `Array.isArray` or `instanceof Array`
+    found an array, used as one: the object owns an array's store, which is
+    no proof that it is an array of `Array.prototype`;
+  - an array used as a record naming `length`, and a mutable tuple's
+    `length` at its arity;
+  - where a signature binding more parameters is expected: a function value
+    known only by its type, a module function with a rest parameter, or a
+    generic one;
+  - a named function where a signature indifferent to the receiver it
+    requires is expected: its type is its annotated signature;
+  - an instance of a declaration with generic methods at an instance of
+    another declaring them otherwise: quantified signatures are related
+    binding the same rows;
+  - a record at an index signature (TypeScript's implicit index signature);
+  - a mutable array or a writable field at a wider one (invariance);
+  - a `typeof` test, `??` or strict equality on a value of a type parameter
+    or `unknown`;
+  - a cell read at its contract: contents are stated only for primitives,
+    and forgotten across a step that may write them;
+  - a write adding a dictionary's key, a spread of a dictionary, and a read
+    of a key `in` found in a dictionary;
+  - an optional key found `undefined`, read at `undefined`;
+  - a non-null assertion on a read at a `for...in` key.
+- With `verify-source.mts --typescript-errors` (it loads the project
+  again), for code TypeScript refuses, the TypeScript error nearest the
+  failed obligation: `reject: TypeScript refuses this code too (line L, col
+  C: <message>); the pipeline follows TypeScript's types`. A refusal of the
+  parser's gate or of the producer, which names no obligation, is named the
+  same way by the file's first TypeScript error.
 
 Neither is a premise of anything: the explanation run's claims are
 discarded, and a failure no source names keeps the verifier's lines alone.
@@ -135,7 +142,8 @@ named row by its name and never expands it.
 - **The finite table.** Its labels are row positions already, so the
   projection is the identity: every row, in order, positions unchanged, and no
   `names`. A sub-table would renumber rows.
-- **Equation labels** ([RECURSIVE-EQUATIONS](REQUEST-PROTOCOL.md)).
+- **Equation labels** ([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md),
+  [equations and tree labels](REQUEST-PROTOCOL.md#equations-and-tree-labels)).
   A label is a tree over infinitely many applications, so the projection
   chooses positions for $`M`$ and for the rows below them up to $`d`$, and
   names each application.
@@ -173,11 +181,6 @@ call site can store arbitrary prose as a judgment. Unsupported source remains a
 separate `source-refusal`, with a mandatory source map and reason, and cannot be
 rendered as a failed semantic obligation or with a turnstile.
 
-Source extraction constructs one explicit plan for every decoded function, a
-graph request. There is no optional request and no filtering step, so adding a
-source function cannot silently omit it from validation. A direct check that
-fails stops request construction through the located diagnostic channel.
-
 ## Node and expression obligations
 
 A `node-typing` record has:
@@ -186,9 +189,8 @@ A `node-typing` record has:
   continuation; `claim` includes its entry context and required expression type.
 - `sequent`: the exact judgement attempted at that node.
 
-An `expression-claim` record has `sourceMap` and `sequent` directly. Its role may
-be an expression claim, closure entry check, local annotation or closure result.
-The kind identifies the obligation collection, not a claim of semantic blame.
+An `expression-claim` record has `sourceMap` and `sequent` directly. The kind
+identifies the obligation collection, not a claim of semantic blame.
 
 `sourceMap` is this node's entry in the graph's **source map**: how to describe
 the node, and each of its context bindings, in the words of the source it was
@@ -214,11 +216,20 @@ staying inside the calculus carries positions. `sequent.context`,
 `transfer.available` and `target.mapping` are the calculus's own words and stay
 positional; a reader joins them to the descriptors by index.
 
-The roles are `tag-dispatch`, `node-typing`, `return-contract`, `binding-annotation`,
-`expression-claim`, `closure-entry`, `closure-result`, and `heap-observation`. The generic
-`node-typing` role does not guess a more specific source purpose.
-Unknown roles should display a generic obligation, not a guessed explanation.
-The span for a closure result may be the lambda span, rather than its body span.
+A role names the source purpose of an obligation, as the pass that creates
+it assigns it. Direct obligations and source refusals take theirs from one
+closed list, `SourceRole` in
+[DirectObligation.lean](../lean/Verification/Programs/DirectObligation.lean):
+`entry-claim`, `expression-claim`, `return-contract`, `binding-annotation`,
+`generic-validation`, `scheme-introduction`, `scheme-elimination`,
+`storage-write`, `call-argument` and `initialization-order`. A graph node's
+role is a string lowering writes where it creates the node:
+`expression-claim`, `node-typing` (no more specific purpose),
+`return-contract`, `binding-annotation`, `tag-dispatch`, `closure-entry`,
+`heap-observation`, and the roles of the lowered source forms
+(`storage-contract`, `method-receiver`, `pattern-rest`, `for-of-step`, …).
+A reader explains the roles it knows and shows any other as a generic
+obligation, never a guessed explanation.
 
 At a top-level return, expression typing and result-contract checking are
 separate nodes that can have the same span. For example, a saved `boolean` result
@@ -270,21 +281,24 @@ an `in / claim / out` triple or a role inferred by a reader.
 
 ## Presentation
 
-`tools/diagnostic-view.mts` turns a decoded record into a typed presentation
-(`presentObligation`). Its `judgement` has only structured `assumptions` and
-`conclusion`. Node and expression failures use the recorded sequent. Edge
-failures state the available slots, branch premise, target mapping, and heap
-requirements explicitly; a transfer is not reduced to plain subtyping. A
-production failure without a goal has no invented sequent. The `summary` leads
-with a source-named comparison, for example `cell.value` with available type
-`boolean` and required return type `true`: the goal term's variable slot is
-resolved through the source map, never assumed to be slot zero, and no
-available type is invented for a compound term. `searchOutcome` states whether
-the search was not established or exhausted, with the budget.
+`presentObligation` (`tools/diagnostic-view.mts`) turns a decoded record into
+two strings: `summary`, a source-named sentence where the record supports
+one, and `searchOutcome`, whether the search was not established or
+exhausted, with the depth or the budget. A summary names the obligation
+from the record's structured fields, never from the human sentence:
 
-Every graph row is shown once in `graph`, with labels in the judgement referring
-to these definitions. Cycles and overloads are preserved without recursive
-unfolding or a depth limit. This graph legend and the native term in the
-judgement give the exact language; see [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) for
-the typed codecs. The presentation describes the failed requirement, not a
-counterexample; search failure means not established, not refuted.
+- a node or expression obligation on a slot: the slot's available claim and
+  the required type, the slot named through the source map, for example
+  `cell.value` available at `boolean` where a `return-contract` requires
+  `true`;
+- a node or expression obligation on a compound term: its form and the
+  claims of the slots it reads directly;
+- an edge: the first destination slot whose mapped incoming claim differs
+  from the requirement, or the required heap facts;
+- a direct obligation: the two compared types;
+- a source refusal: its reason; a production failure: none.
+
+Types are printed in the claim language ([CLAIM-LANGUAGE](CLAIM-LANGUAGE.md)),
+lifted from the record's table to depth 3, a row the record's `names` lists
+shown by its name. The presentation describes the failed requirement, not a
+counterexample: search failure means not established, not refuted.

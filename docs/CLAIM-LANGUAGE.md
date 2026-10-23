@@ -10,7 +10,7 @@ the text fails rather than erasing a requirement.
 ## Structural claim text
 
 `tools/claim.mts` declares `ClaimType`, `Atom`, `Field`, `RecordAtom`, and
-`FunctionAtom`; the source parser imports these same declarations.
+`FunctionAtom`; the source parser imports its `Atom`.
 `decodeClaimType` checks fields recursively. `tools/claim-text.mts` supplies
 `printType`, and `lift`, which reads a normalized claim into this encoding.
 The printed text determines its type without a previous claim.
@@ -52,11 +52,12 @@ The text grammar is a claim language, not all TypeScript syntax. Syntactic
 expressibility is distinct from verification support: optional or multiple
 fields can be printed, and the source adapter supports its documented fragment.
 
-A bare graph-label list such as `[5]` is not the claim language: a normalized
-claim is lifted into structural text, with `#5` only as auxiliary graph
-identity. A recursive or not-yet-expressible type is shown through its graph
-definitions; exact label JSON is not a readable standalone claim because its
-meaning depends on the accompanying graph.
+A bare graph-label list such as `[5]` is not the claim language: its meaning
+depends on the accompanying graph. `lift` reads a label list through its
+table into structural text, to a depth bound (3 for a diagnostic); below the
+top a union shows its first arms and `…`, a row the table's `names` lists is
+shown by its name, and a label the table has no row for is shown as
+`type n`.
 
 ## Native graph and term language
 
@@ -68,9 +69,7 @@ all ordered arrow domains/results. Labels have no implicit meaning in a general
 request graph. The claims document separately requires its primitive prefix.
 
 `decodeGraph` validates every constructor, field, and reference of the exact
-JSON syntax. `graphDefinitions` prints each row once as `#n = ...`; references
-remain references. Self-reference needs no exception and overloads are never
-reduced to a single arrow. The readable definitions are a display.
+JSON syntax.
 
 `tools/calculus.mts` similarly declares `Term`, `CallCode`, and `Tag`
 against `Calculus.lean`. The wire writes a constructor as an object whose one
@@ -88,18 +87,10 @@ record is validated as program data rather than inferred from its expression;
 
 ## Obligations and consistency
 
-`tools/diagnostic.mts` reads the native failure record, checking its
-graph, sequent, mappings, source descriptors, and heap facts. Malformed or unknown
-records remain human diagnostics. `tools/diagnostic-view.mts` turns a decoded
-record into a typed presentation (`presentObligation`) and the complete graph
-legend; it reads the record's structured fields and never infers an obligation
-from a diagnostic sentence. A direct obligation is a subtyping judgment between
-two ground types at a call's span, decoded structurally, its labels checked
-against the record's graph. `pipeline/verify-source.mts` prints the
-presentation's `summary` as the `obligation:` line of a failed search.
-[OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) owns the exact failure
-contract.
-
+`tools/diagnostic.mts` decodes the native failure record and
+`tools/diagnostic-view.mts` presents it, printing its types in the structural
+claim text; [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) owns the
+record and [its presentation](OBLIGATION-DIAGNOSTICS.md#presentation).
 TypeScript compilation (the `Front-end types` suite) checks these shared
 declarations against source extraction, the claims document and the
 diagnostic presentation.
