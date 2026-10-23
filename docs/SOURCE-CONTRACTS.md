@@ -2394,6 +2394,41 @@ So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
 
+### Merged library interfaces
+
+A declaration outside the standard library may merge a member into an
+interface a unit reads at TScert's reviewed contract: `Object` or `Function`
+(in every unit that reaches the declarations), `Array`, `ReadonlyArray` or a
+primitive's wrapper (where an array or the primitive's member reaches the
+unit), and the interfaces those contracts name with their library bases
+(`Iterator`, `ArrayIterator`, `IteratorObject`). Every value of the interface
+is read at the overlay, TScert's reviewed interpretation of the host's
+prototype. A merge states a member of every value of the type and installs
+nothing at run time, so a member the overlay does not review at that
+contract (a `toJSON` stating that every array or object holds a hook) would
+be erased from the annotations it changes: such a merge is refused
+(`invalid-merged-array-param`, `invalid-merged-readonly-array-callback`,
+`invalid-merged-object`, `invalid-merged-function`, `invalid-merged-iterator`,
+`invalid-merged-iterator-set`, `invalid-merged-values-iterator`,
+`invalid-merged-string`; the `collections-*` cases, under Node's types).
+
+A member a merge states at a reviewed contract is read at the reviewed
+translation, its corrections and effects included, from the reviewed
+signature where the project's library declares none: Node's `at` polyfill
+(`RelativeIndexable<T>`) under ES2021 (`node-at-polyfill`). Contracts are
+compared as the type reader reads them, the merged declaration and the
+reviewed signature alike: binders by position, a base at the arguments each
+heritage path gives it, a member's own binders with their bounds,
+optionality, each overload on its own; a parameter's name is no part of a
+contract (`merged-restated-at`, `merged-renamed-at`,
+`invalid-merged-narrowed-at`, `invalid-merged-two-paths-at`). A form the
+comparison does not read (a named type, a computed key, a call, construct or
+index signature, a base outside the merge) is refused. An interface a source
+names (`Iterable<T>`) is read at its merged declarations, not at a reviewed
+contract, so a merge into it is read, not erased: a required member it adds
+is one an array does not meet (`invalid-merged-iterable`; unmerged,
+`array-iterable`).
+
 ### Node's `process`
 
 Node's `process` and `console` are read through the overlay at the members
