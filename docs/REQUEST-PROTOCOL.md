@@ -537,8 +537,8 @@ inductive's constructors and a rule added there extends the protocol;
 
 `readSummaries` lists entries `{"receiver": C, "field": f, "result": B,
 "arms": [...]}`, one arm per member of `C` in `members` order, each
-`{"view": A}` or `{"view": A, "proof": p}`: the view the member states for
-`f` and, where `A` is not `B`, the subtype choices comparing `A` to `B`. An
+`{"view": A, "proof": p}`: the view the member states for `f` and the
+subtype choices comparing `A` to `B`, or `null` where `A` is `B`. An
 entry is checked once against the request's graph and image check: exactly
 one arm per member, each member's view of `f` at `A` (a view of `length`
 only at a type excluding a number) and each comparison accepted by the
