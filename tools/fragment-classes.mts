@@ -28,17 +28,18 @@ export function enumMembers(this: Gate, name: string): EnumMember[] {
   const gate: Gate = this;
   const info = gate.enums.get(name);
   if (!info) return gate.fail(null, `enum ${name} missing`);
-  return info.members.map((m) => {
+  const members: EnumMember[] = [];
+  for (const m of info.members) {
     const value = m.value;
     // TypeScript's emit writes each member by assignment, which for
     // `__proto__` runs the prototype's setter and creates no property.
     if (m.name === "__proto__")
-      return gate.fail(m.node, "an enum member named __proto__: its assignment runs the prototype's setter, which creates no property");
-    if (value === undefined) return { ...m, value: null };
+      gate.fail(m.node, "an enum member named __proto__: its assignment runs the prototype's setter, which creates no property");
     if (typeof value === "number" && !Number.isFinite(value))
-      return gate.fail(m.node, "an enum member that is NaN or infinite has no literal type");
-    return { ...m, value };
-  });
+      gate.fail(m.node, "an enum member that is NaN or infinite has no literal type");
+    members.push({ ...m, value: value ?? null });
+  }
+  return members;
 }
 
 /** Whether an enum's object has keys its declaration does not name: an
