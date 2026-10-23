@@ -1,283 +1,156 @@
 <p align="center"><img src="assets/logo.svg" width="128" alt="TScert logo"></p>
 
-# TScert: independent claim verification
+# TScert
 
-This pipeline checks type claims about TypeScript programs. A **claim** is a
-proposed expression type or a description of local variables at a program
-point. The OCaml producer proposes those claims; Lean checks whether they
-follow from the program and its declared inputs.
+TScert checks that TypeScript functions are type-safe, and accepts a function
+only with a proof. A checker whose soundness is proved in Lean validates that
+proof. It never trusts the types that TypeScript or the proposing tools infer;
+what it does trust is listed under [What acceptance means](#what-acceptance-means).
 
-Lean first turns source syntax into execution plans describing control flow,
-operand order and variable binding. OCaml computes type facts over those plans.
-Lean then reconstructs the plans, uses the proposed types to elaborate a
-**calculus graph**—a program in the verifier's formal language—and checks
-certificates for its typing obligations. A certificate records a derivation
-that the checker can validate. Neither type inference nor evidence search is
-trusted to produce correct answers.
+## Why
 
-There is one maintained calculus and verifier. Its implementation lives in
-`lean/Verification/`, organized by semantics, types, program rules,
-source integration, and tests. Declarations live under the `Verification`
-namespace; module paths identify their topic. These folders aid navigation,
-not an enforced dependency order: some derived semantic lemmas depend on
-program rules.
-[DESIGN.md](docs/DESIGN.md) describes the architecture and trust surface;
-[REFERENCES.md](docs/REFERENCES.md) collects the works it draws on.
+TypeScript's type checker is deliberately unsound in places: `any`, type
+assertions, unchecked index reads and covariant arrays let programs that pass
+`tsc` still read `undefined` where a type says `string`. TScert gives a stronger
+answer for the code it accepts: for every input that meets its annotations, the
+function's translation into a formal model never applies an operation to a value it does not fit, and never
+returns a value outside its result type. A theorem in Lean states that
+guarantee, and the checker that decides acceptance is the code the theorem is
+about.
 
-Start with [the architecture](docs/DESIGN.md#architecture) for the full data flow
-and [the language map](docs/LANGUAGES.md) for the representations exchanged between
-components. The formal definitions live in [SEMANTICS](docs/SEMANTICS.md), which
-defines execution and safety, [POSITIVE-TYPES](docs/POSITIVE-TYPES.md), which defines
-types and state assertions, and [PROGRAM-TYPING](docs/PROGRAM-TYPING.md), which
-defines the rules used to check programs.
+## An example
 
-The TypeScript the pipeline reads is summarised under
-[current source fragment](#current-source-fragment); the
-[fragment boundary](docs/SOURCE-FRAGMENT.md#fragment-boundary) lists what it refuses and why.
+TypeScript accepts this function (under `strict`, which leaves
+`noUncheckedIndexedAccess` off). TScert refuses it:
 
-## Run
-
-Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
-and Dune ([the producer guide](ocaml-producer/README.md#try-it)). Install the
-tools once:
-
-```sh
-make setup
-make test
-make suite
+```ts
+export function stale(xs: string[]): string {
+  const n = xs.length;
+  xs.pop();
+  return xs[n - 1]; // past the end after the pop: undefined at run time
+}
 ```
 
-[tools/package.json](tools/package.json) pins what the node side installs: the
-TypeScript compiler the parser runs on, and KaTeX, which
-checks the documents' math. Its lock,
-[tools/package-lock.json](tools/package-lock.json), fixes every package npm
-installs there, and `make setup` installs it with `npm ci`, as it does
-[the library fixture's](pipeline/library-project/package-lock.json).
-[lean/lakefile.toml](lean/lakefile.toml) declares the Lean package Lake
-builds: the `Verification` library and the `verifier` executable.
-[.gitignore](.gitignore) keeps what these commands write, Lake's build and
-manifest and `node_modules`, out of the repository.
+Abridged output (offsets refer to the example file):
 
-Tests favour end-to-end pipeline cases, source files through the parser, the
-OCaml producer and Lean, over unit tests of intermediate steps; tests written
-while researching a feature retire once a pipeline case covers it
-([AGENTS.md](AGENTS.md#which-tests-to-keep)).
+```text
+"status": "unverified"
+reject: source expression obligation at [219,228): evidence search failed: no derivation of its return-contract claim
+obligation: The available claim for xs[n - 1] is undefined | string. This return requires string.
+```
 
-- `make test` builds Lean and the producer (`make build`, a no-op when
-  nothing changed), then runs the fast checks and the controls
-  ([test-all.sh](test-all.sh) starts them together and reports them in order):
-  front-end types, JSON field names, assertions with their reasons, documents,
-  examples run under Node, the trusted inputs, the rule inventory, and the
-  forged documents and claims no case can make
-  ([pipeline/test.mts](pipeline/test.mts)), whose operations replay from the
-  stage store. Its summary counts test executables, not functions or
-  assertions, and marks an incomplete run after an early failure.
-- `make suite` builds Lean and the producer, then runs every pipeline case
-  ([pipeline/run-cases.mts](pipeline/run-cases.mts)), showing how many cases
-  have finished.
-- `make cases P=…` runs the pipeline cases whose file names contain `P`;
-  `make check FILE=…` runs one source file through the pipeline. `make help`
-  lists every target.
+With the result type stated honestly, `string | undefined`, TScert accepts it.
+Both versions are pipeline cases:
+[`invalid-array-last-after-pop.ts`](pipeline/examples/invalid-array-last-after-pop.ts)
+and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element.ts).
 
-Terminal output uses green for success, red for rejection or failed proof search,
-and amber for unavailable checks. Symbols and words remain visible without
-color. Redirected output, `TERM=dumb`, and a nonempty `NO_COLOR` disable
-colors.
+## How it works
 
-## Current source fragment
+![Architecture: source parsing, Lean execution plans, OCaml type proposals, Lean typed elaboration, evidence search and certificate checking.](diagrams/architecture.svg)
 
-The *fragment* is the subset of TypeScript the verifier accepts; a *Fragment*
-document is the parser's tree of one source in it
-([LANGUAGES](docs/LANGUAGES.md#the-languages)).
+1. **Parse.** A front end on TypeScript's compiler API reads the source and the
+   declarations it uses.
+2. **Plan.** Lean turns the source into execution plans: control flow, operand
+   order, bindings.
+3. **Propose.** An OCaml program, the *producer*, proposes the type of every
+   expression and variable over those plans. Its answers are *claims*, and
+   nothing it says is trusted.
+4. **Elaborate.** Lean translates the function, with the proposed types, into a
+   small formal language (the *calculus*) whose execution and safety are
+   defined in Lean.
+5. **Search, then check.** An untrusted search in Lean looks for a
+   *certificate*, a derivation that the program meets its types; the trusted
+   checker validates it against the exact translated program.
 
-A source file is a module, checked per code unit: each function, and the
-module's initialization, which runs its constants, classes, enums and
-top-level statements ([modules and code units](docs/DESIGN.md#modules-and-code-units)).
-In outline, the parser admits:
+Colours in the diagram: blue parts propose and may be wrong; green parts check,
+with a proved safety consequence; amber parts translate source and are trusted
+on review and tests. Grey boxes are the documents passed between stages: the
+*Fragment* is the parsed source, *SourceClaims* the producer's claims, and the
+*calculus request* the translated program with the obligations it must meet.
 
-- **Statements**: `const` and `let` bindings, annotated or not (a `let`
-  nothing writes is a `const`); object and array patterns with defaults,
-  holes and rests; `if`, `switch`, `while`, `for`, `for...of` over arrays,
-  `for...in`, labeled blocks, `break` and `continue`; `throw` and
-  `try`/`catch`/`finally`, a throw being an outcome
-  ([statement forms](docs/SOURCE-CONTRACTS.md#statement-forms),
-  [patterns](docs/SOURCE-ELABORATION.md#patterns), [throws](docs/SOURCE-MODEL.md#throws)).
-- **Values and operators**: `null`, `undefined`, Booleans, numbers, bigints,
-  strings and symbols, with literal types; arithmetic, relational comparison
-  of operands in their primitive order, string `+` and template literals,
-  compound and logical assignment; `typeof`, `in`, `instanceof`,
-  truthiness, strict equality, and supported loose-equality comparisons
-  ([values](docs/SOURCE-MODEL.md#values), [guards](docs/SOURCE-MODEL.md#guards)).
-- **Objects and arrays**: object literals with spreads, records, index
-  signatures, dense arrays and tuples, optional chaining, enums, and classes
-  with fields, methods, statics, parameter properties and a base class of the
-  file ([objects and prototypes](docs/SOURCE-MODEL.md#objects-and-prototypes),
-  [classes](docs/SOURCE-CONTRACTS.md#classes)).
-- **Functions**: declarations, function expressions and arrows with
-  optional, default and rest parameters, closures as graph code, methods whose contracts depend on their receiver, `.call`, `.apply` and `.bind`; generic functions and
-  classes certified at every instantiation; `async` functions and `await`
-  of promises of primitives ([calls](docs/SOURCE-MODEL.md#calls),
-  [generic bodies](docs/DESIGN.md#generic-bodies),
-  [async and iteration](docs/SOURCE-MODEL.md#async-and-iteration)).
-- **Types**: what TypeScript's declarations state, read by the declaration
-  reader: aliases, interfaces, unions, intersections, computed types and
-  library types through reviewed overlays; imports, ambient declarations and
-  globals are assumptions at their declared types
-  ([trust surface](docs/DESIGN.md#trust-surface)).
+## What acceptance means
 
-A type assertion (`e as T`, `e satisfies T`, `e!`) decides nothing: `T` is one
-more type the operand must meet, so an assertion never establishes what a
-guard would.
+Acceptance proves, of the function's translation into the calculus, that for
+inputs and a heap meeting their declared types it does not get stuck and does
+not return a value outside its result type. It may throw or run forever. The
+theorem is
+[`checkJson_safe`](lean/Verification/Source/Claims/Json.lean). Some things are
+trusted rather than proved:
 
-Unsupported forms are refused with a reason. Where source locations are
-available, diagnostics identify the relevant span. The fragment is smaller
-than the calculus, and the parser can represent syntax the Lean adapter then
-rejects: such a rejection is a limitation, never evidence that a producer
-claim is false.
+- that the translation from TypeScript to the calculus is faithful (reviewed and
+  tested, not proved);
+- that library and host functions behave as their reviewed contracts state;
+- that callers and imports meet their declared types;
+- Lean itself.
 
-[The fragment boundary](docs/SOURCE-FRAGMENT.md) owns what is refused and why.
-[Source contracts](docs/SOURCE-CONTRACTS.md) explains how declarations are read;
-[Fragment](docs/FRAGMENT-FORMAT.md) owns the syntax encoding, and
-[the request protocol](docs/REQUEST-PROTOCOL.md) owns the verifier commands and
-calculus request/evidence encoding. Worked examples of each construct are the
-[pipeline cases](tests/README.md), including the
-[callable examples](pipeline/examples/callables/README.md); the
-[callable surface](pipeline/examples/callables/README.md#the-callable-surface)
-states which TypeScript callable forms are supported and where each
-unsupported one stops.
+The [trust surface](docs/DESIGN.md#trust-surface) lists every assumption, and
+[what "verified" means](docs/DESIGN.md#what-verified-means) states the guarantee
+exactly.
 
-## What is established
+## Status
 
-1. The front end uses TypeScript’s compiler API to produce source syntax and declarations.
-2. Lean constructs execution plans; OCaml proposes types and environments over them.
-3. Lean reconstructs those plans and elaborates a calculus request, retaining
-   source annotation obligations.
-4. Proof search proposes evidence; certificate checking validates it against
-   that exact request. Acceptance implies typing and modeled execution safety.
+TScert is a research project. It handles a substantial subset of TypeScript;
+the [status table](WORK.md#status) records what works and what is open,
+including how much of TScert's own front end it verifies, the benchmark that
+drives its development.
 
-Termination is not guaranteed. Applying the safety result to JavaScript still
-requires trust in source parsing, extraction, the semantic definitions and Lean's
-execution infrastructure. Source extraction is reviewed, not proved equivalent
-to JavaScript. Accepted functions do not certify every unused displayed claim.
+In outline, the supported subset covers:
 
-## Documentation ownership
+- `const`/`let`, patterns, `if`, `switch`, loops including `for...of` and
+  `for...in`, labeled blocks, `throw` and `try`/`catch`/`finally`;
+- primitives with literal types, arithmetic, comparisons, template literals,
+  `typeof`, `in`, `instanceof` and strict equality;
+- object literals with spreads, records, index signatures, arrays and tuples,
+  optional chaining, enums, and classes with fields, methods and a base class;
+- functions, closures, optional, default and rest parameters, generic functions
+  certified for every admissible type argument, `async` and `await` of promises of
+  primitives;
+- declared types: aliases, interfaces, unions, intersections and library types
+  through reviewed contracts.
 
-Each document owns one layer. Keep definitions and detailed examples in that
-owner; other documents link to them and give only the context their readers need.
+`any` is refused, and a type assertion (`e as T`, `e!`) decides nothing. Every
+unsupported form is refused with a reason and a location. The
+[fragment boundary](docs/SOURCE-FRAGMENT.md#fragment-boundary) lists what is
+refused and why.
 
-| Document | Owns |
-| --- | --- |
-| This README | Commands, a concise supported-fragment overview, and navigation. |
-| [DESIGN](docs/DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
-| [SOURCE-MODEL](docs/SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
-| [SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
-| [WORK](WORK.md) | Open work, its reasons and completion conditions. |
-| [SEMANTICS](docs/SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
-| [POSITIVE-TYPES](docs/POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
-| [RECURSIVE-EQUATIONS](docs/RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
-| [UNION-SHAPES](docs/UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas and measured coverage, the profiling dataset and the candidates it names. |
-| [PROGRAM-TYPING](docs/PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
-| [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
-| [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
-| [CALLABLES](docs/CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
-| [FOOTPRINTS](docs/FOOTPRINTS.md) | The design of footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas, natives as its instances, and its increments. |
-| [HOST-FAMILIES](docs/HOST-FAMILIES.md) | The planned mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
-| [COMPILER-API](docs/COMPILER-API.md) | The planned contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
-| [REQUEST-PROTOCOL](docs/REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
-| [FRAGMENT-FORMAT](docs/FRAGMENT-FORMAT.md) | Source syntax wire format and its relation to execution plans and claims. |
-| [SOURCE-CLAIMS](docs/SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
-| [LANGUAGES](docs/LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
-| [OBLIGATION-DIAGNOSTICS](docs/OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
-| [CLAIM-LANGUAGE](docs/CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
-| [Test index](tests/README.md) and the [callable examples](pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
-| [REFERENCES](docs/REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
-| [TRUST-REDUCTION](docs/TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
+## Try it
 
-When adding a rule, put its mathematical statement and proof scope in
-`PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
-in `SEMANTICS`; wire fields go in the relevant protocol document. Record architecture decisions in `DESIGN` and remaining integration in `WORK`.
-Keep case mechanics with the cases. Distinguish **exportable**, **proved in
-the model**, and **accepted by the source checker** wherever those statuses differ.
-Avoid temporary paths, task handoffs and duplicate field tables in maintained
-docs. Lean definitions and tests remain the implementation evidence; cite them.
+Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
+and Dune ([the producer guide](ocaml-producer/README.md#try-it)). Then:
 
-What a change must carry depends on the layer it touches. A new typing or
-subtyping rule needs its soundness lemma in the model. A new lowering or adapter case needs no lemma, but it must emit its
-checks as located obligations (never a bare string), reuse an existing rule
-rather than add an approximate one, and come with a positive witness, an
-independent negative control and a tampering test; see the
-[test index](tests/README.md). A new wire field needs its decoder, every
-producer and consumer updated together, and a tampering test for the field.
-A compilation of one form into existing rules needs a statement of what
-justifies it — the compiled derivations are consequences, never the reason for
-acceptance — and one interface so a later certificate can replace it.
+```sh
+make setup                                   # node dependencies
+make build                                   # the Lean verifier and the OCaml producer
+make check FILE=pipeline/examples/array-last-element.ts
+```
 
-The source boundary starts in
-[Fragment.lean](lean/Verification/Source/Fragment.lean) and
-[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean).
-[SourceFacts.lean](lean/Verification/Source/SourceFacts.lean) supplies assignment
-and ownership analyses; [SourceRequests.lean](lean/Verification/Source/SourceRequests.lean)
-checks source interfaces and obligations using the graph evidence that
-[RequestJson.lean](lean/Verification/Source/RequestJson.lean) validates.
+`make check` prints the outcome and the directory holding the run's documents:
+the source, the parser's output, the producer's claims and the certificate.
 
-Typed lowering is organized around three recursive operations: compiling an
-expression, a binding schedule, or a statement body.
-[SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean) connects
-them through [explicit callbacks](lean/Verification/Source/Lowering/Callbacks.lean)
-and constructs each function request. Separate modules handle
-[closure code](lean/Verification/Source/Lowering/Closures.lean),
-[expression proofs](lean/Verification/Source/Lowering/Expression.lean),
-[atomic operations](lean/Verification/Source/Lowering/Atoms.lean),
-[operand schedules](lean/Verification/Source/Lowering/Execution.lean),
-[bindings](lean/Verification/Source/Lowering/Bindings.lean), and
-[control flow](lean/Verification/Source/Lowering/Flow.lean).
-[Construction state](lean/Verification/Source/Lowering/State.lean) is private to
-its owner. Lowering components compose an abstract `Compiler` through operations
-for graph construction, observations, obligations and code publication. Temporary
-execution bindings, receivers, handlers and graph frames have scoped operations.
-The extraction runner returns an immutable result containing the completed
-graph and shared outputs. The type boundary excludes general state access and
-raw compiler-state replacement from consumers.
+## Develop
 
-The source-claims boundary has a [wire decoder](lean/Verification/Source/Claims/Wire.lean),
-[scheme interpretation](lean/Verification/Source/Claims/Schemes.lean),
-[source-site validation](lean/Verification/Source/Claims/Sites.lean), and
-[equation preparation](lean/Verification/Source/Claims/Preparation.lean).
-[Request extraction](lean/Verification/Source/Claims/Extraction.lean) combines
-them with typed lowering. [Plan certification](lean/Verification/Source/Claims/Plans.lean)
-requires every extracted plan to cross an exhaustive conversion before
-[the acceptance entry point](lean/Verification/Source/Claims/Json.lean)
-checks evidence. That entry point also owns the theorem connecting its exact
-success condition to safety of every accepted function.
+```sh
+make test     # fast checks and the controls (forged documents and claims)
+make suite    # every pipeline case: source files with their expected outcome
+make help     # every target
+```
 
-[Equation lowering](lean/Verification/Source/Equations/Lowering.lean) turns
-source declarations, annotations and claim labels into recursive equations.
-Its [core](lean/Verification/Source/Equations/Core.lean) handles mutually recursive
-type constructors and declaration references; separate modules own
-[declaration decoding](lean/Verification/Source/Equations/Declarations.lean),
-[claim-row decoding](lean/Verification/Source/Equations/ClaimWire.lean),
-[annotation traversal](lean/Verification/Source/Equations/Annotations.lean),
-[instance matching](lean/Verification/Source/Equations/Instances.lean), and
-[final validation](lean/Verification/Source/Equations/Finishing.lean).
-[Construction state](lean/Verification/Source/Equations/State.lean) carries pending
-rows and bound obligations through those stages.
+[AGENTS.md](AGENTS.md) holds the rules for changing the project: what a change
+must carry, which tests to keep, and how commits are recorded.
 
-The Lean directories group modules by subject: `Semantics`, `Types`,
-`Programs` and `Source`, the source boundary's `Lowering`, `Equations` and
-`Claims` families in subdirectories of `Source`. Imports cross these
-directories in both directions, so a module's directory does not bound what it
-may import. The main Lean entry points are:
+## Read next
 
-| Area | Entry points |
-| --- | --- |
-| Operational semantics and worlds | [Calculus](lean/Verification/Semantics/Calculus.lean), [Worlds](lean/Verification/Semantics/Worlds.lean), [ObjectCoherence](lean/Verification/Semantics/ObjectCoherence.lean) |
-| Semantic families and graph types | [Types](lean/Verification/Types/Types.lean), [PositiveGraphs](lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Types/PositiveRules.lean) |
-| Program typing and checked evidence | [ProgramTyping](lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Programs/CertificateProducer.lean) |
-| Source boundary and CLI | [Fragment](lean/Verification/Source/Fragment.lean), [SourceExtraction](lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Source/Claims/Json.lean), [RequestCli](lean/Verification/Source/RequestCli.lean) |
-| Other code and tests | [OCaml producer](ocaml-producer/README.md), [trusted Node front end](tools/), [development tools](dev/), [regression index](tests/README.md) |
+- [DESIGN](docs/DESIGN.md): principles, architecture, the trust surface, and the
+  [documentation map](docs/DESIGN.md#documentation-map) of every document.
+- [SEMANTICS](docs/SEMANTICS.md), [POSITIVE-TYPES](docs/POSITIVE-TYPES.md),
+  [PROGRAM-TYPING](docs/PROGRAM-TYPING.md): the calculus, its types and its
+  typing rules.
+- [SOURCE-MODEL](docs/SOURCE-MODEL.md): how TypeScript values and operations
+  map to the calculus.
+- [Pipeline cases](tests/README.md): worked examples of every supported
+  construct, positive and negative.
+- [REFERENCES](docs/REFERENCES.md): the work TScert draws on.
 
-Claims documents preserve current-content assertions such as
-`{ value: boolean = (true) }`, separately from the storage invariant. Supplied
-observations are checked obligations: every incoming edge, including loop
-backedges, must establish the assertions claimed at a statement entry. See
-[Current-content assertions](docs/SOURCE-MODEL.md#current-content-assertions).
+## License
+
+Licensed under the [MIT License](LICENSE).

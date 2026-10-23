@@ -11,7 +11,7 @@ This document owns the principles, architecture, trust surface and lasting
 decisions. [The source model](SOURCE-MODEL.md) connects source constructs to
 the calculus. [The fragment boundary](SOURCE-FRAGMENT.md) states the restrictions
 the source pipeline enforces. [The work ledger](../WORK.md) records open work and
-its completion conditions. The [documentation map](../README.md#documentation-ownership) assigns
+its completion conditions. The [documentation map](#documentation-map) assigns
 them: terms, values and execution to [SEMANTICS](SEMANTICS.md), types and
 subtyping to [POSITIVE-TYPES](POSITIVE-TYPES.md), program and source rules to
 [PROGRAM-TYPING](PROGRAM-TYPING.md), wire formats to
@@ -1072,3 +1072,132 @@ One line each; the reason is the one the design keeps.
   (`Parametricity.accept_reassign`). Qualified body evidence is certified at
   assignments satisfying the signature’s descriptor constraints
   (`RequestJson.verify_qualified_safe_at`).
+
+## Documentation map
+
+Each document owns one layer. Keep definitions and detailed examples in that
+owner; other documents link to them and give only the context their readers need.
+
+| Document | Owns |
+| --- | --- |
+| [README](../README.md) | What TScert is, an example, what acceptance means, how to run it, and where to read next. |
+| [DESIGN](DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
+| [SOURCE-MODEL](SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
+| [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
+| [WORK](../WORK.md) | Open work, its reasons and completion conditions. |
+| [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
+| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
+| [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
+| [UNION-SHAPES](UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas and measured coverage, the profiling dataset and the candidates it names. |
+| [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
+| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
+| [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
+| [CALLABLES](CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
+| [FOOTPRINTS](FOOTPRINTS.md) | The design of footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas, natives as its instances, and its increments. |
+| [HOST-FAMILIES](HOST-FAMILIES.md) | The planned mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
+| [COMPILER-API](COMPILER-API.md) | The planned contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
+| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
+| [FRAGMENT-FORMAT](FRAGMENT-FORMAT.md) | Source syntax wire format and its relation to execution plans and claims. |
+| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
+| [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
+| [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
+| [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
+| [Test index](../tests/README.md) and the [callable examples](../pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
+| [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
+| [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
+
+When adding a rule, put its mathematical statement and proof scope in
+`PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
+in `SEMANTICS`; wire fields go in the relevant protocol document. Record architecture decisions in `DESIGN` and remaining integration in `WORK`.
+Keep case mechanics with the cases. Distinguish **exportable**, **proved in
+the model**, and **accepted by the source checker** wherever those statuses differ.
+Avoid temporary paths, task handoffs and duplicate field tables in maintained
+docs. Lean definitions and tests remain the implementation evidence; cite them.
+
+What a change must carry depends on the layer it touches. A new typing or
+subtyping rule needs its soundness lemma in the model. A new lowering or adapter case needs no lemma, but it must emit its
+checks as located obligations (never a bare string), reuse an existing rule
+rather than add an approximate one, and come with a positive witness, an
+independent negative control and a tampering test; see the
+[test index](../tests/README.md). A new wire field needs its decoder, every
+producer and consumer updated together, and a tampering test for the field.
+A compilation of one form into existing rules needs a statement of what
+justifies it — the compiled derivations are consequences, never the reason for
+acceptance — and one interface so a later certificate can replace it.
+
+## Implementation map
+
+The source boundary starts in
+[Fragment.lean](../lean/Verification/Source/Fragment.lean) and
+[SourceExtraction.lean](../lean/Verification/Source/SourceExtraction.lean).
+[SourceFacts.lean](../lean/Verification/Source/SourceFacts.lean) supplies assignment
+and ownership analyses; [SourceRequests.lean](../lean/Verification/Source/SourceRequests.lean)
+checks source interfaces and obligations using the graph evidence that
+[RequestJson.lean](../lean/Verification/Source/RequestJson.lean) validates.
+
+Typed lowering is organized around three recursive operations: compiling an
+expression, a binding schedule, or a statement body.
+[SourceExtraction.lean](../lean/Verification/Source/SourceExtraction.lean) connects
+them through [explicit callbacks](../lean/Verification/Source/Lowering/Callbacks.lean)
+and constructs each function request. Separate modules handle
+[closure code](../lean/Verification/Source/Lowering/Closures.lean),
+[expression proofs](../lean/Verification/Source/Lowering/Expression.lean),
+[atomic operations](../lean/Verification/Source/Lowering/Atoms.lean),
+[operand schedules](../lean/Verification/Source/Lowering/Execution.lean),
+[bindings](../lean/Verification/Source/Lowering/Bindings.lean), and
+[control flow](../lean/Verification/Source/Lowering/Flow.lean).
+[Construction state](../lean/Verification/Source/Lowering/State.lean) is private to
+its owner. Lowering components compose an abstract `Compiler` through operations
+for graph construction, observations, obligations and code publication. Temporary
+execution bindings, receivers, handlers and graph frames have scoped operations.
+The extraction runner returns an immutable result containing the completed
+graph and shared outputs. The type boundary excludes general state access and
+raw compiler-state replacement from consumers.
+
+The source-claims boundary has a [wire decoder](../lean/Verification/Source/Claims/Wire.lean),
+[scheme interpretation](../lean/Verification/Source/Claims/Schemes.lean),
+[source-site validation](../lean/Verification/Source/Claims/Sites.lean), and
+[equation preparation](../lean/Verification/Source/Claims/Preparation.lean).
+[Request extraction](../lean/Verification/Source/Claims/Extraction.lean) combines
+them with typed lowering. [Plan certification](../lean/Verification/Source/Claims/Plans.lean)
+requires every extracted plan to cross an exhaustive conversion before
+[the acceptance entry point](../lean/Verification/Source/Claims/Json.lean)
+checks evidence. That entry point also owns the theorem connecting its exact
+success condition to safety of every accepted function.
+
+[Equation lowering](../lean/Verification/Source/Equations/Lowering.lean) turns
+source declarations, annotations and claim labels into recursive equations.
+Its [core](../lean/Verification/Source/Equations/Core.lean) handles mutually recursive
+type constructors and declaration references; separate modules own
+[declaration decoding](../lean/Verification/Source/Equations/Declarations.lean),
+[claim-row decoding](../lean/Verification/Source/Equations/ClaimWire.lean),
+[annotation traversal](../lean/Verification/Source/Equations/Annotations.lean),
+[instance matching](../lean/Verification/Source/Equations/Instances.lean), and
+[final validation](../lean/Verification/Source/Equations/Finishing.lean).
+[Construction state](../lean/Verification/Source/Equations/State.lean) carries pending
+rows and bound obligations through those stages.
+
+The Lean directories group modules by subject: `Semantics`, `Types`,
+`Programs` and `Source`, the source boundary's `Lowering`, `Equations` and
+`Claims` families in subdirectories of `Source`. Imports cross these
+directories in both directions, so a module's directory does not bound what it
+may import. The main Lean entry points are:
+
+| Area | Entry points |
+| --- | --- |
+| Operational semantics and worlds | [Calculus](../lean/Verification/Semantics/Calculus.lean), [Worlds](../lean/Verification/Semantics/Worlds.lean), [ObjectCoherence](../lean/Verification/Semantics/ObjectCoherence.lean) |
+| Semantic families and graph types | [Types](../lean/Verification/Types/Types.lean), [PositiveGraphs](../lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](../lean/Verification/Types/PositiveRules.lean) |
+| Program typing and checked evidence | [ProgramTyping](../lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](../lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](../lean/Verification/Programs/CertificateProducer.lean) |
+| Source boundary and CLI | [Fragment](../lean/Verification/Source/Fragment.lean), [SourceExtraction](../lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](../lean/Verification/Source/Claims/Json.lean), [RequestCli](../lean/Verification/Source/RequestCli.lean) |
+| Other code and tests | [OCaml producer](../ocaml-producer/README.md), [trusted Node front end](../tools/), [development tools](../dev/), [regression index](../tests/README.md) |
+
+[tools/package.json](../tools/package.json) pins what the node side installs: the
+TypeScript compiler the parser runs on, and KaTeX, which
+checks the documents' math. Its lock,
+[tools/package-lock.json](../tools/package-lock.json), fixes every package npm
+installs there, and `make setup` installs it with `npm ci`, as it does
+[the library fixture's](../pipeline/library-project/package-lock.json).
+[lean/lakefile.toml](../lean/lakefile.toml) declares the Lean package Lake
+builds: the `Verification` library and the `verifier` executable.
+[.gitignore](../.gitignore) keeps what these commands write, Lake's build and
+manifest and `node_modules`, out of the repository.
