@@ -279,7 +279,7 @@ host's compliance with assumed contracts remain review obligations. The
 [trust surface](#trust-surface) lists them. The proofs, checked by
 [Lean 4](REFERENCES.md#lean-4), use no `sorry` and no
 project axioms; that fact does not itself establish source correspondence.
-See [the semantic guarantee](SEMANTICS.md#what-the-checked-development-establishes)
+See [the semantic guarantee](SEMANTICS.md#lean-files)
 and [trust-reduction options](TRUST-REDUCTION.md).
 
 ### Statement coverage
