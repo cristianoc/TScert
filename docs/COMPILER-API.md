@@ -283,17 +283,11 @@ objects have those prototypes, and it is preserved:
 ### Restricted values
 
 The package's objects, its nodes, types, symbols, checker and `API`
-instances, and its node lists, are restricted values: host objects whose
-classification, whose exclusion by $`\mathrm{excludesHost}`$, and whose
-operations' classification [host objects](HOST-FAMILIES.md#host-objects)
-states, with this package's objects as its examples. The model reads a node
-as a record whose stated members are readonly views
-([below](#stable-members-as-readonly-views)) and a node list as a dense
-readonly array ([node lists](#node-lists)). The runtime objects are not
-those: a node's stable members are getters on its prototype, a node list's
-indices are getters, and the own enumerable keys of both are the class's data
-fields; under Node, `{ ...node }` has `parent` and no `kind`
-(`tests/compiler-api.mts`).
+instances, and its node lists, are the
+[restricted values](HOST-FAMILIES.md#restricted-values) of host objects:
+that section states their classification, their exclusion and the runtime
+objects' difference from the model's reading, with this package's objects as
+its examples.
 
 ### Stable members as readonly views
 

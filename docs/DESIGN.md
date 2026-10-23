@@ -238,7 +238,8 @@ The outcome is one of:
   `TypeObject.getTypes`; a query whose reply holds that type is such a tool
   failure, and its report names the cause (`empty-tuple-literal-api-panic`).
   A literal whose type no query asks is unaffected (`constructor-tuple-spread`,
-  `as-const`).
+  `as-const`); TScert's own source avoids forming one
+  ([the empty-tuple panic](SOURCE-REWRITES.md#the-compiler-apis-empty-tuple-panic)).
 
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.
@@ -625,24 +626,21 @@ owner; other documents link to them and give only the context their readers need
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
 
-When adding a rule, put its mathematical statement and proof scope in
-`PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
-in `SEMANTICS`; wire fields go in the relevant protocol document. Record architecture decisions in `DESIGN` and remaining integration in `WORK`.
-Keep case mechanics with the cases. Distinguish **exportable**, **proved in
-the model**, and **accepted by the source checker** wherever those statuses differ.
-Avoid temporary paths, task handoffs and duplicate field tables in maintained
-docs. Lean definitions and tests remain the implementation evidence; cite them.
-
-What a change must carry depends on the layer it touches. A new typing or
-subtyping rule needs its soundness lemma in the model. A new lowering or adapter case needs no lemma, but it must emit its
-checks as located obligations (never a bare string), reuse an existing rule
-rather than add an approximate one, and come with a positive witness, an
-independent negative control and a tampering test; see the
-[test index](../tests/README.md). A new wire field needs its decoder, every
-producer and consumer updated together, and a tampering test for the field.
-A compilation of one form into existing rules needs a statement of what
-justifies it — the compiled derivations are consequences, never the reason for
-acceptance — and one interface so a later certificate can replace it.
+Each kind of change has its checklist: a typing rule
+[Lean files and adding a rule](PROGRAM-TYPING.md#lean-files-and-adding-a-rule)
+(a subtyping rule's statement goes in `POSITIVE-TYPES`), a source form
+[adding a source form](SOURCE-ELABORATION.md#adding-a-source-form), a
+representation [adding a language](LANGUAGES.md#adding-a-language). A new
+semantic predicate is stated in `SEMANTICS`; a wire field in its protocol
+document, with its decoder, every producer and consumer changed together,
+and a tampering test for the field. Architecture decisions are recorded here
+and remaining work in `WORK`. A document distinguishes **exportable**,
+**proved in the model** and **accepted by the source checker** wherever
+those differ, and cites Lean definitions and tests as the implementation
+evidence. A compilation of one form into existing rules states what
+justifies it (the compiled derivations are consequences, never the reason
+for acceptance) and has one interface, so that a later certificate can
+replace it.
 
 ## Implementation map
 

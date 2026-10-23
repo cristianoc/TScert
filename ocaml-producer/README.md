@@ -245,7 +245,7 @@ to establish an array result's presence. Preservation concerns normal return;
 exceptional edges require their own state treatment. Composition has an
 explicit admitted scope in the
 [effect design](../docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
-and [effect typing rules](../docs/SOURCE-ELABORATION.md#certifying-inferred-call-effects).
+and [effect typing rules](../docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
 
 ## Implementation map
 

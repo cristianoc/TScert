@@ -307,7 +307,7 @@ callee read at its statement or, within the run, its claim. Mutual
 recursion among methods, among module functions, and between the two
 needs no fixpoint in Lean: each body consumes types, never bodies. Within
 a run the producer's greatest fixpoint
-([function declarations](../SOURCE-ELABORATION.md#certifying-inferred-call-effects);
+([function declarations](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
 cited) proposes claims for unstated declarations as today and reads stated
 ones at their statements; class methods' self-reference through `this` is
 the step-indexed self-reference `funGraphSelf` discharges (proved for

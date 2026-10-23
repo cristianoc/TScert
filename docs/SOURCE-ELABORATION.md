@@ -29,7 +29,9 @@ following, in one change:
    [the Fragment format](FRAGMENT-FORMAT.md) and decoded by Lean field by
    field; `node tests/json-field-names.mts` checks the field names agree.
 3. **The lowering.** The form's lowering is stated here, as a derived form
-   or a rule, with JavaScript's evaluation order and binding scope. A new
+   or a rule, with JavaScript's evaluation order and binding scope. It
+   emits its checks as located obligations and reuses an existing rule
+   rather than adding an approximate one. A new
    executable field on an existing constructor is audited on every lowering
    and certification path: each path executes it or refuses it, located.
 4. **Claims and labels.** Whatever the producer claims about the form is
@@ -119,8 +121,9 @@ and receiver comparisons through the common subtype operation and checks effects
 and arity directly. `checkCallProofs_accepted`, `checkRestProofs_accepted` and
 `checkMemberProofs_accepted` prove agreement with the declarative coverage premises.
 Signature alternatives retain exhaustion when none succeeds. These results
-concern expression evidence; the program acceptance and safety implications
-above remain the semantic boundary.
+concern expression evidence; program acceptance and its safety implication
+([what "verified" means](DESIGN.md#what-verified-means)) remain the semantic
+boundary.
 
 `HeapExpressionRules.checkStepResult` combines expression validation with the
 step's heap-fact premises and returns its guaranteed postcondition together with
@@ -335,324 +338,11 @@ shadowing local's renaming, above, included):
 \{\ldots,\ x,\ \ldots\}\;\equiv\;\{\ldots,\ x\colon x,\ \ldots\}
 ```
 
-### Older spellings
+### Angle-bracket assertions and empty statements
 
 `<T>e` is `e as T` and `<const>e` is `e as const`,
 the same assertion (an obligation on the operand, never a fact); a
 top-level `;`, as one in a body, is nothing.
-
-### Derived classes
-
-A derived class's constructor (`class D extends B`, its body
-`s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
-bound to a name no source spells, then the class constructor's lowering
-([classes](SOURCE-CONTRACTS.md#classes)) whose
-allocation is the allocation from parts copying it:
-
-```math
-\mathsf{class}(\vec x).\ \vec s_1\,;\ \mathsf{const}\ \textit{base} = \mathsf{new}\ B^{\circ}(\vec a)\,;\
-  \mathcal{C}(\vec s_2,\ \varphi_0,\ \varnothing)
-  \quad\text{with}\quad
-  \mathcal{C}(\varepsilon,\varphi,A) = \{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \ldots\textit{base},\ \varphi,\ \overline{f{:}\,\mathsf{undefined}}\}
-```
-
-where $`B^{\circ}`$ is `B`'s constructor claimed also at the fresh instance it
-allocates, its keys exact (`ctorGraph` checks its code at that signature too).
-`D` without a constructor has JavaScript's implicit one,
-`constructor(...args) { super(...args); }`: its parameters are $`B`$'s, at
-their types, under names no source spells, and $`\vec a`$ is them. A class's
-prototype object is allocated once, at its definition:
-
-```math
-D.\texttt{[[prototype]]} = \{\texttt{[[proto]]}{:}\,B.\texttt{[[prototype]]},\ \kappa_D{:}\,\mathsf{undefined},\ m{:}\,D.m,\ \ldots\}
-```
-
-its own methods, linked to its base's under the prototype key, as
-JavaScript's `D.prototype` is; $`\kappa_D`$, the class's key, is there where
-`instanceof D` is written in the file, below. A prototype holding nothing
-of its own that nothing tests is not allocated: `D`'s instances then hold
-the nearest ancestor's (or none), and every read and test answers the same.
-`super.m(ā)` is `B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype
-chain holds. So the allocation's keys are exact, and `D`'s declared type,
-its own members and `B`'s, covers it through the prototype chain
-([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
-
-### A class extending `Error`
-
-The standard `Error`, by its declaration
-identity, is a base too: `class Decline extends Error {}`, and `class
-DeclarationError extends Error { readonly at: Span; constructor(at, message)
-{ super(message); this.at = at; } }`, and a class extending either, to any
-depth. JavaScript constructs such an instance in the base: `super(m)` runs
-`Error(m)` with the derived class as the new target (ECMA-262, `Error (
-message [ , options ] )` and OrdinaryCreateFromConstructor), which allocates
-an ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
-non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and,
-in V8, a non-enumerable `stack`; each derived constructor then defines its
-own fields on it.
-
-The model states the message on the instance's first link, between the
-instance and `D.prototype`, which no copy reaches, as the `Error` overlay
-entry's result places it on a prototype object (`library-globals.mts`). One
-construction serves the family, at the class's prototype and the message its
-base gives:
-
-```math
-\mathsf{new}\ D(\vec a)\;\equiv\;\{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,\mu_D\},\ \ldots\textit{base},\ \varphi\}
-```
-
-```math
-\mu_D=\begin{cases}
-\mathsf{\%ErrorMessage\%}(\vec a_B) & B=\mathsf{Error}\\
-\textit{base}.\mathit{message} & B\ \text{extends}\ \mathsf{Error}
-\end{cases}
-\qquad
-\mathsf{\%ErrorMessage\%}(m)=m\ ??\ \texttt{""},\ \ m:\mathsf{string}\mid\mathsf{undefined}
-```
-
-where $`\vec a_B`$ is what `super` passes, none or the one message, and
-$`\textit{base}`$ is the base's construction, as for any derived class
-(above), absent where $`B`$ is `Error`; its own keys are copied and its links
-replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
-it is and an omitted or `undefined` one to `""`, which JavaScript's instance
-reads from `Error.prototype.message`. The argument is bound at `string |
-undefined` before it defaults, so an argument of another type, which
-`ToString` converts (`null` to `"null"`, an object by running its code), is
-refused at it. The instance's own keys are its declared fields;
-`e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
-$`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
-`Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
-the Boolean).
-
-The model and JavaScript place the message differently: an own
-non-enumerable property in JavaScript, a field of a link in the model (for an
-omitted message, `Error.prototype`'s in JavaScript, `""` on the link in the
-model). JavaScript's instance also owns a non-enumerable `stack`, which the
-model does not state. That the two agree on every admitted observation is the
-conclusion of this audit of the operations reaching an instance, given stable
-prototypes. Each operation is in one of three groups.
-
-Observations that agree:
-
-- `e.message` and a destructuring `{ message }` read the message, or `""`,
-  in both: $`\mu_D`$ on the link.
-- `e instanceof D` walks the chain in both, finding $`\kappa_D`$;
-  `instanceof Error` is the intrinsic stating a Boolean.
-- `Object.keys(e)` and `{ ...e }` see the declared fields in both: the
-  message and `stack` are not enumerable in JavaScript, and not own in the
-  model.
-- `Object.values(e)` and `Object.entries(e)` hand over the values of the
-  same own enumerable fields, by the overlay's obligated contracts; evidence
-  search finds no derivation of either at an instance holding a prototype
-  (observed 2026-10-19).
-
-Observations that differ, abstracted by a broad result type, also admitted:
-
-- `"message" in e` is `true` in JavaScript; it is typed a Boolean.
-- `for (k in e)` enumerates the declared fields; its keys are typed strings,
-  `%ForIn%`'s contract.
-- `Object.getOwnPropertyDescriptor(e, k)` exposes JavaScript's descriptor of
-  the own `message` or `stack`; its reviewed contract
-  (`library-globals.mts`) is `undefined` or a fresh descriptor whose value,
-  getter and setter are `unknown`, which either placement meets; evidence
-  search finds no derivation of it at an instance (observed 2026-10-19).
-
-Operations excluded, refused with a location:
-
-- ownness and the prototype: `e.hasOwnProperty`, `Object.hasOwn` and
-  `Object.getPrototypeOf`, whose results tell the placements apart;
-- serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
-  message through `[[Get]]`; the parameter is a JSON value, which an instance
-  holding a prototype is not;
-- members JavaScript's instance or `Error.prototype` holds and the model does
-  not state: `e.stack`, `e.toString()`, `D.captureStackTrace`, `super.m(…)`;
-- an instance member named `message` or `stack` (a method, a field or an
-  accessor), and a parameter property of either name, of a class extending
-  `Error` at any depth, refused at the member: JavaScript's own property
-  shadows a method, and a field or a parameter property defines or assigns
-  the own property where the model would add an enumerable field;
-- `super(m, options)`, whose `options.cause` is read through `[[Get]]`, as
-  the overlay's `Error` is;
-- another library base (`TypeError`, `Map`, an ambient class).
-
-#### Reserved writes
-
-JavaScript keeps an instance's own `stack`
-non-enumerable through an assignment, and its own `message` too where the
-construction passed one; after `new D()` or `new D(undefined)` the instance
-owns no `message`, and an assignment creates an own enumerable one (observed
-under Node, `invalid-error-subclass-assign-target`). Either way the model,
-which states neither property, would add or change an enumerable own field,
-which a later copy, `Object.keys` or an exact-key claim observes. The
-restriction is one policy of two parts: a set $`R`$ of reserved keys, here
-$`R = \{\texttt{"message"}, \texttt{"stack"}\}`$, and an exclusion of the
-receivers that may hold them, here every object owning the prototype key.
-Lean's lowering decides it on the claims evidence establishes, at every
-write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
-$`T`$ when $`T`$ is of clause rows (`plainTy`), its declared names expanded
-(`PositiveRules.expand`, then `splitSets`), and undefined for a type with a
-parameter or scheme row, which no clause describes.
-
-```math
-\mathrm{reserved}(K) \iff \lnot\,\mathrm{plain}(K) \;\lor\; \exists c \in \mathrm{cl}(K).\;
-  (c = \mathsf{strLit}\ s \land s \in R)
-  \lor (c = \mathsf{strIn}\ S \land S \cap R \neq \varnothing)
-  \lor c \notin \mathit{Keyless}
-```
-
-```math
-\mathit{Keyless} = \{\mathsf{num}, \mathsf{numLit}, \mathsf{numIn}, \mathsf{bigint}, \mathsf{bigintLit},
-  \mathsf{symbol}, \mathsf{symbolLit}, \mathsf{bool}, \mathsf{boolLit}, \mathsf{nul}, \mathsf{undef}\}
-  \cup \{\mathsf{strLit}\ s, \mathsf{strIn}\ S \mid s, S \text{ outside } R\}
-```
-
-```math
-\mathrm{protoFree}(T) \iff \mathrm{plain}(T) \land \forall c \in \mathrm{cl}(T).\;
-  \mathrm{primitive}(c)
-  \lor \bigl(c = \mathsf{dict} \land (\mathit{indexes}(c) \neq [] \lor \mathit{cells}(c) \neq [])\bigr)
-  \lor \bigl(c \in \{\mathsf{refs}, \mathsf{dict}\} \land \exists b \in \mathrm{bounds}(c).\ \lnot\, b.\mathrm{admits}(\texttt{[[proto]]})\bigr)
-```
-
-```math
-\frac{\Gamma \vdash r : T \qquad \kappa = f \ \text{or}\ \Gamma \vdash k : K \qquad
-  \mathrm{reserved}(\kappa) \Rightarrow \mathrm{protoFree}(T)}
-  {r[\kappa] \mathrel{=} e \ \text{is lowered}}\ (\textsf{Write-Reserved})
-```
-
-A key the source spells is reserved when it is in $`R`$; a computed key by
-its claim $`K`$. The key domain: a number key converts to its decimal
-spelling, never a reserved string; a bigint, a Boolean, `null` and
-`undefined` to theirs; a symbol stays a distinct key; a finite template type
-reaches the claims as its string alternatives. Any other key claim, an
-object's (whose conversion runs code) and `string` included, may be
-reserved. A primitive is a clause of `Keyless` or `str`. `top`, `source`,
-arrays (whose objects own `[[proto]]` where the graph states the built-ins),
-packs and callable clauses are never proto-free; optional fields and
-readonly views constrain no absent key and do not make a record proto-free;
-a union is proto-free when every alternative is, and an intersection as its
-normalization's clauses are. $`T`$ and $`K`$ are the claims at the receiver's
-and the key's spans, expression obligations evidence must establish, so the
-premise reads certified facts and no TypeScript type or narrowing.
-
-- **Where.** `reservedWriteCheck` (`Lowering/Types.lean`) is called where a
-  write is emitted: every graph node whose term is a field write
-  (`emitAt`, covering ordinary writes, the saved references of updates,
-  logical assignments and destructuring targets, and closures' bodies, which
-  are lowered through the same emission), the closed expressions' writes
-  (`writeCell`), the key-adding writes of an owned object (`executionGrowth`,
-  `growingWrite`, `computedGrowth`), and before any of them in
-  `comparisonsExpr`. An array element write's key is a number, never
-  reserved. `Object.assign` is the native call's contract check, at each
-  source's copy (`mergeObjects`): the source is a write at every key it may
-  own, reserved unless every clause of its claim is a primitive or a `refs`
-  or `dict` with no index and a key bound admitting neither reserved key.
-  A loop head whose target is a member is outside the fragment (the gate).
-- **Meaning.** `ProtoFree.clause_sound` proves that no member of a
-  proto-free clause owns `[[proto]]`, at every interpretation of the
-  clause's operands (any `Ξ`, `X`, `P` of `semWithArgs`), and
-  `ProtoFree.list_sound` lifts it to a union of clauses. Refusing more keeps
-  `checkJson_safe`; it does not by itself establish that a source write
-  corresponds to the model's, which is what the next item argues.
-- **Why the premise excludes an instance of the family.** In the model an
-  instance owns `[[proto]]` where the fragment builds it: an instance a
-  class extending `Error` constructs (its first link), the result of the
-  overlay's `new Error` and `Error(m)`, and a value at a class or `Error`
-  type, whose declared instance type holds a prototype (`errorInstance` in
-  `library-globals.mts`, for constructor results and explicit `Error`
-  heritage). A value a unit receives at a dictionary with an index, or at a
-  record whose key bound excludes `[[proto]]`, owns no prototype key: that
-  is the meaning of those clauses (`dictViewT`, `dictCellT`, `ownKeysT`),
-  which the inputs meet by `EnvOk`, so it adds no assumption beyond the
-  caller contract ([trust](DESIGN.md)). So a receiver
-  whose checked claim is proto-free is no instance, also of any other class,
-  which the rule refuses alike. Being proto-free discriminates instances in
-  this representation; it says nothing of a plain object's own
-  non-enumerable properties, which the caller contract excludes.
-- **What stays the parser's.** A field of an allocation is no write: an
-  instance member, a parameter property, and a constructor's `this.k = e`,
-  which the lowering makes a field of the instance's allocation, are
-  reserved by the parser in a class extending `Error`. The parser's scan of
-  the constructor follows arrows, which keep its `this`, and stops at a
-  function, a method, an accessor or a class, which bind their own: their
-  writes are writes, the rule's (`invalid-error-subclass-nested-function-write`). Lean reads no class
-  declaration, and accepts a fragment, claims and evidence with a member
-  renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
-  Each write form of `reserved-write-twin`, its key renamed `stack` in the
-  three documents, is a valid document only the rule refuses, located at the
-  write, in search and in check ("forged reserved writes").
-
-External code reaching an instance of the family is required to keep the
-message contract the model represents and to create no enumerable own
-`message` or `stack` on it. The message contract: `e.message` is a string,
-the one the model's link holds; where the model re-reads the instance after
-the external code runs (a call whose footprint may change it), any string
-its declared type allows. This holds through a parameter type looser than
-the instance's own, such as `{ message?: unknown }`: such code may not write
-another value. The enumerability requirement excludes an assignment of
-`message` to an instance constructed without a message and a definition of
-either key as enumerable. A footprint states which locations a call may
-change, not what a changed message holds or whether a key it creates is
-enumerable, so neither requirement follows from an external function's
-effect; both are stated of external code. With them, the admitted
-observations after the call agree with the model: `e.message` reads a string
-the model's type allows, and keys, copies and entries see the declared
-fields alone; `e.stack` is refused.
-
-The pipeline cases `error-subclass` and `error-subclass-methods` (run under
-Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
-constructed instance owning `message` or holding `stack` are refused in
-search and check (`pipeline/test.mts`).
-
-### Class members
-
-A generic method `m<V>(…)` is the instance's member with quantified
-signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its closure `D.m` a
-generic closure, checked once at a scheme received by the instance
-(`funScheme`), which the prototype holds. The parser names the closure's
-binder $`k`$ by the member's key and the position (`"m"#k`,
-the parser's `lambda` in `fragment-expressions.mts`), and the producer's scheme row for the
-prototype's field binds those names; the member's scheme binds the
-declaration's. The prototype's scheme covers the member bound to the
-instance up to renaming the member's binders to its own
-([`CoversByScheme`](POSITIVE-TYPES.md#clause-coverage)): its receivers read
-none of its binders and hold the instance, and its signatures cover the
-member's renamed ones at every instance. A bounded binder is refused, since the row's
-name spells its bound.
-
-A method declaring `this: T` is the instance's member whose host must meet
-`T` ([records](POSITIVE-TYPES.md#records)), and its closure `D.m` takes `T`
-as its receiver, so its body reads `this` at `T`. The prototype's closure
-covers the member through the member's `T`, whose values the closure's
-receiver admits, whatever the instance type is
-([method coverage](POSITIVE-TYPES.md#clause-coverage)); a call on the
-instance, `this.m()` among them, proves its host within `T` (`bindMember`).
-
-What a class declaration may not hold, each for its reason:
-
-- a generic method declaring `this: T`: its member is a scheme the member
-  bound to its host meets, whatever receiver it is given, which states no
-  type the host must meet ([Source model](SOURCE-MODEL.md#method-members-are-host-relative));
-- a generic method with a bounded binder: the member's binder row is named by
-  its bound, which the closure's binder, named by the parser, is not;
-- a constructor parameter default reading `this`, or a constructor statement
-  reading it other than as a field assignment's target: the instance is
-  allocated at the constructor's end;
-- a member with a computed key (a method is a binding and a prototype key
-  named by its plain name) other than a static `[Symbol.hasInstance]`,
-  below;
-- an accessor (reading it runs code; a member read is a plain one), an
-  index signature (instances are what construction allocates), a static
-  block reading `this` (the class value, which JavaScript's block reaches
-  with later static fields undefined and the model allocates only after
-  them);
-- a private name in inheritance (a derived instance's base part is a copy,
-  and a copy holds no private slot), and `#x in o` (it tests an own slot,
-  where $`\mathsf{hasKey}`$ walks the prototype chain and would find an
-  instance's slot from an object inheriting from it);
-- extending a generic class other than at the base's own binders (a generic
-  base's construction is at its binders' rows, [classes](SOURCE-CONTRACTS.md#classes)), and
-  extending `Array` (its instances are what the library's constructor
-  allocates, not an ordinary object).
 
 ### `instanceof`
 
@@ -1135,6 +825,458 @@ runs between the two reads of $`x.f`$, so they read the same value:
 and the test's tag edge refines $`s`$ to the slice of its type the arm admits,
 which must lie within the returned read's claim. A call or a write in the arm
 leaves the shape, and the arm reads anew.
+
+## Class forms
+
+A class declaration's reading is [classes](SOURCE-CONTRACTS.md#classes);
+the forms below lower a derived class, a class extending `Error`, and
+class members.
+
+### Derived classes
+
+A derived class's constructor (`class D extends B`, its body
+`s̄₁; super(ā); s̄₂`, `s̄₁` reading no `this`) is its base's construction,
+bound to a name no source spells, then the class constructor's lowering
+([classes](SOURCE-CONTRACTS.md#classes)) whose
+allocation is the allocation from parts copying it:
+
+```math
+\mathsf{class}(\vec x).\ \vec s_1\,;\ \mathsf{const}\ \textit{base} = \mathsf{new}\ B^{\circ}(\vec a)\,;\
+  \mathcal{C}(\vec s_2,\ \varphi_0,\ \varnothing)
+  \quad\text{with}\quad
+  \mathcal{C}(\varepsilon,\varphi,A) = \{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \ldots\textit{base},\ \varphi,\ \overline{f{:}\,\mathsf{undefined}}\}
+```
+
+where $`B^{\circ}`$ is `B`'s constructor claimed also at the fresh instance it
+allocates, its keys exact (`ctorGraph` checks its code at that signature too).
+`D` without a constructor has JavaScript's implicit one,
+`constructor(...args) { super(...args); }`: its parameters are $`B`$'s, at
+their types, under names no source spells, and $`\vec a`$ is them. A class's
+prototype object is allocated once, at its definition:
+
+```math
+D.\texttt{[[prototype]]} = \{\texttt{[[proto]]}{:}\,B.\texttt{[[prototype]]},\ \kappa_D{:}\,\mathsf{undefined},\ m{:}\,D.m,\ \ldots\}
+```
+
+its own methods, linked to its base's under the prototype key, as
+JavaScript's `D.prototype` is; $`\kappa_D`$, the class's key, is there where
+`instanceof D` is written in the file, below. A prototype holding nothing
+of its own that nothing tests is not allocated: `D`'s instances then hold
+the nearest ancestor's (or none), and every read and test answers the same.
+`super.m(ā)` is `B.m.call(this, ā)`, with `B.m` the closure `B`'s prototype
+chain holds. So the allocation's keys are exact, and `D`'s declared type,
+its own members and `B`'s, covers it through the prototype chain
+([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
+
+### A class extending `Error`
+
+The standard `Error`, by its declaration
+identity, is a base too: `class Decline extends Error {}`, and `class
+DeclarationError extends Error { readonly at: Span; constructor(at, message)
+{ super(message); this.at = at; } }`, and a class extending either, to any
+depth. JavaScript constructs such an instance in the base: `super(m)` runs
+`Error(m)` with the derived class as the new target (ECMA-262, `Error (
+message [ , options ] )` and OrdinaryCreateFromConstructor), which allocates
+an ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
+non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and,
+in V8, a non-enumerable `stack`; each derived constructor then defines its
+own fields on it.
+
+The model states the message on the instance's first link, between the
+instance and `D.prototype`, which no copy reaches, as the `Error` overlay
+entry's result places it on a prototype object (`library-globals.mts`). One
+construction serves the family, at the class's prototype and the message its
+base gives:
+
+```math
+\mathsf{new}\ D(\vec a)\;\equiv\;\{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,\mu_D\},\ \ldots\textit{base},\ \varphi\}
+```
+
+```math
+\mu_D=\begin{cases}
+\mathsf{\%ErrorMessage\%}(\vec a_B) & B=\mathsf{Error}\\
+\textit{base}.\mathit{message} & B\ \text{extends}\ \mathsf{Error}
+\end{cases}
+\qquad
+\mathsf{\%ErrorMessage\%}(m)=m\ ??\ \texttt{""},\ \ m:\mathsf{string}\mid\mathsf{undefined}
+```
+
+where $`\vec a_B`$ is what `super` passes, none or the one message, and
+$`\textit{base}`$ is the base's construction, as for any derived class
+(above), absent where $`B`$ is `Error`; its own keys are copied and its links
+replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
+it is and an omitted or `undefined` one to `""`, which JavaScript's instance
+reads from `Error.prototype.message`. The argument is bound at `string |
+undefined` before it defaults, so an argument of another type, which
+`ToString` converts (`null` to `"null"`, an object by running its code), is
+refused at it. The instance's own keys are its declared fields;
+`e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
+$`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
+`Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
+the Boolean).
+
+The model and JavaScript place the message differently: an own
+non-enumerable property in JavaScript, a field of a link in the model (for an
+omitted message, `Error.prototype`'s in JavaScript, `""` on the link in the
+model). JavaScript's instance also owns a non-enumerable `stack`, which the
+model does not state. That the two agree on every admitted observation is the
+conclusion of this audit of the operations reaching an instance, given stable
+prototypes. Each operation is in one of three groups.
+
+Observations that agree:
+
+- `e.message` and a destructuring `{ message }` read the message, or `""`,
+  in both: $`\mu_D`$ on the link.
+- `e instanceof D` walks the chain in both, finding $`\kappa_D`$;
+  `instanceof Error` is the intrinsic stating a Boolean.
+- `Object.keys(e)` and `{ ...e }` see the declared fields in both: the
+  message and `stack` are not enumerable in JavaScript, and not own in the
+  model.
+- `Object.values(e)` and `Object.entries(e)` hand over the values of the
+  same own enumerable fields, by the overlay's obligated contracts; evidence
+  search finds no derivation of either at an instance holding a prototype
+  (observed 2026-10-19).
+
+Observations that differ, abstracted by a broad result type, also admitted:
+
+- `"message" in e` is `true` in JavaScript; it is typed a Boolean.
+- `for (k in e)` enumerates the declared fields; its keys are typed strings,
+  `%ForIn%`'s contract.
+- `Object.getOwnPropertyDescriptor(e, k)` exposes JavaScript's descriptor of
+  the own `message` or `stack`; its reviewed contract
+  (`library-globals.mts`) is `undefined` or a fresh descriptor whose value,
+  getter and setter are `unknown`, which either placement meets; evidence
+  search finds no derivation of it at an instance (observed 2026-10-19).
+
+Operations excluded, refused with a location:
+
+- ownness and the prototype: `e.hasOwnProperty`, `Object.hasOwn` and
+  `Object.getPrototypeOf`, whose results tell the placements apart;
+- serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
+  message through `[[Get]]`; the parameter is a JSON value, which an instance
+  holding a prototype is not;
+- members JavaScript's instance or `Error.prototype` holds and the model does
+  not state: `e.stack`, `e.toString()`, `D.captureStackTrace`, `super.m(…)`;
+- an instance member named `message` or `stack` (a method, a field or an
+  accessor), and a parameter property of either name, of a class extending
+  `Error` at any depth, refused at the member: JavaScript's own property
+  shadows a method, and a field or a parameter property defines or assigns
+  the own property where the model would add an enumerable field;
+- `super(m, options)`, whose `options.cause` is read through `[[Get]]`, as
+  the overlay's `Error` is;
+- another library base (`TypeError`, `Map`, an ambient class).
+
+#### Reserved writes
+
+JavaScript keeps an instance's own `stack`
+non-enumerable through an assignment, and its own `message` too where the
+construction passed one; after `new D()` or `new D(undefined)` the instance
+owns no `message`, and an assignment creates an own enumerable one (observed
+under Node, `invalid-error-subclass-assign-target`). Either way the model,
+which states neither property, would add or change an enumerable own field,
+which a later copy, `Object.keys` or an exact-key claim observes. The
+restriction is one policy of two parts: a set $`R`$ of reserved keys, here
+$`R = \{\texttt{"message"}, \texttt{"stack"}\}`$, and an exclusion of the
+receivers that may hold them, here every object owning the prototype key.
+Lean's lowering decides it on the claims evidence establishes, at every
+write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
+$`T`$ when $`T`$ is of clause rows (`plainTy`), its declared names expanded
+(`PositiveRules.expand`, then `splitSets`), and undefined for a type with a
+parameter or scheme row, which no clause describes.
+
+```math
+\mathrm{reserved}(K) \iff \lnot\,\mathrm{plain}(K) \;\lor\; \exists c \in \mathrm{cl}(K).\;
+  (c = \mathsf{strLit}\ s \land s \in R)
+  \lor (c = \mathsf{strIn}\ S \land S \cap R \neq \varnothing)
+  \lor c \notin \mathit{Keyless}
+```
+
+```math
+\mathit{Keyless} = \{\mathsf{num}, \mathsf{numLit}, \mathsf{numIn}, \mathsf{bigint}, \mathsf{bigintLit},
+  \mathsf{symbol}, \mathsf{symbolLit}, \mathsf{bool}, \mathsf{boolLit}, \mathsf{nul}, \mathsf{undef}\}
+  \cup \{\mathsf{strLit}\ s, \mathsf{strIn}\ S \mid s, S \text{ outside } R\}
+```
+
+```math
+\mathrm{protoFree}(T) \iff \mathrm{plain}(T) \land \forall c \in \mathrm{cl}(T).\;
+  \mathrm{primitive}(c)
+  \lor \bigl(c = \mathsf{dict} \land (\mathit{indexes}(c) \neq [] \lor \mathit{cells}(c) \neq [])\bigr)
+  \lor \bigl(c \in \{\mathsf{refs}, \mathsf{dict}\} \land \exists b \in \mathrm{bounds}(c).\ \lnot\, b.\mathrm{admits}(\texttt{[[proto]]})\bigr)
+```
+
+```math
+\frac{\Gamma \vdash r : T \qquad \kappa = f \ \text{or}\ \Gamma \vdash k : K \qquad
+  \mathrm{reserved}(\kappa) \Rightarrow \mathrm{protoFree}(T)}
+  {r[\kappa] \mathrel{=} e \ \text{is lowered}}\ (\textsf{Write-Reserved})
+```
+
+A key the source spells is reserved when it is in $`R`$; a computed key by
+its claim $`K`$. The key domain: a number key converts to its decimal
+spelling, never a reserved string; a bigint, a Boolean, `null` and
+`undefined` to theirs; a symbol stays a distinct key; a finite template type
+reaches the claims as its string alternatives. Any other key claim, an
+object's (whose conversion runs code) and `string` included, may be
+reserved. A primitive is a clause of `Keyless` or `str`. `top`, `source`,
+arrays (whose objects own `[[proto]]` where the graph states the built-ins),
+packs and callable clauses are never proto-free; optional fields and
+readonly views constrain no absent key and do not make a record proto-free;
+a union is proto-free when every alternative is, and an intersection as its
+normalization's clauses are. $`T`$ and $`K`$ are the claims at the receiver's
+and the key's spans, expression obligations evidence must establish, so the
+premise reads certified facts and no TypeScript type or narrowing.
+
+- **Where.** `reservedWriteCheck` (`Lowering/Types.lean`) is called where a
+  write is emitted: every graph node whose term is a field write
+  (`emitAt`, covering ordinary writes, the saved references of updates,
+  logical assignments and destructuring targets, and closures' bodies, which
+  are lowered through the same emission), the closed expressions' writes
+  (`writeCell`), the key-adding writes of an owned object (`executionGrowth`,
+  `growingWrite`, `computedGrowth`), and before any of them in
+  `comparisonsExpr`. An array element write's key is a number, never
+  reserved. `Object.assign` is the native call's contract check, at each
+  source's copy (`mergeObjects`): the source is a write at every key it may
+  own, reserved unless every clause of its claim is a primitive or a `refs`
+  or `dict` with no index and a key bound admitting neither reserved key.
+  A loop head whose target is a member is outside the fragment (the gate).
+- **Meaning.** `ProtoFree.clause_sound` proves that no member of a
+  proto-free clause owns `[[proto]]`, at every interpretation of the
+  clause's operands (any `Ξ`, `X`, `P` of `semWithArgs`), and
+  `ProtoFree.list_sound` lifts it to a union of clauses. Refusing more keeps
+  `checkJson_safe`; it does not by itself establish that a source write
+  corresponds to the model's, which is what the next item argues.
+- **Why the premise excludes an instance of the family.** In the model an
+  instance owns `[[proto]]` where the fragment builds it: an instance a
+  class extending `Error` constructs (its first link), the result of the
+  overlay's `new Error` and `Error(m)`, and a value at a class or `Error`
+  type, whose declared instance type holds a prototype (`errorInstance` in
+  `library-globals.mts`, for constructor results and explicit `Error`
+  heritage). A value a unit receives at a dictionary with an index, or at a
+  record whose key bound excludes `[[proto]]`, owns no prototype key: that
+  is the meaning of those clauses (`dictViewT`, `dictCellT`, `ownKeysT`),
+  which the inputs meet by `EnvOk`, so it adds no assumption beyond the
+  caller contract ([trust](DESIGN.md)). So a receiver
+  whose checked claim is proto-free is no instance, also of any other class,
+  which the rule refuses alike. Being proto-free discriminates instances in
+  this representation; it says nothing of a plain object's own
+  non-enumerable properties, which the caller contract excludes.
+- **What stays the parser's.** A field of an allocation is no write: an
+  instance member, a parameter property, and a constructor's `this.k = e`,
+  which the lowering makes a field of the instance's allocation, are
+  reserved by the parser in a class extending `Error`. The parser's scan of
+  the constructor follows arrows, which keep its `this`, and stops at a
+  function, a method, an accessor or a class, which bind their own: their
+  writes are writes, the rule's (`invalid-error-subclass-nested-function-write`). Lean reads no class
+  declaration, and accepts a fragment, claims and evidence with a member
+  renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
+  Each write form of `reserved-write-twin`, its key renamed `stack` in the
+  three documents, is a valid document only the rule refuses, located at the
+  write, in search and in check ("forged reserved writes").
+
+External code reaching an instance of the family is required to keep the
+message contract the model represents and to create no enumerable own
+`message` or `stack` on it. The message contract: `e.message` is a string,
+the one the model's link holds; where the model re-reads the instance after
+the external code runs (a call whose footprint may change it), any string
+its declared type allows. This holds through a parameter type looser than
+the instance's own, such as `{ message?: unknown }`: such code may not write
+another value. The enumerability requirement excludes an assignment of
+`message` to an instance constructed without a message and a definition of
+either key as enumerable. A footprint states which locations a call may
+change, not what a changed message holds or whether a key it creates is
+enumerable, so neither requirement follows from an external function's
+effect; both are stated of external code. With them, the admitted
+observations after the call agree with the model: `e.message` reads a string
+the model's type allows, and keys, copies and entries see the declared
+fields alone; `e.stack` is refused.
+
+The pipeline cases `error-subclass` and `error-subclass-methods` (run under
+Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
+constructed instance owning `message` or holding `stack` are refused in
+search and check (`pipeline/test.mts`).
+
+### Class members
+
+A generic method `m<V>(…)` is the instance's member with quantified
+signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its closure `D.m` a
+generic closure, checked once at a scheme received by the instance
+(`funScheme`), which the prototype holds. The parser names the closure's
+binder $`k`$ by the member's key and the position (`"m"#k`,
+the parser's `lambda` in `fragment-expressions.mts`), and the producer's scheme row for the
+prototype's field binds those names; the member's scheme binds the
+declaration's. The prototype's scheme covers the member bound to the
+instance up to renaming the member's binders to its own
+([`CoversByScheme`](POSITIVE-TYPES.md#clause-coverage)): its receivers read
+none of its binders and hold the instance, and its signatures cover the
+member's renamed ones at every instance. A bounded binder is refused, since the row's
+name spells its bound.
+
+A method declaring `this: T` is the instance's member whose host must meet
+`T` ([records](POSITIVE-TYPES.md#records)), and its closure `D.m` takes `T`
+as its receiver, so its body reads `this` at `T`. The prototype's closure
+covers the member through the member's `T`, whose values the closure's
+receiver admits, whatever the instance type is
+([method coverage](POSITIVE-TYPES.md#clause-coverage)); a call on the
+instance, `this.m()` among them, proves its host within `T` (`bindMember`).
+
+What a class declaration may not hold, each for its reason:
+
+- a generic method declaring `this: T`: its member is a scheme the member
+  bound to its host meets, whatever receiver it is given, which states no
+  type the host must meet ([Source model](SOURCE-MODEL.md#method-members-are-host-relative));
+- a generic method with a bounded binder: the member's binder row is named by
+  its bound, which the closure's binder, named by the parser, is not;
+- a constructor parameter default reading `this`, or a constructor statement
+  reading it other than as a field assignment's target: the instance is
+  allocated at the constructor's end;
+- a member with a computed key (a method is a binding and a prototype key
+  named by its plain name) other than a static `[Symbol.hasInstance]`,
+  below;
+- an accessor (reading it runs code; a member read is a plain one), an
+  index signature (instances are what construction allocates), a static
+  block reading `this` (the class value, which JavaScript's block reaches
+  with later static fields undefined and the model allocates only after
+  them);
+- a private name in inheritance (a derived instance's base part is a copy,
+  and a copy holds no private slot), and `#x in o` (it tests an own slot,
+  where $`\mathsf{hasKey}`$ walks the prototype chain and would find an
+  instance's slot from an object inheriting from it);
+- extending a generic class other than at the base's own binders (a generic
+  base's construction is at its binders' rows, [classes](SOURCE-CONTRACTS.md#classes)), and
+  extending `Array` (its instances are what the library's constructor
+  allocates, not an ordinary object).
+
+## Object spreads
+
+A spread in an object literal copies its source's own enumerable
+properties ([object literals](SOURCE-MODEL.md#object-literals)). The claims
+a copy needs come from the two forms below: the literals whose own-key
+bound a copy keeps, and the arms of an intersection it copies.
+
+### Literals a spread copies
+
+A copy replaces every key its source may own. A source of an open record
+type may own any key, at any type, so a field written before its spread
+is not the copy's: `{ name, ...s }` with $`s:\{\}`$ states no `name`
+(`invalid-object-spread-union-open`). A fresh literal owns exactly the
+keys it writes, and its claim states it with the own-key bound
+$`\mathsf{among}\ \vec k`$. Two forms carry that bound from the literal to
+a spread's source:
+
+```math
+\frac{f\ \text{a closure without a result annotation}\quad
+      e\in\mathrm{returned}(f)\quad e=\{k_1{:}e_1,\ldots,k_n{:}e_n\}\quad \Gamma\vdash e_i:T_i}
+     {\Gamma\vdash e:\mathsf{Ref}(k_1{:}T_1,\ldots,k_n{:}T_n;\ \varnothing;\ \mathsf{among}\ \{k_1,\ldots,k_n\})}\ \textsf{returned-literal}
+```
+
+where $`\mathrm{returned}(f)`$ is $`f`$'s expression body, or the operand of
+each `return` of its block body outside nested closures, an async
+closure's the payload each resolves its promise with, each read through
+the arms of `?:`, the right operands of `&&`, `||`, `??` and `,`, and the
+operands of a non-null assertion and of `satisfies`; and a constant without
+an annotation whose object a later spread or `Object.assign` copies has its
+initializer's literals, through the same positions, claimed with their
+bounds. A literal expected at a writable dictionary is allocated at the
+dictionary instead, since code holding it may add keys, which no own-key
+bound admits. The closure's result is the union of
+its returned claims, widened as TypeScript widens an inferred result, so a
+spread of its call meets each literal's bound. A source clause bounded by
+$`\mathsf{among}\ \vec k`$ gives nothing under a key outside $`\vec k`$, so the
+merge keeps a field written before it there (`FieldsOk`,
+[allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)). This is
+the bound TypeScript's inferred union of literals relies on, which states a
+key one literal lacks as optional at `undefined`:
+`p ? { rest: true as const } : {}` is
+`{ rest: true } | { rest?: undefined }`, and the bound is what puts a value
+of the second arm within it. A const assertion's type is not fresh: a field
+`k: e as const` keeps $`e`$'s literal type. The claims are proposals: Lean
+checks the bound at the allocation, and a written result, a returned name,
+a call or any other source keeps its declared type, open where it is open
+(`invalid-object-spread-annotated-result`,
+`invalid-object-spread-returned-dictionary`;
+`object-spread-exact-literals` verifies, each negative run under Node).
+
+### A spread of an intersection
+
+A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,
+so it is of $`a_1 \sqcap \cdots \sqcap a_n`$ for some arm $`a_i`$ of each
+$`A_i`$, and its copy is the copy of that meet. The arms of a type are its
+union's members, a declaration's through its equation, and an
+intersection's the meets of one arm of each operand, so a union operand
+distributes:
+
+```math
+\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\neq\varnothing\,\}
+```
+
+Each meet $`a\sqcap b`$ has one of three outcomes: empty ($`\varnothing`$),
+a record or primitive the copy reads, or refused. An empty meet contributes
+no arm; a refused meet refuses the whole spread, whatever the other meets
+of the union are; and the spread is refused where no arm remains.
+
+For each product, the producer gathers every record operand before choosing
+fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
+type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
+states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
+state it, and no field is selected for it. Otherwise a candidate must itself
+supply the required presence. The proposal selects an existing field
+$`j\in I_k`$ satisfying
+
+```math
+\forall i\in I_k,\ H(T_j,T_i)
+\qquad\text{and}\qquad
+\bigl(\forall i\in I_k,\ o_i=1\bigr)\ \lor\ o_j=0.
+```
+
+Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
+Here $`H`$ is the producer's `plausible_subtype`
+([`type_queries.ml`](../ocaml-producer/type_queries.ml)), a proposal
+heuristic for inclusion: equality, literals within their primitive, members
+of unions, and shapes with equal fields; it compares named types as written,
+without expanding their declarations. Lean decides inclusion.
+
+Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
+selects the third field, independently of operand order. An optional field
+cannot supply a required key merely because its read type passes the test.
+
+Products with incompatible primitive atoms, or both a primitive and a
+record, contribute no arm, as Lean's clause meet drops them. Emptiness is
+decided over the enclosing union: an empty intersection arm contributes
+nothing, and the whole spread source is refused only when no alternatives
+remain. A product with an unsupported field selection is refused even when
+another product succeeds: `({ k: "a" } | { k: "b" }) & { k: "a" }` has such
+a product. The heuristic does not decide that contradictory field
+constraints make a record empty.
+
+The copy of each surviving arm states its own enumerable string-keyed
+fields, optional ones optional. The copy's type is the producer's proposal.
+Lean checks the merge against the clauses it normalizes the operand's claim
+to, where several fields of a key are constraints on its value
+([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
+refuses a copy's field that no field of the source gives
+(`spread-intersection-meet` and its forged-claim control in
+`pipeline/test.mts`).
+
+Refused at the spread's operand: a data key with no candidate recognized by
+$`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
+`{ k: string } & { k?: "a" }`); two operands with index signatures; a
+callable met with a record with readonly or optional fields, methods or an
+index; an intersection operand that is an array, a
+type parameter, a cyclic declaration, or another unsupported shape; and a
+source with no surviving alternative. A callable is met with a record only where the
+record's fields are required writable data fields, whether the intersection
+is written in an annotation or reached through a declaration. Every callable
+operand in a product contributes all its signatures to one overloaded
+callable, so the producer's proposal is the same whether they are written
+flat or grouped through an alias; Lean's clause meet keeps both signature
+lists of two callables. Lean reads an alias of function types met with a
+record as an empty intersection (`spread-intersection-callable-alias`), so
+the verifier refuses that grouping.
+
+Within an intersection product, `Top` (`unknown`) is the identity; a source
+consisting only of `Top` has no supported copy. `Exact` records are supported
+as standalone spread sources, but an `Exact` operand inside an intersection
+is outside this product algorithm, including when the other operand is
+`Top`. Exact own-key bounds require a separate meet operation.
 
 ## Statement forms
 
@@ -2141,7 +2283,9 @@ reserved keys (`[[proto]]`, `[]`, `[[code]]`, `[[host]]`, a class's
 prototype key) are other spellings; and no allocation but the marker's,
 source, native or host, adds $`\kappa_u`$, so no source-visible value or
 object on its prototype chain owns it. `copiedKey` excludes $`\kappa_u`$,
-as it excludes `[[host]]`, though by confinement (below) no copy receives a
+as it excludes `[[host]]`, though by confinement
+([calls through `Function.prototype.call`](#calls-through-functionprototypecall))
+no copy receives a
 marker. The cell's
 contract is $`T\cup U`$, with $`U`$ a label of its own whose one clause
 requires $`\kappa_u`$; closures and function declarations capture the cell
@@ -2246,7 +2390,7 @@ annotation completes, beside the signatures it is offered, with the
 footprint it proposes for the closure:
 every such closure is assumed to change nothing, and rounds of inference
 raise the assumption to what the closure's claim then shows, as for
-[function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects);
+[function declarations](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
 the checker derives each from the claimed type. A `find` callback calling
 a recursive constant whose body changes nothing is therefore within the
 empty footprint, its element `T` (`find-recursive-constant`); one whose
@@ -2675,9 +2819,7 @@ method call's receiver, a return, a read of a followed member) and an export
 may hand it to code that replaces its member or gives the function an own
 `call`.
 
-## Certifying inferred call effects
-
-### Inferred call effects: elaboration and certification
+## Inferred call effects: elaboration and certification
 
 A call signature states a [closed footprint](FOOTPRINTS.md#changes-and-footprints):
 on normal return, the call changes the contents of the previously allocated
@@ -2689,7 +2831,7 @@ an assertion function's signatures state, besides, the promises `guards` and
 ([user-defined guards](#user-defined-guards)). An
 **effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
-[certification rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
+[certification rules](#definition-and-application-rules)
 state what a certificate must establish.
 
 This extends the language of claims beyond TypeScript annotations. Three
@@ -2717,13 +2859,13 @@ An imported implementation needs checked evidence
 assumption: its TypeScript declaration supplies neither proof nor an implicit
 effect. Built-in contracts remain separately audited assumptions.
 
-#### Calls through a location
+### Calls through a location
 
 A call consumes the contract established for
 the callee value; a stronger effect needs a certificate, and storage keeps
 its checked lifetime contract. A module function declaration no code
 reassigns is read at the signature certified from its body
-([function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
+([function declarations](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)),
 as a certified import is. A field or element read, `e.f(…)` or `e[k](…)`,
 gives the value the location holds when the call runs: one written after
 any initialiser, through any reference, or held by a record built
@@ -3112,7 +3254,7 @@ not. The entry keeps the unrestricted
 form beside it, so a call outside the restricted options keeps its type and
 an unrestricted effect.
 
-#### The motivating chain
+#### Worked example: commit-records
 
 `commit-records`' `git` calls `execFileSync` at
 the restricted options and is certified at the empty footprint with

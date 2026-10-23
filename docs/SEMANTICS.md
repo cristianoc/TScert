@@ -713,7 +713,7 @@ graph evidence and the effect together in `codeCheckedUsing`; `codeChecked_sound
 establishes the semantic contract used by fixed and variadic closure introduction.
 The positive type graph carries the effect on every signature; the source
 side proposes and certifies effects as
-[inferred call effects](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
+[inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 states.
 
 This remains a value type, despite mentioning heaps: membership quantifies over
@@ -734,7 +734,7 @@ sparse result. The host premise is explicit in the
 [boundary](SOURCE-MODEL.md#exact-contracts-and-native-effects); custom species are
 outside this semantics. Native compliance remains a separate review obligation,
 not a consequence of `PromiseWith`'s Lean proofs. The
-[typing rules for inferred effects](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
+[typing rules for inferred effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 state where the callback guarantee is established and consumed.
 
 ## Argument-list preparation

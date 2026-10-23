@@ -69,7 +69,7 @@ pipeline; `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 ## Adding a case
 
 A new feature comes with a positive witness and an independent negative
-control. Promotion of a boundary case depends on implemented semantics and
+control. Promotion of a boundary case depends on the semantics and
 checking, not merely on the parser accepting the syntax.
 
 A negative control must be independent: it must fail the check being added and

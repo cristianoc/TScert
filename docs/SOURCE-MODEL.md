@@ -73,26 +73,15 @@ alone (a lemma of `isSourceVal` and `tagHolds` by cases). A `true` answer of
 fact, held by the slot's value, so a call does not end it.
 
 The calculus has no clause for $`J_{\mathrm{ref}}`$ or $`J_{\mathrm{fun}}`$,
-so a `typeof` test on `unknown` narrows nothing. The proposed rules
-(conjectured sound, not implemented) add them as the `source` clause
-restricted to the kind, $`\{v \in J \mid \mathsf{tagHolds}\ \mathsf{isRef}\ v\}`$
-and its `isFun` analogue:
-
-```math
-\frac{\Gamma\vdash x:J\qquad \mathsf{typeof}\ x = \texttt{"object"}\ \text{answers}\ \mathsf{true}\qquad x\neq\mathsf{null}\ \text{answers}\ \mathsf{true}}
-     {\Gamma\vdash x:J_{\mathrm{ref}}}\ \textsf{slice-object}
-\qquad
-\frac{\Gamma\vdash x:J_{\mathrm{ref}}\qquad \mathsf{Array.isArray}(x)\ \text{answers}\ \mathsf{false}}
-     {\Gamma\vdash x:J_{\mathrm{ref}}\setminus\mathsf{arrays}}\ \textsf{slice-non-array}
-```
-
-$`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ is $`J_{\mathrm{ref}}`$ with an
-own-key bound excluding the store key `[]`, the key `Array.isArray` reads.
+so a `typeof` test on `unknown` narrows nothing. Rules adding them as the
+`source` clause restricted to the kind are conjectured sound:
+[slices of the value universe](../WORK.md#universe-slices).
 
 No slice is the dictionary view. `{ readonly [key: string]: unknown }` is
 `dictViewT` at the string keys and $`J`$: an object without call code,
 owning no `[[proto]]` and no `[[host]]`, every present string-keyed field's
 contract within $`J`$. A member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$
+($`J_{\mathrm{ref}}`$ with an own-key bound excluding the store key `[]`)
 may own a prototype (a class instance, an object `Object.create` made) or be
 a host object (a `Map`, a `Date`), which pass `typeof v === "object"`,
 `v !== null` and `!Array.isArray(v)` alike, so a guard over `unknown` that
@@ -183,7 +172,7 @@ instance's methods are its prototype's and are not copied, nor is an
 `Error`'s non-enumerable `message`. A value of a binder bounded by a record
 (`B extends {…}`) is copied at its bound, the meet row it is read as being
 below the bound's clauses, and a value of an intersection at the meet of
-its operands ([a spread of an intersection](#a-spread-of-an-intersection));
+its operands ([a spread of an intersection](SOURCE-ELABORATION.md#a-spread-of-an-intersection));
 the copy is a record of those fields, no value of the binder, since a binder narrower than its bound may fix a field the
 literal replaces: at `B := { name: "a"; size: number }`, `{ ...b, name: "x" }`
 meets the bound and not `B` (`invalid-spread-binder-result`, executed under
@@ -232,132 +221,6 @@ writable dictionary at what the parts give there, the string and the symbol
 keys each at their own type; a spread of an open record meets no index. `Object.assign` is the same copy, onto a fresh literal or,
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
-
-### Literals a spread copies
-
-A copy replaces every key its source may own. A source of an open record
-type may own any key, at any type, so a field written before its spread
-is not the copy's: `{ name, ...s }` with $`s:\{\}`$ states no `name`
-(`invalid-object-spread-union-open`). A fresh literal owns exactly the
-keys it writes, and its claim states it with the own-key bound
-$`\mathsf{among}\ \vec k`$. Two forms carry that bound from the literal to
-a spread's source:
-
-```math
-\frac{f\ \text{a closure without a result annotation}\quad
-      e\in\mathrm{returned}(f)\quad e=\{k_1{:}e_1,\ldots,k_n{:}e_n\}\quad \Gamma\vdash e_i:T_i}
-     {\Gamma\vdash e:\mathsf{Ref}(k_1{:}T_1,\ldots,k_n{:}T_n;\ \varnothing;\ \mathsf{among}\ \{k_1,\ldots,k_n\})}\ \textsf{returned-literal}
-```
-
-where $`\mathrm{returned}(f)`$ is $`f`$'s expression body, or the operand of
-each `return` of its block body outside nested closures, an async
-closure's the payload each resolves its promise with, each read through
-the arms of `?:`, the right operands of `&&`, `||`, `??` and `,`, and the
-operands of a non-null assertion and of `satisfies`; and a constant without
-an annotation whose object a later spread or `Object.assign` copies has its
-initializer's literals, through the same positions, claimed with their
-bounds. A literal expected at a writable dictionary is allocated at the
-dictionary instead, since code holding it may add keys, which no own-key
-bound admits. The closure's result is the union of
-its returned claims, widened as TypeScript widens an inferred result, so a
-spread of its call meets each literal's bound. A source clause bounded by
-$`\mathsf{among}\ \vec k`$ gives nothing under a key outside $`\vec k`$, so the
-merge keeps a field written before it there (`FieldsOk`,
-[allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)). This is
-the bound TypeScript's inferred union of literals relies on, which states a
-key one literal lacks as optional at `undefined`:
-`p ? { rest: true as const } : {}` is
-`{ rest: true } | { rest?: undefined }`, and the bound is what puts a value
-of the second arm within it. A const assertion's type is not fresh: a field
-`k: e as const` keeps $`e`$'s literal type. The claims are proposals: Lean
-checks the bound at the allocation, and a written result, a returned name,
-a call or any other source keeps its declared type, open where it is open
-(`invalid-object-spread-annotated-result`,
-`invalid-object-spread-returned-dictionary`;
-`object-spread-exact-literals` verifies, each negative run under Node).
-
-### A spread of an intersection
-
-A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,
-so it is of $`a_1 \sqcap \cdots \sqcap a_n`$ for some arm $`a_i`$ of each
-$`A_i`$, and its copy is the copy of that meet. The arms of a type are its
-union's members, a declaration's through its equation, and an
-intersection's the meets of one arm of each operand, so a union operand
-distributes:
-
-```math
-\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\neq\varnothing\,\}
-```
-
-Each meet $`a\sqcap b`$ has one of three outcomes: empty ($`\varnothing`$),
-a record or primitive the copy reads, or refused. An empty meet contributes
-no arm; a refused meet refuses the whole spread, whatever the other meets
-of the union are; and the spread is refused where no arm remains.
-
-For each product, the producer gathers every record operand before choosing
-fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
-type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
-states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
-state it, and no field is selected for it. Otherwise a candidate must itself
-supply the required presence. The proposal selects an existing field
-$`j\in I_k`$ satisfying
-
-```math
-\forall i\in I_k,\ H(T_j,T_i)
-\qquad\text{and}\qquad
-\bigl(\forall i\in I_k,\ o_i=1\bigr)\ \lor\ o_j=0.
-```
-
-Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
-Here $`H`$ is the producer's `plausible_subtype`
-([`type_queries.ml`](../ocaml-producer/type_queries.ml)), a proposal
-heuristic for inclusion: equality, literals within their primitive, members
-of unions, and shapes with equal fields; it compares named types as written,
-without expanding their declarations. Lean decides inclusion.
-
-Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
-selects the third field, independently of operand order. An optional field
-cannot supply a required key merely because its read type passes the test.
-
-Products with incompatible primitive atoms, or both a primitive and a
-record, contribute no arm, as Lean's clause meet drops them. Emptiness is
-decided over the enclosing union: an empty intersection arm contributes
-nothing, and the whole spread source is refused only when no alternatives
-remain. A product with an unsupported field selection is refused even when
-another product succeeds: `({ k: "a" } | { k: "b" }) & { k: "a" }` has such
-a product. The heuristic does not decide that contradictory field
-constraints make a record empty.
-
-The copy of each surviving arm states its own enumerable string-keyed
-fields, optional ones optional. The copy's type is the producer's proposal.
-Lean checks the merge against the clauses it normalizes the operand's claim
-to, where several fields of a key are constraints on its value
-([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
-refuses a copy's field that no field of the source gives
-(`spread-intersection-meet` and its forged-claim control in
-`pipeline/test.mts`).
-
-Refused at the spread's operand: a data key with no candidate recognized by
-$`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
-`{ k: string } & { k?: "a" }`); two operands with index signatures; a
-callable met with a record with readonly or optional fields, methods or an
-index; an intersection operand that is an array, a
-type parameter, a cyclic declaration, or another unsupported shape; and a
-source with no surviving alternative. A callable is met with a record only where the
-record's fields are required writable data fields, whether the intersection
-is written in an annotation or reached through a declaration. Every callable
-operand in a product contributes all its signatures to one overloaded
-callable, so the producer's proposal is the same whether they are written
-flat or grouped through an alias; Lean's clause meet keeps both signature
-lists of two callables. Lean reads an alias of function types met with a
-record as an empty intersection (`spread-intersection-callable-alias`), so
-the verifier refuses that grouping.
-
-Within an intersection product, `Top` (`unknown`) is the identity; a source
-consisting only of `Top` has no supported copy. `Exact` records are supported
-as standalone spread sources, but an `Exact` operand inside an intersection
-is outside this product algorithm, including when the other operand is
-`Top`. Exact own-key bounds require a separate meet operation.
 
 ## Arrays
 
@@ -587,7 +450,7 @@ string's `length` and indices are its own
 ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)). Each member
 those prototypes list states the empty footprint, so a call of one is a
 fixed qualified call, and the read itself an inspection
-([certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
+([certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 
 ## Receivers
 

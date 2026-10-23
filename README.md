@@ -135,9 +135,6 @@ make suite    # every pipeline case: source files with their expected outcome
 make help     # every target
 ```
 
-[AGENTS.md](AGENTS.md) holds the rules for changing the project: what a change
-must carry, which tests to keep, and how commits are recorded.
-
 ## Read next
 
 - [DESIGN](docs/DESIGN.md): principles, architecture, the trust surface, and the
@@ -145,8 +142,15 @@ must carry, which tests to keep, and how commits are recorded.
 - [SEMANTICS](docs/SEMANTICS.md), [POSITIVE-TYPES](docs/POSITIVE-TYPES.md),
   [PROGRAM-TYPING](docs/PROGRAM-TYPING.md): the calculus, its types and its
   typing rules.
-- [SOURCE-MODEL](docs/SOURCE-MODEL.md): how TypeScript values and operations
-  map to the calculus.
+- [SOURCE-MODEL](docs/SOURCE-MODEL.md),
+  [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md),
+  [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md),
+  [SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md): how TypeScript values and
+  operations map to the calculus, how each source form lowers, how types and
+  library contracts are read, and what the fragment refuses.
+- [AGENTS](AGENTS.md): the rules for changing the project: what a change
+  must carry, which tests to keep, and how commits are recorded.
+- [WORK](WORK.md): open work and its status.
 - [Pipeline cases](tests/README.md): worked examples of every supported
   construct, positive and negative.
 - [REFERENCES](docs/REFERENCES.md): the work TScert draws on.

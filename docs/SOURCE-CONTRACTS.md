@@ -307,7 +307,7 @@ require; the import's TypeScript declaration supplies none.
 stable: a named import of an exported function declaration that no code of
 its module reassigns, or a default import of an `export default function`,
 which is the named import of `default`
-([default imports](SOURCE-ELABORATION.md#derived-source-forms)). Its terminal
+([default imports](SOURCE-ELABORATION.md#default-imports)). Its terminal
 declaration identity is the one TypeScript resolves the import to, through
 re-exports; a re-exporting module's own execution is part of the runtime
 module graph below. Any other import is read at its ordinary signature. Lean refuses a unit whose module's document writes
@@ -631,7 +631,7 @@ Three sources give a value of such a type:
 and the scheme an annotation or a declaration states. A closure without a
 result annotation is claimed at its body's type, widened as TypeScript
 widens an inferred result, the object literals it returns with their exact
-keys ([literals a spread copies](SOURCE-MODEL.md#literals-a-spread-copies)),
+keys ([literals a spread copies](SOURCE-ELABORATION.md#literals-a-spread-copies)),
 which the closure's code is then checked at
 ([generic closures](CALLABLES.md#overloads-polymorphism-and-binding)). In
 **module-scheme**, $`g`$ is a generic module function, certified at every
@@ -1144,7 +1144,7 @@ allocation is checked like any other: a field without an initializer holds
 `undefined` until assigned, so `f!: T` holds exactly when the constructor
 assigns `f` on every path, and `f?: string` left unassigned holds its
 `undefined`. A
-derived class's constructor is the [derived form](SOURCE-ELABORATION.md#derived-source-forms) over
+derived class's constructor is the [derived form](SOURCE-ELABORATION.md#derived-classes) over
 this one; an override must be sound, since the derived class's declared type
 is its own members and its base's.
 
@@ -1698,7 +1698,7 @@ index is typed: a write at a key known only at run time is a
 [key-adding write](PROGRAM-TYPING.md#key-adding-writes) on a local's own
 object, its copy with an allocation at the key over it. A numeric property name is the key its value's `ToString` spells
 (`numericKey` in `type-term.mts`), and a number key of a receiver claimed only
-at records is the [named access](SOURCE-ELABORATION.md#derived-source-forms) of that key.
+at records is the [named access](SOURCE-ELABORATION.md#keyed-access-at-a-singleton-key) of that key.
 
 ## Prototype contracts
 
@@ -2685,7 +2685,7 @@ functions. The module `node:assert` itself, whose `equal` is loose equality,
 is not read.
 
 **Reading.** As a namespace import's member is
-([namespace imports](SOURCE-ELABORATION.md#derived-source-forms)), each
+([namespace imports](SOURCE-ELABORATION.md#namespace-imports)), each
 member read `assert.m` is a binding of the file, named `assert.m`, of the
 export `default.m`, and a call `assert(…)` is a call of the import's own
 binding; any other mention (passing `assert`, a member read uncalled) is
