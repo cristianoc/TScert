@@ -2838,7 +2838,10 @@ arm partly covered is kept. `BranchRefinement.uncovered_sound`,
 split, and `memberYield_sound` composes them with the tag slices
 (`memberSlotSlice`, `memberFieldSlice`); the search reads the split arm's
 label from the claims. The candidates are unfolded once per slice, not once
-per arm (`candidateRows`, `restrictionIn_eq`), and search answers a slice
+per arm (`candidateRows`, `restrictionIn_eq`), and an arm reads only the
+candidates whose record clause has its own first operand and views but at
+the tested key, by a hash of these under the graph's label hash
+(`restrictKey`, `restricts_key`, `restrictionAt_eq`); search answers a slice
 asked again from its first answer (`fieldSliceS`). The rule:
 
 ```math
