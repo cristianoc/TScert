@@ -205,3 +205,14 @@ calls; the parser identifies the standard intrinsic by its declaration
 function has a fresh identity and its own bag; the target's properties are not
 copied, and a second `.bind` or a `.call` on it cannot replace the first
 receiver.
+
+**Parameter defaults.** A default is an entry node of the code's graph: a
+tag dispatch on `undefined` at the parameter's slot, the default's
+evaluation on one arm. The slot's type is $`T\cup\{\mathsf{undefined}\}`$
+and the initialized binding's $`T`$. In a generic closure the code is
+checked at its scheme row, so initialization establishes $`T`$ for every
+assignment of the binders, which observed calls cannot justify. It never
+obtains $`T`$ by deleting `undefined` from the input, since $`T`$ may itself
+contain `undefined`. The order of entry nodes and the closure conversion of
+defaults capturing later parameters are
+[parameter initialization order](SOURCE-ELABORATION.md#parameter-initialization-order).

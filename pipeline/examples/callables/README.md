@@ -10,135 +10,25 @@ develop or check, defer it until the case is expressible through the pipeline.
 
 ## The callable surface
 
-Supported. Function declarations, function expressions and arrows are callable
-values.
-Parameter lists of any length are checked, with the callee evaluated before the
-actuals and the actuals left to right. A call may omit a trailing position
-whose contract admits `undefined`, which is the value the machine binds there;
-`x?: T` is carried as `T | undefined`. A parameter may instead carry a default,
-`y: B = e`: its position admits `undefined` for the same reason, and `e`
-replaces that value before the body runs, so the body reads `B`; a default may
-read initialized earlier parameters. A rest parameter whose contract is a tuple
-of required positions, `...rest: [B, C]`, is those positions in the signature
-and one fresh array in the body, allocated where the parameter is bound. A
-spread writes the elements of such a tuple in place of the last arguments, read
-after every earlier argument has been evaluated. A rest parameter whose
-contract is a mutable array, `...rest: T[]`, makes the closure variadic: it
-takes any number of actuals past its fixed parameters, each at `T`, and the
-call collects them into a fresh array. Spreads into it may stand anywhere among
-those actuals, any number of them, each read where it is written: a spread
-followed by an actual that runs code is copied there. An optional fixed
-parameter before the rest may be omitted. A function type promises which actual
-lists a caller may write, not which code the callee has, so a variadic closure
-meets a fixed signature whose positions it admits, one value may carry fixed and
-variadic signatures, and a callable object may be variadic. A current or later raw argument slot is
-not a readable binding. Literal closures may capture later parameters through
-acyclic closure conversion: their allocation waits until their captures are
-initialized, and no executing initializer may read or expose a pending closure.
-Effectful defaults retain source order. Quantified defaults, including inputs
-of type `T | undefined`, have universal initialization certificates.
-Callables pass as
-arguments, return as results, escape as closures and appear as thunks; they form
-unions with null and with each other, are selected by
-`typeof x === "function"` guards, and are held in cells, including recursive
-invocation through one. A fresh arrow takes one initialized `value` field through
-explicitly typed `Object.assign`. `.call` applies to local arrows and their
-immutable aliases, with the receiver evaluated and then discarded. `.bind` saves
-an argument prefix on the same arrows. One closure may advertise several signatures — an intersection of arrows —
-and is then checked once per signature, each a separate obligation on the same
-body; the producer states what that body claims under each. TypeScript rejects
-the implementations this accepts. Generic declarations, their bounds and
-quantified local closures are checked at every instance.
+What a callable is and what its type promises is
+[CALLABLES](../../../docs/CALLABLES.md); argument lists, rests and spreads are
+[calls](../../../docs/SOURCE-MODEL.md#calls), receivers
+[receivers](../../../docs/SOURCE-MODEL.md#receivers), parameter defaults and
+their order
+[parameter initialization order](../../../docs/SOURCE-ELABORATION.md#parameter-initialization-order),
+and every refused form, with the reason and its cases,
+[functions, calls and methods](../../../docs/SOURCE-FRAGMENT.md#fragment-boundary)
+in the refusal index. The encoding is the
+[Fragment's](../../../docs/FRAGMENT-FORMAT.md#expression-closures-and-calls).
 
-Not supported, with the refusal each one meets:
-
-| Form | Where it stops |
-| --- | --- |
-| `arguments` | the producer refuses it as an unbound name; a binding named `arguments` is refused in sloppy code |
-| A spread into fixed parameters of an array that is not a tuple of required positions | the producer: a spread argument needs a tuple of required positions |
-| A spread of an array that may have holes into a rest whose element type lacks `undefined` | the write leaving the hole is refused; TypeScript accepts the call ([witness](../spread-holes.ts)) |
-| `.call` on a method read off an object | a source refusal: `.call` requires a known local function ([call-objects.ts](call-objects.ts)) |
-| One quantified method instantiated at two receiver contracts | evidence search fails ([generic-receivers.ts](generic-receivers.ts)) |
-| Accessors | a source refusal: the heap model has data properties only |
-| Generators | a source refusal: no term of the calculus suspends at `yield` |
-| A function expression referring to its own name | a source refusal: a recursive binding |
-| A callable object type with an index signature or a readonly field | refused at the annotation: it needs a combined clause |
-| A call of an intersection of a function type and a record or array type | the producer: an annotation's meet does not form it |
-| A closure capturing a `for` loop's `let` | a source refusal: JavaScript copies the binding per iteration |
-| Sloppy code reading `this` at a receiver type that may hold a non-object | a source refusal: the receiver conversion has no step in the model |
-
-Refusal reasons are defined in
-[obligation diagnostics](../../../docs/OBLIGATION-DIAGNOSTICS.md); the encoding and its
-restrictions belong to the
-[protocol](../../../docs/FRAGMENT-FORMAT.md#expression-closures-and-calls).
-
-The hole-spread witness writes past the end of a Boolean array, leaving a
-hole. Spreading it would materialize `undefined` in a `boolean[]`. TypeScript
-accepts this contract violation; the pipeline refuses the write.
-
-### Defaults
-
-A default is an entry node of the code's graph: a tag dispatch on
-`undefined` at the parameter's slot, the default's evaluation on one arm. The
-slot's type is `T ∪ {undefined}` and the initialized binding's `T`; in a
-generic closure the code is checked at its scheme row, so initialization must
-establish `T` for every assignment of the binders, and observed calls cannot
-justify it. It never obtains `T` by deleting `undefined` from the input: `T` can
-itself contain `undefined`.
-
-Forward capture uses closure conversion in the trusted Lean extractor. A literal closure allocation can wait until its
-captures are initialized because no pending closure is exposed and parameters
-are immutable in this fragment. It is allocated once, preserving sharing, and
-captures outer mutable cells by identity. All potentially effectful defaults
-retain source order. `Fragment.parameterOrder` fixes the entry nodes' order,
-and its dependency traversal is exhaustive.
-
-Cyclic captures and exposing a pending closure during initialization
-are refused, even where a supplied actual could avoid the default.
-Supporting them needs an explicit initialization frame with
-initializedness separate from fixed world types; it must not expose raw actuals
-or retype locations. Early invocation of a pending closure and a Boolean
-initializer claimed at arbitrary `T` are refused at their own obligations. The
-closure-conversion argument is part of the trusted
-source adapter, as other JavaScript-to-calculus correspondence is; Lean proves
-safety of the resulting term, not equivalence to a formal JavaScript semantics.
-
-### Rests and spreads
-
-Fixed and variadic signatures share the
-[common function equation](../../../docs/SEMANTICS.md#one-meaning-for-callable-contracts).
-Code collecting a rest allocates the store of the
-further actuals before its run (`graphEntry`), and `restsT_of_graphRest` lifts
-the code's check at each variadic signature to the variadic contract; over a
-binder, at every assignment of it. Both declarations and closures are
-consumed by `SourceClaimJson.checkJson_safe` as graph requests.
-
-[`generic-rest.ts`](../generic-rest.ts) checks a returned `T[]`, independent Boolean and numeric uses of one closure,
-a fixed prefix with empty rest and tuple spread, a universal default,
-a possibly sparse spread, and a variadic callback inside a generic body.
-The negative controls reject a captured Boolean array as arbitrary `T[]` and a
-Boolean actual sent to a rest callback at arbitrary `T`. Both CLI entry points
-reject altered rest contracts, substitutions, source binding flags and operand
-claims. These are universal certificates plus ground consequences, never
-observed-call monomorphization. Required tuple snapshots retain their dense
-contract; potentially sparse arrays need an element contract admitting
-`undefined`.
-
-Restrictions on generic body forms and nested quantification are stated in
-[SOURCE-CLAIMS](../../../docs/SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
-
-### Receivers
-
-Every signature states a receiver beside its parameters and result, and every
-call passes one: `undefined` for a plain call, the object for a method call,
-the first argument for `.call` and `.apply`. An arrow's `this` is a capture of
-the enclosing ordinary function's receiver. `.bind` allocates a forwarding
-descriptor whose receiver a later `.bind` or `.call` cannot replace; `.apply`
-reads its list's `length` and each index in order before invoking.
-[SOURCE-MODEL](../../../docs/SOURCE-MODEL.md#receivers) owns the receiver rules,
-[FRAGMENT](../../../docs/FRAGMENT-FORMAT.md#receivers) their encoding, and the call order
-follows ECMA-262's EvaluateCall and OrdinaryCallBindThis
-([ECMA-262](../../../docs/REFERENCES.md#ecma-262)).
+[`generic-rest.ts`](../generic-rest.ts) checks a returned `T[]`, independent
+Boolean and numeric uses of one closure, a fixed prefix with empty rest and
+tuple spread, a universal default, a possibly sparse spread, and a variadic
+callback inside a generic body. Its negative controls reject a captured
+Boolean array as arbitrary `T[]` and a Boolean actual sent to a rest callback
+at arbitrary `T`. [`spread-holes.ts`](../spread-holes.ts) writes past the end
+of a Boolean array, leaving a hole a spread would pass as `undefined` in a
+`boolean[]`; TypeScript accepts the write, and the pipeline refuses it.
 
 ## Examples
 

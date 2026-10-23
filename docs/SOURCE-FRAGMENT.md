@@ -51,7 +51,7 @@ fragment.
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
 | `new Array(x)` with one argument | A numeric argument constructs holes, which a readable element contract excluding `undefined` cannot justify | [arrays](SOURCE-MODEL.md#arrays) | — |
-| An element write at an index not proven in bounds or appending | It could create a hole | [arrays](SOURCE-MODEL.md#arrays) | — |
+| An element write at an index not proven in bounds or appending | It could create a hole, which a later spread into a rest passes as `undefined` | [arrays](SOURCE-MODEL.md#arrays) | `spread-holes` |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract | [writable string index signatures](SOURCE-MODEL.md#writable-string-index-signatures) | — |
 | A position past a mutable tuple's arity; its `length` read at the arity | `push` may have extended it | [arrays](SOURCE-MODEL.md#arrays) | — |
 | An array `Array.isArray` or `instanceof Array` finds in `unknown` or a record, passed at a generic call's mutable `Array<A>` | It may be a tuple, which a callee rearranging its `Array<A>` breaks | [arrays](SOURCE-MODEL.md#arrays) | `invalid-open-array-generic-call` (Node) |
@@ -191,6 +191,9 @@ representation does not state it; the paths are in
 | `f.call(r)`, `f.apply(r, l)` or `f.bind(r)` of an `f` that is no known local function | A supplied function may own a `call`, `apply` or `bind` its type does not constrain | [calls through `Function.prototype.call`](SOURCE-ELABORATION.md#calls-through-functionprototypecall) | — |
 | A rest parameter of a closure, or typed by an enclosing declaration's type parameter; a function type's rest typed by a type parameter typing no value; a rest whose bound is no array or tuple of required positions; a rest typed by a tuple with optional or rest elements | A closure's scheme has no meet row for argument lists; several lengths are several signatures | [calls](SOURCE-MODEL.md#calls) | — |
 | A rest-parameter pattern | The rest binds one name | [patterns](SOURCE-ELABORATION.md#patterns) | — |
+| A spread into an ordinary call's fixed parameters of an array that is no tuple of required positions | The positions it fills are known only at run time | [calls](SOURCE-MODEL.md#calls) | — |
+| A callable object type with a method, an optional or readonly field, or an index signature | No clause of the type language combines call signatures with those members | [how the calculus represents a callable](CALLABLES.md#how-the-calculus-represents-a-callable) | — |
+| A call of an intersection of a function type and a record type | An annotation's meet forms no callable with fields | [calls](SOURCE-MODEL.md#calls) | — |
 | An actual that runs code after a spread into an ordinary call's fixed parameters | The lowering copies a spread where it is written only into a rest | [calls](SOURCE-MODEL.md#calls) | — |
 | A spread argument in `super.m(…)`, an optional method call or a string method dispatching to a regex | These calls take their arguments as written | [calls](SOURCE-MODEL.md#calls) | — |
 | A call through a union of functions carrying fields | The producer claims a call through one arrow, which such a union does not offer | [calls](SOURCE-MODEL.md#calls) | — |
