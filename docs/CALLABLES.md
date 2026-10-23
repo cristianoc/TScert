@@ -195,7 +195,7 @@ body is certified at the others too. Every generic unit takes this one path.
 The binders of a generic class are those of the unit that declares it, the
 module's initialization unit, so its constructor and methods are certified at
 every instantiation the same way. Proved: `Parametricity.accepted_at`,
-`RequestJson.verify_safe_at`, `SourceRequests.checkRequests_safe_at`.
+`RequestJson.verify_safe_at`, `SourceExtraction.checkRequests_safe_at`.
 
 **Binding.** `f.call`, `f.apply` and `f.bind` are property reads followed by
 calls; the parser identifies the standard intrinsic by its declaration
