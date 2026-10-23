@@ -33,9 +33,9 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
   let images := StoreView.images r.types
   let firstBad (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
-    let facts := GraphCode.inferFresh G images P C start
+    let facts := GraphCode.inferFresh G images c.readSummaries P C start
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images Φ facts ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images c.readSummaries Φ facts ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
   let unit := effectResult r c
@@ -44,7 +44,7 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
     some (refuse s!"'{name}'" (((firstBad r.footprint false r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
-      let code := GraphCode.effectCheckedResult G images q.entry C
+      let code := GraphCode.effectCheckedResult G images c.readSummaries q.entry C
       if code.accepted || code.exhaustion.isSome then none else
         let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
         let place := firstBad q.entry.row.effect.footprint q.entry.row.effect.fresh q.entry.row.effect.onThrow
@@ -62,9 +62,9 @@ private def nodeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Source
   let images := StoreView.images r.types
   let firstBad (Φ : Footprints.Closed) (exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
-    let facts := GraphCode.inferFresh G images P C start
+    let facts := GraphCode.inferFresh G images c.readSummaries P C start
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images Φ facts false exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images c.readSummaries Φ facts false exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (pos : Span) :=
     s!"source evidence refusal at [{pos.1},{pos.2}): the evidence does not establish this node's claim"
   ((firstBad r.footprint r.onThrow r.start r.program c.certificate r.sourceMap).map (refuse ·.pos)) <|>
@@ -83,7 +83,8 @@ private def typingRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Sour
     | some table => GraphCode.admits table
     | none => fun _ => false
   ((r.program.zip c.certificate).zipIdx.find? fun ((node, e), _) =>
-      !checkNodeUsing (checker := r.checker) G (StoreView.images r.types) r.goal r.program c.certificate node e codes).bind
+      !checkNodeUsing (checker := r.checker) (sums := c.readSummaries) G (StoreView.images r.types) r.goal r.program
+        c.certificate node e codes).bind
     fun (_, l) => ((r.sourceMap[l]?).bind id).map fun m =>
       s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's typing"
 
@@ -96,7 +97,8 @@ private def obligationRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : 
     | some table => GraphCode.admits table
     | none => fun _ => false
   ((r.obligations.zip es).find? fun (q, e) =>
-    !(ExpressionClaims.checkResult G (StoreView.images r.types) (StoreView.valid r.types) q.sequent e codes).accepted).map
+    !(ExpressionClaims.checkResult G (StoreView.images r.types) (StoreView.valid r.types) q.sequent e codes
+      c.readSummaries).accepted).map
     fun (q, _) => s!"source evidence refusal at [{q.pos.1},{q.pos.2}): the evidence does not establish this obligation's claim"
 
 /-- Where evidence states another claim than the unit's: the first node of
@@ -124,8 +126,8 @@ Claim agreement is checked before this diagnostic is selected. -/
       !((ProgramCertificates.claim e.expression).term == node.expression &&
         ProgramCertificates.checkScope (entry e).length node.expression &&
         ((r.checker.run (ProgramCertificates.claim e.expression) e.knowledge
-          (e.effect.getD (.ordinary e.expression)) codes).expect e.output).accepted &&
-        checkYields G images e codes)) then return none
+          (e.effect.getD (.ordinary e.expression)) codes c.readSummaries).expect e.output).accepted &&
+        checkYields G images e codes c.readSummaries)) then return none
   for ((node, e), label) in (r.program.zip c.certificate).zipIdx do
     if let (some target, some (T, proof)) := (node.handler, e.handler) then
       if let some destination := c.certificate[target.label]? then
@@ -193,21 +195,26 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   -- image check, starts its own.
   let mut answers : CertificateProducer.Answered (EquationStore.CheckedLabel F.equations F.primitive) := {}
   let mut proofLists := #[]
+  -- Each request's read summaries, a table of its own scope: its
+  -- obligations', then its nodes' and codes'.
+  let mut scopes := #[]
   -- Each request's search vocabulary, read by its three searches.
   let vocabularies := rs.map (·.searchLabels)
   for (r, labels) in rs.zip vocabularies do
     let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
-      (StoreView.projection r.types) fuel r.obligations answers
+      (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
     answers := next
     proofLists := proofLists.push e
+    scopes := scopes.push (next.summaries, next.summaryAnswers)
   let mut responses := #[]
-  for ((r, labels), proofs) in (rs.zip vocabularies).zip proofLists.toList do
+  for (((r, labels), proofs), (summaries, summaryAnswers)) in
+      ((rs.zip vocabularies).zip proofLists.toList).zip scopes.toList do
     let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
-      r.nodePlans answers
+      r.nodePlans { answers with summaries, summaryAnswers }
     answers := next
     let known := proofs ++ rendered
     -- A qualified body's checker is stated over the request's own image
-    -- check: its search keeps that check.
+    -- check: its search keeps that check, and the request's summaries.
     if r.qualification.isNone then
       let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
         fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
@@ -217,7 +224,8 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     else
       let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
         r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts
-        r.codeHints r.checker r.aliases (searched := true)
+        r.codeHints r.checker r.aliases { summaries := next.summaries, summaryAnswers := next.summaryAnswers }
+        (searched := true)
       responses := responses.push c
   let es := proofLists.toList
   let cs := responses.toList

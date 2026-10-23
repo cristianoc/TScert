@@ -123,6 +123,7 @@ Rule  (Programs/ProgramCertificates.lean)
   merge
   makeKey
   lenView (slot : Nat)
+  readSummary (index : Nat)
 
 ArrowCert  (Types/PositiveCertificates.lean)
   empty

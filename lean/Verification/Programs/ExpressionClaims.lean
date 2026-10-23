@@ -23,26 +23,29 @@ variable [DecidableEq ι] [CertificateProducer.Instantiates ι]
 
 /-- `valid` says which labels the graph's store holds. -/
 @[nospecialize] def checkResult (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
-    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false)
+    (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
   (CheckResult.ofBool (validEvidence valid e && decide (claim e = j) &&
-    checkScope j.context.length j.term)).bind fun _ => checkTreeResult G images e codes
+    checkScope j.context.length j.term)).bind fun _ => checkTreeResult G images e codes sums
 
 @[nospecialize] def checkUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
-    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkResult G images valid j e codes).accepted
+    (j : Sequent ι) (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false)
+    (sums : List (ReadSummary ι) := []) : Bool :=
+  (checkResult G images valid j e codes sums).accepted
 
 omit [CertificateProducer.Instantiates ι] in
 
 omit [CertificateProducer.Instantiates ι] in
 
 @[nospecialize] def checkAllResult (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool)
-    (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (rs : List (Required ι)) (es : List (Evidence ι)) (codes : CodeEntry ι → Bool := fun _ => false)
+    (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
   (CheckResult.ofBool (rs.length == es.length)).bind fun _ =>
-  CheckResult.allLocated (rs.zip es) .obligation fun (r,e) => checkResult G images valid r.sequent e codes
+  CheckResult.allLocated (rs.zip es) .obligation fun (r,e) => checkResult G images valid r.sequent e codes sums
 
 @[nospecialize] def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkAllResult G images valid rs es codes).accepted
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) : Bool :=
+  (checkAllResult G images valid rs es codes sums).accepted
 
 omit [CertificateProducer.Instantiates ι] in
 
@@ -78,7 +81,8 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
     -- The graph code a unit creates is checked after its obligations are
     -- rendered: here every code is admitted, and acceptance checks the
     -- obligation again against the table its certificate checked.
-    let validated := candidate.bind fun e => (checkResult G images valid j e (fun _ => true)).map fun _ => e
+    let validated := candidate.bind fun e =>
+      (checkResult G images valid j e (fun _ => true) cache.answers.summaries.toList).map fun _ => e
     let some e := validated.value
       | if let some stop := validated.exhaustion then
           let p := project (stop.source ++ stop.target ++ j.context.flatten).eraseDups
@@ -117,7 +121,8 @@ A plan that does not render is dropped; its node is searched as any other. -/
   for plan in plans do
     let (e, next) := DirectProof.renderWith G images pool plan.goal.context plan cache
     cache := next
-    if let some e := e.value.filter (fun e => checkUsing G images valid plan.goal e (fun _ => true)) then es := es.push e
+    if let some e := e.value.filter (fun e =>
+        checkUsing G images valid plan.goal e (fun _ => true) cache.answers.summaries.toList) then es := es.push e
   return (es.toList, cache.answers)
 
 end
