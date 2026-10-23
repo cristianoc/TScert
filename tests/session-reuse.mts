@@ -24,7 +24,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { compilerAccounts, invokeInProcess, Recorder, type AttemptRecord } from "../pipeline/stages.mts";
+import { compilerAccounts, failCompilerReadingsForTests, invokeInProcess, Recorder, type AttemptRecord } from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { diagnosticsCall, parseCall, type Parsed } from "../pipeline/parse-stage.mts";
 import { runnerBuild } from "../pipeline/stage-execution.mts";
@@ -38,7 +38,7 @@ import { textCodec } from "../pipeline/in-process-execution.mts";
 import { clientErrors } from "../tools/declaration-graph.mts";
 import { liveCompilers } from "../tools/compiler-processes.mts";
 import { asideForTests, declarationSessionTelemetry, injectSessionFaultForTests, retainDeclarationSessions, retainedDeclarationSession,
-  retainedLedgerForTests, settleDeclarationSession } from "../tools/declaration-session.mts";
+  inDeclarationAttempt, retainedLedgerForTests } from "../tools/declaration-session.mts";
 import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 const here = import.meta.dirname;
@@ -55,6 +55,11 @@ function fixture(name: string): { examples: string; config: string } {
     cpSync(join(repository, "pipeline", "examples", file), join(project, file));
   // Probes of computed forms, and shadowing locals.
   for (const name of extras) cpSync(join(repository, "pipeline", "examples", `${name}.ts`), join(project, `extra-${name}.ts`));
+  // A module with TypeScript errors, for diagnostics; a configuration only a
+  // compiler request reads.
+  writeFileSync(join(project, "extra-errors.ts"),
+    "export const a: number = \"one\";\nexport function f(x: string): number {\n  return x;\n}\n");
+  writeFileSync(join(project, "lazy.json"), JSON.stringify({ compilerOptions: { strict: true } }));
   const config = join(project, "tsconfig.json");
   writeFileSync(config, readFileSync(config, "utf8").replace('"../examples/*value-import*.ts"', '"./*value-import*.ts", "./extra-*.ts"'));
   return { examples: project, config };
@@ -203,11 +208,12 @@ assert.ok(parserOpenings() - parsersBefore >= requests.length);
 
 // --- TypeScript's diagnostics between parses reuse the session, clean
 // before and after; the same as in a fresh compiler
-for (const name of [names[0], names[3]]) {
+for (const name of [names[0], "extra-errors"]) {
   const file = join(base.examples, `${name}.ts`);
   const call = (): SeenDiagnostic[] => invokeInProcess(diagnosticsCall(file, base.config),
     { force: true, recorder: null }).value;
   const reference = asideForTests(call);
+  if (name === "extra-errors") assert.ok(reference.length >= 2, "two TypeScript errors, in order");
   parse(at(names[1]));
   clean(base.config, "before diagnostics");
   const was = telemetry(), session = generation();
@@ -216,7 +222,8 @@ for (const name of [names[0], names[3]]) {
   assert.equal(generation(), session, "diagnostics reuse the session");
   assert.equal(telemetry().opens, was.opens);
   assert.equal(telemetry().reuses, was.reuses + 1);
-  assert.deepEqual(parse(at(name)).value, references.get(key(at(name))), `${name} after diagnostics`);
+  const again = name === "extra-errors" ? names[3] : name;
+  assert.deepEqual(parse(at(again)).value, references.get(key(at(again))), `${again} after diagnostics`);
   assert.equal(generation(), session);
 }
 
@@ -327,6 +334,30 @@ const observationsOf = (store: string, record: AttemptRecord): string[] => {
   assert.match(telemetry().lastReplacement ?? "", new RegExp(`real ${d}`));
   process.env["TSCERT_STAGE_STORE"] = storeOne;
   assert.equal(parse(r(names[1]), false).record.execution, "executed", "the entry no longer replays");
+
+  // A probe's collection makes observations the session had not made.
+  const probing = "written-pick-value-import";
+  const beforeProbe = ledger();
+  const probed = parse(r(probing));
+  const firstByProbe = [...ledger().keys()].filter((k) => !beforeProbe.has(k) && !k.startsWith("real "));
+  assert.ok(firstByProbe.length > 0, "a probe's collection reads what the session had not");
+  for (const k of firstByProbe) assert.ok(observationsOf(storeOne, probed.record).includes(k), `${k} in the probe's entry`);
+
+  // A file a later compiler request reads first: in the ledger and the entry;
+  // its change replaces the session and refuses the entry.
+  const lazy = join(later.examples, "lazy.json");
+  assert.ok(!ledger().has(`read ${lazy}`), "not read before");
+  injectSessionFaultForTests({ kind: "during", during: (compilerRead) => compilerRead(lazy) });
+  const reading = parse(r(names[3]));
+  injectSessionFaultForTests(null);
+  assert.ok(ledger().has(`read ${lazy}`), "the compiler's read is in the ledger");
+  assert.ok(observationsOf(storeOne, reading.record).includes(`read ${lazy}`), "and in the entry");
+  writeFileSync(lazy, JSON.stringify({ compilerOptions: { strict: false } }));
+  useStore();
+  replaces("a changed file a compiler request read", () => void same(r(names[3]), "after the requested file changed"));
+  assert.match(telemetry().lastReplacement ?? "", /lazy\.json/);
+  process.env["TSCERT_STAGE_STORE"] = storeOne;
+  assert.equal(parse(r(names[3]), false).record.execution, "executed", "its entry no longer replays");
 }
 
 // --- any changed answer of the ledger replaces the session and refuses the
@@ -399,8 +430,15 @@ released("an incomplete read", { kind: "during", during: () => unobservable("an 
 released("a failed restoration", { kind: "restoration" }, /restoration failed: an injected restoration failure/);
 released("an overlay left", { kind: "overlay" }, /restoration failed: the session's overlay is not empty/);
 released("a second project left", { kind: "project", project: other.config }, /restoration failed: the session holds the projects/);
-released("a document opened", { kind: "document", document: join(base.examples, "lib.ts") },
+released("a document requested", { kind: "document-request", document: join(base.examples, "lib.ts") },
   /restoration failed: a declaration session opens no document/);
+{
+  const outside = join(dir, "outside", "document.ts");
+  mkdirSync(dirname(outside), { recursive: true });
+  writeFileSync(outside, "export const x = 1;\n");
+  released("a document left open", { kind: "document-left", document: outside },
+    /restoration failed: the session holds the projects/);
+}
 
 // --- a record begun during a reused collection holds the session's ledger:
 // what it computes may read the compiler the ledger's answers determine
@@ -421,19 +459,68 @@ released("a document opened", { kind: "document", document: join(base.examples, 
 {
   useStore();
   const first = fixture("evicted-a"), second = fixture("evicted-b");
-  const attempt = (mutate: boolean): AttemptRecord => invokeInProcess({ stage: "diagnostics",
-    inputs: [{ role: "control", bytes: `evicted ${mutate}` }], observed: { compiler: compilerImplementation },
-    codec: textCodec, run: (): string => {
+  const touch = (): void => writeFileSync(join(first.examples, "lib.ts"), readFileSync(join(first.examples, "lib.ts"), "utf8") + "\n");
+  // The second session's collection runs in the attempt itself, or in a
+  // nested stage, whose own end checks only what it used.
+  const attempt = (mutate: boolean, nested: boolean): AttemptRecord => invokeInProcess({ stage: "diagnostics",
+    inputs: [{ role: "control", bytes: `evicted ${mutate} ${nested}` }], observed: { compiler: compilerImplementation },
+    codec: textCodec, run: (): string => inDeclarationAttempt(() => {
       const one = clientErrors(join(first.examples, `${names[0]}.ts`), first.config);
-      if (mutate) writeFileSync(join(first.examples, "lib.ts"), readFileSync(join(first.examples, "lib.ts"), "utf8") + "\n");
-      const two = clientErrors(join(second.examples, `${names[0]}.ts`), second.config);
-      settleDeclarationSession();
+      const file = join(second.examples, `${names[0]}.ts`);
+      const two = nested ? invokeInProcess(diagnosticsCall(file, second.config), { force: true, recorder: null }).value
+        : clientErrors(file, second.config);
+      if (mutate) touch();
       return JSON.stringify([one, two]);
+    }) }, { force: true, recorder: null }).record;
+  for (const nested of [false, true]) {
+    assert.notEqual(attempt(false, nested).key, null, `nested ${nested}: an attempt over two sessions, nothing changed, is published`);
+    const changed = attempt(true, nested);
+    assert.equal(changed.key, null, `nested ${nested}: a change to the released session's dependency publishes nothing`);
+    assert.match(changed.ineligible ?? "", /ledger does not hold at the attempt's end: read .*lib\.ts/);
+  }
+}
+
+// --- nested attempts each count their own time: an observed attempt around
+// a parse and around a non-observed attempt using a session; together they
+// count what the process and the compilers used
+{
+  parse(at(names[0]));
+  const session = liveCompilers().at(-1);
+  assert.ok(session);
+  const reading = (): number => {
+    const p = spawnSync(runnerBuild, ["--cpu", String(session.pid)], { encoding: "utf8" });
+    const used = /^cpu (\d+) (\d+) (\d+)\n$/.exec(p.stdout);
+    assert.ok(used, p.stderr);
+    return (Number(used[1]) + Number(used[2])) / 1000;
+  };
+  const ms = (cpu: AttemptRecord["cpu"]): number => {
+    assert.ok("userMs" in cpu, JSON.stringify(cpu));
+    return cpu.userMs + cpu.systemMs;
+  };
+  const ended = new Set(compilerAccounts.keys());
+  const node0 = process.cpuUsage(), session0 = reading();
+  const records: AttemptRecord[] = [];
+  const outer = invokeInProcess({ stage: "diagnostics", inputs: [{ role: "control", bytes: "nested cpu" }],
+    observed: { compiler: compilerImplementation }, codec: textCodec, run: (): string => {
+      records.push(parse(at(names[3])).record);
+      records.push(invokeInProcess({ stage: "assemble", inputs: [{ role: "control", bytes: "plain" }], codec: textCodec,
+        run: (): string => JSON.stringify(clientErrors(join(base.examples, `${names[0]}.ts`), base.config)) },
+        { force: true, recorder: null }).record);
+      return "";
     } }, { force: true, recorder: null }).record;
-  assert.notEqual(attempt(false).key, null, "an attempt over two sessions, nothing changed, is published");
-  const changed = attempt(true);
-  assert.equal(changed.key, null, "a change to the released session's dependency publishes nothing");
-  assert.match(changed.ineligible ?? "", /ledger does not hold at the attempt's end: read .*lib\.ts/);
+  const node = process.cpuUsage(node0);
+  const total = (node.user + node.system) / 1000 + reading() - session0 +
+    [...compilerAccounts].filter(([g, a]) => !ended.has(g) && a.lifetimeMs !== null).reduce((sum, [, a]) => sum + (a.lifetimeMs ?? 0), 0);
+  const counted = ms(outer.cpu) + records.reduce((sum, r) => sum + ms(r.cpu), 0);
+  assert.ok(Math.abs(total - counted) <= Math.max(30, total / 10), `nested attempts counted ${counted} ms of ${total} ms`);
+  assert.ok(ms(records[0]?.cpu ?? outer.cpu) > 0 && ms(outer.cpu) < counted, "each attempt counts its own time");
+  process.stdout.write(`sessions: nested attempts counted ${counted.toFixed(1)} ms (outer ${ms(outer.cpu).toFixed(1)} ms) ` +
+    `of the ${total.toFixed(1)} ms the process and the compilers used\n`);
+  // A reading not taken makes the attempt's CPU time unavailable.
+  failCompilerReadingsForTests(1);
+  const unread = parse(at(names[0])).record;
+  failCompilerReadingsForTests(0);
+  assert.ok("unavailable" in unread.cpu && /not read/.test(unread.cpu.unavailable), JSON.stringify(unread.cpu));
 }
 
 // --- the compiler's CPU time: the attempts' readings of a retained session

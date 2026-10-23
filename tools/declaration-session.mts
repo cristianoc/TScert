@@ -111,9 +111,10 @@ export const retainedLedgerForTests = (): Noted[] => retained ? ledgerAnswers(re
 let retaining: boolean = false;
 let retained: Session | null = null;
 let generations: number = 0;
-/** The ledgers of the sessions collections used since the last attempt's end
- * (`settleDeclarationSession`), released ones included. */
-const consumed: Ledger[] = [];
+/** For each observed attempt running (`inDeclarationAttempt`), innermost
+ * last, the ledgers of the sessions its collections used, released ones
+ * included; a nested attempt's collections are its enclosing attempts' too. */
+const attempts: Ledger[][] = [];
 
 /** Retain a session between collections from now on, or not: a worker
  * serving checks retains one; turning retention off releases it. */
@@ -145,11 +146,13 @@ export function releaseDeclarationSession(): void {
 
 /** Tests only: a fault the next collection makes, to show it is caught: its
  * restoration fails, it leaves an overlay entry, it leaves the project
- * `project` open besides its own, it asks to open the document `document`,
- * or it runs `during` within the session's ledger (reads of its own, an
- * incomplete one). */
+ * `project` open besides its own, it asks to open the document `document`
+ * through the session's requests, or opens it bypassing them, or it runs
+ * `during` within the session's ledger (reads of its own, an incomplete one,
+ * a compiler's read of a configuration by request). */
 export type SessionFault = { kind: "restoration" } | { kind: "overlay" } | { kind: "project"; project: string } |
-  { kind: "document"; document: string } | { kind: "during"; during: () => void };
+  { kind: "document-request"; document: string } | { kind: "document-left"; document: string } |
+  { kind: "during"; during: (compilerRead: (config: string) => void) => void };
 let fault: SessionFault | null = null;
 export function injectSessionFaultForTests(injected: SessionFault | null): void {
   fault = injected;
@@ -212,7 +215,7 @@ export function inDeclarationSession<T>(file: string, tsconfigPath: string,
       uses: 1, ledger: newLedger(), idle: null };
     telemetry.opens++;
   }
-  if (retaining && !consumed.includes(session.ledger)) consumed.push(session.ledger);
+  for (const used of attempts) if (!used.includes(session.ledger)) used.push(session.ledger);
   return collect(session, use);
 }
 
@@ -247,7 +250,7 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
       if (fault?.kind === "during") {
         const { during } = fault;
         fault = null;
-        during();
+        during((config) => void s.api.parseConfigFile(config));
       }
       return use(base.getProject(s.config), probe);
     });
@@ -286,8 +289,9 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
 /** Restore a session's base state after a collection: the overlay cleared,
  * the compiler told of every path a probe replaced, the named project reacquired in a snapshot of its own, the
  * collection's snapshots (`obsolete`) released, and the state checked:
- * exactly that project open and no overlay (no request of a session opens a
- * document, `update`). Why it is not restored, or null. */
+ * exactly that project open and no overlay. No request of a session opens a
+ * document (`update`); one opened outside the project shows as another
+ * project. Why it is not restored, or null. */
 function restore(s: Session, replaced: readonly string[], obsolete: readonly (Snapshot | null)[]): string | null {
   try {
     return withLedger(s.ledger, () => {
@@ -307,10 +311,15 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
         fault = null;
         s.idle = update(s, { openProjects: [extra] });
         snapshot.dispose();
-      } else if (fault?.kind === "document") {
+      } else if (fault?.kind === "document-request") {
         const document = fault.document;
         fault = null;
         update(s, { openFiles: [document] });
+      } else if (fault?.kind === "document-left") {
+        const document = fault.document;
+        fault = null;
+        s.idle = s.api.updateSnapshot({ openFiles: [document] });
+        snapshot.dispose();
       }
       const projects = s.idle.getProjects().map((p) => p.configFileName);
       if (projects.length !== 1 || projects[0] !== s.config)
@@ -324,12 +333,24 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
   }
 }
 
-/** At an observed attempt's end, before its publication: the ledger of every
- * session the attempt's collections used, released ones included, checked
- * again. One that does not hold makes the attempt's records incomplete, and
- * releases its session where it is retained. */
-export function settleDeclarationSession(): void {
-  const ledgers = consumed.splice(0);
+/** `run`, an observed attempt's computation, then, before its publication,
+ * the ledger of every session its collections used, released ones included,
+ * checked again (`settleDeclarationSession`). */
+export function inDeclarationAttempt<T>(run: () => T): T {
+  const used: Ledger[] = [];
+  attempts.push(used);
+  try {
+    return run();
+  } finally {
+    attempts.splice(attempts.lastIndexOf(used), 1);
+    settleDeclarationSession(used);
+  }
+}
+
+/** The ledgers `ledgers` checked again: one that does not hold makes the
+ * records being made incomplete, and releases its session where it is
+ * retained. */
+export function settleDeclarationSession(ledgers: readonly Ledger[]): void {
   for (const ledger of ledgers) {
     const reason = validateLedger(ledger);
     if (reason === null) continue;

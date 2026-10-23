@@ -337,9 +337,10 @@ program reports no error. Its probes replace project files through the
 overlay. After its result or its refusal, the collection restores the base
 state: the overlay cleared, the compiler notified of every path a probe
 replaced, the collection's snapshots released, and the new snapshot checked
-to hold only `p`, with no overlay entry. No request of a session names a file
-to open, which its one request function refuses, so it holds no open
-document. A tool failure releases the session. A restoration that fails, or a state other than the
+to hold only `p`, with no overlay entry. A session's one request function
+refuses a request naming a file to open; a document opened otherwise
+outside `p` shows as another project, which the check refuses. A tool
+failure releases the session. A restoration that fails, or a state other than the
 base one, releases it and makes every record being made incomplete, so the
 attempt that used it publishes nothing.
 
@@ -360,9 +361,9 @@ attempt's observations, and a cached value's, hold every answer the
 compiler's state was computed from. The collection's new answers accumulate
 in the ledger and in those records. At the end of each parse and diagnostics
 stage, before publication, the ledger of every session the stage's
-collections used is made again (`settleDeclarationSession`), a session
-released during the stage included: one that does not hold makes the
-attempt publish nothing, and releases its session if it is retained. These
+collections used is made again (`inDeclarationAttempt`), a session released
+during the stage and a nested stage's included: one that does not hold makes
+the attempt publish nothing, and releases its session if it is retained. These
 checks keep the store's assumption that the file system is stable while a
 stage reads it; they take no atomic snapshot of it.
 
@@ -389,29 +390,38 @@ at the same paths:
 - forward, reverse and A–B–A orders, successes and refusals, distinct
   snapshot directories sharing one resolution project, one compiler opened
   and the parser opened by every parse; TypeScript's diagnostics between
-  parses reuse the session and leave its base state;
+  parses reuse the session and leave its base state, two ordered errors of
+  a module among them;
 - another project, resolution directory, family configuration, or an
   automatically selected project replaces the session; a snapshot path
   given other bytes, and project selection, are other inputs;
-- a dependency first read by a later collection (a declaration file's real
-  path) enters the ledger and the stored entry; changing it replaces the
-  session and the entry no longer replays, while an unchanged one replays
-  opening no compiler; so does any changed answer of the ledger: a
-  declaration, the configuration, an absent target created, a directory's
-  entries, a link, a removed file;
+- a dependency first read by a later collection's query (a declaration
+  file's real path, which the Fragment names) and one a later compiler
+  request reads first (a configuration it parses) each enter the ledger and
+  the stored entry; changing either replaces the session, the replacement's
+  parse is the fresh one, and the entry no longer replays, while an
+  unchanged entry replays opening no compiler; a probe's collection makes
+  observations the session had not, each in its entry;
+- any other changed answer of the ledger replaces the session and refuses
+  the stored entry: a declaration, the configuration, an absent target
+  created, a directory's entries, a link, a removed file;
 - a probe-heavy collection (computed forms evaluated at applications) and
   shadowing locals among the compared parses;
 - a record begun during a reused collection holds the ledger; a change, at
   an attempt's end, to what only a session the attempt used and released
-  read publishes nothing;
+  read, by itself or in a nested stage that ended before, publishes nothing;
 - an incomplete read, a failed restoration, an overlay, a second project or
-  a document left publish nothing and release the session; an incomplete
+  a document outside the project left, and a request to open a document,
+  publish nothing and release the session; an incomplete
   Node read also marks the process for retirement and refuses its further
   observed execution; a changed Node answer of the ledger makes the process
   inconsistent; a worker killed while it holds a session takes its
   compilers with it;
 - the attempts' readings of each compiler that ended sum to its lifetime's
-  time within its idle time (at most 20 ms or a tenth).
+  time within its idle time (at most 20 ms or a tenth); an observed attempt
+  around a parse and a non-observed attempt using a session counts, with
+  them, what the process and the compilers used (within 30 ms or a tenth);
+  a reading not taken makes the attempt's CPU time unavailable.
 
 ## Locations
 
@@ -615,7 +625,8 @@ unavailable, with its reason.
   process running during it (`tools/compiler-processes.mts`, which names a
   process by a generation a reused process id does not repeat), the
   difference of two readings by `stage-runner --cpu <pid>`: at the start of
-  each interval in which the attempt is the innermost one running, or zero
+  each interval in which the attempt is the innermost observed one running
+  (the only stages using compilers), or zero
   for a process started during it, and at that interval's end, or just
   before the process's channel closes, after the requests releasing its
   snapshots. A retained compiler's time is therefore divided among the
