@@ -48,7 +48,7 @@ request from source and claims; evidence never supplies the program it is
 checked against.
 
 Active-name shadowing is refused here: the parser gives a shadowing local a
-name of its own (PROGRAM-TYPING.md, "Shadowing"). This compiler remains a reviewed
+name of its own (SOURCE-ELABORATION.md, "Shadowing"). This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.SourceExtraction
 open CallEffects (Arrow RestArrow Contract Effect)
@@ -93,7 +93,7 @@ The initialization unit checks both contracts where the constant is bound. -/
 inductive ModuleType (ι : Type) where
   | written (ty : Json)
   | claimed (A : SourceClaims.Candidate ι) (annotation : Option Json := none)
-  /-- A module cell (SOURCE-MODEL.md, "Module cells"): the initialization
+  /-- A module cell (SOURCE-ELABORATION.md, "Module cells"): the initialization
   unit's early binding, its cell at the contract the unit's claims state. -/
   | cell (contract : SourceClaims.Candidate ι)
 

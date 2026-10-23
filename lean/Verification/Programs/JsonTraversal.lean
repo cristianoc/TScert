@@ -7,7 +7,7 @@ import Verification.Programs.ObjectMerge
 primitives and one dictionary indexed by every string key at `JsonValue`
 itself. Serialization reads an object's own string keys and descends into
 the values found there. A host object's own keys are the package's internal
-fields (COMPILER-API.md, "Excluding host values"), so the contract is sound
+fields (HOST-FAMILIES.md, "Excluding host values"), so the contract is sound
 for host values only if no object the traversal meets is one.
 
 `reach_noHost`: in a world the heap satisfies, every value the traversal

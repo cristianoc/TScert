@@ -93,7 +93,7 @@ export interface SeenDiagnostic {
 }
 
 /** A standard library type whose declaration is not what it means to
- * TypeScript, so a reference to it is read as that meaning (PROGRAM-TYPING.md,
+ * TypeScript, so a reference to it is read as that meaning (SOURCE-CONTRACTS.md,
  * "Library types"): `Array<T>` and `ReadonlyArray<T>` are the array types
  * `T[]` and `readonly T[]`, and a library type alias whose equation is a
  * mapped type, such as `Record<K, V>`, is that mapped type at the
@@ -568,7 +568,7 @@ export function collectDeclarations(file: string, options: {
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
-   * (PROGRAM-TYPING.md, "Enums"), or undefined where it computes none. */
+   * (SOURCE-CONTRACTS.md, "Enums"), or undefined where it computes none. */
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
   /** Told each imported enum's local name and members: the client's
@@ -1630,7 +1630,7 @@ export function collectDeclarations(file: string, options: {
         const list = node.parent;
         const constant = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
         // A constant initialized by a literal naming nothing states its type
-        // by that literal (SOURCE-FRAGMENT.md, "Types stated by
+        // by that literal (SOURCE-CONTRACTS.md, "Types stated by
         // annotations"): a primitive literal its literal type, an object
         // literal of such the record TypeScript infers. An array literal or
         // one `as const` is no type the reader states yet.
@@ -2134,7 +2134,7 @@ export function collectDeclarations(file: string, options: {
         if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
           throw new DeclarationError(use.span, `the call of ${member.local} passes the namespace object as \`this\`, which its declared \`this\` parameter constrains`);
       }
-    // The client's ambient declarations (PROGRAM-TYPING.md,
+    // The client's ambient declarations (SOURCE-CONTRACTS.md,
     // "Imported, ambient and global values"):
     // each name joins the values like an import of the client's own
     // declaration, at the type it states. Nothing runs them.
@@ -2664,7 +2664,7 @@ export function collectDeclarations(file: string, options: {
       const symbol = name && checker.getSymbolAtLocation(name);
       if (symbol && symbol.flags & SymbolFlags.Method) options.methodTarget?.(span);
     }
-    // Global variables the client reads, such as Node's `process` (PROGRAM-TYPING.md,
+    // Global variables the client reads, such as Node's `process` (SOURCE-CONTRACTS.md,
     // "Imported, ambient and global values"): each joins the values like an import, at a definition
     // of its own, keyed by the variable's declaration, that holds only the
     // members and call signatures the client's references select.
@@ -3670,7 +3670,7 @@ function boundedArguments(call: ts.CallExpression, stated: Stated, what: string)
 /**
  * A global variable, such as Node's `process` or the standard library's
  * `BigInt`, read at the members and call signatures the client's references
- * `uses` select (PROGRAM-TYPING.md, "Imported, ambient and global values"
+ * `uses` select (SOURCE-CONTRACTS.md, "Imported, ambient and global values"
  * and "Library globals"). Every
  * reference must read a member by name, `process.m`, or be called,
  * `BigInt(v)`. TypeScript resolves the member on the interface the variable

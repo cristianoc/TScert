@@ -25,7 +25,7 @@ inductive Action where
   | jump (target : Nat)
   | statement (statement : Stmt) (next : Nat)
   | declaration (source : Span) (mutable : Bool) (binding : Binding) (next : Nat)
-  /-- The entry of a statement list declaring early bindings (SOURCE-MODEL.md,
+  /-- The entry of a statement list declaring early bindings (SOURCE-ELABORATION.md,
   "Lexical bindings before initialization"): each binding's cell, holding the
   activation's uninitialized marker, is in scope from here, its declaration
   then initializing it. The bindings with their declaring statements. -/

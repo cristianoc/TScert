@@ -611,7 +611,7 @@ type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => v
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
 /** The workers that answer their current check and exit: their caches may
- * disagree with the file system (DESIGN.md, "Observed stages"). */
+ * disagree with the file system (STAGE-STORE.md, "Observed stages"). */
 const retiring = new WeakSet<ChildProcess>();
 const retiringMessage = "retiring";
 const logs = new Map<ChildProcess, string>();
@@ -707,7 +707,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
       process.exit(1);
     }
     // A process whose caches may disagree with the file system answers
-    // this check and exits: a fresh worker takes the next (DESIGN.md,
+    // this check and exits: a fresh worker takes the next (STAGE-STORE.md,
     // "Observed stages").
     const retire = processInconsistency() !== null || processRetirement() !== null;
     if (retire) process.send?.(retiringMessage);

@@ -42,7 +42,7 @@ type 'output callbacks = {
   entry: environment -> Json.t -> unit;
   iterator_start: Flow.node -> Source.stmt -> environment -> Flow.binding -> environment;
   iterator_step: Flow.node -> Source.stmt -> environment -> Flow.binding -> Flow.binding -> environment * environment;
-  (* An early binding where its statement list is entered (SOURCE-MODEL.md,
+  (* An early binding where its statement list is entered (SOURCE-ELABORATION.md,
      "Lexical bindings before initialization"): its cell, at its stated
      type, from there on; the declaration later initializes it. *)
   early: environment -> Source.stmt -> string -> environment;

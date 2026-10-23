@@ -1,5 +1,5 @@
 // A constant whose function literal reads the constant: the body reads the
-// closure's self entry, the invoked object (SOURCE-MODEL.md, "Recursive
+// closure's self entry, the invoked object (SOURCE-ELABORATION.md, "Recursive
 // constants"). Local and module-level, an arrow and a function expression, a
 // nested closure capturing the self entry, a default reading it, a body
 // writing a captured array, an annotated constant, a bound wrapper.

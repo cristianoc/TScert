@@ -130,7 +130,7 @@ let rec alternatives_of ~target ~bound declarations seen t =
       | Nul | Undef | True | False | Num | NumLit _ | Bigint | BigintLit _ | Symbol ->
         [empty_alternative]
       (* A copy takes no symbol-keyed property, a private slot's included
-         (DESIGN.md, "Object literals"). *)
+         (SOURCE-MODEL.md, "Object literals"). *)
       | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key && string_key f) fs;
                       exact=true;index=None;symbols=None;numeric=None}]
       | Shape {fields;indexes;calls=[];elements=None} ->

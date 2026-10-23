@@ -128,7 +128,7 @@ export type TypeTerm =
       span: Span })[]; signatures: Extract<TypeTerm, { k: "function" | "constructor" }>[];
       span: Span }
   /** A value with call or construct code, of which no signature is known:
-   * the meaning of the standard library's `Function` (PROGRAM-TYPING.md,
+   * the meaning of the standard library's `Function` (SOURCE-CONTRACTS.md,
    * "Library types"). Nothing may be called or constructed through it. */
   | { k: "callable"; span: Span }
   /** The containing declaration is the implicit receiver of a method
@@ -184,7 +184,7 @@ export type WrittenApplication = {
  * constant its annotation, and a class its constructor, which only `new`
  * calls. A global variable the client reads, such as `process`, is listed
  * the same way, with the specifier `global`, at a definition keyed by its
- * declaration that holds the members the client selects (PROGRAM-TYPING.md,
+ * declaration that holds the members the client selects (SOURCE-CONTRACTS.md,
  * "Imported, ambient and global values"). Nothing here checks the imported code: each is an assumption the
  * client's result is relative to. */
 export type ValueRoot = {

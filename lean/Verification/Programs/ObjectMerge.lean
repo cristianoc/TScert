@@ -619,7 +619,7 @@ inductive Src (ι : Type) where
     | some o => some (.obj o)
     | none => (codeOf c).map .obj
 
-/-- **A clause excluding host values** (COMPILER-API.md, "Excluding host
+/-- **A clause excluding host values** (HOST-FAMILIES.md, "Excluding host
 values"): a record naming an invariant field, a dictionary, a record whose own
 keys a bound lists without the host key, a callable, whose objects carry code,
 or a clause of primitives. A merge reads only operands of such clauses, since

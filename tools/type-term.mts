@@ -115,7 +115,7 @@ export function numericKey(literal: string): string {
 
 /** A generic method declaring `this: T`. A generic method's member is a
  * scheme its member bound to the host meets whatever receiver the bound
- * function is given (DESIGN.md, "Method members are host-relative"), which
+ * function is given (SOURCE-MODEL.md, "Method members are host-relative"), which
  * states no type the host must meet. */
 export const GENERIC_METHOD_RECEIVER =
   "a generic method with a `this` parameter is outside the fragment: its member is a scheme the member bound to its host meets, which states no type the host must meet";
@@ -225,7 +225,7 @@ export type TermScope = {
    * spells. A scope without it reads no private name. */
   privateName?(name: ts.PrivateIdentifier): number;
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
-   * type and the enum's object type (PROGRAM-TYPING.md, "Enums"); null for any other
+   * type and the enum's object type (SOURCE-CONTRACTS.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
   enumerated?(node: TypeNode, span: Span): TypeTerm | null;
   /** A type TypeScript computes from other types (`COMPUTED`): `typeof x`,
@@ -251,7 +251,7 @@ export type TermScope = {
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
- * declaration reader evaluates (PROGRAM-TYPING.md, "Computed types"). */
+ * declaration reader evaluates (SOURCE-CONTRACTS.md, "Computed types"). */
 export function computedForm(node: TypeNode): string | null {
   if (ts.isTypeQueryNode(node)) return "typeof";
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) return "keyof";
@@ -1054,7 +1054,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
     const name = member.name;
     // A private name `#x` is a key of its own, a symbol no code outside the
-    // class spells (PROGRAM-TYPING.md, "Classes").
+    // class spells (SOURCE-CONTRACTS.md, "Classes").
     const key = name && (ts.isIdentifier(name) || ts.isComputedPropertyName(name) || ts.isPrivateIdentifier(name))
       ? propertyKey(scope, name) : null;
     if (key === null) return scope.fail(member, "a class member needs a plain name");

@@ -25,7 +25,7 @@ set_option maxHeartbeats 1000000
   let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
   let next ← after (bound::scope)
   -- A function literal reading the constant: its self entry
-  -- (SOURCE-MODEL.md, "Recursive constants").
+  -- (SOURCE-ELABORATION.md, "Recursive constants").
   let self := match b.init with
     | .lambda .. => if b.init.freeNames.contains b.name then some b.name else none
     | _ => none

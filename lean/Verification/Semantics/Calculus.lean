@@ -65,7 +65,7 @@ No source property names it, so an object owns it exactly when it is an array:
 that is what `Array.isArray` tests (`Tag.isArray`). -/
 def arrayStoreKey : PropKey := "[]"
 
-/-- The key a host object owns (COMPILER-API.md, "The host classification"):
+/-- The key a host object owns (HOST-FAMILIES.md, "The host classification"):
 the package's instances and node lists, which the model reads as records and
 readonly arrays. No source property names it (a double-bracketed key is the
 model's, `RequestJson.reservedKey`), so no allocation of the program makes
@@ -73,7 +73,7 @@ one, and the field map is fixed at allocation: an object's classification
 never changes. The steps that copy an object's own keys are stuck on one. -/
 def hostKey : PropKey := "[[host]]"
 
-/-- The key an early binding's uninitialized marker owns (SOURCE-MODEL.md,
+/-- The key an early binding's uninitialized marker owns (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): a fresh object per entry of the
 binding's statement list, the cell's contents until the declaration writes
 it. No source property names it, no other allocation adds it and no step
@@ -278,7 +278,7 @@ inductive Tm where
   store not) and, over them, the own enumerable data properties `b` has now,
   but the keys in `drop` (`mergeParts`). An object literal with spreads is a
   chain of these from a fresh accumulator: `{ ...x, k: e }` copies `x` into
-  `{}`, then `{ k: e }` into that (DESIGN.md, "Object literals"). -/
+  `{}`, then `{ k: e }` into that (SOURCE-MODEL.md, "Object literals"). -/
   | merge (drop : List PropKey) (a b : Tm)
   /-- An allocation at a key known only at run time: evaluate the key, then
   the initializer, then allocate one fresh plain object owning one property,

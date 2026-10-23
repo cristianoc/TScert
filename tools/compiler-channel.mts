@@ -101,7 +101,7 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   return api;
 }
 
-/* The front end's compiler (DESIGN.md, "Observed stages"): every file-system
+/* The front end's compiler (STAGE-STORE.md, "Observed stages"): every file-system
  * query the API delegates is answered by `files.mts`, and the process runs
  * where it can read no other file of the user's. */
 

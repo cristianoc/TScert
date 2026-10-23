@@ -30,7 +30,7 @@ export type { Cpu, Measurement } from "./stage-store.mts";
  * three files its arguments name and prints its judgment, and reads no clock,
  * randomness, environment or working directory (DESIGN.md, the trust
  * surface). The parse and TypeScript's diagnostics are observed stages, keyed
- * by the file system's answers to their reads (DESIGN.md, "Observed
+ * by the file system's answers to their reads (STAGE-STORE.md, "Observed
  * stages"). */
 const replayedStages: ReadonlySet<StageName> = new Set<StageName>(stageNames);
 

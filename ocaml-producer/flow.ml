@@ -7,7 +7,7 @@ type action =
   | Jump of int
   | Statement of Json.t * int
   | Declaration of Json.t * string * Json.t * bool * int
-  (* The entry of a statement list declaring early bindings (SOURCE-MODEL.md,
+  (* The entry of a statement list declaring early bindings (SOURCE-ELABORATION.md,
      "Lexical bindings before initialization"): each binding, by its
      statement, name, initializer and storage mode, is a cell from here on;
      its declaration initializes it. *)

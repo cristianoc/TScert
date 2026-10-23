@@ -1,6 +1,6 @@
 // A spread copies its operand's own enumerable properties, when it is
 // evaluated, onto the object built so far: each spread is a merge onto a
-// fresh accumulator (DESIGN.md, "Object literals"). A field after a spread
+// fresh accumulator (SOURCE-MODEL.md, "Object literals"). A field after a spread
 // is surely the literal's; a field the operand's type names is surely the
 // operand's; a copy's fields are writable, whatever the operand's were.
 function copy(o: { a: number }): { a: number } {

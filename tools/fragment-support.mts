@@ -9,7 +9,7 @@ import { isStatic, nameOf } from "./syntax.mts";
 import { numberText } from "./intrinsics.mts";
 
 /** A value typed `Promise<T>` is assumed to be a built-in promise, which is
- * never fulfilled with a thenable (PROGRAM-TYPING.md, "Async functions and await"):
+ * never fulfilled with a thenable (SOURCE-CONTRACTS.md, "Async functions and await"):
  * so the source builds no object with a `then`, which could pass for one. */
 /** A write at `Symbol.toStringTag`: no object the program makes holds the
  * tag the native `Promise` contract requires of its prototype
@@ -207,7 +207,7 @@ export const freshName = (cls: string): string => `${cls}.[[class]]`;
  * constructor and its instance field initializers read: JavaScript's class
  * scope binding, initialized before anything in the class body can run. A
  * name no source binding can spell; the initialization unit reads it as the
- * module value the class is (PROGRAM-TYPING.md, "Classes"). */
+ * module value the class is (SOURCE-CONTRACTS.md, "Classes"). */
 export const selfName = (cls: string): string => `${cls}.[[self]]`;
 
 /** The binding holding a derived instance's base part. */
@@ -409,7 +409,7 @@ export function writesName(within: Node, name: string): boolean {
  * object calls its `toString`), or a write other than to a binding. A
  * function written there runs nothing until called, which is a call. The
  * implicit conversions of an object that run its code elsewhere (`o + ""`,
- * a relational comparison) are refused by the model (DESIGN.md, "Refused on
+ * a relational comparison) are refused by the model (SOURCE-FRAGMENT.md, "Refused on
  * principle"), and a read runs none: an object holds data properties only. */
 export function runsCodeOrWrites(node: Node): boolean {
   const target = (e: Node): Node => {

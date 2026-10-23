@@ -1,5 +1,5 @@
 /* Part of the trusted front end: every file-system operation it makes, in one
- * place, and the record of what each one observed (DESIGN.md, "Observed
+ * place, and the record of what each one observed (STAGE-STORE.md, "Observed
  * stages"). Whatever an operation throws is an `IoFailure` naming the
  * operation and the path, a tool failure by where it came from, whatever its
  * fields (Node's permission model throws ERR_ACCESS_DENIED with no

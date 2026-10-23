@@ -347,7 +347,7 @@ let rec field_type bounds declarations seen t name = match t with
   | Rigid r -> (match List.assoc_opt r bounds with
     | Some b -> field_type bounds declarations seen b name
     | None -> unsupported "field read on rigid parameter")
-(* A key-adding write (DESIGN.md, "A key-adding write"): a write of a key
+(* A key-adding write (PROGRAM-TYPING.md, "Key-adding writes"): a write of a key
    some plain-object arm of the receiver's type states neither as a required
    field nor as a method may add the key. Lean lowers it on an owned local as
    the copy of the object with the key, and refuses it on any other object;
@@ -442,7 +442,7 @@ let iterated_hint declarations expected =
    the parser picks the intrinsic of a string, a `Set`, a `Map` or a host
    collection iterator only where TypeScript types the whole iterable as one
    such kind, and lowers a program's iterable, or a union with one, to the
-   iterator protocol (PROGRAM-TYPING.md "Loops and spreads over iterables").
+   iterator protocol (SOURCE-ELABORATION.md "Loops and spreads over iterables").
    A type parameter is left to Lean. *)
 let rec non_array_arm declarations seen t = match t with
   | Rigid _ -> None

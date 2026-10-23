@@ -1,8 +1,9 @@
 // Checks the Markdown documents in this repository: that every relative link
 // and anchor resolves, that a link naming a section number names the section
 // its anchor points at, that math renders with KaTeX and avoids the forms
-// GitHub cannot render, and that cited authors are named only inside links to
-// REFERENCES.md.
+// GitHub cannot render, that cited authors are named only inside links to
+// REFERENCES.md, and that a code comment's `(<document>.md, "Section")`
+// citation names a section the document holds.
 //   node tests/docs.mts
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { present } from "../tools/files.mts";
@@ -176,6 +177,47 @@ for (const file of files) {
         fail(file, `names ${author} outside a link to REFERENCES.md`);
 }
 
+// Citations in code: a comment citing a section as `(<document>.md, "Title")`
+// names a document of docs/ or of the root and a section it holds, a heading
+// or a paragraph opening with a bold label, compared without case, backticks,
+// a section number or a closing period. A citation may wrap across comment
+// lines.
+const codeRoots = ["tools", "pipeline", "dev", "tests", "lean/Verification", "ocaml-producer"];
+const codeFile = /\.(mts|ts|lean|ml|mli|sh|c)$/;
+function codeFiles(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (excluded.has(entry.name) || entry.isSymbolicLink()) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...codeFiles(path));
+    else if (codeFile.test(entry.name)) found.push(path);
+  }
+  return found;
+}
+const sectionKey = (title: string): string =>
+  title.replace(/[`*]/g, "").replace(/^§?[0-9]+(?:\.[0-9]+)*\.?\s+/, "").replace(/\.$/, "").replace(/\s+/g, " ").trim().toLowerCase();
+const sections = new Map<string, Set<string> | undefined>();
+function sectionsOf(document: string): Set<string> | undefined {
+  if (sections.has(document)) return sections.get(document);
+  const path = [join(root, "docs", document), join(root, document)].find((p) => present(p));
+  const found = path === undefined ? undefined : new Set(
+    [...withoutCode(readFileSync(path, "utf8")).matchAll(/^(?:#{1,6}\s+(.*)|\*\*(.+?)\*\*)/gm)]
+      .map((m) => sectionKey(m[1] ?? m[2] ?? "")));
+  sections.set(document, found);
+  return found;
+}
+let codeCitations: number = 0;
+for (const file of codeRoots.flatMap((dir) => codeFiles(join(root, dir)))) {
+  const text = readFileSync(file, "utf8").replace(/\n\s*(?:--|\/\/|\/-|\*|#)?\s*/g, " ");
+  for (const m of text.matchAll(/\b([A-Z][A-Z-]*\.md),?\s+"([^"]+)"/g)) {
+    const [, document = "", title = ""] = m;
+    codeCitations++;
+    const known = sectionsOf(document);
+    if (known === undefined) fail(file, `cites missing document ${document}`);
+    else if (!known.has(sectionKey(title))) fail(file, `cites ${document}, "${title}", which it does not hold`);
+  }
+}
+
 for (const p of problems) process.stdout.write(`${p}\n`);
-process.stdout.write(`docs: ${files.length} documents, ${problems.length} problems\n`);
+process.stdout.write(`docs: ${files.length} documents, ${codeCitations} citations in code, ${problems.length} problems\n`);
 process.exitCode = problems.length ? 1 : 0;

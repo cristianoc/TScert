@@ -11,7 +11,7 @@ open Semantic
 type binding = Value of ty | Storage of ty * ty | Local of ty * ty
 let binding_type = function Value t | Storage (_,t) | Local (_,t) -> t
 let cell contract = Storage (contract,contract)
-(* The module's cells (SOURCE-MODEL.md, "Module cells"), each at the contract
+(* The module's cells (SOURCE-ELABORATION.md, "Module cells"), each at the contract
    the initialization unit claims: a module function reads and writes one as
    the cell it captures. *)
 let module_cells : (string * ty) list ref = ref []

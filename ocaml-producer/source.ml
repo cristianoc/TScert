@@ -719,13 +719,13 @@ let rec assigns name s = match s.statement with
    checks every node of the body against the proposed footprint, and each
    call at the signature it selects.
    Every constructor is listed so extensions require a decision here. *)
-(* The early bindings of the file (SOURCE-MODEL.md, "Lexical bindings before
+(* The early bindings of the file (SOURCE-ELABORATION.md, "Lexical bindings before
    initialization"), by name and initializer: each is a cell its declaration
    writes. *)
 let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
 (* The footprint a recursive constant's closure is assumed to change at most,
    and whether on a throw too, where its body reads its self entry
-   (SOURCE-MODEL.md, "Recursive constants"), by the literal's position. A
+   (SOURCE-ELABORATION.md, "Recursive constants"), by the literal's position. A
    round of inference assumes it of every such closure it meets, and raises it
    to what the closure's claim then proposes (`Proposal.infer`). *)
 let self_effects : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16

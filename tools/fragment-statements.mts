@@ -547,7 +547,7 @@ export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fr
     return { k: "array", pos: gate.span(node), elems, rest };
   }
   // An object rest, last, copies the source's other own enumerable
-  // properties onto a fresh object (DESIGN.md, "Object literals").
+  // properties onto a fresh object (SOURCE-MODEL.md, "Object literals").
   let rest: Extract<PatternAst, { k: "object" }>["rest"] = null;
   const last = node.elements[node.elements.length - 1];
   if (last?.dotDotDotToken) {
@@ -631,7 +631,7 @@ function typeStatement(s: Statement): boolean {
   return ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s);
 }
 
-/** The early bindings of a statement list (SOURCE-MODEL.md, "Lexical
+/** The early bindings of a statement list (SOURCE-ELABORATION.md, "Lexical
  * bindings before initialization"): a one-name `let` or `const` of the list
  * one of whose mentions may run before the binding's initialization point,
  * the end of its declarator: a mention written before it, or one in a
@@ -1323,7 +1323,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
     };
     // A function literal's body and defaults run only when it is called,
     // after the binding holds it: there the read is the closure's self entry
-    // (SOURCE-MODEL.md, "Recursive constants").
+    // (SOURCE-ELABORATION.md, "Recursive constants").
     let literal: Node = d.initializer;
     while (ts.isParenthesizedExpression(literal)) literal = literal.expression;
     const read = ts.isArrowFunction(literal) || ts.isFunctionExpression(literal) ? undefined : reads(d.initializer);

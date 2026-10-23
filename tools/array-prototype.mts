@@ -6,7 +6,7 @@
  * states them (`ReadonlyArray<T>` and `Array<T>`; `String`, `Number`, `BigInt`,
  * `Boolean`), through a reviewed overlay. Nothing is vendored. The overlay
  * holds only what those declarations leave out and soundness needs
- * (DESIGN.md, "Trust surface"; PROGRAM-TYPING.md, "Prototype contracts"):
+ * (DESIGN.md, "Trust surface"; SOURCE-CONTRACTS.md, "Prototype contracts"):
  *
  * - which members exist: any member not listed is refused, not trusted;
  * - each member's receiver: `readonly T[]` for one declared on
@@ -19,7 +19,7 @@
  *
  * A member that throws on some argument its declaration admits
  * (`toString(radix)` outside 2 to 36, a `RangeError`) is read as declared: a
- * throw is an outcome, never a wrong value (DESIGN.md, "Throws").
+ * throw is an outcome, never a wrong value (SOURCE-MODEL.md, "Throws").
  *
  * Each entry records the declaration text it was reviewed against. A member
  * is read only from a declaration with exactly that text, so a changed
@@ -179,8 +179,8 @@ export const overlay: readonly OverlayEntry[] = [
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
-  // (PROGRAM-TYPING.md, "Prototype contracts"). Its throw on an empty
-  // array is no reason: a throw is an outcome (DESIGN.md, "Throws").
+  // (SOURCE-CONTRACTS.md, "Prototype contracts"). Its throw on an empty
+  // array is no reason: a throw is an outcome (SOURCE-MODEL.md, "Throws").
   { name: "reduce", from: "ReadonlyArray",
     signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
   { name: "reduceRight", from: "ReadonlyArray",
@@ -388,7 +388,7 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
 };
 
 /** Standard library interfaces read through the overlay rather than as
- * declared (PROGRAM-TYPING.md, "Prototype contracts"): a reference to
+ * declared (SOURCE-CONTRACTS.md, "Prototype contracts"): a reference to
  * `Set<T>`, `Map<K, V>` or `Date` is the interface with only the members
  * listed, each a host-relative method on the object it is read from (its
  * prototype's, at run time), a property a readonly view. Every other member,

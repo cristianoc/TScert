@@ -1,7 +1,7 @@
 /**
  * An `instanceof` test of a constructor passed in: nothing in the file says
  * which prototype it gives its instances, so the test is not lowered; one of
- * a class the file declares is (DESIGN.md, "Guards").
+ * a class the file declares is (SOURCE-ELABORATION.md, "`instanceof`").
  */
 function describe(
   x: { a: number } | number,

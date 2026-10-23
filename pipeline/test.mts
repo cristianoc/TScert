@@ -3236,7 +3236,7 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // A recursive closure's self entry is at the closure's own claimed type,
-  // which its code must establish (SOURCE-MODEL.md, "Recursive constants"):
+  // which its code must establish (SOURCE-ELABORATION.md, "Recursive constants"):
   // the claim forged to a result its body does not return, or to a footprint
   // its body exceeds, is refused in search and in checking the honest
   // evidence, within the closure.
@@ -5123,7 +5123,7 @@ if (serving) {
   // A control process: one control per message, with the mutation
   // verifier's path once it is built. A process whose caches may disagree
   // with the file system reports its control and exits; a fresh one takes
-  // the next (DESIGN.md, "Observed stages").
+  // the next (STAGE-STORE.md, "Observed stages").
   useMutationVerifier(null);
   process.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null || !("control" in message) || typeof message.control !== "number" ||

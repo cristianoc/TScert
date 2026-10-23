@@ -26,7 +26,7 @@ export type InProcessCall<T> = {
   run: () => T;
   /** The value as stored, and back: for a stage that replays. */
   codec?: { encode: (value: T) => Buffer; decode: (bytes: Buffer) => T };
-  /** An observed stage (DESIGN.md, "Observed stages"): the compiler it
+  /** An observed stage (STAGE-STORE.md, "Observed stages"): the compiler it
    * opens, and the file system's answers to its reads, are part of its key. */
   observed?: { compiler: () => CompilerIdentity };
 };

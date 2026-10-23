@@ -1,4 +1,4 @@
-// The observed stages' tests (DESIGN.md, "Observed stages"): a parse
+// The observed stages' tests (STAGE-STORE.md, "Observed stages"): a parse
 // replays after an unchanged run, and a change to an imported module, to a
 // declaration file reached through node_modules, to the tsconfig, to the
 // family descriptions or to the TypeScript package, and a module added where

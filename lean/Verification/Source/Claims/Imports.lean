@@ -1,7 +1,7 @@
 import Verification.Source.Claims.Extraction
 import Verification.Source.EffectJson
 
-/-! Certified imports (SOURCE-MODEL.md, "Certified imports"): which module
+/-! Certified imports (SOURCE-CONTRACTS.md, "Certified imports"): which module
 units the importer's claims read qualified, the structural correspondence of
 the two readings of each one's signature, and the module documents the one
 check certifies, each restricted to its certified set. -/

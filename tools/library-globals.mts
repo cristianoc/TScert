@@ -1,6 +1,6 @@
 /** The standard library's global values, such as `BigInt` and `Symbol`, as a
  * client may use them: TypeScript's own declarations, as the project's
- * standard library states them, through a reviewed overlay (PROGRAM-TYPING.md,
+ * standard library states them, through a reviewed overlay (SOURCE-CONTRACTS.md,
  * "Library globals"). Nothing is vendored. As for `Array.prototype`
  * (`array-prototype.mts`), the overlay holds only what those declarations do
  * not say and soundness needs:
@@ -13,7 +13,7 @@
  *   reader states instead: the part of the declared type on which it runs
  *   none (`admit`). Where the host only throws on an argument (`BigInt(1.5)`,
  *   a `RangeError`), the declaration is read as it is: a throw is an outcome,
- *   never a wrong value (DESIGN.md, "Throws");
+ *   never a wrong value (SOURCE-MODEL.md, "Throws");
  * - where the declaration states less than the host does (`any`) or more (a
  *   parameter at which it misbehaves), the signature the host meets, stated
  *   instead (`stated`);

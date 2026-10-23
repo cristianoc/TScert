@@ -113,8 +113,8 @@ inductive Clause (α : Type) where
   /-- One symbol, below the `symbol` family: the symbol of a `unique symbol`
   constant, by its identity; appended last so every earlier case order holds. -/
   | symbolLit (id : Nat)
-  /-- A finite set of numbers, by bit pattern: a **kind set** (COMPILER-API.md,
-  "Compact kind sets"). A union of number singletons is one; the wire and the
+  /-- A finite set of numbers, by bit pattern: a **tag set** (HOST-FAMILIES.md,
+  "Tag sets"). A union of number singletons is one; the wire and the
   normal forms keep its list sorted, distinct and of at least two patterns,
   which no meaning depends on. Appended last so every earlier case order
   holds. -/

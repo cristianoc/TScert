@@ -495,7 +495,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- A source read of a mutable local returns the cell's contents; the
     -- identity in the slot is never the value of a source expression.
     | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
-    -- A checked access (SOURCE-MODEL.md, "Lexical bindings before
+    -- A checked access (SOURCE-ELABORATION.md, "Lexical bindings before
     -- initialization"): the contents, read once, then a dispatch on the
     -- marker's key: owned, the throw; otherwise the contents, without the
     -- marker's label, continue.

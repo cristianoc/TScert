@@ -708,9 +708,9 @@ export function expr(this: Gate, node: Expression): Expr {
  * field: it has no `super` or construction here, which is all that tells
  * them apart. `{ x }` is `{ x: x }`, the name read where it is written. A
  * spread of an object literal is its fields, in place: evaluated where
- * written, owning exactly those keys (DESIGN.md, "Object literals"). A
+ * written, owning exactly those keys (SOURCE-MODEL.md, "Object literals"). A
  * spread of any other value is a part of its own, copied where written
- * (DESIGN.md, "Object literals"). A key is written once: a later field
+ * (SOURCE-MODEL.md, "Object literals"). A key is written once: a later field
  * over an earlier one is refused, as in a literal without spreads. */
 export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen: Set<string>): ObjectPart[] {
   const gate: Gate = this;
@@ -1443,7 +1443,7 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
   // `[Symbol.hasInstance]`. For a class of this file, which TypeScript binds
   // the right operand to, it evaluates the operand, then reads the class's
   // prototype object, and looks for the key only that object owns along
-  // the operand's chain (DESIGN.md, "Guards").
+  // the operand's chain (SOURCE-ELABORATION.md, "`instanceof`").
   if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
     const cls = gate.classTests.get(gate.span(node.right).join(":"));
     // A class whose chain of constructors holds a static

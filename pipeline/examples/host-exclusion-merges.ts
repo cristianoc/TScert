@@ -1,6 +1,6 @@
 // The merges a spread, an object rest and `Object.assign` lower to copy their
 // operands' own keys: each operand's type excludes host values
-// (COMPILER-API.md, "Excluding host values"), by an invariant field, a closed
+// (HOST-FAMILIES.md, "Excluding host values"), by an invariant field, a closed
 // literal, a dictionary, a primitive or a writable array.
 export function field(o: { a: number }): { a: number } {
   return { ...o };

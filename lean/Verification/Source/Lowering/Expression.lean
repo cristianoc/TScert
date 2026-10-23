@@ -59,7 +59,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       else
         pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
     | some (i, .early stored reference) =>
-      -- A checked access (SOURCE-MODEL.md, "Lexical bindings before
+      -- A checked access (SOURCE-ELABORATION.md, "Lexical bindings before
       -- initialization"): the contents, read once, tested for the marker's
       -- key; where it is owned, the throw, and otherwise the contents.
       let G := SourceTypes.graph (← table)

@@ -1,4 +1,4 @@
-// The observed stages of the entry point (DESIGN.md, "Observed stages"): the
+// The observed stages of the entry point (STAGE-STORE.md, "Observed stages"): the
 // parse and TypeScript's diagnostics, each run in this process with fresh
 // compilers, their values stored as text and decoded field by field.
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.

@@ -226,7 +226,7 @@ inductive Expr where
   | alloc (pos : Span) (names : List PropKey) (es : List Expr)
   /-- An object literal with spreads of values, in source order: a named
   field (`some k`) or a spread (`none`), each part evaluated where written and
-  a spread's operand copied as soon as it is evaluated (DESIGN.md, "Object
+  a spread's operand copied as soon as it is evaluated (SOURCE-MODEL.md, "Object
   literals"). -/
   | build (pos : Span) (names : List (Option String)) (es : List Expr)
   /-- A named read: a string key, or, for `e[k]` with `k` a `unique symbol`
@@ -342,7 +342,7 @@ structure Binding where
   namePos : Span
   annot : Option Json
   init : Expr
-  /-- An early binding (SOURCE-MODEL.md, "Lexical bindings before
+  /-- An early binding (SOURCE-ELABORATION.md, "Lexical bindings before
   initialization"): a cell allocated where its statement list is entered,
   every mention a checked access. -/
   early : Bool := false
@@ -402,7 +402,7 @@ inductive Stmt where
 end
 
 /-- The intrinsic a checked access of an early binding calls where the
-binding is uninitialized (`intrinsics.mts`, SOURCE-MODEL.md, "Lexical
+binding is uninitialized (`intrinsics.mts`, SOURCE-ELABORATION.md, "Lexical
 bindings before initialization"): `() => never`, throwing a fresh
 `ReferenceError`. -/
 def throwUninitializedName : String := "%ThrowUninitialized%"

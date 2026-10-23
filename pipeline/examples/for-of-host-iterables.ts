@@ -1,6 +1,6 @@
 // `for...of` over the host's iterables other than arrays: each loop steps
 // the iteration intrinsic of its iterable's kind, which TypeScript's type of
-// it picks (DESIGN.md, "Async and iteration"). A string yields its code
+// it picks (SOURCE-MODEL.md, "Async and iteration"). A string yields its code
 // points, a `Set` its elements, a `Map` a fresh `[key, value]` per entry, and
 // `keys`, `values` and `entries` a host iterator of their collection. None of
 // these iterators has a `return`, so a loop left early calls nothing.

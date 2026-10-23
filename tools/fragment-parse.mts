@@ -313,7 +313,7 @@ export class Gate {
   /** Calls the reviewed overlay reads as the global's construct, `Error(m)`,
    * by span. */
   readonly globalConstructs: Set<string> = new Set();
-  /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
+  /** The file's enums by name (SOURCE-CONTRACTS.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
   readonly enums: Map<string, EnumInfo> = new Map();
   /** The enums the file imports, by local name, with their members as the
@@ -1221,7 +1221,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     else if (ts.isVariableStatement(s)) {
       // A module constant is read by functions at its annotation. A module
-      // `let` the module does not export is a module cell (SOURCE-MODEL.md,
+      // `let` the module does not export is a module cell (SOURCE-ELABORATION.md,
       // "Module cells"): an early binding of the module's scope, whatever
       // its mentions. A `var`, and an exported `let`, a live binding an
       // importer reads, are outside the fragment.
@@ -1799,7 +1799,7 @@ function lowerFile(file: string, carriesContext: boolean,
           const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
           // A function literal that is the whole initializer runs only after
           // the binding holds it: its reads are the recursive constant's self
-          // entry (SOURCE-MODEL.md, "Recursive constants").
+          // entry (SOURCE-ELABORATION.md, "Recursive constants").
           let literal: Node | undefined = initializer;
           while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
           const selfEntry = !!literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal));

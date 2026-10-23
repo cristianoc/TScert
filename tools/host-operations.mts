@@ -1,5 +1,5 @@
 /** The audit of the fragment's operations against restricted values
- * (COMPILER-API.md, "Operations and their obligations"): each source form
+ * (HOST-FAMILIES.md, "Operations and their obligations"): each source form
  * the parser admits, each intrinsic it writes and each table of the reviewed
  * library overlays, classified by what its model states of a host object or
  * a node list. The tables are keyed by the parser's own unions, so a form

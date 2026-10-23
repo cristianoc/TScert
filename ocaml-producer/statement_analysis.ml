@@ -239,7 +239,7 @@ let transfer (expr:Analysis_state.expression_infer) =
       (* A constant's function literal reading the constant: its body reads
          the closure's self entry, at the constant's annotation or the
          literal's own signature, with the footprint the round assumes of the
-         closure (SOURCE-MODEL.md, "Recursive constants"). *)
+         closure (SOURCE-ELABORATION.md, "Recursive constants"). *)
       let init_env = match mutable_,init.node with
         | false,Lambda (_,[],ps,defaults,false,result,guard,_) when mentions n init ->
           let self = match written,result with

@@ -54,7 +54,7 @@ export type Expr =
   /* An object literal with spreads of values: its parts in source order, a
      named field or a spread. Each part is evaluated where written, and a
      spread's operand copied as soon as it is evaluated: its own enumerable
-     properties, the later parts' over the earlier ones' (DESIGN.md, "Object
+     properties, the later parts' over the earlier ones' (SOURCE-MODEL.md, "Object
      literals"). A spread of an object literal is its fields, in place. */
   | { k: "build"; pos: Span; parts: ({ name: string; e: Expr } | { spread: Expr })[]; proto?: Expr }
   /* A named read: `e.name`, or `e[k]` with `k` a `unique symbol` constant,
@@ -335,7 +335,7 @@ export interface BindingAst {
   namePos: Span;
   annot: TypeTerm | null;
   init: Expr;
-  /** Whether the binding is early (SOURCE-MODEL.md, "Lexical bindings before
+  /** Whether the binding is early (SOURCE-ELABORATION.md, "Lexical bindings before
    * initialization"): a mention of it may run before its initialization, so
    * it is a cell allocated where its block is entered, every mention a
    * checked access. */

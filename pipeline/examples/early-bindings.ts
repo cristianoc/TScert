@@ -2,7 +2,7 @@
 // mentioned above its declaration, is an early binding: a cell from the
 // entry of its block, holding the uninitialized marker until its
 // declaration writes it, every mention a checked access that throws where
-// it is uninitialized (SOURCE-MODEL.md, "Lexical bindings before
+// it is uninitialized (SOURCE-ELABORATION.md, "Lexical bindings before
 // initialization").
 
 // A closure reading a constant declared after it, called after both.

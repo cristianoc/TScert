@@ -34,7 +34,7 @@ inductive Storage (ι : Type) where
   producer says `x` is at a point is this slot's type there. -/
   | slot (contract : Ty ι)
   | cell (contract : Ty ι) (reference : Ty ι)
-  /-- An early binding (SOURCE-MODEL.md, "Lexical bindings before
+  /-- An early binding (SOURCE-ELABORATION.md, "Lexical bindings before
   initialization"): a cell allocated where its statement list is entered,
   holding the activation's uninitialized marker until the declaration
   writes it, at the contract `contract ∪ U`; `reference` is the cell's own
@@ -272,7 +272,7 @@ the answers at the store while it is still that generation's. -/
     let b := within T C A
     .ok (b, { s with withinAnswers := s.withinAnswers.insert (C, A) b })⟩
 
-/-- The type of an early binding's uninitialized marker, `U` (SOURCE-MODEL.md,
+/-- The type of an early binding's uninitialized marker, `U` (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): the object owning the marker's
 key, at `undefined`. -/
 @[nospecialize] def uninitializedTy : Compiler (Ty Tree) :=

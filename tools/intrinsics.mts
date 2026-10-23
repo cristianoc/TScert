@@ -1,5 +1,5 @@
 /** `async`, `await`, `for...of`, argument spreads, array pattern slices and
- * `for...in` as trusted steps (PROGRAM-TYPING.md, "Async functions and
+ * `for...in` as trusted steps (SOURCE-CONTRACTS.md, "Async functions and
  * await", "Loops and spreads over iterables", "Patterns" and "Statement
  * forms"). Each is a
  * call of an intrinsic, a value no source name can denote: the parser writes
@@ -115,7 +115,7 @@ export const instanceOfErrorName = "%InstanceOf:Error%";
  * throw %AssertionFailure%(m)`: the fresh `AssertionError`. */
 export const assertionFailureName = "%AssertionFailure%";
 /** A checked access of an early binding that finds it uninitialized
- * (SOURCE-MODEL.md, "Lexical bindings before initialization"): allocates a
+ * (SOURCE-ELABORATION.md, "Lexical bindings before initialization"): allocates a
  * `ReferenceError` by the realm's intrinsic constructor, whatever a source
  * binding of that name holds, and throws it. */
 export const throwUninitializedName = "%ThrowUninitialized%";

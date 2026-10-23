@@ -86,7 +86,7 @@ set_option maxHeartbeats 1000000
         (scope := held ⟨"",some e.span⟩ :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ e raise
     | .early bindings next =>
-      -- The list's early bindings (SOURCE-MODEL.md, "Lexical bindings before
+      -- The list's early bindings (SOURCE-ELABORATION.md, "Lexical bindings before
       -- initialization"): the activation's marker, then each binding's cell
       -- holding it, at the binding's contract with the marker's type.
       let U ← uninitializedTy
