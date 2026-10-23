@@ -430,8 +430,13 @@ export type ProcessCall = {
 
 /** The largest output a stage may print. */
 const maxBuffer = 16 * 1024 * 1024;
+/** How long the runner lets a program run past SIGTERM before killing its
+ * group (`GRACE_MS` of `runner/stage-runner.c`), and how long past that the
+ * runner itself is killed, when its watchdog kills the stage's group. */
+const graceMs = 250, runnerBackstopMs = 2_000;
 /** What, beside the limit, decides whether a process stage times out. */
-export const resourcePolicy: string = canonical({ maxBuffer, killSignal: "SIGTERM", spawn: "spawnSync" });
+export const resourcePolicy: string = canonical({ maxBuffer, killSignal: "SIGTERM", graceMs, kill: "process group",
+  spawn: "spawnSync" });
 export const text = (bytes: Buffer): string => new TextDecoder("utf-8").decode(bytes);
 
 /** Whether a stage's exit is a finished result under its protocol. */
@@ -593,21 +598,26 @@ export type ProcessRun = {
 };
 
 /** The runner's report (`runner/stage-runner.c`): the errno of a program
- * that did not execute, and the CPU time of the stage's processes. */
-function readReport(report: string): { execErrno: number | null; cpu: Cpu } {
+ * that did not execute, a failure of the runner's own, whether the limit
+ * expired, and the CPU time and peak memory of the stage's processes. */
+function readReport(report: string):
+    { execErrno: number | null; runnerFailure: string | null; expired: boolean; cpu: Cpu } {
   const exec = /^exec (\d+)$/m.exec(report);
+  const failed = /^runner (\S+) (\d+)$/m.exec(report);
   const used = /^cpu (\d+) (\d+) (\d+)$/m.exec(report);
   return { execErrno: exec ? Number(exec[1]) : null,
+    runnerFailure: failed ? `${failed[1]} ${errnoNames.get(Number(failed[2])) ?? failed[2]}` : null,
+    expired: /^deadline$/m.test(report),
     cpu: used ? { userMs: Number(used[1]) / 1000, systemMs: Number(used[2]) / 1000, peakBytes: Number(used[3]),
       covers: "the stage's program and the descendants it waited for" }
       : { unavailable: "the stage runner reported no CPU time" } };
 }
 const errnoNames = new Map(Object.entries(constants.errno).map(([name, n]) => [n, name]));
-
 /** Run a bound process stage in `directory`, a fresh empty directory: its
  * inputs written there under their roles' names, the program run there with
- * the argument vector and the call's environment under the runner, killed at
- * `limitMs`, its exit classified by its protocol; its outputs delivered to
+ * the argument vector and the call's environment under the runner, which
+ * signals its process group at `limitMs` and kills it `graceMs` later, its
+ * exit classified by its protocol; its outputs delivered to
  * the caller's paths. The runner's report goes to a file unlinked before the
  * program starts, the runner's descriptor 3, which the program does not
  * inherit. */
@@ -618,10 +628,11 @@ export function executeProcess(bound: BoundProcess, directory: string, limitMs: 
   let p: ReturnType<typeof spawnSync>, report: string;
   try {
     unlinkSync(reportPath);
-    p = spawnSync(runnerBuild, [bound.program, ...bound.argv], {
+    p = spawnSync(runnerBuild, [String(limitMs), bound.program, ...bound.argv], {
       cwd: directory,
       env: { ...bound.environment },
-      timeout: limitMs,
+      timeout: limitMs + graceMs + runnerBackstopMs,
+      killSignal: "SIGKILL",
       maxBuffer,
       stdio: ["pipe", "pipe", "pipe", reportFile],
     });
@@ -633,17 +644,19 @@ export function executeProcess(bound: BoundProcess, directory: string, limitMs: 
   }
   if (p.error && "code" in p.error && p.error.code === "ENOENT" && p.error.message.includes(runnerBuild))
     throw Error("the stage runner is not built (make build-runner)");
-  const { execErrno, cpu } = readReport(report);
-  // A program that did not execute fails as a spawn failure does.
-  const error = p.error ?? (execErrno === null ? undefined
-    : Object.assign(Error(`spawnSync ${bound.program} ${errnoNames.get(execErrno) ?? execErrno}`),
-      { code: errnoNames.get(execErrno) ?? String(execErrno), errno: -execErrno }));
-  const status = execErrno === null ? p.status : null;
+  const { execErrno, runnerFailure, expired, cpu } = readReport(report);
+  // A program that did not execute fails as a spawn failure does; a failure
+  // of the runner's own fails the run.
+  const error = p.error ?? (execErrno !== null
+    ? Object.assign(Error(`spawnSync ${bound.program} ${errnoNames.get(execErrno) ?? execErrno}`),
+      { code: errnoNames.get(execErrno) ?? String(execErrno), errno: -execErrno })
+    : runnerFailure !== null ? Error(`the stage runner failed: ${runnerFailure}`) : undefined);
+  const status = execErrno === null && runnerFailure === null ? p.status : null;
   const stdoutBytes = p.stdout ? Buffer.from(p.stdout) : Buffer.alloc(0);
   const stderrBytes = p.stderr ? Buffer.from(p.stderr) : Buffer.alloc(0);
   const stdout = text(stdoutBytes), stderr = text(stderrBytes);
   // A timeout is the expiry of this attempt's own enforced limit.
-  const timedOut = (p.error && "code" in p.error && p.error.code === "ETIMEDOUT") ?? false;
+  const timedOut = expired || ((p.error && "code" in p.error && p.error.code === "ETIMEDOUT") ?? false);
   const finished = !error && !p.signal && status !== null && finishedExit(bound.protocol, status, stdout, stderr);
   const produced: [string, Buffer][] = [];
   for (const o of bound.outputs) {

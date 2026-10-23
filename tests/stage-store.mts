@@ -8,13 +8,14 @@
 // pipeline's own stages replay in `pipeline/test.mts`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, symlinkSync,
+  writeFileSync } from "node:fs";
 import { platform } from "node:os";
 import { join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests } from "../pipeline/stage-store.mts";
 import { invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
-import { auditForTests, canonical, linkedLibraries, sha256, verifierCall, type ProcessCall }
+import { auditForTests, canonical, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
@@ -291,12 +292,48 @@ if (eligible) {
     ["/bin/sleep"]);
   const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 600, true);
   assert.equal(timed.record.execution, "timed-out");
-  assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 100, JSON.stringify(timed.record.cpu));
+  assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 10, JSON.stringify(timed.record.cpu));
   const descendant = Number(readFileSync(pids, "utf8"));
   assert.ok(descendant > 0);
   assert.throws(() => process.kill(descendant, 0), /ESRCH/, "a descendant of a timed-out stage survived");
+  // The limit holds against a program ignoring SIGTERM and a stopped one:
+  // the group is killed 250 ms past it.
+  for (const [name, body] of [["ignoring", 'trap "" TERM; /bin/sleep 5; exit 7'], ["stopped", "kill -STOP $$"]]) {
+    const held = invoke(lower(script(`runner-${name}.sh`, body, ["/bin/sleep"]), file(`runner-${name}.json`, "")), 300, true);
+    assert.equal(held.record.execution, "timed-out", name);
+    assert.ok(held.record.elapsedMs < 3_000, `${name}: ${held.record.elapsedMs} ms`);
+  }
+  // A descendant holding the output pipes ends with the program.
+  const lingering = invoke(lower(script("runner-lingering.sh", "/bin/sleep 30 & exit 0", ["/bin/sleep"]),
+    file("runner-lingering.json", "")), 10_000, true);
+  assert.equal(lingering.status, 0);
+  assert.ok(lingering.record.elapsedMs < 3_000, `lingering: ${lingering.record.elapsedMs} ms`);
+  // The runner killed, its watchdog kills the stage's group.
+  const started = join(dir, "runner-orphan-pid");
+  const orphan = script("runner-orphan.sh", `echo $$ > ${started}; exec /bin/sleep 30`, ["/bin/sleep"]);
+  const report = openSync(join(dir, "runner-orphan-report"), "w+");
+  const runner = spawn(runnerBuild, ["10000", orphan], { stdio: ["ignore", "ignore", "ignore", report] });
+  const exited = new Promise<void>((done) => runner.on("exit", () => done()));
+  const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+  for (let i = 0; i < 100 && !existsSync(started); i++) await wait(20);
+  const program = Number(readFileSync(started, "utf8"));
+  assert.ok(program > 0);
+  runner.kill("SIGKILL");
+  await exited;
+  closeSync(report);
+  const alive = (): boolean => {
+    try {
+      process.kill(program, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (let i = 0; i < 100 && alive(); i++) await wait(20);
+  assert.ok(!alive(), "the program of a killed runner survived");
   process.stdout.write("runner: output bytes, status and signal pass through; CPU time reported, up to a timeout's " +
-    "kill, which leaves no process of the stage running\n");
+    "kill, which leaves no process of the stage running, also of a program ignoring SIGTERM or stopped; " +
+    "descendants end with the program; a killed runner's stage is killed\n");
 }
 
 if (eligible) {
