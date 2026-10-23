@@ -541,7 +541,8 @@ inductive's constructors and a rule added there extends the protocol;
 subtype choices comparing `A` to `B`, or `null` where `A` is `B`. An
 entry is checked once against the request's graph and image check: exactly
 one arm per member, each member's view of `f` at `A` (a view of `length`
-only at a type excluding a number) and each comparison accepted by the
+only at a type shown to exclude some number, as `readView` requires) and
+each comparison accepted by the
 ordinary subtype checker
 ([read summaries](PROGRAM-TYPING.md#read-summaries)). An entry states no
 location, heap fact or cached value, and a summary field beside these is

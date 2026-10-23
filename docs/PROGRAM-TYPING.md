@@ -1823,9 +1823,9 @@ named views (`namedMembers`):
 The checker (`checkReadSummary`) enumerates $`\mathrm{members}(C)`$ itself
 and reads one arm per member, in that order: the view's type $`A`$ and the
 choices comparing it to $`B`$, none where $`A`$ is $`B`$. A missing or extra
-arm, a key the member states as no view, a `length` view at a type admitting
-a number, and a comparison the ordinary checker refuses each refuse the
-summary. The comparison is the ordinary one (`PositiveCertificates.checkUsing`),
+arm, a key the member states as no view, a `length` view at a type not
+shown to exclude some number (`lengthExcluded`, as `readView` requires), and
+a comparison the ordinary checker refuses each refuse the summary. The comparison is the ordinary one (`PositiveCertificates.checkUsing`),
 whatever body checks the use. A summary gives the read rule
 
 ```math
