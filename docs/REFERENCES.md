@@ -273,7 +273,7 @@ complete for a declarative system (chapter 16, records with width and depth
 subtyping), and subtyping of recursive types as a greatest fixed point decided
 by a terminating algorithm (chapter 21). The results concern those calculi;
 the selection lemmas here are inversion lemmas of the same kind.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ### Castagna and Frisch 2005
 
@@ -286,7 +286,7 @@ inclusion as emptiness of a difference, complete for the set-theoretic model
 it describes. The outer shapes play the role of the kinds; the completeness
 result does not transfer to a model without negation whose record fields are
 lifetime contracts of heap locations.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ### TypeScript 30779
 
@@ -301,7 +301,7 @@ discriminants' literal types, up to a fixed limit of 25 combinations, and
 compares each part with the target union. Selecting target arms by
 discriminant carries over; decomposing through a property does not, since
 here a property's type constrains every later write.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ### Milner et al. 1997
 
@@ -313,7 +313,7 @@ of different constructors are disjoint by construction, and case analysis
 selects a branch by constructor. A record discriminant gives a coverage
 exclusion from its field types, and disjointness of meanings only at a
 successor level under a heap satisfying the world.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ### Maranget 2008
 
@@ -323,7 +323,7 @@ SIGPLAN Workshop on ML, 2008.
 **Used for** constructor-directed case analysis: matches compiled to decision
 trees that test a value's constructor once per node, the cost model indexing
 by cell aims at.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ### Garrigue 1998
 
@@ -334,7 +334,7 @@ Workshop on ML, 1998.
 is compared with the one target tag of its name, tags disjoint by
 construction. The literal-discriminant rule is that rule's selection with the
 tag a record field; its lemma proves a coverage exclusion, not disjointness.
-**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#6-prior-work).
 
 ## JavaScript and ECMAScript
 
