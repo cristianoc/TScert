@@ -14,6 +14,8 @@ import Verification.Source.Claims.Plans
 import Verification.Source.Claims.Extraction
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
 import Verification.Source.Claims.Imports
+-- EvidenceWire.lean reads and writes the evidence document's tables and references.
+import Verification.Source.EvidenceWire
 
 /-! Source claim validation, evidence production and the theorem relating
 exact accepted plans to modeled graph safety. -/
@@ -165,7 +167,7 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
   let ⟨F, frozen⟩ ← freezePlans T plans
   let certified ← certifyPlans frozen
   let rs := CertifiedPlan.requests certified
-  let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
+  let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← EvidenceWire.decode evidence
   let checked := checkRequestsResult rs b
   if checked.accepted then return ()
   -- An exhausted search is reported as such; a footprint the graph does not
@@ -232,8 +234,8 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   for (plan, c) in frozen.zip cs do
     let .graph name namePos r := plan
     if let some refusal := footprintRefusal name namePos r c then throw refusal
-  let evidence := toJson (Bundle.mk cs es)
-  let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
+  let evidence := EvidenceWire.encode (Bundle.mk cs es)
+  let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← EvidenceWire.decode evidence
   let checked := checkRequestsResult rs b
   if !checked.accepted then
     throw (validationFailure rs checked "source evidence does not justify the extracted graph requests")
@@ -322,7 +324,7 @@ def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
       ∃ F : EquationStore.Frozen, ∃ frozen certified b,
       freezePlans T plans = .ok ⟨F, frozen⟩ ∧
       certifyPlans frozen = .ok certified ∧
-      decodeStrict evidence = .ok b ∧
+      EvidenceWire.decode evidence = .ok b ∧
       checkRequests (CertifiedPlan.requests certified) b = true ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
         ∀ η, r.Admits η → ∀ n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
@@ -373,7 +375,7 @@ theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
       | error e => rw [hc] at h; contradiction
       | ok certified =>
         rw [hc] at h
-        cases hb : (decodeStrict evidence : Except String
+        cases hb : (EvidenceWire.decode evidence : Except String
             (Bundle (EquationStore.CheckedLabel F.equations F.primitive))) with
         | error e => rw [hb] at h; contradiction
         | ok b =>

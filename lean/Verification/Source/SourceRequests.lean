@@ -113,7 +113,6 @@ def SourceRequest.Admits (r : SourceRequest σ ι) (η : PositiveGraphs.MixedAss
 structure Bundle (ι : Type) where
   functions : List (Response ι)
   obligations : List (List (ProgramCertificates.Evidence ι))
-  deriving ToJson, FromJson
 
 /-- Statement entries are exact interfaces, in a unit's graph and in each of its
 codes'. Expression observation checkpoints inside a statement require

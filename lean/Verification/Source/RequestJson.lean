@@ -228,28 +228,12 @@ deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for SummaryArm
 deriving instance ToJson, FromJson for ReadSummary
-deriving instance ToJson, FromJson for ProgramCertificates.Evidence
 deriving instance ToJson, FromJson for HeapFacts.Atom
 deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
-deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for PromiseCalls.Implication
 deriving instance ToJson, FromJson for PromiseCalls.Yield
-deriving instance ToJson, FromJson for OrdinaryEvidence
-deriving instance ToJson, FromJson for NodeEvidence
-
-@[nospecialize] private def derivedNodeEvidenceFromJson [FromJson ι] : Json → Except String (NodeEvidence ι) := fromJson?
-
-/-- A node is read in its one spelling (`NodeEvidence.wellFormed`): its
-sequent stated once, by its ordinary derivation's root, by its step's proof
-or by itself, and an ordinary derivation wherever it has no step evidence. -/
-instance (priority := high) [FromJson ι] : FromJson (NodeEvidence ι) :=
-  ⟨fun j => do
-    let c ← derivedNodeEvidenceFromJson j
-    unless c.wellFormed do
-      throw "a node states its sequent once, by its ordinary derivation, its step's proof or itself, and has an ordinary derivation without step evidence"
-    return c⟩
 deriving instance ToJson, FromJson for PointClaim
 deriving instance ToJson, FromJson for CodeEntry
 
@@ -291,34 +275,21 @@ structure Response (ι : Type) where
   /-- The request's read summaries, each checked once; a derivation node
   `readSummary` names one by its index. -/
   readSummaries : List (ReadSummary ι) := []
-  deriving ToJson, FromJson
 
-/-- A request's and a response's `codes`, and a response's `readSummaries`,
-are left out when empty. Absence is the one spelling of none, so strict
-decoding, which re-encodes and compares, refuses an explicit empty list, and
-a request without code reads as none. -/
-private def withoutEmpty (key : String) (j : Json) : Json :=
+/-- A list field left out when empty (a response's `codes` and
+`readSummaries`, `EvidenceWire.ResponseRef`). Absence is the one spelling of
+none, so strict decoding, which re-encodes and compares, refuses an explicit
+empty list. -/
+def withoutEmpty (key : String) (j : Json) : Json :=
   match j.getObjVal? key, j with
   | .ok (.arr xs), .obj kvs =>
     if xs.isEmpty then Json.mkObj (kvs.toArray.toList.filter (·.1 != key)) else j
   | _, _ => j
 
-private def withEmpty (key : String) (j : Json) : Json :=
+def withEmpty (key : String) (j : Json) : Json :=
   match j, j.getObjVal? key with
   | .obj _, .error _ => j.setObjVal! key (.arr #[])
   | _, _ => j
-
-private def withoutEmptyCodes (j : Json) : Json := withoutEmpty "codes" j
-
-private def withEmptyCodes (j : Json) : Json := withEmpty "codes" j
-
-@[nospecialize] private def derivedResponseToJson [ToJson ι] : Response ι → Json := toJson
-@[nospecialize] private def derivedResponseFromJson [FromJson ι] : Json → Except String (Response ι) := fromJson?
-
-instance (priority := high) [ToJson ι] : ToJson (Response ι) :=
-  ⟨fun r => withoutEmpty "readSummaries" (withoutEmptyCodes (derivedResponseToJson r))⟩
-instance (priority := high) [FromJson ι] : FromJson (Response ι) :=
-  ⟨fun j => derivedResponseFromJson (withEmpty "readSummaries" (withEmptyCodes j))⟩
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]

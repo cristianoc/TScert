@@ -149,6 +149,145 @@ function nodeSequent(node: WireNode): WireSequent {
   const step = Object.values(must(node.effect, "a node without a derivation has step evidence"))[0];
   return must(step?.proof, "a node without a stated sequent has a step proof").node.claim;
 }
+/** A JSON value, as a document's text parses. */
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+/** A parsed document as a JSON value, a copy of its own. */
+function jsonValue(v: unknown): JsonValue {
+  if (v === null || typeof v === "boolean" || typeof v === "number" || typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map(jsonValue);
+  assert.ok(typeof v === "object", "a JSON value");
+  return Object.fromEntries(Object.entries(v).map(([k, w]) => [k, jsonValue(w)]));
+}
+const jsonObject = (v: JsonValue | undefined): JsonObject => {
+  assert.ok(typeof v === "object" && v !== null && !Array.isArray(v), "a JSON object");
+  return v;
+};
+const jsonArray = (v: JsonValue | undefined): JsonValue[] => {
+  assert.ok(Array.isArray(v), "a JSON array");
+  return v;
+};
+const jsonIndex = (v: JsonValue | undefined): number => {
+  assert.ok(typeof v === "number" && Number.isInteger(v) && v >= 0, "a reference");
+  return v;
+};
+/** The kinds of an evidence bundle's tables, in the order each names only
+ * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
+const evidenceTables = ["types", "contexts", "links", "knowledge", "proofs"] as const;
+/** Every bundle of an evidence document: the main one, then each module's. */
+const evidenceBundles = (document: JsonValue): JsonObject[] => [jsonObject(jsonObject(document).main),
+  ...jsonArray(jsonObject(document).modules).map((m) => jsonObject(jsonObject(m).evidence))];
+/** An evidence document with every reference unfolded: each bundle spelled
+ * as the responses and obligations the tables stand for, every occurrence
+ * a copy of its own, for a control to edit one occurrence. */
+function unfoldedEvidence(path: string): JsonValue {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  const document = jsonValue(parsed);
+  for (const b of evidenceBundles(document)) {
+    const at = (table: JsonValue[], k: JsonValue | undefined): JsonValue =>
+      structuredClone(must(table[jsonIndex(k)], "an entry of its table"));
+    const types = jsonArray(b.types), links = jsonArray(b.links);
+    const contexts = jsonArray(b.contexts).map((c) => jsonArray(c).map((t) => at(types, t)));
+    const knowledge = jsonArray(b.knowledge).map((k): JsonValue => {
+      const e = jsonObject(k);
+      return { cells: e.cells ?? null, values: e.values ?? null, links: jsonArray(e.links).map((l) => at(links, l)) };
+    });
+    const sequent = (s: JsonValue): JsonValue => {
+      const e = jsonObject(s);
+      return { context: at(contexts, e.context), term: e.term ?? null, type: at(types, e.type) };
+    };
+    const proofs: JsonValue[] = [];
+    for (const p of jsonArray(b.proofs)) {
+      const e = jsonObject(p);
+      proofs.push({ node: { claim: sequent(e.claim ?? null), rule: e.rule ?? null,
+        premises: jsonArray(e.premises).map((q) => at(proofs, q)) } });
+    }
+    const step = (s: JsonValue): JsonValue => {
+      if (s === null) return null;
+      const [[name, fields]] = Object.entries(jsonObject(s));
+      const f = jsonObject(fields);
+      return { [name]: "proof" in f ? { ...f, proof: at(proofs, f.proof) } : f };
+    };
+    const node = (n: JsonValue): JsonValue => {
+      const e = jsonObject(n);
+      const ordinary = e.ordinary ?? null;
+      return { ...e, ordinary: typeof ordinary === "object" && ordinary !== null && !Array.isArray(ordinary)
+          ? { proof: { tree: at(proofs, jsonObject(ordinary.proof).tree) } } : ordinary,
+        sequent: e.sequent === null ? null : sequent(e.sequent ?? null), knowledge: at(knowledge, e.knowledge),
+        effect: step(e.effect ?? null), output: at(knowledge, e.output) };
+    };
+    b.functions = jsonArray(b.functions).map((f) => {
+      const r = jsonObject(f);
+      return { ...r, certificate: jsonArray(r.certificate).map(node),
+        ...("codes" in r ? { codes: jsonArray(r.codes).map((c) => jsonArray(c).map(node)) } : {}) };
+    });
+    b.obligations = jsonArray(b.obligations).map((o) => jsonArray(o).map((p) => at(proofs, p)));
+    for (const table of evidenceTables) delete b[table];
+  }
+  return document;
+}
+/** A JSON value's text. */
+function jsonText(v: JsonValue): string {
+  const text = JSON.stringify(v);
+  assert.ok(typeof text === "string", "a JSON value has a text");
+  return text;
+}
+/** An unfolded evidence document written with tables again, each entry once:
+ * the text the verifier reads. */
+function tabledEvidence(document: unknown): string {
+  const copy = jsonValue(document);
+  for (const b of evidenceBundles(copy)) {
+    const tables = new Map<string, { keys: Map<string, number>; entries: JsonValue[] }>(
+      evidenceTables.map((t) => [t, { keys: new Map(), entries: [] }]));
+    const add = (table: string, value: JsonValue): number => {
+      const t = must(tables.get(table), table);
+      const key = jsonText(value);
+      const known = t.keys.get(key);
+      if (known !== undefined) return known;
+      t.keys.set(key, t.entries.length);
+      t.entries.push(value);
+      return t.entries.length - 1;
+    };
+    const type = (t: JsonValue | undefined): number => add("types", t ?? null);
+    const sequent = (s: JsonValue | undefined): JsonValue => {
+      const e = jsonObject(s);
+      return { context: add("contexts", jsonArray(e.context).map(type)), term: e.term ?? null, type: type(e.type) };
+    };
+    const proof = (p: JsonValue | undefined): number => {
+      const e = jsonObject(jsonObject(p).node);
+      const premises = jsonArray(e.premises).map(proof);
+      return add("proofs", { claim: sequent(e.claim), rule: e.rule ?? null, premises });
+    };
+    const knowledge = (k: JsonValue | undefined): number => {
+      const e = jsonObject(k);
+      return add("knowledge", { cells: e.cells ?? null, values: e.values ?? null,
+        links: jsonArray(e.links).map((l) => add("links", l)) });
+    };
+    const node = (n: JsonValue): JsonValue => {
+      const e = jsonObject(n);
+      const ordinary = e.ordinary ?? null;
+      const effect = e.effect ?? null;
+      let step: JsonValue = null;
+      if (effect !== null) {
+        const [[name, fields]] = Object.entries(jsonObject(effect));
+        const f = jsonObject(fields);
+        step = { [name]: "proof" in f ? { ...f, proof: proof(f.proof) } : f };
+      }
+      return { ...e, ordinary: typeof ordinary === "object" && ordinary !== null && !Array.isArray(ordinary)
+          ? { proof: { tree: proof(jsonObject(ordinary.proof).tree) } } : ordinary,
+        sequent: e.sequent === null ? null : sequent(e.sequent), knowledge: knowledge(e.knowledge), effect: step,
+        output: knowledge(e.output) };
+    };
+    b.functions = jsonArray(b.functions).map((f) => {
+      const r = jsonObject(f);
+      return { ...r, certificate: jsonArray(r.certificate).map(node),
+        ...("codes" in r ? { codes: jsonArray(r.codes).map((c) => jsonArray(c).map(node)) } : {}) };
+    });
+    b.obligations = jsonArray(b.obligations).map((o) => jsonArray(o).map(proof));
+    for (const table of evidenceTables) b[table] = must(tables.get(table), table).entries;
+  }
+  return jsonText(copy);
+}
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
@@ -4345,12 +4484,12 @@ control(async (): Promise<void> => {
   const spelling = /a node states its sequent once/;
   const forgery = (artifacts: string) => {
     const honest = (): Evidence =>
-      JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
+      unfoldedEvidence(join(artifacts, "evidence.json")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
     const forge = (name: string, change: (e: Evidence) => void): string => {
       const e = honest();
       change(e);
       const path = join(artifacts, `forged-node-${name}-evidence.json`);
-      writeFileSync(path, JSON.stringify(e));
+      writeFileSync(path, tabledEvidence(e));
       return path;
     };
     const at = (pick: (n: WireNode) => boolean, change: (n: WireNode) => void) => (e: Evidence): void =>
@@ -4406,6 +4545,105 @@ control(async (): Promise<void> => {
   process.stdout.write("node headers: a referenced proof written out, a proof-less step's sequent stated alone and an ordinary derivation without step accepted; a sequent stated twice or nowhere, a reference without a step proof, a sliced read's proof as the header and a node without step or derivation refused by the decoder; a step proof at another sequent by the step check\n");
 });
 control(async (): Promise<void> => {
+  // The evidence document's references (REQUEST-PROTOCOL.md, "Evidence
+  // document"): a reference past its table, an entry of another kind, a
+  // derivation naming itself or a later one as a premise are refused by
+  // the decoder; a reference to another entry of the right kind, whose
+  // value is not the one the node's claim needs, by the check. An entry
+  // stated twice and used once each, and an entry no reference uses, are
+  // accepted: they denote the same bundle.
+  const artifacts = run("aliases");
+  const check = (name: string, change: (b: JsonObject) => void): Invoked => {
+    const document = jsonValue(JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")));
+    change(evidenceBundles(document)[0] ?? {});
+    const path = join(artifacts, `forged-reference-${name}-evidence.json`);
+    writeFileSync(path, jsonText(document));
+    return tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+      join(artifacts, "claims.json"), sourceKey(artifacts), path]));
+  };
+  const nodes = (b: JsonObject): JsonObject[] =>
+    jsonArray(b.functions).flatMap((f) => jsonArray(jsonObject(f).certificate).map(jsonObject));
+  const proofs = (b: JsonObject): JsonObject[] => jsonArray(b.proofs).map(jsonObject);
+  /** The first derivation with premises, and its position. */
+  const withPremises = (b: JsonObject): [JsonObject, number] => {
+    const k = proofs(b).findIndex((p) => jsonArray(p.premises).length > 0);
+    assert.ok(k >= 0, "a derivation with premises");
+    return [must(proofs(b)[k], "the derivation"), k];
+  };
+  /** A node whose ordinary derivation is a separate tree, and that tree's position. */
+  const separate = (b: JsonObject): [JsonObject, number] => {
+    const n = must(nodes(b).find((m) => typeof m.ordinary === "object" && m.ordinary !== null &&
+      !Array.isArray(m.ordinary)), "a node with its own derivation");
+    return [n, jsonIndex(jsonObject(jsonObject(n.ordinary).proof).tree)];
+  };
+  const refused: [string, (b: JsonObject) => void, RegExp][] = [
+    ["knowledge-past-table", (b) => { must(nodes(b)[0], "a node").knowledge = jsonArray(b.knowledge).length; },
+      /a reference to knowledge \d+, not among the knowledge entries it may name/],
+    ["type-past-table", (b) => { jsonArray(b.contexts)[0] = [jsonArray(b.types).length]; },
+      /a reference to type \d+, not among the type entries it may name/],
+    ["proof-as-knowledge", (b) => { jsonArray(b.proofs)[0] = must(jsonArray(b.knowledge)[0], "a knowledge entry"); },
+      /Document\.proofs: Verification\.EvidenceWire\.ProofEntry\./],
+    ["knowledge-as-link", (b) => { jsonArray(b.links)[0] = must(jsonArray(b.knowledge)[0], "a knowledge entry"); },
+      /Document\.links: Verification\.HeapLinks\.Link\./],
+    ["premise-itself", (b) => { const [p, k] = withPremises(b); jsonArray(p.premises)[0] = k; },
+      /a reference to proof \d+, not among the proof entries it may name/],
+    ["premise-later", (b) => { const [p] = withPremises(b); jsonArray(p.premises)[0] = jsonArray(b.proofs).length - 1; },
+      /a reference to proof \d+, not among the proof entries it may name/],
+  ];
+  for (const [name, change, refusal] of refused) {
+    const checked = check(name, change);
+    assert.equal(checked.status, 1, `${name}: ${checked.stdout}${checked.stderr}`);
+    assert.match(checked.stdout + checked.stderr, refusal, name);
+  }
+  // A node's derivation, a premise and a sequent's context, each moved to
+  // another entry of its table, are read and refused by the check.
+  const differing: [string, (b: JsonObject) => void][] = [
+    ["other-derivation", (b) => {
+      const [n, k] = separate(b);
+      const claim = JSON.stringify(must(proofs(b)[k], "its derivation").claim);
+      const other = proofs(b).findIndex((p) => JSON.stringify(p.claim) !== claim);
+      jsonObject(jsonObject(n.ordinary).proof).tree = other;
+    }],
+    ["other-premise", (b) => {
+      const k = proofs(b).reduce((last, q, i) => jsonArray(q.premises).length > 0 ? i : last, -1);
+      const p = must(proofs(b)[k], "the last derivation with premises");
+      const first = jsonIndex(jsonArray(p.premises)[0]);
+      const claim = JSON.stringify(must(proofs(b)[first], "the premise").claim);
+      const other = proofs(b).findIndex((q, i) => i < k && JSON.stringify(q.claim) !== claim);
+      assert.ok(other >= 0, "an earlier derivation at another sequent");
+      jsonArray(p.premises)[0] = other;
+    }],
+    ["other-context", (b) => {
+      const [, k] = separate(b);
+      const claim = jsonObject(must(proofs(b)[k], "its derivation").claim);
+      const contexts = jsonArray(b.contexts);
+      const other = contexts.findIndex((c, i) => i !== jsonIndex(claim.context) &&
+        JSON.stringify(c) !== JSON.stringify(contexts[jsonIndex(claim.context)]));
+      assert.ok(other >= 0, "another context");
+      claim.context = other;
+    }],
+  ];
+  for (const [name, change] of differing) {
+    const checked = check(name, change);
+    assert.equal(checked.status, 1, `${name}: ${checked.stdout}${checked.stderr}`);
+    assert.match(checked.stdout + checked.stderr, /^reject: /m, name);
+    assert.doesNotMatch(checked.stdout + checked.stderr, /entries it may name|Verification\.EvidenceWire\.Document\./, name);
+  }
+  const accepted: [string, (b: JsonObject) => void][] = [
+    ["stated-twice", (b) => {
+      const [n, k] = separate(b);
+      jsonArray(b.proofs).push(must(proofs(b)[k], "its derivation"));
+      jsonObject(jsonObject(n.ordinary).proof).tree = jsonArray(b.proofs).length - 1;
+    }],
+    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [] }); }],
+  ];
+  for (const [name, change] of accepted) {
+    const checked = check(name, change);
+    assert.equal(checked.status, 0, `${name}: ${checked.stdout}${checked.stderr}`);
+  }
+  process.stdout.write("evidence references: a reference past its table, an entry of another kind and a premise at or after its derivation refused by the decoder; a derivation, a premise and a context moved to another entry refused by the check; an entry stated twice and an unused entry accepted\n");
+});
+control(async (): Promise<void> => {
   // A request's read summaries (REQUEST-PROTOCOL.md, "Read summaries") are
   // checked once each, used or not, against the request's graph and image
   // check: an entry whose arms miss or add a member, compare a view to a
@@ -4444,7 +4682,7 @@ control(async (): Promise<void> => {
     return i;
   };
   const honest = (): Evidence =>
-    JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
+    unfoldedEvidence(join(artifacts, "evidence.json")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
   const unit = (e: Evidence, name: string): Unit => must(e.main.functions[at(name)], name);
   const table = (e: Evidence, name: string): Summary[] => must(unit(e, name).readSummaries, `${name}'s summaries`);
   /** Every value nested in `value`, depth first. */
@@ -4523,7 +4761,7 @@ control(async (): Promise<void> => {
     const e = honest();
     change(e);
     const path = join(artifacts, `forged-summary-${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(e));
+    writeFileSync(path, tabledEvidence(e));
     return path;
   };
   const check = (path: string): Invoked => tested(verifierCall(verifier, ["--check-source-claims",
@@ -4814,7 +5052,7 @@ mutationControl(async (): Promise<void> => {
     field: string; other: string; optional: boolean };
   type WitnessNode = WireNode & { knowledge: { links: Link[] }; output: { links: Link[] } };
   for (const name of ["receiver", "field"]) {
-    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
     assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
     const index = honest.functions.findIndex(f => f.name === name);
     const fn = must(honest.functions[index], name);
@@ -4845,7 +5083,7 @@ mutationControl(async (): Promise<void> => {
     node.knowledge.links.push(forged);
     node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
     const path = join(artifacts, `forged-witness-${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(evidence));
+    writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const start = entry.start + "return ".length;
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
@@ -4858,7 +5096,7 @@ mutationControl(async (): Promise<void> => {
   // producer states every mapped alias: an alias claimed between them is
   // refused by heap knowledge, and accepted with the links check bypassed.
   {
-    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
     assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
     const unit: unknown = evidence.main.functions[honest.functions.findIndex(f => f.name === "receiver")];
     assert.ok(object(unit) && Array.isArray(unit.certificate));
@@ -4883,7 +5121,7 @@ mutationControl(async (): Promise<void> => {
     node.knowledge.links.push(forged);
     node.output.links.push({ ...forged, cell: i + 1, value: j + 1 });
     const path = join(artifacts, "forged-mapped-alias-evidence.json");
-    writeFileSync(path, JSON.stringify(evidence));
+    writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
     assert.ok(checked.includes("evidence fails heap knowledge"), checked);
@@ -4936,7 +5174,7 @@ mutationControl(async (): Promise<void> => {
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   for (const name of ["receiver", "field"]) {
-    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
     assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
     const index = honest.functions.findIndex(f => f.name === name);
     const fn = must(honest.functions[index], name);
@@ -4972,7 +5210,7 @@ mutationControl(async (): Promise<void> => {
     node.knowledge.links.push(forged);
     node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
     const path = join(artifacts, `forged-chain-${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(evidence));
+    writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const start = entry.start + "return ".length;
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
