@@ -98,7 +98,7 @@ writes only to the run directory. `pipeline/test.mts` builds it once per run,
 beside its controls (`node pipeline/evidence-mutations.mts --build`), and
 gives it to its control processes; its invocations replay from the stage
 store by its executable's digest and the mutation selection
-([controls](../docs/DESIGN.md#the-stage-store)). The production verifier and
+([controls](../docs/STAGE-STORE.md#controls)). The production verifier and
 Lean sources contain no mutation switches.
 
 The mutations bypass mapped/observed edge coverage, read-link entailment or

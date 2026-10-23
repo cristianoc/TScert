@@ -245,504 +245,18 @@ Neither an unsupported result nor an infrastructure error is a safety verdict.
 
 ### The stage store
 
-The entry point uses one content-addressed store for stage invocations,
-including imported modules and repeated proposal/search attempts. Every
-runner uses this mechanism. Each invocation has an explicit input
-description, immutable inputs and a recorded result.
-
-**Keys.** A key is the SHA-256 of a canonical encoding of the stage,
-its implementation and its complete input description. Ordering is retained
-where it affects execution. The implementation includes the stage's
-execution adapter, the code the stage runs and the runtime it runs on.
-A package version or executable pathname alone does not identify it.
-
-Code identity uses whole-directory enumeration, complete by construction
-within the declared universe: the direct-child `.mts` files of `pipeline/`
-and `tools/`, with the exclusions below. It involves no import discovery.
-`tests/` and `dev/` are outside this universe. A key covers:
-
-- for a process stage, the digest, by sorted path and content, of every
-  `.mts` file directly in `pipeline/` but those excluded below, with the
-  executable and its libraries, the stage runner and its libraries
-  ([timing](#the-stage-store)) and the Node runtime;
-- for an in-process stage, the same digest over every `.mts` file directly in
-  `pipeline/` and in `tools/` but those excluded below, with the Node runtime
-  and, for an observed stage, the compiler's packages and the system's
-  build.
-
-A file within the universe is keyed by default: a new or renamed keyed
-module changes every key it falls under. The exclusions are `unkeyed` and
-`inProcessOnly` in `pipeline/stage-execution.mts`. Each is a named file
-whose role is to choose among entries whose stored
-manifest equals the invocation's own, to publish or record attempts, to
-orchestrate stages over inputs the manifest binds, or to present outcomes;
-none computes a stage's result from its inputs.
-
-Excluded from every key:
-
-- `pipeline/stages.mts`: the replay policy (forcing, finished and timeout
-  lookup, retrying timeouts, publication calls) and the attempt records;
-- `pipeline/stage-store.mts`: the store's lookup, validation, publication and
-  cleanup;
-- `pipeline/verify-source.mts`: the orchestration of one check, passing
-  values to the stages' calls, and its outcome;
-- `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
-  case inventory;
-- `pipeline/test.mts`, `pipeline/default-parameters.mts`,
-  `pipeline/evidence-mutations.mts`, `pipeline/generic-rest.mts`,
-  `pipeline/overload-claims.mts`, `pipeline/rest-pack-instance.mts`: the
-  controls and their forged inputs, which reach a stage only as manifest
-  inputs;
-- `pipeline/run-example.mts`, `pipeline/fixture-links.mts`: running an
-  example under Node, and creating the fixture projects' links;
-- `tools/diagnostic.mts`, `tools/diagnostic-view.mts`, `tools/claim-text.mts`:
-  decoding and rendering diagnostics after the stages;
-- `tools/unchecked.mts`, `tools/shadow-contracts.mts`: the `any` audit of the
-  node side's sources, a suite;
-- `tools/strip-types.mts`: type erasure for the examples run under Node by
-  the excluded controls.
-- `tools/compiler-processes.mts`: the attempt records' measurement of the
-  compiler processes' CPU time and peak memory.
-
-Excluded from process keys, beside those: the in-process stages' own
-modules, `pipeline/parse-stage.mts`, `pipeline/claims-assembly.mts` and
-`pipeline/in-process-execution.mts`, and every module of `tools/`, the front
-end, which a process stage's binding and run in `pipeline/stage-execution.mts`
-do not execute.
-
-*Completeness.* Result-path completeness rests on three audited assumptions:
-excluded files contribute no result-affecting code; process-stage binding,
-execution, classification and materialization execute no in-process stage
-or `tools/` code; and result-affecting repository code is confined to the
-direct-child `.mts` files of `pipeline/` and `tools/`. External code is
-limited to identified executables and their libraries, Node built-ins
-covered by the runtime identity, the observed stage's compiler packages
-covered by compiler identity, and family loads covered by the loader's
-observations. Identified executables and observed family loads are exceptions
-to the repository-code and process-stage restrictions. Loading code outside
-this universe is an audited assumption, not a mechanically refused action.
-
-The identity is captured when the process loads its modules: the sorted
-file set and every file's digest. Failed enumeration or an unreadable file
-leaves the invocation without a key. At stage entry and before publication,
-the file set and every file's content must match the captured identity;
-a difference makes the invocation execute without a key and publish
-nothing.
-
-That every result-affecting file-system read passes through the observation
-mechanism (`tools/files.mts`), including reads reached indirectly
-(`process.getBuiltinModule`) or by evaluated code, is a separate audited
-assumption of observed stages. The fast check `tests/observed-stages.mts
---reads` checks the listed import forms toward it; it parses every keyed
-module of the in-process universe with the TypeScript compiler's own parser,
-through the compiler API the front end opens, over `tools/tsconfig.json`.
-It refuses import declarations, export-from declarations and `import(…)`
-calls whose specifier names a Node file-system, module, process, worker or
-vm module, and every `import(…)` whose argument is not a string literal.
-The exceptions are `tools/files.mts`, `pipeline/stage-execution.mts` and
-`pipeline/run-directory.mts`: the execution adapters read the code they
-identify and a process stage's inputs, never an observed stage's inputs.
-
-*Cost.* An edit of any keyed file misses every entry of the kinds it keys:
-an edit of a front-end module misses every parse, diagnostics and assembly
-entry, and an edit of a keyed pipeline module every entry. An edit of an
-excluded file replays everything.
-
-Each in-process stage's call is constructed by its own module: the input
-description, execution over exactly those inputs, codec and, for an
-observed stage, compiler identity. `pipeline/parse-stage.mts` owns the parse
-and TypeScript diagnostics calls; `pipeline/claims-assembly.mts` owns
-assembly. The orchestration passes values only.
-
-Replay policy (`pipeline/stages.mts`), store lookup, validation and
-publication (`pipeline/stage-store.mts`), and outcome presentation are outside
-keys. Presentation includes attempt records and their decoders, orchestration
-and diagnostic formatting. Replay validation, including `storedObservations`,
-`observationsHold` and stored-input comparison, preserves exact manifest
-equality and observation validity. Excluding policy and store code assumes
-that every publishing and reading version binds results to their exact
-manifests: a replayed result is exactly what execution on the key's inputs
-produced. Repair of a publication or reading defect includes invalidation of
-entries it could have written (`make clean-store`).
-
-Each invocation fixes or records its arguments, working directory,
-observable environment and runtime options. Executable dependencies and
-in-process configuration are inputs too. An invocation whose dependencies
-cannot be identified executes without replay.
-
-All stages use the common invocation mechanism. Replay requires complete
-dependency identification, consistent compiler state where applicable,
-established path equivalence and audited result binding. An invocation
-failing these requirements executes without replay and retains its timing
-and outcome records. Every stage in the table replays; the parse and
-TypeScript's diagnostics where their observations are complete
-([observed stages](#the-stage-store), below).
-
-An invocation whose dependencies cannot be identified has an attempt
-identity and a record of its known inputs, but no reusable stage key. Its
-result and timeout observations are retained only as attempt records;
-neither is published or reused as a stage entry. The stage-key publication
-and timeout-reuse rules apply only to replay-eligible invocations. Force
-execution of a replay-eligible invocation retains its complete stage key.
-
-| Stage | Inputs in addition to its implementation and execution context |
-| --- | --- |
-| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the complete filesystem observations of parsing, declaration collection and host activation |
-| lower | the exact Fragment document |
-| propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
-| assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
-| search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds |
-| check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
-| explain | the Fragment and flow passed to the producer's `--explain` mode |
-| TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
-
-**Observed stages.** The parse and TypeScript's diagnostics read the file
-system through the compiler and through Node, so their inputs are known only
-after they run. Each is keyed in two steps. Its *pre-key* binds what is known
-before it runs: its stage, its input files and paths, its implementation and
-runtime, the active family descriptions and the compiler's identity. Its
-*observations* are every answer the file system gave it, each a triple of an
-operation, an absolute path and the answer:
-
-| Operation | Answer |
-| --- | --- |
-| `read` | the SHA-256 of the bytes read, `directory`, or absent |
-| `kind` | `file` or `directory` after following links, or absent |
-| `real` | the real path, or absent |
-| `dirents` | the digest of the directory's entries in name order with their own kinds (link, file, directory, other), including the digest of an empty list, or absent |
-| `entries` | the digest of the directory's files and directories in name order, links followed and others dropped, or absent |
-
-A failed lookup is an observation with the answer absent; configuration
-discovery and module resolution are the queries they make. The stage's key is
-the digest of its pre-key's manifest with its observations. An entry is
-published under that key, then referenced from an index under its pre-key; a
-reference is only a candidate: a later run with the same pre-key replays a
-referenced entry that is valid, whose manifest is exactly its own pre-key
-manifest with observations, and each of whose observations gives the same
-answer when made again now. An entry is published only when its
-observations are complete, as follows; otherwise the stage executes without
-replay, its ineligibility recorded.
-
-*Every read is an observation.* The front end reads the file system only
-through [`tools/files.mts`](../tools/files.mts), which records each answer:
-its own reads, the answers it gives the compiler, and the reads of Node's
-resolver and loader where family activation uses them. A fast check
-requires every module of the stages' code closure other than `files.mts` to
-import no file system, module or process API.
-
-- *The compiler.* The compiler API delegates five queries to the client
-  (`readFile`, `fileExists`, `directoryExists`, `getAccessibleEntries`,
-  `realpath`), each falling back to the compiler's own file system when the
-  client declines; its other operations (`Stat`, `WalkDir`, case-sensitivity
-  detection, library location) use the compiler's file system directly. The
-  front end answers all five, from its in-memory texts or from an
-  observation of exactly the answer given; it declines only a path inside
-  the compiler's own executable package (its library files), which the
-  pre-key identifies. A failure of a query is the request's failure, as
-  the front end's own read failure. On macOS the compiler runs under
-  `sandbox-exec` with a profile that kills it on any read or existence test
-  of a path outside the system volume (`/System` but its data volume,
-  `/usr/lib`, `/dev`, the root directory and its links `/var`, `/tmp`,
-  `/etc` themselves), its own executable package, its launcher and an empty
-  working directory of the process's own, each allowed as named and as
-  named through those links; three probes of the system's libraries
-  (`~/.CFUserTextEncoding`, `/AppleInternal`, `/Library/Preferences/Logging`)
-  are denied without the kill, answering absent every time. Its environment
-  is empty and it inherits no file but its standard streams. The allowed
-  paths are fixed by the pre-key: the operating system's build, the
-  installation's digest, the profile's text and the case sensitivity of the
-  executable's file system (the compiler's own probe). A compiler run that
-  finishes therefore reached the user's files only through the five
-  queries; a direct read, of an existing file or of a missing one, ends the
-  run as an operational failure (`tests/observed-stages.mts` makes both).
-  Elsewhere the observations are incomplete.
-- *Node's resolver.* A resolution of a specifier from module `m` observes the
-  reads of [Node's resolution algorithm](REFERENCES.md#nodejs-modules). Each
-  resolution first reads `m`'s package scope (`kind a/package.json` for each
-  ancestor `a` of `m` from the nearest, stopping before a `node_modules`
-  directory or at the first that is a file, its `read`, and the scope's
-  directory `real`). A package import (`#…`) and a self-reference (the scope
-  names the package and states non-null `exports`) resolve through it;
-  another bare specifier of package
-  `p` through the `node_modules` lookup
-  (`kind a/node_modules/p` for each ancestor from the nearest, up to the
-  first that is a directory, its `real` and the `read` of its
-  `package.json`). The resolved file's `kind` and `real` follow. A relative,
-  absolute or `file:` specifier observes its target's `kind` and `real`; a
-  built-in, nothing. A package with absent or null `exports`, and a specifier
-  a scope or a package found does not resolve, leave the observations
-  incomplete.
-  A package whose `exports` or `imports` resolve the specifier (the package
-  found, or the scope of a self-reference or a package import) observes the
-  `dirents` of every directory of its own tree, nested `node_modules` left
-  out (a target naming `node_modules` is invalid); a symbolic link there
-  leaves the observations incomplete, since the path a target names before
-  Node resolves its links is not observed. A package import is accounted for
-  only when every string target in its scope's `imports` map, through
-  condition objects and arrays, starts with `./`. Any other string leaves
-  the observations incomplete: another package lookup can traverse an
-  unobserved link even when its resolved file lies inside the scope.
-  Node reads these files itself: they are observed before and after the
-  resolution, and the two must agree.
-- *Node's loader.* Loading a module of a family's installation observes the
-  bytes of each module the load reads (the source a load hook sees) and its
-  package scope; a module read outside the installation leaves the
-  observations incomplete.
-- *The implementation.* Every module of the stage's code closure, the
-  compiler package's and its executable package's files (its JavaScript
-  client, its executable and its library files) are digested when the
-  process loads them and are in the pre-key; a difference from disk at the
-  stage entry or after execution before publication makes it ineligible,
-  with the reason recorded and no entry published. The modules the
-  front end loads at start-up are these.
-
-*State follows the observations.* Each parse and each diagnostics stage opens
-its compilers fresh and releases them, so no compiler outlives the stage:
-the compiler's state is a function of the requests the front end makes,
-which its code and inputs determine, and of the observed answers. The
-process's own caches of file-system-derived values (installation roots and
-inventories, activated guard tables, declaration origins) keep the
-observations a value was computed from, and whether they were complete;
-its first use in a stage makes them again, computing the value again where
-one answers otherwise, and every use records them for the stage. Node's
-resolution and module caches cannot be computed again: the
-process keeps the first answer of every observation of its resolver and
-loader, and an observed stage during which one answers otherwise fails as an
-operational failure; the pipeline's worker process then exits, and a fresh
-one takes its next check. A resolver or loader read the record cannot account
-for marks the process for retirement and the current stage incomplete; that
-stage keeps its result without publication. Further observed-stage execution
-in the process is refused. Validated replays remain available because they
-do not use Node's caches. The worker answers its current check and exits
-when marked for retirement, so its next check has fresh caches.
-
-*Validation.* An observation is made again by its operation, reading the
-file system afresh. The answers a stage used are the ones it recorded: the
-compiler's and the front end's reads by construction, Node's by agreement
-before and after its read. A replayed entry is the stage's result for the
-file system its observations describe, which agrees with the present one on
-everything the stage reads.
-
-Each imported module uses the same lower and propose stages. Each
-withdrawal recomputes the eligible reads and transitive claims assembly.
-A replayed search refusal drives the same withdrawal decision as a fresh
-refusal. The orchestration and diagnostic presentation run under their
-current implementation; a stored raw refusal is not a stored final Outcome.
-
-**Locations.** Stages use stable file identities and execution locations
-independent of an invocation's temporary artifact directory. The parser
-retains the original source's project and import-resolution context.
-Any path affecting resolution, document identity or output remains an
-input unless an explicit stage adapter establishes a stable equivalent.
-
-The source snapshot lives at a store location named by its bytes and its
-configuration's; its path is the Fragment's file identity, which every
-later document embeds. A process stage runs in a fresh directory holding
-its input files under fixed role names, with relative arguments and an
-explicit environment. The audited programs, the repository's builds of the
-verifier and the producer and the controls' mutation verifier, read only the
-files their arguments name and do not observe that directory's path, which
-is excluded from the key. Any other program executes without replay.
-
-Logs belong to the stage invocation whose paths they describe. Each
-caller receives fresh writable copies of the artifacts under its own run
-root, and its Outcome names that directory. Shared entries are immutable.
-The run root controls artifact lifetime; it is excluded from semantic keys
-only where stage execution is independent of it. Store data outlives run
-directory cleanup.
-
-**Entries and timeouts.** A finished entry contains the complete input
-manifest, exit status, stdout, stderr and a manifest of output files with
-their digests. This includes parser diagnostics and auxiliary stage outputs.
-Only a complete success or recognized refusal is a finished result.
-Operational failures are not reusable results.
-
-A timeout is a separate immutable observation recording its stage key,
-attempt identity, elapsed execution time, CPU time up to the kill, enforced
-limit and resource policy. Limits and measurement metadata are outside the stage key. Under the
-same resource policy, a request may reuse an observation whose enforced
-limit is at least the requested limit. A larger requested limit executes the
-stage. If no finished entry is available, retrying timeouts
-(`TSCERT_RETRY_TIMEOUTS=1`) bypasses timeout reuse and executes at the
-requested limit. The retry flag is outside the key; normal timeout
-publication and resource-policy checks apply. Force execution bypasses both
-finished results and timeout observations. Reuse reports an earlier timeout, not proof that execution
-would time out again.
-
-An aggregate worker deadline records interruption of the run. A stage
-timeout requires identification of the attempt and evidence that its own
-enforced limit expired; identifying the active stage alone is insufficient.
-Completed entries remain reusable. Readers check for a finished entry before
-returning a timeout observation; a finished entry visible at that check
-takes precedence.
-
-**Publication.** Writers build complete entries in unique temporary
-directories on the store's filesystem, close their files and publish by
-atomic rename to the stage-key destination. Published entry directories are
-nonempty and immutable. A destination-exists failure requires validation of
-the existing entry. Finished results are compared by input manifest, exit
-status, stdout, stderr and output-file names and digests; attempt
-identities, timings and load measurements are excluded. Different result
-payloads for one key are a store error. If the existing entry is invalid,
-the caller may use its freshly computed result without publishing it;
-replacement requires coordinated removal of the invalid entry.
-
-Finished entries and timeout observations have separate destinations.
-Publication never deletes a timeout entry to replace it with a finished
-result, so a late timeout cannot overwrite success. Duplicate computation
-is permitted.
-
-Timeout observations use unique attempt destinations and the same
-complete-directory publication protocol. Concurrent observations coexist.
-
-Atomic publication provides visibility across process interruption.
-Power-loss durability requires a separately specified and validated
-filesystem flush protocol. Readers validate complete manifests, an integrity
-digest covering every manifest payload field (including exit status and
-measurement metadata), and file digests; missing, incomplete or corrupt
-entries cause recomputation.
-Cleanup removes temporary directories only when their writers are known
-to have stopped. A reader reads a whole entry into its memory and validates
-that copy before use; concurrent eviction causes a retry or miss.
-
-**Replay and trust.** The parser is part of the trusted source boundary.
-Replaying its output and replaying a successful check additionally trust
-the store implementation, its binding of results to exact inputs and the
-integrity of its stored results. A replayed parse further trusts that its
-observations are complete: the sandbox profile and the compiler API's five
-queries for the compiler, the resolution algorithm's reads for Node's
-resolver, and the process's first-answer consistency for its caches
-([observed stages](#the-stage-store)). The store is private to the user and
-shared among that user's cooperating processes. Digests detect accidental
-corruption; they do not authenticate results supplied by an untrusted
-writer.
-
-`SourceClaimJson.checkJson_safe` establishes safety from the corresponding
-successful `checkJson` evaluation. The memoizer must preserve that premise
-when replaying a check. This is an additional implementation obligation,
-outside that theorem.
-
-The production check's pure computation supports a deterministic judgment
-for fixed inputs. Replay eligibility requires an audit of the executable's
-I/O and runtime dependencies. Cold and replayed runs are compared across
-different run roots and worker histories, including their judgments,
-documents and diagnostics. These checks support the implementation audit;
-they are not a proof of executable determinism. Resource timeouts are
-observations rather than deterministic judgments.
-
-**Controls.** A control tests the verifier, the producer or the pipeline on
-an input no case makes: a forged or tampered document, a mutation of the
-verifier, an injected tool failure, a host-family override. The controls of
-`pipeline/test.mts` run in `make test`, in a pool of processes. Every
-operation a control runs is a stage invocation of the common mechanism and
-replays from the store like any other: its key binds the executable by
-content, its argument vector, its environment and the bytes of every input
-file, so the operation executes again exactly when one of these changes. A
-control's own code (its forgery and its assertions) runs every time, over
-the operation's result, executed or replayed.
-
-- *Executables.* The repository's verifier and producer builds, and the
-  mutation verifier. The mutation verifier is built at each run of the
-  controls from the current build's generated C and Lake's link response,
-  and is audited as the verifier is: its identity is its executable's digest
-  and linked libraries, and it reads, beyond the verifier's I/O, only the
-  variable `TSCERT_TEST_MUTATIONS`, which its invocation's environment
-  fixes. A mutation selection is therefore part of the key, and a rebuild
-  giving the same bytes replays its entries.
-- *Protocol.* The exit protocol that decides whether an exit is a finished
-  result (the refusal's status and prefix) is part of the key.
-- *Settings.* A host-family override is an input of the parse (the active
-  family descriptions). An injected tool failure is written into a stand-in
-  program, which no audit identifies: its invocations execute every time,
-  and the stages it does not replace replay.
-- *Baselines.* A control deriving its input from a case's honest documents
-  obtains them through the pipeline: the case is checked (its stages
-  replayed when warm) and its outcome required to be the case's expected
-  one.
-- *Ran.* Each operation's attempt must have executed, or replayed a finished
-  result the store holds for its key; a replayed timeout fails the control.
-  `TSCERT_STAGE_STORE=off` executes every operation of every control.
-
-The controls of the store itself (`tests/stage-store.mts`, the observed
-stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)
-name fresh stores of their own and execute every time: their subject is the
-replay mechanism. Store tests cover dependency invalidation, concurrent
-publication, interrupted writers, timeout/success races and writable
-artifact isolation.
-
-**Timing.** Every invocation records monotonic elapsed wall time, its
-configured limit and whether it executed, replayed, timed out, failed
-operationally or was interrupted. Replay records lookup, validation and
-materialization time separately from the stored execution measurements. An
-execution, a timeout included, also records its CPU time (user and system),
-the processes it covers and the largest peak memory among the stage's
-processes; a replay records the stored execution's, a finished entry's or a
-timeout observation's. A measurement that is not taken is recorded as
-unavailable, with its reason.
-
-- A process stage's program runs under the stage runner
-  ([`pipeline/runner/stage-runner.c`](../pipeline/runner/stage-runner.c),
-  built by `make build-runner`), which starts it with the invocation's
-  arguments, environment, working directory and standard streams in a
-  process group led by a watchdog. The runner enforces the limit: at the
-  limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues and signals
-  the program, by its process id, and the group (SIGTERM at the limit), and
-  250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
-  the group ends too. When the program ends, the runner kills what remains
-  of its group, so no descendant in it holds the output pipes, and ends with
-  the program's exit status or signal. The watchdog holds a pipe only the
-  runner writes to; when the runner ends in any way, the watchdog kills the
-  group. Node kills the runner 2 s past the grace period, a backstop for a
-  runner that does not end. A failed system call of the runner's kills the
-  program and the group and fails the run.
-- Containment is limited to the program and its group: a descendant that
-  left the group (`setsid`, `setpgid`) is not killed, and neither is a
-  program that left the group when the runner itself dies. Such a
-  descendant may also hold the output pipes, keeping the invocation waiting
-  until the backstop. TScert's process stages, the Lean verifier and the
-  OCaml producer, start no process.
-- The runner's report, the `RUSAGE_CHILDREN` CPU time and peak resident set
-  (`ru_maxrss`) of the program and the descendants it waited for, whether
-  the limit expired, and any failure of its own system calls, goes to its
-  descriptor 3, a file the program does not inherit; it covers the CPU time
-  used up to a timeout's kill. Descendants the program did not wait for are
-  not counted. The runner relays the exit status a result is classified by
-  and decides timeouts, so it is part of the execution adapter: a process
-  stage's key covers its identity.
-- An in-process stage records the pipeline process's own CPU time over the
-  attempt (`process.cpuUsage`) plus that of each compiler process the attempt
-  started (`tools/compiler-processes.mts`), read just before the compiler is
-  released or abandoned by `stage-runner --cpu <pid>`: `proc_pid_rusage` on
-  macOS, to the microsecond, with the compiler's lifetime maximum physical
-  footprint as its peak memory, and `/proc/<pid>/stat` and `VmHWM` on Linux,
-  to the clock tick. The pipeline process's own peak memory is not
-  attributed to a stage.
-
-Timing, CPU and memory are outside semantic keys and result equality.
-Census records retain these measurements for each attempt, including module
-stages and withdrawals, after entry eviction. They describe observed
-execution cost. Elapsed time depends on the machine's load; CPU time does not
-count waiting.
-
-**Location and size.** The store lives outside every checkout at
-`$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
-`TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-`make clean-store` removes finished entries, timeout observations and
-abandoned publication directories on this host. It retains
-immutable, content-addressed source locations, validated at each use, so
-active parses keep their inputs.
-Eviction is approximate and affects reuse only; readers treat concurrent
-removal as a miss.
-
-**Census records.** Each slice has a persistent record of its source
-identity, outcome, execution policy and ordered invocation references,
-including module stages and withdrawal attempts. Each reference identifies
-its attempt and, where available, its complete stage key. These records survive artifact
-cleanup and store eviction. Processes may partition the slices and share
-stage entries. A later census runs the current orchestration and presentation, validating
-dependencies through the common stage mechanism. Census records retain
-historical outcomes and measurements; they do not independently authorize
-replay of a final Outcome. Missing stage entries execute again.
+Every stage of the entry point and every operation a control runs goes
+through one invocation mechanism and replays from one content-addressed
+store ([the stage store](STAGE-STORE.md)). A stage's key is the digest of
+its implementation (the executable, the keyed node-side code, the runtime)
+and its complete input description ([keys](STAGE-STORE.md#keys)); the parse
+and TypeScript's diagnostics, whose inputs are known only after they run,
+are keyed by the file system's answers to their reads as
+[observed stages](STAGE-STORE.md#observed-stages); timeouts are recorded at
+their limit ([entries and timeouts](STAGE-STORE.md#entries-and-timeouts));
+and every attempt records its timing ([timing](STAGE-STORE.md#timing)). A
+replayed check, parse or control operation is a trusted step: the trust
+surface's rows state what each replay assumes.
 
 ### What "verified" means
 
@@ -919,9 +433,9 @@ trusted obligation below.
 | The capture-shape reading of a regex literal is correct: for every literal it reads, the number of capture groups and whether a group is named are the pattern's, and a group it reports as taking part in every match holds a string in every successful match under ECMA-262's semantics. The count and the names are also checked against the host's compilation of each literal; which groups take part is the reading's alone. | [`tools/regexp-shape.mts`](../tools/regexp-shape.mts); `tests/regexp-shapes.mts` runs it against the host on known shapes, its counterexamples and a seeded fuzz |
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
-| A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the keyed direct-child `pipeline/*.mts` code captured at module load and the Node runtime ([keys](#the-stage-store): result-path completeness rests on the stated audits; the replay policy, the store and presentation decide no result and are outside the key, which assumes every version of them that published or reads an entry binds it to its exact manifest), and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](#the-stage-store), [`pipeline/stage-execution.mts`](../pipeline/stage-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
-| A control passing over replayed operations shows what it showed when they executed: each replayed operation is its executable's own result for exactly the inputs its key binds, under the same binding, validation and audit as a replayed check (the executable by content, its argument vector, its environment, its exit protocol and every input file's bytes). The mutation verifier's audit is the verifier's, beside the one variable `TSCERT_TEST_MUTATIONS` its invocation fixes. A control's own forgery and assertions run at every run. | [Controls](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts) (`tested`), [`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) |
-| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the keyed direct-child `.mts` files of `pipeline/` and `tools/` captured at module load, and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (the parser-based import guard over the keyed in-process universe and the result-path audits under [keys](#the-stage-store)); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree, and every string target in a package import's scope `imports` map starting with `./` (including targets within condition objects and arrays); the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. An incomplete Node resolver or loader observation makes the current execution unpublishable and retires the worker; later observed executions require a fresh process, while validated replays remain available. Elsewhere, or where other observations are not accounted for, the stage executes without publication. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/in-process-execution.mts`](../pipeline/in-process-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
+| A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the keyed direct-child `pipeline/*.mts` code captured at module load and the Node runtime ([keys](STAGE-STORE.md#keys): result-path completeness rests on the stated audits; the replay policy, the store and presentation decide no result and are outside the key, which assumes every version of them that published or reads an entry binds it to its exact manifest), and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](STAGE-STORE.md), [`pipeline/stage-execution.mts`](../pipeline/stage-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
+| A control passing over replayed operations shows what it showed when they executed: each replayed operation is its executable's own result for exactly the inputs its key binds, under the same binding, validation and audit as a replayed check (the executable by content, its argument vector, its environment, its exit protocol and every input file's bytes). The mutation verifier's audit is the verifier's, beside the one variable `TSCERT_TEST_MUTATIONS` its invocation fixes. A control's own forgery and assertions run at every run. | [Controls](STAGE-STORE.md#controls), [`pipeline/stages.mts`](../pipeline/stages.mts) (`tested`), [`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) |
+| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the keyed direct-child `.mts` files of `pipeline/` and `tools/` captured at module load, and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (the parser-based import guard over the keyed in-process universe and the result-path audits under [keys](STAGE-STORE.md#keys)); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree, and every string target in a package import's scope `imports` map starting with `./` (including targets within condition objects and arrays); the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. An incomplete Node resolver or loader observation makes the current execution unpublishable and retires the worker; later observed executions require a fresh process, while validated replays remain available. Elsewhere, or where other observations are not accounted for, the stage executes without publication. | [Observed stages](STAGE-STORE.md#observed-stages), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/in-process-execution.mts`](../pipeline/in-process-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
 
 **Assumed values.** Each is an input slot of the units that use it, at its
 declared or stated type; nothing checks the code behind it, and each may
@@ -932,7 +446,7 @@ throw, which safety admits, but never return a wrong value.
 | An imported value meets its declaration, a guard's declared promise included, and a program module's enum the object its emit builds, the reverse mapping included ([enums](SOURCE-CONTRACTS.md#enums)); a function declared with overloads meets every overload; an imported `unique symbol` constant holds the symbol its declaration names, the one its key names; distinct canonical symbol identities denote distinct run-time symbols, and an alias or a re-export shares its original's identity, as do constants made by `Symbol.for` of the same string literal. | `IMPORT`, `OVERLOADS` in [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md#imported-ambient-and-global-values) |
 | An ambient declaration of the checked file (`declare function`, `declare const`, `declare class`, `declare enum`) holds of the value the environment supplies under that name; a global function declared anywhere else is read only through a reviewed overlay entry of its exact text, never at its declaration; an ambient enum's object at its members' object type ([enums](SOURCE-CONTRACTS.md#enums)); the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | A host family's stable members, its tag and every property member of its shapes, required or optional, but those its description omits or excludes, read one value for the object's life, an optional one present with one value or absent, and nothing the package or its clients do after creation changes them (F2); the model's host values realize them as locations with stable contracts or absent keys of objects without a prototype (F1′). For the compiler API this rests on an audit of the package's implementation, and C4's corpus reads are regression evidence. | [trust rows](HOST-FAMILIES.md#trust-rows); [stable members as readonly views](COMPILER-API.md#stable-members-as-readonly-views); `tests/compiler-api-shapes.mts` |
-| The compiler API's host enums the contract lists hold exactly the member values their declarations state (T5); C1 compares each with the object Node loads. | `hostEnums` in [`tools/compiler-api.mts`](../tools/compiler-api.mts); [trust](COMPILER-API.md#trust); `tests/compiler-api.mts` |
+| The compiler API's host enums the contract lists hold exactly the member values their declarations state ([trust](COMPILER-API.md#trust)); `tests/compiler-api.mts` compares each with the object Node loads. | `hostEnums` in [`tools/compiler-api.mts`](../tools/compiler-api.mts); [trust](COMPILER-API.md#trust); `tests/compiler-api.mts` |
 | Other code preserves the file's top-level bindings and their functions: the file runs as a module, or, run as a script, whose top-level functions are properties of the global object, no other code writes those globals or gives one of the file's functions an own `call`, `apply` or `bind`. A module function's immutable slot rests on it, for a plain call and for `.call`, `.apply` and `.bind` alike (`script-global-assumption` runs what it excludes under Node). | `moduleFunction` in `tools/fragment-parse.mts`; [module functions](SOURCE-MODEL.md#mutable-bindings) |
 | Each Node module function the overlay of library modules lists meets its entry at the stated arguments: `execFileSync`, `writeFileSync`, `readFileSync`, `existsSync`, `mkdtempSync`, `rmSync`, `realpathSync`, `spawnSync` with both outputs piped and decoded, `readdirSync` with `withFileTypes` at options stating each property Node reads, its entries owning `name` and `parentPath`, `Dirent` and `DirentFromStats` instances keep their audited prototype chains, `DirentFromStats.prototype` → `Dirent.prototype` → `Object.prototype`, whose two Node prototypes hold data properties only, the seven `is…` tests among them callable throughout execution, also in external code, and `node:path`'s `join`, `resolve`, `dirname`, `basename` and `relative`; `node:assert/strict`'s call and its members `ok`, `equal`, `notEqual`, `deepEqual`, `notDeepEqual`, `match`, `doesNotMatch`, `throws`, `doesNotThrow`, `ifError` and `fail`, the module's object unmodified, `ifError` returning only where its value is `null` or `undefined`, and each footprint holding on normal return only. | `modulesOverlay` in [`tools/library-modules.mts`](../tools/library-modules.mts); [rules](SOURCE-CONTRACTS.md#library-modules) |
 | Node's `process` and `console` meet their reviewed entries at the members read ([Node's process](SOURCE-CONTRACTS.md#nodes-process)): `argv` an array of strings no code replaces or writes a non-string into, `env` an object whose own entries hold strings and whose chain provides only `Object.prototype`'s keys, `execPath`, `pid`, `exit`, `kill`, `console.log` and `console.error`; `setTimeout` schedules its callback with no argument; `structuredClone` of any value returns or throws. The audited Node process and EventEmitter methods retain their standard identities. Host delivery invokes registered callbacks with the audited event arguments and receiver. Deferred delivery occurs between synchronous jobs; every synchronous dispatch occurs within an operation whose contract covers the callbacks' effects. External code preserves callback contracts and storage invariants. | `globalsOverlay` in [`tools/library-globals.mts`](../tools/library-globals.mts) |
@@ -973,7 +487,7 @@ the model's reading of an operation relies.
 
 One line each; the reason is the one the design keeps.
 
-- **Density belongs to a contract, not the built-ins.** Source `T[]` currently
+- **Density belongs to a contract, not the built-ins.** Source `T[]`
   requires readability; dense and sparse contracts also exist. Iteration, spreads
   and `.apply` consume that read guarantee; sparse stores need a separate
   `undefined` alternative. `find` needs
@@ -1081,27 +595,32 @@ owner; other documents link to them and give only the context their readers need
 | Document | Owns |
 | --- | --- |
 | [README](../README.md) | What TScert is, an example, what acceptance means, how to run it, and where to read next. |
+| [AGENTS](../AGENTS.md) | How to change TScert: commands, test tiers, where a check goes, the acceptance invariant and the conventions a change keeps. |
 | [DESIGN](DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
+| [STAGE-STORE](STAGE-STORE.md) | The stage store: keys, observed stages, entries, publication, replay's trust, controls and timing. |
+| [WORK](../WORK.md) | Open work, its reasons and completion conditions; the one place progress is recorded. |
+| [Drafts](drafts/) | Designs kept for the owner's decision ([method effects](drafts/method-effects.md), [verification server](drafts/verification-server.md)); their status is WORK's. |
 | [SOURCE-MODEL](SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
 | [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
-| [WORK](../WORK.md) | Open work, its reasons and completion conditions. |
+| [SOURCE-REWRITES](SOURCE-REWRITES.md) | Changes made to TScert's own source so that it verifies, each with the property the original lacked and the general rewrite. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
-| [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
-| [UNION-SHAPES](UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas and measured coverage, the profiling dataset and the candidates it names. |
+| [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering and acceptance statement. |
+| [UNION-SHAPES](UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas, and the structural engine that implements them. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
 | [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
 | [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
-| [CALLABLES](CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
-| [FOOTPRINTS](FOOTPRINTS.md) | The design of footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas, natives as its instances, and its increments. |
-| [HOST-FAMILIES](HOST-FAMILIES.md) | The planned mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
-| [COMPILER-API](COMPILER-API.md) | The planned contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
+| [CALLABLES](CALLABLES.md) | What a function is in the calculus: callable values, their call and code rules and their proof scope. |
+| [FOOTPRINTS](FOOTPRINTS.md) | Footprints: one framing mechanism that keeps heap-dependent facts across writes, calls and callbacks, its proved lemmas and natives as its instances. |
+| [HOST-FAMILIES](HOST-FAMILIES.md) | The mechanism for families of library objects tagged by one field: tag sets, the family contract, guards read as tag tests, stable members, and each family's description and trust. |
+| [COMPILER-API](COMPILER-API.md) | The contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
 | [FRAGMENT-FORMAT](FRAGMENT-FORMAT.md) | Source syntax wire format and its relation to execution plans and claims. |
 | [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
+| [OCaml producer](../ocaml-producer/README.md) | The producer: its inputs and output, how it infers, its implementation map and how to extend it. |
 | [Test index](../tests/README.md) and the [callable examples](../pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |

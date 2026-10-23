@@ -27,9 +27,9 @@ make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of
 ### The stage store
 
 Every stage invocation goes through [one mechanism](pipeline/stages.mts),
-and every stage replays from [the stage store](docs/DESIGN.md#the-stage-store)
+and every stage replays from [the stage store](docs/STAGE-STORE.md)
 by content: the parse and TypeScript's diagnostics as
-[observed stages](docs/DESIGN.md#the-stage-store), keyed by the file system's
+[observed stages](docs/STAGE-STORE.md#observed-stages), keyed by the file system's
 answers to their reads, on macOS, where the compiler runs confined by
 `sandbox-exec`.
 
@@ -42,7 +42,7 @@ answers to their reads, on macOS, where the compiler runs confined by
   `.mts` file directly in `pipeline/`, an in-process stage those of
   `pipeline/` and `tools/`, each by content, but the files named in
   `unkeyed` (`pipeline/stage-execution.mts`, listed with their reasons in
-  [keys](docs/DESIGN.md#the-stage-store)): the replay policy, the store, the
+  [keys](docs/STAGE-STORE.md#keys)): the replay policy, the store, the
   orchestration, the controls and the diagnostics. Editing an unkeyed file
   replays every entry; editing or adding any other file there misses every
   entry it keys. A new file that only orchestrates or presents goes on that
@@ -218,7 +218,7 @@ where a check goes.
   mutation verifier); a pool of control processes, one per core, runs them.
   Every operation a control runs goes through `tested` (`pipeline/stages.mts`)
   and replays from the store when its executable, inputs and environment are
-  unchanged ([controls](docs/DESIGN.md#the-stage-store)). A control is
+  unchanged ([controls](docs/STAGE-STORE.md#controls)). A control is
   independent of the others: it reads its cases' artifacts through
   `run(…)`, the case checked through the pipeline in its own process, and
   states its own family overrides. The suite reports the controls' wall

@@ -602,7 +602,7 @@ section "Resolution algorithm specification" (`ESM_RESOLVE`,
 ancestor's `package.json`, each ancestor's `node_modules/<package>` up to the
 first that exists, and the resolved file. These are the observations a
 replayed parse records for a resolution.
-**Discussed in** [DESIGN: the stage store](DESIGN.md#the-stage-store).
+**Discussed in** [STAGE-STORE: observed stages](STAGE-STORE.md#observed-stages).
 
 ### Lean 4
 
