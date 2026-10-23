@@ -1338,9 +1338,9 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     -- A read a live read link answers: the linked slot's value, at its type;
     -- first a slot read links leave from, so that a read of a longer path
     -- finds its next link (a path's witnesses, HOST-FAMILIES.md, "Entries").
-    let onward := fun (y : Nat) => k.links.any fun g => g.cell == y && !g.alias && !g.distinct
+    let onward := fun (y : Nat) => k.links.any fun g => g.cell == y && !g.alias
     for g in k.links.filter (onward ·.value) ++ k.links.filter (!onward ·.value) do
-      if (HeapLinks.aliases k.links i).contains g.cell && g.field == fld && !g.alias && !g.distinct then
+      if (HeapLinks.aliases k.links i).contains g.cell && g.field == fld && !g.alias then
         if let some B := j.context[g.value]? then
           let compared ← (subtypeUsing G images B j.type).result
           incomplete := incomplete <|> compared.exhaustion
@@ -1467,7 +1467,7 @@ where
         if sliced == A then pure none else
         pure (some { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some {} })
     let fields ← (answers.flatMap fun q => k.links.map (q, ·)).filterMapM fun (q, g) =>
-      if g.distinct || g.alias || g.optional || g.value != i then pure none else
+      if g.alias || g.optional || g.value != i then pure none else
         match Γ[g.cell]? with
         | none => pure none
         | some A =>
@@ -1485,7 +1485,7 @@ where
   from: each at the arms whose field answers the test so. -/
   throughFields (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
     k.links.filterMapM fun g =>
-      if g.distinct || g.alias || g.optional || g.value != i then pure none else
+      if g.alias || g.optional || g.value != i then pure none else
         match Γ[g.cell]? with
         | none => pure none
         | some A =>
@@ -1545,7 +1545,7 @@ obligations. Untrusted: the checker decides. -/
 where
   /-- The read links whose value is slot `i`'s. -/
   reads (i : Nat) : List HeapLinks.Link :=
-    k.links.filter fun g => !g.distinct && !g.alias && !g.optional && g.value == i
+    k.links.filter fun g => !g.alias && !g.optional && g.value == i
   /-- A conditional yield at `j` of `sliced`, by a subtype choice of it. -/
   sliceAt (j : Nat) (sliced : Ty ι) : StateM (Answered ι) (Option (PromiseCalls.Yield ι)) := do
     match Γ[j]? with
@@ -1843,7 +1843,7 @@ Every edge is still checked by the independent consumer. -/
       if (table.getD l none).isSome then continue
       let some node := nodes[l]? | throw .claimCount
       let some c := claimed[l]? | throw .claimCount
-      let required := (requirements.lookup l).getD ⟨[],[],[]⟩
+      let required := (requirements.lookup l).getD {}
       let mut k := required
       let mut implies : List (PromiseCalls.Implication ι) := []
       -- At the entry and at cuts, the argument slots every edge carries.
@@ -1885,7 +1885,8 @@ Every edge is still checked by the independent consumer. -/
               | [] => []
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
-        HeapLinks.dedup (k.links ++ required.links)⟩
+        HeapLinks.dedup (k.links ++ required.links),
+        HeapSeparation.union k.separation required.separation⟩
       -- A handler target is entered by throws too, which carry no
       -- implication, and the argument slots the throwing nodes carry.
       if handlerTargets.contains l then

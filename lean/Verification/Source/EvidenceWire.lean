@@ -3,8 +3,8 @@ import Verification.Source.SourceRequests
 /-! # The evidence document: tables with backward references
 
 An evidence bundle (`SourceExtraction.Bundle`) is written as one document of
-typed tables: the types, contexts, links, heap knowledge and derivation nodes
-it states, each once, and the responses and obligations naming them by their
+typed tables: the types, contexts, links, separation facts, heap knowledge
+and derivation nodes it states, each once, and the responses and obligations naming them by their
 positions (REQUEST-PROTOCOL.md, "Evidence document"). A reference names an
 entry of the table its position's kind gives; a derivation node names its
 premises among the derivation nodes before it, so a document has no cycle.
@@ -37,11 +37,14 @@ structure ProofEntry (ι : Type) where
   premises : List Nat
   deriving ToJson, FromJson
 
-/-- Heap knowledge whose links are entries of `links`. -/
+/-- Heap knowledge whose links are entries of `links` and whose separation
+facts, at its depth, are entries of `separations`. -/
 structure KnowledgeEntry where
   cells : HeapFacts.Facts
   values : HeapFacts.Facts
   links : List Nat
+  depth : Nat
+  separation : List Nat
   deriving ToJson, FromJson
 
 /-- `OrdinaryEvidence`, its derivation an entry of `proofs`. -/
@@ -105,6 +108,7 @@ structure Document (ι : Type) where
   types : List (Ty ι)
   contexts : List (List Nat)
   links : List HeapLinks.Link
+  separations : List HeapSeparation.Fact
   knowledge : List KnowledgeEntry
   proofs : List (ProofEntry ι)
   functions : List (ResponseRef ι)
@@ -160,14 +164,17 @@ structure Tables (ι : Type) where
   | .error m, _ => .error m
   | .ok _, .error m => .error m
 
-@[nospecialize] def knowledge (links : Array HeapLinks.Link) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
-  return ⟨e.cells, e.values, ← entries "link" links e.links⟩
+@[nospecialize] def knowledge (links : Array HeapLinks.Link) (separations : Array HeapSeparation.Fact)
+    (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
+  return ⟨e.cells, e.values, ← entries "link" links e.links,
+    ⟨e.depth, ← entries "separation fact" separations e.separation⟩⟩
 
 @[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
   let types := d.types.toArray
   let contexts ← build (fun _ c => entries "type" types c) d.contexts #[]
   let links := d.links.toArray
-  let knowledge ← build (fun _ e => knowledge links e) d.knowledge #[]
+  let separations := d.separations.toArray
+  let knowledge ← build (fun _ e => knowledge links separations e) d.knowledge #[]
   let proofs ← build (proof types contexts) d.proofs #[]
   return ⟨types, contexts, knowledge, proofs⟩
 
@@ -336,8 +343,8 @@ end
 
 /-! ### Interning: the producer's
 
-Search writes its bundle as a document: each type, context, link, heap
-knowledge and derivation node once, by its value. A table maps an entry's
+Search writes its bundle as a document: each type, context, link, separation
+fact, heap knowledge and derivation node once, by its value. A table maps an entry's
 key to its position; keys equal under a hash are compared in full, so a
 collision never merges two entries. Untrusted: the decoder accepts any
 document whose references point back, however much it shares. -/
@@ -360,8 +367,10 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
   types : Interned (Ty ι) (Ty ι) := {}
   contexts : Interned (List Nat) (List Nat) := {}
   links : Interned HeapLinks.Link HeapLinks.Link := {}
-  /-- Knowledge by its facts' JSON text and its link positions. -/
-  knowledge : Interned (String × String × List Nat) KnowledgeEntry := {}
+  separations : Interned HeapSeparation.Fact HeapSeparation.Fact := {}
+  /-- Knowledge by its facts' JSON text, its link positions, its depth and
+  its separation facts' positions. -/
+  knowledge : Interned (String × String × List Nat × Nat × List Nat) KnowledgeEntry := {}
   /-- Derivation nodes by their JSON text, whose premises are positions. -/
   proofs : Interned String (ProofEntry ι) := {}
 
@@ -381,11 +390,16 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let (k, t) := s.links.add l l
   (k, { s with links := t })
 
+@[nospecialize] def internSeparation (a : HeapSeparation.Fact) : InternM ι Nat := modifyGet fun s =>
+  let (k, t) := s.separations.add a a
+  (k, { s with separations := t })
+
 @[nospecialize] def internKnowledge (k : HeapKnowledge.Knowledge) : InternM ι Nat := do
   let ls ← k.links.mapM internLink
-  let key := ((toJson k.cells).compress, (toJson k.values).compress, ls)
+  let ss ← k.separation.facts.mapM internSeparation
+  let key := ((toJson k.cells).compress, (toJson k.values).compress, ls, k.separation.depth, ss)
   modifyGet fun s =>
-    let (i, t) := s.knowledge.add key ⟨k.cells, k.values, ls⟩
+    let (i, t) := s.knowledge.add key ⟨k.cells, k.values, ls, k.separation.depth, ss⟩
     (i, { s with knowledge := t })
 
 @[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do
@@ -429,7 +443,7 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
     return (← b.functions.mapM internResponse, ← b.obligations.mapM (·.mapM internProof))
   let ((functions, obligations), s) := run.run {}
   let d : Document ι := ⟨s.types.entries.toList, s.contexts.entries.toList, s.links.entries.toList,
-    s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
+    s.separations.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
   toJson d
 
 end

@@ -65,11 +65,14 @@ interface HeapFact {
 }
 export interface HeapKnowledge {
   cells: HeapFact[]; values: HeapFact[];
-  /** A read link (`alias` false), a value equality (`alias` true), or, with
-   * `distinct`, two fields at different locations: `cell.field` and
-   * `value.other`. A read link through an `optional` key also covers the
-   * object lacking the key, where the read gave `undefined`. */
-  links: {cell: number; value: number; alias: boolean; field: string; distinct: boolean; other: string; optional: boolean}[];
+  /** A read link (`alias` false) or a value equality (`alias` true). A read
+   * link through an `optional` key also covers the object lacking the key,
+   * where the read gave `undefined`. */
+  links: {cell: number; value: number; alias: boolean; field: string; optional: boolean}[];
+  /** Which locations differ: facts addressed by level, level `l` naming slot
+   * `depth - 1 - l`; a fact's subject `fields` (null: every own location)
+   * differ from each partner's listed fields. */
+  separation: {depth: number; facts: {slot: number; fields: string[] | null; partners: [number, string[]][]}[]};
 }
 
 /** A node of the certificate graph, as the failure reports it. */
@@ -275,7 +278,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 }
 function knowledge(v: Json | undefined): void {
   if (v === null) return;
-  const k = record(v,["cells","values","links"]);
+  const k = record(v,["cells","values","links","separation"]);
   for (const key of ["cells","values"]) {
     const facts = k[key];
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
@@ -288,12 +291,24 @@ function knowledge(v: Json | undefined): void {
   }
   if (!Array.isArray(k.links)) throw Error("invalid heap links");
   for (const link of k.links) {
-    const l = record(link,["cell","value","alias","field","distinct","other","optional"]); nat(l.cell); nat(l.value);
-    if (typeof l.distinct !== "boolean") throw Error("invalid distinct flag");
+    const l = record(link,["cell","value","alias","field","optional"]); nat(l.cell); nat(l.value);
     if (typeof l.optional !== "boolean") throw Error("invalid optional flag");
-    if (typeof l.other !== "string") throw Error("invalid link field");
     if (typeof l.field !== "string") throw Error("invalid heap link field");
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
+  }
+  const keys = (v: Json | undefined): void => {
+    if (!Array.isArray(v) || v.some((f) => typeof f !== "string")) throw Error("invalid separation fields");
+  };
+  const s = record(k.separation,["depth","facts"]); nat(s.depth);
+  if (!Array.isArray(s.facts)) throw Error("invalid separation facts");
+  for (const fact of s.facts) {
+    const f = record(fact,["slot","fields","partners"]); nat(f.slot);
+    if (f.fields !== null) keys(f.fields);
+    if (!Array.isArray(f.partners)) throw Error("invalid separation partners");
+    for (const p of f.partners) {
+      if (!Array.isArray(p) || p.length !== 2) throw Error("invalid separation partner");
+      nat(p[0]); keys(p[1]);
+    }
   }
 }
 /** A node record with its node decoded in place of its wire form, as the

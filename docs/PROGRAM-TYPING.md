@@ -2412,8 +2412,8 @@ is bound at and the handler edge's certificate. `checkHandlerUsing` requires $`T
 admit every JavaScript value, with a `source` or `top` clause (`admitsAll`), and the edge to
 check against the target's claims under the facts that hold wherever the
 expression throws, which are those of the node's entry that do not mention the
-heap (`handlerFacts`: immutable values, alias and distinct links, shifted past
-the thrown value's slot):
+heap (`handlerFacts`: immutable values, alias links and the
+[separation](#separation-facts), shifted past the thrown value's slot):
 
 ```math
 \frac{\{\mathsf{source},\mathsf{top}\}\cap\mathrm{expand}_G(T)\ne\varnothing\quad
@@ -3174,10 +3174,11 @@ names, so all of $`\Sigma`$ survives.
   \dashv \Pi\;;\;\Sigma}
 ```
 
-Either way the fresh cell's field is a location distinct from every contract
-field of every record-typed slot (the distinct links of `allocOutput`), whether
-or not its contents are known: a cell holding an object keeps what is known of
-the others, and a later write to either keeps what is known of the other.
+Either way every location of the fresh object is separated from every
+contract field of every record-typed slot, one [separation
+fact](#separation-facts) whether or not its contents are known: a cell holding
+an object keeps what is known of the others, and a later write to either keeps
+what is known of the other.
 
 ##### Reading
 
@@ -3263,7 +3264,8 @@ on the choice — only precision does.
 Writing stores $`y`$'s value in the field $`f`$ of the object $`x`$ names. The
 result is `null`. Where $`y`$'s value is a known primitive it establishes the new
 contents for $`x`$ and every variable recorded equal to it; it keeps the atoms
-about locations a distinct link $`z.g\neq x.f`$ separates from the written one;
+about locations [separated](#separation-facts) from the written one,
+$`\mathrm{apart}(x.f,z.g)`$;
 it destroys the rest of $`\Sigma`$ — including atoms about cells that may or may
 not be this one. Writing a value that is not a known primitive, an object say,
 establishes no new contents and keeps the separated atoms all the same:
@@ -3281,7 +3283,7 @@ establishes no new contents and keeps the separated atoms all the same:
   \dashv \Pi,\;r=\mathsf{null}\;;\;\Sigma_{\neq x.f}}
 ```
 
-where $`\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid z.g\neq x.f\}`$ (`writeOutput`,
+where $`\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid \mathrm{apart}(x.f,z.g)\}`$ (`writeOutput`,
 `write_sound`).
 
 ##### Every other expression
@@ -3307,22 +3309,89 @@ general frame rule.** A write through $`x`$ discards what is known about $`z`$ e
 when $`z`$ is a different name, because distinct names need not be distinct
 locations — $`\Pi`$ can witness that two names are equal, never that they are
 not. So the positive direction is proof-driven and the negative direction is
-total but for one timeless fact, the distinct link $`z.g\neq x.f`$: two field
-locations that differ whatever they hold (`HeapLinks.distinctFrom`,
-`distinct_sound`). Allocation states it: a fresh object's locations differ
-from every field each record of a record-typed slot names (`contractFields`).
-The lowering restates, at each statement entry, the links between a private
-cell the code allocated and the slots whose records' fields it was allocated
-after, or that were allocated after it
+total but for one timeless fact, the separation of two field locations: they
+differ whatever they hold. Allocation states it: a fresh object's locations
+differ from every field each record of a record-typed slot names
+(`contractFields`). The lowering restates, at each statement entry, the
+separation of a private cell the code allocated from the slots whose records'
+fields it was allocated after, or that were allocated after it
 ([Source model](SOURCE-MODEL.md#current-content-assertions)); a cell a
 closure captures was allocated before the closure's entry, which states no
-fact of that allocation, so its body states none of these links.
+fact of that allocation, so its body states none.
+
+##### Separation facts
+
+The separation of $`K`$ is a depth $`d`$ and a list of facts addressed by
+**level**: level $`\ell<d`$ names slot $`d-1-\ell`$, so pushing a result
+renames every slot and no level, and a slot $`i\geq d`$ has no level. A fact
+$`(x,F,O)`$ separates the fields $`F`$ of the object at level $`x`$ ($`F=\star`$:
+every own location of it) from the fields $`G`$ of the object at each partner
+level $`y`$, $`(y,G)\in O`$ (`HeapSeparation.Holds`):
+
+```math
+⟦(d,A)⟧\rho\iff\forall(x,F,O)\in A.\;x<d\wedge\forall(y,G)\in O.\;y<d\wedge
+  \forall g\in G.\;\forall l\in\mathrm{loc}_F(\rho(d-1-x)).\;\forall l'.\;
+  \rho(d-1-y).g\mapsto l'\Rightarrow l\neq l'
+```
+
+It names no heap, so every heap change keeps it. A fact without partners says
+nothing and is dropped, and a separation without facts is $`(0,[\,])`$, so
+knowledge stating none has one spelling (`HeapSeparation.norm`). The rules,
+each proved to preserve the meaning for the environment it produces:
+
+```math
+\frac{}{(d,A)\ \xrightarrow{\ \mathrm{push}\ }\ (d+1,A)}\ \textsf{sep-push}
+\qquad
+\frac{}{(d,A)\ \xrightarrow{\ \mathrm{drop}\ }\ (d-1,\ A\setminus(d-1))}\ \textsf{sep-drop}
+```
+
+where $`A\setminus\ell`$ removes the facts of subject $`\ell`$ and the partners
+at $`\ell`$ (`shift_holds`, `drop_holds`). A copy of slot $`i<d`$, the pushed
+level $`d`$, takes slot $`i`$'s facts in both roles (`copy_holds`):
+
+```math
+\frac{i<d\qquad A^{+}=\{(x,F,O\cup\{(d,G)\mid(\ell_i,G)\in O\})\mid(x,F,O)\in A\}}
+     {(d,A)\ \xrightarrow{\ \mathrm{copy}\ i\ }\ (d+1,\ A^{+}\cup\{(d,F,O)\mid(\ell_i,F,O)\in A^{+}\})}\ \textsf{sep-copy}
+```
+
+An allocation in context $`\Gamma`$ rebases the levels to depth
+$`D=\max(d,|\Gamma|)`$, slots unchanged (`rebase_holds`), and adds one fact
+for the fresh object, every own location of which lies past the old heap
+while every contract field of a slot of $`\Gamma`$ lies in it
+(`allocate_holds`, `fresh_apart`):
+
+```math
+\frac{O_\Gamma=\{(D-1-s,\,\{g\mid(s,g)\in\mathrm{contractFields}(\Gamma)\})\mid s\in\mathrm{slots}(\mathrm{contractFields}(\Gamma))\}}
+     {(d,A)\ \xrightarrow{\ \mathrm{alloc}\ }\ (D+1,\ A\cup\{(D,\star,O_\Gamma)\})}\ \textsf{sep-alloc}
+```
+
+A write $`x.f\leftarrow v`$ keeps a cell fact $`z.g\mapsto R`$ where a fact
+answers the query, in either orientation (`apart_sound`):
+
+```math
+\mathrm{apart}(i.f,s.g)\iff i,s<d\wedge\exists(x,F,O)\in A.\;
+  (x=\ell_i\wedge f\in F\wedge g\in O(\ell_s))\vee(x=\ell_s\wedge g\in F\wedge f\in O(\ell_i))
+```
+
+An edge with mapping $`m`$ from a source $`(d_s,A_s)`$ accepts a target
+$`(d_t,A_t)`$ where every target fact's levels have source levels,
+$`\tau(\ell)=d_s-1-m(d_t-1-\ell)`$ with $`m(d_t-1-\ell)<d_s`$, and each of its
+pairs is a source pair in one orientation: for $`F=\star`$ the pair
+$`(\tau x,\star,\tau y,g)`$, for $`f\in F`$ any of $`(\tau x,\star,\tau y,g)`$,
+$`(\tau x,f,\tau y,g)`$, $`(\tau y,\star,\tau x,f)`$, $`(\tau y,g,\tau x,f)`$
+(`HeapSeparation.check`, `check_sound`). Any set of pairwise inequalities has a
+representation of the same meaning, one explicit fact each (`ofPairs_iff`),
+and after an allocation the query answers for every pair of a field of the
+fresh object and a contract field of $`\Gamma`$ (`allocate_apart`). Calls,
+reads, observations and a handler's edge keep the separation, pushed past
+their result; a handler's edge carries the node's entry knowledge, so no fact
+of the throwing expression's own allocation reaches it.
 
 The practical shape of the gap is worth stating. Facts about several cells
 coexist freely: allocation and reads preserve every one of them, so a program
 that allocates three cells knows the contents of all three. A write collapses
-that set to the written cell, its aliases and the locations distinct links
-separate from it, and a call empties it: a callee may write any location its
+that set to the written cell, its aliases and the locations separated from it,
+and a call empties it: a callee may write any location its
 operands reach, and nothing states which locations those are. $`\Pi`$ is not subject to this at
 all, which is why a value read out of a cell before a callback
 remains usable after the callback has overwritten that cell.
@@ -3360,8 +3429,8 @@ It computes a guaranteed output, not an assumed postcondition:
 | Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |
 | Linked read (`linkedRead`)           | A read of a field one of whose read links, from the receiver's slot or a slot an alias link equates with it, names the slot holding what the field holds: the read gives that slot's value, at its type below the claim (`checkUsing`); the output is that slot's copy. [Witness edges](#witness-edges) check both the slot's type and its receiver-and-field link when carrying it into a target. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
-| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and one separation fact: its locations apart from every record slot's contract fields. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, its locations separated likewise. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
+| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a separation fact separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 Every step keeps, past its result, the read links and cell facts of its
@@ -3429,7 +3498,7 @@ into the point establishes it. A dictionary's entry is such a field: its
 contract is what the index holds or `undefined`
 (`dictionary-field-tag-read`, `invalid-dictionary-field-tag-call`). Observed contents follow the existing
 invalidation rules: a write that may alias the location discards them, a
-write a distinct link separates from it keeps them, and a call discards them.
+write separated from it keeps them, and a call discards them.
 So after `Array.isArray(t.mapping)` a read of `t.mapping` is of an array
 (`field-tag-read`); past a write through a parameter that may be `t`, or a
 call, it is of the field's type (`invalid-field-tag-alias`,

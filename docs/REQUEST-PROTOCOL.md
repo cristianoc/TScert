@@ -571,7 +571,8 @@ accepted certificate shape.
 
 ## Heap facts
 
-`knowledge` and `output` each contain `cells`, `values` and `links`
+`knowledge` and `output` each contain `cells`, `values`, `links` and
+`separation`
 ([checked expression postconditions](PROGRAM-TYPING.md#checked-expression-postconditions)).
 
 - `cells` and `values` are lists of `{slot, contents, field}` facts: for a
@@ -581,15 +582,19 @@ accepted certificate shape.
   `"nonNullish"`, `{"numLit":{"bits":"…"}}`, `{"strLit":{"value":"…"}}`, and
   `{"tag":{"test":k,"answer":b}}`, a test's observed answer. A singleton fact
   can weaken to its family, never the reverse.
-- `links` is a list of `{cell, value, alias, field, distinct, other, optional}`
-  objects: `alias: true` means equal slot values; `alias: false` means the
-  named field currently contains the other slot's value (a read link), or,
-  with `optional: true`, that the object lacks the key and the other slot
-  holds `undefined`; `distinct: true` means field `field` of the object in
-  `cell` and field `other` of the object in `value` are different locations,
-  a timeless fact established by allocation, since fresh locations differ
-  from every field of every record-typed slot in scope, and the reason a
-  write to one cell keeps facts about another.
+- `links` is a list of `{cell, value, alias, field, optional}` objects:
+  `alias: true` means equal slot values; `alias: false` means the named
+  field currently contains the other slot's value (a read link), or, with
+  `optional: true`, that the object lacks the key and the other slot holds
+  `undefined`.
+- `separation` is `{depth, facts}`, each fact `{slot, fields, partners}`
+  addressed by level, level `l` naming slot `depth - 1 - l`: the fields
+  `fields` of the object at level `slot` (`null`: every own location of it)
+  and the fields of each partner `[level, [field, …]]` are different
+  locations ([separation facts](PROGRAM-TYPING.md#separation-facts)), a
+  timeless fact established by allocation and the reason a write to one
+  cell keeps facts about another. A separation stating no fact is
+  `{"depth": 0, "facts": []}`.
 
 These are finite state assertions, not extra type labels. Current-content
 predicates are checked on every incoming edge; a predicate the rules do not
@@ -756,15 +761,16 @@ name their entries by position
 ([EvidenceWire.lean](../lean/Verification/Source/EvidenceWire.lean)):
 
 ```json
-{ "types": [T, …], "contexts": [[t, …], …], "links": [link, …],
-  "knowledge": [{"cells": [...], "values": [...], "links": [l, …]}, …],
+{ "types": [T, …], "contexts": [[t, …], …], "links": [link, …], "separations": [fact, …],
+  "knowledge": [{"cells": [...], "values": [...], "links": [l, …], "depth": d, "separation": [s, …]}, …],
   "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
   "functions": [response, …], "obligations": [[p, …], …] }
 ```
 
-`T` is a type (a list of labels), `link` a [heap link](#heap-facts) and
-`r` a [rule](#rules); `t`, `c`, `l` and `p` are positions in `types`,
-`contexts`, `links` and `proofs`. A response is as in [evidence](#evidence),
+`T` is a type (a list of labels), `link` a [heap link](#heap-facts), `fact`
+a [separation fact](#heap-facts) and `r` a [rule](#rules); `t`, `c`, `l`,
+`s` and `p` are positions in `types`, `contexts`, `links`, `separations` and
+`proofs`. A response is as in [evidence](#evidence),
 its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
 `"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
 `null`; `knowledge` and `output` are positions in `knowledge`; a step's
@@ -779,8 +785,9 @@ derivation's premises earlier entries of `proofs`:
 \begin{aligned}
 \mathit{type}(t) &= D.\mathit{types}[t] \qquad
 \mathit{context}(c) = [\,\mathit{type}(t) \mid t \in D.\mathit{contexts}[c]\,] \\
-\mathit{knowledge}(k) &= \langle \vec f, \vec g, [\,D.\mathit{links}[l] \mid l \in \vec l\,]\rangle
-  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l\rangle \\
+\mathit{knowledge}(k) &= \langle \vec f, \vec g, [\,D.\mathit{links}[l] \mid l \in \vec l\,],
+  \langle d, [\,D.\mathit{separations}[s] \mid s \in \vec s\,]\rangle\rangle
+  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l, d, \vec s\rangle \\
 \mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), m, \mathit{type}(t)\rangle, r,
   [\,\mathit{proof}(p) \mid p \in \vec p\,])
   \quad\text{where } D.\mathit{proofs}[k] = \langle \langle c, m, t\rangle, r, \vec p\rangle
@@ -799,7 +806,7 @@ built, the derivations table satisfies the equation of $`\mathit{proof}`$
 above (`EvidenceWire.proofs_unfold`), which has one solution
 (`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
 direct lookups, trusted code. Search writes each type, context, link,
-knowledge and derivation once (`EvidenceWire.encode`), an untrusted
+separation fact, knowledge and derivation once (`EvidenceWire.encode`), an untrusted
 choice.
 
 ## Proved boundary and validation
