@@ -1,6 +1,8 @@
 // Reads of a slot holding a union: a readonly view each member states is
 // read through one checked summary of the request (`readSummary`), a view
-// of `length` at a type excluding a number included; a writable field, an
+// of `length` at a type excluding a number included, in plain and in
+// qualified bodies (`Awaited<T>`), as a typed read or, with a dictionary
+// holding a numeric index only among the members, an inspection; a writable field, an
 // optional field, a dictionary's index, a callable object's field, a class
 // value's readonly static field, a receiver coerced to its base, an array's or a string's `length` and a
 // primitive's member read through its wrapper's prototype keep their own
@@ -22,6 +24,7 @@ type B = {
 };
 type D = { readonly k: "d"; readonly [key: string]: string };
 type E = { readonly k: "e"; readonly [key: string]: string };
+type N = { readonly k: "n"; readonly [key: number]: string };
 type L = { readonly length: "l" };
 type M = { readonly length: "m" };
 type F = { (): number; tag: "f" };
@@ -56,6 +59,15 @@ export function lengthView(x: L | M): "l" | "m" {
 }
 
 export async function kindAwaiting<T>(value: T, x: A | B): Promise<Awaited<T>> {
+  const kind = x.k;
+  if (kind === "a") return await value;
+  return await value;
+}
+
+export async function numberedKindAwaiting<T>(
+  value: T,
+  x: N | A,
+): Promise<Awaited<T>> {
   const kind = x.k;
   if (kind === "a") return await value;
   return await value;

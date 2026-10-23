@@ -4421,7 +4421,8 @@ control(async (): Promise<void> => {
   // the read's, an index past the table and an entry of another request's
   // table by the use check. The same holds in a body qualified by its
   // binder's resolution descriptor (`Awaited<T>`), which reads through an
-  // ordinary summary, and in a closure's code, checked before the unit's
+  // ordinary summary in a typed read, an inspection and, written so, an
+  // ordinary step, checked with the body's rule, and in a closure's code, checked before the unit's
   // graph against the codes before it. A typed read is checked against the
   // unit's code table where every member states the key as a field or view
   // (kindOf's at A | B), and against no code entry otherwise (entryKind's at
@@ -4465,7 +4466,7 @@ control(async (): Promise<void> => {
   assert.equal(S.arms.length, 2, "one arm per member of A | B");
   assert.equal(uses(unit(e0, "kindTwice")).length, 2, "two reads of one summary in kindTwice");
   assert.equal(table(e0, "kindTwice").length, 1, "one summary for both reads");
-  for (const name of ["kindOf", "tagOf", "entryKind", "lengthView", "kindAwaiting"])
+  for (const name of ["kindOf", "tagOf", "entryKind", "lengthView", "kindAwaiting", "numberedKindAwaiting"])
     assert.equal(uses(unit(e0, name)).length, 1, `${name} reads through a summary`);
   assert.ok(uses(unit(e0, "kindOfCell").codes).length > 0, "the closure's code reads through a summary");
   /** The steps of a unit's nodes whose proof reads through a summary. */
@@ -4473,6 +4474,14 @@ control(async (): Promise<void> => {
     n.effect !== null && uses(n.effect).length > 0 ? Object.keys(n.effect) : []);
   for (const name of ["kindOf", "entryKind"])
     assert.deepEqual(summarizedSteps(unit(e0, name)), ["typedRead"], `${name}'s read is a typed read through a summary`);
+  // At N | A, N a dictionary with a numeric index only, the read is an
+  // inspection (`reading`); written as an ordinary step, the qualified
+  // body's checker checks it with the body's subsumption rule.
+  assert.deepEqual(summarizedSteps(unit(e0, "numberedKindAwaiting")), ["reading"], "an inspection through a summary");
+  const ordinaryStep = (name: string) => (e: Evidence): void => {
+    for (const n of unit(e, name).certificate)
+      if (n.effect !== null && "reading" in n.effect && uses(n.effect).length > 0) n.effect = { ordinary: must(n.effect.reading, "the inspection") };
+  };
   for (const [name, rule] of [["widthOf", "read"], ["optionalOf", "readOptional"], ["indexOf", "readDict"],
       ["tagOfCallable", "readCallable"], ["classTag", "readCallable"], ["errorName", "read"], ["sizeOf", "len"], ["textSize", "lenStr"],
       ["upper", "readProto"]] as const) {
@@ -4515,6 +4524,7 @@ control(async (): Promise<void> => {
     ["other-key-unused", added(structuredClone(tagged))],
     ["length-view-unused", added(structuredClone(lengths))],
     ["qualified-copy-used", added(structuredClone(S), true, "kindAwaiting")],
+    ["qualified-ordinary-step", ordinaryStep("numberedKindAwaiting")],
     ["restricted-copy-used", (e) => added(structuredClone(must(table(e0, "entryKind")[0], "entryKind's summary")), true,
       "entryKind")(e)],
   ];
@@ -4543,6 +4553,15 @@ control(async (): Promise<void> => {
     ["other-request", (e) => { delete unit(e, "kindOf").readSummaries; }, typing],
     ["qualified-missing-arm", (e) => { must(table(e, "kindAwaiting")[0], "its summary").arms.pop(); }, /does not justify/],
     ["qualified-other-result", added(structuredClone(wider), true, "kindAwaiting"), typing],
+    ["qualified-ordinary-past-the-table", (e) => {
+      ordinaryStep("numberedKindAwaiting")(e);
+      for (const u of uses(unit(e, "numberedKindAwaiting"))) u.index = 9;
+    }, typing],
+    ["qualified-ordinary-other-result", (e) => {
+      ordinaryStep("numberedKindAwaiting")(e);
+      const own = must(table(e0, "numberedKindAwaiting")[0], "its summary");
+      added({ ...structuredClone(own), result: own.arms.flatMap((a) => a.view) }, true, "numberedKindAwaiting")(e);
+    }, typing],
     ["code-past-the-table", (e) => { for (const u of uses(unit(e, "kindOfCell").codes)) u.index = 9; }, /does not justify|does not establish/],
     ["restricted-past-the-table", (e) => { for (const u of uses(unit(e, "entryKind"))) u.index = 9; }, typing],
     ["cached-contents", (e) => { Object.assign(must(table(e, "kindOf")[0], "S"), { contents: ["str"] }); },
@@ -4555,7 +4574,7 @@ control(async (): Promise<void> => {
     assert.equal(outcome.status, 1, `${name}: ${outcome.stdout}${outcome.stderr}`);
     assert.match(outcome.stdout + outcome.stderr, reason, name);
   }
-  process.stdout.write(`read summaries: 7 units read through summaries (a qualified body's, a closure's code's and a typed read's against no code entry among them) and 9 read outside the boundary by their own rules in the honest evidence; ${accepted.length} copies and valid entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver, class-static or cell key by the table check; contents or a link by the decoder; another receiver, key or result, an index past the table and another request's entry by the use check; likewise in the qualified body, the closure's code and the typed read checked against no code entry)\n`);
+  process.stdout.write(`read summaries: 8 units read through summaries (two qualified bodies', a closure's code's and a typed read's against no code entry among them) and 9 read outside the boundary by their own rules in the honest evidence; ${accepted.length} copies and valid entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver, class-static or cell key by the table check; contents or a link by the decoder; another receiver, key or result, an index past the table and another request's entry by the use check; likewise in a qualified body's typed read and ordinary step, the closure's code and the typed read checked against no code entry)\n`);
 });
 control(async (): Promise<void> => {
   // The evidence decoder reads the parsed JSON value (REQUEST-PROTOCOL.md,
