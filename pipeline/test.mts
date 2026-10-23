@@ -4800,6 +4800,40 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A guard's reread of `kind` answered by a fact of it links its result
+  // presently where every arm of the receiver states `kind`
+  // (`read-observed-present`). The producer refuses a union with an arm
+  // lacking `kind` (`invalid-guard-after-kind-missing`); claims stating it
+  // there, the fact of `kind` kept at the guard's entry, are refused by
+  // search and by the checker. The neighbour's arm states `kind` and decodes.
+  const artifacts = run("compiler-api-guard-after-kind-tests");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("if (ts.isParenthesizedExpression(node))");
+  const forge = (name: string, withKind: boolean): string => {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find((f) => f.name === "literal"), "literal's claims");
+    const entry = must(fn.entries.find((e) => e.start === start), "the guard's entry");
+    const node = must(entry.bindings.find((b) => b.name === "node"), "node at the guard");
+    assert.ok(node.current?.some(([[key]]) => key === "kind"), "the fact of kind at the guard");
+    const num = rowOf(claims, "num");
+    const arm = rowOf(claims, { refs: { first: withKind ? [["kind", [num]], ["other", [num]]] : [["other", [num]]],
+      rest: [], views: [] } });
+    const declared = node.type;
+    assert.ok(Array.isArray(declared), "node's labels at the guard");
+    node.type = [arm, ...declared];
+    return writeClaims(artifacts, name, claims);
+  };
+  const decoder = "invalid source claims: duplicate identity, span, binding or type labels";
+  const missing = forge("forged-guard-kind-missing-arm", false);
+  refusedAt(artifacts, missing, "forged-guard-kind-missing-arm", decoder);
+  assert.ok(invoke(missing, join(artifacts, "evidence.json"), artifacts).includes(decoder));
+  const neighbour = forge("guard-kind-stated-arm", true);
+  const searched = produceWith(artifacts, neighbour, "guard-kind-stated-arm");
+  assert.ok(!(searched.stdout + searched.stderr).includes(decoder), searched.stdout + searched.stderr);
+  process.stdout.write("guard after kind tests: a fact of kind at a receiver with an arm lacking kind refused in search and check, its neighbour stating kind decoded\n");
+});
+
+control(async (): Promise<void> => {
   // Stable links (HOST-FAMILIES.md, "Stable links"): a read link through a
   // member every arm states stable survives a call. The positive case's
   // document with the tested member's stable key dropped from its shape,
