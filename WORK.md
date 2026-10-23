@@ -43,7 +43,7 @@ each item's design and evidence, not its progress.
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Class methods' effects](#class-methods-effects) | open: the draft's design accepted by the owner (2026-10-23): D1 (a), stated effects, and D2–D6 as the draft recommends | callbacks calling a class instance's methods use effects stated with `Within<…>` and certified in each definition's own module |
 | [Async and generator code](#async-and-generator-code) | open | an async function's entry and resumption are checked by an asynchronous entry judgment, and `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` leave the trust surface |
-| [Function declarations in bodies](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
+| [Function declarations in bodies](docs/SOURCE-ELABORATION.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -488,7 +488,7 @@ each is an application of the one equation, unfolded only when read
 **Contract completeness.** Array presence, callback effects and conversion
 contracts impose separate obligations. Their current designs are stated under
 [arrays](docs/SOURCE-MODEL.md#arrays), [native contracts](docs/SOURCE-MODEL.md#exact-contracts-and-native-effects) and
-[effect certification](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
+[effect certification](docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
 A future inference improvement must preserve these distinctions: density is
 stronger than readable elements; readonly aliases do not prevent callback
 mutation; and a written callback annotation cannot silently acquire a stronger
@@ -541,7 +541,7 @@ only closures state.
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
 when it throws (`onThrow`), carried through handlers and concluded by
-`checkJson_safe` ([the design](docs/SOURCE-MODEL.md#exceptional-footprints)).
+`checkJson_safe` ([the design](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
 Left: handlers receive no current-content facts across a throw.
 
 - a semantic extension: `SafePost` states no postcondition on a throw, so
@@ -789,12 +789,12 @@ function was verified by it.
 <a id="module-composition"></a>
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.
-[Certified imports](docs/SOURCE-MODEL.md#certified-imports) check an
+[Certified imports](docs/SOURCE-CONTRACTS.md#certified-imports) check an
 imported function's code in the importer's run, at its effect-qualified
 signature. `checkJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
-unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
+unit's closure ([the linking obligation](docs/SOURCE-CONTRACTS.md#certified-imports)).
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest

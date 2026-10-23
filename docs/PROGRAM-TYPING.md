@@ -646,7 +646,7 @@ $`p\ge|\vec p|`$, and is then about parameter $`p-|\vec p|`$ (`Effect.keeps`,
 `Effect.drop`). A call rule (`app`, `callCallable`, `callRest`,
 `callPacked`) applies a signature whose result family is its result type
 (`Effect.plain`); a promise signature is consumed by the narrowing after a
-call ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+call ([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)).
 
 A method member is host-relative: its contract holds when it is invoked on
 the object it is read from ([Source model](SOURCE-MODEL.md#method-members-are-host-relative)).
@@ -767,7 +767,7 @@ $`\mathsf{new}(A_1,\ldots,A_n)\Rightarrow^{\varepsilon} B`$ (the `ctors` clause)
 is met by a class whose code, for actuals at the parameters, is safe at $`B`$
 and whose normal return meets the signature's effect $`\varepsilon`$ from the
 heap the construction starts in (`ConstructPromise`), as a call signature's
-effect is met ([inferred call effects](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)). As for a
+effect is met ([inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)). As for a
 function, a signature may offer more parameters than the constructor binds:
 the construct step binds its first $`\mathit{arity}`$ actuals and discards the
 rest, so the code is checked at the signature's first $`\mathit{arity}`$
@@ -1270,7 +1270,7 @@ numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
 `undefined`: `Array.prototype` and `Object.prototype` own no numeric key
 ([trust surface](DESIGN.md#trust-surface)). No getter runs, so the read
 writes nothing and states heap preservation
-([effects](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the store
+([effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the store
 alone, which answers `undefined` where the array owns such a key.
 
 <a id="reads-at-an-index-from-the-length"></a>
@@ -2643,7 +2643,7 @@ every incoming edge establishes that claim, which no value meets. Proof search
 derives any sequent there by `unionVar` on the empty slot, which has no
 premise, and a jump whose entry is so claimed completes the function rather
 than continuing (the exhaustive `switch` in the
-[source statement rules](SOURCE-CONTRACTS.md#statement-forms) falls off no end).
+[source statement rules](SOURCE-ELABORATION.md#statement-forms) falls off no end).
 
 <a id="vacuous-edges"></a>
 An edge out of such a context is never taken, so it establishes every
@@ -2829,7 +2829,7 @@ Fragment refuses `NaN` as a tag.
 
 #### Statement forms as graphs
 
-The [statement forms](SOURCE-CONTRACTS.md#statement-forms) add no node
+The [statement forms](SOURCE-ELABORATION.md#statement-forms) add no node
 kind, continuation or rule; each is a shape of ordinary nodes and edges.
 
 - A loop with an update: the body's end and each `continue` edge go to the
@@ -2846,7 +2846,7 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   the handler's entry as its handler, the thrown value landing in the catch
   binding's slot and the `try`'s scope kept; the handler's nodes name the
   `finally` block's throw-path entry, or the enclosing handler. The `finally`
-  block is compiled once per way out ([statement forms](SOURCE-CONTRACTS.md#statement-forms)): after a
+  block is compiled once per way out ([statement forms](SOURCE-ELABORATION.md#statement-forms)): after a
   normal completion, before each `return` in the body or handler with the
   value held in a slot of its own, before each `break` or `continue` that
   leaves the `try` (every `finally` the jump passes, innermost first, the
@@ -2854,7 +2854,7 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   held, ending in a node that throws it again. Where neither the body nor the
   handler can complete, the normal way leads to an unreachable node that
   loops on itself and states nothing.
-- A closing region (the [iterator protocol](SOURCE-CONTRACTS.md#the-iterator-protocol)'s
+- A closing region (the [iterator protocol](SOURCE-ELABORATION.md#the-iterator-protocol)'s
   IteratorClose): the body's nodes name, as their handler, the close's entry
   under a handler that drops the close's own throws, followed by a node that
   throws the held value again; the loop's `break` goes to the close's entry

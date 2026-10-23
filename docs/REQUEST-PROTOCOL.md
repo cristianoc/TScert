@@ -221,7 +221,7 @@ The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "o
   ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
 - `b`, `c` and `o`, Booleans: a fresh result, the receiver's store excepted
   from the footprint, and the footprint stated on a throw too
-  ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)).
+  ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
 
 ## Terms
 
@@ -684,7 +684,7 @@ depth, with names for applications
 The evidence file of the source commands is
 `{"main": bundle, "modules": [{"location": l, "evidence": bundle}, …]}`: the
 checked file's bundle, and one per module run of its
-[certified imports](SOURCE-MODEL.md#certified-imports), in the order of the
+[certified imports](SOURCE-CONTRACTS.md#certified-imports), in the order of the
 Fragment's `modules`, each named by its location
 (`SourceClaimJson.evidenceParts`). Each module run is checked as a document
 of its own, over its own store.

@@ -317,7 +317,7 @@ a host type is read as a readonly view:
   rejects a node, because the importer checks the argument against the
   declared parameter.
 - *Narrowing.* A field test on a view drops the arms whose view answers the
-  other way (`if-field`, [guards](SOURCE-CONTRACTS.md#guards); Lean's
+  other way (`if-field`, [guards](SOURCE-ELABORATION.md#guards); Lean's
   `fieldSlice` and `fieldSlice_sound`, which take a view's location from
   `viewsT_at`). The exclusion concerns the object's label, which the stored
   contract fixes for the object's lifetime. A view of `length`, which an

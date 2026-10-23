@@ -1,17 +1,19 @@
-# Reading the source
+# Source contracts
 
 Source verification requires a faithful interpretation of annotations, module
-bindings and library contracts. This document specifies their translation into
-graph types and core operations, together with statement, iterator and guard
-lowering that consumes those contracts.
+bindings and library contracts. This document specifies how the type reader
+translates them into graph types: modules and their imports, declarations and
+their equations, written and computed types, classes, and the reviewed
+contracts of library types, globals, modules, regular expressions and
+promises. The lowering of statements, guards and iteration that consumes
+these contracts is in [Source elaboration](SOURCE-ELABORATION.md).
 
 The prerequisites are the judgments and state rules in
 [Program typing](PROGRAM-TYPING.md), declaration equations and binders in
 [Recursive equations](RECURSIVE-EQUATIONS.md), and graph types in
 [Positive types](POSITIVE-TYPES.md). Types are finite unions of graph labels;
 $`\Gamma`$ assigns types to variables, and $`\Gamma\vdash_G t:A`$ is the core
-term judgment. Source extraction and evidence search are specified in
-[Source elaboration](SOURCE-ELABORATION.md); runtime values and worlds in
+term judgment. Runtime values and worlds are specified in
 [Semantics](SEMANTICS.md). The trusted source model and refusal boundaries are
 specified in [Source model](SOURCE-MODEL.md) and
 [Source fragment](SOURCE-FRAGMENT.md).
@@ -256,6 +258,193 @@ under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
 are the [ambient assumption](DESIGN.md#trust-surface). A
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
+
+### Types stated by annotations
+
+The written annotations that determine a declaration's exposed type, by its
+kind. These, and only these, are read for a declaration a type reaches; no
+function body, initializer's code or static block is read. A declaration
+without them is refused
+([fragment boundary](SOURCE-FRAGMENT.md#refused-on-principle)). The structure is the checker's symbols, not
+syntax: what a name or a selection denotes is one symbol, its annotations
+the union over its declarations (an overload set's, an accessor pair's, a
+merged entity's); a class's members are its instance and static member
+symbols, apart; a module's or namespace's are its exported symbols,
+`export =`, a default export and ambient members included. A member under
+a computed name, which the checker binds late, counts by its declaration,
+and its name's entity is swept. A name path, `typeof E.p₁…pₙ` (a qualified name, a property access, a
+`typeof` or import type), contributes the determining annotations of every
+declared entity on it: the root, which must have them, and each later step
+with a declaration, with everything those annotations name. A step the
+checker synthesises (a mapped type's member, an instantiation's) has no
+declaration and needs none: its type is computed from annotations already
+swept. A module or namespace a further step selects from contributes
+nothing itself.
+
+| Declaration | Determined by |
+| --- | --- |
+| Interface, type alias | Its whole syntax |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
+| Property declaration or signature | Its annotation |
+| Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
+| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations; a function's or method's defaulted parameter is optional to its callers |
+| Accessor | The symbol's getter result or setter parameter, either for the pair |
+| Constructor | Its parameter annotations, or its overloads' with the implementation's parameter properties |
+| Class | Its type parameters, its heritage, and every instance and static member symbol |
+| Namespace, module | Every exported symbol, `export =` and a default export included |
+| Enum, enum member | Its value |
+
+## Certified imports
+
+An imported function of the program is read at its declaration's ordinary
+signature, which states no effect. A **certified import** is read at an
+effect-qualified signature that the same run certifies from the imported
+declaration's code. This is the checked evidence
+[inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+require; the import's TypeScript declaration supplies none.
+
+**Eligibility.** A read may be qualified only where its binding's value is
+stable: a named import of an exported function declaration that no code of
+its module reassigns, or a default import of an `export default function`,
+which is the named import of `default`
+([default imports](SOURCE-ELABORATION.md#derived-source-forms)). Its terminal
+declaration identity is the one TypeScript resolves the import to, through
+re-exports; a re-exporting module's own execution is part of the runtime
+module graph below. Any other import is read at its ordinary signature. Lean refuses a unit whose module's document writes
+its binding, and the parser lists no module whose code it leaves unlowered
+writes one.
+
+**Two graphs.** The **qualified-dependency graph** has an edge from a unit to
+each unit it reads at a qualified signature; it is acyclic. The pipeline
+proposes a module after the modules it imports from, so a read that would
+close a cycle is read at its ordinary signature, and Lean refuses a cycle
+among the modules the planned reads name. The **runtime
+module graph** is the modules' import relation as the host evaluates it,
+ordinary imports and re-exports included; it may have cycles. Qualification
+reasons about the first; the second bears on initialisation and binding,
+below.
+
+**The documents.** The parser lowers its documents before any claim exists,
+so it lowers every module the qualified-dependency graph may need: every
+program module the checked file imports a function from, transitively,
+each under the checked file's TypeScript program and options and the run's
+[tag selection](HOST-FAMILIES.md#the-runs-selection), so that both readings
+of a declaration resolve alike. The fragment's required `modules`
+array ([the wire](FRAGMENT-FORMAT.md)) lists each once: its **artifact**,
+the module identity its declarations carry (`location`) and the `sha256` of
+the exact bytes lowered, then its declarations, top-level code and
+functions, as a file's own fragment holds them, its own identity written as
+`location`. A function of such a module is a **unit**, named by its origin:
+the module's artifact, the declaration's span and its name. Origins come
+from the parser's resolution and snapshot, never from a claim of the
+producer's. The claims document's required `modules` array holds one claims
+document per fragment module, over that module's own type table, and the
+importer's claims list the imports it reads qualified (`qualified`), each by
+its declaration identity. A census slice keeps its own identity: a slice verified
+is not a certification of the module it was cut from.
+
+**Failure boundary.** A module function the parser cannot lower is absent
+from its module, with the parser's reason, and its module's other functions
+stay. A module whose declarations or top-level code cannot be lowered is
+absent: its imports are read at their ordinary signatures. An import read
+at its ordinary signature is refused where that signature is not
+representable in full.
+
+**What a unit's certification covers.** A unit is checked in its module's
+run, as a run of that file alone checks it but for the run's tag selection,
+over that module's own type table: its module's initialisation (the existing initialisation unit and
+order, `Extraction.lean`), its own code at its claimed signature, the
+module's functions its code reads, and, recursively, every unit it reads
+at a qualified signature. So the certified set is the closure of the units
+the claims read qualified under the module functions they read, together with
+the module's initialisation, and, recursively, the same of every unit a
+module run's own claims read qualified; the module's other functions are not
+checked. Every other fact of its environment is an
+explicit assumption, the
+[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
+its module's own run also makes. An initialiser that is not checked never
+supplies a qualified signature. Lean computes the closure and restricts
+each module's document and claims to it itself, whatever the producer
+chose.
+
+**Binding.** Lean reads an import at a qualified signature only where the
+importer's claims list it qualified and the documents hold a unit of its
+origin: the import's declaration identity names a module whose artifact
+the fragment lists, and a function of it whose name is the declaration's
+and whose name lies in the declaration's span. The unit is eligible: one
+declaration, binders of its own none, no rest parameter, no receiver, no
+guard and no promise. The two readings of
+its ordinary signature, the importer's declaration document's and the
+module's own annotation, are compared structurally, a mismatch refused:
+the parameter and result terms, and recursively every declaration either
+reaches, under the identity mapping of declaration identities: its equation,
+parameters and heritage, and the written applications listed in it, in the
+unit's own declaration alike, with their scopes, arguments and bounds. A
+declaration lowering reads by identity rather than through a reference
+(`ImplicitDependency`, the one list lowering selects them through) is
+reached as a reference's target is where a term reached needs it:
+`ArrayProto` for an array or tuple term, `%Stable%` and native `Promise` for
+a resolution-qualified binder. Symbol keys compare by the identity of their
+symbol's declaration rather than a document's index, and a visited set
+closes recursive definitions. Every field of a term takes part, array presence and host
+classification among them. Each of the following is refused, named by the
+unit's origin: a qualified read naming no unit, a unit of another origin, a
+unit not eligible, a structural mismatch, a module's claims about other bytes
+than its document's, and a module run whose check fails. The
+importer's evidence and the units' are checked by one `checkJson` call, so
+the evidence that certifies the effect is evidence about that declaration's
+code, not about a name.
+
+**The ordinary signature is kept.** The unit is checked at its annotation's
+signature with the effect added, its annotation obligations retained, as
+[elaboration](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification) states
+for a module function. The importer reads the import as the unit's module
+reads it (`moduleArrow` of the unit's annotation, with the footprint and
+on-throw flag its claim states), which the structural comparison makes its
+own declaration's signature with that effect. Its code is then known to
+discard further actuals, so it may be passed where a signature binding more
+parameters is expected.
+
+**Inference.** OCaml proposes each module's effects as it proposes a
+file's own (the greatest fixpoint over that module), then the importer's
+claims at them. No effect
+follows from a comment, a name or a module's role. The pipeline lists
+qualified each eligible read whose unit has claims. Where the search over the
+whole document refuses a read or a module run, its footprint refuted or its
+initialisation unchecked, the pipeline withdraws those reads, proposes the
+importer again, and the import is read at its ordinary signature. The final check is one
+`checkJson` call over the whole document. Dense `map` needs a callback
+footprint that keeps dense prefixes
+([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
+
+**What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
+the importer's document and for each module document's certified set, each
+over its own frozen store: safety and its
+footprint for every certified unit, and safety for the importer's
+functions, each under `EnvOk` of its own inputs, the qualified import among
+the importer's, and under `WorldAdm` and `HeapOk`.
+It does not construct a module's environment, prove that initialisation
+succeeds, or prove that the value an import binds at run time meets the
+qualified signature: those are the linking obligation's.
+
+**The linking obligation.** The conclusions combine into safety of the
+linked program under a runtime invariant: at every qualified read, the
+binding holds the certified unit's closure, whose captures meet its input
+contracts in the current heap and world, and the module's initialisation and
+all execution after it preserve that. The eligibility rule makes the first
+half a property of the parser's resolution and of the host's module loader
+(an exported declaration never reassigned holds its closure once its module
+is evaluated); the second is the [module composition](../WORK.md#module-composition)
+argument for units certified against each other's signatures, on which the
+units of one module already rely. A dependency whose initialisation throws
+stops the importer's evaluation: certifying a body proves no initialisation
+succeeds. Until module composition is proved, the invariant is a review
+obligation, listed with the import assumption and in the
+[parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
+
+**A catch.** A certified import's footprint holds on normal return, and on
+a throw where its effect states `onThrow`
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
 
 ## One equation per declaration
 
@@ -536,15 +725,15 @@ except that a record of invariant fields met with a function type is the
 callable carrying them (`sourceMeetLists`, [below](#intersections-of-functions-and-records)),
 and any other intersection (a scheme, a union holding a binder) is refused
 rather than an operand being dropped. A function's own annotation lowers its
-intersections so (`annotationClaim`), each binder read as the row the unit
+intersections so, each binder read as the row the unit
 reads it as, its parameter row met with a ground bound or with the binder
 bounding it (`binderRows`): `T & U`, `T & "fixed"`, `T & object` and
 `A<U> & B<V>` are meet rows or meets of application rows over the binders'
 rows. An operand whose row is not yet filled, a declaration being lowered or
 a recursive application met inside its own equation
 (`TreeNode<T> & TreeLeaf<T>` in `TreeLeaf<T>`'s field), makes the meet a row
-of its own that waits for it (`waitingMeet`), filled once every operand is
-(`settle`); a nullary declaration an intersection names is lowered first, so
+of its own that waits for it, a pending row filled once every operand is
+(`Equations/Core.lean`); a nullary declaration an intersection names is lowered first, so
 the declarations' order does not matter. No lowering ends with a meet left
 waiting. A meet row is below each of its parameters, so
 it establishes what each does. At an instance $`p_1:=U_1,\ldots,p_k:=U_k`$ it
@@ -627,7 +816,7 @@ declared: a function declaration's type parameter bounded by the verifier's
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which the project of a lone
 source lists (`verify-source.mts`), and the parser recognizes the bound by
 that declaration, which TypeScript binds the name to, not shadowed by a type
-parameter (`resolvableBound`). A program's own alias of that name is an
+parameter (`qualificationBound` in `fragment-parse.mts`). A program's own alias of that name is an
 ordinary bound. `Awaited<T>` in a declared-qualified signature reads
 $`R_T`$. The parser refuses the marker on another type parameter ("qualify
 a type parameter of a function declaration's signature") and in a signature
@@ -1118,6 +1307,18 @@ admitted and refused exactly as its unnamed one:
 ⟦[\ldots,\ \ldots x\colon\tau]⟧=⟦[\ldots,\ \ldots\tau]⟧\ \ \textsf{named-member}
 ```
 
+The standard library's `BuiltinIteratorReturn`, an alias TypeScript
+declares `intrinsic`, is `undefined` in the interfaces of ECMA-262's
+iterators, `ArrayIterator`, `MapIterator`, `SetIterator`, `StringIterator`
+and `RegExpStringIterator`: they complete with
+`CreateIterResultObject(undefined, true)`, as `strictBuiltinIteratorReturn`,
+which `strict` sets, reads it (`builtin-iterator-return-value-import`,
+`invalid-builtin-iterator-return-value-import`, run under Node). Anywhere
+else, Intl's and the DOM's iterator interfaces among them, it is refused:
+another specification states those iterators' done value. An imported
+`Intl.SegmentIterator` is refused before it, as a qualified type reference,
+so no case reaches this refusal.
+
 ### Intersections of functions and records
 
 A record type's clause is a plain object, which no function is, so the
@@ -1356,7 +1557,7 @@ type syntax, with the binders of its enclosing declarations in scope,
 whatever path reached it; never its enclosing statement, its executable
 body or its initializer. What is swept of a reached declaration is the
 written annotations that determine its exposed type
-([types stated by annotations](SOURCE-FRAGMENT.md#types-stated-by-annotations));
+([types stated by annotations](#types-stated-by-annotations));
 one they do not determine, whose type TypeScript infers from its code, is
 refused at the use reaching it. A name a further step selects a member of
 contributes only that member; a whole class, namespace or module
@@ -1555,7 +1756,7 @@ unrestricted callback do not.
 
 `filter` is stated at TypeScript's guard overload too,
 `filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S): S[]`,
-read at a callback whose [promise signature](#user-defined-guards) promises
+read at a callback whose [promise signature](SOURCE-ELABORATION.md#user-defined-guards) promises
 $`S`$ of its first actual:
 
 ```math
@@ -1702,7 +1903,7 @@ array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
 iterator result as `Iterator<T>`, which it extends, or, for `Set`'s and
 `Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`, as the native
 collection iterator, `Iterator<T>` marked as the built-in one
-([loops and spreads](#loops-and-spreads-over-iterables)). A property is a readonly
+([loops and spreads](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables)). A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
 
@@ -1716,7 +1917,7 @@ meets `ReadonlyArray` (`readonly-collection-views`). They state no
 `[Symbol.toStringTag]`, so a program's object may meet them: each member
 states the effect its declaration does, which is no footprint
 (`invalid-readonly-set-has-effect`, run under Node), and a loop or a spread
-over one runs the [iterator protocol](#the-iterator-protocol).
+over one runs the [iterator protocol](SOURCE-ELABORATION.md#the-iterator-protocol).
 
 ### Native footprints
 
@@ -1812,6 +2013,11 @@ What is proved and what is audited:
   `lastIndex`; a `Map` written by a callback holds what it wrote.
 
 ## Library globals
+
+**Audited against:** TypeScript 7.0.2's standard library and `@types/node`
+22.20.2 and 22.10.7 (`tools/package.json`,
+`pipeline/library-project/package.json`); host behaviour observed under Node 25.2.1
+(2026-10-19).
 
 A standard library global is read only through the reviewed overlay
 (`library-globals.mts`), one entry per signature, with exactly the
@@ -2096,7 +2302,7 @@ not call (`json-parse-stringify-tojson-member`, run under Node). At a `JsonValue
 calls no `toJSON` and no getter, and allocates its string, so it returns a
 string and states the empty footprint, on a throw too (a cycle); so does `Error`
 at a string message, which it stores without conversion code
-([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints);
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints);
 `map-stable-json-error`,
 `json-stringify-recursive`, `json-stringify-arrays`). A record a declaration
 types by its fields (an interface, a type literal) is no `JsonValue`: a
@@ -2188,12 +2394,46 @@ So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
 
+### Merged library interfaces
+
+A declaration outside the standard library may merge a member into an
+interface a unit reads at TScert's reviewed contract: `Object` or `Function`
+(in every unit that reaches the declarations), `Array`, `ReadonlyArray` or a
+primitive's wrapper (where an array or the primitive's member reaches the
+unit), and the interfaces those contracts name with their library bases
+(`Iterator`, `ArrayIterator`, `IteratorObject`). Every value of the interface
+is read at the overlay, TScert's reviewed interpretation of the host's
+prototype. A merge states a member of every value of the type and installs
+nothing at run time, so a member the overlay does not review at that
+contract (a `toJSON` stating that every array or object holds a hook) would
+be erased from the annotations it changes: such a merge is refused
+(`invalid-merged-array-param`, `invalid-merged-readonly-array-callback`,
+`invalid-merged-object`, `invalid-merged-function`, `invalid-merged-iterator`,
+`invalid-merged-iterator-set`, `invalid-merged-values-iterator`,
+`invalid-merged-string`; the `collections-*` cases, under Node's types).
+
+A member a merge states at a reviewed contract is read at the reviewed
+translation, its corrections and effects included, from the reviewed
+signature where the project's library declares none: Node's `at` polyfill
+(`RelativeIndexable<T>`) under ES2021 (`node-at-polyfill`). Contracts are
+compared as the type reader reads them, the merged declaration and the
+reviewed signature alike: binders by position, a base at the arguments each
+heritage path gives it, a member's own binders with their bounds,
+optionality, each overload on its own; a parameter's name is no part of a
+contract (`merged-restated-at`, `merged-renamed-at`,
+`invalid-merged-narrowed-at`, `invalid-merged-two-paths-at`). A form the
+comparison does not read (a named type, a computed key, a call, construct or
+index signature, a base outside the merge) is refused. An interface a source
+names (`Iterable<T>`) is read at its merged declarations, not at a reviewed
+contract, so a merge into it is read, not erased: a required member it adds
+is one an array does not meet (`invalid-merged-iterable`; unmerged,
+`array-iterable`).
+
 ### Node's `process`
 
 Node's `process` and `console` are read through the overlay at the members
 the repository's code uses, each pinned to its declaration in the pinned
-`@types/node` installations, their origin the package `@types/node`,
-observed under Node 25.2.1 (2026-10-19). A member read at a stated contract,
+`@types/node` installations, their origin the package `@types/node`. A member read at a stated contract,
 and every reviewed method, is a readonly view: no write of it is admitted,
 through `process` or through the process a registration returns
 (`invalid-node-process-replace-result`, `invalid-node-process-replace-alias`).
@@ -2253,6 +2493,11 @@ the calculus does not prove Node's scheduler.
 
 ## Library modules
 
+**Audited against:** `@types/node` 22.20.2 and 22.10.7 (`tools/package.json`,
+`pipeline/library-project/package.json`); host
+behaviour from Node 25.2.1's `lib/` sources and probes run under Node 25.2.1
+(2026-10-19).
+
 A function a client imports from one of Node's modules (`node:fs`, or `fs`)
 is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
@@ -2292,8 +2537,7 @@ unrestricted in its effect unless its entry states one. The entries:
   then `null` (`invalid-node-exec-env-object`). A record type states nothing
   of the keys it does not name, so `env` is stated at strings. Every other
   option the host reads it validates without converting, throwing on a type
-  it does not accept: an object at each such key ran no code of the client's
-  under Node 25.2.1.
+  it does not accept: an object at each such key ran no code of the client's.
 - `execFileSync` has a second stated form, the **restricted form**. Its
   options state every key the synchronous path reads, each at a type Node
   validates without running code of the client's:
@@ -2304,8 +2548,8 @@ unrestricted in its effect unless its entry states one. The entries:
   A record type is open, so a key it does not name may hold any value; a key
   it names at `undefined` or `false` is absent or holds that value. The form
   states the empty footprint on normal return and on a throw
-  ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)). A call
-  meeting only the first form keeps an unrestricted effect. The audit of Node 25.2.1's
+  ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)). A call
+  meeting only the first form keeps an unrestricted effect. The audit of Node's
   `lib/child_process.js` and `lib/internal/child_process.js` covers every
   write the call makes before it returns, and before each throw: a
   validation error, a failure to spawn, and a failed command.
@@ -2369,7 +2613,7 @@ unrestricted in its effect unless its entry states one. The entries:
 - `spawnSync(command, args, options)` at options $`O`$ stating
   `encoding: "utf8"`, `stdio` and `env` absent, and an optional `timeout`,
   `cwd`, `maxBuffer` and `input`, runs the command and returns a fresh
-  record (Node 25.2.1):
+  record:
   $`(\mathtt{string},\ \mathsf{readonly}\ \mathtt{string}[\,],\ O)\Rightarrow\{\mathtt{pid}\colon\mathtt{number};\ \mathtt{status}\colon\mathtt{number}\mid\mathtt{null};\ \mathtt{signal}\colon\mathtt{string}\mid\mathtt{null};\ \mathtt{stdout},\mathtt{stderr}\colon\mathtt{string}\mid\mathtt{undefined};\ \mathtt{error}^?\colon\mathtt{unknown}\}`$,
   stating no effect: the host reads the options' properties
   (`node-spawn-sync`). Both streams are piped, so each output is a string
@@ -2378,8 +2622,8 @@ unrestricted in its effect unless its entry states one. The entries:
   Node); `stdio` naming no pipe leaves it `null` and is outside the stated
   call (`invalid-node-spawn-sync-stdio`, run under Node).
 - `readdirSync(path, o)` with a string path reads `o.encoding` and
-  `o.signal`, then `o.recursive`, `o.encoding` and `o.withFileTypes` (Node
-  25.2.1's `lib/fs.js`). The four are stated,
+  `o.signal`, then `o.recursive`, `o.encoding` and `o.withFileTypes` (Node's
+  `lib/fs.js`). The four are stated,
   $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{false}\mid\mathtt{undefined};\ \mathtt{signal}^?\colon\mathtt{undefined}\}`$,
   so under the caller contract ([trust surface](DESIGN.md#trust-surface))
   each is a data property whose reads agree. `recursive: true` walks the
@@ -2414,12 +2658,12 @@ unrestricted in its effect unless its entry states one. The entries:
   $`()\Rightarrow\mathtt{unknown}`$, its effect unrestricted
   (`invalid-node-readdir-test-result`, run under Node: a replaced test
   answers a number).
-  The declared `Dirent.path` is absent under Node 25.2.1, so the entry states
+  The declared `Dirent.path` is absent at run time, so the entry states
   none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
   whose parameter TypeScript types as `Dirent` is refused.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
-  too (Node 25.2.1's `lib/path.js`). `join` of any number of strings,
+  too (Node's `lib/path.js`). `join` of any number of strings,
   `resolve` of any number and `relative` of two compute one too, but `join`
   calls `posix.normalize` and `resolve` and `relative` call `process.cwd()`
   for a relative path, writable properties other code may replace, so they
@@ -2458,8 +2702,7 @@ declaration's text, pinned as every entry is), so a changed declaration is
 refused and reviewed again; a generic entry's binders are the binding's type
 parameters.
 
-**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run under
-Node), a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
+**Footprints.** By probes run under Node, a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
 ToBoolean, `Object.is` and a comparison with `null` and `undefined`. A failing
 call builds an `AssertionError`: it calls no `inspect.custom` hook, but it
 reads the compared values' accessors while building the message, sets and
@@ -2469,7 +2712,7 @@ Each entry states a footprint for normal return only, and unrestricted
 effects on the exceptional edge: `onThrow` false, so a handler catching an
 `AssertionError`, or whatever a hook throws instead, holds no fact about the
 heap that the call's footprint would preserve, as the
-[effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+[effect](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 of any call reaching a handler (`invalid-node-assert-catch-continue`, run
 under Node). A message is stated at `string`.
 
@@ -2963,564 +3206,6 @@ declaration given the native methods without the tag; claims putting a
 thenable at each resolving operation's instance, claiming an allocation with
 a callable `then` as a `Promise<number>`, or a key-adding write's key at
 `symbol`.
-
-## Loops and spreads over iterables
-
-`for (const x of e) S` steps a trusted **iteration intrinsic**, one per kind
-of host iterable, which the parser picks by TypeScript's type of $`e`$
-(`iterationKind` in `declaration-graph.mts`, every part of a union alike).
-With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid\mathsf{null}`$:
-
-```math
-\begin{array}{ll}
-\mathtt{\%Iterate\%}:\forall T.\ (\mathsf{readonly}\ T[\,])\Rightarrow\mathit{Step}(T) & \text{an array or tuple}\\
-\mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
-\mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{Set}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
-\mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
-\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
-\end{array}
-```
-
-`Set` and `Map` are the [interface overlay](#library-types)'s, whose
-`keys`, `values`, `entries` and `[Symbol.iterator]` give a `SetIterator` or
-`MapIterator` read as the native collection iterator
-$`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `Iterator<T>` with
-a key $`\langle\mathit{CollectionIterator}\rangle`$ at `undefined`, a
-synthetic symbol no source declaration, literal or class states, so no
-other value meets it. A value TypeScript types `SetIterator` or
-`MapIterator` from any other source, a `ReadonlySet`'s or `ReadonlyMap`'s
-iterator included, is no argument of `%Iterate:Iterator%`, and its loop is
-refused (`invalid-readonly-set-iterator-native`, run under Node). None of these iterators has a `return`, so a
-loop left early by `break`, `return` or a throw calls nothing. An iterable of
-any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
-record with one), or a union with one, is the program's, and runs the
-[iterator protocol](#the-iterator-protocol); any other steps `%Iterate%`,
-whose typing then refuses what is no array. Lean compiles the loop over a
-host iterable itself (`SourceExtraction.body`), $`\mathit{it}`$ the picked
-intrinsic:
-
-```math
-⟦\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S⟧=
-n\leftarrow\mathit{it}(⟦e⟧);\
-\mathit{head}:\ r\leftarrow n();\
-\mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
-\mathsf{else}\ x\leftarrow r.\mathit{value};\ ⟦S⟧;\ \mathsf{goto}\ \mathit{head}
-```
-
-`n` is a slot at the call's claimed type, the head a cut stated by the loop's
-entry claims, `continue` and the body's end go to the head and `break` to the
-exit; the tag dispatch refines `r` on each arm (`tagBind isNul`). The derived
-rule, with $`\mathit{it}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)`$ and
-$`\sigma`$ the call's instance:
-
-```math
-\frac{\Gamma\vdash e:A\quad A\le P\sigma\quad
-      \Gamma_{\mathit{head}},x:E\sigma\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
-     {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsf{for-of}
-```
-
-The native iterator requires a readable array receiver, so every in-bounds
-read yields `T`, including a hole when `T` admits `undefined`. A sparse store
-needs a separate proof of readability before it satisfies that contract. Array patterns read positions under the same trust
-([patterns](SOURCE-ELABORATION.md#patterns)).
-
-An argument spread `f(…, ...e, …)` over an iterable of one of the other kinds
-is the spread of the fresh array its iterator yields, collected where the
-spread is written: $`\ldots e\equiv\ldots\mathtt{\%Spread{:}K\%}(e)`$, with
-$`\mathtt{\%Spread{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow E[\,]`$ for each
-$`\mathtt{\%Iterate{:}K\%}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)`$, the
-array of what that step yields until $`\mathsf{null}`$. It is an ordinary call
-of a trusted value, and the array an ordinary spread into a variadic
-callee. A spread of a program's iterable is collected by the
-[protocol](#the-iterator-protocol).
-
-A tuple meets `Iterable<T>` through the readonly array of its positions: the
-producer claims a tuple expected at an iterable other than an array at
-$`\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]`$, which Lean derives from
-the tuple ($`\mathsf{list}`$ inclusion) and relates to the iterable through
-`Array.prototype[Symbol.iterator]`, as for any array. A compiler-API node
-list is read as a dense readonly array of its elements
-([node lists in the model](COMPILER-API.md#node-lists-in-the-model)): its own
-`Symbol.iterator` yields what indexing reads, which T4 states and C4 runs, so
-it is iterated as that array in every position, under the host assumption on
-the package's values (`compiler-api-node-list-spread`).
-
-## The iterator protocol
-
-An iterable the program defines is iterated as
-[ECMA-262](REFERENCES.md#ecma-262)'s ForIn/OfBodyEvaluation runs it, in
-ordinary forms the parser writes (`protocolForOf`), each an ordinary call or
-read typed by the declarations TypeScript gives the iterable (`Iterable<T>`,
-`Iterator<T, TReturn, TNext>`, `IteratorResult<T, TReturn>`, or the program's
-own class or record), under names no source spells:
-
-```math
-\begin{array}{l}
-[\![\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S]\!]=
-\{\ \mathsf{const}\ i=e[@@\mathit{iterator}](),\ n=i.\mathit{next}.\mathsf{bind}(i);\\
-\quad\mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\
-  \mathsf{const}\ x=r.\mathit{value};\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C_i\ \}\ \}\\[2pt]
-C_i=\mathsf{const}\ m=i.\mathit{return};\ \mathsf{if}\ (\mathsf{typeof}\ m\ne\texttt{"undefined"})\ \{\ \mathsf{const}\ \_:\mathsf{object}=m.\mathsf{call}(i)\ \}
-\end{array}
-```
-
-The protocol lowering writes `.bind` in the fragment to save a method with
-its receiver. Source-written `.bind` is admitted by the parser only on a
-known local function.
-
-GetIterator reads `next` once, and each step calls it on the iterator: the
-bound function is that call ([`bindMember`](PROGRAM-TYPING.md#judgments-and-constructor-views)). A
-`return` the iterator's type declares a required method is read bound the
-same way, $`C_i=\mathsf{const}\ m=i.\mathit{return}.\mathsf{bind}(i);\ \mathsf{const}\ \_:\mathsf{object}=m()`$;
-an optional one or a property is read, tested and called on the iterator, as
-GetMethod and IteratorClose do. The result must be an object, which is the
-TypeError IteratorClose throws otherwise, made impossible by the annotation's
-obligation. The test of `r.done` refines $`r`$ to the arms whose `done` may be
-falsy (a [field slice](PROGRAM-TYPING.md#refinement-under-an-observed-outcome) through the
-read's link, optional where `IteratorYieldResult` leaves `done` optional), so
-`r.value` is read at the not-done arm's type, `T`. An iterator whose type
-states no `return` is refused where the loop could close it: an open record
-may own any `return`. An array's `values`, `keys` and `entries` give the
-`ArrayIterator` the library declares, read at the overlay as
-`IterableIterator` of the declared argument (`[number, T]` for `entries`):
-the iterator is its own, and a program's iterable by this rule, its `return`
-read `undefined` and the close calling nothing, by the
-[host assumption](DESIGN.md#trust-surface) that its chain holds none.
-
-GetIterator on an iterable of a union type gives a union of iterators, and
-the protocol binds the `next` (and a required `return`) of whichever iterator
-it is: a [member bound to a union of hosts](PROGRAM-TYPING.md#judgments-and-constructor-views),
-each host's member taken at the signature it binds alone. Each step's result
-is then the union of the hosts' results, `IteratorResult<T_j, TReturn_j>`
-each, and `r.value` past the test of `r.done` the union of the not-done arms'
-`T_j`. The `next` the protocol admits, per host, is a method member whose
-signature takes no required parameter (`next()`, or the rest-tuple union
-`next(...[value]: [] | [TNext])`, whose first signature is `next()`), with no
-promise, under a receiver the iterator is within, returning a record with
-`done` and `value`; the hosts' `next` signatures take the same parameters at
-the same effect. Refused: a required parameter (the step's call passes none),
-hosts' signatures that differ in parameters or effect, a result that is no
-object (IteratorStepValue throws on it; the step's `done` read has no rule on
-a primitive), a receiver the iterator is
-not (`this: S`), an optional `next` or an accessor (outside the fragment), and
-a `next` that is a field holding a function in a union, which no rule binds.
-A `next` with effects changes what the loop's body and what follows know, as
-any call of its footprint does.
-
-The library's declarations are read by the rules of
-[library types](#library-types): `Iterable<T>` is the record of its one
-method under the built-in `Symbol.iterator` key, returning an `Iterator`, and
-so no `Iterator`, whose `next` it lacks; `Iterator`'s
-`next(...[value]: [] | [TNext])` is the two signatures `next()` and
-`next(value: TNext)` (**rest-tuples**), and its `return?` and `throw?` are
-optional methods: optional fields whose functions take the iterator as
-receiver ([records](POSITIVE-TYPES.md#records)), which is what the close's
-test of `return` reads.
-
-The closing region is a `finally` that runs on some ways out of $`S`$ only,
-compiled by the machinery of `try` (`SourceExtraction.body`, `Finalizer`):
-
-```math
-\frac{\begin{array}{c}
-\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\mapsto C;\mathit{exit},\quad
-  \mathsf{return}\ v\mapsto C;\mathsf{return}\ v,\quad
-  \mathsf{continue}\mapsto\mathit{head},\quad
-  \mathsf{throw}\ u\mapsto(\mathsf{try}\ C\ \mathsf{catch}\ \{\});\mathsf{throw}\ u\\
-\Gamma\vdash_R C\ \text{on each of those ways}
-\end{array}}
-     {\Gamma\vdash_R\ \mathsf{closing}\ \{S\}\ \mathsf{close}\ C}\ \textsf{closing}
-```
-
-The close runs before a `break` of the loop leaves it, before a `return`
-returns the value held in a slot of its own (as through any `finally`), and,
-its own throws discarded by a handler that drops them, before a throw out of
-the body is thrown again: IteratorClose with a throw completion keeps the
-body's. Its end and a `continue` go to the head, and a done result leaves
-without it, as IteratorClose is not called there. A jump past the loop to an
-outer target passes it as it passes a `finally`. Every edge is checked as
-any other; the close's statement entries state each cell at its contract.
-
-A pattern $`p`$ binding the loop binds the step's value to a name no source
-spells, where $`x`$ is bound, and destructures it as the closing region's
-first statement:
-
-```math
-\mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\
-\mathsf{const}\ \%e=r.\mathit{value};\
-\mathsf{closing}\ \{\ \mathsf{const}\ p=\%e;\ S\ \}\ \mathsf{close}\ C_i
-```
-
-ForIn/OfBodyEvaluation runs ForDeclarationBindingInitialization of $`p`$ on
-the step's value after IteratorValue and before the body, and on its abrupt
-completion returns IteratorClose with it: a throw of a default or of a read
-the pattern makes closes the iterator, its own throw discarded, as a throw out
-of $`S`$ does, and a default has no other way out. The pattern runs between two
-steps of the protocol, so its code runs where JavaScript runs it. The inner
-declaration is a `const` pattern's over a value another reference may hold
-(the iterator may keep it), with every rule of
-[patterns](SOURCE-ELABORATION.md#patterns): an array pattern reads the
-positions of an array, with no code that may change it between its steps, its
-nested patterns and defaults included
-(`for-of-pattern-program-iterable-default-refused`); an array pattern over a
-value that is no array (a string, a `Set`, an iterable the program defines)
-is refused by the typing of those reads
-(`for-of-pattern-nested-iterable-refused`), and a position past a short
-array is `undefined` (`invalid-for-of-pattern-program-iterable`, run under
-Node). It is the same lowering as a pattern over an array's loop
-(`forOfPattern`), inside the region (`for-of-pattern-program-iterable`).
-
-A spread of a program's iterable (`collect`) that is the first evaluation
-able to run code of the statement's value (an expression statement's, a
-`return`'s or a declaration's one initializer), every evaluation before it
-a literal or a name the file never assigns whose read cannot throw nor run
-code: a parameter, a function declaration with a body (an ambient
-`declare function` is none, `spread-program-iterable-ambient-function-refused`),
-a function body's `let` or
-`const` the early-binding analysis finds initialized at every read, or a
-name the file declares nowhere that TypeScript binds to the standard
-library's `var`s or functions alone, whose read runs no code by the
-[host assumption](DESIGN.md#trust-surface) on standard-library global
-bindings. A module binding, an import, a class,
-an ambient declaration or an unresolved name is none
-(`spread-program-iterable-uninitialized-refused`,
-`spread-program-iterable-global-getter-refused`,
-`spread-program-iterable-global-tdz-refused`, each run under Node). Such a
-spread is collected before the statement, where nothing the statement evaluates before the spread can be
-changed by the iterator's code. Evaluation is followed in JavaScript's
-order: an array literal's elements, a call's or a construction's callee then
-arguments (a callee that is such a name, or a method read off a value whose
-first evaluation is the spread), a member read's object. So the spread may
-be the first element of an array literal before others, an argument of
-`new Set(…)`, or the receiver of a method call (`spread-program-iterable-first`,
-run under Node: the iterator's steps precede the later element's code): $`\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\ a.\mathit{push}(r.\mathit{value})\ \}`$, then $`\ldots a`$ (or $`a`$ for the literal);
-a spread steps to the end and closes nothing. An array literal's spread of
-a host iterable (a string, a `Set`, a `Map`, a host collection iterator)
-spreads its spread intrinsic's array, `[…, ...e, …]` $`\equiv`$
-`[…, ...%Spread:K%(e), …]`, the fresh array of what the host's iterator
-yields, as an argument spread of one is; the literal is a fresh array of its
-own, at the store contract its claim states, also where the spread is its
-one element (`array-literal-host-spread`). An array pattern
-`const [p₀, …, ...q] = e` over one (`protocolPattern`) steps once per element,
-a hole too, into cells $`v_j`$ starting `undefined`, leaves a labeled block when
-a step is done, collects the rest to the end, and without a rest closes the
-iterator after the elements, as IteratorBindingInitialization does; the
-source's names are then bound from the cells, which binding names does not
-observe. A default or a nested pattern, which run code between the steps, is
-refused.
-
-## Statement forms
-
-The statement forms of a body are lowered to the graph compiler's where the
-lowering is exact ([as graphs](PROGRAM-TYPING.md#statement-forms-as-graphs)). $`\Gamma\vdash_R S`$
-reads "the statements $`S`$ are safe under $`\Gamma`$ in a function whose result
-is $`R`$". An unbraced arm is the block holding it and `else if (c) S` is
-`else { if (c) S }`; `return;` is `return undefined`, and a block closure that
-does not return on every terminal arm ends with `return undefined`:
-
-```math
-\frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsf{return-bare}
-\qquad
-\frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
-     {\Gamma\vdash_R S_1;S_2}\ \textsf{dead}
-```
-
-`for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
-body's end and every `continue` run `update`, then go to the head (a closure
-capturing a `for` loop's `let` is refused, since JavaScript copies it per
-iteration):
-
-```math
-\frac{\Gamma\vdash_R \mathit{init}:\Gamma'\quad \Gamma_h\ \text{the head's entry claims}\quad
-      \Gamma'\le\Gamma_h\quad \Gamma_h\vdash c:\mathsf{boolean}\quad
-      \Gamma_h\wedge c\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto u\quad
-      \Gamma_u\vdash \mathit{update}\ \text{back to}\ \Gamma_h}
-     {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsf{for}
-```
-
-`switch (d) { … }` is a labeled block per clause, nested in source order
-inside one for the whole switch: the innermost holds the dispatch, each case
-label in order `if (d === l) break` to the end of its clause's block, and
-each clause's statements follow its block's end, so fall-through is ordinary
-sequencing. The discriminant is evaluated once into a slot no source names,
-unless it is a name or a field of a name and every label a literal or a name,
-when it is re-read at each test. A name declared in one clause and read in
-another is refused.
-
-```math
-\frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad
-      \Gamma_{\mathit{after}}\vdash_R S'}
-     {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsf{labeled-block}
-```
-
-`for (const k in o) S` is `for (const k of %ForIn%(o)) S` with the trusted
-
-```math
-\mathtt{\%ForIn\%}:(o:\mathsf{unknown})\Rightarrow\mathsf{readonly}\ \mathsf{string}[\,],
-```
-
-the keys the loop visits: strings, for any value. Where the body reads the
-entry at the key, `P[k]` with `P` the loop's operand spelled again (a name,
-or a chain of named reads from one), before anything that could change the
-entry runs, the loop steps the entries instead,
-`for (const e of %Iterate:ForIn%(P)) { const k = e[0]; S' }` with each such
-read in $`S'`$ the step's value `e[1]`:
-
-```math
-\mathtt{\%Iterate{:}ForIn\%}:\forall V.\ (o:\{\mathsf{readonly}\ [k:\mathsf{string}]:V\})\Rightarrow
-  ()\Rightarrow\{\mathsf{readonly}\ \mathsf{value}:[\mathsf{string},V]\}\mid\mathsf{null},
-```
-
-each step a fresh array of a key the loop visits and the value the object
-holds under it at the step. A dictionary holds no prototype, and a plain
-object's, `Object.prototype`, no enumerable key, so every key visited is the
-object's own, whose value the index's contract states. The reads rewritten
-are those of the statements the body starts with that run no code and write
-no property, outside the functions they define, and the whole initializer of
-the declaration after them; the operand's name is written nowhere in the
-outermost function holding the loop (the file, at the top level), and a
-chain of reads is read from a body that runs no code and writes no
-property, so each read finds the object the loop enumerates and the value
-the step read (`forInEntryReads` in `tools/fragment-support.mts`). A read
-after a call is the dictionary's read, `V | undefined`: the call may have
-removed the key. `try B catch (e) C finally
-F` names $`C`$'s entry as the handler of $`B`$'s nodes that may throw, with `e`
-at `unknown` (the only annotation admitted), and compiles $`F`$ on every way
-out: after a normal completion, before each `return` with the value held,
-before each `break` or `continue` leaving it, then on to the jump's target
-through the `finally` of every enclosing `try` the jump also leaves, after a
-throw with the thrown value held and rethrown. A `return`, `throw`, `break`
-or `continue` in $`F`$ leaves by its own way, as JavaScript's replaces the
-pending completion:
-
-```math
-\frac{\Gamma\vdash_R B\ \text{with throws}\mapsto(\mathsf{unknown},\Gamma)\vdash_R C\quad
-      \Gamma\vdash_R F\ \text{on each way out}}
-     {\Gamma\vdash_R\ \mathsf{try}\ B\ \mathsf{catch}\ (e)\ C\ \mathsf{finally}\ F}\ \textsf{try}
-```
-
-The handler's and finalizer's entries state each cell at its contract, since
-a throw may leave after any part of the body ran.
-
-## Guards
-
-Every guard is a tag test ([SEMANTICS](SEMANTICS.md#operational-language)),
-refining a tested immutable binding by the tag slice $`T_q`$ of its type on
-each edge ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
-A call of a [user-defined guard](#user-defined-guards) narrows by such tests
-of its argument, run again after the call:
-
-```math
-\frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-typeof-object}
-```
-
-```math
-\frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal B\quad
-      \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
-```
-
-with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
-`Array.prototype`'s and `Function.prototype`'s own string keys, array
-indices, and the keys the model reserves). `in`'s answers are by keys the
-types state (`inAnswer`): a failed test drops an arm owning the key, a passed
-one drops an arm whose key bounds exclude it and the prototype key, and every
-primitive; a passed test promotes an optional key to a field (`promote`). A
-test against a claimed singleton $`c`$ of any primitive kind, and against a
-field of an immutable binding's object, narrows the binding or the object's
-arms:
-
-```math
-\frac{\Gamma\vdash a:A\quad \Gamma\vdash k:\{c\}\quad
-      \Gamma[x:T_{\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_1\quad
-      \Gamma[x:T_{\lnot\mathsf{eq}(c)}(\Gamma(x))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (x\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-singleton}
-\qquad
-\frac{\Gamma\vdash k:\{c\}\quad
-      \Gamma[o:F^{f}_{\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_1\quad
-      \Gamma[o:F^{f}_{\lnot\mathsf{eq}(c)}(\Gamma(o))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (o.f\equiv k)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field}
-```
-
-with $`F^f`$ the field slice. The truthiness of a field of an immutable
-binding's object, where an arm of it leaves the field optional or unnamed (so
-that no fact about what the field holds is claimed, as of an
-`IteratorResult`'s `done`), narrows the object's arms the same way, the read
-dispatched on its truthiness:
-
-```math
-\frac{\Gamma[o:F^{f}_{\mathsf{truthy}}(\Gamma(o))]\vdash_R S_1\quad
-      \Gamma[o:F^{f}_{\lnot\mathsf{truthy}}(\Gamma(o))]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field-truthy}
-```
-
-Where the singleton $`c`$ is a string or a number other than a zero, a passed
-test leaves the operand $`c`$ alone, whatever its type was, `unknown`
-included: $`T_{\mathsf{eq}(c)}(A)=\{c\}`$ for every $`A`$ the test may pass
-on (`tagMember`). A disjunction's passed outcome came from either operand,
-and each slot holds what either path left it, a slot one path leaves at its
-input type keeping that type:
-
-```math
-\frac{\Gamma_1=\Gamma[a\mapsto\mathsf{true}]\quad
-      \Gamma_2=\Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{true}]\quad
-      \Gamma_1\sqcup_\Gamma\Gamma_2\vdash_R S_1\quad
-      \Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{false}]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (a\parallel b)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-or}
-\qquad
-(\Gamma_1\sqcup_\Gamma\Gamma_2)(x)=\begin{cases}\Gamma(x)&\Gamma_1(x)=\Gamma(x)\lor\Gamma_2(x)=\Gamma(x)\\
-  \Gamma_1(x)\cup\Gamma_2(x)&\text{otherwise}\end{cases}
-```
-
-with $`\Gamma[a\mapsto q]`$ the refinement by $`a`$'s answer $`q`$, and `&&`'s
-false outcome the same join. Each edge into $`S_1`$ is checked against the
-joined context, so `v === "dense" || v === "sparse"` leaves `v` at
-`"dense" | "sparse"` (`literal-union-narrowing`). An operand testing a field
-of an immutable binding's object refines that object by its field slice
-$`F^f`$, as `if-field` does, so `n.kind === 1 || n.kind === 2` leaves `n` at
-the arms whose `kind` admits 1 or 2 (`field-test-disjunction`).
-
-`x === y` with `x` claimed at a union of
-singletons is dispatched as the disjunction over its singletons $`c`$ of
-$`x\equiv c\land y\equiv c`$ (`savedSplit` where `x` has effects). Strict
-equality without a singleton is the $`\equiv`$ operator of `arith`, which
-narrows nothing and is refused between two operands that may both be objects
-without a field. `x instanceof C`, for a class the file declares at its top
-level, is $`\mathsf{hasKey}(\kappa_C)`$ ([derived form](SOURCE-ELABORATION.md#derived-source-forms)).
-It does not narrow `unknown`: an object gets $`C`$'s prototype without $`C`$'s
-constructor running (`Object.create(C.prototype)`), so the key is no evidence
-of $`C`$'s fields. `Array.isArray(x)` narrows a record or dictionary arm of $`x`$
-to the built-in `sparse ReadonlyArray<unknown>` where it holds
-([**tag-array**](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)), and keeps
-`unknown`, which the array invariant says nothing of:
-
-```math
-\frac{\Gamma(x)=A\quad A\preceq_{\mathsf{isArray}=\mathsf{true}}B\quad \Gamma[x:B]\vdash_R S_1\quad
-      \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-array}
-```
-
-### User-defined guards
-
-A type guard `function g(x: A): x is T` and an assertion function
-`function f(x: A): asserts x is T` have function types of two signatures each,
-the plain one and a **promise signature** about the parameter $`x`$, the
-$`p`$-th:
-
-```math
-g : (A) \to \mathtt{boolean}\ \land\ (A) \to T\,[\mathsf{guards}\ p]
-\qquad
-f : (A) \to \mathtt{void}\ \land\ (A) \to T\,[\mathsf{asserts}\ p]
-```
-
-A promise signature's result operand is the promise's type. Its meaning is the
-[effect-qualified call contract](SEMANTICS.md#effect-qualified-call-contracts)
-whose result family relates the result $`v`$ to the $`p`$-th actual $`v_p`$:
-a call of $`g`$ returns `true` with $`v_p \in T`$, or `false`; a normal return
-of $`f`$ is `undefined` with $`v_p \in T`$. The same declaration reads the
-same in every position: a function type, a method, an imported module's
-declaration and a closure's annotation all carry both signatures.
-
-The promise is proved at the definition. The body is checked at the promise
-signature with the goal that each return meets the result family for the
-argument $`v`$ the call passed. The checker tracks the slots holding $`v`$,
-which a write of the parameter or a default replacing it leaves, and at each
-return asks for the answer and the argument's type where that answer is
-possible:
-
-```math
-\frac{\begin{array}{c}\Gamma_0 = x{:}A \qquad
-      \forall\ \mathsf{return}\ e \text{ at } \Gamma \text{ with } x \text{ holding } v:\
-      \Gamma\vdash e : \mathtt{boolean} \quad
-      \bigl(\Gamma\vdash e : \mathtt{false}\ \lor\ \Gamma_{e=\mathtt{true}} \vdash v : T\bigr)\end{array}}
-     {\vdash g : (A) \to T\,[\mathsf{guards}\ p]}\ \textsf{guard-def}
-```
-
-```math
-\frac{\forall\ \text{normal completion at } \Gamma \text{ with } x \text{ holding } v:\
-      \Gamma\vdash v : T}
-     {\vdash f : (A) \to T\,[\mathsf{asserts}\ p]}\ \textsf{assert-def}
-```
-
-$`\Gamma_{e=\mathtt{true}}`$ is $`\Gamma`$ refined by what the returned value
-being `true` establishes: a test of a slot (`typeof x === "string"`, a strict
-equality, a conjunction or disjunction of these), a Boolean slot carrying such
-a test's answer, or a call at a promise signature. A test of a value read
-from a field refines the object it was read from, while the read is current,
-to the arms whose field answers the test so (`return s.kind === "circle"`).
-A branch before the return refines $`\Gamma`$ itself. A return
-is claimed at its value's own type, so a `return false` answers `false`
-alone.
-
-A call consumes the promise. The callee is any expression whose type holds
-a promise signature its actuals meet: a name, a method or a field of an
-object, a bound function. Of an overloaded callee's promise signatures, the
-call narrows by one whose parameters admit its actuals. The call's `true`
-result, or its normal return, leaves the promised actual $`a`$, a name, a
-$`T`$:
-
-```math
-\frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
-      \Gamma[a_p : T]\vdash_R S_1\quad \Gamma\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (g(\vec a))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-guard}
-\qquad
-\frac{\Gamma\vdash f : (\vec A)\to T\,[\mathsf{asserts}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
-      \Gamma[a_p : T]\vdash_R S}
-     {\Gamma\vdash_R\ f(\vec a);\ S}\ \textsf{assert-call}
-```
-
-A conditional expression narrows its first arm the same way, a closure the
-arm creates reading the actual at $`T`$ (`guard-ternary-closure`):
-
-```math
-\frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
-      \Gamma[a_p : T]\vdash e_1 : B\quad \Gamma\vdash e_2 : B}
-     {\Gamma\vdash g(\vec a)\ ?\ e_1 : e_2 : B}\ \textsf{cond-guard}
-```
-
-A `false` outcome narrows nothing: the promise states nothing of it
-(`invalid-type-guard-false-branch`). Passing a guard where a plain predicate
-is expected forgets its promise signature, as an intersection's operand.
-Binding a prefix of a guard's actuals (`g.bind(r, …)`) keeps a promise about
-an actual past the prefix, at its new position.
-
-A closure's written promise is proved whatever its claim offers: one of the
-signatures its code is checked at states that promise over the annotation's
-whole domain, admitting every receiver and argument the annotation admits,
-at a type within the written one, or the closure is refused. A guard
-closure passed where a callback binding more parameters is expected
-(`every`'s or `filter`'s predicate) is claimed at its own signature, its
-promise and the longer signature, its body checked at each
-(`guard-closure-callback`). Where the longer signature states the
-closure's written promise (`filter`'s guard overload,
-[`native-guard-filter`](#prototype-contracts)), the closure is claimed at it
-with that promise, and its body is checked at it with the promise goal. The
-reviewed `every` states no guard overload (`every<S>`), so a call passing a
-guard does not narrow its receiver.
-
-An imported guard is read at its declared type, both signatures; its promise
-is the import assumption of [the trust surface](DESIGN.md#trust-surface),
-discharged where the imported module's own run verifies the guard. A guard
-of a host family is read instead from its audited table entry
-([guard recognition](HOST-FAMILIES.md#guard-recognition)), never at its
-declared predicate; the entry rests on the host assumption that the
-package's enum objects and its guards' bindings are never written, by the
-program or by external code, and a source write to them is refused.
-
-Implementation: `CallEffects.Effect` (`guards p`, `asserts p`) gives the
-contract; `ControlFlow.Goal` states a body's goal and `checkReturnResult` its
-check at a return; [PromiseCalls.lean](../lean/Verification/Programs/PromiseCalls.lean)
-holds the yields of a returned value (`yieldFollows_sound`) and the promise
-call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
-narrowed claim after a call, which the edge check verifies. Pipeline cases:
-`type-guards`, `type-guard-objects`, `type-guard-methods`,
-`type-guard-value-import` and `type-guard-overload-value-import` verify;
-`invalid-type-guard-promise`, `invalid-type-guard-undefined`,
-`invalid-type-guard-default`, `invalid-type-guard-object`,
-`invalid-type-guard-field-test`,
-`invalid-type-guard-method` and
-`invalid-assertion-promise` are refused at the return where the argument is
-not a $`T`$, each run under Node by `node-runs.mts`.
 
 ## Enums
 

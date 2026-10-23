@@ -429,13 +429,13 @@ Language Specification* as of this writing). Sections relied on by name:
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
 **Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host),
-[SOURCE-MODEL: the model in brief](SOURCE-MODEL.md#the-model-in-brief),
+[SOURCE-MODEL](SOURCE-MODEL.md),
 [DESIGN: trust surface](DESIGN.md#trust-surface),
 [SEMANTICS: operational language](SEMANTICS.md#operational-language),
 [SEMANTICS: graph code](SEMANTICS.md#graph-code),
 [SEMANTICS: the array invariant](SEMANTICS.md#the-array-invariant),
 [SOURCE-CONTRACTS: async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await),
-[SOURCE-CONTRACTS: loops and spreads over iterables](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables),
+[SOURCE-ELABORATION: loops and spreads over iterables](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables),
 [SOURCE-ELABORATION: patterns](SOURCE-ELABORATION.md#patterns),
 [SOURCE-CONTRACTS: classes](SOURCE-CONTRACTS.md#classes),
 [CALLABLES](CALLABLES.md), [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),

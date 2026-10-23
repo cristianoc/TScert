@@ -306,7 +306,7 @@ graph/claim mapping, and distinguish array-store metadata from argument
 packs, which hold values and have no holes.
 
 For inferred callable effects, follow the
-[elaboration/certification boundary](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
+[elaboration/certification boundary](docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
 Annotation translation must not strengthen an ordinary arrow. Producer inference
 proposes a qualified signature; definition evidence must prove both safety and
 the effect before application consumes it. Never recognize callback syntax at

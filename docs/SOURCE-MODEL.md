@@ -6,17 +6,13 @@ and permitted operations a program may rely on. An execution world assigns a
 fixed type to every allocated location; current contents may vary within it.
 The formal definitions belong to [SEMANTICS](SEMANTICS.md), the type language
 to [POSITIVE-TYPES](POSITIVE-TYPES.md), and the checking rules to
-[PROGRAM-TYPING](PROGRAM-TYPING.md). This overview connects those definitions
-to source constructs and the host assumptions they require.
+[PROGRAM-TYPING](PROGRAM-TYPING.md). This document connects those
+definitions to source values, the heap and the host assumptions they
+require. How annotations and library declarations are read is in
+[Source contracts](SOURCE-CONTRACTS.md), and how each source form is lowered
+in [Source elaboration](SOURCE-ELABORATION.md).
 
-## The model in brief
-
-The calculus describes execution, types and the conditions under which a
-program may use a value. This section introduces the main concepts;
-[SEMANTICS](SEMANTICS.md), [POSITIVE-TYPES](POSITIVE-TYPES.md) and
-[PROGRAM-TYPING](PROGRAM-TYPING.md) own the formal definitions and rules.
-
-### Values
+## Values
 
 Values include JavaScript primitives and allocated objects. Object properties
 refer to heap locations. Arrays have element storage; callable objects also
@@ -30,11 +26,11 @@ Literal type `0` includes both positive and negative zero; equality against
 defines their numeric representation and comparison.
 
 The supported equality
-comparisons are specified under [guards](#guards) and in the
+comparisons are specified under [tag tests](#tag-tests) and in the
 [operational language](SEMANTICS.md#operational-language). Operations requiring
 unsupported coercions are refused at the source boundary.
 
-### Source-value boundary
+## Source-value boundary
 
 Let $`J`$ be the JavaScript values: primitives and allocated objects, including
 arrays, functions and constructors. Internal array stores are calculus values
@@ -58,7 +54,7 @@ The calculus clause `source` denotes $`J`$ independently of the built-ins'
 record invariants; calculus `top` also includes internal stores. The
 [clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
 
-#### Slices of the value universe by tag tests (design)
+### Slices of the value universe by tag tests
 
 A tag test splits $`J`$ by the kind of a value, which no heap write changes.
 Every source value (`isSourceVal`) is of exactly one kind: `null`,
@@ -71,11 +67,15 @@ J = \mathsf{nul}\cup\mathsf{undef}\cup\mathsf{bool}\cup\mathsf{num}\cup\mathsf{s
 ```
 
 a disjoint union, and `tagHolds` of each shape tag is decided by the kind
-alone. The rule: where a test of a tag $`t`$ answers $`q`$ on a value at the
-`source` clause, the value is at the union of the kinds whose members answer
-$`q`$; a primitive kind is its existing clause, and $`J_{\mathrm{ref}}`$ and
-$`J_{\mathrm{fun}}`$ are the `source` clause restricted to the kind, new
-clauses whose meaning is $`\{v \in J \mid \mathsf{tagHolds}\ \mathsf{isRef}\ v\}`$
+alone (a lemma of `isSourceVal` and `tagHolds` by cases). A `true` answer of
+`Array.isArray` on a value at the `source` clause gives the built-ins'
+`readonly unknown[]` (`arraySlice`). A test's answer on a slot is a value
+fact, held by the slot's value, so a call does not end it.
+
+The calculus has no clause for $`J_{\mathrm{ref}}`$ or $`J_{\mathrm{fun}}`$,
+so a `typeof` test on `unknown` narrows nothing. The proposed rules
+(conjectured sound, not implemented) add them as the `source` clause
+restricted to the kind, $`\{v \in J \mid \mathsf{tagHolds}\ \mathsf{isRef}\ v\}`$
 and its `isFun` analogue:
 
 ```math
@@ -88,91 +88,20 @@ and its `isFun` analogue:
 
 $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ is $`J_{\mathrm{ref}}`$ with an
 own-key bound excluding the store key `[]`, the key `Array.isArray` reads.
-A `true` answer of `Array.isArray` is the built-ins' `readonly unknown[]`,
-as `arraySlice` gives it today. The partition is a lemma of `isSourceVal`
-and `tagHolds` by cases. A test's answer on a slot is a value fact, held by
-the slot's value, so a call does not end it.
 
-**What the slices do not give: the dictionary view.**
-`{ readonly [key: string]: unknown }` is `dictViewT` at the string keys and
-$`J`$: an object without call code, owning no `[[proto]]` and no
-`[[host]]`, every present string-keyed field's contract within $`J`$. A
-member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ may own a prototype
-(a class instance, an object `Object.create` made) or be a host object (a
-`Map`, a `Date`), which pass `typeof v === "object"`, `v !== null` and
-`!Array.isArray(v)` alike. So a guard over `unknown` that tests exactly
-those promises more than the model proves, and stays refused under the
-rule; the front end's readers test them over `JsonValue` instead (below).
+No slice is the dictionary view. `{ readonly [key: string]: unknown }` is
+`dictViewT` at the string keys and $`J`$: an object without call code,
+owning no `[[proto]]` and no `[[host]]`, every present string-keyed field's
+contract within $`J`$. A member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$
+may own a prototype (a class instance, an object `Object.create` made) or be
+a host object (a `Map`, a `Date`), which pass `typeof v === "object"`,
+`v !== null` and `!Array.isArray(v)` alike, so a guard over `unknown` that
+tests exactly those and promises a dictionary is refused. The front end's
+readers of JSON take their input at the structural `JsonValue`
+([library globals](SOURCE-CONTRACTS.md#library-globals)), which holds no host
+object, class or prototype, and over which those tests decide the arms.
 
-**Reading keys of a value of $`J_{\mathrm{ref}}`$ (design A, its
-limits).** Design A promises what the tests give, `isObject(v: unknown): v
-is object` and `isList(v: unknown): v is readonly unknown[]`, and reads keys
-after an `in` test, `isObject(v) && "kind" in v && typeof v.kind ===
-"string"`. Three facts of the model bound it:
-
-1. Source `object` denotes $`J_{\mathrm{ref}}\cup J_{\mathrm{fun}}`$, which
-   holds classes, and `k in C` of a class is refused: the model binds a
-   class's static members apart from the class value, so the test has no
-   answer there (`` `in` on a class value ``, measured 2026-10-19 on
-   `function f(v: object) { return "k" in v; }`). A guard promising
-   `object` loses the `typeof` slice its body tested; `in` after it is
-   refused.
-2. Presence alone gives a read no contract: `key_slice` and key promotion
-   (`BranchRefinement`) promote a contract the value's type states. A read
-   of `v.k` after `"k" in v` on $`J_{\mathrm{ref}}`$ needs a rule of its
-   own:
-
-   ```math
-   \frac{\Gamma\vdash v:J_{\mathrm{ref}}\qquad \texttt{"k" in } v\ \text{answers}\ \mathsf{true}\qquad v\ \text{no host object}}
-        {\Gamma\vdash v.\mathtt{k} : J}\ \textsf{read-present}
-   ```
-
-   It is sound where the calculus's read, own field or prototype chain,
-   finds what JavaScript's does and every source-keyed field of an object
-   of $`J`$ holds a value of $`J`$, the built-ins' invariant of the
-   `source` row (`sourceTy_exc`), to be stated for this read. The premise
-   "no host object" is its limit: a host object's prototype holds
-   accessors (`Map.prototype.size`), which JavaScript runs and the
-   calculus's read does not, and $`J_{\mathrm{ref}}`$ holds host objects,
-   so no test the guards write establishes it. A read after `in` on a value
-   that may be a host object is refused, located.
-3. Enumeration is its own contract: `Object.keys(v)` of $`v\in J_{\mathrm{ref}}`$
-   lists its own enumerable string keys, whatever their values, which the
-   reviewed overlay admits today (`Object.keys(v)` of `v: object`
-   verifies, measured 2026-10-19).
-
-So design A verifies a caller over `unknown` only where its reads are of
-values the model knows to be no host object. The front end's readers of
-the claims, the type graphs and the diagnostics take their input at
-`JsonValue` ([the contract](SOURCE-CONTRACTS.md#library-globals)), a
-structural contract: a value of `JsonValue`'s shape, whatever built it. It
-holds no host object, no class and no prototype, and over it the tests the
-guards write decide the arms:
-
-- `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`
-  (`JsonValue`, `JsonObject` and `JsonRead` in `calculus.mts`): the guards
-  are `isObject(v: JsonRead): v is JsonObject`, with `typeof v ===
-  "object" && v !== null && !Array.isArray(v)`, and `isList(v: JsonRead):
-  v is readonly JsonValue[]`, with `Array.isArray(v)`, where `JsonObject`
-  is `{ readonly [key: string]: JsonValue }` and `JsonRead` is `JsonValue |
-  undefined`, a read of a key of a `JsonObject`. A field is read at
-  `JsonRead`, and a malformed input keeps its diagnostic. A guard of
-  literals (`isArrayPresence`, `isIndexClass`) takes `unknown`, which a
-  `JsonRead` meets.
-- The values given to these readers that are not parsed are built at
-  `JsonValue`: `diagnostic.mts` passes `decodeGraph` a decoded singleton
-  clause in a fresh row (`[[record(v, ["strLit"])]]`), `pipeline/test.mts`
-  passes it in-memory graphs, and `diagnostic-view.mts` passes `printType`
-  (which calls `decodeClaimType`) the result of `surface.lift(…)`, which
-  `lift` states at `JsonValue`. The lifter builds records whose absent
-  parts are left out or written as `null`; a record is no `JsonValue` in
-  the model (an open record meets no index), so the lifter's own
-  functions stay refused at that conversion.
-- The slices of $`J`$ above stay the general rule for a test on `unknown`;
-  `read-present` waits on a stance on host objects, which these readers do
-  not need.
-
-### Void
+## Void
 
 The source type `void` denotes the same JavaScript-value universe as `unknown`.
 A `void` result supplies no guarantee about which member is returned. A `void`
@@ -180,7 +109,7 @@ parameter must support every member. Strict equality of two source values
 produces a Boolean by the primitive and object equality rules. Membership
 supplies no number, undefined, field or call guarantee.
 
-### Heap and contracts
+## Heap and contracts
 
 The **heap** maps locations to their current values. A **world** assigns each
 allocated location a fixed type, its storage contract. A heap satisfies a world
@@ -199,7 +128,7 @@ resource budget used by proof search.
 [Worlds and recursive types](SEMANTICS.md#computations-and-recursive-types)
 give the definitions and their relation to the cited step-indexed models.
 
-### Current-content assertions
+## Current-content assertions
 
 A cell's current contents can be more precise than its lifetime contract.
 For example, `{ value: boolean = true }` describes a Boolean cell whose current
@@ -214,281 +143,12 @@ The source-entry rules determine which of these facts cross a checkpoint.
 
 An unrestricted call invalidates heap observations because the callee may write
 through an alias. A certified heap-preserving call can retain facts on normal
-return, under the [effect rules](#inferred-call-effects-elaboration-and-certification).
+return, under the [effect rules](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
 Immutable values remain available. A closure's initial heap assumptions follow
 from storage contracts, rather than observations made when the closure was
 created. See [source checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints).
 
-### Mutable bindings
-
-A `let` and an assigned parameter have a storage contract fixed where they
-are declared: the annotation, or the producer's proposal (TypeScript's
-widened or evolved type), against which the initializer and every write are
-checked. One that every closure mentioning it sees at its value when the
-closure was created (no closure writes it, and no write follows such a
-closure's creation) is a slot of its activation, rebound at each write: what
-it holds is its type at each point, and no call, closure run or throw
-changes it. Any other is a private cell, which a closure holds the identity
-of ([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
-A `const` copy holds a snapshot, and an unannotated constant of a
-named union is held at the union's arms, as an annotated one is, an
-annotated one initialized by an object literal at the arms the literal may
-be of (TypeScript's narrowing on assignment); a constant's object literal
-used whole where an optional field it leaves out is expected is claimed
-with its exact keys
-([rules](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). A `let`
-statement whose initialized bindings nothing in their scope writes, closures
-included, is a `const`: each holds its initial value throughout, so a test
-narrows it and a `let` pattern binds (`LET-CONST`). A written `let` held in a
-cell has current contents that support primitive refinements and nullish
-exclusions.
-A guard can remove null or undefined from its read type until an effect
-invalidates that observation.
-A written `let` pattern binds hidden names, then each source name is a
-cell of its own at its value.
-
-A local may hide an outer binding of its name. The parser renames it, by
-the declaration TypeScript binds each reference to, to a name no source
-spells (`x@line:col`), so the lowering never meets two bindings of one name:
-consistent renaming of bound variables, for `const`, `let`, parameters, patterns, closure
-parameters, `for...of` and `catch` bindings in any body
-([shadowing](SOURCE-ELABORATION.md#derived-source-forms)). A mention above the
-declaration, a closure's included, or in its own initializer is the
-binding before it is initialized ([lexical bindings before
-initialization](#lexical-bindings-before-initialization)).
-
-<a id="lexical-bindings-before-initialization"></a>
-**Lexical bindings before initialization.** A `let`, `const` or class
-declaration's binding exists from the entry of its scope and is
-uninitialized until its declaration runs; reading, writing or `typeof` of it
-then throws a `ReferenceError` (the temporal dead zone). A closure holds the
-binding, never its value, so whether a read through a closure throws depends
-on when the closure runs, not on where it is written: in
-
-```ts
-const visit = (n: Node): void => { if (wanted(n)) found.push(n); };
-const wanted = (n: Node): boolean => n.kind === 79;
-```
-
-`visit` reads `wanted` successfully at every call made after the second
-line, and throws at a call made before it.
-
-**Scope.** The model covers a `let` or `const` that declares one name (no
-pattern), in a function body or a block statement, a loop's body included.
-Each entry of the block creates its bindings anew, so a closure created in
-one iteration keeps that iteration's. Refused at their location, as
-explicit restrictions, each the behaviour of reading a binding of an
-environment the model does not represent before its initialization: an
-early binding (below) declared by a pattern; one in a `switch`'s case block
-(one environment for every clause, entered after the discriminant, whose
-clauses may skip a declaration); a class declaration's binding; a
-generator's body; a parameter default that mentions its own parameter or a
-later one, a closure's mention included (`initializedBefore`); and a loop
-head's binding mentioned in its own head (`for (const xs of xs)`). A module's constants keep the initialization order check
-(`Sites.checkInitializationOrder`), which refuses an initialization step
-that may reach a constant not yet bound; it does not model the module's dead
-zone for them, a caught `ReferenceError` there or a module cycle. A
-module-level `let` is a [module cell](#module-cells).
-
-A binding is **early** when one of its mentions is in a closure created
-before its initialization point, which may run at any time after its
-creation, or when a
-mention in the scope's own code is not dominated, within the same
-activation, by the binding's **initialization point**: the write after its
-initializer completed normally, which follows the initializer's own
-evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
-declaration list at a time. A function literal that is a constant's whole
-initializer is the exception: creating it runs nothing, so its reads of the
-constant are the [recursive constant](#recursive-constants)'s self entry,
-not checked accesses. Every other binding is lowered as before. A function
-declaration in a body, which JavaScript creates when its block is entered
-(`f(); let x = 1; function f() { return x; }` throws), is outside the
-fragment (refused at the declaration); the parser's analysis takes its
-creation at the block's entry.
-
-**Representation.** An early binding $`x`$ of storage contract $`T`$ is a
-cell of the block's activation, allocated when the block is entered, before
-its statements,
-holding the activation's **uninitialized marker** $`u`$: one fresh object per
-block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`), and the only
-objects that own it. This is a representation invariant, an obligation of
-the lowering: every string key a JavaScript object has is represented
-under $`\mathsf{esc}`$, whose image misses the model's reserved spellings
-(`reservedSpelling_escapeKey`, [keys](SEMANTICS.md)); the model's own
-reserved keys (`[[proto]]`, `[]`, `[[code]]`, `[[host]]`, a class's
-prototype key) are other spellings; and no allocation but the marker's,
-source, native or host, adds $`\kappa_u`$, so no source-visible value or
-object on its prototype chain owns it. `copiedKey` excludes $`\kappa_u`$,
-as it excludes `[[host]]`, though by confinement (below) no copy receives a
-marker. The cell's
-contract is $`T\cup U`$, with $`U`$ a label of its own whose one clause
-requires $`\kappa_u`$; closures and function declarations capture the cell
-itself, never its contents.
-
-**Checked access.** A read of $`x`$ reads the cell once, tests that value
-for $`\kappa_u`$ (the calculus's `hasKey`, which is false of a primitive;
-never JavaScript's `in`, which throws on one), throws on the true edge, and
-on the false edge proceeds with the same value, the test's slice removing
-$`U`$ (`tagSlice`), so at $`T`$:
-
-```math
-\frac{\Gamma\vdash x:\mathsf{cell}(T\cup U)}
-     {⟦x⟧=\mathsf{let}\ v=\mathsf{read}(x)\ \mathsf{in}\ \mathsf{if}\ \kappa_u\in v\ \mathsf{then}\ \mathsf{throw}\ \iota_{\mathsf{RE}}()\ \mathsf{else}\ v,
-      \qquad \Gamma\vdash ⟦x⟧:T\ \text{on its normal edge}}\ \textsf{early-read}
-```
-
-Only checked accesses read the cell, so the marker never reaches a value
-position: a return, an argument, a spread, a copy or a serialization. The
-operators keep ECMAScript's order: `x = e` evaluates `e`, then checks, then
-writes; `x += e`, an update and a logical assignment begin with a checked
-read; `typeof x` is a checked read followed by the test. Assigning a `const`
-is refused by TypeScript and is outside the fragment.
-
-**Initialization.** The declaration's evaluation, where the source has it,
-writes its initializer's value into the cell after the initializer
-completes normally, checked at $`T`$; `let x;` writes `undefined`. An
-initializer that throws leaves the marker, so a closure retained from that
-activation throws at every later read, as JavaScript's does.
-
-**The throw.** $`\iota_{\mathsf{RE}}`$, `%ThrowUninitialized%`, allocates a
-`ReferenceError` by the realm's intrinsic constructor, whatever a source
-binding of that name holds, and throws it: the read's exceptional edge,
-which reaches the enclosing handler as any throw does, with no fact of the
-normal edge. Its footprint is empty over storage that existed before it;
-effects already performed, by an assignment's right side for one, remain.
-
-**Precision.** A checked read always has its exceptional edge: where the
-cell's current contents are known at $`T`$, the test is still undecided for
-a $`T`$ that is an open record, a dictionary or `unknown`, and after a call
-the cell is again at $`T\cup U`$. Safety, a value, a step or a throw, holds
-either way; an exceptional guarantee that excludes the throw would need a
-durable initialization fact, which the model does not have.
-
-**Ownership.** The parser marks each early binding in the Fragment
-(`markEarly`) and lists `%ThrowUninitialized%` where a file has one; Lean
-lowers a marked binding as above, allocating the cells at the list's entry
-(an `early` node of the flow graph), capturing the cell and the intrinsic in
-every closure that mentions the binding, and lowering every mention as a
-checked access, in graph code and in closure term code. A mention of an
-unmarked binding before its initialization has no binding in scope there and
-is refused by the lowering. The producer proposes $`T`$ and the claims at
-the checked accesses; no claim can omit a check, replace the cell by a
-value, or make an initialization an unchecked write
-(`early-bindings`, `invalid-early-binding-stale`, run under Node; the forged
-claims of `pipeline/test.mts`: a dropped contract, a contract narrower than
-the annotation, a checked access claimed past the contract). The stated
-type $`T`$ is the annotation, or a function literal's parameter and result
-annotations; an early binding with neither is refused, and so are the
-compound assignment, update and logical assignment of an early `let`, an
-assignment to one in closure term code, a key-adding write of an object one
-holds, and an initializer that reads its own binding.
-
-<a id="recursive-constants"></a>
-**Recursive constants.** A constant whose initializer is a function literal,
-an arrow or a function expression with nothing else evaluated, reads its own
-name inside the literal's body and parameter defaults:
-`const visit = (n: Node): R => … visit(child) …`. Creating the literal runs
-neither, so every such read runs during an invocation, after the binding
-holds the closure. The read is the code's **self entry**: every invocation of
-graph code enters it with the invoked object, the exact
-$`\mathsf{obj}(\mathit{fs},\mathsf{graph}(\ldots))`$ the call step matched, in
-the slot after the captures ([graph code](SEMANTICS.md#graph-code)); a bound
-function forwards to its target first, so self is the original closure, never
-the wrapper. A nested closure captures the self entry as any other slot. The
-literal's code, of fixed arity, is checked from the frame with self at the
-closure's claimed type, and the closure rule proves the closure meets that
-whole type, its effects and exceptional guarantee included, by induction on
-the step index (`funGraphSelf`,
-[program typing](PROGRAM-TYPING.md#judgments-and-constructor-views)): at
-budget $`n`$ every invocation runs at a lower index, where the induction
-hypothesis gives self its type. A read of the self entry is a flow of the
-closure like any read of the constant, so where it is expected at a
-signature binding more parameters, as `some`'s callback in `const binder =
-(t: Term): boolean => t.k === "union" && t.parts.some(binder)`, the closure
-is offered that signature ([offers](SOURCE-ELABORATION.md#source-closures-and-their-annotations))
-and its claim holds it; the read meets it as a conjunct of the claim
-(`recursive-constant-callback`). The producer types the body's reads at the
-constant's annotation or the literal's own signature, which its result
-annotation completes, beside the signatures it is offered, with the
-footprint it proposes for the closure:
-every such closure is assumed to change nothing, and rounds of inference
-raise the assumption to what the closure's claim then shows, as for
-[function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects);
-the checker derives each from the claimed type. A `find` callback calling
-a recursive constant whose body changes nothing is therefore within the
-empty footprint, its element `T` (`find-recursive-constant`); one whose
-body shrinks the array is the unrestricted callback
-(`invalid-find-recursive-constant-mutation`, run under Node), and a
-closure whose body writes, claimed at the empty footprint, its self entry
-with it, is refused in search and in checking (a control over
-`recursive-constants`). A `let` read by its own initializer's closure is a
-cell, which a later assignment may rebind, never a self entry
-(`invalid-find-recursive-cell`, run under Node). Every
-other read of a binding in its own initializer is refused at its location
-(`recursive-const-before-initialization-refused`), and module initialization
-order is checked as before (`Sites`).
-
-<a id="module-cells"></a>
-**Module cells.** A module-level `let x` that the module does not export,
-in no form (no `export let`, no `export { x }` or alias of it), is an
-[early binding](#lexical-bindings-before-initialization) of the module's
-scope, whatever its mentions: a **module cell**. The initialization unit
-allocates it at its entry, before any statement and before the module's
-functions and classes exist, holding the module's uninitialized marker,
-and binds a module constant to it, so a closure or function created before
-the declaration captures the one cell, as `const get = () => x; let x = 1;
-get();` needs. The declaration writes the initializer's value after it
-completes normally; `let x;` writes `undefined`. Every mention of $`x`$, in
-the initialization unit, in every module function and in every closure, is
-a checked access, so a run that reaches $`x`$ before its initialization
-throws the `ReferenceError` JavaScript throws, and no initialization order
-check is needed for it:
-
-```math
-\frac{\mathtt{let}\ x\ \text{at the module's top level, not exported}\quad C_x\ \text{its one contract}}
-     {\Gamma_f(x)=\mathsf{cell}(C_x\cup U)\ \text{for every unit } f\ \text{of the module}}\ \textsf{module-cell}
-```
-
-$`\mathsf{cell}(C)`$ is the private cell's invariant writable field at
-$`C`$. $`C_x`$ is one contract for the binding, stated once in the claims
-and the same in every unit: its annotation. The module's units read the
-binding, so it is a unit boundary, whose type is written, as a module
-function's signature is; an unannotated module `let` is refused at the
-gate (`invalid-unannotated-module-let`). The initialization unit checks
-the initializer against $`C_x`$, and every unit each of its writes,
-`undefined` included for `let x: T;`; no unit narrows it. A unit's theorem assumes $`x`$ at
-$`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
-entry and after each call; the facts a unit establishes of the contents
-follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
-a write or a call ends them, a join keeps only what every edge proves, and
-a closure captures the cell's identity, never its contents. Composing the
-units' theorems for a module execution, with the cell's contract as a
-shared invariant of the heap every write preserves, is
-[module composition](../WORK.md#module-composition). A `var`, whose binding
-exists from the module's entry at `undefined` and may be redeclared, and an
-exported `let`, a live binding importers read, are outside the fragment. A
-module `let` stays a cell whatever writes it; a certified module's run checks the initialization that
-allocates and initializes its cells with the module's units
-(`module-cells`, `module-cell-before-initialization`,
-`module-cell-saved-value`, `invalid-module-cell-stale`, run under Node;
-`certified-module-cell-value-import`; a cycle of modules whose
-initialization reads a cell of a module not yet evaluated throws at the
-checked access, `certified-cell-cycle-value-import`, run under Node; the
-forged claims of `pipeline/test.mts`: a dropped or narrowed contract, a
-narrowed entry claim, a read after a writing call claimed at the earlier
-value).
-
-A module function is an immutable slot holding its code. A file without
-imports or exports may run as a script, whose top-level functions are
-properties of the global object other scripts can write; the slot rests on
-the trusted assumption that other code preserves the file's top-level
-bindings and their functions (the file runs as a module, or no other code
-writes its globals or gives one of its functions an own `call`, `apply` or
-`bind`), for a plain call
-and for `.call`, `.apply` and `.bind` alike
-([trust surface](DESIGN.md#trust-surface)).
-
-### Objects and prototypes
+## Objects and prototypes
 
 An object's set of keys is fixed at allocation in the calculus. Writing a field
 changes its location's contents. Adding a key to a fresh local object can be
@@ -512,7 +172,7 @@ read capability without granting a write through that view. The exact
 [record contracts](POSITIVE-TYPES.md#records) and
 [class translation](SOURCE-CONTRACTS.md#classes) define these forms.
 
-### Object literals
+## Object literals
 
 A literal allocates one object owning exactly the properties it writes, in
 order. A spread of a literal is its fields; a spread of any other value is an
@@ -573,7 +233,7 @@ keys each at their own type; a spread of an open record meets no index. `Object.
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
 
-#### Literals a spread copies
+### Literals a spread copies
 
 A copy replaces every key its source may own. A source of an open record
 type may own any key, at any type, so a field written before its spread
@@ -616,7 +276,7 @@ a call or any other source keeps its declared type, open where it is open
 `invalid-object-spread-returned-dictionary`;
 `object-spread-exact-literals` verifies, each negative run under Node).
 
-#### A spread of an intersection
+### A spread of an intersection
 
 A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,
 so it is of $`a_1 \sqcap \cdots \sqcap a_n`$ for some arm $`a_i`$ of each
@@ -699,7 +359,7 @@ as standalone spread sources, but an `Exact` operand inside an intersection
 is outside this product algorithm, including when the other operand is
 `Top`. Exact own-key bounds require a separate meet operation.
 
-### Arrays
+## Arrays
 
 The **built-ins** are the objects and prototypes of the JavaScript global
 environment a program runs in. The array contracts below assume their
@@ -716,7 +376,7 @@ as a library may tag the arrays it manages with a symbol key. Stores may be spar
 source `T[]` requires **readability**: every in-bounds read, including a hole's
 `undefined`, meets `T`. Density is a separate, stronger guarantee. All three
 spellings (`T[]`, `Array<T>`, `ReadonlyArray<T>`) use the same element-family
-interpretation, including generic substitution. Element writes currently require
+interpretation, including generic substitution. Element writes require
 an in-bounds position or appending; they preserve each presence mode.
 Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through
@@ -735,14 +395,14 @@ receives throws, and a thrown value, of `unknown`, is what a handler binds
 ([the array invariant](SEMANTICS.md#the-array-invariant)). So where
 `Array.isArray` holds, a record arm and `unknown` are `readonly unknown[]`.
 
-### Index signatures
+## Index signatures
 
 An index signature describes properties in a **key class**: string keys,
 canonical numeric property keys, or symbol keys. A dictionary read returns
 `V | undefined` when the key may be absent. A readonly index promises values
 of type `V` at present keys without granting writes.
 
-#### Writable string index signatures
+### Writable string index signatures
 
 A writable index must permit every admitted write while preserving all aliases'
 contracts. It is therefore invariant in its value type. A dictionary of `true`
@@ -763,7 +423,7 @@ writable contract and the reserved-key restrictions.
 [source index operations](SOURCE-CONTRACTS.md#index-signatures) specify the
 coverage checks and supported keys.
 
-### Method members are host-relative
+## Method members are host-relative
 
 A method member's contract is relative to its host: read from `o` and invoked
 with receiver `o` and admitted actuals, it behaves as typed, and it promises
@@ -812,7 +472,7 @@ A class's generic method is such a member of its instance type, which its
 prototype's closure, a scheme received by the instance, covers bound to the
 instance ([classes](SOURCE-CONTRACTS.md#classes)).
 
-### Exact contracts and native effects
+## Exact contracts and native effects
 
 A source declaration is lowered in full or refused. Unsupported generic
 bounds, mixed value/argument-pack binders and an unguarded alias cycle are
@@ -891,411 +551,7 @@ erasure is tested against both verifier entry points using a forged producer
 proposal. These tests exercise premises and translation that the calculus
 safety theorem does not prove. Intrinsics are collected on demand from the operations the source uses.
 
-### Inferred call effects: elaboration and certification
-
-A call signature states a [closed footprint](FOOTPRINTS.md#changes-and-footprints):
-on normal return, the call changes the contents of the previously allocated
-locations holding a value and of those holding an array store at most as it
-says. The empty footprint leaves every such location's contents unchanged;
-`all: any` constrains none. It may allocate fresh storage. A type guard's and
-an assertion function's signatures state, besides, the promises `guards` and
-`asserts`, a promise about an actual
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). An
-**effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
-[effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
-[certification rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
-state what a certificate must establish.
-
-This extends the language of claims beyond TypeScript annotations. Three
-operations must remain distinct:
-
-1. **Annotation translation** preserves the source contract. An ordinary
-   TypeScript arrow imposes no heap-preservation guarantee. It must never become
-   an effect-qualified arrow merely because a consumer needs one.
-2. **Inference** proposes a stronger type for a definition, including an effect
-   on each call signature. This is untrusted producer work. It can use bodies
-   and inferred contracts of callees; it need not change the source annotation.
-3. **Elaboration and verification** attach the proposal to the lowered
-   definition and discharge its additional obligation. Lowering emits proof
-   obligations; it does not establish an effect by translating syntax. Lean must
-   check both ordinary body safety and the claimed effect, with the original
-   annotation obligations retained. Only certified types may justify uses.
-
-At a call, the rule consumes the qualified type of the value. It does not
-inspect its source body or recheck it for the observed call. The guarantee
-must survive passing, returning, capturing and generic instantiation through
-ordinary type operations. An explicit annotation may forget the guarantee;
-that loses precision, not soundness. Overloads carry effects per signature.
-An imported implementation needs checked evidence
-([certified imports](#certified-imports)) or an explicitly documented external
-assumption: its TypeScript declaration supplies neither proof nor an implicit
-effect. Built-in contracts remain separately audited assumptions.
-
-**Calls through a location.** A call consumes the contract established for
-the callee value; a stronger effect needs a certificate, and storage keeps
-its checked lifetime contract. A module function declaration no code
-reassigns is read at the signature certified from its body
-([function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
-as a certified import is. A field or element read, `e.f(…)` or `e[k](…)`,
-gives the value the location holds when the call runs: one written after
-any initialiser, through any reference, or held by a record built
-elsewhere. The callee is read at the location's contract, checked at every
-write: the lowering of its declaration, with the effect that declaration
-states, or, for a fresh literal's field no contextual type fixes, the
-storage contract inferred from its initialiser, which keeps a certified
-signature's effect and widens a literal's type. An
-ordinary arrow annotation states no effect, `typeof f` of a function
-declaration included, which names `f`'s declared signature. With
-$`\epsilon`$ the contract's effect,
-
-```math
-\frac{\Gamma\vdash e:\{f:\mathcal F_\epsilon(R,\mathcal A,B),\ \ldots\}\qquad
-      \Gamma\vdash e:R\qquad\Gamma\vdash\vec v:\mathcal A}
-     {\Gamma\vdash e.f(\vec v):B\;!\;\epsilon}\ \textsf{field-call}
-```
-
-`readonly` grants no more: it is a view, and a record holding any function of
-the field's type has the class's type. A `findIndex` callback calling a
-function held by a field whose contract is an ordinary arrow is therefore
-the unrestricted one, its element
-`T | undefined` (`invalid-field-call-effect`,
-`invalid-readonly-field-call-effect`, run under Node); a write of a
-function that does not keep storage into a literal's field or a cell whose
-inferred contract does is refused (`invalid-field-call-effect-alias`,
-`invalid-field-call-effect-cell`, run under Node); a callback calling a
-module function, directly or through a fresh literal's field, verifies at
-`T` (`find-index-module-function`).
-
-The first guarantee preserves existing heap contents on normal return and
-allows fresh allocation. A call that throws supplies no heap postcondition.
-Consequently, a body checker cannot carry this guarantee through a caught
-exception: it must check the handler with the possibly changed heap, or have
-a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The current pure-body
-checker does not admit such calls. Graph composition checks normal-return
-postconditions node by node and refuses handlers; the independent pure-graph
-rule can still certify pure handlers. Qualified-call composition retains
-this distinction. No stronger external assumption is implicit here.
-
-The guarantee is sufficient but not necessary for safe dense
-`map`: mutation of unrelated state can also be safe. [Footprints](FOOTPRINTS.md)
-designs effects that express that within the same inference/certification
-boundary.
-The body-effect checker recognizes a subset of programs satisfying the
-semantic contract. An unrecognized body therefore represents an inference or
-checking limit, not a restriction on the meaning of heap preservation.
-
-The source acceptance theorem includes effect checking. Pipeline controls
-exercise qualified callbacks passed or returned as values, ordinary-call
-fallbacks, and forged effect claims on bodies that mutate captured storage.
-
-### Certified imports
-
-An imported function of the program is read at its declaration's ordinary
-signature, which states no effect. A **certified import** is read at an
-effect-qualified signature that the same run certifies from the imported
-declaration's code. This is the checked evidence the
-[previous section](#inferred-call-effects-elaboration-and-certification)
-requires; the import's TypeScript declaration still supplies none.
-
-**Eligibility.** A read may be qualified only where its binding's value is
-stable: a named import of an exported function declaration that no code of
-its module reassigns. Its terminal declaration identity is the one
-TypeScript resolves the import to, through re-exports; a re-exporting
-module's own execution is part of the runtime module graph below. Default
-imports stay refused, as the parser refuses them. Any other import is read
-at its ordinary signature. Lean refuses a unit whose module's document writes
-its binding, and the parser lists no module whose code it leaves unlowered
-writes one.
-
-**Two graphs.** The **qualified-dependency graph** has an edge from a unit to
-each unit it reads at a qualified signature; it is acyclic. The pipeline
-proposes a module after the modules it imports from, so a read that would
-close a cycle is read at its ordinary signature, and Lean refuses a cycle
-among the modules the planned reads name. The **runtime
-module graph** is the modules' import relation as the host evaluates it,
-ordinary imports and re-exports included; it may have cycles. Qualification
-reasons about the first; the second bears on initialisation and binding,
-below.
-
-**The documents.** The parser lowers its documents before any claim exists,
-so it lowers every module the qualified-dependency graph may need: every
-program module the checked file imports a function from, transitively,
-each under the checked file's TypeScript program and options and the run's
-[tag selection](HOST-FAMILIES.md#the-runs-selection), so that both readings
-of a declaration resolve alike. The fragment's required `modules`
-array ([the wire](FRAGMENT-FORMAT.md)) lists each once: its **artifact**,
-the module identity its declarations carry (`location`) and the `sha256` of
-the exact bytes lowered, then its declarations, top-level code and
-functions, as a file's own fragment holds them, its own identity written as
-`location`. A function of such a module is a **unit**, named by its origin:
-the module's artifact, the declaration's span and its name. Origins come
-from the parser's resolution and snapshot, never from a claim of the
-producer's. The claims document's required `modules` array holds one claims
-document per fragment module, over that module's own type table, and the
-importer's claims list the imports it reads qualified (`qualified`), each by
-its declaration identity. A census slice keeps its own identity: a slice verified
-is not a certification of the module it was cut from.
-
-**Failure boundary.** A module function the parser cannot lower is absent
-from its module, with the parser's reason, and its module's other functions
-stay. A module whose declarations or top-level code cannot be lowered is
-absent: its imports are read at their ordinary signatures. An import read
-at its ordinary signature is refused where that signature is not
-representable in full, as today.
-
-**What a unit's certification covers.** A unit is checked in its module's
-run, as a run of that file alone checks it but for the run's tag selection,
-over that module's own type table: its module's initialisation (the existing initialisation unit and
-order, `Extraction.lean`), its own code at its claimed signature, the
-module's functions its code reads, and, recursively, every unit it reads
-at a qualified signature. So the certified set is the closure of the units
-the claims read qualified under the module functions they read, together with
-the module's initialisation, and, recursively, the same of every unit a
-module run's own claims read qualified; the module's other functions are not
-checked. Every other fact of its environment is an
-explicit assumption, the
-[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
-its module's own run also makes. An initialiser that is not checked never
-supplies a qualified signature. Lean computes the closure and restricts
-each module's document and claims to it itself, whatever the producer
-chose.
-
-**Binding.** Lean reads an import at a qualified signature only where the
-importer's claims list it qualified and the documents hold a unit of its
-origin: the import's declaration identity names a module whose artifact
-the fragment lists, and a function of it whose name is the declaration's
-and whose name lies in the declaration's span. The unit is eligible: one
-declaration, binders of its own none, no rest parameter, no receiver, no
-guard and no promise. The two readings of
-its ordinary signature, the importer's declaration document's and the
-module's own annotation, are compared structurally, a mismatch refused:
-the parameter and result terms, and recursively every declaration either
-reaches, under the identity mapping of declaration identities: its equation,
-parameters and heritage, and the written applications listed in it, in the
-unit's own declaration alike, with their scopes, arguments and bounds. A
-declaration lowering reads by identity rather than through a reference
-(`ImplicitDependency`, the one list lowering selects them through) is
-reached as a reference's target is where a term reached needs it:
-`ArrayProto` for an array or tuple term, `%Stable%` and native `Promise` for
-a resolution-qualified binder. Symbol keys compare by the identity of their
-symbol's declaration rather than a document's index, and a visited set
-closes recursive definitions. Every field of a term takes part, array presence and host
-classification among them. Each of the following is refused, named by the
-unit's origin: a qualified read naming no unit, a unit of another origin, a
-unit not eligible, a structural mismatch, a module's claims about other bytes
-than its document's, and a module run whose check fails. The
-importer's evidence and the units' are checked by one `checkJson` call, so
-the evidence that certifies the effect is evidence about that declaration's
-code, not about a name.
-
-**The ordinary signature is kept.** The unit is checked at its annotation's
-signature with the effect added, its annotation obligations retained, as
-[elaboration](#inferred-call-effects-elaboration-and-certification) states
-for a module function. The importer reads the import as the unit's module
-reads it (`moduleArrow` of the unit's annotation, with the footprint and
-on-throw flag its claim states), which the structural comparison makes its
-own declaration's signature with that effect. Its code is then known to
-discard further actuals, so it may be passed where a signature binding more
-parameters is expected.
-
-**Inference.** OCaml proposes each module's effects as it proposes a
-file's own (the greatest fixpoint over that module), then the importer's
-claims at them. No effect
-follows from a comment, a name or a module's role. The pipeline lists
-qualified each eligible read whose unit has claims. Where the search over the
-whole document refuses a read or a module run, its footprint refuted or its
-initialisation unchecked, the pipeline withdraws those reads, proposes the
-importer again, and the import is read at its ordinary signature. The final check is one
-`checkJson` call over the whole document. Dense `map` needs a callback
-footprint that keeps dense prefixes
-([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
-`record-render`'s `parseRecord` is proposed and certified at
-`{value: any, store: grow}`, in that set.
-
-**What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
-the importer's document, what it states today, and the same of each module
-document's certified set, each over its own frozen store: safety and its
-footprint for every certified unit, and safety for the importer's
-functions, each under `EnvOk` of its own inputs, the qualified import among
-the importer's, and under `WorldAdm` and `HeapOk`.
-It does not construct a module's environment, prove that initialisation
-succeeds, or prove that the value an import binds at run time meets the
-qualified signature: those are the linking obligation's.
-
-**The linking obligation.** The conclusions combine into safety of the
-linked program under a runtime invariant: at every qualified read, the
-binding holds the certified unit's closure, whose captures meet its input
-contracts in the current heap and world, and the module's initialisation and
-all execution after it preserve that. The eligibility rule makes the first
-half a property of the parser's resolution and of the host's module loader
-(an exported declaration never reassigned holds its closure once its module
-is evaluated); the second is the [module composition](../WORK.md#module-composition)
-argument for units certified against each other's signatures, on which the
-units of one module already rely. A dependency whose initialisation throws
-stops the importer's evaluation: certifying a body proves no initialisation
-succeeds. Until module composition is proved, the invariant is a review
-obligation, listed with the import assumption and in the
-[parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
-
-**A catch.** A certified import's footprint holds on normal return, and on
-a throw where its effect states `onThrow`
-([exceptional footprints](#exceptional-footprints)).
-
-### Exceptional footprints
-
-An effect may promise that its footprint also holds when the call throws:
-`onThrow`. The promise covers the heap a throw leaves the call in, from the
-call's entry heap, exactly as the footprint covers a normal return's. It says
-nothing of the thrown value. A handler of a node calling at such a signature
-then starts in a heap the footprint relates to the node's entry heap, and a
-body that catches can be certified at a footprint.
-
-**Semantics.** `SafePost Ξ T Q` states `Q` of the heap a value is returned in
-and nothing of a throw. Its generalization `SafePostExc Ξ T Q R` states, in its
-throw disjunct, `R h` of the heap `h` at which the term raises, whatever
-value it raises:
-
-```math
-\mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,(n{+}1)\,W\,h\,t \iff
-(\mathsf{val}\,t \wedge T\,W\,t \wedge Q\,h\,t)
-\vee (\exists v.\ \mathsf{Raises}\,t\,v \wedge \mathsf{Scoped}_0\,v \wedge \Xi\,W\,v \wedge R\,h)
-\vee (\exists W'\,h'\,t'.\ \ldots \wedge \mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,n\,W'\,h'\,t')
-```
-
-with the step disjunct as in `SafePost`. `SafePost Ξ T Q` is
-`SafePostExc Ξ T Q (fun _ => True)`, and `erase` holds for both. An
-effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
-$`h_0`$, the exceptional postcondition
-$`R\,h \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
-$`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
-reads them. Without `onThrow`, $`R`$ is `True`. Coverage
-(`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
-without, and not the other way.
-
-**Combining effects.** Two guarantees of one call combine
-(`Effect.meet`) into the meet of their footprints, with `onThrow` the
-conjunction of theirs. A disjunction would be unsound: an empty footprint
-stated on normal return only, met with a wider one stated also on a throw,
-gives no empty footprint on a throw. Where the conjunction loses a useful
-guarantee, the signatures stay separately selectable, as overloads are. The
-field is carried, and audited, wherever an effect is: overload combination,
-weakening by an annotation, `bind`, construct signatures, and imported and
-library signatures.
-
-**What stays on normal edges.** A promise (`guards`, `asserts`) is a fact
-about the arguments a normal return establishes, and `fresh` a fact about
-the returned value. A throw establishes neither, so neither moves onto an
-exceptional edge. A handler binds the thrown value at the graph's exception
-family, `unknown`, and the thrown slot is never fresh; the slots the node
-already held keep their freshness (`handlerFresh`; the candidate facts
-`inferFresh` proposes flow along handler edges the same way). The handler
-receives no current-content fact ([handler facts](#exceptional-footprints)).
-
-**Composition through a body.** `GraphCode.BoundState` states the run's
-invariant from the body's entry heap $`h_0`$, with $`b`$ the body's
-freshness cutoff, the length of $`h_0`$: a node's run is bounded on the
-locations below $`b`$, so a node may change storage the body allocated
-before it, a receiver among them. The extension keeps that cutoff:
-
-- a node with a handler is admitted when its term's run is `SafePostExc`
-  whose exceptional postcondition relates the node's entry heap to the heap
-  it raises in on the locations below $`b`$; the `handle` transition then
-  keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ by `Closed.Holds.trans_on` with
-  the invariant at the node's entry, as `enter` does for a normal return;
-- the state `.raised v` keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ where the body
-  claims `onThrow`; without it the state stays unconstrained;
-- the `handle` transition also establishes the handler target's
-  `FreshOk`, through the handler's slot mapping with the thrown slot
-  non-fresh;
-- each node's term is checked by the form that admits it today (an
-  inspection, a typed write, a call at a selected signature), now also on
-  its throws.
-
-**Handler facts.** Ordinary graph certification checks a handler edge
-(`HandlerOk`) with facts that hold in every heap: `handlerFacts` drops heap
-observations, whatever the throwing call's footprint. A handler therefore
-receives no current-content fact across a throw, and one that relies on a
-fact the guard before the call established is refused
-(`invalid-exceptional-handler-fact`, run under Node). The bounded run's
-footprint and freshness are what the exceptional postcondition carries to a
-handler. Keeping the facts a throw's footprint keeps would thread the
-postcondition through expression checking, `HandlerOk` and `StateOk`.
-
-Every way a node's term can raise is then covered:
-
-- **Before the invocation.** Source lowering evaluates operands into slots
-  first (`valueTerm`), so a call node raises either while reading its
-  operands, which writes nothing, or in the callee. An inspection may
-  allocate before it raises; it preserves the heap's prefix
-  (`inspect_step`), so every location below $`b`$ keeps its contents. A typed
-  write raises before it writes.
-- **In the callee.** A call at a selected signature raises within the
-  signature's `onThrow` footprint. In bounded certification, a node whose
-  call lacks `onThrow` admits no handler, and a body containing one claims
-  no `onThrow`; ordinary safety keeps every handler.
-- **Defaults and intermediate mutations.** A parameter default runs as nodes
-  of the declaration's graph, and earlier nodes' normal returns compose into
-  the invariant, so a throw at any node is relative to the body's entry
-  heap.
-- **Handlers and rethrows.** A handler is a node like any other. A rethrow
-  is a `throw` node without a handler, which raises at its entry heap and so
-  reaches `.raised` with the invariant.
-
-A pure graph keeps its independent operational rule, which covers its
-handlers already and bounds its throws too: every step keeps the heap a
-prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
-type no value meets is never entered, so it is within any bound
-(`GraphCode.unreachableEntry`; `never-parameter-calls`).
-
-**What `checkJson_safe` states.** Its second conclusion, for each accepted
-request with a footprint other than `top`, becomes a `SafePostExc` whose
-exceptional postcondition is the footprint from the run's entry heap where
-the request's effect states `onThrow`, and `True` elsewhere. Its premise
-stays the exact CLI success condition. The first conclusion, plain safety,
-is unchanged.
-
-**Natives.** A native signature states `onThrow` only where its audit
-covers every throw: validation errors, failures of the host, and the
-operation's own errors. `Error` at a string message and `JSON.stringify` at
-a JSON value write nothing they did not allocate before they return or
-throw, so each states the empty footprint with `onThrow`
-([library globals](SOURCE-CONTRACTS.md#library-globals)). `execFileSync`'s
-[restricted form](SOURCE-CONTRACTS.md#library-modules) is audited for it;
-its overlay entry in `library-modules.mts` states the empty footprint with
-`onThrow`, at options whose optional fields `env?: undefined` and
-`shell?: false` the argument's claim must meet. An object literal without a
-spread meets them by leaving those keys out, since a literal owns exactly
-the properties it writes ([object literals](#object-literals)). A literal
-with a spread meets them only where each spread part's claim states the two
-keys absent or at those types; leaving them out after an open spread does
-not. The entry keeps the unrestricted
-form beside it, so a call outside the restricted options keeps its type and
-an unrestricted effect.
-
-**The motivating chain.** `commit-records`' `git` calls `execFileSync` at
-the restricted options and is certified at the empty footprint with
-`onThrow`. `at` catches `git`'s throw and returns `undefined` from its
-handler, so it is certified at the empty footprint. `examplesOf`,
-`readRecord` and `group`'s `map` callback then compose normal-return
-footprints, with the [certified import](#certified-imports) of
-`parseRecord`. `node-exec-restricted` shows the first steps, and
-`exceptional-footprint-handler` the same composition
-for callees that build and throw an error: a declaration, a constant's
-arrow, and a declaration whose handler rethrows.
-
-**Producer and wire.** A call effect states `onThrow` in the wire
-([source claims](SOURCE-CLAIMS.md)), and so does a declaration's claim beside
-its footprint. OCaml proposes it for a closure and, at a greatest fixpoint
-over the module, for a declaration whose every node bounds its throw
-(`Source.throws_stmts`); a `try` whose block bounds its throws, with a catch
-and no `finally`, is within the join of the block's and the handler's
-footprints. Implementation: `HeapObservations.SafePostExc`,
-`CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
-`GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
-(its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose
-statement `checkJson_safe`'s second conclusion is.
-
-### Calls
+## Calls
 
 Argument lists are native: the callee is evaluated first, then
 the actuals left to right; a missing trailing actual binds `undefined`, so
@@ -1320,9 +576,9 @@ passes; into fixed parameters such an actual is refused
 arm, its result the union of theirs; a method call on a union whose arms'
 members differ reads and calls in one step dispatched on the receiver, where
 every actual is a name or a literal. A union callee whose alternatives carry callable fields
-is refused ([call rules](SOURCE-CONTRACTS.md#reading-the-source)).
+is refused ([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
-### Primitive members
+## Primitive members
 
 A member read on a primitive is read through the
 built-in wrapper prototype (`String.prototype`, `Number.prototype`,
@@ -1333,7 +589,7 @@ those prototypes list states the empty footprint, so a call of one is a
 fixed qualified call, and the read itself an inspection
 ([certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
 
-### Receivers
+## Receivers
 
 Every signature states its receiver and every call passes one:
 `undefined` for a plain call, the object for a method call, the first
@@ -1348,7 +604,7 @@ signatures whose receiver types hold objects only
 declaration reading `this` has such a receiver annotation. `.bind` allocates a forwarding descriptor whose
 receiver a later `.bind` or `.call` cannot replace (`callsT_bound`).
 
-### Generic types
+## Generic types
 
 A declaration is one equation, and a generic application a finite term over
 the equations, unfolded one step when a check reads it, so a recursive family
@@ -1359,7 +615,7 @@ of applications, however it grows, is finitely many heads
 scheme whose binders its application owns; a binder intersected with ground
 types is a meet label ([RECURSIVE-EQUATIONS §2.2](RECURSIVE-EQUATIONS.md#22-meaning)).
 
-### Graphs
+## Graphs
 
 A body is a finite graph of nodes, each evaluating one term then
 returning, binding, discarding or branching; destinations carry explicit slot
@@ -1367,7 +623,7 @@ maps, checked on every edge; a node may name a handler for a throw out of its
 term ([control-flow graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)).
 Global safety covers cycles without unrolling.
 
-### Throws
+## Throws
 
 `throw a` evaluates `a` and throws its value; a throwing term does not step,
 and every evaluation context carries the throw out
@@ -1380,9 +636,9 @@ value at `unknown`, under only the facts that hold without the heap
 (`handlerFacts`), since the body may have run any effect before it threw. A
 `finally` block is compiled on every way out, returns and jumps included: a
 `break` or `continue` runs each `finally` it passes, innermost first, then
-lands ([try](SOURCE-CONTRACTS.md#statement-forms)).
+lands ([try](SOURCE-ELABORATION.md#statement-forms)).
 
-### Guards
+## Tag tests
 
 Expression tag dispatches expand named union rows into their constituent
 clauses before splitting branches. The dispatch expression must prove the
@@ -1392,7 +648,7 @@ A guard is a test JavaScript defines exactly. It is followed where the model
 answers it as JavaScript does, as one more tag test (`Tag`, `tagHolds`), so
 it narrows by the one mechanism of tag observations (`tagSlice`), and refused
 with the reason where the model would answer otherwise
-([rules](SOURCE-CONTRACTS.md#guards)). The tests are `typeof` (eight shapes,
+([rules](SOURCE-ELABORATION.md#guards)). The tests are `typeof` (eight shapes,
 `"object"` being `typeofObject`: `null` or an object without call code),
 `key in o` (`hasKey`, along the prototype chain the model holds), truthiness
 (`ToBoolean`), `== null`, strict equality against a singleton of any
@@ -1416,45 +672,27 @@ holds a static `[Symbol.hasInstance]` is a call of that method, its result
 converted by `ToBoolean`, and narrows nothing. A user-defined guard's promise
 is a claim of a derived unit checked at the guard's body, and a call narrows
 its argument by testing it again
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)).
 
-### Async and iteration
+## Async and iteration
 
 `await`, an async function's return and completion, `for...of` and a
 spread over a host iterable, an array pattern's slice rest and `for...in`
 are calls of trusted **intrinsics**, values no source name spells, whose
 signatures the declaration reader states
-([async](SOURCE-CONTRACTS.md#async-functions-and-await),
-[loops](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables)). A loop over a
-host iterable steps one **iteration intrinsic** family, `%Iterate:K%`, picked
-by TypeScript's type of the iterable: an array's (`%Iterate%`), a string's, a
-`Set`'s, a `Map`'s and a host collection iterator's; a spread collects the
-same iterator into a fresh array (`%Spread:K%`). A `for...in` whose body
-reads the entry at its key, `o[k]`, where nothing that could change the entry
-ran since the step, steps the dictionary's entries (`%Iterate:ForIn%`), a
-fresh `[key, value]` array per key, read at its step, and the read is the
-step's value: a dictionary holds no prototype, so the keys the loop visits
-are its own ([statement forms](SOURCE-CONTRACTS.md#statement-forms)). None of these iterators has
-a `return`, so leaving such a loop early calls nothing. An iterable the
-program defines (an object with its own `[Symbol.iterator]`, an
-`Iterable<T>`) runs the **iterator protocol** of
-[ECMA-262](REFERENCES.md#ecma-262) as ordinary calls, each typed
-by TypeScript's `Iterable`, `Iterator` and `IteratorResult` declarations: the
-parser writes GetIterator, `next` read once and called per step, the result's
-`done` tested (a truthiness test of a field, which refines the result to its
-not-done arm) and its `value` bound. IteratorClose is a **closing region**
-around the loop's body, a `finally` that runs on some ways out only: before
-a `break` of the loop leaves it, before a `return` returns, and, its own
-throws discarded, before a throw out of the body resumes; not at the body's
-end, on a `continue`, or when the iterator is done. It calls the iterator's
-`return` where it is not `undefined`, whose result must be an object. A
-spread of such an iterable is collected before its statement, where nothing
-the statement evaluates before it can change, and an array pattern over one
-steps once per element and closes the iterator where no rest took it to its
-end. No calculus rule changes: a call's callee is an assumption at its
-declared type, or code the unit checks. An async function's
-promise settles only to a primitive, the values that are never thenables
-([nested promises](TRUST-REDUCTION.md#illustration-nested-promises)).
-The model runs a body to its end; every point where other code can intervene
-is an `await` or a call, across which only contracts survive.
-
+([async](SOURCE-CONTRACTS.md#async-functions-and-await)): an iteration
+intrinsic `%Iterate:K%` per kind of host iterable, picked by TypeScript's
+type of the iterable, its spread `%Spread:K%`, and `%Iterate:ForIn%` over a
+dictionary's own entries. None of these iterators has a `return`, so leaving
+such a loop early calls nothing. An iterable the program defines runs
+[ECMA-262](REFERENCES.md#ecma-262)'s iterator protocol as ordinary calls,
+each typed by TypeScript's `Iterable`, `Iterator` and `IteratorResult`
+declarations, with IteratorClose a closing region around the loop's body
+([loops](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables),
+[the iterator protocol](SOURCE-ELABORATION.md#the-iterator-protocol)). No
+calculus rule changes: a call's callee is an assumption at its declared
+type, or code the unit checks. An async function's promise settles only to
+a primitive, the values that are never thenables
+([nested promises](TRUST-REDUCTION.md#illustration-nested-promises)). The
+model runs a body to its end; every point where other code can intervene is
+an `await` or a call, across which only contracts survive.

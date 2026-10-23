@@ -89,7 +89,7 @@ value. It is the one test that reads the heap (`tagHoldsIn`, `keyInChain`):
 bounded by the heap's length, so a chain the heap makes cyclic, which no
 JavaScript object has, answers false. Keys are fixed at allocation and no
 source writes a prototype, so its answer never changes. It is `in` for the
-keys the lowering admits ([SOURCE-MODEL](SOURCE-MODEL.md#guards)); JavaScript's `in`
+keys the lowering admits ([SOURCE-MODEL](SOURCE-MODEL.md#tag-tests)); JavaScript's `in`
 throws on a primitive. For $`\kappa_C`$, the key only class `C`'s prototype
 object owns, it is `instanceof C`: an object along whose chain that
 prototype is, and `false` of a primitive, as JavaScript's `instanceof`
@@ -464,7 +464,7 @@ source syntax (`sourceTerm` refuses both). An environment is a list of slots
 and the value every slot past it holds (`envOf`). Invocation enters the code
 with the receiver, the parameters padded as a closure's are, then the
 captures, then the invoked object itself, the code's self entry (a recursive
-closure's read of itself, [recursive constants](SOURCE-MODEL.md#recursive-constants));
+closure's read of itself, [recursive constants](SOURCE-ELABORATION.md#recursive-constants));
 entering a node instantiates its expression in the environment; the
 node's value then leaves the run or moves along an edge, whose slot map
 $`\mu`$ acts on the pushed environment as a program's does:
@@ -695,7 +695,7 @@ forwards to its target with a saved receiver: its signature keeps the fresh
 result and lets everything change where the target's excepts the receiver's
 store (`Effect.drop`). The promises state a type
 guard's and an assertion function's promise
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. The effect
+([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)). Fresh allocation is allowed. The effect
 bounds the heap at a normal return, and at a throw where $`\theta`$ is set;
 it does not bound intermediate writes or claim termination. Where
 $`\theta`$ is unset, a caller catching an exception recovers no entry heap
