@@ -39,8 +39,8 @@ check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 clean-store: ## remove stage entries and timeouts; keep source snapshots (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
 	node pipeline/stages.mts clean
 
-census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n; a record per run; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
-	node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD))
+census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n; a record per run; each stage limited to 300 s unless TSCERT_STEP_LIMIT says otherwise; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
+	TSCERT_STEP_LIMIT=$${TSCERT_STEP_LIMIT:-300} node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD))
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)

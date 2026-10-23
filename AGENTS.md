@@ -99,6 +99,10 @@ merge, and its movement is recorded then. A branch runs no census, over
 slice of the function the change targets and one slice depending on it,
 before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
 
+`make census` limits each stage to 300 s unless `TSCERT_STEP_LIMIT` is
+set, so a slow search reports the outcome it reaches rather than a
+timeout; the pipeline cases keep the 60 s default.
+
 [`dev/census.mts`](dev/census.mts) writes a census record per run (each
 slice's outcome and its stage invocations with their timings) and prints
 its path. `SHARD=i/n` runs every n-th slice from the i-th, so n processes
