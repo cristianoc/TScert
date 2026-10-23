@@ -323,13 +323,14 @@ if (eligible) {
   // The limit holds against a program ignoring SIGTERM, a stopped one and
   // one that left the group: each is killed by its process id 250 ms past it.
   const left = join(dir, "runner-setsid-pid");
-  for (const [name, body, dependencies] of [
-    ["ignoring", 'trap "" TERM; /bin/sleep 5; exit 7', ["/bin/sleep"]],
-    ["stopped", "kill -STOP $$", []],
-    ["setsid", `echo $$ > ${left}; exec /usr/bin/perl -e 'use POSIX; POSIX::setsid() or die "setsid"; sleep 30'`,
-      ["/usr/bin/perl"]],
-  ] as const) {
-    if (!existsSync(dependencies[0] ?? "/bin/sh")) continue;
+  const held: { name: string; body: string; dependencies: string[] }[] = [
+    { name: "ignoring", body: 'trap "" TERM; /bin/sleep 5; exit 7', dependencies: ["/bin/sleep"] },
+    { name: "stopped", body: "kill -STOP $$", dependencies: [] },
+    { name: "setsid", dependencies: ["/usr/bin/perl"],
+      body: `echo $$ > ${left}; exec /usr/bin/perl -e 'use POSIX; POSIX::setsid() or die "setsid"; sleep 30'` },
+  ];
+  for (const { name, body, dependencies } of held) {
+    if (!dependencies.every((d) => existsSync(d))) continue;
     runnerTimeout(name, invoke(lower(script(`runner-${name}.sh`, body, dependencies), file(`runner-${name}.json`, "")),
       300, true));
   }
