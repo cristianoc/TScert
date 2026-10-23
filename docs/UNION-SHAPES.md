@@ -450,8 +450,8 @@ Measured on 2026-10-18 at commit 84b326a with the scratch patch, wall-clock
 times on a machine shared with other work, one run each. The datasets:
 `termsOf` (the slice of `calculus.mts` holding `decodeTerm` and
 `decodeCode`, verified by running the verifier directly, outside the
-pipeline's 30 s limit), `statementsOnPath` against the 347-literal reading
-([a measured slice](COMPILER-API.md#a-measured-slice)), all pipeline cases,
+pipeline's 30 s limit), `statementsOnPath` against the 347-literal reading (a generated reading of
+the compiler API for its four kinds, measured at db22bec), all pipeline cases,
 and every top-level function of `tools/` and `dev/` sliced into its own file
 (313 and 24 slices).
 
@@ -550,7 +550,7 @@ node by node.
 
 The measured bulk is in the second part. In `statementsOnPath`'s 108 MB,
 the 7,016 `flsLit` and 7,004 `ifFalse` certificates are one per literal of a
-`kind` tested against a constant ([a measured slice](COMPILER-API.md#a-measured-slice)),
+`kind` tested against a constant (db22bec),
 and the `numLit` atoms are 19.8 MB (§5.3). The selection rules do not change
 these. R7, making a test one node with two slices and a kind set one atom,
 and sharing a kind set or context repeated across nodes, as a field of the

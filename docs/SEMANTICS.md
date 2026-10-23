@@ -149,7 +149,7 @@ takes none of it, as JavaScript's function owns no enumerable property. A
 class value the program creates holds that field and its static fields, which
 a copy takes, as JavaScript's class owns each static field as an enumerable
 data property. A host object (`hostKey`, spelled `[[host]]`, owned by the
-package's instances and node lists, [restricted values](COMPILER-API.md#restricted-values))
+package's instances and node lists, [restricted values](HOST-FAMILIES.md#restricted-values))
 has neither, so a merge of one is stuck. A
 value the heap lacks, or a term that is not a value there, reads as
 `undefined`, so the step never depends on one (`heapVal`). It allocates

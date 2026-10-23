@@ -854,7 +854,7 @@ names, and write $`\mathsf{Ref}(\varphi)`$ for the record clause carrying those
 invariants. `alloc` allocates one fresh location per named field, and the names
 being distinct is what makes the result a map from them; none is the host
 key `[[host]]`, so the object is ordinary
-([restricted values](COMPILER-API.md#restricted-values)). The object's own keys
+([restricted values](HOST-FAMILIES.md#restricted-values)). The object's own keys
 are exactly those names, so its type may also bound them: each own-key bound
 $`b`$ the type states must admit every name
 ([POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)). An array is allocated this
@@ -1939,7 +1939,7 @@ $`\mathrm{MergeOk}_G(\delta,A,B,R)`$ holds where $`A`$ and $`B`$ are of clause
 rows, each clause of either excludes host values (`hostFree`: an invariant
 field, a closed own-key bound, an index, a callable, a class value, a
 primitive; the step is stuck on a host object,
-[restricted values](COMPILER-API.md#restricted-values)), and, for each clause $`c_a`$ of $`A`$ and $`c_b`$ of $`B`$, some clause
+[restricted values](HOST-FAMILIES.md#restricted-values)), and, for each clause $`c_a`$ of $`A`$ and $`c_b`$ of $`B`$, some clause
 $`\mathsf{Ref}(\varphi;\omega;\beta)`$ of $`R`$ is given by them
 (`ObjectMerge.MergeClause`): $`c_a`$ a record or dictionary, $`c_b`$ one too, a
 function clause (a function, or a callable object, whose own enumerable

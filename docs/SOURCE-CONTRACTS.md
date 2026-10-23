@@ -2041,7 +2041,7 @@ The entries, each with the code its restriction keeps from running:
   (`console-log-object-refused`).
 
 $`\mathsf{NonHost}`$, which no source spells, is every value but a host
-object ([restricted values](COMPILER-API.md#restricted-values)): the
+object ([restricted values](HOST-FAMILIES.md#restricted-values)): the
 primitives, the callables and the objects owning no `[[host]]`, the record
 clause bounded by an exclusion of that key. A type is below it when each of
 its clauses is: an object clause names an invariant field or an index, or
