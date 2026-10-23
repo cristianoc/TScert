@@ -295,7 +295,7 @@ async function census(args: string[]): Promise<void> {
         invocations: invocationsOfRequest(path) };
     }
   };
-  const rows = await Promise.all(selected.map(async (s): Promise<SliceRecord> => {
+  const finish = async (s: Slice): Promise<SliceRecord> => {
     const row = await sliceRow(s);
     finished++;
     bump(outcomes, row.detail.startsWith("timeout:") ? "timeout" : row.status);
@@ -304,7 +304,25 @@ async function census(args: string[]): Promise<void> {
       process.stderr.write(`${finished} of ${selected.length} slices, ${((performance.now() - started) / 1000).toFixed(0)} s` +
         ` · ${tally(outcomes)} · stages ${tally(executions)}\n`);
     return row;
+  };
+  // Slices of one text (the functions of one mutually recursive group) run one after another, so each after
+  // the first replays the stages their equal inputs key; groups run in parallel.
+  const groups = new Map<string, Slice[]>();
+  for (const s of selected) {
+    const text = createHash("sha256").update(s.text).digest("hex");
+    const group = groups.get(text);
+    if (group) group.push(s);
+    else groups.set(text, [s]);
+  }
+  const done = new Map<Slice, SliceRecord>();
+  await Promise.all([...groups.values()].map(async (group): Promise<void> => {
+    for (const s of group) done.set(s, await finish(s));
   }));
+  const rows = selected.map((s): SliceRecord => {
+    const row = done.get(s);
+    if (!row) throw Error(`no outcome for ${s.slice}`);
+    return row;
+  });
   const setting = storeSetting();
   const record: CensusRecord = {
     source: { commit, dirty, directory, files, functions },
