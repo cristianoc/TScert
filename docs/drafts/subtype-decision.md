@@ -1,4 +1,4 @@
-# Draft: the subtype decision procedure
+# Draft: deciding types in search and checking
 
 A design for review by the owner before any implementation. Base: TScert
 main at c71c404.
@@ -8,9 +8,11 @@ The subtype relation is
 [RECURSIVE-EQUATIONS §4](../RECURSIVE-EQUATIONS.md#4-subtyping). One
 operation decides it for both evidence search and the checker
 (`PositiveCertificates.compareUsing`); the two differ only in where instance
-choices come from. This draft replaces that operation's algorithm with one
-designed whole, states the two rules it adds, and gives the lemmas the
-trusted part needs.
+choices come from. What asks it, search's typing of expressions and the
+narrowing of a union by a member test, sets how often it is asked. This
+draft designs the three together: the comparison's algorithm and the two
+rules it adds, narrowing by an index, and typing by synthesis, with the
+lemmas the trusted part needs.
 
 **Evidence labels.** **Measured** gives the command, the commit and the date.
 **Cited** names inspected code or a supplied measurement. **Proved** names a
@@ -126,29 +128,83 @@ named functions with `TSCERT_STAGE_STORE=off`, median of 3 serial runs
 
 The two refusals are at a source expression obligation.
 
-**Measured — attribution**, 2026-10-23, c71c404, one traced run of the copy
-on each slice's artifacts, elapsed seconds of the outermost image checks
-that are not the substitution, and of the outermost `checkUsing` calls:
+**Measured — image checks**, 2026-10-23, c71c404, one traced run of the
+copy on each slice's artifacts, elapsed seconds of the outermost image checks
+that are not the substitution (count):
 
-| Run | Total | Image checks | Failing image checks | `checkUsing` calls |
-| --- | ---: | ---: | ---: | ---: |
-| `forOfPattern` | 116.9 | 89.7 (158) | 50.6 (55) | 0.07 (918, all by label identity) |
-| `pattern` | 14.8 | 8.3 (115) | 4.1 (34) | 0.05 (870, all by label identity) |
-| `moduleFunction` | 28.6 | 4.2 (1,686) | 0.8 (10) | 0.19 (2,372, all by label identity) |
-| `inertRead` | 20.1 | 0.3 (651) | 0 (0) | 0.17 (2,064, all by label identity) |
-| `resolve` | 19.8 | 0.3 (651) | 0 (0) | 0.16 (2,024, all by label identity) |
-| `collect` | 1.6 | 0.1 (6) | 0 (0) | 0.00 (8, all by label identity) |
-| `closeStatements` | 1.2 | 0 (0) | 0 (0) | 0 (0) |
-| Width 136 | 138.7 | 125.1 (24) | 66.9 (5) | 0.00 (42, all by label identity) |
+| Run | Total | Image checks | Failing image checks |
+| --- | ---: | ---: | ---: |
+| `forOfPattern` | 116.9 | 89.7 (158) | 50.6 (55) |
+| `pattern` | 14.8 | 8.3 (115) | 4.1 (34) |
+| `moduleFunction` | 28.6 | 4.2 (1,686) | 0.8 (10) |
+| `inertRead` | 20.1 | 0.3 (651) | 0 |
+| `resolve` | 19.8 | 0.3 (651) | 0 |
+| `collect` | 1.6 | 0.1 (6) | 0 |
+| `closeStatements` | 1.2 | 0 | 0 |
+| Width 136 | 138.7 | 125.1 (24) | 66.9 (5) |
+
+**Measured — the whole verifier**, 2026-10-23, c71c404, macOS `sample` at
+1 ms over one run of the uninstrumented verifier on each slice's artifacts,
+`--produce-source-claims` (search, then its own check of the evidence) and
+`--check-source-claims` on the evidence it wrote; seconds of working
+samples, each sample assigned to the first mechanism of the list on its
+stack:
+
+| Mechanism | `moduleFunction` | `inertRead` | `resolve` | `forOfPattern` | `pattern` | `collect` | `closeStatements` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Narrowing by a member test (`uncoveredField`) | 6.40 | 5.88 | 5.74 | 4.52 | 0.79 | 0 | 0 |
+| Other narrowing slices | 3.32 | 2.84 | 2.72 | 4.32 | 1.29 | 0 | 0 |
+| Image equivalence | 3.73 | 0.23 | 0.23 | 78.44 | 7.48 | 0.08 | 0 |
+| Search's subtype requests (the rest) | 6.01 | 5.04 | 5.07 | 9.03 | 1.13 | 0.02 | 0.01 |
+| Search re-checking its candidate evidence | 1.19 | 0.10 | 0.08 | 2.45 | 0.57 | 0.08 | 0.01 |
+| Label membership (`subsetUsing`) | 0.71 | 0.59 | 0.56 | 0.21 | 0.02 | 0.01 | 0.02 |
+| Structural tables, outside the above | 0.26 | 0.27 | 0.25 | 0.30 | 0.04 | 0 | 0 |
+| Reading and writing documents | 2.56 | 2.23 | 1.91 | 2.38 | 1.33 | 0.80 | 0.42 |
+| Everything else | 0.50 | 0.42 | 0.39 | 0.23 | 0.17 | 0.01 | 0.15 |
+| **Search run** | 24.7 | 17.6 | 16.9 | 101.9 | 12.8 | 1.0 | 0.6 |
+| Check: reading documents | 1.40 | 1.23 | 1.09 | — | — | 0.39 | 0.12 |
+| Check: narrowing | 0.88 | 0.78 | 0.74 | — | — | 0 | 0 |
+| Check: image equivalence | 0.71 | 0.08 | 0.08 | — | — | 0.03 | 0 |
+| Check: other comparisons | 0.95 | 0.50 | 0.45 | — | — | 0.06 | 0.02 |
+| Check: everything else | 0.14 | 0.14 | 0.15 | — | — | 0 | 0.07 |
+| **Check run** | 4.1 | 2.7 | 2.5 | — | — | 0.5 | 0.2 |
+
+The census's stage CPU is larger than the sampled work (29.1 against 24.7 s
+for `moduleFunction`'s search): it counts every thread and the process's
+start.
+
+**Measured — what multiplies**, the traced copy, same runs:
+
+- **Narrowing.** `uncoveredField` runs 1,280 times in `moduleFunction`
+  (1,126 and 1,110 in `inertRead` and `resolve`), mostly over `Node` and its
+  restrictions (108 × 108 labels in 266 calls, 108 × 492 in 74). For each
+  label of the narrowed type it scans the candidate labels, unfolding each
+  and comparing its record clause component by component (`restriction`,
+  `restricts`): $`n\cdot m`$ unfoldings and clause comparisons a call.
+- **Generate and test.** Search types an expression by trying types: a read
+  `x.f` tries every type of the unit's pool that has a field `f` as the
+  receiver's type, then asks whether `x`'s type is below it. Of
+  `moduleFunction`'s 7,715 distinct subtype requests, 6,045 are such
+  coercions of a variable, 6,031 of them failing (3.2 s traced); 42,402
+  requests are answered again from the producer's table. `inertRead` and
+  `resolve` have 6,022 and 6,020 failing requests of 7,585 and 7,461.
+- **Recomputation across passes.** Search checks each candidate evidence
+  tree as the checker would (`checkTreeS`), and its comparisons go through
+  the checker's operation, which starts empty: every comparison search made
+  is made again, then again in the check stage's process.
+- **Lists.** Label membership tests a list against a list
+  ($`O(|S|\cdot|T|)`$, 108 × 108 for `Node`).
 
 ### 1.3 The causes
+
+Of the comparison itself:
 
 1. **Equality where the rule needs inclusion.** The instance rule asks for
    the instance's operands to be the target's, so a respelled operand costs
    two subtype checks, and a wrong overload is refuted by a failing
    equivalence.
 2. **Several spellings of one type** (§1.2), with identity tested on labels
-   only.
+   only, and labels compared as lists.
 3. **Union members compared each against each** in table growth, coverage
    and the validator's candidate filter (`ClauseSelection.candidates` filters
    every target clause for every source clause).
@@ -156,6 +212,20 @@ that are not the substitution, and of the outermost `checkUsing` calls:
    after every candidate's demand pairs were collected eagerly.
 5. **Results discarded**: per-operation caches, a rerun without selection,
    several respelling candidates per signature.
+
+Of what asks it:
+
+6. **Narrowing pairs every member with every candidate**: a member test's
+   slice scans the candidates for each member of the narrowed union.
+7. **Types guessed, then tested**: search proposes the types of an
+   expression's parts from the unit's pool and refutes the wrong ones by
+   failing subtype questions, where the parts' types determine them.
+8. **Answers not shared across passes**: search's own check, and the check
+   stage, decide again every comparison search established.
+
+Reading and writing documents (2.6 of `moduleFunction`'s 24.7 s, 0.8 of
+`collect`'s 1.0 s) is the subject of
+[certificate sharing](certificate-sharing.md), not of this design.
 
 ## 2. What TypeScript does, and what fits
 
@@ -171,14 +241,13 @@ checker stays sound and decides a stated relation; search is untrusted.
 | Relation results cached for the whole run | yes, scoped | engine; proofs ride with entries |
 | Recursive questions assumed while open | yes | engine; the validator is unchanged |
 | Overloads and type arguments decided locally | yes | producer; the rule becomes inclusion |
+| Expression types synthesized from their parts | yes | producer's typing (§3.7) |
 
 **Syntax and types.** Interning gives every tree and every clause a request
 encounters one identity, so syntactic equality and hashing cost $`O(1)`$
-after a tree's first visit. That is identity of syntax. Equality of types is
-equality of their unfoldings, and a non-regular family unfolds to infinitely
-many distinct types
-([RECURSIVE-EQUATIONS §1](../RECURSIVE-EQUATIONS.md#1-the-problem)), so no
-finite canonicalization decides it. The level at which the spellings of
+after a tree's first visit. That is identity of syntax; this design
+canonicalizes nothing beyond it, and two spellings whose unfoldings agree
+only deeper are related by comparison. The level at which the spellings of
 §1.2 coincide is a type's **clauses**: a type means the union of its clause
 rows' clause meanings and its other labels' meanings, so two types with the
 same clauses and the same other labels are one type, whatever labels carry
@@ -278,50 +347,47 @@ established result carries its proof (`CheckedComparison`).
 
 1. **Interning.** Trees, label lists and clauses get request-wide identities
    (hash-consing of the syntax met); a type's clause set and label set are
-   sorted identity arrays.
-2. **Memo** of completed successes (§3.5).
+   hash sets of identities.
+2. **Memo** (§3.5).
 3. **Identity** by `Mem` and `Clauses`, on the target's identity sets.
 4. **Var**, its premises asked recursively.
 5. **Inst≤** for a scheme row against an arrow target (§3.4), its premises
    asked recursively as completed comparisons.
-6. **Structure, by assumption.** The family certificate is built depth
-   first. A pair open on the current path is assumed; a pair established in
-   this question holds. Each premise of a covering is decided by what the
-   premise judgment reads: a table row (the pair is visited), `Mem`,
-   `Clauses`, `Var` and `Inst` of validated entries, `TabRen`; and
-   prototype-member coverage reads member instances, each validated before
-   use as a completed comparison. For each split source clause: `Same`,
-   else the target clauses the index returns (§3.3), each checked first by
-   its premise-free conditions, then by its premises in turn; the first
-   covering clause is kept. When a pair fails, every result established
-   since it was pushed is discarded; a pair established while assumptions
-   are open stays provisional until the outermost open pair closes.
-7. **Validation.** The established pairs, with the arrow evidence and
-   member instances their coverings used, are the table `checkEntries`
-   validates; the structural result is that validation.
+6. **Structure.** Today's discovery, deletion and validation
+   (`growTable`, `gfp`, `checkStructural`), with three changes: with
+   selection on, every reading of candidates for a source clause, in demand
+   pairs (`demandPairs`), coverage (`coveredIn`) and validation
+   (`checkEntries`), reads the index (§3.3), and with selection off
+   (`InstanceImageCheck.general`, the rerun) every clause, as today; a
+   row's demand (`demandPairs`, `renamedPairs`, `rowsFor`) is memoized for
+   the request, keyed by every input it reads (the row, the selection mode,
+   the known rows, the depth, the graph and image check), so selected
+   discovery and the rerun keep separate entries; a memo entry is the
+   function's value at its key, where today every comparison recomputes it
+   for every row of every table it grows; `Same` and `Clauses` answer
+   identical clauses and contained types without a row; exact row
+   membership reads a hash set. Element-wise coverage of a tag set,
+   `SameKind`, the opaque-row conditions and `meetSources` are read as
+   today.
 
-**What it decides.** The engine's generating function is today's search
-space: coverings by candidates; arrow evidence as `arrowSearch` produces it
-(domain union and combinations of two source signatures, not the nested
-combinations `ArrowCert` admits); `TabRen` over the rows inserted; member
-instances as `rowInstances` proposes them. Within one question, a pair that
-fails while every open pair is assumed is outside the greatest fixed point
-of that function over the pairs the question reaches: assumptions only add
-premises. Depth-first search with every candidate tried decides membership
-in that fixed point
-([Pierce 2002](../REFERENCES.md#pierce-2002), chapter 21, for
-finite-state generating functions; it transfers where the reachable set is
-finite). A pair is evaluated again only after a failure discards its
-provisional result, so a question evaluates a pair at most once more per
-failed pair.
+**Coverage by assumption, the target form of step 6.** Discovery collects
+every candidate's demand pairs before deletion, and deletion rechecks every
+row each round. The depth-first form builds the family certificate from the
+root, assuming a pair while it is open, keeping a covering's first candidate
+that holds, discarding the results established since a failed pair was
+pushed. Its completeness for today's search space is open: `TabRen`, arrow
+evidence and member instances read rows other coverings insert, which is the
+dependency representation WORK's
+[selected discovery](../../WORK.md#union-shapes-discovery) states as
+missing. The depth-first form replaces discovery and deletion only with that
+representation (each covering naming the rows, arrow evidence and instances
+it reads, a failure invalidated when they change) and `discovery_complete`
+(§5), and only where structural comparison remains a measured cost
+after the other steps (§8, step 8).
 
-**Resources.** A question's budget counts pairs evaluated and instance
-descent; growth refuses as `grows` does, over the pairs inserted in the
-question; exhaustion stays an outcome distinct from an unestablished
-question. These differ from today's frontier rounds, and `grows` depends on
-insertion order, so a question near either limit can be decided
-differently: the design does not claim preservation of today's acceptances
-under resource limits (§3.6).
+**Resources** keep today's meaning while step 6 keeps today's discovery:
+frontier rounds, `grows` over the rows inserted, exhaustion distinct from
+an unestablished question.
 
 ### 3.3 Union members by index
 
@@ -357,15 +423,21 @@ retained constraints as the union over entries of the intersection over
 their literals of the admitting sets, counts them per clause, and keeps the
 clauses of the group with no plain constraint at $`f`$ or all retained; it
 then filters that set by R2, R4, R5 and R3 at the other keys. The lookup
-returns exactly the candidates (`indexCandidates_mem`, §5). A union
+returns exactly the candidates, in the order and multiplicity of
+`ClauseSelection.candidates` (each bucket holds clause positions, merged in
+position order): `indexCandidates_eq`, list equality, which discovery
+needs because `growTable` inserts rows in candidate order and `grows` reads
+the rows inserted; the validator's existential needs only its consequence,
+membership equality (`indexCandidates_mem`, §5). A union
 discriminated by one key costs, per source clause, the clauses admitting
 its literal where the filter reads every target clause.
 
 For a closed entry, the one a comparison validates, the validator reads
 candidates only (`checkEntries_eq`, §5); an entry with hypotheses, as
 variance validation checks, reads the indexed candidates first and every
-clause after, as today. Table membership reads a hash set of the rows, and
-`TabRen` the rows of the queried head pair, where both scan the table.
+clause after, as today. Exact table membership reads a hash set of the
+rows; `TabRen`, which accepts a row containing the query after renaming,
+scans the rows as today.
 
 ### 3.4 Instances
 
@@ -391,34 +463,137 @@ existential.
 A request-wide map from a question to its completed success, with its
 `CheckedComparison`, in one graph and one image check
 (`Checked.graph_eq`, `Checked.images_eq`): a success holds in every context,
-its proof being of the inclusion at every assignment. Failures and
-exhaustions are not kept across questions: whether a question fails
-depends on its instance path, its proposals and its resources. Search
-threads the memo through every question of a request (`Answered`,
-extended); the checker threads it through a request's checking by the
-subtyping interface (`Subtyping.check`, made state-passing). Memo entries
-answer top-level questions and instance premises; inside a family
-certificate premises are read by the premise judgment only.
+its proof being of the inclusion at every assignment. Inside the
+comparison operation failures and exhaustions are not kept across
+questions: an inner question's failure depends on its instance path, its
+proposals and its resources. Search's top-level table (`Answered`) keeps
+every outcome, as today; a question it records as unestablished is answered
+by the success map first, so a success found later wins, and an
+unestablished answer is reused as today otherwise, with today's coverage. The success
+map is threaded through the inner questions of search and, by the
+subtyping interface (`Subtyping.check`, made state-passing), through a
+request's checking. Memo entries answer top-level questions and instance
+premises; inside a family certificate premises are read by the premise
+judgment only.
 
-### 3.6 What is preserved
+### 3.6 Narrowing by index
+
+A member test's slice reads, for each label $`a`$ of the narrowed union, the
+first candidate label $`b\ne a`$ whose one record clause is $`a`$'s clause
+with its views of the tested key $`f`$ at another type (`restriction`,
+`restricts`). `restricts` requires every other component to be equal, so
+$`b`$ is found among the candidates with $`a`$'s **key**: the record clause
+with the views at $`f`$ erased. The index of a candidate list maps a key to
+the candidates holding it in list order, built once per list; a lookup
+reads $`a`$'s key's candidates and keeps the first that `restricts`
+accepts, which is the first of the whole list that does
+(`restriction_index_eq`, §5): a candidate with another key fails
+`restricts`. A slice then costs $`m`$ key computations for the index,
+$`n`$ lookups, and `restricts` on each label's bucket, where it costs
+$`n\cdot m`$ unfoldings and comparisons. A bucket holds the candidates
+sharing a member's record clause but for the tested key; `restricts` and its
+nested reads of field types run on the bucket only.
+
+**Measured**, 2026-10-23, the traced copy with `uncoveredField` reading each
+candidate's row once per call (a prototype of the index's first half):
+`moduleFunction`'s 1,280 calls take 2.1 s where they take 7.3 s, `inertRead`'s
+1,126 take 1.9 s where 6.8; the buckets total 40 candidates a call
+(35 in `inertRead`), at most 30 for one label, against the 11,664 pairs of a
+108 × 108 call. The index removes the remaining pairwise `restricts` calls.
+
+Search asks the same yield checks repeatedly (1,280 `uncoveredField` calls
+in `moduleFunction`, over few distinct sizes). Search's answers table
+(`Answered`) keeps each yield check's outcome by its inputs (the slot's
+type, the key, the tags, the answer, the yield's type), so a repeated check
+is answered from its first. This memo is search's: the checker's slices are
+its own.
+
+Narrowing is trusted: the checker computes the same slices
+(`uncoveredField_sound`). The index needs `Hashable` on labels, which the
+equation labels have; `restriction` keeps its statement and its proof, and
+the indexed lookup is proved equal to it.
+
+### 3.7 Typing by synthesis
+
+Search types an expression bidirectionally. Each term's type is
+**synthesized** from its parts: a variable's from the context, a read's
+from its receiver's synthesized type (its field, its view, or the read
+summary of a union, `summaryUsing`), a call's from its callee's member
+signature, an operator's from its operands'. The claimed type is
+**checked** once, where the term meets it, by one subtype question
+(`coerce`). Synthesis is a partial function: it returns one candidate type
+for a variable (its slot's type), a read of a field from a receiver whose
+synthesized type is one record clause (that field's, view's or optional
+field's type, by the read rules), and a call whose callee synthesizes one
+member signature (its result); it returns none for any other form,
+including a read from a union receiver other than a variable, which goes to
+the pool at once. The candidate is one more alternative, first, at the same
+fuel as the pool's: an alternative costs no fuel today, fuel being spent by
+recursion. Per form:
+
+- a read `a.f` against a claimed type $`A`$: the receiver type `a`
+  synthesizes (a variable's slot type; a read's field type); a union
+  receiver through the read summary of that type, key and $`A`$
+  (`summaryUsing` takes the claimed type, which checking supplies);
+- a call or construct: the callee's synthesized type, its signatures in
+  declaration order filtered by arity and effect, the first whose argument
+  checks hold; a rest call's spread operands at their synthesized types;
+- an operator: its operands' synthesized types, then the pool's operand
+  types.
+
+Fuel and budgets are today's; evidence is the same rules' nodes. The pool keeps the types no part determines: a literal's
+singleton or family label, a fresh object's code type, `undefined`.
+
+As search, this orders alternatives: each `findSearch?` over the pool tries
+the synthesized type first and the pool after, so a term search typed
+before keeps every alternative it had, and a wrong guess is no longer tried
+before the type its parts determine. Where the synthesized attempt fails,
+the pool is still tried, at today's cost.
+
+**Measured**, 2026-10-23, the traced copy: of `moduleFunction`'s 6,031
+failing variable coercions, 5,893 (1.19 s traced) lie in an alternative
+search that then succeeds, 138 (1.98 s) in one that fails; `inertRead`'s
+are 5,885 (1.19 s) and 129 (1.90 s). Synthesis-first leaves the first kind
+where the synthesized candidate is the one that succeeds; the second kind
+stays. Search is untrusted, so this changes no
+trusted code and no wire.
+
+### 3.8 One memo for search and its check
+
+Search's own check of its evidence (`checkTreeS`, the final check of
+`--produce-source-claims`) runs in the process that established its
+comparisons, over the same graph and image check. The memo of §3.5 is
+passed to it: a comparison search established is answered with its
+`CheckedComparison`. The check stage, in its own process, starts with an
+empty memo.
+
+### 3.9 What is preserved
 
 - **Soundness:** unchanged statement.
 - **Instances:** a witness accepted today is accepted with the same
-  binders where the new engine establishes its operand premises. Today's
-  check established each respelled image $`I`$ and its substitution $`S`$
-  included both ways; the new premise relates the target operand $`Q`$, the
-  union of the entry images, to the exact image, the union of the
-  substitutions. That premise is composed of inclusions today's engine
-  established in parts; that the new engine establishes the composed
-  question is conjectured, not proved: composing completed comparisons
-  over a union is not a rule of the structural engine.
-- **Structure:** a certificate outside the generating function of §3.2 (a
-  nested combination, a row only another search would insert) is not
-  searched, as today. Today's search draws its tables from the same
-  function; that the depth-first search finds a table wherever today's
-  growth and deletion find one (`selected_complete` and `discovery_complete`,
-  §5) is conjectured. Resources differ (§3.2), so preservation is claimed
-  only for questions within both budgets.
+  binders when the engine establishes its operand premises. Today's check
+  established, for each respelled entry, the respelled image $`I_l`$ and the
+  substitution $`S_l`$ included both ways; the new premise relates the
+  target operand $`Q=\bigcup_l I_l`$ to the exact image
+  $`S=\bigcup_l S_l`$ (or the reverse). It composes the parts
+  constructively where each part was established by identity, `Var` or a
+  structural family: a label of $`S_l`$ that is a label of $`I_l`$ is one of
+  $`Q`$; a `Var` premise against a member of $`I_l`$ is one against a member
+  of $`Q`$; and the union of the parts' valid families with the root row
+  $`(S,Q)`$ is a valid family (`families_union_valid`, §5) when no part's
+  covering reads its source type (`self`, the receiver premise of method
+  coverage, `CoversArrows`): each source clause of $`S`$ is then covered in
+  $`I_l\subseteq Q`$ with premises in its part's family. A part whose
+  covering reads its source type, or established by instantiation, is not
+  composed: its premise read at the union may fail. Whether discovery from
+  $`(S,Q)`$ finds the composed family within today's fuel and growth is not
+  proved. So instance preservation is claimed for the composable parts and
+  measured for the rest: step 1 deletes image equivalence, and a case or
+  census slice it loses is a coverage result that revises the design (§8).
+- **Structure:** discovery and deletion stay today's; selected discovery
+  reads candidates as today, now through the index, and the rerun without
+  selection stays (§8, step 7). The depth-first form, where it is taken,
+  carries `discovery_complete`.
 
 What is not proved is measured: every pipeline case keeps its expected
 outcome, and the eight census slices keep theirs; any other change is a
@@ -438,7 +613,9 @@ coverage result, reported with its cause.
    completed comparisons enter it as validated member instances.
 6. Assumptions discharge operand premises only, which a constructor guards;
    instance premises are completed derivations.
-7. Only successes are reused across questions.
+7. Inside the comparison operation only successes are reused across
+   questions; search's top-level answers (`Answered`) keep every outcome,
+   each for its fixed graph, image check, proposals and budget.
 
 ## 5. Trust and lemmas
 
@@ -460,6 +637,14 @@ coverage result, reported with its cause.
   universe-receiver weakening (`top_row_mixed`, `sourceTy_sound`), then the
   signature covering's soundness (`covers_arrows_sound`);
   `compareInstArrsState_sound` and `compareInstState_sound` restated over it.
+- Narrowing: `restriction_index_eq` — the indexed lookup returns
+  `restriction`'s result, from `restricts_key` (a candidate `restricts`
+  accepts has $`a`$'s key) and the index listing each key's candidates in
+  list order; `uncoveredField_sound` unchanged.
+- The index: `indexCandidates_eq`, the lookup equal as a list to
+  `candidates G a B`, used by discovery; the demand memo's entries equal to
+  their functions' values at their keys (untrusted, but stated, since
+  discovery's decision depends on it).
 - The indexed validator: `indexCandidates_mem`,
   `b ∈ indexCandidates G a B ↔ b ∈ candidates G a B`; `checkEntries_eq`,
   for a family of closed entries with `VariablesOk`, lookups to entries of
@@ -467,20 +652,28 @@ coverage result, reported with its cause.
   `checkStructural`'s callers hold as `checkStructural_sound` uses them —
   the decision over candidates, element branch included, equal to the
   decision over `candidates ++ clausesOf`, from `valid_selected` and
-  `checkEntries_sound`; `premTable_eq`, hashed membership and head-pair
-  `TabRen` equal to the list scans.
+  `checkEntries_sound`; `premTable_eq`, hashed exact membership equal to
+  the list's, `TabRen` unchanged.
 - Memo lookups return an entry whose question is the query's, checked by
   equality as `completedLookup` checks it.
+
+**Untrusted, a preservation lemma:** `families_union_valid` — valid closed
+families for $`(S_l,I_l)`$ of one kind, none of whose coverings reads its
+source type, with their arrow evidence and member instances kept, form with
+the root row $`(\bigcup S_l,\bigcup I_l)`$ a valid closed family (§3.9). It
+is a statement about certificates; that bounded discovery finds the family
+is a separate question, measured.
 
 **Untrusted, with completeness lemmas:** `selected_complete` — a valid
 closed family whose coverings are by candidates, restricted to the pairs
 reachable from its root through those coverings' premises (table rows,
 `Var`, `TabRen`, member instances) and their arrow evidence, stays valid;
 it needs the dependency closure WORK's
-[selected discovery](../../WORK.md#union-shapes-discovery) states. With
-`discovery_complete` — a table in the reach of §3.2's generating function,
-its coverings by candidates, is found by the depth-first search — it is the
-condition for deleting the rerun.
+[selected discovery](../../WORK.md#union-shapes-discovery) states. It is a
+part of the operational theorem that deleting the rerun needs (§8, step 7). `discovery_complete` — with the
+dependency representation of §3.2, a valid closed family in the reach of
+today's discovery, its coverings by candidates, is found by the depth-first
+form — is the condition for replacing discovery and deletion by it.
 
 **Unchanged:** `SourceClaimJson.checkJson_safe`, its premise and its
 conclusion; `FamilyValid` but for `Same`; R1–R5 and their lemmas. Generic
@@ -488,18 +681,20 @@ definitions carry `@[nospecialize]`; no `sorry`, no axioms.
 
 **Untrusted:** the engine (interning, search order, assumptions, memo
 policy, budgets), the index's construction beyond its lemma, unification
-and overload order, every proposal.
+and overload order, every proposal, and search's typing order (§3.7).
 
 **Removed:** `imagesUpTo`, `structuralImages`, `compareEquivalent`,
-`equivalent`, `compareImagesUpTo`, `growTable`, `gfp`, `coveredIn`, the
-respelling patches, `extendInstancePatches`, `instancePatchLimit`; with the
-completeness lemmas, the reruns and `InstanceImageCheck.general`.
+`equivalent`, `compareImagesUpTo`, the respelling patches,
+`extendInstancePatches`, `instancePatchLimit`; with step 7's operational
+theorem, the reruns and `InstanceImageCheck.general`; with `discovery_complete`,
+`growTable`, `gfp` and `coveredIn`.
 
 ## 6. Certificates and the checker's search
 
 **Conjectured — a linear check needs explicit witnesses.** A certificate of
 a question would be its table with, per row, per split source clause, the
-covering target clause's position or `Same`; per premise its rule with its
+covering target clause's position or `Same`, or for a tag set covered
+element by element a covering position per element; per premise its rule with its
 row, entry or instance; for `TabRen` the renaming and the renamed row it
 generates; and arrow evidence with each domain split, each combination's
 chosen signatures and the compatibility of each pair of their result labels
@@ -507,75 +702,128 @@ written out. Its size is charged with every term it names or generates.
 With interned terms, rows in a hash set and validation memoized by evidence
 entry, each obligation is checked in time proportional to the terms it
 names, preprocessing and instance validation included, so the check is
-linear in that size. A combination's compatibility obligations are a product
-of result labels; the certificate pays their size where the checker today
-pays their search.
+linear in that size.
 
 **The checker keeps deciding.** The checker runs the engine with the
-evidence's instance choices in place of the proposal routes. Its work on a
-question is not bounded by search's in general: search's memo holds
-results of questions checking does not ask, and supplied member choices
-change the traversal. The measured check stages take 0.4–5.0 s CPU
-(§1.2), and in every check traced each checker comparison is decided by
-label identity; reading and decoding are the dominant part of checking
-([certificate sharing](certificate-sharing.md#measurements-and-their-limits)),
-and a certificate adds to that part. So the checker's structural search is
-kept, with the memo of §3.5. The census reports check CPU per slice; a slice
-whose check spends its time in structural search is where certificates
-replace it, with the same validator.
+evidence's instance choices in place of the proposal routes. The measured
+check runs (§1.2) spend, of 4.1, 2.7 and 2.5 s, 1.66, 0.58 and 0.53 s in
+comparisons (image equivalence 0.71, 0.08 and 0.08 of it), 0.88, 0.78 and
+0.74 s in narrowing, and 1.40, 1.23 and 1.09 s reading the documents. Image
+equivalence leaves with §3.1 and narrowing's pairs with §3.6; what the
+remaining comparisons cost is projected, not measured, and is measured when
+each step lands. Reading is the largest part measured to remain, and a
+certificate adds to it; the checker's structural search is kept, with the
+memo of §3.5. A slice whose check spends its time in structural search
+after these steps is where certificates replace it, with the same
+validator.
 
 ## 7. Expected costs
 
-**Conjectured.** Without image equivalence (§3.1) and with the respelled
-operands identities by `Clauses`, the image-check time of §1.2's
-attribution is removed: 89.7 s of `forOfPattern`'s 116.9 s, 8.3 of
-`pattern`'s 14.8, 4.2 of `moduleFunction`'s 28.6, 125.1 of the width-136
-run's 138.7; the image checks of `inertRead`, `resolve`, `collect` and
-`closeStatements` take at most 0.3 s. The rest compares `Node` unions by
-index, $`O(n)`$ each, so the width-independent part of the width-5 run
-(0.65 s at 2628711) dominates the width series:
+**Conjectured**, from §1.2's samples: what each part of the design removes,
+and what it leaves.
 
-| Width of `Node` | 5 | 30 | 50 | 87 | 136 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Today, c71c404 | 0.88 | 7.55 | 18.6 | 54.6 | 137.6 |
-| Expected | ≤ 0.9 | ≤ 1 | ≤ 1 | ≤ 1.5 | ≤ 2 |
+| Part | Removes | Leaves |
+| --- | --- | --- |
+| Instantiation by inclusion (§3.1) | image equivalence | the one-direction operand comparisons |
+| Clause identity, interning, the index (§3.1–§3.3) | label membership; most structural comparison of respelled or discriminated unions | comparisons of genuinely different structure |
+| Narrowing by index and search's yield memo (§3.6) | `uncoveredField`'s pairs; repeated yield checks | one bucket scan per label; distinct checks |
+| Typing by synthesis (§3.7) | coercions of guessed types tried before the synthesized one | exhaustive failures |
+| One memo for search and its check (§3.8) | search re-checking its own comparisons | — |
 
-The criterion is the shape: the time at width 136 within twice the time at
-width 5. For `inertRead`, `resolve`, `collect` and `closeStatements`, whose
-search spends its time outside image checks, the expected change is what
-the index and the engine save in their structural comparisons, measured at
-each step. Outcomes are unchanged: six verified, `forOfPattern` and
-`pattern` refused at their source expression obligation.
+The structural engine's parts in `moduleFunction`'s search, inclusive
+samples, which overlap each other and include their share inside image
+equivalence: discovery (`growTable`) 5.86 s, of which demand pairs
+(`demandPairs`) 1.73 and renamed members (`renamedPairs`) 2.82; deletion
+(`gfp`, with `coveredIn`) 2.14; validation (`checkEntries`) 1.68; the
+`TabRen` scan (`premTable`) 1.77; member instances (`rowInstances`) 1.25.
+Non-overlapping, after image equivalence and narrowing, the subtype
+requests take 6.0 s and search's re-check 1.19. The index and clause
+identity act on demand pairs, coverage and validation; the demand memo on
+demand pairs and renamed members; image equivalence's removal on its share
+of each. The `TabRen` scan, `rowArrows`' arrow products and
+`rowInstances`' traversal are kept, and the high end below keeps them.
+
+Per slice, CPU seconds: today the census medians of §1.2; expected from the
+sampled work less what the parts remove, scaled by the census-to-sample
+ratio of each slice (1.13–1.21 for these five; `collect` 1.7 and
+`closeStatements` 2.0, whose search is mostly the process outside the
+sampled work). With §1.2's rows, the low end keeps reading and writing,
+lowering, graph checks and the rest, and a tenth of the subtype requests,
+the other narrowing slices and the structural tables, and 3% of
+`uncoveredField`'s time (a conjectured fraction: the measured bucket counts
+are 0.3% of the pairs, but surviving `restricts` calls read nested types); the high end removes only image
+equivalence and `uncoveredField`'s repeated row reads (the measured
+prototype, 2.1 of 7.3 s) and keeps everything else, the subtype requests,
+the other slices, the re-check and label membership included. For
+`moduleFunction` that is 2.56 + 0.48 + 0.1·(6.01 + 3.32 + 0.26) + 0.03·6.40
+= 4.2 s sampled (4.9 s census) and 24.7 − 3.73 − (1 − 2.1/7.3)·6.40 = 16.4 s
+sampled (19.3 s census). The check intervals keep reading the documents
+and the rest, remove image equivalence, and keep from a quarter (low) to a
+half (high) of narrowing and of the other comparisons, scaled by each
+slice's check ratio (1.22–1.36). Where a slice lands between the ends is
+what the steps measure.
+
+| Slice | Search today | Search expected | Check today | Check expected |
+| --- | ---: | ---: | ---: | ---: |
+| `moduleFunction` | 29.1 | 4.9–19.3 | 5.0 | 2–3 |
+| `inertRead` | 21.1 | 4.4–15.8 | 3.6 | 2–2.5 |
+| `resolve` | 20.4 | 4.0–15.3 | 3.4 | 2–2.5 |
+| `forOfPattern` | 115.0 | 4.6–22.8 | — | — |
+| `pattern` | 15.1 | 2.1–5.6 | — | — |
+| `patternDefaults` | 0.8 | ≤ 0.8 | 0.4 | ≤ 0.4 |
+| `collect` | 1.7 | 1.6–1.7 | 1.0 | 0.9–1.0 |
+| `closeStatements` | 1.2 | 1.2 | 0.7 | 0.7 |
+
+`collect` and `closeStatements` spend 0.8 of 1.0 s and 0.4 of 0.6 s of their
+search's sampled work reading and writing documents and at most 0.2 s
+comparing types: their cost is
+[certificate sharing](certificate-sharing.md)'s, not this design's. The
+width series is expected flat: the time at width 136 within twice the time
+measured at width 5.
+
+Outcomes are unchanged: six verified, `forOfPattern` and `pattern` refused
+at their source expression obligation.
 
 ## 8. Migration
 
 Each step is a green round (`make test`, `make suite`), measured on the
-eight census slices and the width series, with its commit record, and moves
-the owning documents in the same commit: POSITIVE-TYPES for the relation and
-the engine, RECURSIVE-EQUATIONS §4.4 and §6 for instantiation, UNION-SHAPES
-§7 for the index and the rerun, WORK's row for the measurements. No step
-changes a wire shape: the evidence keeps instance choices with their
-tables, which become exact substitutions; evidence bytes change only where
-a proposal's images change, and that change is reported.
+eight census slices (search and check CPU, evidence bytes, outcome) and the
+width series, with its commit record, and moves the owning documents in the
+same commit: POSITIVE-TYPES for the relation and the engine,
+RECURSIVE-EQUATIONS §4.4 and §6 for instantiation, UNION-SHAPES §7 for the
+index and the rerun, PROGRAM-TYPING for narrowing, WORK's row for the
+measurements. No step changes a wire shape: the evidence keeps instance
+choices with their tables, which become exact substitutions.
+Every change of evidence size is reported. A step whose measurement falls short of this section's expectation is
+explained before the next lands, and the design revised where the
+explanation requires it.
 
-1. **Validator.** Index, candidates-only existential for closed entries,
-   hashed table lookups, with `indexCandidates_mem`, `checkEntries_eq` and
-   `premTable_eq`. The decision is unchanged.
-2. **Clause identity.** `Clauses` and `Same` in the premise judgment, the
-   coverage rule and the identity step, with `clauses_subset_sound` and
-   `excludes_self`, which keeps step 1's equality.
-3. **Instantiation by inclusion.** `Inst≤` in `compareInstArrsState`, exact
+1. **Instantiation by inclusion.** `Inst≤` in `compareInstArrsState`, exact
    images, the proposal routes without patches; image equivalence and the
    patches deleted in the same commit.
-4. **Engine.** Interning, the memo of successes in search, structure by
-   assumption; `growTable`, `gfp` and `coveredIn` deleted in the same
-   commit; the rerun kept.
-5. **Checker memo.** `Subtyping.check` state-passing, the memo threaded
-   through a request's checking.
-6. **Rerun.** `selected_complete` and `discovery_complete` proved and the
-   reruns deleted.
+2. **Narrowing by index.** `restriction`'s indexed lookup with
+   `restriction_index_eq`; search's yield memo.
+3. **Typing by synthesis.** The synthesized type first at each pool
+   alternative.
+4. **Validator and discovery read candidates.** The index, with
+   `indexCandidates_eq`; candidates-only existential for closed entries,
+   with `indexCandidates_mem`,
+   `checkEntries_eq`; demand pairs and coverage through the index; hashed
+   exact membership with `premTable_eq`. Decisions unchanged.
+5. **Clause identity.** `Clauses` and `Same` in the premise judgment, the
+   coverage rule and the identity step, with `clauses_subset_sound` and
+   `excludes_self`, which keeps step 4's equality; interning.
+6. **Memos.** The demand memo (§3.2); the success map through inner
+   questions and search's own check (§3.5, §3.8); the checker's through
+   `Subtyping.check`.
+7. **Rerun.** Deleted only with an operational theorem: selected discovery,
+   at today's fuel and growth, finds a valid table wherever unrestricted
+   discovery does. `selected_complete` is a part of it.
+8. **Coverage by assumption**, where structural comparison remains a
+   measured cost after steps 1–7: the dependency representation,
+   `discovery_complete`, and discovery and deletion replaced.
 
-Step 2 follows step 1 (it extends the selection lemma step 1 uses); step 3
-is independent of both; step 4 uses step 1's index and step 2's identity;
-step 5 uses step 4's memo; step 6 follows step 4, whose search the lemma is
-about. This draft is deleted when step 6 lands.
+Steps 1–3 are independent and ordered by measured cost; step 5 follows step
+4 (it extends the selection lemma step 4 uses); step 6 uses step 5's
+interning; steps 7 and 8 follow step 4, whose search their lemmas are about.
+This draft is deleted when the last step taken lands.
