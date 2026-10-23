@@ -15,6 +15,7 @@ design, not its progress.
 
 | Item | State | Closed when |
 | --- | --- | --- |
+| [Code adapted to the verifier, an experiment](docs/SOURCE-REWRITES.md) | closed (2026-10-23): with the verifier fixed at 53e96e3, rewrites made 2 of the 11 target functions verify at 60 s (`enumMembers`, `enumOpen`), both forms judged less readable by a blinded model review and reverted; rewrites of the other 9 advanced each chain 3 to 7 blockers within 25 minutes and left it refused or past 600 s of search | a measured answer exists to whether simple rewrites, rather than new verifier rules, reach the front end's chains |
 | [A connection to ECMA-262](#a-connection-to-ecma-262) | open | the host's stated types are lemmas of a mechanized specification |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
