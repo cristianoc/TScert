@@ -256,15 +256,24 @@ function abandon(api: API): void {
  * without a further request. A failure closing it abandons it and is
  * reported, as a tool failure, with what was in flight as context. */
 export function releaseCompiler(api: API, thrown: { error: unknown } | null): void {
-  observeEnd(api);
   const failure = thrown && toolFailureOf(thrown.error);
   if (failure && !failure.readable) {
+    observeEnd(api);
     abandon(api);
     return;
   }
+  // The process's end is announced as the API closes its channel, after the
+  // requests releasing its snapshots, so their work is observed.
+  const client = privateClient(api);
+  const closeChannel = client.close;
+  Object.assign(client, { close: function (this: unknown): void {
+    observeEnd(api);
+    closeChannel.call(this);
+  } });
   try {
     api.close();
   } catch (error) {
+    observeEnd(api);
     abandon(api);
     const context = thrown ? `, closing the compiler after: ${messageOf(thrown.error).split("\n")[0] ?? ""}` :
       ", closing the compiler";

@@ -65,7 +65,7 @@ export type Noted = { observation: Observation; node: boolean };
 /** A record being made: the answers by operation and path, the cached
  * values whose observations it holds, why it is incomplete, if it is, and
  * why Node's caches may disagree with the file system, if they may. */
-export type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null;
+export type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null; ledger: boolean;
   inconsistent: string | null };
 const recordings: Recording[] = [];
 /** The outermost records made in this process so far. */
@@ -129,14 +129,19 @@ export type Observed<T> = { value: T; observations: Observation[]; incomplete: s
 export function observed<T>(run: () => T): Observed<T> {
   if (recordings.length === 0 && retiringProcess !== null)
     throw Error(`Node's reads are incomplete (${retiringProcess}); a fresh process is needed`);
-  const made = observedNoting(run, true);
+  const made = observedNoting(run, true, true);
   return { value: made.value, observations: made.noted.map((n) => n.observation), incomplete: made.incomplete,
     inconsistent: made.inconsistent };
 }
-function observedNoting<T>(run: () => T, stage: boolean):
+function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
     { value: T; noted: Noted[]; incomplete: string | null; inconsistent: string | null } {
   if (stage && recordings.length === 0) epoch++;
-  const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess };
+  const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
+    ledger: false };
+  // A record begun while a compiler session's ledger is being kept holds the
+  // ledger: what it computes may read the session's compiler, whose state
+  // the ledger's answers determine.
+  if (inherit) for (const kept of recordings) if (kept.ledger) inheritLedger(recording, kept);
   recordings.push(recording);
   let value: T;
   try {
@@ -180,7 +185,7 @@ export function observationsHold(observations: readonly Observation[]): boolean 
  * disagree with the file system, if they may. */
 export type Ledger = { readonly recording: Recording };
 export const newLedger = (): Ledger =>
-  ({ recording: { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess } });
+  ({ recording: { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess, ledger: true } });
 /** The number of answers a ledger holds, and its state. */
 export const ledgerState = (ledger: Ledger): { answers: number; incomplete: string | null; inconsistent: string | null } =>
   ({ answers: ledger.recording.answers.size, incomplete: ledger.recording.incomplete,
@@ -221,15 +226,16 @@ export function validateLedger(ledger: Ledger): string | null {
   return failed;
 }
 /** Note every answer of `ledger`, with its Node-origin bit, its incompleteness
- * and its inconsistency in each record being made but the ledger's own. */
+ * and its inconsistency in each record being made but the ledger's own; a
+ * record begun while the ledger is kept (`withLedger`) holds them from its
+ * start. */
 export function importLedger(ledger: Ledger): void {
-  const { recording } = ledger;
-  for (const r of recordings) {
-    if (r === recording) continue;
-    for (const n of recording.answers.values()) noteIn(r, n.observation, n.node);
-    if (recording.incomplete !== null) r.incomplete ??= recording.incomplete;
-    if (recording.inconsistent !== null) r.inconsistent ??= recording.inconsistent;
-  }
+  for (const r of recordings) if (r !== ledger.recording) inheritLedger(r, ledger.recording);
+}
+function inheritLedger(into: Recording, kept: Recording): void {
+  for (const n of kept.answers.values()) noteIn(into, n.observation, n.node);
+  if (kept.incomplete !== null) into.incomplete ??= kept.incomplete;
+  if (kept.inconsistent !== null) into.inconsistent ??= kept.inconsistent;
 }
 
 /** A value of a process cache, with the observations it was computed from
@@ -254,7 +260,7 @@ export function remembered<K, V>(cache: Map<K, Remembered<V>>, key: K, compute: 
     return known.value;
   }
   cache.delete(key);
-  const made = observedNoting(compute, false);
+  const made = observedNoting(compute, false, true);
   // What the computation noted is noted in the records around it already;
   // where it is incomplete or inconsistent, so are they.
   if (made.incomplete !== null) unobservable(made.incomplete);
@@ -673,7 +679,7 @@ function observeResolution(specifier: string, parent: string): boolean {
  * and resolves nothing else; it loads nothing. Its reads are observed before
  * and after it, and must agree; its target after it. */
 export function nodeResolve(specifier: string, parent: string): string | null {
-  const before = observedNoting(() => observeResolution(specifier, parent), false);
+  const before = observedNoting(() => observeResolution(specifier, parent), false, false);
   const probe = "tscert:resolve";
   const found: { url: string | null } = { url: null };
   const hooks = registerHooks({
@@ -692,7 +698,7 @@ export function nodeResolve(specifier: string, parent: string): string | null {
   } finally {
     hooks.deregister();
   }
-  const after = observedNoting(() => observeResolution(specifier, parent), false);
+  const after = observedNoting(() => observeResolution(specifier, parent), false, false);
   if (JSON.stringify(before.noted) !== JSON.stringify(after.noted))
     inconsistent(`the files Node read resolving ${specifier} from ${parent} changed meanwhile`);
   const url = found.url;

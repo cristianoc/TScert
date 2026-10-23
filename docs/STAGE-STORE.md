@@ -337,8 +337,9 @@ program reports no error. Its probes replace project files through the
 overlay. After its result or its refusal, the collection restores the base
 state: the overlay cleared, the compiler notified of every path a probe
 replaced, the collection's snapshots released, and the new snapshot checked
-to hold only `p`, with no overlay entry and no open document. A tool failure
-releases the session. A restoration that fails, or a state other than the
+to hold only `p`, with no overlay entry. No request of a session names a file
+to open, which its one request function refuses, so it holds no open
+document. A tool failure releases the session. A restoration that fails, or a state other than the
 base one, releases it and makes every record being made incomplete, so the
 attempt that used it publishes nothing.
 
@@ -352,12 +353,16 @@ collection, every answer is made again outside the records being made
 answer is made again, after one differs as well, against the process's first
 answers; one that differs makes the process inconsistent, and the worker
 retires. An incomplete or inconsistent ledger is never retained. The
-validated ledger, its metadata included, is noted in every record the
-collection makes (`importLedger`), so the attempt's observations hold every
-answer the compiler's state was computed from; its new answers accumulate
-in both. At the end of each parse and diagnostics stage, before publication,
-the retained ledger is made again (`settleDeclarationSession`): one that does
-not hold releases the session, and the attempt publishes nothing. These
+validated ledger, its metadata included, is noted in every record being made
+(`importLedger`), and every record begun while the ledger is kept, a nested
+stage's or a process cache's computation, holds it from its start; so an
+attempt's observations, and a cached value's, hold every answer the
+compiler's state was computed from. The collection's new answers accumulate
+in the ledger and in those records. At the end of each parse and diagnostics
+stage, before publication, the ledger of every session the stage's
+collections used is made again (`settleDeclarationSession`), a session
+released during the stage included: one that does not hold makes the
+attempt publish nothing, and releases its session if it is retained. These
 checks keep the store's assumption that the file system is stable while a
 stage reads it; they take no atomic snapshot of it.
 
@@ -394,9 +399,19 @@ at the same paths:
   opening no compiler; so does any changed answer of the ledger: a
   declaration, the configuration, an absent target created, a directory's
   entries, a link, a removed file;
-- an incomplete read, a failed restoration, an overlay or a second project
-  left publish nothing and release the session; a changed Node answer of
-  the ledger makes the process inconsistent.
+- a probe-heavy collection (computed forms evaluated at applications) and
+  shadowing locals among the compared parses;
+- a record begun during a reused collection holds the ledger; a change, at
+  an attempt's end, to what only a session the attempt used and released
+  read publishes nothing;
+- an incomplete read, a failed restoration, an overlay, a second project or
+  a document left publish nothing and release the session; an incomplete
+  Node read also marks the process for retirement and refuses its further
+  observed execution; a changed Node answer of the ledger makes the process
+  inconsistent; a worker killed while it holds a session takes its
+  compilers with it;
+- the attempts' readings of each compiler that ended sum to its lifetime's
+  time within its idle time (at most 20 ms or a tenth).
 
 ## Locations
 
@@ -599,12 +614,15 @@ unavailable, with its reason.
   attempt (`process.cpuUsage`); an observed one adds, for each compiler
   process running during it (`tools/compiler-processes.mts`, which names a
   process by a generation a reused process id does not repeat), the
-  difference of two readings by `stage-runner --cpu <pid>`: at the
-  attempt's start, or zero for a process started during it, and at the
-  attempt's end, or just before the process is released or abandoned. A
-  retained compiler's time is therefore divided among the attempts that use
-  it, its idle time counted by none, and its validation and restoration by
-  the attempt they belong to; nested attempts each count it. The reading is
+  difference of two readings by `stage-runner --cpu <pid>`: at the start of
+  each interval in which the attempt is the innermost one running, or zero
+  for a process started during it, and at that interval's end, or just
+  before the process's channel closes, after the requests releasing its
+  snapshots. A retained compiler's time is therefore divided among the
+  attempts that use it, its idle time counted by none, and its validation
+  and restoration by the attempt they belong to. A nested attempt's time,
+  the pipeline process's and the compilers', is its own and not its
+  enclosing attempt's. The reading is
   `proc_pid_rusage` on macOS, to the microsecond, with the compiler's
   lifetime maximum physical footprint as its peak memory, and
   `/proc/<pid>/stat` and `VmHWM` on Linux, to the clock tick; an attempt with

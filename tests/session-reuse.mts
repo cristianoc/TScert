@@ -32,16 +32,20 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { parserOpenings } from "../tools/fragment-parse.mts";
-import { nodeResolve, processInconsistency, unobservable } from "../tools/files.mts";
+import { nodeResolve, observed, processInconsistency, processRetirement, unobservable } from "../tools/files.mts";
+import { compilerImplementation } from "../tools/compiler-channel.mts";
+import { textCodec } from "../pipeline/in-process-execution.mts";
+import { clientErrors } from "../tools/declaration-graph.mts";
 import { liveCompilers } from "../tools/compiler-processes.mts";
 import { asideForTests, declarationSessionTelemetry, injectSessionFaultForTests, retainDeclarationSessions, retainedDeclarationSession,
-  retainedLedgerForTests } from "../tools/declaration-session.mts";
+  retainedLedgerForTests, settleDeclarationSession } from "../tools/declaration-session.mts";
 import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 const here = import.meta.dirname;
 const repository = resolve(here, "..");
 const dir = runDirectory("tscert-sessions-");
 
+const extras = ["computed-conditional", "written-instantiated-bounds", "shadowing", "shadowed-locals"];
 /** A copy of the value-import examples beside the modules they import, in
  * one project directory, at `name`. */
 function fixture(name: string): { examples: string; config: string } {
@@ -49,8 +53,10 @@ function fixture(name: string): { examples: string; config: string } {
   cpSync(join(repository, "pipeline", "imports-project"), project, { recursive: true });
   for (const file of readdirSync(join(repository, "pipeline", "examples")).filter((f) => f.includes("value-import") && f.endsWith(".ts")))
     cpSync(join(repository, "pipeline", "examples", file), join(project, file));
+  // Probes of computed forms, and shadowing locals.
+  for (const name of extras) cpSync(join(repository, "pipeline", "examples", `${name}.ts`), join(project, `extra-${name}.ts`));
   const config = join(project, "tsconfig.json");
-  writeFileSync(config, readFileSync(config, "utf8").replace('"../examples/*value-import*.ts"', '"./*value-import*.ts"'));
+  writeFileSync(config, readFileSync(config, "utf8").replace('"../examples/*value-import*.ts"', '"./*value-import*.ts", "./extra-*.ts"'));
   return { examples: project, config };
 }
 
@@ -93,7 +99,6 @@ function clean(config: string, what: string): void {
   const s = retainedDeclarationSession();
   assert.ok(s, `${what}: a session is retained`);
   assert.deepEqual(s.projects, [config], what);
-  assert.equal(s.openDocuments, 0, what);
   assert.equal(s.overlay, 0, what);
 }
 
@@ -140,8 +145,27 @@ const at = (name: string, directory: string = name): Request =>
 // Successes, refusals at the gate and at the declaration graph.
 const names = ["certified-value-import", "overload-value-import", "invalid-side-effect-value-import",
   "symbol-key-value-import", "invalid-symbol-key-missing-value-import", "default-import-value-import",
-  "invalid-written-whole-class-value-import"];
+  "invalid-written-whole-class-value-import", "written-pick-value-import", "written-helper-global-value-import",
+  ...extras.map((n) => `extra-${n}`)];
 
+// A process of its own for the incomplete Node read (below).
+if (process.argv[2] === "--node-incomplete") {
+  const directory = join(dir, "node-incomplete");
+  mkdirSync(join(directory, "node_modules", "plain"), { recursive: true });
+  writeFileSync(join(directory, "node_modules", "plain", "package.json"), JSON.stringify({ name: "plain", main: "index.js" }));
+  writeFileSync(join(directory, "node_modules", "plain", "index.js"), "export {};\n");
+  parse(at(names[0]));
+  injectSessionFaultForTests({ kind: "during", during: () => void nodeResolve("plain", join(directory, "main.js")) });
+  const done = parse(at(names[3]));
+  injectSessionFaultForTests(null);
+  assert.equal(done.record.key, null);
+  assert.match(done.record.ineligible ?? "", /states no exports/);
+  assert.equal(retainedDeclarationSession(), null, "the session is not retained");
+  assert.match(processRetirement() ?? "", /states no exports/);
+  assert.throws(() => parse(at(names[0])), /fresh process is needed/);
+  process.stdout.write("retired\n");
+  process.exit(0);
+}
 // --- fidelity: every invocation against a fresh run at the same paths
 const requests: Request[] = [
   ...names.map((n) => at(n)), // forward
@@ -171,6 +195,7 @@ for (const [i, r] of requests.entries()) {
 }
 const reuseMs = performance.now() - reuseStarted;
 const after = telemetry();
+assert.ok(after.probes > before.probes, "reused sessions made probe programs");
 assert.equal(after.opens - before.opens, 1, "one declaration compiler opened");
 assert.ok(after.reuses - before.reuses >= requests.length - 1, "every later collection reuses it");
 assert.equal(after.replacements, before.replacements);
@@ -295,7 +320,10 @@ const observationsOf = (store: string, record: AttemptRecord): string[] => {
   rmSync(d);
   symlinkSync(join(elsewhere, "dependency.ts"), d);
   useStore();
-  replaces("a changed dependency", () => void same(r(names[1]), "after the dependency changed"));
+  replaces("a changed dependency", () => {
+    const changed = same(r(names[1]), "after the dependency changed");
+    assert.notDeepEqual(changed.value, dependent.value, "the dependency's real path is in the Fragment");
+  });
   assert.match(telemetry().lastReplacement ?? "", new RegExp(`real ${d}`));
   process.env["TSCERT_STAGE_STORE"] = storeOne;
   assert.equal(parse(r(names[1]), false).record.execution, "executed", "the entry no longer replays");
@@ -371,6 +399,42 @@ released("an incomplete read", { kind: "during", during: () => unobservable("an 
 released("a failed restoration", { kind: "restoration" }, /restoration failed: an injected restoration failure/);
 released("an overlay left", { kind: "overlay" }, /restoration failed: the session's overlay is not empty/);
 released("a second project left", { kind: "project", project: other.config }, /restoration failed: the session holds the projects/);
+released("a document opened", { kind: "document", document: join(base.examples, "lib.ts") },
+  /restoration failed: a declaration session opens no document/);
+
+// --- a record begun during a reused collection holds the session's ledger:
+// what it computes may read the compiler the ledger's answers determine
+{
+  parse(at(names[0]));
+  const nested: { observations: readonly (readonly [string, string, string | null])[] }[] = [];
+  injectSessionFaultForTests({ kind: "during", during: () => void nested.push(observed(() => 0)) });
+  parse(at(names[3]));
+  injectSessionFaultForTests(null);
+  const [made] = nested;
+  assert.ok(made, "the nested record was made");
+  assert.ok(made.observations.some(([operation, path]) => operation === "read" && path === base.config),
+    "a nested record holds the ledger's read of the configuration");
+}
+
+// --- at an attempt's end, the ledger of a session the attempt used and
+// released is checked too: a change to what only it read publishes nothing
+{
+  useStore();
+  const first = fixture("evicted-a"), second = fixture("evicted-b");
+  const attempt = (mutate: boolean): AttemptRecord => invokeInProcess({ stage: "diagnostics",
+    inputs: [{ role: "control", bytes: `evicted ${mutate}` }], observed: { compiler: compilerImplementation },
+    codec: textCodec, run: (): string => {
+      const one = clientErrors(join(first.examples, `${names[0]}.ts`), first.config);
+      if (mutate) writeFileSync(join(first.examples, "lib.ts"), readFileSync(join(first.examples, "lib.ts"), "utf8") + "\n");
+      const two = clientErrors(join(second.examples, `${names[0]}.ts`), second.config);
+      settleDeclarationSession();
+      return JSON.stringify([one, two]);
+    } }, { force: true, recorder: null }).record;
+  assert.notEqual(attempt(false).key, null, "an attempt over two sessions, nothing changed, is published");
+  const changed = attempt(true);
+  assert.equal(changed.key, null, "a change to the released session's dependency publishes nothing");
+  assert.match(changed.ineligible ?? "", /ledger does not hold at the attempt's end: read .*lib\.ts/);
+}
 
 // --- the compiler's CPU time: the attempts' readings of a retained session
 // sum to its lifetime's but its idle time
@@ -382,12 +446,28 @@ released("a second project left", { kind: "project", project: other.config }, /r
   assert.ok(used, p.stderr);
   const lifetimeMs = (Number(used[1]) + Number(used[2])) / 1000;
   const counted = compilerAccounts.get(session.generation)?.countedMs ?? 0;
-  assert.ok(counted > 0 && counted <= lifetimeMs + 1, `counted ${counted} ms of a lifetime of ${lifetimeMs} ms`);
+  // The attempts count all but the time the compiler used idle between them.
+  const close = (countedMs: number, lifetime: number): boolean =>
+    countedMs <= lifetime + 1 && lifetime - countedMs <= Math.max(20, lifetime / 10);
+  assert.ok(counted > 0 && close(counted, lifetimeMs), `counted ${counted} ms of a lifetime of ${lifetimeMs} ms`);
+  let ended = 0;
   for (const [g, account] of compilerAccounts)
-    if (account.lifetimeMs !== null)
-      assert.ok(account.countedMs <= account.lifetimeMs + 1, `generation ${g}: ${JSON.stringify(account)}`);
+    if (account.lifetimeMs !== null) {
+      ended++;
+      assert.ok(close(account.countedMs, account.lifetimeMs), `generation ${g}: ${JSON.stringify(account)}`);
+    }
+  assert.ok(ended > 10, "compilers replaced, discarded and fresh ones ended during attempts");
   process.stdout.write(`sessions: the retained compiler's attempts counted ${counted.toFixed(1)} ms of its ` +
     `${lifetimeMs.toFixed(1)} ms\n`);
+}
+
+// --- an incomplete Node read during a collection: the attempt publishes
+// nothing, the session is not retained, and the process executes no further
+// observed stage: it is to retire (in a process of its own)
+{
+  const child = spawnSync(process.execPath, [import.meta.filename, "--node-incomplete"], { encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /retired/);
 }
 
 // --- a Node answer of the ledger that changes makes the process

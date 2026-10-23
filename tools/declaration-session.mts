@@ -22,6 +22,8 @@
  * again at an attempt's end, before its publication. */
 import { dirname, resolve } from "node:path";
 import type { API, Project, Snapshot } from "typescript/unstable/sync";
+/** What a snapshot request asks. */
+type UpdateSnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
 import { abandonCompiler, compilerChoice, openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { activeFamilies } from "./family-activation.mts";
 import { importLedger, ledgerAnswers, ledgerState, newLedger, processInconsistency, processRetirement, unobservable, validateLedger,
@@ -45,9 +47,14 @@ type Session = {
   ledger: Ledger;
   /** The latest snapshot, the idle session's base. */
   idle: Snapshot | null;
-  /** The documents the session holds open: none, between collections. */
-  openDocuments: number;
 };
+
+/** A session's request for a snapshot: it names no file to open, so a
+ * session holds no open document. */
+function update(s: Session, params: UpdateSnapshotParams): Snapshot {
+  if (params.openFiles?.length) throw Error("a declaration session opens no document");
+  return s.api.updateSnapshot(params);
+}
 
 /** What the sessions did in this process, for the controls. */
 export type SessionTelemetry = {
@@ -65,22 +72,23 @@ export type SessionTelemetry = {
   lastDiscard: string | null;
   /** Collections of an automatically selected project. */
   automatic: number;
+  /** Probe programs made in sessions. */
+  probes: number;
 };
 const telemetry: SessionTelemetry = { opens: 0, reuses: 0, replacements: 0, lastReplacement: null, discarded: 0,
-  lastDiscard: null, automatic: 0 };
+  lastDiscard: null, automatic: 0, probes: 0 };
 export const declarationSessionTelemetry = (): SessionTelemetry => ({ ...telemetry });
 
 /** The idle session and what it holds, for the controls: its generation,
- * uses, directory, project, open projects and documents, overlay and ledger
- * size; null where none is retained. */
+ * uses, directory, project, open projects, overlay and ledger size; null
+ * where none is retained. */
 export type RetainedSession = { generation: number; uses: number; cwd: string; config: string; projects: string[];
-  openDocuments: number; overlay: number; ledger: number };
+  overlay: number; ledger: number };
 export function retainedDeclarationSession(): RetainedSession | null {
   const s = retained;
   if (!s) return null;
   return { generation: s.generation, uses: s.uses, cwd: s.cwd, config: s.config,
-    projects: s.idle ? s.idle.getProjects().map((p) => p.configFileName) : [], openDocuments: s.openDocuments,
-    overlay: s.overlay.size, ledger: ledgerState(s.ledger).answers };
+    projects: s.idle ? s.idle.getProjects().map((p) => p.configFileName) : [], overlay: s.overlay.size, ledger: ledgerState(s.ledger).answers };
 }
 
 /** Tests only: `run` in fresh compilers, the retained session, retention
@@ -103,6 +111,9 @@ export const retainedLedgerForTests = (): Noted[] => retained ? ledgerAnswers(re
 let retaining: boolean = false;
 let retained: Session | null = null;
 let generations: number = 0;
+/** The ledgers of the sessions collections used since the last attempt's end
+ * (`settleDeclarationSession`), released ones included. */
+const consumed: Ledger[] = [];
 
 /** Retain a session between collections from now on, or not: a worker
  * serving checks retains one; turning retention off releases it. */
@@ -134,10 +145,11 @@ export function releaseDeclarationSession(): void {
 
 /** Tests only: a fault the next collection makes, to show it is caught: its
  * restoration fails, it leaves an overlay entry, it leaves the project
- * `project` open besides its own, or it runs `during` within the session's
- * ledger (reads of its own, an incomplete one). */
+ * `project` open besides its own, it asks to open the document `document`,
+ * or it runs `during` within the session's ledger (reads of its own, an
+ * incomplete one). */
 export type SessionFault = { kind: "restoration" } | { kind: "overlay" } | { kind: "project"; project: string } |
-  { kind: "during"; during: () => void };
+  { kind: "document"; document: string } | { kind: "during"; during: () => void };
 let fault: SessionFault | null = null;
 export function injectSessionFaultForTests(injected: SessionFault | null): void {
   fault = injected;
@@ -163,7 +175,7 @@ function discard(s: Session, reason: string): void {
  * `descriptor`, or null. */
 function incompatibility(s: Session, descriptor: string): string | null {
   if (s.descriptor !== descriptor) return "another project, directory, compiler or family configuration";
-  if (s.overlay.size !== 0 || s.openDocuments !== 0) return "the session's base state is not clean";
+  if (s.overlay.size !== 0) return "the session's base state is not clean";
   return validateLedger(s.ledger);
 }
 
@@ -197,9 +209,10 @@ export function inDeclarationSession<T>(file: string, tsconfigPath: string,
   if (!session) {
     const overlay = new Map<string, string>();
     session = { api: openFrontEndCompiler(cwd, overlay), overlay, cwd, config, descriptor, generation: ++generations,
-      uses: 1, ledger: newLedger(), idle: null, openDocuments: 0 };
+      uses: 1, ledger: newLedger(), idle: null };
     telemetry.opens++;
   }
+  if (retaining && !consumed.includes(session.ledger)) consumed.push(session.ledger);
   return collect(session, use);
 }
 
@@ -212,7 +225,8 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
   const probe: ProbeProgram = (files, read) => {
     s.overlay.clear();
     for (const [name, text] of files) s.overlay.set(name, text);
-    const snapshot = s.api.updateSnapshot({ fileChanges: { changed: [...new Set([...replaced, ...files.keys()])] } });
+    telemetry.probes++;
+    const snapshot = update(s, { fileChanges: { changed: [...new Set([...replaced, ...files.keys()])] } });
     replaced = [...files.keys()];
     snapshots.probed?.dispose();
     snapshots.probed = snapshot;
@@ -226,7 +240,7 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
     value = withLedger(s.ledger, () => {
       // The project is opened once, by the session's first snapshot; a
       // later collection reacquires it in a snapshot of its own.
-      const base = s.api.updateSnapshot(s.idle === null ? { openProjects: [s.config] } : {});
+      const base = update(s, s.idle === null ? { openProjects: [s.config] } : {});
       snapshots.base = base;
       s.idle?.dispose();
       s.idle = null;
@@ -272,8 +286,8 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
 /** Restore a session's base state after a collection: the overlay cleared,
  * the compiler told of every path a probe replaced, the named project reacquired in a snapshot of its own, the
  * collection's snapshots (`obsolete`) released, and the state checked:
- * exactly that project open, no document open, no overlay. Why it is not
- * restored, or null. */
+ * exactly that project open and no overlay (no request of a session opens a
+ * document, `update`). Why it is not restored, or null. */
 function restore(s: Session, replaced: readonly string[], obsolete: readonly (Snapshot | null)[]): string | null {
   try {
     return withLedger(s.ledger, () => {
@@ -282,7 +296,7 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
         fault = null;
         throw Error("an injected restoration failure");
       }
-      const snapshot = s.api.updateSnapshot(replaced.length ? { fileChanges: { changed: [...replaced] } } : {});
+      const snapshot = update(s, replaced.length ? { fileChanges: { changed: [...replaced] } } : {});
       for (const old of obsolete) old?.dispose();
       s.idle = snapshot;
       if (fault?.kind === "overlay") {
@@ -291,15 +305,18 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
       } else if (fault?.kind === "project") {
         const extra = fault.project;
         fault = null;
-        s.idle = s.api.updateSnapshot({ openProjects: [extra] });
+        s.idle = update(s, { openProjects: [extra] });
         snapshot.dispose();
+      } else if (fault?.kind === "document") {
+        const document = fault.document;
+        fault = null;
+        update(s, { openFiles: [document] });
       }
       const projects = s.idle.getProjects().map((p) => p.configFileName);
       if (projects.length !== 1 || projects[0] !== s.config)
         return `the session holds the projects ${JSON.stringify(projects)}, not only ${s.config}`;
       if (!s.idle.getProject(s.config)) return `the session does not hold ${s.config}`;
       if (s.overlay.size !== 0) return "the session's overlay is not empty";
-      if (s.openDocuments !== 0) return "the session holds an open document";
       return null;
     });
   } catch (error) {
@@ -307,17 +324,22 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
   }
 }
 
-/** At an observed attempt's end, before its publication: the retained
- * session's ledger checked again. One that does not hold releases the
- * session and makes the attempt's records incomplete. */
+/** At an observed attempt's end, before its publication: the ledger of every
+ * session the attempt's collections used, released ones included, checked
+ * again. One that does not hold makes the attempt's records incomplete, and
+ * releases its session where it is retained. */
 export function settleDeclarationSession(): void {
-  const s = retained;
-  if (!s) return;
-  const reason = validateLedger(s.ledger);
-  if (reason === null) return;
-  retained = null;
-  unobservable(`the declaration session's ledger does not hold at the attempt's end: ${reason}`);
-  telemetry.discarded++;
-  telemetry.lastDiscard = reason;
-  close(s);
+  const ledgers = consumed.splice(0);
+  for (const ledger of ledgers) {
+    const reason = validateLedger(ledger);
+    if (reason === null) continue;
+    unobservable(`a declaration session's ledger does not hold at the attempt's end: ${reason}`);
+    const s = retained;
+    if (s?.ledger === ledger) {
+      retained = null;
+      telemetry.discarded++;
+      telemetry.lastDiscard = reason;
+      close(s);
+    }
+  }
 }

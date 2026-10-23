@@ -259,22 +259,31 @@ function storedObservations(input: string, manifest: { readonly [key: string]: C
   return observedInput(manifest, observations) === input ? observations : null;
 }
 
-/** The compiler processes' CPU time over each running observed attempt: the
- * time each used between the attempt's start, or its own start, and the
- * attempt's end, or its own end; the largest of their lifetime peak
- * memories; how many were counted, and how many samples were not read.
- * A compiler process outlives an attempt where its session is retained
- * (`tools/declaration-session.mts`): each is read by the runner
- * (`stage-runner --cpu`) when an attempt starts and ends while it runs, when
- * it starts during one (from zero) and just before it ends
- * (`compiler-processes.mts`), and each attempt adds the difference of its
- * own two readings, so a process's time is counted once for each attempt
- * running, nested ones included. A process is named by its generation, which
- * a reused process id does not repeat. */
+/** The CPU time of in-process attempts, each attempt's own: a nested
+ * attempt's time is its own and not its enclosing attempt's. Each attempt is
+ * a frame of a stack; the innermost running one is counted. Its pipeline
+ * time is the process's (`process.cpuUsage`) over the attempt but its nested
+ * attempts'. An observed attempt also counts the compiler processes' time
+ * while it is innermost: a compiler process outlives an attempt where its
+ * session is retained (`tools/declaration-session.mts`), so each is read by
+ * the runner (`stage-runner --cpu`) at the start and end of each interval in
+ * which the attempt is innermost, when it starts (from zero) and just before
+ * it ends (`compiler-processes.mts`); the attempt adds the differences. A
+ * process is named by its generation, which a reused process id does not
+ * repeat. */
 type Sample = { userMs: number; systemMs: number; peakBytes: number };
-type CompilerCpu = { userMs: number; systemMs: number; peakBytes: number | null; counted: number; unread: number;
-  baseline: Map<number, Sample | null> };
-const runningAttempts: CompilerCpu[] = [];
+type Frame = {
+  observed: boolean;
+  started: number;
+  cpu: NodeJS.CpuUsage;
+  /** The pipeline time of the attempts nested in this one, in microseconds. */
+  nested: { user: number; system: number };
+  userMs: number; systemMs: number; peakBytes: number | null; counted: number; unread: number;
+  /** Each compiler's reading at the start of the current interval. */
+  baseline: Map<number, Sample | null>;
+  ended: boolean;
+};
+const frames: Frame[] = [];
 /** A compiler process's CPU time and lifetime peak memory so far, or null
  * where it is not read. */
 function sample(compiler: LiveCompiler): Sample | null {
@@ -283,60 +292,82 @@ function sample(compiler: LiveCompiler): Sample | null {
   return used ? { userMs: Number(used[1]) / 1000, systemMs: Number(used[2]) / 1000, peakBytes: Number(used[3]) } : null;
 }
 const zero: Sample = { userMs: 0, systemMs: 0, peakBytes: 0 };
-/** Add a compiler's time between `from` and `to` to an attempt. */
 /** For the controls: by compiler generation, the CPU time the attempts
- * counted (outermost attempts only), and the process's last reading as it
- * ended, its lifetime's. */
+ * counted, and the process's last reading as it ended, its lifetime's. */
 export const compilerAccounts: Map<number, { countedMs: number; lifetimeMs: number | null }> = new Map();
-function count(attempt: CompilerCpu, generation: number, from: Sample | null, to: Sample | null): void {
-  attempt.counted++;
+const accountOf = (generation: number): { countedMs: number; lifetimeMs: number | null } => {
+  const account = compilerAccounts.get(generation) ?? { countedMs: 0, lifetimeMs: null };
+  compilerAccounts.set(generation, account);
+  return account;
+};
+/** Add a compiler's time between `from` and `to` to an attempt. */
+function count(frame: Frame, generation: number, from: Sample | null, to: Sample | null): void {
+  frame.counted++;
   if (from === null || to === null) {
-    attempt.unread++;
+    frame.unread++;
     return;
   }
-  attempt.userMs += to.userMs - from.userMs;
-  attempt.systemMs += to.systemMs - from.systemMs;
-  attempt.peakBytes = Math.max(attempt.peakBytes ?? 0, to.peakBytes);
-  if (attempt === runningAttempts[0]) {
-    const account = compilerAccounts.get(generation) ?? { countedMs: 0, lifetimeMs: null };
-    account.countedMs += to.userMs - from.userMs + to.systemMs - from.systemMs;
-    compilerAccounts.set(generation, account);
-  }
+  frame.userMs += to.userMs - from.userMs;
+  frame.systemMs += to.systemMs - from.systemMs;
+  frame.peakBytes = Math.max(frame.peakBytes ?? 0, to.peakBytes);
+  accountOf(generation).countedMs += to.userMs - from.userMs + to.systemMs - from.systemMs;
+}
+/** The running compilers' readings. */
+const readings = (): Map<number, Sample | null> =>
+  new Map(liveCompilers().map((compiler) => [compiler.generation, sample(compiler)]));
+/** End an observed frame's interval at `now` (a process that ended unannounced
+ * has no reading, and counts as not read), or begin one. */
+function closeInterval(frame: Frame, now: Map<number, Sample | null>): void {
+  if (!frame.observed) return;
+  for (const [generation, from] of frame.baseline) count(frame, generation, from, now.get(generation) ?? null);
+  frame.baseline.clear();
+}
+function openInterval(frame: Frame, now: Map<number, Sample | null>): void {
+  if (frame.observed) frame.baseline = new Map(now);
 }
 observeCompilers({
   started: (compiler: LiveCompiler): void => {
-    for (const attempt of runningAttempts) attempt.baseline.set(compiler.generation, zero);
+    const top = frames.at(-1);
+    if (top?.observed) top.baseline.set(compiler.generation, zero);
   },
   ending: (compiler: LiveCompiler): void => {
-    const counting = runningAttempts.filter((attempt) => attempt.baseline.has(compiler.generation));
-    if (counting.length === 0) return;
+    const top = frames.at(-1);
+    if (!top?.observed || !top.baseline.has(compiler.generation)) return;
     const last = sample(compiler);
-    const account = compilerAccounts.get(compiler.generation) ?? { countedMs: 0, lifetimeMs: null };
-    account.lifetimeMs = last && last.userMs + last.systemMs;
-    compilerAccounts.set(compiler.generation, account);
-    for (const attempt of counting) {
-      count(attempt, compiler.generation, attempt.baseline.get(compiler.generation) ?? null, last);
-      attempt.baseline.delete(compiler.generation);
-    }
+    accountOf(compiler.generation).lifetimeMs = last && last.userMs + last.systemMs;
+    count(top, compiler.generation, top.baseline.get(compiler.generation) ?? null, last);
+    top.baseline.delete(compiler.generation);
   },
 });
-/** An attempt's compiler accounting begun: each running compiler read. */
-function beginCompilers(): CompilerCpu {
-  const attempt: CompilerCpu = { userMs: 0, systemMs: 0, peakBytes: null, counted: 0, unread: 0, baseline: new Map() };
-  for (const compiler of liveCompilers()) attempt.baseline.set(compiler.generation, sample(compiler));
-  return attempt;
+/** An attempt's frame begun: its clocks started, then the interval of the
+ * attempt it interrupts ended and its own begun at the same readings. */
+function beginFrame(observed: boolean): Frame {
+  const frame: Frame = { observed, started: performance.now(), cpu: process.cpuUsage(), nested: { user: 0, system: 0 },
+    userMs: 0, systemMs: 0, peakBytes: null, counted: 0, unread: 0, baseline: new Map(), ended: false };
+  const top = frames.at(-1);
+  const now = observed || top?.observed ? readings() : new Map<number, Sample | null>();
+  if (top) closeInterval(top, now);
+  openInterval(frame, now);
+  frames.push(frame);
+  return frame;
 }
-/** An attempt's compiler accounting ended: each compiler still running read
- * and counted. */
-function endCompilers(attempt: CompilerCpu): void {
-  for (const compiler of liveCompilers()) {
-    if (!attempt.baseline.has(compiler.generation)) continue;
-    count(attempt, compiler.generation, attempt.baseline.get(compiler.generation) ?? null, sample(compiler));
-    attempt.baseline.delete(compiler.generation);
+/** An attempt's frame ended: its interval closed, the enclosing attempt's
+ * resumed at the same readings and told of this attempt's pipeline time;
+ * the attempt's own pipeline time, in microseconds. */
+function endFrame(frame: Frame): NodeJS.CpuUsage {
+  frame.ended = true;
+  const at = frames.lastIndexOf(frame);
+  if (at >= 0) frames.splice(at, 1);
+  const parent = frames.at(-1);
+  const now = frame.observed || parent?.observed ? readings() : new Map<number, Sample | null>();
+  closeInterval(frame, now);
+  const inclusive = process.cpuUsage(frame.cpu);
+  if (parent) {
+    openInterval(parent, now);
+    parent.nested.user += inclusive.user;
+    parent.nested.system += inclusive.system;
   }
-  // A process that ended unannounced is not read.
-  for (const generation of attempt.baseline.keys()) count(attempt, generation, null, null);
-  attempt.baseline.clear();
+  return { user: inclusive.user - frame.nested.user, system: inclusive.system - frame.nested.system };
 }
 
 /** Run an in-process stage through its adapter (`bindInProcess`,
@@ -348,21 +379,18 @@ function endCompilers(attempt: CompilerCpu): void {
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
   // Only an observed stage uses the front end's compilers.
-  if (!call.observed) return attemptInProcess(call, options, null);
-  const compilers = beginCompilers();
-  runningAttempts.push(compilers);
+  const frame = beginFrame(call.observed !== undefined);
   try {
-    return attemptInProcess(call, options, compilers);
+    return attemptInProcess(call, options, frame);
   } finally {
-    runningAttempts.splice(runningAttempts.indexOf(compilers), 1);
+    if (!frame.ended) endFrame(frame);
   }
 }
 function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null },
-    compilers: CompilerCpu | null): { value: T; record: AttemptRecord } {
+    frame: Frame): { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
-  const started = performance.now();
+  const started = frame.started;
   const startedAt = Date.now();
-  const cpu = process.cpuUsage();
   const store = currentStore();
   const forced = options.force || store === null;
   const { manifest, input, identityFailure } = bindInProcess(call);
@@ -372,15 +400,14 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
   let key = ineligible === null ? sha256(input) : null;
   let recorded: Canonical = manifest;
   // The attempt's own record, at its end; the start event's, `interrupted`,
-  // reads no compiler.
+  // ends no frame.
   const record = (execution: Execution, replay: Replay | null): AttemptRecord => {
-    if (compilers && execution !== "interrupted") endCompilers(compilers);
-    const used = process.cpuUsage(cpu);
-    const measured: Cpu = compilers && compilers.unread > 0
-      ? { unavailable: `${compilers.unread} of the attempt's ${compilers.counted} compiler process readings were not read` }
-      : { userMs: used.user / 1000 + (compilers?.userMs ?? 0), systemMs: used.system / 1000 + (compilers?.systemMs ?? 0),
-        peakBytes: compilers?.peakBytes ?? null,
-        covers: compilers && compilers.counted > 0 ? "the pipeline's process and the compiler processes running during it"
+    const used = execution === "interrupted" ? process.cpuUsage(frame.cpu) : endFrame(frame);
+    const measured: Cpu = frame.unread > 0
+      ? { unavailable: `${frame.unread} of the attempt's ${frame.counted} compiler process readings were not read` }
+      : { userMs: used.user / 1000 + frame.userMs, systemMs: used.system / 1000 + frame.systemMs,
+        peakBytes: frame.peakBytes,
+        covers: frame.counted > 0 ? "the pipeline's process and the compiler processes running during it"
           : "the pipeline's process" };
     return {
       attempt, stage: call.stage, key, ineligible, manifest: recorded, context: null, forced, limitMs: null, execution,
