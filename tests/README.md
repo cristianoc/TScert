@@ -17,37 +17,33 @@ make are `pipeline/test.mts`'s. Two families in
 - [`callables/`](../pipeline/examples/callables/README.md): call signatures,
   callable objects, arity, receivers and argument lists.
 
-Cases naming a project read their imports from it:
-`pipeline/imports-project/` supplies value imports, and
-`pipeline/library-project/` is a typed library of reactive collections
-(`collections.ts`) with Node's pinned types, read by the `collections-*` cases;
-`pipeline/compiler-api-project/` resolves the compiler API, the package
-`typescript` the front end pins, for the `*compiler-api*` cases;
-`pipeline/augmented-project/` augments `ObjectConstructor` from a module of
-its own, and `pipeline/fake-lib-project/` reads `pipeline/fake-lib/`, a file
-named like a standard library file, for the `*augmented*` and `*fake-lib*`
-cases; `pipeline/lib-collision-project/` holds one at
-`typescript/lib/lib.augment.d.ts`, the path a standard library identity is
-printed with, for the `*lib-collision*` case;
-the `pipeline/merged-*-project/` directories each merge a member into one
-standard library interface (`Array`, `ReadonlyArray`, `Object`, `Function`,
-`Iterator`, `ArrayIterator`, `String`, `Iterable`, and `ReadonlyArray`'s
-`at` restated, renamed, narrowed and reached along two bases), for the cases
-whose file names contain the directory's `merged-*` part;
-`pipeline/parse-int-overload-project/` adds an overload to the standard
-library's `parseInt`, for the `*parse-int-overload*` case;
-`pipeline/host-global-project/` declares globals in a declaration file of
-its own, for the `*host-global*` cases; `pipeline/fake-process-project/`
-declares a `process` spelled as Node's, for the `*fake-process*` case;
-`pipeline/host-fixture-project/` reads `pipeline/host-fixture/`, a package
-whose manifest names the host package and whose `Node` reaches no node list:
-as a case it is no host (`host-fixture-lookalike`), and `pipeline/test.mts`
-activates it under the compiler API's description naming its installation
-(`pipeline/host-fixture-project/node_modules/typescript`, a fixture link) and
-digest for the `*host-fixture*` controls of reading rule 1.
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
-This directory holds the suites that check the repository around the pipeline:
+A case naming a project reads its imports and declarations from it:
+
+| Project | Holds, for which cases |
+| --- | --- |
+| `pipeline/imports-project/` | value imports |
+| `pipeline/library-project/` | a typed library of reactive collections (`collections.ts`) with Node's pinned types, for the `collections-*` cases |
+| `pipeline/compiler-api-project/` | the compiler API, the package `typescript` the front end pins, for the `*compiler-api*` cases |
+| `pipeline/augmented-project/` | an augmentation of `ObjectConstructor` from a module of its own, for the `*augmented*` cases |
+| `pipeline/host-augmented-project/` | an augmentation merging members into the compiler API's host types, for the `invalid-host-augmentation-*` cases |
+| `pipeline/fake-lib-project/` | `pipeline/fake-lib/`, a file named like a standard library file, for the `*fake-lib*` cases |
+| `pipeline/lib-collision-project/` | a file at `typescript/lib/lib.augment.d.ts`, the path a standard library identity is printed with, for the `*lib-collision*` case |
+| `pipeline/merged-*-project/` | one member merged into one standard library interface each (`Array`, `ReadonlyArray`, `Object`, `Function`, `Iterator`, `ArrayIterator`, `String`, `Iterable`, and `ReadonlyArray`'s `at` restated, renamed, narrowed and reached along two bases), for the cases whose file names contain the directory's `merged-*` part |
+| `pipeline/parse-int-overload-project/` | an overload added to the standard library's `parseInt`, for the `*parse-int-overload*` case |
+| `pipeline/host-global-project/` | globals declared in a declaration file of its own, for the `*host-global*` cases |
+| `pipeline/fake-process-project/` | a `process` spelled as Node's, for the `*fake-process*` case |
+| `pipeline/host-fixture-project/` | `pipeline/host-fixture/`, a package whose manifest names the host package and whose `Node` reaches no node list: as a case no host (`host-fixture-lookalike`); `pipeline/test.mts` activates it under the compiler API's description naming its installation and digest for the `*host-fixture*` controls of reading rule 1 |
+| `pipeline/family-fixture-project/` | `pipeline/family-fixture/`, a stand-in host package `pipeline/test.mts` activates under the compiler API's description, for the controls of a method a family declares optional |
+| `pipeline/string-family-fixture-project/` | `pipeline/string-family-fixture/`, a string-tagged stand-in family activated beside the compiler API's by a description of its own, for the controls of a second family |
+
+The fixture projects' `node_modules` are links `pipeline/fixture-links.mts`
+creates.
+
+This directory holds the suites that check the repository around the
+pipeline; `test-all.sh` runs each but `compiler-api-shapes.mts`, which
+`make compiler-api-shapes` runs:
 
 | Tests | Coverage |
 | --- | --- |
@@ -56,11 +52,19 @@ This directory holds the suites that check the repository around the pipeline:
 | [`node-runs.mts`](node-runs.mts) | The examples and native-contract counterexamples run under Node with the outcomes the cases state. |
 | [`trusted-inputs.mts`](trusted-inputs.mts) | The front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay. |
 | [`tool-failures.mts`](tool-failures.mts) / [`force-tool-failure.mts`](force-tool-failure.mts) | A failure of the compiler's API forced at each kind of site that catches what a query throws (a read refused into a value or a located error, a lookup made an absence, a computed type refused when generic, an imported module left out, `unchecked.mts`'s uninspected nodes) is reported as a tool failure, also when it strikes after a request was sent, a native read failure included; no request follows on a damaged channel, and the next parse opens a fresh compiler; a failure releasing the compiler is a tool failure naming the refusal in flight; an abandoned compiler's process ends; `unchecked.mts` reports every panic, retried or not; a step killed by a signal is a tool failure. |
+| [`stage-store.mts`](stage-store.mts) | The [stage store](../docs/STAGE-STORE.md) with stand-in stages: dependency invalidation, concurrent publication, an interrupted writer, a timeout/success race, writable artifact isolation, timeouts at a longer limit and retried, and an edit of the replay policy replaying its entries. |
+| [`observed-stages.mts`](observed-stages.mts) | With `--reads` (a fast check), that the stages' code reads the file system only through `tools/files.mts`; in full, run by `pipeline/test.mts`, that a parse replays after an unchanged run and executes after each change that alters what it read, that forged entries are refused, and that the confined compiler is killed on a read the API's queries do not serve. |
 | [`compiler-api.mts`](compiler-api.mts) | The compiler-API contract against the installed package: the host package is the audited installation with the reviewed declarations (C0); the host enums' declared values are their runtime values (C1); `jsDoc` allocates on each read, a stable member does not (C4). |
+| [`compiler-api-guards.mts`](compiler-api-guards.mts) | Each family's guard table, the compiler API's and the string-tagged stand-in's, equals its generator's output, and every entry run under Node answers exactly its tag set (C2). |
+| [`compiler-api-shapes.mts`](compiler-api-shapes.mts) | Every node of a corpus holds the properties its shape states required, or a correction covers them (C3), and its members read one value throughout (C4). |
+| [`host-families.mts`](host-families.mts) | The family interpreter on declarations no audited package has: generic arms, residual members, refinements, and tampered tag enum objects. |
+| [`regexp-shapes.mts`](regexp-shapes.mts) | The capture-shape reading of regex literals against the host: known shapes, counterexamples and a seeded fuzz. |
+| [`claim-text.mts`](claim-text.mts) | The claim printer on malformed producer output, which no source can make. |
 | [`rule-inventory.mts`](rule-inventory.mts) / `rule-inventory.snap` | The rules REQUEST-PROTOCOL documents are the rules Lean declares. |
 | [`unchecked-project/`](unchecked-project/) | The counterexamples [`tools/unchecked.mts`](../tools/unchecked.mts) must report, each line marked `// expected: KIND`: flows of an external `any` (`library/` declares them) through results, properties read and written, index signatures, aliases, generic arguments, heritage, defaults beside constraints, conditional types, callback and rest parameters and an unreviewed input; the compiler's brands; `JSON.stringify(undefined)`; suppression directives, a syntax error; values still typed `any`; functions at a unit's boundary; and, unmarked, the `Object.assign` mutations outside the check. |
 | `unchecked-project/gaps.mts` | Unmarked: the documented gaps, programs the check accepts by its stated limit (the relations `any` satisfied in an outside declaration are not re-established) though the written program or the written types refuse them. |
 | [`unchecked-broken/`](unchecked-broken/) | A project the command must refuse: its external declaration names a type that does not exist. |
+| `node-shapes-corpus/` | Sources the compiler-API shape check walks beside the repository's own: TypeScript, JSX, JavaScript with JSDoc, declarations and recovered syntax. |
 
 ## Adding a case
 
@@ -85,8 +89,8 @@ termination is not established.
 
 ## Path-witness and stable-link evidence controls
 
-`node pipeline/test.mts` derives the 4a and 4b forgeries from each run's
-claims and evidence. Function names, parsed statements, source spans and named
+`node pipeline/test.mts` derives the path-witness and stable-link forgeries
+from each run's claims and evidence. Function names, parsed statements, source spans and named
 receiver paths select the changes. There are no stored evidence patches or
 fixture regeneration commands.
 
@@ -110,5 +114,5 @@ choices for the destination context; the other mutations use ordinary search.
 Each generated document must be accepted under its selected mutation and
 refused with each selected component removed. The stable and handler controls
 also require refusal under each other's mutation. The production verifier
-checks every forgery against its exact refusal location, including the handler
-edge at `[405,424)`.
+checks every forgery against its exact refusal location, including the
+handler's incoming edge.
