@@ -12,6 +12,10 @@ a type the code already relies on, adds the check a type promised, or makes
 an implicit correlation explicit. A change made for a reason other than
 soundness (a tool's defect) is listed apart. A rewrite that a fix of the
 verifier would make unnecessary is not one: that fix goes to the verifier.
+Rewriting TScert's code to fit the verifier is premature while the
+verifier's rules change (the owner's decision, 2026-10-23): a refusal of
+TScert's own code is fixed in the verifier, or stays a refusal the census
+reports.
 
 ## Rewrites
 
@@ -141,7 +145,7 @@ positions").
 - **Rewrite:** each arm carries `k`, `{ k: "positions"; positions }` or
   `{ k: "element"; element }` (`RestPositions`), produced and read by `k`.
 - **Pattern:** an `in` test that stands for a tag becomes a tag.
-- **Commit:** this entry's commit (`tools/type-term.mts`,
+- **Commit:** ddb9b4f (`tools/type-term.mts`,
   `declaration-graph.mts`).
 
 ### A cache in an optional field of a shared object
@@ -161,7 +165,7 @@ refused on principle (`optional-write-refused`).
 - **Pattern:** a field written after construction is declared with an
   initializer and a type that holds its absent state (`T | null`), so a
   write replaces its value and adds no key.
-- **Commit:** this entry's commit (`tools/fragment-parse.mts`,
+- **Commit:** 1fd49eb (`tools/fragment-parse.mts`,
   `fragment-expressions.mts`).
 
 ### A `map` callback calling a method of a structurally typed object
@@ -184,19 +188,16 @@ reach would show ([deferred precision](FOOTPRINTS.md#deferred-extra-precision)).
   array dense whatever the calls do (`map-method-loop-push`).
 - **Pattern:** an array whose elements need calls of unbounded effect is
   collected by a loop pushing them, rather than by a `map` callback.
-- **Commit:** this entry's commit (`tools/fragment-statements.mts`).
-
-## Rewrites required, not made
-
-A source pattern of TScert's own code that TScert refuses on principle is
-listed here, with the rewrite that removes it, until the rewrite is made.
+- **Commit:** 9ed9407 (`tools/fragment-statements.mts`).
 
 ## Changes for a tool's defect
 
 ### The compiler API's empty-tuple panic
 
 TypeScript 7.0.2's API panics writing a union that holds an empty array
-literal's tuple type (fixed upstream in 7.1). `forInEntryReads` destructured
+literal's tuple type, a tool failure
+([the pipeline entry point](DESIGN.md#the-pipeline-entry-point)).
+`forInEntryReads` destructured
 `ts.isVariableStatement(s) ? s.declarationList.declarations : []`, so every
 slice including it ended in that tool failure.
 

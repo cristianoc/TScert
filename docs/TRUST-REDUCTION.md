@@ -2,19 +2,20 @@
 
 The bridges between a TypeScript program and the proved theorem that rest on
 review rather than proof, the ways each could be narrowed or proved, and how
-they compose. The options [WORK](../WORK.md#next-steps) takes are (2) and
-(3), with the Fragment semantics read as JavaScript directly and tested
-against node.
+they compose. [A semantics of the Fragment](../WORK.md#a-semantics-of-the-fragment)
+is the open work taking options (2) and (3), with the Fragment semantics
+read as JavaScript directly and tested against node.
 
 ## The bridges
 
 [`checkJson_safe`](DESIGN.md#what-verified-means) proves the extracted
 calculus program safe. Between the source a user writes and that program,
-four things are trusted ([trust surface](DESIGN.md#trust-surface)):
+four bridges rest on review; the [trust surface](DESIGN.md#trust-surface)
+lists them with the rest of what the theorem assumes:
 
 | Bridge | Where | What is trusted |
 | --- | --- | --- |
-| **Parser rewrites** | `tools/fragment-parse.mts` with its parts `fragment-classes.mts`, `fragment-expressions.mts`, `fragment-statements.mts` and `fragment-support.mts` (TypeScript) | Its lowerings (`switch`, `for`, templates, enums, optional chains, patterns, `super`, the iterator protocol, shadowing renames, …) preserve JavaScript's execution; TypeScript's binder names each reference's declaration; for [certified imports](SOURCE-MODEL.md#certified-imports), each imported module's document lowers the bytes its digest names, no code of it left unlowered writes the binding of one of its function declarations, and each import resolves to its unit's terminal declaration. |
+| **Parser rewrites** | `tools/fragment-parse.mts` with its parts `fragment-classes.mts`, `fragment-expressions.mts`, `fragment-statements.mts`, `fragment-support.mts` and `fragment-guards.mts` (TypeScript) | Its lowerings (`switch`, `for`, templates, enums, optional chains, patterns, `super`, the iterator protocol, shadowing renames, …) preserve JavaScript's execution; TypeScript's binder names each reference's declaration; for [certified imports](SOURCE-MODEL.md#certified-imports), each imported module's document lowers the bytes its digest names, no code of it left unlowered writes the binding of one of its function declarations, and each import resolves to its unit's terminal declaration. |
 | **Extraction** | `Source/SourceExtraction.lean`, `Source/Fragment.lean` (Lean) | The calculus program it builds from the Fragment AST means what the Fragment means: control flow, lexical binding, evaluation order, and the program point each claim attaches to; for certified imports, a unit's run, its initialisation included, is its module's. |
 | **Declared types** | `tools/declaration-graph.mts`, `type-term.mts`, `computed-types.mts`, `written-applications.mts`; `Source/Equations/Lowering.lean` | A declaration or annotation is read as the type TypeScript means, and its written applications are supplied with their scopes, each one ([written applications](SOURCE-CONTRACTS.md#written-applications)); the standard library's declarations are reviewed, the applications inside them included; for certified imports, a module's declarations are read in its own document. |
 | **Host** | intrinsics, library overlay, environment premises | Native code meets its stated types ([the host](#the-host)); for certified imports, the module loader binds an eligible import to its unit's closure, evaluated once ([the linking obligation](SOURCE-MODEL.md#certified-imports)). |
@@ -72,15 +73,13 @@ would take a mechanized specification M, which (5) needs as well.
 
 ## Evidence
 
-Errors of the kinds these options address have occurred in each bridge: a
-jump's slot map resolving a binding by name, a default reading the rest
-parameter no longer refused, and source keys spelling the model's reserved
-keys (extraction, caught by (1) or (3)); `super` in a static member calling
-the base's prototype method, and a program-built object passing for a host
-`Set` (parser rewrites, caught by (2) with (3)); generic contracts erased by
-the declaration reader (declared types, (4)); an unbounded `%Await%` and
-native array contracts (host, (5)). Each was found by review or tests; none
-by the proofs, which hold of the program the bridges deliver.
+Errors of the kinds these options address have been found in each bridge
+by review or tests, none by the proofs, which hold of the program the
+bridges deliver: in extraction, a binding resolved by name and source keys
+spelling the model's reserved keys ((1) or (3)); in the parser's rewrites,
+a program-built object passing for a host `Set` ((2) with (3)); in the
+declaration reader, generic contracts erased ((4)); in the host, an
+unbounded `%Await%` ((5)).
 
 ## The host
 

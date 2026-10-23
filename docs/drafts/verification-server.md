@@ -1,10 +1,8 @@
-# Draft pre-plan: the verification server
+# Draft: the verification server
 
-A draft kept for a later decision: neither accepted nor rejected by the owner (2026-10-22). Its decisions D1–D7 are open. Astra passed it as a design on its fifth review round; nothing of it is implemented.
-
-
-Design only. Base: TScert main at e9dfc1a. Measurements carry their source;
-everything else is a decision or a stated obligation.
+A design kept as a draft; its status is in [WORK](../../WORK.md#status).
+Base: TScert main at e9dfc1a. Measurements carry their source; everything
+else is a decision or a stated obligation.
 
 ## 0. Goal and measured motivation
 

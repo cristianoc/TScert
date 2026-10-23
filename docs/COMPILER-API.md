@@ -1345,7 +1345,7 @@ limits it:
   constants: `push` (footprint `value: any`) ends what a test found of a
   field, and a truthiness test of a field one arm requires and another
   leaves optional is refused
-  ([WORK.md](../WORK.md#optional-field-truthiness)).
+  ([witness edges](PROGRAM-TYPING.md#witness-edges)).
 
 Measured on 2026-10-18 at commit db22bec, one run each, the parser's time
 the remainder of the pipeline's:
