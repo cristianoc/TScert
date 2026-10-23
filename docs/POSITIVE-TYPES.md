@@ -1134,17 +1134,24 @@ is **covered** when it satisfies three conditions:
    may be read through any one part; any of these rows may be below a meet
    row of $`B`$ read part by part; a scheme row of $`A`$ may instead have its
    quantified signatures covered by a scheme row of $`B`$.
-3. **Coverage.** Every split part of every clause of $`A`$ is covered by some
-   clause of $`B`$, with $`A`$ as the source type; so is every split part of the
-   clauses of each meet row of $`A`$ without a scheme part that $`B`$ does not
-   name.
+3. **Coverage.** Every split part of every clause of $`A`$ is a clause of
+   $`B`$ or is covered by some clause of $`B`$, with $`A`$ as the source type;
+   so is every split part of the clauses of each meet row of $`A`$ without a
+   scheme part that $`B`$ does not name.
 
 ```math
 \frac{\mathsf{SameKind}(A,B)\qquad\mathsf{Opaque}(A,B)\qquad
-      \forall a\in\mathsf{split}(\mathsf{cl}_G(A)\mathbin{+\!\!+}\mathsf{mcl}_G(A,B)).\;\exists b\in\mathsf{cl}_G(B).\;
+      \forall a\in\mathsf{split}(\mathsf{cl}_G(A)\mathbin{+\!\!+}\mathsf{mcl}_G(A,B)).\;a\in\mathsf{cl}_G(B)\lor\exists b\in\mathsf{cl}_G(B).\;
       \Delta;\kappa;A\vdash a\sqsubseteq b}
      {\Delta;\kappa\vdash(A,B)\ \mathsf{covered}}
 ```
+
+A clause of $`B`$ itself is covered as it is (`Same`): a member of $`A`$
+through it is a member of $`B`$ through it, built-in invariant included
+(`mixed_expand_mpr`), with no premise. Two spellings of one type, such as a
+union of member labels and one label holding their clauses, or a record and
+its meet with the source universe, are then related clause by clause without
+a table row.
 
 Here $`\mathsf{cl}_G(A)`$ lists the clauses of $`A`$'s clause rows, and
 $`\mathsf{mcl}_G(A,B)`$ the clauses $`\vec c`$ of each meet row $`p\sqcap\vec c`$ of

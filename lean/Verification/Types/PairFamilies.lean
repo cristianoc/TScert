@@ -397,7 +397,19 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
     case pack a bs =>
       have hsrc : .pack a bs ∈ sourceClauses G A :=
         List.mem_flatMap.mpr ⟨.pack a bs, List.mem_flatMap.mpr ⟨i, hi, hci⟩, by simp [splitClause]⟩
-      obtain ⟨b, hb, hcov⟩ := (hcover _ (List.mem_append_left _ hsrc)).single rfl
+      have hcases : Clause.pack a bs ∈ clausesOf G B ∨
+          ∃ b ∈ clausesOf G B, Covers G sub R known A (.pack a bs) b := by
+        rcases hcover _ (List.mem_append_left _ hsrc) with h | h | h
+        · exact .inl h
+        · exact .inr h
+        · exact .inr (h _ (by simp [Clause.elements]))
+      rcases hcases with hsame | ⟨b, hb, hcov⟩
+      · -- The target holds the same argument-list clause (`Same`).
+        obtain ⟨j, hj, hbj⟩ := List.mem_flatMap.mp hsame
+        have hjplain := NormalGraph.plain_of_clauses hbj
+        refine ⟨j, hj, ?_⟩
+        simp only [NormalGraph.listParam_of_plain hjplain, Bool.false_eq_true, ite_false]
+        exact ⟨.pack a bs, hbj, hca⟩
       obtain ⟨d, ds, rfl⟩ := argument_clause hba hb
       obtain ⟨j, hj, hbj⟩ := List.mem_flatMap.mp hb
       have hjplain := NormalGraph.plain_of_clauses hbj

@@ -254,6 +254,52 @@ instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {e : 
   decide (l ∈ B) || f.hypotheses.any (fun h => decide (h.1 = l) && decide (h.2 ∈ B)) ||
     (G.meetRow l && B.any fun y => meetBelow G l y f.hypotheses)
 
+/-- The labels after the first `a` of a list, where it holds one. -/
+@[nospecialize] def afterFirst [DecidableEq ι] (a : ι) : List ι → Option (List ι)
+  | [] => none
+  | b :: bs => if b = a then some bs else afterFirst a bs
+
+theorem afterFirst_some [DecidableEq ι] {a : ι} {l r : List ι} (h : afterFirst a l = some r) :
+    a ∈ l ∧ ∀ x ∈ r, x ∈ l := by
+  induction l with
+  | nil => simp [afterFirst] at h
+  | cons b bs ih =>
+    unfold afterFirst at h
+    split at h
+    · next hb => cases h; subst hb; exact ⟨List.mem_cons_self, fun x hx => List.mem_cons_of_mem _ hx⟩
+    · obtain ⟨ha, hr⟩ := ih h
+      exact ⟨List.mem_cons_of_mem _ ha, fun x hx => List.mem_cons_of_mem _ (hr x hx)⟩
+
+/-- `A.all (· ∈ B)`, each label sought first after where the previous one
+was found, in `rest`: linear for two unions in one order
+(`subsetIn_eq`). -/
+@[nospecialize] def subsetIn [DecidableEq ι] (B : List ι) : List ι → List ι → Bool
+  | [], _ => true
+  | a :: as, rest => match afterFirst a rest with
+    | some rest' => subsetIn B as rest'
+    | none => a ∈ B && subsetIn B as B
+
+theorem subsetIn_eq [DecidableEq ι] (B A rest : List ι) (h : ∀ x ∈ rest, x ∈ B) :
+    subsetIn B A rest = A.all (· ∈ B) := by
+  induction A generalizing rest with
+  | nil => rfl
+  | cons a as ih =>
+    unfold subsetIn
+    split
+    · next rest' hr =>
+      obtain ⟨ha, hr'⟩ := afterFirst_some hr
+      rw [ih rest' fun x hx => h x (hr' x hx)]
+      simp [h a ha]
+    · rw [ih B fun _ hx => hx]
+      simp
+
+/-- `A.all (· ∈ B)`, linear where `A` lists `B`'s labels in `B`'s order
+(`subsetIn`). -/
+@[nospecialize] def memAll [DecidableEq ι] (B A : List ι) : Bool := subsetIn B A B
+
+@[simp] theorem memAll_eq [DecidableEq ι] (B A : List ι) : memAll B A = A.all (· ∈ B) :=
+  subsetIn_eq B A B fun _ hx => hx
+
 /-- `Tab` and `TabRen`, decided: the renaming is the representation's own
 proposal, checked. -/
 @[nospecialize] def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (f : Entry ι)
@@ -262,10 +308,8 @@ proposal, checked. -/
     | some r => f.table.any fun p =>
         -- The renaming and its images computed once per row.
         let σ := r.rename p A B
-        decide (RenamesBound G r σ) &&
-        (let S := r.substitute σ p.1
-         A.all (fun l => decide (l ∈ S))) &&
-        (r.substitute σ p.2).all (fun b => decide (b ∈ B))
+        decide (RenamesBound G r σ) && memAll (r.substitute σ p.1) A &&
+          memAll B (r.substitute σ p.2)
     | none => false
 
 /-- `Inst` at the instance `w`, its hypotheses decided by `prem` on strictly
@@ -311,7 +355,7 @@ theorem premTable_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Ren
     {look : Lookup ι} {gen : ι → List ι → List (Nat × List (List ι))} {f : Entry ι}
     {A B : List ι} (h : premTable G sub f A B = true) : Prem G sub look gen f A B := by
   unfold premTable at h
-  simp only [Bool.or_eq_true, decide_eq_true_eq] at h
+  simp only [memAll_eq, Bool.or_eq_true, decide_eq_true_eq] at h
   rcases h with h | h
   · exact .tab h
   · cases sub with
@@ -392,7 +436,7 @@ theorem prem_complete [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renam
     intro A B r p hs hp hren hA hB k _
     subst hs
     have : premTable G (some r) f A B = true := by
-      simp only [premTable, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true,
+      simp only [premTable, memAll_eq, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true,
         decide_eq_true_eq, List.all_eq_true]
       exact .inr ⟨p, hp, ⟨hren, hA⟩, hB⟩
     simp [premB, this]
@@ -469,6 +513,7 @@ checked evidence. -/
     OpaqueFamily G sub (Prem G sub look gen f) known
       (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
+      a ∈ clausesOf G p.2 ∨
       (∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
         checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true) ∨
       ∀ e ∈ a.elements, ∃ b ∈ clausesOf G p.2,
@@ -485,15 +530,16 @@ theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
   refine ⟨hk, OpaqueFamily.mono (fun L S M hs q hq => ?_) ho, fun a ha => ?_⟩
   · obtain ⟨e, _, _, _, he⟩ := hs q hq
     exact checkArrowWith_sound he
-  · rcases hc a ha with ⟨b, hb, hcb⟩ | he
+  · rcases hc a ha with hsame | ⟨b, hb, hcb⟩ | he
+    · exact .inl hsame
     · have hb : b ∈ clausesOf G p.2 := by
         rcases List.mem_append.mp hb with hb | hb
         · exact ClauseSelection.mem_candidates G hb
         · exact hb
-      exact .inl ⟨b, hb, checkClauseWith_sound hcb⟩
-    · exact .inr fun e he' => by
+      exact .inr (.inl ⟨b, hb, checkClauseWith_sound hcb⟩)
+    · exact .inr (.inr fun e he' => by
         obtain ⟨b, hb, hcb⟩ := he e he'
-        exact ⟨b, hb, checkClauseWith_sound hcb⟩
+        exact ⟨b, hb, checkClauseWith_sound hcb⟩)
 
 /-- The variable discipline, decided. -/
 @[nospecialize] def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
@@ -1064,7 +1110,9 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 and a scheme's signatures against a target scheme's binding the same rows. -/
 @[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
     (select : Bool := false) : List (List ι × List ι) :=
-  (clausesOf G X).flatMap (fun a =>
+  -- A clause the target holds itself is covered as it is (`Same`): it
+  -- demands no pair.
+  (clausesOf G X).flatMap (fun a => if a ∈ clausesOf G Y then [] else
     (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
@@ -1097,45 +1145,6 @@ variance the checker computed. -/
     | _ => none
   | _, _ => none
 
-/-- The labels after the first `a` of a list, where it holds one. -/
-@[nospecialize] def afterFirst [DecidableEq ι] (a : ι) : List ι → Option (List ι)
-  | [] => none
-  | b :: bs => if b = a then some bs else afterFirst a bs
-
-theorem afterFirst_some [DecidableEq ι] {a : ι} {l r : List ι} (h : afterFirst a l = some r) :
-    a ∈ l ∧ ∀ x ∈ r, x ∈ l := by
-  induction l with
-  | nil => simp [afterFirst] at h
-  | cons b bs ih =>
-    unfold afterFirst at h
-    split at h
-    · next hb => cases h; subst hb; exact ⟨List.mem_cons_self, fun x hx => List.mem_cons_of_mem _ hx⟩
-    · obtain ⟨ha, hr⟩ := ih h
-      exact ⟨List.mem_cons_of_mem _ ha, fun x hx => List.mem_cons_of_mem _ (hr x hx)⟩
-
-/-- `A.all (· ∈ B)`, each label sought first after where the previous one
-was found, in `rest`: linear for two unions in one order
-(`subsetIn_eq`). -/
-@[nospecialize] def subsetIn [DecidableEq ι] (B : List ι) : List ι → List ι → Bool
-  | [], _ => true
-  | a :: as, rest => match afterFirst a rest with
-    | some rest' => subsetIn B as rest'
-    | none => a ∈ B && subsetIn B as B
-
-theorem subsetIn_eq [DecidableEq ι] (B A rest : List ι) (h : ∀ x ∈ rest, x ∈ B) :
-    subsetIn B A rest = A.all (· ∈ B) := by
-  induction A generalizing rest with
-  | nil => rfl
-  | cons a as ih =>
-    unfold subsetIn
-    split
-    · next rest' hr =>
-      obtain ⟨ha, hr'⟩ := afterFirst_some hr
-      rw [ih rest' fun x hx => h x (hr' x hx)]
-      simp [h a ha]
-    · rw [ih B fun _ hx => hx]
-      simp
-
 /-- The rows a pair needs: none for an inclusion, its per-position pairs'
 through `Var`, else the pair itself. -/
 @[nospecialize] def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
@@ -1163,10 +1172,22 @@ stored on the prototype and received by the source object. -/
   let methods := (clausesOf G Y).flatMap fun c => match c with
     | .refs _ _ _ _ ms _ _ | .dict _ _ _ _ _ ms _ _ _ => ms
     | _ => []
-  direct ++ methods.flatMap fun m =>
-    let sources := (protoChain G PositiveRules.protoChainDepth X).flatMap fun P =>
-      (PositiveRules.viewOf G P m.key).toList.flatten
-    sources.flatMap fun i => m.schemes.flatten.flatMap (pairs i)
+  -- The source's prototype chain is read once, its view of a key once per
+  -- key, and a method whose key and schemes an earlier one had adds the same
+  -- pairs again, so it is skipped.
+  let chain := protoChain G PositiveRules.protoChainDepth X
+  let step (acc : List (PropKey × List ι) × List (PropKey × List ι) × List (List ι × List ι))
+      (m : MethodMembers.Sig (List ι)) :=
+    let (seen, views, out) := acc
+    let targets := m.schemes.flatten
+    if seen.contains (m.key, targets) then acc else
+    let (sources, views) := match views.lookup m.key with
+      | some src => (src, views)
+      | none =>
+        let src := chain.flatMap fun P => (PositiveRules.viewOf G P m.key).toList.flatten
+        (src, (m.key, src) :: views)
+    ((m.key, targets) :: seen, views, out ++ sources.flatMap fun i => targets.flatMap (pairs i))
+  direct ++ (methods.foldl step ([], [], [])).2.2
 
 /-- A head pair recurring with larger arguments than each of its two or more
 earlier occurrences, none of which it renames: growth. -/
@@ -1244,6 +1265,7 @@ searched for its rows. The check decides (`compareUsing`). -/
     decide (OpaqueFamily G images.sub R known
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
+      decide (a ∈ clausesOf G p.2) ||
       (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
         (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
       -- A tag set is covered between several target clauses, element by
@@ -1274,7 +1296,7 @@ the execution budget. -/
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
       if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          (sourceClauses G p.1).all fun a => (clausesOf G p.2).any (fun b =>
+          (sourceClauses G p.1).all fun a => decide (a ∈ clausesOf G p.2) || (clausesOf G p.2).any (fun b =>
             checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
             (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any fun b =>
               checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
@@ -1365,7 +1387,7 @@ theorem premAt_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 premise judgment on the pair (`Var` for two applications of one head). -/
 @[nospecialize] def subsetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) : Bool :=
-  decide (∀ i ∈ S, i ∈ T) || match images.sub with
+  memAll T S || match images.sub with
     | some r => premAt G images r S T
     | none => false
 
@@ -1373,9 +1395,9 @@ theorem subsetUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T}
     (h : subsetUsing G images S T = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  simp only [subsetUsing, Bool.or_eq_true] at h
+  simp only [subsetUsing, memAll_eq, Bool.or_eq_true] at h
   rcases h with h | h
-  · exact fun _ => mixed_subset (of_decide_eq_true h)
+  · exact fun _ => mixed_subset (by simpa only [List.all_eq_true, decide_eq_true_eq] using h)
   · split at h
     · exact premAt_sound h
     · cases h

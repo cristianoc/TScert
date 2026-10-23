@@ -3289,12 +3289,13 @@ theorem rowSem_elements (G : NormalGraph ι) (A X : List ι → Fam) (P : List �
   all_goals exact ⟨_, List.mem_singleton_self _, hv⟩
 
 /-- **A source clause covered by a target type** (HOST-FAMILIES.md, "Tag
-sets"): by one of the target's clauses, or, for a tag set, each of its
-elements by one, so that several target clauses cover one set between them.
-For any other clause the two are one condition. -/
+sets"): as one of the target's own clauses (`Same`), by one of the target's
+clauses, or, for a tag set, each of its elements by one, so that several
+target clauses cover one set between them. For any other clause the last
+two are one condition. -/
 @[nospecialize] def ClauseCovered [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (R : List ι → List ι → Prop) (known : Known ι) (self : List ι) (a : Clause (List ι)) (B : List ι) : Prop :=
-  (∃ b ∈ clausesOf G B, Covers G sub R known self a b) ∨
+  a ∈ clausesOf G B ∨ (∃ b ∈ clausesOf G B, Covers G sub R known self a b) ∨
     ∀ e ∈ a.elements, ∃ b ∈ clausesOf G B, Covers G sub R known self e b
 
 theorem ClauseCovered.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
@@ -3307,19 +3308,12 @@ theorem ClauseCovered.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option 
     (hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       mixedValues G η self j U v)
     (hv : mixedSem G η a n W v) : mixedValues G η B n W v := by
-  rcases hc with ⟨b, hb, hcover⟩ | he
+  rcases hc with ha | ⟨b, hb, hcover⟩ | he
+  · exact mixed_expand_mpr ⟨a, ha, hv⟩
   · exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hv⟩
   · obtain ⟨e, hem, hve⟩ := rowSem_elements G _ _ _ hv
     obtain ⟨b, hb, hcover⟩ := he e hem
     exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hve⟩
-
-/-- A clause other than a tag set is covered by one target clause. -/
-theorem ClauseCovered.single [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {R known self a B} (hc : ClauseCovered G sub R known self a B) (ha : a.elements = [a]) :
-    ∃ b ∈ clausesOf G B, Covers G sub R known self a b := by
-  rcases hc with h | h
-  · exact h
-  · exact h a (by simp [ha])
 
 /-- A type's meaning is a family of closed values. -/
 theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=

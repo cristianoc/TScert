@@ -455,8 +455,10 @@ default:
 - table growth adds only the demand pairs of candidate clause pairs
   (`demandPairs`), and the greatest fixed point's coverage test reads only
   candidates (`coveredIn`);
-- the table check reads the candidates first and then every target clause
+- the table check first accepts a source clause that is a target clause
+  (`Same`), then reads the candidates and then every target clause
   (`checkEntries`, its existential over `candidates ++ clausesOf`);
+- a source clause that is a target clause demands no pair (`demandPairs`);
 - a structural comparison or a comparison step not established with
   selection is redone with selection off (`InstanceImageCheck.general`, in
   `compareStructural` and `compareStepState`), so the restricted search
