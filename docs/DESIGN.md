@@ -722,6 +722,69 @@ project axioms; that fact does not itself establish source correspondence.
 See [the semantic guarantee](SEMANTICS.md#what-the-checked-development-establishes)
 and [trust-reduction options](TRUST-REDUCTION.md).
 
+### Statement coverage
+
+Statement coverage states how much of a directory's source a census verifies,
+as a percentage that sums over files and functions. Its unit is an
+executable source statement of the original source, before lowering, each of
+weight 1.
+
+**Inventory.** The units of a module are its statements that execute:
+variable statements, expression statements, `if`, `do`, `while`, `for`,
+`for...in`, `for...of`, `continue`, `break`, `return`, `with`, `switch`,
+`throw`, `try`, `debugger`, `export default` of an expression, class
+declarations and enum declarations other than `const enum`. Blocks, empty
+statements, labels, imports, exports of bindings, function declarations,
+type-only and ambient declarations are none. A compound statement owns its
+header (a condition, a `for` head, a `switch` discriminant and its cases);
+each statement of its branches or body is a unit of its own. A statement
+owns its expressions, except the bodies of the functions they hold. A class
+field's initializer is a unit, and an arrow whose body is an expression has
+one unit for that expression, its implicit `return`. A parameter's default
+belongs to no unit.
+
+**Ownership.** Each unit belongs to the function whose body holds it, and a
+nested function's units belong also to the top-level function enclosing it.
+A top-level function declaration with a name and a body is a census
+function: the census slices exactly these. A unit outside every function
+belongs to `<module>`; a unit of any other function directly at module level
+(a class member, a function a module binding holds) belongs to that
+function, outside the census's scope.
+
+**Classes.** A unit of a census function is *verified* when the census
+slice of its top-level function verified: the slice's source acceptance,
+imports included, covers that function, and so every function nested in it.
+Every other unit of a census function is *not verified*, classified by its
+slice's outcome (`unsupported/source`, `unsupported/proposal`,
+`unverified/search`, `timeout`, `error/…` for a tool failure, and the other
+outcomes a slice can have). Units of `<module>` and of functions outside the
+census's scope are *out of scope*, and units of a census function no slice
+of the record covers are *not run*; both are reported and not counted.
+
+**The measure.** With $`V`$ the verified units and $`N`$ the counted ones
+(verified and not verified), verified coverage is $`100\,V/N`$, `n/a` for
+$`N = 0`$, reported with verified functions over census functions. File and
+directory figures sum $`V`$ and $`N`$ first; percentages are never averaged.
+While `<module>` and functions outside the census's scope are not counted,
+the measure is *top-level-function-body coverage*. Equal weights measure
+statement sites, not code size or difficulty, and no syntactic unit is
+invariant under every refactoring: splitting a function, adding trivial
+statements or dead code moves the denominator, which comparisons report
+separately.
+
+**Comparison.** Two censuses compare on matched units: a unit's identity is
+its file, its top-level function, its kind and its ordinal among that
+function's units of that kind. A unit matched on both sides counts in the
+transition between verified, not verified and not counted; a unit on one
+side only counts as deleted or added.
+
+**Records.** A census record holds each file's source hash and its
+inventory, every unit with its file, span, position, kind, owner and class
+([`dev/statement-coverage.mts`](../dev/statement-coverage.mts)). The measure
+of an existing record is computed from the sources of the record's commit,
+or of the checkout for a census of a dirty tree, compared with the record's
+hashes per file, or per slice for a record without an inventory.
+
 ### Modules and code units
 
 The module is the unit of source verification. Its top-level functions and
