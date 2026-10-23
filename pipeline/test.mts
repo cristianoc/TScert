@@ -4413,7 +4413,7 @@ control(async (): Promise<void> => {
   // view (a `length` view at a number, a writable field, an optional field,
   // a dictionary's index, a key every object reads through its prototype,
   // the field of a receiver coerced to its base, a class value's static
-  // field, a captured cell's value) is
+  // field or a constructor's readonly field, a captured cell's value) is
   // refused by the table check, beside an accepted entry differing in that
   // part (a copy, a `length` view at a type excluding a number, an entry at
   // a wider result); an entry stating a location's contents or a heap link
@@ -4483,7 +4483,7 @@ control(async (): Promise<void> => {
       if (n.effect !== null && "reading" in n.effect && uses(n.effect).length > 0) n.effect = { ordinary: must(n.effect.reading, "the inspection") };
   };
   for (const [name, rule] of [["widthOf", "read"], ["optionalOf", "readOptional"], ["indexOf", "readDict"],
-      ["tagOfCallable", "readCallable"], ["classTag", "readCallable"], ["errorName", "read"], ["sizeOf", "len"], ["textSize", "lenStr"],
+      ["tagOfCallable", "readCallable"], ["classTag", "readCallable"], ["constructorTag", "readBagView"], ["errorName", "read"], ["sizeOf", "len"], ["textSize", "lenStr"],
       ["upper", "readProto"]] as const) {
     assert.equal(uses(unit(e0, name)).length, 0, `${name} reads through no summary`);
     assert.ok(rules(unit(e0, name)).has(rule), `${name} reads by ${rule}`);
@@ -4498,6 +4498,8 @@ control(async (): Promise<void> => {
   const errors = must(readOf(unit(e0, "errorName"), "name").context[0], "the error slot's type") as number[]; // asserted: a context entry is a type
   const statics = readOf(unit(e0, "classTag"), "tag");
   const classes = must(statics.context[0], "the class slot's type") as number[]; // asserted: a context entry is a type
+  const views = readOf(unit(e0, "constructorTag"), "tag");
+  const constructors = must(views.context[0], "the constructor slot's type") as number[]; // asserted: a context entry is a type
   const cellRead = readOf(unit(e0, "kindOfCell").codes, "value");
   const cellUse = must(nested(cellRead.term).find((v) => typeof v === "object" && v !== null && "var" in v), "the cell's slot") as { var: { i: number } }; // asserted: the read's receiver term
   const cell = must(cellRead.context[cellUse.var.i], "the cell's type") as number[]; // asserted: a context entry is a type
@@ -4545,6 +4547,8 @@ control(async (): Promise<void> => {
     ["coerced-receiver", added({ receiver: errors, field: "name", result: str, arms: errors.map(() => ({ view: str, proof: null })) }), /does not justify/],
     ["class-static", added({ receiver: classes, field: "tag", result: statics.type,
       arms: classes.map(() => ({ view: statics.type, proof: null })) }), /does not justify/],
+    ["constructor-view", added({ receiver: constructors, field: "tag", result: views.type,
+      arms: constructors.map(() => ({ view: views.type, proof: null })) }), /does not justify/],
     ["cell-contents", added({ receiver: cell, field: "value", result: S.receiver, arms: [{ view: S.receiver, proof: null }] }), /does not justify/],
     ["other-receiver", added({ receiver: [must(S.receiver[0], "A")], field: "k", result: S.result, arms: [armA] }, true), typing],
     ["other-result", added(structuredClone(wider), true), typing],
@@ -4574,7 +4578,7 @@ control(async (): Promise<void> => {
     assert.equal(outcome.status, 1, `${name}: ${outcome.stdout}${outcome.stderr}`);
     assert.match(outcome.stdout + outcome.stderr, reason, name);
   }
-  process.stdout.write(`read summaries: 8 units read through summaries (two qualified bodies', a closure's code's and a typed read's against no code entry among them) and 9 read outside the boundary by their own rules in the honest evidence; ${accepted.length} copies and valid entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver, class-static or cell key by the table check; contents or a link by the decoder; another receiver, key or result, an index past the table and another request's entry by the use check; likewise in a qualified body's typed read and ordinary step, the closure's code and the typed read checked against no code entry)\n`);
+  process.stdout.write(`read summaries: 8 units read through summaries (two qualified bodies', a closure's code's and a typed read's against no code entry among them) and 10 read outside the boundary by their own rules in the honest evidence; ${accepted.length} copies and valid entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver, class-static, constructor-view or cell key by the table check; contents or a link by the decoder; another receiver, key or result, an index past the table and another request's entry by the use check; likewise in a qualified body's typed read and ordinary step, the closure's code and the typed read checked against no code entry)\n`);
 });
 control(async (): Promise<void> => {
   // The evidence decoder reads the parsed JSON value (REQUEST-PROTOCOL.md,

@@ -2,9 +2,10 @@
 // read through one checked summary of the request (`readSummary`), a view
 // of `length` at a type excluding a number included, in plain and in
 // qualified bodies (`Awaited<T>`), as a typed read or, with a dictionary
-// holding a numeric index only among the members, an inspection; a writable field, an
-// optional field, a dictionary's index, a callable object's field, a class
-// value's readonly static field, a receiver coerced to its base, an array's or a string's `length` and a
+// holding a numeric index only among the members, an inspection; a
+// writable field, an optional field, a dictionary's index, a callable
+// object's field, a class value's readonly static field, a constructor
+// type's readonly field, a receiver coerced to its base, an array's or a string's `length` and a
 // primitive's member read through its wrapper's prototype keep their own
 // rules. The read-summary controls of pipeline/test.mts forge summaries
 // beside these reads.
@@ -93,6 +94,19 @@ export function indexOf(x: D | E): string | undefined {
 }
 
 export function tagOfCallable(x: F | G): "f" | "g" {
+  return x.tag;
+}
+
+interface PC {
+  new (): object;
+  readonly tag: "p";
+}
+interface QC {
+  new (): object;
+  readonly tag: "q";
+}
+
+export function constructorTag(x: PC | QC): "p" | "q" {
   return x.tag;
 }
 
