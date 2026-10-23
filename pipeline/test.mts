@@ -4407,16 +4407,22 @@ control(async (): Promise<void> => {
 });
 control(async (): Promise<void> => {
   // A request's read summaries (REQUEST-PROTOCOL.md, "Read summaries") are
-  // checked once each, used or not: an entry whose arms miss or add a
-  // member, compare a view to a result it is not within, or read a key no
-  // member states as a readonly view (a `length` view at a number, a
-  // writable field, an optional field, a dictionary's index, a key every
-  // object reads through its prototype, the field of a receiver coerced to
-  // its base, a captured cell's value) is refused by the table check; an
-  // entry stating a location's contents or a heap link beside its fields by
-  // the decoder; and a valid entry at another receiver or result than the
-  // read's by the use check. A copy of an honest entry, used or not, and a
-  // valid entry unused, are accepted.
+  // checked once each, used or not, against the request's graph and image
+  // check: an entry whose arms miss or add a member, compare a view to a
+  // result it is not within, or read a key no member states as a readonly
+  // view (a `length` view at a number, a writable field, an optional field,
+  // a dictionary's index, a key every object reads through its prototype,
+  // the field of a receiver coerced to its base, a captured cell's value) is
+  // refused by the table check, beside an accepted entry differing in that
+  // part (a copy, a `length` view at a type excluding a number, an entry at
+  // a wider result); an entry stating a location's contents or a heap link
+  // by the decoder; a valid entry at another receiver, key or result than
+  // the read's, an index past the table and an entry of another request's
+  // table by the use check. The same holds in a body qualified by its
+  // binder's resolution descriptor (`Awaited<T>`), which reads through an
+  // ordinary summary, and in a closure's code, checked before the unit's
+  // graph against the codes before it. The reads outside the boundary keep
+  // their rules in the honest evidence.
   type Arm = { view: number[]; proof: unknown };
   type Summary = { receiver: number[]; field: string; result: number[]; arms: Arm[] };
   type Unit = { certificate: WireNode[]; codes?: WireNode[][]; readSummaries?: Summary[] };
@@ -4440,7 +4446,11 @@ control(async (): Promise<void> => {
     typeof v === "object" && v !== null && "claim" in v ? [v.claim as Claim] : []); // asserted: a derivation node's claim, as the wire spells it
   const uses = (value: unknown): { index: number }[] => nested(value).flatMap((v) =>
     typeof v === "object" && v !== null && "readSummary" in v ? [v.readSummary as { index: number }] : []); // asserted: a derivation node's rule, as the wire spells it
-  const readOf = (u: Unit, field: string): Claim => must(claims(u).find((c) =>
+  /** The rules a unit's derivations apply, by name. */
+  const rules = (value: unknown): Set<string> => new Set(nested(value).flatMap((v) =>
+    typeof v !== "object" || v === null || !("rule" in v) ? [] : typeof v.rule === "string" ? [v.rule]
+      : typeof v.rule === "object" && v.rule !== null ? Object.keys(v.rule) : []));
+  const readOf = (u: unknown, field: string): Claim => must(claims(u).find((c) =>
     (JSON.stringify(c.term) ?? "").includes(`"field":"${field}"`) && (JSON.stringify(c.term) ?? "").startsWith('{"readAt"')),
     `a read of ${field}`);
   const e0 = honest();
@@ -4449,13 +4459,24 @@ control(async (): Promise<void> => {
   assert.equal(S.arms.length, 2, "one arm per member of A | B");
   assert.equal(uses(unit(e0, "kindTwice")).length, 2, "two reads of one summary in kindTwice");
   assert.equal(table(e0, "kindTwice").length, 1, "one summary for both reads");
-  assert.ok(uses(unit(e0, "kindOfCell")).length > 0, "the closure's read through a summary");
+  for (const name of ["kindOf", "tagOf", "entryKind", "lengthView", "kindAwaiting"])
+    assert.equal(uses(unit(e0, name)).length, 1, `${name} reads through a summary`);
+  assert.ok(uses(unit(e0, "kindOfCell").codes).length > 0, "the closure's code reads through a summary");
+  for (const [name, rule] of [["widthOf", "read"], ["optionalOf", "readOptional"], ["indexOf", "readDict"],
+      ["tagOfCallable", "readCallable"], ["errorName", "read"], ["sizeOf", "len"], ["textSize", "lenStr"],
+      ["upper", "readProto"]] as const) {
+    assert.equal(uses(unit(e0, name)).length, 0, `${name} reads through no summary`);
+    assert.ok(rules(unit(e0, name)).has(rule), `${name} reads by ${rule}`);
+  }
   const [armA, armB] = [must(S.arms[0], "A's arm"), must(S.arms[1], "B's arm")];
+  const tagged = must(table(e0, "tagOf")[0], "tagOf's summary");
+  const lengths = must(table(e0, "lengthView")[0], "lengthView's summary");
+  assert.equal(lengths.field, "length");
   const num = readOf(unit(e0, "widthOf"), "w").type;
   const str = readOf(unit(e0, "errorName"), "name").type;
   const dictionary = must(must(table(e0, "entryKind")[0], "entryKind's summary").receiver.find((l) => !S.receiver.includes(l)), "D");
   const errors = must(readOf(unit(e0, "errorName"), "name").context[0], "the error slot's type") as number[]; // asserted: a context entry is a type
-  const cellRead = readOf(must(unit(e0, "kindOfCell").codes?.[0], "the closure's code") as unknown as Unit, "value"); // asserted: a code certificate, searched as a unit's
+  const cellRead = readOf(unit(e0, "kindOfCell").codes, "value");
   const cellUse = must(nested(cellRead.term).find((v) => typeof v === "object" && v !== null && "var" in v), "the cell's slot") as { var: { i: number } }; // asserted: the read's receiver term
   const cell = must(cellRead.context[cellUse.var.i], "the cell's type") as number[]; // asserted: a context entry is a type
   const forge = (name: string, change: (e: Evidence) => void): string => {
@@ -4467,21 +4488,26 @@ control(async (): Promise<void> => {
   };
   const check = (path: string): Invoked => tested(verifierCall(verifier, ["--check-source-claims",
     join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts), path]));
-  const added = (entry: Summary, use: boolean = false) => (e: Evidence): void => {
-    const t = table(e, "kindOf");
+  const added = (entry: Summary, use: boolean = false, name: string = "kindOf") => (e: Evidence): void => {
+    const t = table(e, name);
     t.push(entry);
-    if (use) for (const u of uses(unit(e, "kindOf"))) u.index = t.length - 1;
+    if (use) for (const u of uses(unit(e, name))) u.index = t.length - 1;
   };
+  const wider: Summary = { ...structuredClone(S), result: [...armA.view, ...armB.view] };
   const accepted: [string, (e: Evidence) => void][] = [
     ["copy-used", added(structuredClone(S), true)],
     ["copy-unused", added(structuredClone(S))],
     ["narrower-unused", added({ receiver: [must(S.receiver[0], "A")], field: "k", result: S.result, arms: [armA] })],
-    ["wider-result-unused", added({ ...structuredClone(S), result: [...armA.view, ...armB.view] })],
+    ["wider-result-unused", added(structuredClone(wider))],
+    ["other-key-unused", added(structuredClone(tagged))],
+    ["length-view-unused", added(structuredClone(lengths))],
+    ["qualified-copy-used", added(structuredClone(S), true, "kindAwaiting")],
   ];
   for (const [name, change] of accepted) {
     const outcome = check(forge(name, change));
     assert.equal(outcome.status, 0, `${name}: ${outcome.stdout}${outcome.stderr}`);
   }
+  const typing = /does not establish this node's typing/;
   const refused: [string, (e: Evidence) => void, RegExp][] = [
     ["missing-arm", (e) => { must(table(e, "kindOf")[0], "S").arms.pop(); }, /does not justify/],
     ["extra-arm", (e) => { must(table(e, "kindOf")[0], "S").arms.push(armA); }, /does not justify/],
@@ -4493,10 +4519,14 @@ control(async (): Promise<void> => {
     ["prototype-key", added({ receiver: S.receiver, field: "toString", result: str, arms: [{ view: str, proof: null }, { view: str, proof: null }] }), /does not justify/],
     ["coerced-receiver", added({ receiver: errors, field: "name", result: str, arms: errors.map(() => ({ view: str, proof: null })) }), /does not justify/],
     ["cell-contents", added({ receiver: cell, field: "value", result: S.receiver, arms: [{ view: S.receiver, proof: null }] }), /does not justify/],
-    ["other-receiver", added({ receiver: [must(S.receiver[0], "A")], field: "k", result: S.result, arms: [armA] }, true),
-      /does not establish this node's typing/],
-    ["other-result", added({ ...structuredClone(S), result: [...armA.view, ...armB.view] }, true),
-      /does not establish this node's typing/],
+    ["other-receiver", added({ receiver: [must(S.receiver[0], "A")], field: "k", result: S.result, arms: [armA] }, true), typing],
+    ["other-result", added(structuredClone(wider), true), typing],
+    ["other-key", added(structuredClone(tagged), true), typing],
+    ["past-the-table", (e) => { for (const u of uses(unit(e, "kindOf"))) u.index = 9; }, typing],
+    ["other-request", (e) => { delete unit(e, "kindOf").readSummaries; }, typing],
+    ["qualified-missing-arm", (e) => { must(table(e, "kindAwaiting")[0], "its summary").arms.pop(); }, /does not justify/],
+    ["qualified-other-result", added(structuredClone(wider), true, "kindAwaiting"), typing],
+    ["code-past-the-table", (e) => { for (const u of uses(unit(e, "kindOfCell").codes)) u.index = 9; }, /does not justify|does not establish/],
     ["cached-contents", (e) => { Object.assign(must(table(e, "kindOf")[0], "S"), { contents: ["str"] }); },
       /unknown fields or missing explicit fields/],
     ["heap-link", (e) => { Object.assign(must(table(e, "kindOf")[0], "S"), { links: [] }); },
@@ -4507,7 +4537,7 @@ control(async (): Promise<void> => {
     assert.equal(outcome.status, 1, `${name}: ${outcome.stdout}${outcome.stderr}`);
     assert.match(outcome.stdout + outcome.stderr, reason, name);
   }
-  process.stdout.write(`read summaries: ${accepted.length} honest copies and valid unused entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver or cell key by the table check; a stated location's contents or link by the decoder; another receiver or result than the read's by the use check)\n`);
+  process.stdout.write(`read summaries: 7 units read through summaries (a qualified body and a closure's code among them) and 8 read outside the boundary by their own rules in the honest evidence; ${accepted.length} copies and valid entries accepted; ${refused.length} forged entries and uses refused (a missing or extra arm, a view not within the result, a length view at a number, a writable, optional, index, prototype, coerced-receiver or cell key by the table check; contents or a link by the decoder; another receiver, key or result, an index past the table and another request's entry by the use check; likewise in the qualified body and the closure's code)\n`);
 });
 control(async (): Promise<void> => {
   // The evidence decoder reads the parsed JSON value (REQUEST-PROTOCOL.md,
