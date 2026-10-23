@@ -405,7 +405,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     execute_bindings;
     expression=(fun env e -> expr env e);
     expression_effects=after;
-    branch;
+    condition;
     return_expression=(fun env e -> expr ?expected:(expected_result ()) env e);
     returned=record_return;
     entry;

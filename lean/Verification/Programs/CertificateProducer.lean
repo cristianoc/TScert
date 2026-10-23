@@ -1459,6 +1459,52 @@ where
           | none => [])
     | none => pure []
 
+/-- What a node's test yields about each slot it speaks of, at that slot's
+own slice, a slice the test leaves unchanged included: the tested slot, and
+each object a current read link says its value was read from. An edge
+spreads each yield over the slots the alias links relate to its target.
+The producer tries bounded selections and orderings against the edge
+obligations. Untrusted: the checker decides. -/
+@[nospecialize] def sliceYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (e : Evidence ι)
+    (k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+  match PromiseCalls.promiseOf G e with
+  | some _ => pure []
+  | none =>
+    match (claim e).term with
+    | .ite (.test tag (.var i)) .tru .fls => do
+      return (← tagged i tag true) ++ (← membership [tag] i [false])
+    | .ite (.test tag (.var i)) .fls .tru => tagged i tag false
+    | t => match PromiseCalls.memberParts t with
+      | some (ts, i) => if PromiseCalls.isMemberOn ts i t then membership ts i [true, false] else pure []
+      | none => pure []
+where
+  /-- The read links whose value is slot `i`'s. -/
+  reads (i : Nat) : List HeapLinks.Link :=
+    k.links.filter fun g => !g.distinct && !g.alias && !g.optional && g.value == i
+  /-- A conditional yield at `j` of `sliced`, by a subtype choice of it. -/
+  sliceAt (j : Nat) (sliced : Ty ι) : StateM (Answered ι) (Option (PromiseCalls.Yield ι)) := do
+    match Γ[j]? with
+    | none => pure none
+    | some _ => do
+      let r ← (subtypeUsing G images sliced sliced).toState
+      pure (r.value.map fun p => { conditional := true, target := j, type := sliced, evidence := some p })
+  tagged (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+    let slot ← sliceAt i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag q)
+    let fields ← (reads i).filterMapM fun g =>
+      sliceAt g.cell (BranchRefinement.fieldSlice G (Γ[g.cell]?.getD []) g.field tag q)
+    pure (slot.toList ++ fields)
+  membership (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+    let yieldAt := fun (j : Nat) (q : Bool) (sliced : Ty ι) =>
+      match Γ[j]? with
+      | some _ =>
+        some ({ conditional := q, onFalse := !q, target := j, type := sliced, evidence := some {} } : PromiseCalls.Yield ι)
+      | none => none
+    let slots := answers.filterMap fun q => yieldAt i q (PromiseCalls.memberSlotSlice G (Γ[i]?.getD []) ts q)
+    let fields := answers.flatMap fun q => (reads i).filterMap fun g =>
+      yieldAt g.cell q (PromiseCalls.memberFieldSlice G (Γ[g.cell]?.getD []) g.field ts q pool.flatten.eraseDups)
+    pure (slots ++ fields)
+
 /-- An edge's implications in the target's slots: each the source states, at
 every pair of target slots the mapping reads it from. -/
 def projectImplications (xs : List (PromiseCalls.Implication ι)) (m : PointClaims.Mapping) (width : Nat) :
@@ -1575,10 +1621,42 @@ promise's evidence. -/
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
   let found ← stateIn (nodeYields G images pool c.context implies e out k)
-  -- Yields that leave a target's claim unmet are not taken.
-  tryCatch (produceNodeAt G images pool l node claims k c e effect out implies arguments goal found) fun err =>
-    if found.isEmpty then throw err
-    else produceNodeAt G images pool l node claims k c e effect out implies arguments goal []
+  -- Every candidate is checked against the node's edge obligations. Retry
+  -- only a bounded number; label counts do not order semantic precision.
+  let attempt := produceNodeAt G images pool l node claims k c e effect out implies arguments goal
+  tryCatch (attempt found) fun err => do
+    let sliced ← stateIn (sliceYields G images pool c.context e k)
+    let same := fun (a b : PromiseCalls.Yield ι) =>
+      a.target == b.target && a.conditional == b.conditional &&
+        a.onFalse == b.onFalse && a.type == b.type
+    let choices := (found ++ sliced).foldl (fun ys y =>
+      if ys.any (same y) then ys else ys ++ [y]) []
+    if choices.isEmpty then throw err
+    let edge := match err with
+      | .edge _ _ i | .exhaustedEdge _ _ i _ => (successors node.continuation)[i]?
+      | _ => none
+    let pushed := match node.continuation with
+      | .effect _ | .branch .. => false
+      | _ => true
+    let links := if pushed then out.links else (HeapKnowledge.dropResult out).links
+    -- Prefer a yield whose alias-expanded fact discharges a demanded slot
+    -- on the failing edge. Subtyping, rather than cardinality, ranks it.
+    let useful ← choices.filterM fun y => do
+      let some t := edge | pure false
+      let some tc := claims[t.label]? | pure false
+      let facts := PromiseCalls.aliasFacts links [(y.target, y.type)] (if pushed then 1 else 0)
+      tc.context.zipIdx.anyM fun (T, i) => do
+        let some A := facts.lookup (PointClaims.slot t.mapping i) | pure false
+        let r ← searchIn (subtypeUsing G images A T)
+        pure r.value.isSome
+    let ordered := useful ++ choices.filter (fun y => !useful.any (same y))
+    let candidates := [choices, choices.reverse] ++
+      (ordered.take 8).flatMap fun y =>
+        [choices.filter (fun z => !same z y) ++ [y], [y]]
+    let rec retry : List (List (PromiseCalls.Yield ι)) → ProduceM ι (NodeEvidence ι)
+      | [] => attempt []
+      | ys :: rest => tryCatch (attempt ys) fun _ => retry rest
+    retry (candidates.take 18)
 
 /-- The implications a source node carries on its edge of `cont` numbered
 `index`, and the context, refined by its yields, they are checked in. -/

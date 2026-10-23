@@ -1307,6 +1307,15 @@ it established it since the last write. A cell's point claim states only its
 current-content predicates, primitive refinements and nullish exclusions, so
 a test of the object a cell holds does not narrow it.
 
+A condition's outcomes are proposed along its execution plan, in
+evaluation order: each test refines the state where it runs, each later step
+acts on that state, and the paths reaching one answer are joined. So a
+field's contents a left operand of `&&` found are forgotten past a call in
+its right operand, which may write any cell, while the arm the test selected
+for an immutable binding, a lifetime fact, stays (`condition-effect-order`;
+`invalid-condition-stale-call`, `invalid-condition-stale-branch`,
+`invalid-condition-stale-disjunction`, run under Node).
+
 A slot is part of the environment, which no heap step reaches: its type and
 value facts survive a call, a closure run and a throw. A `catch` is entered
 from each node that may throw (a node whose expression is a value or a slot

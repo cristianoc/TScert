@@ -57,9 +57,86 @@ open S
     let env=List.remove_assoc "?." env in
     match List.assoc_opt "?." original with None -> env | Some binding -> env @ ["?.",binding]
 
-  let rec run_execution ?(observe = fun _ _ -> ()) env = function
-    | Execution.Observe (source,evaluate) -> observe source env; run_execution ~observe env evaluate
-    | Execution.Atom (_,operation) -> (match operation.Execution.impact with
+  (* Two paths' states from `base`: as `join` leaves them, and where the
+     paths are a condition's (`refine`), an immutable value holds what either
+     path refined it to. *)
+  let merge ~refine base left right =
+    let joined = join (List.map (fun (n,b) -> n,Option.value (List.assoc_opt n base) ~default:b) left) left right in
+    if not refine then joined else List.map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+      | Value _,Some (Value l),Some (Value r) when not (is_field n) -> n,Value (if l = r then l else union l r)
+      | _ -> n,b) joined
+  let either ~refine base a b = match a,b with
+    | Some l,Some r -> Some (merge ~refine base l r) | Some l,None -> Some l | None,r -> r
+  (* The state a plan leaves, its paths joined. *)
+  let rec run_execution ?(observe = fun _ _ -> ()) env plan =
+    let _,_,all=outcomes ~observe ~refine:false env plan in
+    Option.value all ~default:env
+  (* What a plan leaves where its value is truthy, where it is falsy, and on
+     every path (`run_execution`): each path refined by a test where the
+     test runs, every later step acting on what it found, so a call past a
+     test forgets the fields the test knew. None where no path gets there. A
+     plan whose value is read for its effects alone (`refine` false)
+     refines only by the tests it dispatches on. *)
+  and outcomes ?(observe = fun _ _ -> ()) ~refine env = function
+    | Execution.Observe (source,evaluate) -> observe source env; outcomes ~observe ~refine env evaluate
+    | Execution.Atom (source,operation) ->
+      let env=step env operation in
+      (match operation.Execution.result,refine,expression_hint source with
+       | Execution.Boolean true,_,_ -> Some env,None,Some env
+       | Execution.Boolean false,_,_ -> None,Some env,Some env
+       | _,true,Some e -> Some (branch env e true),Some (branch env e false),Some env
+       | _ -> Some env,Some env,Some env)
+    | Execution.Sequence (_,binding,evaluate,Execution.Atom (_,operation))
+      when (match operation.Execution.result with
+        | Execution.Saved (name,_) -> name = binding.Execution.name
+        | _ -> false) ->
+      let t,f,all=outcomes ~observe ~refine env evaluate in
+      let apply=Option.map (fun env -> step env operation) in
+      let t,f=match operation.Execution.result with
+        | Execution.Saved (_,true) -> f,t | _ -> t,f in
+      apply t,apply f,apply all
+    | Execution.Sequence (_,binding,evaluate,next) ->
+      let env=run_execution ~observe env evaluate in
+      let optional=binding.Execution.name="?." in
+      let original=env in
+      let env=if optional then
+        let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
+        List.remove_assoc "?." env @ ["?.",Value t] else env in
+      let t,f,all=outcomes ~observe ~refine env next in
+      let restore = if optional then Option.map (restore_optional original) else Fun.id in
+      restore t,restore f,restore all
+    | Execution.Choose (_source,condition,test,binding,evaluate,yes,no) ->
+      let optional=binding.Execution.name="?." in
+      let truthy,falsy,after=match test with
+        | Execution.Truthy -> outcomes ~observe ~refine:true env evaluate
+        | Execution.Nullish | Execution.Defined ->
+          let after=run_execution ~observe env evaluate in
+          Some (refine_test after condition test true),Some (refine_test after condition test false),Some after in
+      let original=Option.value after ~default:env in
+      let with_optional env = if optional then
+          let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
+          List.remove_assoc "?." env @ ["?.",Value t] else env in
+      let base=with_optional original in
+      let path truth state = Option.map (fun env ->
+        let env=with_optional env in
+        if optional then refine_value env "?." (fun t ->
+          if truth then union (restrict Nul true t) (restrict Undef true t)
+          else without_nullish t) else env) state in
+      (* An arm keeping the tested value (`a && b` where `a` is falsy) has
+         that value's answer. *)
+      let arm truth state plan = match state,plan with
+        | None,_ -> None,None,None
+        | Some env,Execution.Atom (_,operation) when
+            operation.Execution.result = Execution.Saved (binding.Execution.name,false)
+            && test = Execution.Truthy ->
+          if truth then Some env,None,Some env else None,Some env,Some env
+        | Some env,_ -> outcomes ~observe ~refine env plan in
+      let yt,yf,yall=arm true (path true truthy) yes
+      and nt,nf,nall=arm false (path false falsy) no in
+      let restore = Option.map (fun env -> if optional then restore_optional original env else env) in
+      restore (either ~refine base yt nt),restore (either ~refine base yf nf),
+      restore (either ~refine:false base yall nall)
+  and step env operation = match operation.Execution.impact with
       (* A completed member read narrows its receiver: reading a member of
          `null` or `undefined` throws, so past it the constant or owned local
          it names holds an object or primitive (Lean's `readNarrowing`). *)
@@ -94,34 +171,17 @@ open S
            assign env name (operation_result declarations op current right)
          | Some (Storage _),_ -> forget ~only:(( = ) name) env
          | Some (Local (contract,_)),_ -> assign env name contract
-         | _ -> env))
-    | Execution.Sequence (_,binding,evaluate,next) ->
-      let env=run_execution ~observe env evaluate in
-      let optional=binding.Execution.name="?." in
-      let original=env in
-      let env=if optional then
-        let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
-        List.remove_assoc "?." env @ ["?.",Value t] else env in
-      let env=run_execution ~observe env next in
-      if optional then restore_optional original env else env
-    | Execution.Choose (_,condition,test,binding,evaluate,yes,no) ->
-      let env=run_execution ~observe env evaluate in
-      let original=env in
-      let optional=binding.Execution.name="?." in
-      let env=if optional then
-        let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
-        List.remove_assoc "?." env @ ["?.",Value t] else env in
-      let path truth =
-        let env=refine_test env condition test truth in
-        if optional then refine_value env "?." (fun t ->
-          if truth then union (restrict Nul true t) (restrict Undef true t)
-          else without_nullish t) else env in
-      let left=run_execution ~observe (path true) yes
-      and right=run_execution ~observe (path false) no in
-      let result=join env left right in
-      if optional then restore_optional original result else result
+         | _ -> env)
 
   let effects env (e:expr) = run_execution env (execution e)
+  (* What a condition leaves where it holds and where it fails, each path
+     refined in evaluation order; where no path reaches an answer, its
+     syntactic refinement. *)
+  let condition env (e:expr) =
+    let t,f,all=outcomes ~refine:true env (execution e) in
+    let after=Option.value all ~default:env in
+    (match t with Some t -> t | None -> branch after e true),
+    (match f with Some f -> f | None -> branch after e false)
 
   let expression_entry root source fallback =
     let (_,plan,initial)=root in

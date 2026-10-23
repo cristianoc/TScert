@@ -118,6 +118,26 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // A guard answering `true` of a value outside its promise: each call
+  // returns the tag the promise excludes, or the member it says is there.
+  for (const [file, call, found] of [
+    ["invalid-condition-stale-call", `(() => { const b = { k: "union" }; return staleCall(b) ? b.k : ""; })()`, "intersection"],
+    ["invalid-condition-stale-read", `(() => { const b = { k: "union" }; return staleRead(b) ? b.k : ""; })()`, "intersection"],
+    ["invalid-condition-partial-tag", `(() => { const b = { k: "union" }; return partialTag(b) ? b.k : ""; })()`, "union"],
+    ["invalid-guard-disjunction-left-true", `(() => { const p = { k: "a" }; return right(p) ? p.k : ""; })()`, "a"],
+    ["invalid-guard-disjunction-nested", `(() => { const p = { k: "a" }; return nested(p) ? typeof p.a : ""; })()`, "undefined"],
+    ["invalid-guard-disjunction-write",
+      `(() => { const b = { k: "b" }; return written(b, (x) => { x.k = "a"; }) ? b.k : ""; })()`, "a"],
+  ])
+    assert.equal(runExample(file, call), found, `${file}: the guard answers true of a value outside its promise`);
+  // An `if` and `||`'s false outcome past a call that writes the tested
+  // field: the read returns what the call wrote.
+  assert.equal(runExample("invalid-condition-stale-branch", `(() => { const b = { k: "union" }; return staleIf(b, () => { b.k = "intersection"; }); })()`),
+    "intersection");
+  assert.equal(runExample("invalid-condition-stale-disjunction", `(() => { const b = { k: "union" }; return staleOr(b, () => { b.k = "intersection"; return false; }); })()`),
+    "intersection");
+  assert.equal(runExample("invalid-condition-negated-stale-call", `(() => { const b = { k: "union" }; return negatedStale(b, () => { b.k = "intersection"; }); })()`),
+    "intersection");
   // A method call on a union of hosts runs the member of the object read
   // before its actual, which replaces the receiver's cell or binding.
   assert.equal(runExample("union-method-head",

@@ -72,7 +72,15 @@ type ExecutionReference =
       key: SavedValue | null;
     };
 export type ExecutionOperation =
-  | { kind: "evaluate"; source: Span; effect: ExecutionEffect }
+  | {
+      kind: "evaluate";
+      source: Span;
+      effect: ExecutionEffect;
+      result:
+        | { kind: "unknown" }
+        | { kind: "boolean"; value: boolean }
+        | { kind: "saved" | "negated"; name: string };
+    }
   | {
       kind: "methodRead";
       source: Span;
@@ -325,12 +333,32 @@ const reference = (value: unknown): void => {
       invalid("unknown execution reference");
   }
 };
+const executionResult = (value: unknown): void => {
+  const r = object(value);
+  switch (r.kind) {
+    case "unknown":
+      exact(r, ["kind"]);
+      break;
+    case "boolean":
+      exact(r, ["kind", "value"]);
+      if (typeof r.value !== "boolean") invalid("Boolean execution result");
+      break;
+    case "saved":
+    case "negated":
+      exact(r, ["kind", "name"]);
+      if (typeof r.name !== "string") invalid("saved execution result");
+      break;
+    default:
+      invalid("unknown execution result");
+  }
+};
 const operation = (value: unknown): void => {
   const op = object(value);
   span(op.source);
   switch (op.kind) {
     case "evaluate":
-      exact(op, ["kind", "source", "effect"]);
+      exact(op, ["kind", "source", "effect", "result"]);
+      executionResult(op.result);
       executionEffect(op.effect);
       break;
     case "methodRead":

@@ -1,7 +1,8 @@
 (* Lean owns the order and conditional execution of expression operations. *)
 type saved = { id: int; name: string; source: Json.t; role: string }
 type impact = None_ | Havoc | CellWrite of string * Json.t | CellUpdate of string * Json.t
-type operation = { source: Json.t; impact: impact }
+type result = Unknown | Boolean of bool | Saved of string * bool
+type operation = { source: Json.t; impact: impact; result: result }
 type test = Truthy | Nullish | Defined
 type plan =
   | Observe of Json.t * plan
@@ -55,7 +56,18 @@ let operation j =
      ignore (saved (Json.field "value" j)); ignore (Json.boolean (Json.field "final" j)); None_
    | "mergeObjects" -> ignore (saved (Json.field "left" j)); ignore (saved (Json.field "right" j)); ignore (Json.boolean (Json.field "final" j)); ignore (Json.boolean (Json.field "assign" j)); None_
    | kind -> Json.fail ("unknown expression operation " ^ kind) in
-  {source;impact}
+  let result = match Json.str (Json.field "kind" j) with
+    | "evaluate" ->
+      let r=Json.field "result" j in
+      (match Json.str (Json.field "kind" r) with
+       | "unknown" -> Unknown
+       | "boolean" -> Boolean (Json.boolean (Json.field "value" r))
+       | "saved" -> Saved (Json.str (Json.field "name" r),false)
+       | "negated" -> Saved (Json.str (Json.field "name" r),true)
+       | kind -> Json.fail ("unknown execution result " ^ kind))
+    | "referenceWrite" -> Saved ((saved (Json.field "value" j)).name,false)
+    | _ -> Unknown in
+  {source;impact;result}
 let rec decode j =
   let source=Json.field "source" j in
   match Json.str (Json.field "kind" j) with
