@@ -2715,15 +2715,17 @@ contradicts it nor covers it, and a slot is never replaced by a family's
 other tags.
 An edge refines every slot an alias link relates to a yield's target to the
 yield's type (`aliasFacts`), the yields in order. The search proposes the
-yields it finds and, where an edge then leaves a target's claim unmet, also
+yields it finds and, where an edge leaves a target's claim unmet, also
 one per slot the test speaks of (the tested slot and each object a current
-read link names) at that slot's own slice, unchanged ones included, the
-fewest labels last (`sliceYields`): a slot holding the value whose own type
-is narrower than another's slice keeps it, and one whose slice is empty
-makes the edge vacuous. A disjunction's right operand meets this where a
-saved read from its left operand holds the node at the left guard's arm
-(`compiler-api-guard-disjunction`). The choice is untrusted; each yield is
-checked by the rules above.
+read link names) at that slot's own slice, unchanged ones included
+(`sliceYields`). The search tries at most eighteen additional selections
+and orderings, then no yields. It prioritizes yields whose alias-expanded
+facts subtype a required slot on the failing edge. Label count does not
+determine semantic precision, and this bounded search is incomplete.
+Each candidate must meet all edge obligations; each yield is checked by
+the rules above. A disjunction's right operand exercises these choices
+where a saved read from its left operand holds the node at the left
+guard's arm (`compiler-api-guard-disjunction`).
 Numbers are compared by `numberEqual`, JavaScript's equality, under which
 `0` and `-0` are one value and `NaN` equals none: a slice drops a label only
 where the tag's test answers so for every value of it (`tagClause_sound`),

@@ -136,6 +136,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "intersection");
   assert.equal(runExample("invalid-condition-stale-disjunction", `(() => { const b = { k: "union" }; return staleOr(b, () => { b.k = "intersection"; return false; }); })()`),
     "intersection");
+  assert.equal(runExample("invalid-condition-negated-stale-call", `(() => { const b = { k: "union" }; return negatedStale(b, () => { b.k = "intersection"; }); })()`),
+    "intersection");
   // A method call on a union of hosts runs the member of the object read
   // before its actual, which replaces the receiver's cell or binding.
   assert.equal(runExample("union-method-head",

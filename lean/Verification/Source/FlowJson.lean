@@ -33,9 +33,17 @@ private def referenceJson : SourceExecution.Reference → Json
       ("source",toJson original.span),("receiver",savedJson receiver),
       ("key",key.map savedJson |>.getD .null)]
 
+private def resultJson : Fragment.Expr → Json
+  | .lit _ (.vbool b) => Json.mkObj [("kind",toJson "boolean"),("value",toJson b)]
+  | .var _ name => Json.mkObj [("kind",toJson "saved"),("name",toJson name)]
+  | .not _ (.var _ name) => Json.mkObj [("kind",toJson "negated"),("name",toJson name)]
+  | .cast _ _ value | .assign _ _ _ value | .write _ _ _ value
+  | .indexWrite _ _ _ _ value | .elemWrite _ _ _ value => resultJson value
+  | _ => Json.mkObj [("kind",toJson "unknown")]
+
 private def operationJson : SourceExecution.Operation → Json
-  | .evaluate original _ effect => Json.mkObj [("kind",toJson "evaluate"),
-      ("source",toJson original.span),("effect",effectJson effect)]
+  | .evaluate original prepared effect => Json.mkObj [("kind",toJson "evaluate"),
+      ("source",toJson original.span),("effect",effectJson effect),("result",resultJson prepared)]
   | .methodRead original receiver key call => Json.mkObj [("kind",toJson "methodRead"),
       ("source",toJson original.span),("receiver",savedJson receiver),
       ("key",key.map savedJson |>.getD .null),("call",toJson call.span)]

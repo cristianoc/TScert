@@ -81,9 +81,20 @@ open S
     | Execution.Observe (source,evaluate) -> observe source env; outcomes ~observe ~refine env evaluate
     | Execution.Atom (source,operation) ->
       let env=step env operation in
-      (match refine,expression_hint source with
-       | true,Some e -> Some (branch env e true),Some (branch env e false),Some env
+      (match operation.Execution.result,refine,expression_hint source with
+       | Execution.Boolean true,_,_ -> Some env,None,Some env
+       | Execution.Boolean false,_,_ -> None,Some env,Some env
+       | _,true,Some e -> Some (branch env e true),Some (branch env e false),Some env
        | _ -> Some env,Some env,Some env)
+    | Execution.Sequence (_,binding,evaluate,Execution.Atom (_,operation))
+      when (match operation.Execution.result with
+        | Execution.Saved (name,_) -> name = binding.Execution.name
+        | _ -> false) ->
+      let t,f,all=outcomes ~observe ~refine env evaluate in
+      let apply=Option.map (fun env -> step env operation) in
+      let t,f=match operation.Execution.result with
+        | Execution.Saved (_,true) -> f,t | _ -> t,f in
+      apply t,apply f,apply all
     | Execution.Sequence (_,binding,evaluate,next) ->
       let env=run_execution ~observe env evaluate in
       let optional=binding.Execution.name="?." in
@@ -94,7 +105,7 @@ open S
       let t,f,all=outcomes ~observe ~refine env next in
       let restore = if optional then Option.map (restore_optional original) else Fun.id in
       restore t,restore f,restore all
-    | Execution.Choose (source,condition,test,binding,evaluate,yes,no) ->
+    | Execution.Choose (_source,condition,test,binding,evaluate,yes,no) ->
       let optional=binding.Execution.name="?." in
       let truthy,falsy,after=match test with
         | Execution.Truthy -> outcomes ~observe ~refine:true env evaluate
@@ -115,7 +126,9 @@ open S
          that value's answer. *)
       let arm truth state plan = match state,plan with
         | None,_ -> None,None,None
-        | Some env,Execution.Atom (kept,_) when kept = source && test = Execution.Truthy ->
+        | Some env,Execution.Atom (_,operation) when
+            operation.Execution.result = Execution.Saved (binding.Execution.name,false)
+            && test = Execution.Truthy ->
           if truth then Some env,None,Some env else None,Some env,Some env
         | Some env,_ -> outcomes ~observe ~refine env plan in
       let yt,yf,yall=arm true (path true truthy) yes

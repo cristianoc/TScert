@@ -1462,10 +1462,9 @@ where
 /-- What a node's test yields about each slot it speaks of, at that slot's
 own slice, a slice the test leaves unchanged included: the tested slot, and
 each object a current read link says its value was read from. An edge
-spreads each yield over the slots the alias links relate to its target, the
-narrowest last (`nodeYields.fewestLast`), so a slot whose own type the test
-leaves narrower than another's slice keeps it. Untrusted: the checker
-decides. -/
+spreads each yield over the slots the alias links relate to its target.
+The producer tries bounded selections and orderings against the edge
+obligations. Untrusted: the checker decides. -/
 @[nospecialize] def sliceYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (e : Evidence ι)
     (k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
@@ -1622,14 +1621,42 @@ promise's evidence. -/
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
   let found ← stateIn (nodeYields G images pool c.context implies e out k)
-  -- Yields that leave a target's claim unmet are not taken: those found,
-  -- then with every slot the test speaks of at its own slice, then none.
+  -- Every candidate is checked against the node's edge obligations. Retry
+  -- only a bounded number; label counts do not order semantic precision.
   let attempt := produceNodeAt G images pool l node claims k c e effect out implies arguments goal
-  let fallback := fun (err : Failure ι) => if found.isEmpty then throw err else attempt []
   tryCatch (attempt found) fun err => do
     let sliced ← stateIn (sliceYields G images pool c.context e k)
-    if sliced.isEmpty then fallback err
-    else tryCatch (attempt (nodeYields.fewestLast (found ++ sliced))) fun _ => fallback err
+    let same := fun (a b : PromiseCalls.Yield ι) =>
+      a.target == b.target && a.conditional == b.conditional &&
+        a.onFalse == b.onFalse && a.type == b.type
+    let choices := (found ++ sliced).foldl (fun ys y =>
+      if ys.any (same y) then ys else ys ++ [y]) []
+    if choices.isEmpty then throw err
+    let edge := match err with
+      | .edge _ _ i | .exhaustedEdge _ _ i _ => (successors node.continuation)[i]?
+      | _ => none
+    let pushed := match node.continuation with
+      | .effect _ | .branch .. => false
+      | _ => true
+    let links := if pushed then out.links else (HeapKnowledge.dropResult out).links
+    -- Prefer a yield whose alias-expanded fact discharges a demanded slot
+    -- on the failing edge. Subtyping, rather than cardinality, ranks it.
+    let useful ← choices.filterM fun y => do
+      let some t := edge | pure false
+      let some tc := claims[t.label]? | pure false
+      let facts := PromiseCalls.aliasFacts links [(y.target, y.type)] (if pushed then 1 else 0)
+      tc.context.zipIdx.anyM fun (T, i) => do
+        let some A := facts.lookup (PointClaims.slot t.mapping i) | pure false
+        let r ← searchIn (subtypeUsing G images A T)
+        pure r.value.isSome
+    let ordered := useful ++ choices.filter (fun y => !useful.any (same y))
+    let candidates := [choices, choices.reverse] ++
+      (ordered.take 8).flatMap fun y =>
+        [choices.filter (fun z => !same z y) ++ [y], [y]]
+    let rec retry : List (List (PromiseCalls.Yield ι)) → ProduceM ι (NodeEvidence ι)
+      | [] => attempt []
+      | ys :: rest => tryCatch (attempt ys) fun _ => retry rest
+    retry (candidates.take 18)
 
 /-- The implications a source node carries on its edge of `cont` numbered
 `index`, and the context, refined by its yields, they are checked in. -/
