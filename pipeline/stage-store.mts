@@ -20,8 +20,10 @@ import { dirname, join } from "node:path";
 
 const sha256 = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
 
-/** CPU time, with the processes it covers, or why none is measured. */
-export type Cpu = { userMs: number; systemMs: number; covers: string } | { unavailable: string };
+/** CPU time, with the processes it covers, and the largest peak memory in
+ * bytes among the stage's processes the pipeline's own process aside, null
+ * where there are none; or why nothing is measured. */
+export type Cpu = { userMs: number; systemMs: number; peakBytes: number | null; covers: string } | { unavailable: string };
 
 /** What an attempt measured: outside keys and result equality. */
 export type Measurement = { attempt: string; elapsedMs: number; limitMs: number | null; cpu: Cpu };
@@ -39,13 +41,15 @@ export type StoredResult = {
 };
 
 /** A timeout observation: the stage key and input it was observed at, the
- * attempt, its elapsed time, its enforced limit and its resource policy. */
+ * attempt, its elapsed time, its enforced limit, its resource policy and the
+ * CPU time its processes used up to their kill. */
 export type TimeoutObservation = {
   input: string;
   attempt: string;
   elapsedMs: number;
   limitMs: number;
   policy: string;
+  cpu: Cpu;
 };
 
 /** A failure of the store's own consistency: two different results for
@@ -61,11 +65,11 @@ const exactly = (fields: Fields, keys: readonly string[]): boolean =>
 function readCpu(value: unknown): Cpu | null {
   const c = fieldsOf(value);
   if (!c) return null;
-  const { unavailable, userMs, systemMs, covers } = c;
+  const { unavailable, userMs, systemMs, peakBytes, covers } = c;
   if (exactly(c, ["unavailable"]) && typeof unavailable === "string") return { unavailable };
-  if (exactly(c, ["userMs", "systemMs", "covers"]) && typeof userMs === "number" && typeof systemMs === "number" &&
-      typeof covers === "string")
-    return { userMs, systemMs, covers };
+  if (exactly(c, ["userMs", "systemMs", "peakBytes", "covers"]) && typeof userMs === "number" &&
+      typeof systemMs === "number" && (peakBytes === null || typeof peakBytes === "number") && typeof covers === "string")
+    return { userMs, systemMs, peakBytes, covers };
   return null;
 }
 export function readMeasurement(value: unknown): Measurement | null {
@@ -125,11 +129,12 @@ function readManifest(value: unknown): Manifest | null {
 
 function readObservation(value: unknown): TimeoutObservation | null {
   const o = fieldsOf(value);
-  if (!o || !exactly(o, ["input", "attempt", "elapsedMs", "limitMs", "policy"])) return null;
+  if (!o || !exactly(o, ["input", "attempt", "elapsedMs", "limitMs", "policy", "cpu"])) return null;
   const { input, attempt, elapsedMs, limitMs, policy } = o;
+  const cpu = readCpu(o["cpu"]);
   return typeof input === "string" && typeof attempt === "string" && typeof elapsedMs === "number" &&
-    typeof limitMs === "number" && typeof policy === "string"
-    ? { input, attempt, elapsedMs, limitMs, policy }
+    typeof limitMs === "number" && typeof policy === "string" && cpu
+    ? { input, attempt, elapsedMs, limitMs, policy, cpu }
     : null;
 }
 

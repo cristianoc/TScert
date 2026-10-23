@@ -8,13 +8,14 @@
 // pipeline's own stages replay in `pipeline/test.mts`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, symlinkSync,
+  writeFileSync } from "node:fs";
 import { platform } from "node:os";
 import { join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests } from "../pipeline/stage-store.mts";
 import { invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
-import { auditForTests, canonical, linkedLibraries, sha256, verifierCall, type ProcessCall }
+import { auditForTests, canonical, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
@@ -62,7 +63,8 @@ if (process.argv[2] === "--writer") {
   });
   const input = "concurrent input", key = sha256(input);
   if (kind === "timeout")
-    store.publishTimeout("lower", key, { input, attempt, elapsedMs: 300, limitMs: 300, policy: "test" });
+    store.publishTimeout("lower", key, { input, attempt, elapsedMs: 300, limitMs: 300, policy: "test",
+      cpu: { unavailable: "test" } });
   else
     store.publishFinished("lower", key, { input, exitStatus: 0, stdout: Buffer.from("whole"), stderr: Buffer.alloc(0),
       outputs: [], measurement: { attempt, elapsedMs: 1, limitMs: 1000, cpu: { unavailable: "test" } } });
@@ -255,6 +257,104 @@ if (eligible) {
   delete process.env["TSCERT_RETRY_TIMEOUTS"];
   process.stdout.write("timeouts: reused at their limit or below, executed past at a longer one, executed again when " +
     "retried; finished results replay\n");
+}
+
+{
+  // The runner (`pipeline/runner/stage-runner.c`) passes the program's
+  // output bytes, exit status and signal through unchanged, reports its CPU
+  // time, and on a timeout leaves no process of the stage running.
+  freshStore("runner");
+  const bytes = String.raw`printf 'out\000\377\376 \342\202\254\n'; printf 'err\000\200\n' >&2`;
+  const cases: [string, string][] = [["exits", `${bytes}; exit 2`], ["succeeds", bytes],
+    ["signals", `${bytes}; kill -USR1 $$`]];
+  for (const [name, body] of cases) {
+    const program = script(`runner-${name}.sh`, body, ["/usr/bin/printf"]);
+    const input = file(`runner-${name}.json`, name);
+    const staged = invoke(lower(program, input), 10_000, true);
+    const direct = spawnSync(program, ["--lower-control-flow", input]);
+    assert.deepEqual(staged.stdoutBytes, direct.stdout, `${name}: stdout`);
+    assert.deepEqual(staged.stderrBytes, direct.stderr, `${name}: stderr`);
+    assert.equal(staged.status, direct.status, `${name}: status`);
+    assert.equal(staged.signal, direct.signal, `${name}: signal`);
+    assert.ok("userMs" in staged.record.cpu, `${name}: CPU time`);
+  }
+  const missing = invoke(lower(join(dir, "no-such-program"), file("runner-missing.json", "")), 10_000, true);
+  assert.equal(missing.record.execution, "failed");
+  assert.equal(missing.error && "code" in missing.error ? missing.error.code : null, "ENOENT");
+  // A busy program's CPU time and peak memory; a timed-out one's CPU time up to its kill, and its
+  // descendants killed with it.
+  const busy = invoke(lower(script("runner-busy.sh", "i=0; while [ $i -lt 100000 ]; do i=$((i+1)); done"),
+    file("runner-busy.json", "")), 10_000, true);
+  assert.ok("userMs" in busy.record.cpu && busy.record.cpu.userMs > 20 && (busy.record.cpu.peakBytes ?? 0) > 0,
+    JSON.stringify(busy.record.cpu));
+  const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** Whether process `pid` ends within 2 s. */
+  const ends = async (pid: number): Promise<boolean> => {
+    for (let i = 0; i < 100 && alive(pid); i++) await wait(20);
+    return !alive(pid);
+  };
+  const pidOf = (path: string): number => {
+    const pid = Number(readFileSync(path, "utf8"));
+    assert.ok(pid > 0, path);
+    return pid;
+  };
+  /** A timeout the runner decided at its own deadline, not spawnSync's
+   * backstop, which reports ETIMEDOUT; with the CPU time up to the kill. */
+  const runnerTimeout = (name: string, held: Invoked): void => {
+    assert.equal(held.record.execution, "timed-out", name);
+    assert.equal(held.error, undefined, `${name}: ${String(held.error)}`);
+    assert.ok("userMs" in held.record.cpu, `${name}: ${JSON.stringify(held.record.cpu)}`);
+  };
+  const pids = join(dir, "runner-pids");
+  const spinning = script("runner-timeout.sh", `/bin/sleep 30 & echo $! > ${pids}; while :; do :; done`,
+    ["/bin/sleep"]);
+  const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 600, true);
+  runnerTimeout("spinning", timed);
+  assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 10, JSON.stringify(timed.record.cpu));
+  assert.ok(await ends(pidOf(pids)), "a descendant of a timed-out stage survived");
+  // The limit holds against a program ignoring SIGTERM, a stopped one and
+  // one that left the group: each is killed by its process id 250 ms past it.
+  const left = join(dir, "runner-setsid-pid");
+  const held: { name: string; body: string; dependencies: string[] }[] = [
+    { name: "ignoring", body: 'trap "" TERM; /bin/sleep 5; exit 7', dependencies: ["/bin/sleep"] },
+    { name: "stopped", body: "kill -STOP $$", dependencies: [] },
+    { name: "setsid", dependencies: ["/usr/bin/perl"],
+      body: `echo $$ > ${left}; exec /usr/bin/perl -e 'use POSIX; POSIX::setsid() or die "setsid"; sleep 30'` },
+  ];
+  for (const { name, body, dependencies } of held) {
+    if (!dependencies.every((d) => existsSync(d))) continue;
+    runnerTimeout(name, invoke(lower(script(`runner-${name}.sh`, body, dependencies), file(`runner-${name}.json`, "")),
+      300, true));
+  }
+  if (existsSync("/usr/bin/perl")) assert.ok(await ends(pidOf(left)), "a program that left its group survived its limit");
+  // A descendant holding the output pipes ends with the program.
+  const lingering = invoke(lower(script("runner-lingering.sh", "/bin/sleep 30 & exit 0", ["/bin/sleep"]),
+    file("runner-lingering.json", "")), 10_000, true);
+  assert.equal(lingering.status, 0);
+  assert.ok(lingering.record.elapsedMs < 3_000, `lingering: ${lingering.record.elapsedMs} ms`);
+  // The runner killed, its watchdog kills the stage's group.
+  const started = join(dir, "runner-orphan-pid");
+  const orphan = script("runner-orphan.sh", `echo $$ > ${started}; exec /bin/sleep 30`, ["/bin/sleep"]);
+  const report = openSync(join(dir, "runner-orphan-report"), "w+");
+  const runner = spawn(runnerBuild, ["10000", orphan], { stdio: ["ignore", "ignore", "ignore", report] });
+  const exited = new Promise<void>((done) => runner.on("exit", () => done()));
+  for (let i = 0; i < 100 && !existsSync(started); i++) await wait(20);
+  const program = pidOf(started);
+  runner.kill("SIGKILL");
+  await exited;
+  closeSync(report);
+  assert.ok(await ends(program), "the program of a killed runner survived");
+  process.stdout.write("runner: output bytes, status and signal pass through; CPU time reported, up to a timeout's " +
+    "kill at the runner's own deadline, which leaves no process of the stage running, also of a program ignoring " +
+    "SIGTERM, stopped or out of its group; descendants end with the program; a killed runner's stage is killed\n");
 }
 
 if (eligible) {
@@ -527,6 +627,7 @@ if (platform() === "darwin") {
     for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts",
       "stage-execution.mts", "in-process-execution.mts"])
       copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    symlinkSync(resolve(import.meta.dirname, "../pipeline/runner"), join(copied, "runner"));
     // A module loaded only by a name the code computes.
     writeFileSync(join(copied, "hidden.mts"), 'const n = 1 / "/"; await import(name); const s = "//";\n');
     const driver = join(copied, "test.mts");

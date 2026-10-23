@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff fmt \
-  check-fmt setup-git-hooks clean-store census
+  check-fmt setup-git-hooks clean-store census build-runner
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -16,7 +16,15 @@ setup: ## install the node dependencies (tools, the library fixture's Node types
 	npm install --no-save
 	node pipeline/fixture-links.mts
 
-build: build-lean build-producer ## build the Lean verifier and the OCaml producer
+build: build-lean build-producer build-runner ## build the Lean verifier, the OCaml producer and the stage runner
+
+RUNNER := pipeline/runner/_build/stage-runner
+
+build-runner: $(RUNNER) ## build the stage runner, which reports the CPU time of process stages
+
+$(RUNNER): pipeline/runner/stage-runner.c
+	mkdir -p $(dir $@)
+	cc -O2 -Wall -Wextra -Werror -o $@ $<
 
 build-lean: ## build the Lean verifier
 	cd lean && lake build --log-level=warning

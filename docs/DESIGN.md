@@ -263,7 +263,8 @@ and `tools/`, with the exclusions below. It involves no import discovery.
 
 - for a process stage, the digest, by sorted path and content, of every
   `.mts` file directly in `pipeline/` but those excluded below, with the
-  executable and its libraries and the Node runtime;
+  executable and its libraries, the stage runner and its libraries
+  ([timing](#the-stage-store)) and the Node runtime;
 - for an in-process stage, the same digest over every `.mts` file directly in
   `pipeline/` and in `tools/` but those excluded below, with the Node runtime
   and, for an observed stage, the compiler's packages and the system's
@@ -300,6 +301,8 @@ Excluded from every key:
   node side's sources, a suite;
 - `tools/strip-types.mts`: type erasure for the examples run under Node by
   the excluded controls.
+- `tools/compiler-processes.mts`: the attempt records' measurement of the
+  compiler processes' CPU time and peak memory.
 
 Excluded from process keys, beside those: the in-process stages' own
 modules, `pipeline/parse-stage.mts`, `pipeline/claims-assembly.mts` and
@@ -555,8 +558,8 @@ Only a complete success or recognized refusal is a finished result.
 Operational failures are not reusable results.
 
 A timeout is a separate immutable observation recording its stage key,
-attempt identity, elapsed execution time, enforced limit and resource
-policy. Limits and measurement metadata are outside the stage key. Under the
+attempt identity, elapsed execution time, CPU time up to the kill, enforced
+limit and resource policy. Limits and measurement metadata are outside the stage key. Under the
 same resource policy, a request may reuse an observation whose enforced
 limit is at least the requested limit. A larger requested limit executes the
 stage. If no finished entry is available, retrying timeouts
@@ -670,13 +673,56 @@ artifact isolation.
 **Timing.** Every invocation records monotonic elapsed wall time, its
 configured limit and whether it executed, replayed, timed out, failed
 operationally or was interrupted. Replay records lookup, validation and
-materialization time separately from the stored execution measurements. CPU
-measurements, when available, state which processes they cover; unavailable
-measurements are explicit. Timing and load metadata are outside semantic
-keys and result equality. Census records retain these measurements for each
-attempt, including module stages and withdrawals, after entry eviction. They
-describe observed execution cost; a timeout supplies only a partial
-measurement.
+materialization time separately from the stored execution measurements. An
+execution, a timeout included, also records its CPU time (user and system),
+the processes it covers and the largest peak memory among the stage's
+processes; a replay records the stored execution's, a finished entry's or a
+timeout observation's. A measurement that is not taken is recorded as
+unavailable, with its reason.
+
+- A process stage's program runs under the stage runner
+  ([`pipeline/runner/stage-runner.c`](../pipeline/runner/stage-runner.c),
+  built by `make build-runner`), which starts it with the invocation's
+  arguments, environment, working directory and standard streams in a
+  process group led by a watchdog. The runner enforces the limit: at the
+  limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues and signals
+  the program, by its process id, and the group (SIGTERM at the limit), and
+  250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
+  the group ends too. When the program ends, the runner kills what remains
+  of its group, so no descendant in it holds the output pipes, and ends with
+  the program's exit status or signal. The watchdog holds a pipe only the
+  runner writes to; when the runner ends in any way, the watchdog kills the
+  group. Node kills the runner 2 s past the grace period, a backstop for a
+  runner that does not end. A failed system call of the runner's kills the
+  program and the group and fails the run.
+- Containment is limited to the program and its group: a descendant that
+  left the group (`setsid`, `setpgid`) is not killed, and neither is a
+  program that left the group when the runner itself dies. Such a
+  descendant may also hold the output pipes, keeping the invocation waiting
+  until the backstop. TScert's process stages, the Lean verifier and the
+  OCaml producer, start no process.
+- The runner's report, the `RUSAGE_CHILDREN` CPU time and peak resident set
+  (`ru_maxrss`) of the program and the descendants it waited for, whether
+  the limit expired, and any failure of its own system calls, goes to its
+  descriptor 3, a file the program does not inherit; it covers the CPU time
+  used up to a timeout's kill. Descendants the program did not wait for are
+  not counted. The runner relays the exit status a result is classified by
+  and decides timeouts, so it is part of the execution adapter: a process
+  stage's key covers its identity.
+- An in-process stage records the pipeline process's own CPU time over the
+  attempt (`process.cpuUsage`) plus that of each compiler process the attempt
+  started (`tools/compiler-processes.mts`), read just before the compiler is
+  released or abandoned by `stage-runner --cpu <pid>`: `proc_pid_rusage` on
+  macOS, to the microsecond, with the compiler's lifetime maximum physical
+  footprint as its peak memory, and `/proc/<pid>/stat` and `VmHWM` on Linux,
+  to the clock tick. The pipeline process's own peak memory is not
+  attributed to a stage.
+
+Timing, CPU and memory are outside semantic keys and result equality.
+Census records retain these measurements for each attempt, including module
+stages and withdrawals, after entry eviction. They describe observed
+execution cost. Elapsed time depends on the machine's load; CPU time does not
+count waiting.
 
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
