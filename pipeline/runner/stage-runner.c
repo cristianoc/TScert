@@ -7,8 +7,10 @@
  *     directory and the standard streams it was given, in a process group
  *     of its own, led by a watchdog that kills the group when the runner
  *     ends in any way. At the limit, or on SIGTERM, SIGINT, SIGHUP or
- *     SIGQUIT, the group is continued and signalled (SIGTERM at the limit),
- *     and killed 250 ms later. When the program ends, what remains of its
+ *     SIGQUIT, the program, by its process id, and the group are continued
+ *     and signalled (SIGTERM at the limit), and killed 250 ms later. A
+ *     descendant that left the group (setsid) is not signalled, nor is the
+ *     program once the runner itself has died. When the program ends, what remains of its
  *     group is killed, and the runner writes to file descriptor 3, which the
  *     program does not inherit, `deadline` where the limit expired and
  *     `cpu <user µs> <system µs> <peak bytes>`: the CPU time of the program
@@ -87,19 +89,39 @@ static int cpu_of(const char *text) {
 
 static void wake(int sig) { (void)sig; }
 
-/* How long a program may run past SIGTERM before its group is killed. */
+/* How long a program may run past SIGTERM before it and its group are
+ * killed. */
 #define GRACE_MS 250
 
-/* The stage's process group: the watchdog's process id once it exists. */
-static pid_t group = 0;
+/* The stage's process group (the watchdog's process id once it exists), the
+ * program's process id, and whether the program has been reaped, with its
+ * status. */
+static pid_t group = 0, child = 0;
+static int reaped = 0, status = 0;
+/* Whether the watchdog, and so the group under its id, still exists. */
+static int watching = 0;
 
-/* A failure of the runner itself: the stage's group killed, the failure
- * reported, the runner's exit status 125. */
+/* A failure of the runner itself: the program and its group killed, the
+ * failure reported, the runner's exit status 125. */
 static void fail(const char *what) {
   int e = errno;
-  if (group > 0) kill(-group, SIGKILL);
+  if (child > 0 && !reaped) kill(child, SIGKILL);
+  if (group > 0 && watching) kill(-group, SIGKILL);
   dprintf(3, "runner %s %d\n", what, e);
   _exit(125);
+}
+
+/* waitpid, retried on EINTR; a failure is the runner's. */
+static pid_t wait_for(pid_t pid, int *into, int options) {
+  pid_t r;
+  while ((r = waitpid(pid, into, options)) < 0 && errno == EINTR) {}
+  if (r < 0) fail("waitpid");
+  return r;
+}
+
+/* Reap the program if it has ended. */
+static void reap(void) {
+  if (!reaped && wait_for(child, &status, WNOHANG) == child) reaped = 1;
 }
 
 /* SIGALRM after `ms` milliseconds, or none for 0. */
@@ -111,14 +133,27 @@ static void arm(long ms) {
   if (setitimer(ITIMER_REAL, &t, NULL) != 0) fail("setitimer");
 }
 
-/* Signal every member of the group. macOS refuses a group signal with EPERM
- * where the group holds a zombie, having signalled the others. */
+/* Signal every member of the group, which exists while the watchdog does.
+ * macOS refuses a group signal with EPERM where the group holds a zombie,
+ * having signalled the others. */
 static void kill_group(int sig) {
-  if (kill(-group, sig) != 0 && errno != EPERM) fail("kill");
+  if (watching && kill(-group, sig) != 0 && errno != EPERM) fail("kill");
 }
-/* Signal the whole group, a stopped member continued first. */
-static void signal_group(int sig) {
+/* Signal the program by its process id too, which reaches it after it left
+ * the group (setsid). A refusal (ESRCH, or EPERM for a zombie on macOS)
+ * stands only where the program has ended, which reaping it shows. */
+static void kill_child(int sig) {
+  if (reaped || kill(child, sig) == 0) return;
+  if (errno != ESRCH && errno != EPERM) fail("kill");
+  reap();
+  if (!reaped) fail("kill");
+}
+/* Signal the program and the whole group, stopped processes continued
+ * first. */
+static void signal_stage(int sig) {
+  kill_child(SIGCONT);
   kill_group(SIGCONT);
+  kill_child(sig);
   kill_group(sig);
 }
 
@@ -149,56 +184,65 @@ int main(int argc, char **argv) {
   /* The watchdog leads the stage's process group, so the group exists, under
    * its id, as long as the watchdog does. It holds the read end of a pipe
    * whose write end only the runner holds: when the runner ends in any way,
-   * the watchdog reads end of file and kills the group, itself included.
-   * The runner kills the group, the watchdog with it, when the program ends. */
-  int watch[2];
-  if (pipe(watch) != 0) fail("pipe");
-  if (fcntl(watch[0], F_SETFD, FD_CLOEXEC) != 0 || fcntl(watch[1], F_SETFD, FD_CLOEXEC) != 0) fail("fcntl");
+   * the watchdog reads end of file and kills the group, itself included. It
+   * reports its setup complete by a byte on a second pipe; the runner
+   * starts the program only then. The runner kills the group, the watchdog
+   * with it, when the program ends. */
+  int watch[2], ready[2];
+  if (pipe(watch) != 0 || pipe(ready) != 0) fail("pipe");
+  for (int i = 0; i < 2; i++)
+    if (fcntl(watch[i], F_SETFD, FD_CLOEXEC) != 0 || fcntl(ready[i], F_SETFD, FD_CLOEXEC) != 0) fail("fcntl");
   pid_t watchdog = fork();
   if (watchdog < 0) fail("fork");
   if (watchdog == 0) {
-    setpgid(0, 0);
-    for (size_t i = 0; i < sizeof forwarded / sizeof *forwarded; i++) signal(forwarded[i], SIG_IGN);
-    sigprocmask(SIG_SETMASK, &previous, NULL);
-    close(watch[1]);
-    for (int fd = 0; fd <= 3; fd++) close(fd);
-    char c;
+    int ok = setpgid(0, 0) == 0 && close(watch[1]) == 0 && close(ready[0]) == 0 &&
+      sigprocmask(SIG_SETMASK, &previous, NULL) == 0;
+    for (size_t i = 0; ok && i < sizeof forwarded / sizeof *forwarded; i++) ok = signal(forwarded[i], SIG_IGN) != SIG_ERR;
+    for (int fd = 0; ok && fd <= 3; fd++) ok = close(fd) == 0 || errno == EBADF;
+    char c = 1;
+    if (!ok || write(ready[1], &c, 1) != 1) _exit(125);
+    close(ready[1]);
     while (read(watch[0], &c, 1) < 0 && errno == EINTR) {}
     kill(-getpid(), SIGKILL);
-    _exit(0);
+    _exit(125);
   }
-  /* Both the watchdog and the runner make the watchdog's group; whichever
-   * comes second may be refused (EPERM on macOS), so the group is checked. */
-  if (setpgid(watchdog, watchdog) != 0 && getpgid(watchdog) != watchdog) fail("setpgid");
+  /* The watchdog makes its group itself before it reports ready: only one
+   * process changes a group, since concurrent changes may be refused (EPERM
+   * on macOS). */
   group = watchdog;
-  if (close(watch[0]) != 0) fail("close");
+  watching = 1;
+  if (close(watch[0]) != 0 || close(ready[1]) != 0) fail("close");
+  char byte;
+  ssize_t got;
+  while ((got = read(ready[0], &byte, 1)) < 0 && errno == EINTR) {}
+  if (got != 1) {
+    errno = got < 0 ? errno : ECHILD;
+    fail("watchdog-setup");
+  }
+  if (close(ready[0]) != 0) fail("close");
+  if (getpgid(watchdog) != watchdog) fail("getpgid");
 
-  pid_t child = fork();
+  child = fork();
   if (child < 0) fail("fork");
   if (child == 0) {
-    if (setpgid(0, group) != 0) {
-      dprintf(3, "runner setpgid %d\n", errno);
+    if (setpgid(0, group) != 0 || signal(SIGCHLD, SIG_DFL) == SIG_ERR || signal(SIGALRM, SIG_DFL) == SIG_ERR ||
+        sigprocmask(SIG_SETMASK, &previous, NULL) != 0) {
+      dprintf(3, "runner child %d\n", errno);
       _exit(125);
     }
-    signal(SIGCHLD, SIG_DFL);
-    signal(SIGALRM, SIG_DFL);
-    sigprocmask(SIG_SETMASK, &previous, NULL);
     execvp(argv[2], argv + 2);
     dprintf(3, "exec %d\n", errno);
     _exit(127);
   }
   /* The child joins the group itself before it executes the program, or
-   * exits with 125; joining it here too only narrows the window in which a
-   * group signal misses it. It fails where the child has executed the
-   * program (EACCES) or ended (ESRCH, or EPERM on macOS), which is no
-   * failure. */
-  (void)setpgid(child, group);
+   * exits with 125. Before it has joined, the program is reached by its
+   * process id, which every signal of the stage also goes to. */
 
-  /* At the limit, or on a forwarded signal, the group is signalled; GRACE_MS
-   * later it is killed. */
+  /* At the limit, or on a forwarded signal, the program and its group are
+   * signalled; GRACE_MS later they are killed. */
   arm(limit);
-  int terminating = 0, expired = 0, status = 0;
-  for (;;) {
+  int terminating = 0, expired = 0, killed = 0;
+  while (!reaped) {
     int sig;
     int e = sigwait(&taken, &sig);
     if (e != 0) {
@@ -206,17 +250,25 @@ int main(int argc, char **argv) {
       fail("sigwait");
     }
     if (sig == SIGCHLD) {
-      pid_t reaped = waitpid(child, &status, WNOHANG);
-      if (reaped < 0 && errno != EINTR) fail("waitpid");
-      if (reaped == child) break;
+      // The watchdog ends early only where the runner has killed the group.
+      if (watching && wait_for(watchdog, NULL, WNOHANG) == watchdog) {
+        if (!killed) {
+          errno = ECHILD;
+          fail("watchdog");
+        }
+        watching = 0;
+      }
+      reap();
       continue;
     }
     if (sig == SIGALRM && terminating) {
+      killed = 1;
+      kill_child(SIGKILL);
       kill_group(SIGKILL);
       continue;
     }
     if (sig == SIGALRM) expired = 1;
-    signal_group(sig == SIGALRM ? SIGTERM : sig);
+    signal_stage(sig == SIGALRM ? SIGTERM : sig);
     if (!terminating) {
       terminating = 1;
       arm(GRACE_MS);
@@ -225,10 +277,10 @@ int main(int argc, char **argv) {
   arm(0);
   /* The program has ended: what remains of its group, which the watchdog
    * keeps under its id, is killed, the watchdog with it. */
-  kill_group(SIGKILL);
-  pid_t reaped;
-  while ((reaped = waitpid(watchdog, NULL, 0)) < 0 && errno == EINTR) {}
-  if (reaped != watchdog) fail("waitpid");
+  if (watching) {
+    kill_group(SIGKILL);
+    if (wait_for(watchdog, NULL, 0) != watchdog) fail("waitpid");
+  }
   struct rusage used;
   if (getrusage(RUSAGE_CHILDREN, &used) != 0) fail("getrusage");
 #ifdef __APPLE__
@@ -236,20 +288,22 @@ int main(int argc, char **argv) {
 #else
   long long peak = (long long)used.ru_maxrss * 1024; /* kB */
 #endif
+  /* The runner ends as the program did: its exit status, or its signal,
+   * raised with no core file once the report is written. */
+  int sig = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
+  if (sig) {
+    struct rlimit none = {0, 0};
+    if (setrlimit(RLIMIT_CORE, &none) != 0) fail("setrlimit");
+    if (sig != SIGKILL && signal(sig, SIG_DFL) == SIG_ERR) fail("signal");
+  }
   if ((expired && dprintf(3, "deadline\n") < 0) ||
       dprintf(3, "cpu %lld %lld %lld\n", micros(used.ru_utime), micros(used.ru_stime), peak) < 0)
     fail("dprintf");
-  close(3);
-
-  if (WIFEXITED(status)) return WEXITSTATUS(status);
-  int sig = WTERMSIG(status);
-  struct rlimit none = {0, 0};
-  setrlimit(RLIMIT_CORE, &none);
-  signal(sig, SIG_DFL);
+  if (close(3) != 0) fail("close");
+  if (!sig) return WIFEXITED(status) ? WEXITSTATUS(status) : 125;
   sigset_t only;
   sigemptyset(&only);
   sigaddset(&only, sig);
-  sigprocmask(SIG_UNBLOCK, &only, NULL);
-  kill(getpid(), sig);
-  return 128 + sig;
+  if (sigprocmask(SIG_UNBLOCK, &only, NULL) != 0 || kill(getpid(), sig) != 0) _exit(125);
+  _exit(125);
 }

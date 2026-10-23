@@ -685,22 +685,30 @@ unavailable, with its reason.
   built by `make build-runner`), which starts it with the invocation's
   arguments, environment, working directory and standard streams in a
   process group led by a watchdog. The runner enforces the limit: at the
-  limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues the group
-  and signals it (SIGTERM at the limit), and 250 ms later kills it, so a
-  program ignoring SIGTERM or stopped ends too. When the program ends, the
-  runner kills what remains of its group, so no descendant in it holds the
-  output pipes, and ends with the program's exit status or signal. The
-  watchdog holds a pipe only the runner writes to; when the runner ends in
-  any way, the watchdog kills the group. Node kills the runner 2 s past the
-  grace period, a backstop that also bounds descendants that left the
-  group. The runner's report, the `RUSAGE_CHILDREN` CPU time and peak
-  resident set (`ru_maxrss`) of the program and the descendants it waited
-  for, whether the limit expired, and any failure of its own system calls,
-  goes to its descriptor 3, a file the program does not inherit; it covers
-  the CPU time used up to a timeout's kill. Descendants the program did not
-  wait for are killed and not counted. The runner relays the exit status a
-  result is classified by and decides timeouts, so it is part of the
-  execution adapter: a process stage's key covers its identity.
+  limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues and signals
+  the program, by its process id, and the group (SIGTERM at the limit), and
+  250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
+  the group ends too. When the program ends, the runner kills what remains
+  of its group, so no descendant in it holds the output pipes, and ends with
+  the program's exit status or signal. The watchdog holds a pipe only the
+  runner writes to; when the runner ends in any way, the watchdog kills the
+  group. Node kills the runner 2 s past the grace period, a backstop for a
+  runner that does not end. A failed system call of the runner's kills the
+  program and the group and fails the run.
+- Containment is limited to the program and its group: a descendant that
+  left the group (`setsid`, `setpgid`) is not killed, and neither is a
+  program that left the group when the runner itself dies. Such a
+  descendant may also hold the output pipes, keeping the invocation waiting
+  until the backstop. TScert's process stages, the Lean verifier and the
+  OCaml producer, start no process.
+- The runner's report, the `RUSAGE_CHILDREN` CPU time and peak resident set
+  (`ru_maxrss`) of the program and the descendants it waited for, whether
+  the limit expired, and any failure of its own system calls, goes to its
+  descriptor 3, a file the program does not inherit; it covers the CPU time
+  used up to a timeout's kill. Descendants the program did not wait for are
+  not counted. The runner relays the exit status a result is classified by
+  and decides timeouts, so it is part of the execution adapter: a process
+  stage's key covers its identity.
 - An in-process stage records the pipeline process's own CPU time over the
   attempt (`process.cpuUsage`) plus that of each compiler process the attempt
   started (`tools/compiler-processes.mts`), read just before the compiler is

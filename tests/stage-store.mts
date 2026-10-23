@@ -287,22 +287,53 @@ if (eligible) {
     file("runner-busy.json", "")), 10_000, true);
   assert.ok("userMs" in busy.record.cpu && busy.record.cpu.userMs > 20 && (busy.record.cpu.peakBytes ?? 0) > 0,
     JSON.stringify(busy.record.cpu));
+  const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** Whether process `pid` ends within 2 s. */
+  const ends = async (pid: number): Promise<boolean> => {
+    for (let i = 0; i < 100 && alive(pid); i++) await wait(20);
+    return !alive(pid);
+  };
+  const pidOf = (path: string): number => {
+    const pid = Number(readFileSync(path, "utf8"));
+    assert.ok(pid > 0, path);
+    return pid;
+  };
+  /** A timeout the runner decided at its own deadline, not spawnSync's
+   * backstop, which reports ETIMEDOUT; with the CPU time up to the kill. */
+  const runnerTimeout = (name: string, held: Invoked): void => {
+    assert.equal(held.record.execution, "timed-out", name);
+    assert.equal(held.error, undefined, `${name}: ${String(held.error)}`);
+    assert.ok("userMs" in held.record.cpu, `${name}: ${JSON.stringify(held.record.cpu)}`);
+  };
   const pids = join(dir, "runner-pids");
   const spinning = script("runner-timeout.sh", `/bin/sleep 30 & echo $! > ${pids}; while :; do :; done`,
     ["/bin/sleep"]);
   const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 600, true);
-  assert.equal(timed.record.execution, "timed-out");
+  runnerTimeout("spinning", timed);
   assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 10, JSON.stringify(timed.record.cpu));
-  const descendant = Number(readFileSync(pids, "utf8"));
-  assert.ok(descendant > 0);
-  assert.throws(() => process.kill(descendant, 0), /ESRCH/, "a descendant of a timed-out stage survived");
-  // The limit holds against a program ignoring SIGTERM and a stopped one:
-  // the group is killed 250 ms past it.
-  for (const [name, body] of [["ignoring", 'trap "" TERM; /bin/sleep 5; exit 7'], ["stopped", "kill -STOP $$"]]) {
-    const held = invoke(lower(script(`runner-${name}.sh`, body, ["/bin/sleep"]), file(`runner-${name}.json`, "")), 300, true);
-    assert.equal(held.record.execution, "timed-out", name);
-    assert.ok(held.record.elapsedMs < 3_000, `${name}: ${held.record.elapsedMs} ms`);
+  assert.ok(await ends(pidOf(pids)), "a descendant of a timed-out stage survived");
+  // The limit holds against a program ignoring SIGTERM, a stopped one and
+  // one that left the group: each is killed by its process id 250 ms past it.
+  const left = join(dir, "runner-setsid-pid");
+  for (const [name, body, dependencies] of [
+    ["ignoring", 'trap "" TERM; /bin/sleep 5; exit 7', ["/bin/sleep"]],
+    ["stopped", "kill -STOP $$", []],
+    ["setsid", `echo $$ > ${left}; exec /usr/bin/perl -e 'use POSIX; POSIX::setsid() or die "setsid"; sleep 30'`,
+      ["/usr/bin/perl"]],
+  ] as const) {
+    if (!existsSync(dependencies[0] ?? "/bin/sh")) continue;
+    runnerTimeout(name, invoke(lower(script(`runner-${name}.sh`, body, dependencies), file(`runner-${name}.json`, "")),
+      300, true));
   }
+  if (existsSync("/usr/bin/perl")) assert.ok(await ends(pidOf(left)), "a program that left its group survived its limit");
   // A descendant holding the output pipes ends with the program.
   const lingering = invoke(lower(script("runner-lingering.sh", "/bin/sleep 30 & exit 0", ["/bin/sleep"]),
     file("runner-lingering.json", "")), 10_000, true);
@@ -314,26 +345,15 @@ if (eligible) {
   const report = openSync(join(dir, "runner-orphan-report"), "w+");
   const runner = spawn(runnerBuild, ["10000", orphan], { stdio: ["ignore", "ignore", "ignore", report] });
   const exited = new Promise<void>((done) => runner.on("exit", () => done()));
-  const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
   for (let i = 0; i < 100 && !existsSync(started); i++) await wait(20);
-  const program = Number(readFileSync(started, "utf8"));
-  assert.ok(program > 0);
+  const program = pidOf(started);
   runner.kill("SIGKILL");
   await exited;
   closeSync(report);
-  const alive = (): boolean => {
-    try {
-      process.kill(program, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  for (let i = 0; i < 100 && alive(); i++) await wait(20);
-  assert.ok(!alive(), "the program of a killed runner survived");
+  assert.ok(await ends(program), "the program of a killed runner survived");
   process.stdout.write("runner: output bytes, status and signal pass through; CPU time reported, up to a timeout's " +
-    "kill, which leaves no process of the stage running, also of a program ignoring SIGTERM or stopped; " +
-    "descendants end with the program; a killed runner's stage is killed\n");
+    "kill at the runner's own deadline, which leaves no process of the stage running, also of a program ignoring " +
+    "SIGTERM, stopped or out of its group; descendants end with the program; a killed runner's stage is killed\n");
 }
 
 if (eligible) {
