@@ -353,7 +353,11 @@ established result carries its proof (`CheckedComparison`).
 4. **Var**, its premises asked recursively.
 5. **Inst≤** for a scheme row against an arrow target (§3.4), its premises
    asked recursively as completed comparisons.
-6. **Structure.** Today's discovery, deletion and validation
+6. **Lists.** Label containment is linear where both lists share an order
+   (`memAll`, `subsetIn`), search deduplicates candidate types through a hash
+   set (`keepFirst`), and renamed-member pairs are formed once per key and
+   schemes.
+7. **Structure.** Today's discovery, deletion and validation
    (`growTable`, `gfp`, `checkStructural`), with three changes: with
    selection on, every reading of candidates for a source clause, in demand
    pairs (`demandPairs`), coverage (`coveredIn`) and validation
@@ -481,14 +485,18 @@ judgment only.
 A member test's slice reads, for each label $`a`$ of the narrowed union, the
 first candidate label $`b\ne a`$ whose one record clause is $`a`$'s clause
 with its views of the tested key $`f`$ at another type (`restriction`,
-`restricts`). `restricts` requires every other component to be equal, so
-$`b`$ is found among the candidates with $`a`$'s **key**: the record clause
-with the views at $`f`$ erased. The index of a candidate list maps a key to
-the candidates holding it in list order, built once per list; a lookup
-reads $`a`$'s key's candidates and keeps the first that `restricts`
-accepts, which is the first of the whole list that does
-(`restriction_index_eq`, §5): a candidate with another key fails
-`restricts`. A slice then costs $`m`$ key computations for the index,
+`restricts`). The candidates are unfolded once per slice (`candidateRows`,
+`restrictionIn_eq`). `restricts` requires the two clauses' first operands
+equal and their views equal but at $`f`$, so $`b`$ is found among the
+candidates with $`a`$'s **key**: a hash of the first operand and of the
+views with the views at $`f`$ at no type, under the graph's label hash
+(`restrictKey`, `NormalGraph.labelHash`, which the equations' graph takes
+from a label's tree). The index of a candidate list maps a key to the
+candidates holding it in list order, built once per list (`rowIndex`,
+`rowIndex_getD`); a lookup reads $`a`$'s key's candidates and keeps the
+first that `restricts` accepts, which is the first of the whole list that
+does (`restrictionAt_eq`): a candidate `restricts` accepts has $`a`$'s key
+(`restricts_key`). A slice then costs $`m`$ key computations for the index,
 $`n`$ lookups, and `restricts` on each label's bucket, where it costs
 $`n\cdot m`$ unfoldings and comparisons. A bucket holds the candidates
 sharing a member's record clause but for the tested key; `restricts` and its
@@ -509,9 +517,9 @@ is answered from its first. This memo is search's: the checker's slices are
 its own.
 
 Narrowing is trusted: the checker computes the same slices
-(`uncoveredField_sound`). The index needs `Hashable` on labels, which the
-equation labels have; `restriction` keeps its statement and its proof, and
-the indexed lookup is proved equal to it.
+(`uncoveredField_sound`). The index reads the graph's label hash, which no
+meaning reads; `restriction` keeps its statement and its proof, and the
+indexed lookup is proved equal to it.
 
 ### 3.7 Typing by synthesis
 
@@ -540,6 +548,11 @@ recursion. Per form:
   checks hold; a rest call's spread operands at their synthesized types;
 - an operator: its operands' synthesized types, then the pool's operand
   types.
+
+Within a rule, search establishes the parts (callee, receiver, arguments,
+the receiver of a read) before it compares the rule's result with the
+claimed type: a wrong candidate then fails at its parts, which the parts'
+types decide, rather than at a comparison of its result with the claim.
 
 Fuel and budgets are today's; evidence is the same rules' nodes. The pool keeps the types no part determines: a literal's
 singleton or family label, a fresh object's code type, `undefined`.
@@ -784,6 +797,25 @@ measured at width 5.
 Outcomes are unchanged: six verified, `forOfPattern` and `pattern` refused
 at their source expression obligation.
 
+**Measured against the expectation**, 2026-10-24, after the steps
+[WORK](../../WORK.md#status) lists, census medians, search CPU today →
+measured: `moduleFunction` 29.1 → 9.0 s, `inertRead` 21.1 → 6.6,
+`resolve` 20.4 → 6.0, `forOfPattern` 115.0 → 9.0, `pattern` 15.1 → 3.3,
+`patternDefaults` 0.8 → 0.6, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
+check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
+3.4 → 2.3. Each lies within its expected interval. The width series, 0.88 /
+7.55 / 18.6 / 54.6 / 137.6 → 0.56 / 1.08 / 1.65 / 3.24 / 6.31 s, misses its
+criterion. At width 136, of 4.7 sampled seconds, reading and writing the
+documents takes 1.24, which the input's own growth sets, search re-checking
+its comparisons 0.87, and the comparisons 2.35, whose remaining cost is the
+kernel's list scans: `TabRen` reading every table row for each premise
+(`premTable`), label containment across lists of different orders
+(`subsetIn`'s fallback), a meet row read against every label of a target
+(`meetBelow`), and clause equality in the validator's `Same` test. Each is
+linear per premise and quadratic per row. The criterion is therefore
+revised to what the design can reach: the time outside reading the
+documents linear in the width, which the hashed lookups of §8's steps give.
+
 ## 8. Migration
 
 Each step is a green round (`make test`, `make suite`), measured on the
@@ -792,38 +824,37 @@ width series, with its commit record, and moves the owning documents in the
 same commit: POSITIVE-TYPES for the relation and the engine,
 RECURSIVE-EQUATIONS §4.4 and §6 for instantiation, UNION-SHAPES §7 for the
 index and the rerun, PROGRAM-TYPING for narrowing, WORK's row for the
-measurements. No step changes a wire shape: the evidence keeps instance
-choices with their tables, which become exact substitutions.
-Every change of evidence size is reported. A step whose measurement falls short of this section's expectation is
+measurements. No step changes a wire shape; every change of evidence size
+is reported. A step whose measurement falls short of §7's expectation is
 explained before the next lands, and the design revised where the
 explanation requires it.
 
-1. **Instantiation by inclusion.** `Inst≤` in `compareInstArrsState`, exact
-   images, the proposal routes without patches; image equivalence and the
-   patches deleted in the same commit.
-2. **Narrowing by index.** `restriction`'s indexed lookup with
-   `restriction_index_eq`; search's yield memo.
-3. **Typing by synthesis.** The synthesized type first at each pool
-   alternative.
-4. **Validator and discovery read candidates.** The index, with
-   `indexCandidates_eq`; candidates-only existential for closed entries,
-   with `indexCandidates_mem`,
-   `checkEntries_eq`; demand pairs and coverage through the index; hashed
-   exact membership with `premTable_eq`. Decisions unchanged.
-5. **Clause identity.** `Clauses` and `Same` in the premise judgment, the
-   coverage rule and the identity step, with `clauses_subset_sound` and
-   `excludes_self`, which keeps step 4's equality; interning.
-6. **Memos.** The demand memo (§3.2); the success map through inner
-   questions and search's own check (§3.5, §3.8); the checker's through
-   `Subtyping.check`.
+Landed, in order: instantiation by inclusion; narrowing's candidates
+unfolded once and search's slice memo; typing by synthesis; `Same` with
+linear containment and renamed-member pairs once; hashed deduplication of
+search's candidates; parts before the claim with bucketed `Same` lookups in
+search; the keyed narrowing index. Each step's measurement is WORK's row.
+
+Remaining:
+
+1. **Hashed kernel lookups.** Under the graph's label hash, `TabRen`'s rows
+   bucketed by their source labels, label containment through a hash set
+   where the orders differ, a meet row's parts read once per premise, and
+   the validator's `Same` test by bucket; each with its equality lemma to
+   the list form it replaces.
+2. **One memo for search and its check** (§3.8).
+3. **Validator and discovery read the candidate index** (§3.3), with
+   `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
+4. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
+5. **The row-matched instance on demand**: `matchedInstance` computed only
+   once the unified instances are refuted, through a lazy candidate list of
+   the instance rule.
+6. **Checker memo.** `Subtyping.check` state-passing.
 7. **Rerun.** Deleted only with an operational theorem: selected discovery,
    at today's fuel and growth, finds a valid table wherever unrestricted
-   discovery does. `selected_complete` is a part of it.
+   discovery does; `selected_complete` is a part of it.
 8. **Coverage by assumption**, where structural comparison remains a
    measured cost after steps 1–7: the dependency representation,
    `discovery_complete`, and discovery and deletion replaced.
 
-Steps 1–3 are independent and ordered by measured cost; step 5 follows step
-4 (it extends the selection lemma step 4 uses); step 6 uses step 5's
-interning; steps 7 and 8 follow step 4, whose search their lemmas are about.
 This draft is deleted when the last step taken lands.
