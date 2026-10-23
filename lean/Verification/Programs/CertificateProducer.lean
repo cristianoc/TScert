@@ -409,6 +409,7 @@ for the same arguments. A search step returns its result and the answers it
 grew; a failed step keeps the answers its attempts found. -/
 
 deriving instance Hashable for PropKey
+deriving instance Hashable for Tag
 
 /-- Answered subtype requests, each `subtypeSearch`'s whole result, an
 exhaustion included; and the read summaries search proposed in one request's
@@ -418,6 +419,21 @@ structure Answered (ι : Type) [BEq ι] [Hashable ι] where
   subtypes : Std.HashMap (Ty ι × Ty ι) (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
   summaries : Array (ReadSummary ι) := #[]
   summaryAnswers : Std.HashMap (Ty ι × PropKey × Ty ι) (CheckResult ι Nat) := {}
+  /-- Member-test slices of an object's field (`PromiseCalls.memberFieldSlice`),
+  by the object's type, the field, the tags, the answer and the candidates:
+  a pure function of these, so an entry is its value. -/
+  fieldSlices : Std.HashMap (Ty ι × PropKey × List Tag × Bool × Ty ι) (Ty ι) := {}
+
+/-- `PromiseCalls.memberFieldSlice`, answered again from the table where its
+inputs were asked before. -/
+@[nospecialize] def fieldSliceS [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (A : Ty ι) (f : PropKey)
+    (ts : List Tag) (q : Bool) (candidates : Ty ι) : StateM (Answered ι) (Ty ι) := fun s =>
+  let key := (A, f, ts, q, candidates)
+  match s.fieldSlices.get? key with
+  | some r => (r, s)
+  | none =>
+    let r := PromiseCalls.memberFieldSlice G A f ts q candidates
+    (r, { s with fieldSlices := s.fieldSlices.insert key r })
 
 /-- A search step threading the answered requests: a `CheckResult`
 computation whose answers persist across its failed alternatives. -/
@@ -1401,10 +1417,10 @@ where
       if g.alias || g.optional || g.value != i then pure none else
         match Γ[g.cell]? with
         | none => pure none
-        | some A =>
+        | some A => do
           -- A partly covered arm is read at a label of the pool its
           -- record restricts to (member-split): the claims name it.
-          let sliced := PromiseCalls.memberFieldSlice G A g.field ts q pool.flatten.eraseDups
+          let sliced ← fieldSliceS G A g.field ts q pool.flatten.eraseDups
           if sliced == A then pure none else
           pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
     pure (fewestLast (slot ++ fields))
@@ -1496,8 +1512,9 @@ where
         some ({ conditional := q, onFalse := !q, target := j, type := sliced, evidence := some {} } : PromiseCalls.Yield ι)
       | none => none
     let slots := answers.filterMap fun q => yieldAt i q (PromiseCalls.memberSlotSlice G (Γ[i]?.getD []) ts q)
-    let fields := answers.flatMap fun q => (reads i).filterMap fun g =>
-      yieldAt g.cell q (PromiseCalls.memberFieldSlice G (Γ[g.cell]?.getD []) g.field ts q pool.flatten.eraseDups)
+    let fields ← (answers.flatMap fun q => (reads i).map (q, ·)).filterMapM fun (q, g) => do
+      let sliced ← fieldSliceS G (Γ[g.cell]?.getD []) g.field ts q pool.flatten.eraseDups
+      pure (yieldAt g.cell q sliced)
     pure (slots ++ fields)
 
 /-- An edge's implications in the target's slots: each the source states, at

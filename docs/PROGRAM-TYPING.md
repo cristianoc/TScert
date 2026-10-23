@@ -2837,7 +2837,9 @@ arm partly covered is kept. `BranchRefinement.uncovered_sound`,
 `uncoveredField_sound` and `restricts_sound` prove the removal and the
 split, and `memberYield_sound` composes them with the tag slices
 (`memberSlotSlice`, `memberFieldSlice`); the search reads the split arm's
-label from the claims. The rule:
+label from the claims. The candidates are unfolded once per slice, not once
+per arm (`candidateRows`, `restrictionIn_eq`), and search answers a slice
+asked again from its first answer (`fieldSliceS`). The rule:
 
 ```math
 \frac{

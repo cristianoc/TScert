@@ -417,14 +417,59 @@ theorem restriction_sound [DecidableEq ι] {G : NormalGraph ι} {a b : ι} {f : 
     · cases hfound
   · cases hb
 
+/-- The candidates of one clause each, with that clause, unfolded once. -/
+def candidateRows (G : NormalGraph ι) (candidates : Ty ι) : List (ι × Clause (Ty ι)) :=
+  candidates.filterMap fun b => match expand G [b] with
+    | [c'] => some (b, c')
+    | _ => none
+
+/-- `restriction` over candidates unfolded once (`candidateRows`). -/
+def restrictionIn [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (rows : List (ι × Clause (Ty ι))) : Option ι :=
+  match expand G [a] with
+  | [c] => (rows.find? fun r => r.1 != a && restricts G c r.2 f ts).map (·.1)
+  | _ => none
+
+theorem find?_filterMap_fst {g : β → Option (β × γ)} (hg : ∀ b x, g b = some x → x.1 = b)
+    (P : β × γ → Bool) : ∀ cs : List β,
+    ((cs.filterMap g).find? P).map Prod.fst = cs.find? (fun b => (g b).any P)
+  | [] => rfl
+  | b :: bs => by
+    rw [List.filterMap_cons, List.find?_cons]
+    cases h : g b with
+    | none => simpa only [h, Option.any_none] using find?_filterMap_fst hg P bs
+    | some x =>
+      simp only [List.find?_cons, Option.any_some]
+      cases hp : P x with
+      | true => simp [hg b x h]
+      | false => simpa only using find?_filterMap_fst hg P bs
+
+theorem restrictionIn_eq [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+    (candidates : Ty ι) :
+    restrictionIn G a f ts (candidateRows G candidates) = restriction G a f ts candidates := by
+  unfold restrictionIn restriction candidateRows
+  split
+  · rename_i c _
+    rw [find?_filterMap_fst]
+    · congr 1
+      funext b
+      split <;> simp
+    · intro b x hx
+      split at hx
+      · cases hx; rfl
+      · cases hx
+  · rfl
+
 /-- The labels of `A` an object may still have once every tag of `ts`
 answered `false` of the value of its field `f`: a label each of whose clauses
 fixes `f` at a covered type is dropped, and a label of one record clause a
-label of `candidates` restricts (`restriction`) is read as that label. -/
+label of `candidates` restricts (`restriction`) is read as that label. The
+candidates are unfolded once for all of `A`'s labels. -/
 def uncoveredField [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (ts : List Tag) (candidates : Ty ι) : Ty ι :=
+  let rows := candidateRows G candidates
   A.flatMap fun a =>
     if G.plain a && (expand G [a]).all (fieldCovered G · f ts) then []
-    else [(restriction G a f ts candidates).getD a]
+    else [(restrictionIn G a f ts rows).getD a]
 
 theorem uncoveredField_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {f : PropKey} {ts : List Tag} {candidates : Ty ι}
     {n W h v flds code oid l u}
@@ -452,7 +497,7 @@ theorem uncoveredField_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {
     | _ => simp [fieldCovered] at hans
   | false =>
     have hmem : (restriction G a f ts candidates).getD a ∈ uncoveredField G A f ts candidates :=
-      List.mem_flatMap.mpr ⟨a, ha, by simp [hd]⟩
+      List.mem_flatMap.mpr ⟨a, ha, by simp [hd, restrictionIn_eq]⟩
     cases hr : restriction G a f ts candidates with
     | none =>
       simp only [hr, Option.getD_none] at hmem
