@@ -14,46 +14,30 @@ rules and acceptance decision.
 
 ## Try it
 
-From the repository root, with OCaml 5 and Dune 3 installed:
+The producer needs OCaml 5 and Dune 3 (`opam install dune`) and only the
+OCaml standard library. `make build` builds it with the verifier, and
+`dune build --root ocaml-producer` alone; [the README](../README.md#try-it)
+runs a file through the whole pipeline, whose outcomes
+[the pipeline entry point](../docs/DESIGN.md#the-pipeline-entry-point)
+lists. A pipeline run gives proof search fuel 12 and each stage a 60 s
+limit (`TSCERT_STEP_LIMIT` sets another): operational limits, separate from
+the typing rules. `VERIFIER` names a verifier executable built from the same
+Lean sources.
 
-```sh
-make setup
-make build
-node pipeline/verify-source.mts pipeline/examples/callbacks.ts
-node pipeline/verify-source.mts pipeline/examples/collections-json-values.ts \
-  --project pipeline/library-project
-```
-
-Dune is available through `opam install dune`. The executable needs only the
-OCaml standard library. Set `VERIFIER` to
-use a verifier executable built from the same Lean sources.
-
-The pipeline requires a strict TypeScript project. Without `--project`, the
-examples use their checked-in project. With it, the front end resolves imports
-through that project's source files, package exports, workspace symlinks and
-`tsconfig.json`. The configuration must include the client file. The
-`library-project` and `imports-project` directories supply such projects for
-the imported examples.
-
-The command prints an outcome, one of those
-[the pipeline entry point](../docs/DESIGN.md#the-pipeline-entry-point) lists, and an
-artifact directory. The directory holds the source snapshot, `fragment.json`,
-`flow.json`, `claims.json` when proposed, `evidence.json` when produced, and
-diagnostic logs. Only `verified` exits successfully. `unverified` is not a disproof of the
-program. The pipeline uses proof-search fuel 12 and a 30-second timeout per
-child process. These are operational limits, separate from the typing rules.
-
-For direct use, with existing artifacts:
+For direct use, with a run's artifacts:
 
 ```sh
 lean/.lake/build/bin/verifier --lower-control-flow fragment.json > flow.json
-ocaml-producer/_build/default/producer.exe fragment.json flow.json > claims.json
+ocaml-producer/_build/default/producer.exe fragment.json flow.json [qualified.json] > claims.json
 ocaml-producer/_build/default/producer.exe --explain fragment.json flow.json
 ```
 
-`--explain` prints the known causes of proposal failure with source spans. It
-is an aid to diagnosis, not a verification result. The pipeline command runs
-the complete search and independent certificate check.
+`qualified.json` lists the imports the pipeline reads at their certified
+effects, each by its local name, its declaration identity, its unit's
+footprint and on-throw flag. `--explain` prints the known causes of
+proposal failure with source spans: an aid to diagnosis, not a verification
+result. A refusal exits 2 with its reason and a last line `end of refusal`;
+an operational failure exits 3 with a first line `error: `.
 
 [dune](dune) declares the library and executable;
 [dune-project](dune-project) makes this directory a Dune root.
