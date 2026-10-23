@@ -124,7 +124,7 @@ A row is one of:
   none).
 
 Only a clause row has clauses. The graph of a table $`T`$
-(`RequestJson.tableGraph`) is
+(`StoreView.graph`) is
 
 ```math
 G.\mathit{rows}(i)=\begin{cases}\vec c & T[i]=\vec c\\ [\,] & \text{otherwise}\end{cases}
@@ -140,7 +140,7 @@ G.\mathit{meets}(i)=(p;\vec c)\land G.\mathit{meetParams}(i)=\vec q\iff T[i]=\ma
 
 with the meaning given in
 [Parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
-Validation (`validRows`) requires every label a row names to index `types`,
+Validation (`StoreView.wellFormed`, which `RequestJson.validRequest` calls) requires every label a row names to index `types`,
 a parameter row to name its own label and state its kind, a scheme's binders
 to be parameter rows, and a meet row's parameters to be value parameter rows.
 A parameter row is therefore never the same row as another, so two distinct
@@ -209,7 +209,7 @@ contravariant, like the arguments. A class value's and a method's signatures
 have receiver `{}`, a construct scheme's `[]`. Effectful contracts use these
 records in graph rows, scheme rows, code entries and subtype certificates;
 a code entry must discharge both safety and its effect
-([the definition rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
+([the definition rules](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 
 The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o}`:
 

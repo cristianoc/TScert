@@ -83,6 +83,7 @@ Each function object has these fields:
 | `result` | Claimed return type |
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
 | `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
+| `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
 | `entries` | Entry claims: `{point,start,bindings}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
@@ -104,7 +105,7 @@ they do not replace this lifetime obligation.
 A function's `footprint` strengthens its annotated signature only as a
 claim: a footprint other than `{"value":"any","store":"any"}` is an
 obligation on the function's own graph, which must establish it
-([effect certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
+([effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)),
 and the other units then read the function at its annotation's signature
 stating that footprint. A guard's or an assertion function's footprint
 is claimed and established the same way, and its promise signature states it
@@ -217,14 +218,14 @@ primitive table above, so the receiver accepts any value. Its claim is:
 ```json
 {"scheme": {
   "effect": {"footprint": {"value":"any","store":"any"}, "promise": null, "fresh": false, "receiverStore": false, "onThrow": false},
-  "typeParams": [{"name":"T","bound":null}],
+  "typeParams": [{"name":"T","bound":null,"resolution":null}],
   "this": [4], "params": [{"param":"T"}],
   "rest": null, "result": {"param":"T"}
 }}
 ```
 
 Every shown scheme field is required. `bound` is `null` or a claim type; a
-type parameter may also carry `resolution`, `null` or
+type parameter's `resolution` is `null` or
 `{"observation": o, "result": r}` as in the [Fragment](FRAGMENT-FORMAT.md), which
 makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
@@ -250,11 +251,11 @@ A call expression can propose an instance with:
 
 ```json
 {"point":"9:17:7","pos":[121,129],"type":[1,2],"current":null,
- "instantiate":[{"name":"T","type":[1,2]}]}
+ "instantiate":[{"name":"T","type":[1,2],"resolution":null}]}
 ```
 
-Its names must match the callable's binders. An entry may carry `resolution`:
-`null`, or for a qualified binder `{"certificate": c}`, with `c`
+Its names must match the callable's binders. An entry's required `resolution`
+is `null`, or for a qualified binder `{"certificate": c}`, with `c`
 one of `{"k":"stable"}`, `{"k":"native","child":c}`, `{"k":"promise"}`,
 `{"k":"union","arms":[c, ...]}` or `{"k":"binder","binder":name}`; the
 consumer checks the certificate against the entry's complete input type: a

@@ -438,6 +438,8 @@ the operation's result, executed or replayed.
 - *Ran.* Each operation's attempt must have executed, or replayed a finished
   result the store holds for its key; a replayed timeout fails the control.
   `TSCERT_STAGE_STORE=off` executes every operation of every control.
+- *Limit.* A control's operation is killed after 30 s unless the control
+  states another limit (`tested`, `pipeline/stages.mts`).
 
 The controls of the store itself (`tests/stage-store.mts`, the observed
 stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)

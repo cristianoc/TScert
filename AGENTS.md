@@ -47,8 +47,9 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
   executes every stage. A branch uses the default store; an agent testing
   the store itself names one under `$TMPDIR`. `make clean-store` removes
   entries and timeout observations.
-- Each process stage is killed after 60 s; `TSCERT_STEP_LIMIT=<seconds>`
-  sets another limit. A timeout is recorded with its limit and reported
+- Each process stage is killed after 60 s, and a control's operation after
+  30 s unless the control states another limit;
+  `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
   again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
   it again at the same limit.
 - A run's directory holds `invocations.jsonl`, each stage invocation's
