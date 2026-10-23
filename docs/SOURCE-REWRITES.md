@@ -186,25 +186,6 @@ reach would show ([deferred precision](FOOTPRINTS.md#deferred-extra-precision)).
   collected by a loop pushing them, rather than by a `map` callback.
 - **Commit:** this entry's commit (`tools/fragment-statements.mts`).
 
-### A `map` callback whose only call is a failure through the gate
-
-`enumMembers` (`tools/fragment-classes.mts`) built an enum's members as
-`info.members.map((m) => { … gate.fail(…) … return { ...m, value }; })`.
-`gate.fail` is a method reached through a value of the gate's type, read at
-its signature, which states no effect; so the callback is unrestricted,
-`map` takes its signature with holes, and the result is no `EnumMember[]`
-(`no derivation of its return-contract claim` at the `map`). Its caller
-`enumOpen` inherited the refusal.
-
-- **Rewrite:** a `for...of` loop over the members pushes each onto a fresh
-  `EnumMember[]`, calling `gate.fail` in the same order and on the same
-  members. The two forms agree here: the mapped array is the parser's own
-  dense array, nothing writes it while the loop runs (the only call throws),
-  and an exception leaves both at the same member.
-- **Pattern:** an array whose elements need calls of unbounded effect is
-  collected by a loop pushing them (as for `protocolPattern` above).
-- **Commit:** this entry's commit (`tools/fragment-classes.mts`).
-
 ## Rewrites required, not made
 
 A source pattern of TScert's own code that TScert refuses on principle is
