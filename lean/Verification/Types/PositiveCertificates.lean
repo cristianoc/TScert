@@ -1907,14 +1907,23 @@ theorem compareInstState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
         simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs, NormalGraph.listParam] at hx
   · cases h
 
+/-- Instance proposals, tried in order: each is computed when the engine
+reaches it, and proposes at most one instance. -/
+abbrev Proposals (ι : Type) := List (Thunk (Option (Instance ι)))
+
+/-- Proposals already computed. -/
+@[nospecialize] def Proposals.of (cs : List (Instance ι)) : Proposals ι := cs.map fun c => Thunk.pure (some c)
+
 /-- Candidate construction supplies choices; this operation selects an instance
 only after checking its images, bounds and every target component. -/
 @[nospecialize] def compareInstancesState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
-    (S T : List ι) (candidates : List (Instance ι)) (state : σ) : ComparisonResult (Instance ι × List α) × σ :=
-  ComparisonResult.firstState (fun c prior =>
-    let (result, next) := compareInstState G images compare empty S T c prior
-    (result.map (c, ·), next)) candidates state
+    (S T : List ι) (candidates : Proposals ι) (state : σ) : ComparisonResult (Instance ι × List α) × σ :=
+  ComparisonResult.firstState (fun c prior => match c.get with
+    | some c =>
+      let (result, next) := compareInstState G images compare empty S T c prior
+      (result.map (c, ·), next)
+    | none => (.notEstablished, prior)) candidates state
 
 theorem compareInstancesState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S T candidates state}
@@ -1924,8 +1933,10 @@ theorem compareInstancesState_sound [DecidableEq ι] {G : NormalGraph ι} {image
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   unfold compareInstancesState at h
   obtain ⟨c, _, prior, checked⟩ := ComparisonResult.firstState_sound _ _ _ h
-  simp only [ComparisonResult.accepted_map] at checked
-  exact compareInstState_sound hc checked
+  split at checked
+  · simp only [ComparisonResult.accepted_map] at checked
+    exact compareInstState_sound hc checked
+  · simp [ComparisonResult.accepted] at checked
 
 /-- The rows a family certificate's instances prove. -/
 @[nospecialize] def knownOf (ks : List (KnownInstance ι)) :
@@ -1954,7 +1965,7 @@ instance when its target is an arrow contract. The checker validates every use. 
 structural dependencies. Its bound premises use the supplied comparison operation. -/
 @[nospecialize] def compareStepStateCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
   if subsetUsing G images S T then (.established {}, state) else
   let (selected, next) := compareInstancesState G images compare [] S T (instantiation S T) state
@@ -2025,7 +2036,7 @@ theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images
 reading every target clause where that is not established. -/
 @[nospecialize] def compareStepState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
   let r := compareStepStateCore G images compare S T instantiation members state
   if r.1.accepted || !images.budget.select then r
@@ -2099,7 +2110,7 @@ established structural check publishes a completed result. -/
 /-- Instance premises share completed results across siblings and alternatives.
 A repeated unfinished query requires the guarded structural checker. -/
 @[nospecialize] def compareCheckedStep [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (recur : ∀ A B : List ι, List (CompletedComparison G) →
       ComparisonResult (CheckedComparison G A B) × List (CompletedComparison G))
@@ -2135,7 +2146,7 @@ A repeated unfinished query requires the guarded structural checker. -/
     | .exhausted rounds visited => (.exhausted rounds visited, step.2)
 
 @[nospecialize] def compareUsingCoreState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (depth : Nat) (path : Table ι) (S T : List ι) (cache : List (CompletedComparison G)) :
     ComparisonResult (CheckedComparison G S T) × List (CompletedComparison G) :=
@@ -2151,7 +2162,7 @@ termination_by depth
 /-- The engine's cache belongs to one fixed equation environment. Parameter
 reassignment changes meanings, while every cached proof holds for all of them. -/
 @[nospecialize] def compareUsingCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (depth : Nat) (path : Table ι) (S T : List ι) : ComparisonResult (SubtypeChoices ι) :=
   let e := ParameterAssignment.empty .mixed
@@ -2170,7 +2181,7 @@ theorem compareUsingCore_sound [DecidableEq ι] {G : NormalGraph ι}
 comparison state used by ordinary instantiation and its bound premises. -/
 @[nospecialize] def selectInstancesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (candidates : List (Instance ι))
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (Instance ι × List (List (KnownInstance ι))) :=
   let e := ParameterAssignment.empty .mixed
   let G' := PositiveRules.reassign G e
@@ -2178,12 +2189,12 @@ comparison state used by ordinary instantiation and its bound premises. -/
   let compare := fun A B prior =>
     let (result, next) := compareUsingCoreState G' images' instantiation members images.budget.rounds [(S, T)] A B prior
     (result.map fun checked => checked.choices.dependencies G' A B, next)
-  (compareInstancesState G' images' compare [] S T candidates []).1
+  (compareInstancesState G' images' compare [] S T (Proposals.of candidates) []).1
 
 /-- One subtype operation for evidence production and checking. Proposal functions
 choose instances for the comparisons requested by the engine. -/
 @[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
   compareUsingCore G images instantiation members images.budget.rounds [] S T
 
@@ -2196,10 +2207,10 @@ theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
 /-- Find a supplied instance for the comparison the engine requests. Root choices
 and supporting choices carry the same instance data and receive the same validation. -/
 @[nospecialize] def SubtypeChoices.proposal [DecidableEq ι] (G : NormalGraph ι)
-    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : List (Instance ι) :=
-  (if A == S && B == T then p.instantiation.toList else []) ++
+    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : Proposals ι :=
+  Proposals.of ((if A == S && B == T then p.instantiation.toList else []) ++
     (p.members.filter fun k => k.1 == A &&
-      ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2)
+      ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2))
 
 /-- Public evidence carries instantiation choices. The common operation
 selects and validates the subtype rule. -/

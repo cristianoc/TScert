@@ -45,7 +45,7 @@ variable (images : InstanceImageCheck G)
 theorem proposal_reassign (S T : List ι) (p : SubtypeChoices ι) :
     p.proposal (reassign G η) S T = p.proposal G S T := rfl
 
-theorem compareUsingCore_reassign (instantiation : List ι → List ι → List (Instance ι))
+theorem compareUsingCore_reassign (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (depth : Nat) (path : Table ι) (S T : List ι) :
     compareUsingCore (reassign G η) (images.reassign η) instantiation members depth path S T =
       compareUsingCore G images instantiation members depth path S T := by
@@ -54,7 +54,7 @@ theorem compareUsingCore_reassign (instantiation : List ι → List ι → List 
   rw [images_reassign_fixed]
   rfl
 
-theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) :
     compareUsing (reassign G η) (images.reassign η) S T instantiation members =
       compareUsing G images S T instantiation members := by

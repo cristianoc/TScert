@@ -373,7 +373,7 @@ established result carries its proof (`CheckedComparison`).
    `SameKind`, the opaque-row conditions and `meetSources` are read as
    today.
 
-**Coverage by assumption, the target form of step 6.** Discovery collects
+**Coverage by assumption, the target form of discovery.** Discovery collects
 every candidate's demand pairs before deletion, and deletion rechecks every
 row each round. The depth-first form builds the family certificate from the
 root, assuming a pair while it is open, keeping a covering's first candidate
@@ -386,9 +386,9 @@ missing. The depth-first form replaces discovery and deletion only with that
 representation (each covering naming the rows, arrow evidence and instances
 it reads, a failure invalidated when they change) and `discovery_complete`
 (§5), and only where structural comparison remains a measured cost
-after the other steps (§8, step 8).
+after the other steps (§8).
 
-**Resources** keep today's meaning while step 6 keeps today's discovery:
+**Resources** keep today's meaning while discovery stays today's:
 frontier rounds, `grows` over the rows inserted, exhaustion distinct from
 an unestablished question.
 
@@ -604,7 +604,7 @@ empty memo.
   census slice it loses is a coverage result that revises the design (§8).
 - **Structure:** discovery and deletion stay today's; selected discovery
   reads candidates as today, now through the index, and the rerun without
-  selection stays (§8, step 7). The depth-first form, where it is taken,
+  selection stays (§8, the rerun). The depth-first form, where it is taken,
   carries `discovery_complete`.
 
 What is not proved is measured: every pipeline case keeps its expected
@@ -682,7 +682,7 @@ reachable from its root through those coverings' premises (table rows,
 `Var`, `TabRen`, member instances) and their arrow evidence, stays valid;
 it needs the dependency closure WORK's
 [selected discovery](../../WORK.md#union-shapes-discovery) states. It is a
-part of the operational theorem that deleting the rerun needs (§8, step 7). `discovery_complete` — with the
+part of the operational theorem that deleting the rerun needs (§8). `discovery_complete` — with the
 dependency representation of §3.2, a valid closed family in the reach of
 today's discovery, its coverings by candidates, is found by the depth-first
 form — is the condition for replacing discovery and deletion by it.
@@ -697,7 +697,7 @@ and overload order, every proposal, and search's typing order (§3.7).
 
 **Removed:** `imagesUpTo`, `structuralImages`, `compareEquivalent`,
 `equivalent`, `compareImagesUpTo`, the respelling patches,
-`extendInstancePatches`, `instancePatchLimit`; with step 7's operational
+`extendInstancePatches`, `instancePatchLimit`; with the rerun's operational
 theorem, the reruns and `InstanceImageCheck.general`; with `discovery_complete`,
 `growTable`, `gfp` and `coveredIn`.
 
@@ -798,19 +798,19 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 8.4 s, `inertRead` 21.1 → 6.0,
-`resolve` 20.4 → 5.5, `forOfPattern` 115.0 → 7.0, `pattern` 15.1 → 3.2,
-`patternDefaults` 0.8 → 0.6, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
-check CPU `moduleFunction` 5.0 → 2.8, `inertRead` 3.6 → 2.5, `resolve`
+measured: `moduleFunction` 29.1 → 6.9 s, `inertRead` 21.1 → 5.5,
+`resolve` 20.4 → 5.0, `forOfPattern` 115.0 → 5.7, `pattern` 15.1 → 2.9,
+`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
+check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
 3.4 → 2.3. Each lies within its expected interval. The width series is
-0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.53 / 0.94 / 1.26 / 2.14 / 3.53 s. The
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.56 / 0.94 / 1.29 / 2.08 / 3.41 s. The
 width criterion is on the part the design acts on: the sampled time outside
 the front end (reading the fragment and the claims, lowering and freezing
 them) and the evidence write, at width 136 within 12 times its time at
 width 5 (the widths' ratio, 136/5, is 27), and within 1.5 times its time at
 width 87 scaled by 136/87. Measured at widths 5 / 30 / 87 / 136 it is
-0.12 / 0.22 / 0.65 / 1.17 s, within both bounds (1.44 and 1.52); the front
-end takes 0.22 / 0.47 / 1.00 / 1.61 s, which the input's own growth sets.
+0.11 / 0.21 / 0.60 / 1.04 s, within both bounds (1.32 and 1.41); the front
+end takes 0.21 / 0.47 / 0.97 / 1.64 s, which the input's own growth sets.
 
 ## 8. Migration
 
@@ -832,7 +832,9 @@ search's candidates; parts before the claim with bucketed `Same` lookups in
 search; the keyed narrowing index; no table grown from a pair no valid
 family covers; clause membership by an index under the label hash, in
 search and in the validator, which reads a pair's target clauses once, as
-its opaque rows do. Each step's measurement is WORK's row.
+its opaque rows do; the row-matched instance computed when the engine reaches
+it, and reading no row where a target signature has no scheme signature of
+its effect and arity. Each step's measurement is WORK's row.
 
 Remaining:
 
@@ -844,15 +846,12 @@ Remaining:
 3. **Validator and discovery read the candidate index** (§3.3), with
    `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
 4. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
-5. **The row-matched instance on demand**: `matchedInstance` computed only
-   once the unified instances are refuted, through a lazy candidate list of
-   the instance rule.
-6. **Checker memo.** `Subtyping.check` state-passing.
-7. **Rerun.** Deleted only with an operational theorem: selected discovery,
+5. **Checker memo.** `Subtyping.check` state-passing.
+6. **Rerun.** Deleted only with an operational theorem: selected discovery,
    at today's fuel and growth, finds a valid table wherever unrestricted
    discovery does; `selected_complete` is a part of it.
-8. **Coverage by assumption**, where structural comparison remains a
-   measured cost after steps 1–7: the dependency representation,
+7. **Coverage by assumption**, where structural comparison remains a
+   measured cost after steps 1–6: the dependency representation,
    `discovery_complete`, and discovery and deletion replaced.
 
 This draft is deleted when the last step taken lands.

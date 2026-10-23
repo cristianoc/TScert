@@ -418,8 +418,11 @@ determine is proposed at the empty union where no target operand mentions it
 (`filter`'s `S` at a plain predicate), and stands for itself where one does;
 the substitution, bound and image checks decide either proposal. Its constructor receives the
 substitution operation and constructs choices. `compareInstancesState` validates
-those choices, selecting a successful one and retaining exhaustion when no
-alternative succeeds. This selection serves ordinary subtype comparisons and
+those choices in order, selecting a successful one and retaining exhaustion when no
+alternative succeeds; each alternative is computed when it is reached
+(`Proposals`), so structural matching runs only once unification's instance is
+refuted, and reads no row where a target signature has no scheme signature of
+its effect and arity. This selection serves ordinary subtype comparisons and
 explicit method type arguments through `selectInstancesUsing`.
 `compareInstancesState_sound` reduces acceptance to a checked instance at every
 parameter assignment.
