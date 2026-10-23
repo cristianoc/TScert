@@ -317,25 +317,24 @@ signature's image, and $`i`$ is below each part:
      {\{i\}\ \le\ T}\ \textsf{Inst}_\le
 ```
 
-$`p[c]_q`$ is the signature's image through the instance's table
-(`sigImg`, `restImg`), defined when every operand it reads has an image;
-where $`p`$'s receiver admits every value (`receiverUniverse`: `top`, or
-`source` with the target's receiver a source type) its receiver is $`q`$'s
-and its body alone is imaged, as `sigBodyMatch` reads it.
+$`p[c]_q`$ is the signature's image through the instance's table, defined
+when every operand it reads has an image; where $`p`$'s receiver admits
+every value (`receiverUniverse`: `top`, or `source` with the target's
+receiver a source type) its receiver is $`q`$'s and its body alone is
+imaged (`sigPremises`, `restPremises`).
 $`\sqsubseteq_{\mathsf{sig}}`$ is one signature covering one signature of the
 same arity: receiver and arguments contravariant, result covariant, the
 effect covering $`q`$'s; for variadic signatures the fixed arguments and
 the result likewise, and the complete rest pack contravariantly, as an
 inclusion of argument-list components (tuple length, positions and
-optionality included). Its operand premises are
-derivations. Today's rule (`instSig`, `instRest`) is its case of operands
-equal up to member order. It is F<:'s instantiation followed by
-subsumption ([Pierce 2002](../REFERENCES.md#pierce-2002), chapter 26).
+optionality included). Its operand premises are derivations. Its case of
+operands equal up to member order is the rule it replaces. It is F<:'s
+instantiation followed by subsumption
+([Pierce 2002](../REFERENCES.md#pierce-2002), chapter 26).
 
-The image check keeps its two forms (`eitherImages`): the substitution, now
-exact (`substitutionTableOk`), and the checked finite table (`TableOk`).
-Image equivalence (`imagesUpTo`, `structuralImages`, `compareEquivalent`)
-has no remaining use. Instance premises are read as bound premises are
+The image check keeps its two forms (`eitherImages`): the substitution,
+exact (`exactImages`, `substitutionTableOk`), and the checked finite table
+(`TableOk`). Instance premises are read as bound premises are
 today: completed derivations, never assumed, a repeat on the instance path
 requiring a guarded structural derivation
 ([§4.4](../RECURSIVE-EQUATIONS.md#44-instantiation)).
