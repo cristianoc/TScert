@@ -1,11 +1,11 @@
-# Draft pre-plan: class methods' effects
+# Draft: class methods' effects
 
-A draft kept for a later decision: neither accepted nor rejected by the owner (2026-10-22). Its decisions D1–D6 are open. Astra reviewed it in six rounds: rounds 1–5 asked for fixes, all applied here; round 6 found no blocking counterexample, the obligations L1–L6 remaining implementation and proof work. Nothing of it is implemented. On main 0e48e9f the async rejection hole of round 4 does not occur: async definitions' effects are unrestricted there, and three probes that break an effect through a rejected promise are refused (each leaves a hole under Node).
-
-
-Status: draft for the owner's decision (2026-10-22), main at d99275a. Nothing
-here is implemented. Claims are labelled **proved** (with the Lean name),
-**cited** (with the document and its scope) or **conjectured**.
+The design of class methods' effects; its status and the owner's decisions
+on it are in [WORK](../../WORK.md#class-methods-effects). Base: TScert main at d99275a.
+Claims are labelled **proved** (with the Lean name), **cited** (with the
+document and its scope) or **conjectured**. Observed on 0e48e9f: async
+definitions' effects are unrestricted, and three probes that break an effect
+through a rejected promise are refused (each leaves a hole under Node).
 
 ## 1. The problem, at the level of the judgment
 
