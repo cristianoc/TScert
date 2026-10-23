@@ -230,7 +230,7 @@ scheme row, its binders standing for the other's. Untrusted:
     Option (InstState ι) := do
   if !p.effect.covers q.effect || p.arguments.length != q.arguments.length then none
   -- A scheme receiver admitting every value admits the target's
-  -- (`instSig`): it is not matched.
+  -- (`receiverUniverse`): it is not matched.
   let pairs := if receiverUniverse G p.receiver q.receiver then (p.result :: p.arguments).zip (q.result :: q.arguments)
     else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
@@ -296,31 +296,16 @@ scheme row, its binders standing for the other's. Untrusted:
   some ⟨final.table, θs, D, V⟩
 
 
-/-- Maximum accumulated instance patches across all fixed and rest targets.
-This bounds untrusted search only; every candidate requires certification. -/
-def instancePatchLimit : Nat := 64
-
-/-- Extend accumulated patches, stopping before constructing a combination
-beyond the global budget. Duplicate patches consume no additional slot. -/
-@[nospecialize] def extendInstancePatches [DecidableEq ι]
-    (patches choices : List (InstTable ι)) : List (InstTable ι) := Id.run do
-  let mut result : Array (InstTable ι) := #[]
-  for patch in patches do
-    for choice in choices do
-      if result.size ≥ instancePatchLimit then return result.toList
-      let candidate := patch ++ choice
-      if !result.contains candidate then result := result.push candidate
-  return result.toList
-
-/-- Untrusted instance alternatives from syntax, equivalent spellings and row
-matching. Only the common comparison operation validates these choices. -/
+/-- Untrusted instance alternatives from unification, unification without the
+results, and row matching. Only the common comparison operation validates
+these choices. -/
 @[nospecialize] def instanceCandidates [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : List (PositiveCertificates.Instance ι) :=
-  -- Where the target's operands are other spellings of the instance's (a
-  -- result `Pair<[number, string]>` for `Pair<[T, U]>`), the binders are
-  -- found from the signatures without their results, and the instance's own
-  -- signatures, by the renaming's substitution, are proposed instead.
+  -- Where unification of the whole signatures fails (a result the target
+  -- spells otherwise, `Pair<[number, string]>` for `Pair<[T, U]>`), the
+  -- binders are found from the signatures without their results, and the
+  -- instance's own signatures, by the renaming's substitution, are matched.
   let exact : Option (PositiveRules.Ops ι) := do
     let r ← sub
     let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
@@ -331,65 +316,11 @@ matching. Only the common comparison operation validates these choices. -/
     let L' ← exact
     let (θs, table) ← Instantiates.propose s L' M
     some (θs, table)
+  -- Images are the substitution: the instance rule compares each target
+  -- signature with an image by inclusion, so no image is respelled.
   let syntactic : List (PositiveCertificates.Instance ι) := match proposal with
     | none => []
-    | some (θs, table) =>
-      let c : PositiveCertificates.Instance ι := ⟨table, θs, [], []⟩
-      let κ₀ := s.binders.zip θs
-      -- An operand whose image is another spelling of the target's (a
-      -- result `Pair<[number, string]>` for `Pair<[T, U]>` at `string`, a
-      -- callback the target states as a definition of its own): the
-      -- target's as the image of the one label whose image is not among the
-      -- target's, which the image check accepts only when the two are
-      -- proved equal. The label's image is proposed as the target less the
-      -- other labels' images, and, where the instance shares those labels
-      -- (a result `undefined | T` at `T = undefined | number`), as the whole
-      -- target: each operand's alternatives, the patches their products.
-      let respell (P Q : List ι) : List (InstTable ι) :=
-        match tyImg table κ₀ P with
-        | some img =>
-          if PositiveRules.sameLabels img Q then [[]] else
-          let open_ := if P.length == 1 then P
-            else P.filter fun l => !((entryImg table κ₀ l).getD []).all (· ∈ Q)
-          match open_ with
-          | [l] =>
-            let others := (P.filter (· != l)).flatMap fun m => (entryImg table κ₀ m).getD []
-            let rest := Q.filter (!others.contains ·)
-            if rest == Q then [[(l, κ₀, Q)]] else [[(l, κ₀, rest)], [(l, κ₀, Q)]]
-          | _ => [[]]
-        | none => [[]]
-      -- One patch of every operand's first proposal, and one more for each
-      -- operand with a second, that operand's second beside the others'
-      -- first: linear in the operands, each distinct once.
-      let product (operands : List (List ι × List ι)) : List (InstTable ι) :=
-        let choices := operands.map fun (P, Q) => respell P Q
-        let indexed := choices.zip (List.range choices.length)
-        let primary := choices.flatMap fun c => c.headD []
-        let swapped := indexed.filterMap fun (c, i) => match c with
-          | [_, second] => some (indexed.flatMap fun (d, j) => if j == i then second else d.headD [])
-          | _ => none
-        (primary :: swapped).eraseDups
-      let fixedPatch (p q : Arrow (List ι)) : List (InstTable ι) :=
-        product <| if receiverUniverse G p.receiver q.receiver then
-          (p.result :: p.arguments).zip (q.result :: q.arguments)
-        else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
-      let restPatch (p q : RestArrow (List ι)) : List (InstTable ι) :=
-        product <| if receiverUniverse G p.receiver q.receiver then
-          (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
-        else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip
-          (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
-      -- Each target chooses one overload. Images of an unused overload need
-      -- not equal that target's operands; the checker validates each choice.
-      let patches := L.foldl (fun patches q => extendInstancePatches patches <|
-        s.signatures.flatMap fun p =>
-          if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
-            fixedPatch p q else []) ([[]] : List (InstTable ι))
-      let patches := M.foldl (fun patches q => extendInstancePatches patches <|
-        s.variadic.flatMap fun p =>
-          if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
-            restPatch p q else []) patches
-      c :: (patches.filter (! ·.isEmpty)).map fun patch =>
-        ⟨patch.eraseDups ++ table, θs, [], []⟩
+    | some (θs, table) => [⟨table, θs, [], []⟩]
   syntactic ++ (matchedInstance G fuel s L M).toList
 
 /-- How deep instance matching follows a type's rows: search only. -/

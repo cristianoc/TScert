@@ -697,7 +697,7 @@ it ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)):
 The certificate is `bindMember` with no proofs, at a type of no clauses, the
 scheme row. A scheme's own receivers are the forwarding function's, which
 ignores them, so a member's scheme admits every receiver; an instance may
-state a narrower one, the call's object (`instSig`).
+state a narrower one, the call's object (`sigPremises`, `receiverUniverse`).
 
 The member read from $`v=\rho(i)`$ meets $`m`$'s signatures with receiver $`\{v\}`$
 where $`v`$ is in each of $`m.\mathsf{this}`$ (`memberOf_at`,

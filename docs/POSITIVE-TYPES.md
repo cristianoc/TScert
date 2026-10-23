@@ -1363,31 +1363,39 @@ i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
 \forall(p,B)\in\beta.\;G\vdash\theta_p\le B\\
 \text{a checked table}\quad
 T\equiv_G\mathsf{arrs}(L;M)\quad
-\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\land\varepsilon_\sigma\succeq\varepsilon_\tau\quad
-\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau\doteq\sigma[\kappa_0]\land\varepsilon_\sigma\succeq\varepsilon_\tau
+\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\sigma[\kappa_0]\sqsubseteq_{\mathsf{sig}}\tau\quad
+\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\sigma[\kappa_0]\sqsubseteq_{\mathsf{sig}}\tau
 \end{array}}
      {G\vdash\{i\}\le T}\ \textsf{inst}
 ```
 
-Here $`\tau\doteq\sigma'`$ when the two have the same arity and each type of
-$`\tau`$ has the same members as the corresponding type of $`\sigma'`$: a type
-means the union of its labels, so their order does not matter
-(`sameLabels`, `sigMatch`, `restMatch`, and for clauses `sameClauses`). Where
-the scheme signature's receiver admits every value (`top`), as a quantified
-member's does, the instance's receiver is not compared: a callable safe at
-every receiver is safe at a narrower one, every receiver being a closed value
-(`instSig`, `instRest`, `top_row_mixed`). So a method call's instance states
-its object as the receiver. The finite-table specialization of the premises other than
+Here $`\sigma'\sqsubseteq_{\mathsf{sig}}\tau`$ when the image $`\sigma'`$ of
+a scheme signature, read through the table, covers the target signature
+$`\tau`$ of the same arity: $`\tau`$'s receiver within $`\sigma'`$'s, each of
+$`\tau`$'s arguments within $`\sigma'`$'s, $`\sigma'`$'s result within
+$`\tau`$'s, for a variadic signature $`\tau`$'s rest argument lists within
+$`\sigma'`$'s, and $`\varepsilon_\sigma\succeq\varepsilon_\tau`$ (`sigPremises`,
+`restPremises`). Each inclusion is a premise the comparison operation
+discharges, as it discharges the bounds. Where the scheme signature's
+receiver admits every value (`top`, or `source` at a source receiver), as a
+quantified member's does, no receiver premise is asked: a callable safe at
+every receiver is safe at a narrower one, every receiver being a closed
+value (`receiverUniverse`, `top_row_mixed`). So a method call's instance
+states its object as the receiver. The checker tries, for each target
+signature, the scheme signatures with the fewest premises relating types of
+different shapes first (`structureFirst`); the order changes cost only. The finite-table specialization of the premises other than
 $`T\equiv_G\mathsf{arrs}(L;M)`$ is
 $`G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)`$, checked by `compareInstArrsState`.
 
 The order $`\varepsilon_\sigma\succeq\varepsilon_\tau`$ means that the
 source effect guarantees the target effect. Signature images retain their
-effects. Instance elimination composes image equality with arrow subsumption: the source effect must cover the target
-effect. A preserving signature therefore supplies an unrestricted instance;
-an unrestricted signature cannot supply a preserving instance. The argument,
-receiver and result images keep their equality obligations. The proof
-`inst_images_sound` applies `PromiseWith.weaken` after substitution.
+effects. Instance elimination composes image correctness with signature
+subsumption: the source effect must cover the target effect. A preserving
+signature therefore supplies an unrestricted instance; an unrestricted
+signature cannot supply a preserving instance. The proof
+`inst_covers_sound` applies `PromiseWith.weaken` after substitution, with the
+premises' inclusions for the receiver, the arguments (`ArgsShort_mono`,
+`ArgsRest_mono`) and the result.
 
 The semantic proof of `inst` separates **image correctness** from universal
 elimination. Let $`\eta_\theta`$ assign each scheme binder the mixed meaning
@@ -1403,7 +1411,7 @@ obligation is
 
 `InstanceImages` states this obligation for the images named by a witness.
 `table_instanceImages` proves it using the checked finite table, including its
-closure, free-variable and kind checks. `inst_images_sound` then proves
+closure, free-variable and kind checks. `inst_covers_sound` then proves
 elimination from those equalities and the existing bound/signature premises;
 fixed and rest arguments, effects and receiver weakening use this one proof.
 `compareInstArrsState_sound_at` composes the two. The default checker discharges the obligation with
@@ -1419,7 +1427,7 @@ results are described in [RECURSIVE-EQUATIONS §4.4](RECURSIVE-EQUATIONS.md#44-i
 
 Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `compareInstArrsState`,
 `mixed_assignment_substitution`, `InstanceImages`, `table_instanceImages`,
-`inst_images_sound`, `meet_row_value`, `meet_noArguments`,
+`inst_covers_sound`, `sigPremises`, `restPremises`, `meet_row_value`, `meet_noArguments`,
 `meetOk_noArguments`, `table_row_mixed`, `checkStructural_sound`,
 `compareInstArrsState_sound_at`, `compareInstArrsState_sound`.
 

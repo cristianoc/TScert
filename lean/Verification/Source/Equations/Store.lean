@@ -450,88 +450,10 @@ def eitherImages {ι : Type} [DecidableEq ι] {G : NormalGraph ι} (a b : Instan
   gen := b.gen
   budget := b.budget
 
-/-- Structural image equality uses the subtype engine without proposing any
-quantified instances, so it cannot recursively request another image check. -/
-def structuralEquivalent (E : Equations) (v : Variances E) (budget : SearchBudget)
-    (X Y : List (Label E.signature)) : Bool :=
-  let I := { E.images v with budget }
-  (PositiveCertificates.compareUsing E.graph I X Y (fun _ _ => []) (fun _ => [])).accepted &&
-    (PositiveCertificates.compareUsing E.graph I Y X (fun _ _ => []) (fun _ => [])).accepted
-
-theorem structuralEquivalent_sound {E : Equations} {v : Variances E} {budget X Y}
-    (checked : structuralEquivalent E v budget X Y = true) :
-    ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
-  obtain ⟨left, right⟩ := Bool.and_eq_true_iff.mp checked
-  intro η
-  funext n W x
-  exact propext ⟨PositiveCertificates.compareUsing_sound left η n W x,
-    PositiveCertificates.compareUsing_sound right η n W x⟩
-
-/-- Exact substitution images may be respelled by a structurally equal type.
-This independent first layer supports instance checking inside image equality. -/
-def structuralImages (E : Equations) (v : Variances E) (budget : SearchBudget) :
-    InstanceImageCheck E.graph :=
-  { E.images v with
-    budget
-    compare := fun _ c => ComparisonResult.fromBool
-      (substitutionTableOkUpTo (structuralEquivalent E v budget) c.table)
-    sound := fun bs c hlen hkinds checked η =>
-      E.substitutionTableUpTo_instanceImages (structuralEquivalent E v budget)
-        (fun _ _ h => structuralEquivalent_sound h) η bs c.instances c.table hlen hkinds
-        (by simpa only [ComparisonResult.accepted_fromBool] using checked) }
-
-/-- Semantic equality by the common subtype operation in both directions,
-with the equations' validated variances and image checker. -/
-def compareEquivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
-    (budget : SearchBudget := {}) : ComparisonResult Unit :=
-  let I := structuralImages E v budget
-  ((CertificateProducer.comparisonUsing E.graph I X Y).map fun _ => ()).andThen fun _ =>
-    (CertificateProducer.comparisonUsing E.graph I Y X).map fun _ => ()
-
-def equivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
-    (budget : SearchBudget := {}) : Bool :=
-  (compareEquivalent E v X Y budget).accepted
-
-theorem equivalent_sound {E : Equations} {v : Variances E} {X Y : List (Label E.signature)} {budget : SearchBudget}
-    (h : equivalent E v X Y budget = true) :
-    ∀ η, mixedMeaning E.graph η X = mixedMeaning E.graph η Y := by
-  simp only [equivalent, compareEquivalent, ComparisonResult.accepted_andThen,
-    ComparisonResult.accepted_map, Bool.and_eq_true] at h
-  have l := CertificateProducer.comparisonUsing_sound h.1
-  have r := CertificateProducer.comparisonUsing_sound h.2
-  intro η
-  funext n W x
-  exact propext ⟨l η n W x, r η n W x⟩
-
-/-- Structural substitution, with each non-identical image checked up to
-semantic equality by the common comparison operation. -/
-def compareImagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget)
-    (tbl : InstTable (Label E.signature)) : ComparisonResult Unit :=
-  ComparisonResult.all (fun (l, κ, image) =>
-    if decide (l.substitute (parameterReplacement κ) = image) then .established ()
-    else compareEquivalent E v (l.substitute (parameterReplacement κ)) image budget) tbl
-
-theorem compareImagesUpTo_accepted (E : Equations) (v : Variances E) (budget : SearchBudget)
-    (tbl : InstTable (Label E.signature)) :
-    (compareImagesUpTo E v budget tbl).accepted =
-      substitutionTableOkUpTo (fun X Y => equivalent E v X Y budget) tbl := by
-  simp only [compareImagesUpTo, ComparisonResult.accepted_all, substitutionTableOkUpTo]
-  apply congrArg (List.all tbl)
-  funext ⟨l, κ, image⟩
-  split <;> rename_i h <;> simp only [h, ComparisonResult.accepted, Bool.true_or, Bool.false_or, equivalent]
-
-/-- The equations' checks, an instance's images accepted up to proved
-equivalence: a scheme's result at an instance may be named by an equal type
-of another spelling (`Pair<[number, string]>` for the instance of
-`Pair<[T, U]>`). -/
-def imagesUpTo (E : Equations) (v : Variances E) (budget : SearchBudget := {}) : InstanceImageCheck E.graph :=
-  { E.images v with
-    budget := budget
-    compare := fun _ c => compareImagesUpTo E v budget c.table
-    sound := fun bs c hlen hkinds checked η =>
-      E.substitutionTableUpTo_instanceImages (fun X Y => equivalent E v X Y budget) (fun _ _ h => equivalent_sound h)
-        η bs c.instances c.table hlen hkinds
-        (by simpa only [compareImagesUpTo_accepted] using checked) }
+/-- The equations' checks with exact substitution images and the store's
+budget. -/
+def exactImages (E : Equations) (v : Variances E) (budget : SearchBudget := {}) : InstanceImageCheck E.graph :=
+  { E.images v with budget }
 
 /-- The native Promise declaration selected by declaration identity. Its
 application has one value argument. -/
@@ -934,7 +856,7 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
         | none => .clauses []) (spell c.heads)
       (mentioned.map CheckedLabel.tree) depth
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
-  images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)
+  images c := eitherImages (finiteInstanceImages E.graph) (exactImages E c.variances c.heads.subtypeBudget)
 
 
 /-- A checked store's graph is its equations': it reads none of the store's
@@ -948,8 +870,8 @@ included) the same. -/
 theorem Checked.images_eq (c c' : Checked E p) (hv : c.variances = c'.variances)
     (hb : c.heads.subtypeBudget = c'.heads.subtypeBudget) :
     StoreView.images c = StoreView.images c' := by
-  show eitherImages _ (imagesUpTo E c.variances c.heads.subtypeBudget) =
-    eitherImages _ (imagesUpTo E c'.variances c'.heads.subtypeBudget)
+  show eitherImages _ (exactImages E c.variances c.heads.subtypeBudget) =
+    eitherImages _ (exactImages E c'.variances c'.heads.subtypeBudget)
   rw [hv, hb]
 
 end

@@ -51,64 +51,45 @@ abbrev InstTable (ι : Type) := List (ι × Ctx ι × List ι)
 so their order and repetition carry no meaning. -/
 @[nospecialize] def sameLabels [DecidableEq ι] (a b : List ι) : Bool := a.all (· ∈ b) && b.all (· ∈ a)
 
-/-- Two lists of types, position by position with the same members. -/
-@[nospecialize] def sameLabelLists [DecidableEq ι] (as bs : List (List ι)) : Bool :=
-  as.length == bs.length && (as.zip bs).all fun ab => sameLabels ab.1 ab.2
-
-/-- A signature is a scheme signature's image, up to the members of each type. -/
-@[nospecialize] def sigMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : Arrow (List ι)) : Bool :=
-  match sigImg tbl κ p with
-  | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments q.arguments && sameLabels q'.result q.result && q'.effect == q.effect
-  | none => false
-
-/-- A variadic signature is a scheme one's image, up to the members of each type. -/
-@[nospecialize] def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : RestArrow (List ι)) : Bool :=
-  match restImg tbl κ p with
-  | some q' => sameLabels q'.receiver q.receiver && sameLabelLists q'.arguments.1 q.arguments.1 &&
-      sameLabels q'.arguments.2 q.arguments.2 && sameLabels q'.result q.result && q'.effect == q.effect
-  | none => false
-
-/-- A signature's parameters and result are a scheme signature's images; its
-receiver is not compared. -/
-@[nospecialize] def sigBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : Arrow (List ι)) : Bool :=
-  match p.arguments.mapM (tyImg tbl κ), tyImg tbl κ p.result with
-  | some ps, some r => sameLabelLists ps q.arguments && sameLabels r q.result && p.effect == q.effect
-  | _, _ => false
-
-/-- A variadic signature's fixed parameters, rest and result are a scheme
-one's images; its receiver is not compared. -/
-@[nospecialize] def restBodyMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : RestArrow (List ι)) : Bool :=
-  match p.arguments.1.mapM (tyImg tbl κ), tyImg tbl κ p.arguments.2, tyImg tbl κ p.result with
-  | some ps, some e, some r => sameLabelLists ps q.arguments.1 && sameLabels e q.arguments.2 && sameLabels r q.result && p.effect == q.effect
-  | _, _, _ => false
+/-- The images of a list of types, each an entry's. -/
+@[nospecialize] def tysImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (Ss : List (List ι)) :
+    Option (List (List ι)) :=
+  Ss.mapM (tyImg tbl κ)
 
 /-- A receiver universe covers the instance's receiver without a substitution. -/
 @[nospecialize] def receiverUniverse [DecidableEq ι] (G : NormalGraph ι) (P Q : List ι) : Bool :=
   expand G P == [.top] ||
     (expand G P == [.source] && sourceTy G Q)
 
-/-- A signature an instance states: a scheme signature's image, or, where the
-scheme's receiver admits every value, one whose parameters and result are its
-images at any receiver. A callable invoked safely with every receiver is
-invoked safely with a narrower one, such as a generic method's scheme, which
-the member bound to its host meets whatever receiver it is given, at a call
-whose receiver is the host. -/
-@[nospecialize] def instSig [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : Arrow (List ι)) : Bool :=
-  (sigMatch tbl κ p { q with effect := p.effect } ||
-    (receiverUniverse G p.receiver q.receiver && sigBodyMatch tbl κ p { q with effect := p.effect })) &&
-      p.effect.covers q.effect
+/-- The premises under which the scheme signature `p`, read through the
+instance's images, covers the target signature `q` (`Inst≤`): the target's
+receiver within the image's, unless the scheme's receiver admits every value;
+each target argument within the image's; the image's result within the
+target's. None where the arities differ, `p`'s effect does not cover `q`'s,
+or an operand has no image. -/
+@[nospecialize] def sigPremises [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : Arrow (List ι)) : Option (List (List ι × List ι)) :=
+  if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
+    match tysImg tbl κ p.arguments, tyImg tbl κ p.result with
+    | some ps, some r =>
+      let body := q.arguments.zip ps ++ [(r, q.result)]
+      if receiverUniverse G p.receiver q.receiver then some body
+      else (tyImg tbl κ p.receiver).map fun rc => (q.receiver, rc) :: body
+    | _, _ => none
+  else none
 
-/-- The same, for a variadic signature. -/
-@[nospecialize] def instRest [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
-    (p q : RestArrow (List ι)) : Bool :=
-  (restMatch tbl κ p { q with effect := p.effect } ||
-    (receiverUniverse G p.receiver q.receiver && restBodyMatch tbl κ p { q with effect := p.effect })) &&
-      p.effect.covers q.effect
+/-- The same, for a variadic signature: its fixed arguments, its rest's
+argument lists and its result. -/
+@[nospecialize] def restPremises [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : RestArrow (List ι)) : Option (List (List ι × List ι)) :=
+  if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
+    match tysImg tbl κ p.arguments.1, tyImg tbl κ p.arguments.2, tyImg tbl κ p.result with
+    | some ps, some e, some r =>
+      let body := q.arguments.1.zip ps ++ [(q.arguments.2, e), (r, q.result)]
+      if receiverUniverse G p.receiver q.receiver then some body
+      else (tyImg tbl κ p.receiver).map fun rc => (q.receiver, rc) :: body
+    | _, _, _ => none
+  else none
 
 /-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
 @[nospecialize] def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
@@ -785,64 +766,99 @@ theorem sameLabels_arguments [DecidableEq ι] {G : NormalGraph ι} {η : MixedAs
   funext n W vs
   exact propext (sameLabels_exists h _)
 
-theorem sameLabelLists_values [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} :
-    ∀ {as bs : List (List ι)}, sameLabelLists as bs = true →
-      as.map (mixedValues G η) = bs.map (mixedValues G η)
-  | [], [], _ => rfl
-  | [], _ :: _, h => by simp [sameLabelLists] at h
-  | _ :: _, [], h => by simp [sameLabelLists] at h
-  | a :: as, b :: bs, h => by
-    simp only [sameLabelLists, List.length_cons, List.zip_cons_cons, List.all_cons,
-      Bool.and_eq_true, beq_iff_eq, Nat.add_right_cancel_iff] at h
-    have ht : sameLabelLists as bs = true := by
-      simp only [sameLabelLists, Bool.and_eq_true, beq_iff_eq]; exact ⟨h.1, h.2.2⟩
-    simp only [List.map_cons, sameLabels_values h.2.1, sameLabelLists_values ht]
+theorem tysImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι} :
+    ∀ {Ss Ts : List (List ι)}, tysImg tbl κ Ss = some Ts →
+      Ts.length = Ss.length ∧ ∀ x ∈ Ss.zip Ts, tyImg tbl κ x.1 = some x.2
+  | [], Ts, h => by simp [tysImg] at h; subst h; simp
+  | S :: Ss, Ts, h => by
+    simp only [tysImg, List.mapM_cons] at h
+    cases hS : tyImg tbl κ S with
+    | none => simp [hS] at h
+    | some T =>
+      cases hr : Ss.mapM (tyImg tbl κ) with
+      | none => simp [hS, hr] at h
+      | some Ts' =>
+        simp only [hS, hr, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+          Option.some.injEq] at h
+        subst h
+        obtain ⟨hl, hz⟩ := tysImg_some (Ss := Ss) (Ts := Ts') hr
+        refine ⟨by simp [hl], ?_⟩
+        intro x hx
+        simp only [List.zip_cons_cons, List.mem_cons] at hx
+        rcases hx with rfl | hx
+        · exact hS
+        · exact hz x hx
 
-theorem sigMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : Arrow (List ι)} (h : sigMatch tbl κ p q = true) :
-    ∃ q', sigImg tbl κ p = some q' ∧ sameLabels q'.receiver q.receiver = true ∧
-      sameLabelLists q'.arguments q.arguments = true ∧ sameLabels q'.result q.result = true ∧ q'.effect = q.effect := by
-  unfold sigMatch at h
+/-- What `sigPremises` read: the images of the arguments and the result, and
+of the receiver unless the scheme's receiver admits the target's. -/
+theorem sigPremises_some [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : Arrow (List ι)} {prs : List (List ι × List ι)} (h : sigPremises G tbl κ p q = some prs) :
+    p.arguments.length = q.arguments.length ∧ p.effect.covers q.effect = true ∧
+    ∃ ps r, tysImg tbl κ p.arguments = some ps ∧ tyImg tbl κ p.result = some r ∧
+      (q.arguments.zip ps ++ [(r, q.result)] ⊆ prs) ∧
+      (receiverUniverse G p.receiver q.receiver = true ∨
+        ∃ rc, tyImg tbl κ p.receiver = some rc ∧ (q.receiver, rc) ∈ prs) := by
+  unfold sigPremises at h
   split at h
-  · rename_i q' hq
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨q', hq, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+  · rename_i hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    split at h
+    · rename_i ps r hps hr
+      refine ⟨hc.1, hc.2, ps, r, hps, hr, ?_⟩
+      split at h
+      · rename_i hu
+        cases h
+        exact ⟨List.Subset.refl _, .inl hu⟩
+      · cases hrc : tyImg tbl κ p.receiver with
+        | none => simp [hrc] at h
+        | some rc =>
+          simp only [hrc, Option.map_some, Option.some.injEq] at h
+          subst h
+          exact ⟨List.subset_cons_self _ _, .inr ⟨rc, rfl, List.mem_cons_self⟩⟩
+    · cases h
   · cases h
 
-theorem restMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : RestArrow (List ι)} (h : restMatch tbl κ p q = true) :
-    ∃ q', restImg tbl κ p = some q' ∧ sameLabels q'.receiver q.receiver = true ∧
-      sameLabelLists q'.arguments.1 q.arguments.1 = true ∧ sameLabels q'.arguments.2 q.arguments.2 = true ∧
-      sameLabels q'.result q.result = true ∧ q'.effect = q.effect := by
-  unfold restMatch at h
+/-- What `restPremises` read. -/
+theorem restPremises_some [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : RestArrow (List ι)} {prs : List (List ι × List ι)} (h : restPremises G tbl κ p q = some prs) :
+    p.arguments.1.length = q.arguments.1.length ∧ p.effect.covers q.effect = true ∧
+    ∃ ps e r, tysImg tbl κ p.arguments.1 = some ps ∧ tyImg tbl κ p.arguments.2 = some e ∧
+      tyImg tbl κ p.result = some r ∧
+      (q.arguments.1.zip ps ++ [(q.arguments.2, e), (r, q.result)] ⊆ prs) ∧
+      (receiverUniverse G p.receiver q.receiver = true ∨
+        ∃ rc, tyImg tbl κ p.receiver = some rc ∧ (q.receiver, rc) ∈ prs) := by
+  unfold restPremises at h
   split at h
-  · rename_i q' hq
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨q', hq, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+  · rename_i hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    split at h
+    · rename_i ps e r hps he hr
+      refine ⟨hc.1, hc.2, ps, e, r, hps, he, hr, ?_⟩
+      split at h
+      · rename_i hu
+        cases h
+        exact ⟨List.Subset.refl _, .inl hu⟩
+      · cases hrc : tyImg tbl κ p.receiver with
+        | none => simp [hrc] at h
+        | some rc =>
+          simp only [hrc, Option.map_some, Option.some.injEq] at h
+          subst h
+          exact ⟨List.subset_cons_self _ _, .inr ⟨rc, rfl, List.mem_cons_self⟩⟩
+    · cases h
   · cases h
 
-theorem sigBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : Arrow (List ι)} (h : sigBodyMatch tbl κ p q = true) :
-    ∃ ps r, p.arguments.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.result = some r ∧
-      sameLabelLists ps q.arguments = true ∧ sameLabels r q.result = true ∧ p.effect = q.effect := by
-  unfold sigBodyMatch at h
-  split at h
-  · rename_i ps r h1 h2
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨ps, r, h1, h2, h.1.1, h.1.2, h.2⟩
-  · cases h
-
-theorem restBodyMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
-    {p q : RestArrow (List ι)} (h : restBodyMatch tbl κ p q = true) :
-    ∃ ps e r, p.arguments.1.mapM (tyImg tbl κ) = some ps ∧ tyImg tbl κ p.arguments.2 = some e ∧
-      tyImg tbl κ p.result = some r ∧ sameLabelLists ps q.arguments.1 = true ∧
-      sameLabels e q.arguments.2 = true ∧ sameLabels r q.result = true ∧ p.effect = q.effect := by
-  unfold restBodyMatch at h
-  split at h
-  · rename_i ps e r h1 h2 h3
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨ps, e, r, h1, h2, h3, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
-  · cases h
+/-- Positions included pairwise, as values, are pointwise wider. -/
+theorem argsLe_of_zip {G : NormalGraph ι} {η : MixedAssignment ι} :
+    ∀ {as bs : List (List ι)}, as.length = bs.length →
+      (∀ x ∈ as.zip bs, FamLe (mixedMeaning G η x.1) (mixedMeaning G η x.2)) →
+      ArgsLe (as.map (mixedValues G η)) (bs.map (mixedValues G η))
+  | [], [], _, _ => .nil
+  | [], _ :: _, h, _ => by simp at h
+  | _ :: _, [], h, _ => by simp at h
+  | a :: as, b :: bs, hl, h => by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at hl
+    refine .cons (fun n W v hv => h (a, b) (by simp) n W (.inl v) hv)
+      (argsLe_of_zip hl fun x hx => h x (by simp [hx]))
 
 /-- A type whose one clause is `top` holds every closed value. -/
 theorem top_row_mixed {G : NormalGraph ι} {η : MixedAssignment ι} {S : List ι}
@@ -1749,11 +1765,14 @@ theorem table_instanceImages [DecidableEq ι] {G : NormalGraph ι} (η : MixedAs
   exact tyImg_mixed_iff hS fun l _ T hT =>
     table_row_mixed hok m _ η (l, _, T) (entryImg_mem hT) (hrel l) W x
 
-/-- Universal callable elimination depends on meaning-preserving images, not
-on enumerating all rows a recursive type can reach. This is the same rule for
-fixed and variadic signatures; their bounds, effects and receiver contracts
-are retained by the existing signature-image check. -/
-theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
+/-- **Instantiation by inclusion** (`Inst≤`): a member of a scheme row, at an
+instance whose images mean what the substitution means, is in an arrow
+contract each of whose signatures one scheme signature's image covers,
+receiver and arguments contravariant, result covariant, effect subsuming.
+Elimination is at the instance's assignment, transport by the images, and
+the covering by the premises' inclusions; a receiver the scheme lets be any
+value is weakened to the target's. -/
+theorem inst_covers_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
     {tbl : InstTable ι} {θs : List (List ι)} {L : Ops ι}
     {M : List (RestArrow (List ι))}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hcon : s.construct = false)
@@ -1763,8 +1782,10 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
     (himages : InstanceImages G η s.binders θs tbl)
-    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, instSig G tbl (s.binders.zip θs) p q = true)
-    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, instRest G tbl (s.binders.zip θs) p q = true)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, ∃ prs, sigPremises G tbl (s.binders.zip θs) p q = some prs ∧
+      ∀ x ∈ prs, FamLe (mixedMeaning G η x.1) (mixedMeaning G η x.2))
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, ∃ prs, restPremises G tbl (s.binders.zip θs) p q = some prs ∧
+      ∀ x ∈ prs, FamLe (mixedMeaning G η x.1) (mixedMeaning G η x.2))
     : FamLe (mixedValues G η [i])
       (semWithArgs (excOf G) (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
   intro n W v hv
@@ -1825,56 +1846,53 @@ theorem inst_images_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssig
     · exact mixed_of_expand hP (sourceTy_exc hQ η j U r hr)
   refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
-    obtain ⟨p, hps, hsig⟩ := hL q hqL
+    obtain ⟨p, hps, prs, hprs, hle⟩ := hL q hqL
     have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
     change PromiseWith (excOf G) p.effect (ArgsShort (p.arguments.map (mixedValues G (assign η s.binders As))))
       (mixedValues G (assign η s.binders As) p.receiver)
       (mixedValues G (assign η s.binders As) p.result) n W v at hpr
-    obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
-    rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
-    · obtain ⟨q', hq', s1, s2, s3, se⟩ := sigMatch_some hsig
-      obtain ⟨h1, h2, h3, he⟩ := sigImg_some hq'
-      have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
-      have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
-      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3] at hpr
-      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
-        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
-    · simp only [Bool.and_eq_true] at hbody
-      obtain ⟨ps, r, h2, h3, s2, s3, he⟩ := sigBodyMatch_some hbody.2
-      have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
-      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3] at hpr
-      exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)).weaken
+    obtain ⟨hlen', heffect, ps, r, h2, h3, hsub, hrecv⟩ := sigPremises_some hprs
+    have e2 := hargs _ _ h2
+    have e3 := hfam _ _ h3
+    rw [e2, e3] at hpr
+    have hpl := (tysImg_some h2).1
+    have hargsLe : ArgsLe (q.arguments.map (mixedValues G η)) (ps.map (mixedValues G η)) :=
+      argsLe_of_zip (by omega) fun x hx => hle x (hsub (List.mem_append_left _ hx))
+    have hres := hle (r, q.result) (hsub (List.mem_append_right _ (List.mem_singleton_self _)))
+    rcases hrecv with hu | ⟨rc, h1, hrc⟩
+    · exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hu)).weaken
         (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
-        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
+        (fun _ _ _ _ ha => ArgsShort_mono hargsLe ha) (fun _ _ U u h => hres _ U (.inl u) h)
+    · rw [hfam _ _ h1] at hpr
+      have hr := hle _ hrc
+      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ U u h => hr _ U (.inl u) h)
+        (fun _ _ _ _ ha => ArgsShort_mono hargsLe ha) (fun _ _ U u h => hres _ U (.inl u) h)
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
-    obtain ⟨p, hps, hsig⟩ := hM q hqM
+    obtain ⟨p, hps, prs, hprs, hle⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
-    change PromiseWith (excOf G) p.effect (ArgsRest _ (graphArguments G (assign η s.binders As)
-      (mixedValues G (assign η s.binders As)) p.arguments.2)) _ _ n W v at hpr
     change PromiseWith (excOf G) p.effect (ArgsRest (p.arguments.1.map (mixedValues G (assign η s.binders As)))
       (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.arguments.2))
       (mixedValues G (assign η s.binders As) p.receiver) (mixedValues G (assign η s.binders As) p.result) n W v at hpr
-    obtain ⟨hsig, heffect⟩ := Bool.and_eq_true_iff.mp hsig
-    rcases Bool.or_eq_true_iff.mp hsig with hsig | hbody
-    · obtain ⟨q', hq', s1, s2, s3, s4, se⟩ := restMatch_some hsig
-      obtain ⟨h1, h2, h3, h4, he⟩ := restImg_some hq'
-      have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
-      have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
-      have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
-      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e1, e2, e3, e4] at hpr
-      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
-        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
-    · simp only [Bool.and_eq_true] at hbody
-      obtain ⟨ps, e, r, h2, h3, h4, s2, s3, s4, he⟩ := restBodyMatch_some hbody.2
-      have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
-      have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
-      have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
-      simp only [e2, e3, e4] at hpr
-      exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hbody.1)).weaken
-        (Effect.covers_sound heffect) (fun _ _ _ _ h => h)
-        (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
+    obtain ⟨hlen', heffect, ps, e, r, h2, h3, h4, hsub, hrecv⟩ := restPremises_some hprs
+    have e2 := hargs _ _ h2
+    have e3 := hpack _ _ h3
+    have e4 := hfam _ _ h4
+    rw [e2, e3, e4] at hpr
+    have hpl := (tysImg_some h2).1
+    have hargsLe : ArgsLe (q.arguments.1.map (mixedValues G η)) (ps.map (mixedValues G η)) :=
+      argsLe_of_zip (by omega) fun x hx => hle x (hsub (List.mem_append_left _ hx))
+    have hpk := hle (q.arguments.2, e) (hsub (List.mem_append_right _ (by simp)))
+    have hres := hle (r, q.result) (hsub (List.mem_append_right _ (by simp)))
+    have hacc : ∀ j, j < n → ∀ U args,
+        ArgsRest (q.arguments.1.map (mixedValues G η)) (graphArguments G η (mixedValues G η) q.arguments.2) j U args →
+        ArgsRest (ps.map (mixedValues G η)) (graphArguments G η (mixedValues G η) e) j U args :=
+      fun j _ U _ ha => ArgsRest_mono hargsLe (fun vs hv => hpk j U (.inr vs) hv) ha
+    rcases hrecv with hu | ⟨rc, h1, hrc⟩
+    · exact (hpr.weaken_recv (anyRecv p.receiver q.receiver hu)).weaken
+        (Effect.covers_sound heffect) (fun _ _ _ _ h => h) hacc (fun _ _ U u h => hres _ U (.inl u) h)
+    · rw [hfam _ _ h1] at hpr
+      have hr := hle _ hrc
+      exact hpr.weaken (Effect.covers_sound heffect) (fun _ _ U u h => hr _ U (.inl u) h)
+        hacc (fun _ _ U u h => hres _ U (.inl u) h)
 
 end Verification.PositiveRules

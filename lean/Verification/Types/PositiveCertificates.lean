@@ -1471,9 +1471,105 @@ engine. The identity value represents a binder absent from this instance. -/
   | none => (.established empty, state)
   | some U => compare U b.2 state
 
-/-- The instance rule validates kinds, signature images, admissibility and the
+/-- Premises asked of the enclosing comparison, none when a signature's shape
+does not admit the target's. -/
+@[nospecialize] def comparePremisesState (compare : List ι → List ι → σ → ComparisonResult α × σ)
+    (prs : Option (List (List ι × List ι))) (state : σ) : ComparisonResult (List α) × σ :=
+  match prs with
+  | some prs => ComparisonResult.collectState (fun x => compare x.1 x.2) prs state
+  | none => (.notEstablished, state)
+
+theorem comparePremisesState_sound {compare : List ι → List ι → σ → ComparisonResult α × σ}
+    {prs : Option (List (List ι × List ι))} {state : σ}
+    (h : (comparePremisesState compare prs state).1.accepted = true) :
+    ∃ ps, prs = some ps ∧ ∀ x ∈ ps, ∃ prior, (compare x.1 x.2 prior).1.accepted = true := by
+  unfold comparePremisesState at h
+  split at h
+  · rename_i ps
+    exact ⟨ps, rfl, ComparisonResult.collectState_sound _ _ _ h⟩
+  · cases h
+
+/-- Whether two types' clauses have one shape, operands aside: the clause
+kinds, keys, arities and effects. -/
+@[nospecialize] def sameShapes [DecidableEq ι] (G : NormalGraph ι) (A B : List ι) : Bool :=
+  decide ((clausesOf G A).map (Clause.map fun _ => ()) = (clausesOf G B).map (Clause.map fun _ => ()))
+
+/-- Candidate signatures structure first: by the number of their premises
+relating types of different shapes, a signature whose shape does not admit
+the target last. The order changes the cost of finding the signature whose
+premises hold, not which signatures are tried. -/
+@[nospecialize] def structureFirst [DecidableEq ι] (G : NormalGraph ι)
+    (prem : β → Option (List (List ι × List ι))) (ps : List β) : List β :=
+  let score (p : β) : Option Nat := (prem p).map fun prs => (prs.filter fun x => !sameShapes G x.1 x.2).length
+  let before : Option Nat → Option Nat → Bool
+    | some a, some b => decide (a ≤ b)
+    | some _, none => true
+    | none, some _ => false
+    | none, none => true
+  ps.mergeSort fun a b => before (score a) (score b)
+
+theorem mem_structureFirst [DecidableEq ι] {G : NormalGraph ι}
+    {prem : β → Option (List (List ι × List ι))} {ps : List β} {p : β}
+    (h : p ∈ structureFirst G prem ps) : p ∈ ps :=
+  (List.mem_mergeSort).mp h
+
+/-- The premises of an instance: every bound, then, for each target
+signature, the premises of the first scheme signature in declaration order
+whose premises hold (`sigPremises`, `restPremises`). -/
+@[nospecialize] def instPremisesState [DecidableEq ι] (G : NormalGraph ι)
+    (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
+    (s : SchemeRow ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) (state : σ) :
+    ComparisonResult (List α) × σ :=
+  match ComparisonResult.collectState (compareBoundState compare empty s.binders c.instances) s.bounds state with
+  | (.established bs, st) =>
+    match ComparisonResult.collectState (fun q => ComparisonResult.firstState (fun p =>
+        comparePremisesState compare (sigPremises G c.table (s.binders.zip c.instances) p q))
+        (structureFirst G (fun p => sigPremises G c.table (s.binders.zip c.instances) p q) s.signatures)) L st with
+    | (.established fs, st) =>
+      match ComparisonResult.collectState (fun q => ComparisonResult.firstState (fun p =>
+          comparePremisesState compare (restPremises G c.table (s.binders.zip c.instances) p q))
+          (structureFirst G (fun p => restPremises G c.table (s.binders.zip c.instances) p q) s.variadic)) M st with
+      | (.established rs, st) => (.established (bs ++ fs.flatten ++ rs.flatten), st)
+      | (.notEstablished, st) => (.notEstablished, st)
+      | (.exhausted rounds visited, st) => (.exhausted rounds visited, st)
+    | (.notEstablished, st) => (.notEstablished, st)
+    | (.exhausted rounds visited, st) => (.exhausted rounds visited, st)
+  | (.notEstablished, st) => (.notEstablished, st)
+  | (.exhausted rounds visited, st) => (.exhausted rounds visited, st)
+
+theorem instPremisesState_sound [DecidableEq ι] {G : NormalGraph ι}
+    {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty : α}
+    {s : SchemeRow ι} {L : Ops ι} {M : List (RestArrow (List ι))} {c : Instance ι} {state : σ}
+    (h : (instPremisesState G compare empty s L M c state).1.accepted = true) :
+    (∀ b ∈ s.bounds, ∃ prior, (compareBoundState compare empty s.binders c.instances b prior).1.accepted = true) ∧
+    (∀ q ∈ L, ∃ p ∈ s.signatures, ∃ prior,
+      (comparePremisesState compare (sigPremises G c.table (s.binders.zip c.instances) p q) prior).1.accepted = true) ∧
+    (∀ q ∈ M, ∃ p ∈ s.variadic, ∃ prior,
+      (comparePremisesState compare (restPremises G c.table (s.binders.zip c.instances) p q) prior).1.accepted = true) := by
+  unfold instPremisesState at h
+  split at h
+  · rename_i bs st hb
+    split at h
+    · rename_i fs st' hf
+      split at h
+      · rename_i rs st'' hr
+        refine ⟨ComparisonResult.collectState_sound _ _ _ (by rw [hb]; rfl), ?_, ?_⟩
+        · intro q hq
+          obtain ⟨prior, hq'⟩ := ComparisonResult.collectState_sound _ _ _ (by rw [hf]; rfl) q hq
+          obtain ⟨p, hp, rest⟩ := ComparisonResult.firstState_sound _ _ _ hq'
+          exact ⟨p, mem_structureFirst hp, rest⟩
+        · intro q hq
+          obtain ⟨prior, hq'⟩ := ComparisonResult.collectState_sound _ _ _ (by rw [hr]; rfl) q hq
+          obtain ⟨p, hp, rest⟩ := ComparisonResult.firstState_sound _ _ _ hq'
+          exact ⟨p, mem_structureFirst hp, rest⟩
+      all_goals cases h
+    all_goals cases h
+  all_goals cases h
+
+/-- The instance rule (`Inst≤`) validates kinds, admissibility and the
 representation's image table, then asks its enclosing subtype operation to
-discharge every bound. Successful bound comparisons retain their proposal data. -/
+discharge every premise (`instPremisesState`). Successful comparisons retain
+their proposal data. -/
 @[nospecialize] def compareInstArrsState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
     (S : List ι) (L : Ops ι) (M : List (RestArrow (List ι))) (c : Instance ι) (state : σ)
@@ -1484,12 +1580,9 @@ discharge every bound. Successful bound comparisons retain their proposal data. 
     match G.schemes i with
     | some s =>
       if !G.params i && !s.construct && c.instances.length == s.binders.length &&
-          instKinds G s.binders c.instances &&
-          (L.all fun q => s.signatures.any fun p => instSig G c.table (s.binders.zip c.instances) p q) &&
-          (M.all fun q => s.variadic.any fun p => instRest G c.table (s.binders.zip c.instances) p q) then
+          instKinds G s.binders c.instances then
         match (images.compare s.binders c).andThen (fun _ => admission s c) with
-        | .established _ =>
-          ComparisonResult.collectState (compareBoundState compare empty s.binders c.instances) s.bounds state
+        | .established _ => instPremisesState G compare empty s L M c state
         | .notEstablished => (.notEstablished, state)
         | .exhausted rounds visited => (.exhausted rounds visited, state)
       else (.notEstablished, state)
@@ -1518,22 +1611,38 @@ theorem compareInstArrsState_sound_at [DecidableEq ι] {G : NormalGraph ι} {ima
       · rename_i shape
         split at h
         · rename_i image imagesOk
-          simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
-            beq_iff_eq] at shape
-          obtain ⟨⟨⟨⟨⟨hp, hcon⟩, hlen⟩, hkinds⟩, hL⟩, hM⟩ := shape
+          simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at shape
+          obtain ⟨⟨⟨hp, hcon⟩, hlen⟩, hkinds⟩ := shape
           have checked : ((images.compare s.binders c).andThen
               (fun _ => admission s c)).accepted = true := by rw [imagesOk]; rfl
           simp only [ComparisonResult.accepted_andThen, Bool.and_eq_true] at checked
           have himg := checked.1
+          obtain ⟨hb, hL, hM⟩ := instPremisesState_sound h
+          have prem : ∀ {prs : Option (List (List ι × List ι))} {prior},
+              (comparePremisesState compare prs prior).1.accepted = true →
+              ∃ ps, prs = some ps ∧ ∀ x ∈ ps, FamLe (mixedMeaning G η x.1) (mixedMeaning G η x.2) := by
+            intro prs prior hpr
+            obtain ⟨ps, hps, hall⟩ := comparePremisesState_sound hpr
+            exact ⟨ps, hps, fun x hx => by
+              obtain ⟨prior', hx'⟩ := hall x hx
+              exact hc _ _ prior' hx'⟩
           intro n W v hv
-          refine ⟨inst_images_sound η hp hs hcon hlen (hadmission s c checked.2) ?_
-            (images.sound s.binders c hlen hkinds himg η) hL hM n W v hv,
+          refine ⟨inst_covers_sound η hp hs hcon hlen (hadmission s c checked.2) ?_
+            (images.sound s.binders c hlen hkinds himg η) ?_ ?_ n W v hv,
             builtinInvariant_of_withoutInvariant rfl n W v⟩
-          intro b hb U hU
-          obtain ⟨prior, checked⟩ := ComparisonResult.collectState_sound _ _ _ h b hb
-          unfold compareBoundState at checked
-          rw [hU] at checked
-          exact hc U b.2 prior checked
+          · intro b hbm U hU
+            obtain ⟨prior, checked⟩ := hb b hbm
+            unfold compareBoundState at checked
+            rw [hU] at checked
+            exact hc U b.2 prior checked
+          · intro q hq
+            obtain ⟨p, hps, prior, hpr⟩ := hL q hq
+            obtain ⟨ps, hps', hall⟩ := prem hpr
+            exact ⟨p, hps, ps, hps', hall⟩
+          · intro q hq
+            obtain ⟨p, hps, prior, hpr⟩ := hM q hq
+            obtain ⟨ps, hps', hall⟩ := prem hpr
+            exact ⟨p, hps, ps, hps', hall⟩
         · cases h
         · cases h
       · cases h
@@ -1567,7 +1676,7 @@ theorem compareInstArrsState_source [DecidableEq ι] {G : NormalGraph ι} {image
       · rename_i shape
         exact ⟨i, s, rfl, hs, by
           simp only [Bool.and_eq_true, Bool.not_eq_true'] at shape
-          exact shape.1.1.1.1.1⟩
+          exact shape.1.1.1⟩
       · cases h
     · cases h
   · cases h
