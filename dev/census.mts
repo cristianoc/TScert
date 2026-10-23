@@ -9,6 +9,14 @@
 //   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shard i/n]
 //       [--out dir] [--record file]
 //   node dev/census.mts report <before.json[,shard.json…]> <after.json[,shard.json…]>
+//   node dev/census.mts report <record.json[,shard.json…]> [--per-function]
+//   node dev/census.mts coverage <record.json[,shard.json…]> [--per-function] [--sources checkout|commit]
+// A record also holds the directory's statement inventory, each statement
+// classified by its function's outcome (statement-coverage.mts); `report`
+// and the end of a run print verified statement coverage, and `coverage`
+// computes it for a record from the sources of the record's commit (of the
+// checkout for a census of a dirty tree, or by `--sources`), without
+// running a slice.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -21,6 +29,8 @@ import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-sou
 import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import type { StageName } from "../pipeline/stage-execution.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
+import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
+  from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -62,6 +72,9 @@ type CensusRecord = {
   started: string;
   elapsedMs: number;
   slices: SliceRecord[];
+  /** The statements of the census's files, each with its class by this
+   * record's slices, and each file's source hash. */
+  inventory: { files: { file: string; sourceSha256: string }[]; units: UnitRecord[] };
 };
 
 // ---------------------------------------------------------------------------
@@ -80,8 +93,7 @@ function identifiers(node: ts.Node, into: Set<string>): Set<string> {
 /** The slices of one module: each function declaration with a body and a
  * name, with the module's declarations it uses, transitively, in the
  * module's order, and the imports of the names they use. */
-function slicesOf(file: string, path: string, text: string): Slice[] {
-  const tree = openText(path, text);
+function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
   const declarations = new Map<string, ts.Statement>();
   const imports: ts.ImportDeclaration[] = [];
   for (const s of tree.statements) {
@@ -260,9 +272,15 @@ async function census(args: string[]): Promise<void> {
   prepare(out, directory);
   const root = join(out, directory);
   const all: Slice[] = [];
+  const units: Unit[] = [];
+  const fileHashes: { file: string; sourceSha256: string }[] = [];
   for (const file of readdirSync(join(repository, directory)).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort()) {
     if (files && !files.includes(file)) continue;
-    all.push(...slicesOf(file, join(root, file), readFileSync(join(root, file), "utf8")));
+    const text = readFileSync(join(root, file), "utf8");
+    const tree = openText(join(root, file), text);
+    all.push(...slicesOf(file, tree, text));
+    units.push(...inventory(file, tree));
+    fileHashes.push({ file, sourceSha256: sha256(text) });
   }
   closeParser();
   const chosen = functions ? all.filter((s) => functions.includes(s.fn)) : all;
@@ -324,15 +342,18 @@ async function census(args: string[]): Promise<void> {
     return row;
   });
   const setting = storeSetting();
+  const sliceOutcomes = bySlice(rows);
   const record: CensusRecord = {
     source: { commit, dirty, directory, files, functions },
     policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
     started: new Date(Date.now() - (performance.now() - started)).toISOString(),
     elapsedMs: performance.now() - started,
     slices: rows,
+    inventory: { files: fileHashes, units: units.map((u) => ({ ...u, class: classify(u, sliceOutcomes) })) },
   };
   writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
   summarize(record.slices);
+  process.stdout.write(coverageReport(directory, record.inventory.units, sliceOutcomes, false));
   process.stdout.write(`record: ${recordPath}\n`);
 }
 
@@ -395,17 +416,143 @@ function readReference(value: unknown): InvocationReference {
   return { attempt, stage: foundStage, key, execution: foundExecution, limitMs, elapsedMs, cpu: readCpu,
     replay: readReplay };
 }
-/** The slices of one or more census records (the shards of one census),
- * by `file#fn`. */
-function readSlices(paths: string): Map<string, SliceRecord> {
+const scopes: readonly UnitScope[] = ["census", "module", "outside"];
+function readUnit(value: unknown): Unit {
+  if (typeof value !== "object" || value === null) throw Error("not a statement unit");
+  const v: { [key: string]: unknown } = { ...value };
+  const { file, fn, inner, scope, kind, start, end, line, column } = v;
+  const foundScope = scopes.find((s) => s === scope);
+  if (typeof file !== "string" || typeof fn !== "string" || !(inner === null || typeof inner === "string") ||
+      !foundScope || typeof kind !== "string" || typeof start !== "number" || typeof end !== "number" ||
+      typeof line !== "number" || typeof column !== "number")
+    throw Error(`not a statement unit: ${JSON.stringify(value).slice(0, 200)}`);
+  return { file, fn, inner, scope: foundScope, kind, start, end, line, column };
+}
+function readFileHash(value: unknown): { file: string; sourceSha256: string } {
+  if (typeof value !== "object" || value === null) throw Error("not a file hash");
+  const v: { [key: string]: unknown } = { ...value };
+  const { file, sourceSha256 } = v;
+  if (typeof file !== "string" || typeof sourceSha256 !== "string")
+    throw Error(`not a file hash: ${JSON.stringify(value).slice(0, 200)}`);
+  return { file, sourceSha256 };
+}
+
+/** One census as one or more records (the shards of one census) give it:
+ * its source, its slices by `file#fn`, and its inventory where the records
+ * hold one, each unit once. */
+type Census = {
+  source: CensusRecord["source"];
+  slices: Map<string, SliceRecord>;
+  inventory: { files: Map<string, string>; units: Unit[] } | null;
+};
+function readCensus(paths: string): Census {
   const slices = new Map<string, SliceRecord>();
+  let source: Census["source"] | null = null;
+  let inventory: Census["inventory"] = null;
+  let withoutInventory = 0;
+  const names = (x: unknown): string[] | null =>
+    Array.isArray(x) && x.every((n) => typeof n === "string") ? x : null;
   for (const path of paths.split(",")) {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    const list: unknown = typeof parsed === "object" && parsed !== null && "slices" in parsed ? parsed.slices : null;
+    if (typeof parsed !== "object" || parsed === null) throw Error(`${path} is no census record`);
+    const v: { [key: string]: unknown } = { ...parsed };
+    const list = v["slices"];
     if (!Array.isArray(list)) throw Error(`${path} is no census record`);
     for (const s of list.map(readSliceRecord)) slices.set(`${s.file}#${s.fn}`, s);
+    const recorded = v["source"];
+    const s: { [key: string]: unknown } = typeof recorded === "object" && recorded !== null ? { ...recorded } : {};
+    const { commit, dirty, directory, files, functions } = s;
+    if (typeof commit !== "string" || typeof dirty !== "boolean" || typeof directory !== "string")
+      throw Error(`${path}: no census source`);
+    if (source && (source.commit !== commit || source.directory !== directory))
+      throw Error(`${path} is a census of ${directory} at ${commit}, the others of ${source.directory} at ${source.commit}`);
+    source = { commit, dirty, directory, files: names(files), functions: names(functions) };
+    const held = v["inventory"];
+    const inv: { [key: string]: unknown } = typeof held === "object" && held !== null ? { ...held } : {};
+    const [unitList, fileList] = [inv["units"], inv["files"]];
+    if (!Array.isArray(unitList) || !Array.isArray(fileList)) {
+      withoutInventory++;
+      continue;
+    }
+    inventory ??= { files: new Map(), units: [] };
+    for (const f of fileList.map(readFileHash)) inventory.files.set(f.file, f.sourceSha256);
+    const seen = new Set(inventory.units.map((u) => `${u.file}:${u.start}:${u.end}`));
+    for (const u of unitList.map(readUnit))
+      if (!seen.has(`${u.file}:${u.start}:${u.end}`)) inventory.units.push(u);
   }
-  return slices;
+  if (!source) throw Error("no census record");
+  if (inventory && withoutInventory) throw Error(`${withoutInventory} of the records hold no inventory`);
+  return { source, slices, inventory };
+}
+
+/** Each slice's outcome by `file#fn`. */
+function bySlice(rows: Iterable<SliceRecord>): Map<string, SliceRecord> {
+  return new Map([...rows].map((s): [string, SliceRecord] => [`${s.file}#${s.fn}`, s]));
+}
+
+/** The inventory of a census's files read from `sources` (the checkout or
+ * the census's commit), and how those sources compare with the record's
+ * hashes: per file where the record holds file hashes, else per slice. The
+ * commit's files are parsed from a copy under the temporary directory: the
+ * compiler reads a module another one imports from the disk, so a file is
+ * parsed where the disk holds its text. */
+function inventoryFromSources(census: Census, sources: "checkout" | "commit"): { units: Unit[]; note: string } {
+  const { directory, commit } = census.source;
+  const base = sources === "commit"
+    ? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), `sources-${commit.slice(0, 12)}`, directory)
+    : join(repository, directory);
+  const read = (file: string): string => sources === "commit"
+    ? execFileSync("git", ["-C", repository, "show", `${commit}:${directory}/${file}`], { encoding: "utf8" })
+    : readFileSync(join(base, file), "utf8");
+  const listed = sources === "commit"
+    ? execFileSync("git", ["-C", repository, "ls-tree", "--name-only", `${commit}:${directory}`], { encoding: "utf8" })
+      .split("\n")
+    : readdirSync(join(repository, directory));
+  const files = listed.filter((f) => f.endsWith(".mts") && !f.startsWith("slice-") &&
+    (!census.source.files || census.source.files.includes(f))).sort();
+  const units: Unit[] = [];
+  const differing: string[] = [];
+  let compared = 0;
+  const texts = files.map((file): [string, string] => [file, read(file)]);
+  if (sources === "commit") {
+    mkdirSync(base, { recursive: true });
+    for (const [file, text] of texts) writeStable(join(base, file), text);
+  }
+  for (const [file, text] of texts) {
+    const tree = openText(join(base, file), text);
+    units.push(...inventory(file, tree));
+    if (census.inventory) {
+      compared++;
+      if (census.inventory.files.get(file) !== sha256(text)) differing.push(file);
+      continue;
+    }
+    for (const s of slicesOf(file, tree, text)) {
+      const r = census.slices.get(`${s.file}#${s.fn}`);
+      if (!r) continue;
+      compared++;
+      if (r.sourceSha256 !== sha256(s.text)) differing.push(`${s.file}#${s.fn}`);
+    }
+  }
+  closeParser();
+  const from = sources === "commit" ? `the census's commit ${commit.slice(0, 12)}` : "the current checkout";
+  const what = census.inventory ? "files" : "slices";
+  const note = `inventory from ${from}${sources === "commit" && census.source.dirty ? " (the census ran on a dirty tree)" : ""}; ` +
+    (differing.length === 0 ? `all ${compared} ${what} match the record's source hashes`
+      : `${differing.length} of ${compared} ${what} differ from the record's: ${differing.slice(0, 12).join(", ")}` +
+        `${differing.length > 12 ? ", …" : ""}`);
+  return { units, note };
+}
+
+/** Where an inventory is read for a census without one: its commit, or the
+ * checkout for a census of a dirty tree. */
+const defaultSources = (census: Census): "checkout" | "commit" => (census.source.dirty ? "checkout" : "commit");
+
+/** The classified inventory of a census: its records', or else one read
+ * from its sources. */
+function classifiedInventory(census: Census): { units: UnitRecord[]; note: string | null } {
+  const found = census.inventory ? { units: census.inventory.units, note: null }
+    : inventoryFromSources(census, defaultSources(census));
+  return { units: found.units.map((u) => ({ ...u, class: classify(u, census.slices) })), note: found.note };
 }
 
 const isTimeout = (s: SliceRecord): boolean => s.detail.startsWith("timeout:");
@@ -458,9 +605,36 @@ function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
   const args = process.argv.slice(2);
   try {
-    if (args[0] === "report") {
-      if (args.length !== 3) throw Error("usage: node dev/census.mts report <before.json[,…]> <after.json[,…]>");
-      report(readSlices(args[1]), readSlices(args[2]));
+    if (args[0] === "report" || args[0] === "coverage") {
+      const perFunction = args.includes("--per-function");
+      const rest = args.slice(1).filter((a) => a !== "--per-function");
+      const sources = option(rest, "--sources");
+      if (sources !== null && sources !== "checkout" && sources !== "commit")
+        throw Error(`--sources takes checkout or commit: ${sources}`);
+      const [first, second] = rest;
+      if (args[0] === "coverage" && first !== undefined && rest.length === 1) {
+        const c = readCensus(first);
+        const found = inventoryFromSources(c, sources ?? defaultSources(c));
+        process.stdout.write(`${found.note}\n`);
+        process.stdout.write(coverageReport(c.source.directory,
+          found.units.map((u) => ({ ...u, class: classify(u, c.slices) })), c.slices, perFunction));
+      } else if (args[0] === "report" && sources === null && first !== undefined && rest.length === 1) {
+        const c = readCensus(first);
+        const found = classifiedInventory(c);
+        if (found.note) process.stdout.write(`${found.note}\n`);
+        process.stdout.write(coverageReport(c.source.directory, found.units, c.slices, perFunction));
+      } else if (args[0] === "report" && sources === null && first !== undefined && second !== undefined &&
+          rest.length === 2) {
+        const [before, after] = [readCensus(first), readCensus(second)];
+        report(before.slices, after.slices);
+        const [a, b] = [classifiedInventory(before), classifiedInventory(after)];
+        if (a.note) process.stdout.write(`before: ${a.note}\n`);
+        if (b.note) process.stdout.write(`after: ${b.note}\n`);
+        process.stdout.write(coverageComparison(a.units, b.units));
+      } else
+        throw Error("usage: node dev/census.mts report <before.json[,…]> <after.json[,…]>\n" +
+          "       node dev/census.mts report <record.json[,…]> [--per-function]\n" +
+          "       node dev/census.mts coverage <record.json[,…]> [--per-function] [--sources checkout|commit]");
     } else await census(args);
   } catch (error) {
     process.stderr.write(`${basename(import.meta.filename)}: ${error instanceof Error ? error.message : String(error)}\n`);
