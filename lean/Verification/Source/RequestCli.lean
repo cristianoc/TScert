@@ -15,20 +15,23 @@ def refuse (reason : String) : IO UInt32 := do
   IO.eprintln "end of refusal"
   return 1
 
+/-- A hexadecimal digit's value. -/
+def hexDigit (c : Char) : Option Nat :=
+  if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c ∧ c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c ∧ c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
 /-- Four hexadecimal digits' value. -/
 def hex4 (cs : List Char) : Option Nat :=
-  cs.foldlM (fun v c =>
-    if '0' ≤ c ∧ c ≤ '9' then some (v * 16 + (c.toNat - '0'.toNat))
-    else if 'a' ≤ c ∧ c ≤ 'f' then some (v * 16 + (c.toNat - 'a'.toNat + 10))
-    else if 'A' ≤ c ∧ c ≤ 'F' then some (v * 16 + (c.toNat - 'A'.toNat + 10))
-    else none) 0
+  cs.foldlM (fun v c => (hexDigit c).map (v * 16 + ·)) 0
 
 /-- A lone surrogate escape of a JSON text's strings, if it has one. Every
 wire string is well-formed Unicode (HOST-FAMILIES.md, "Tag sets"): Lean's
 JSON parser reads a lone surrogate as U+FFFD, a different string, so a text
 holding one is refused before it is parsed, as is a text that is not valid
 UTF-8. -/
-partial def loneSurrogate (cs : List Char) (inString : Bool := false) : Option String :=
+def loneSurrogate (cs : List Char) (inString : Bool := false) : Option String :=
   match cs, inString with
   | [], _ => none
   | '"' :: rest, b => loneSurrogate rest !b
@@ -48,6 +51,150 @@ partial def loneSurrogate (cs : List Char) (inString : Bool := false) : Option S
   | '\\' :: _ :: rest, true => loneSurrogate rest true
   | _ :: rest, b => loneSurrogate rest b
 
+theorem charLe {a c : Char} : a ≤ c ↔ a.toNat ≤ c.toNat := by
+  rw [Char.le_def, UInt32.le_iff_toNat_le]; rfl
+
+theorem char_eq_of_toNat {c d : Char} (h : c.toNat = d.toNat) : c = d :=
+  Char.ext (UInt32.toNat_inj.mp h)
+
+theorem hexDigit_lt {c : Char} {v : Nat} (h : hexDigit c = some v) : v < 16 := by
+  unfold hexDigit at h
+  simp only [charLe] at h
+  have h0 : '0'.toNat = 48 := rfl
+  have h9 : '9'.toNat = 57 := rfl
+  have ha : 'a'.toNat = 97 := rfl
+  have hf : 'f'.toNat = 102 := rfl
+  have hA : 'A'.toNat = 65 := rfl
+  have hF : 'F'.toNat = 70 := rfl
+  split at h
+  · simp only [Option.some.injEq] at h; omega
+  · split at h
+    · simp only [Option.some.injEq] at h; omega
+    · split at h
+      · simp only [Option.some.injEq] at h; omega
+      · cases h
+
+theorem hexDigit_d {c : Char} (h : hexDigit c = some 13) : c = 'd' ∨ c = 'D' := by
+  unfold hexDigit at h
+  simp only [charLe] at h
+  have h0 : '0'.toNat = 48 := rfl
+  have h9 : '9'.toNat = 57 := rfl
+  have ha : 'a'.toNat = 97 := rfl
+  have hf : 'f'.toNat = 102 := rfl
+  have hA : 'A'.toNat = 65 := rfl
+  have hF : 'F'.toNat = 70 := rfl
+  have hd : 'd'.toNat = 100 := rfl
+  have hD : 'D'.toNat = 68 := rfl
+  split at h
+  · simp only [Option.some.injEq] at h; omega
+  · split at h
+    · simp only [Option.some.injEq] at h; left; apply char_eq_of_toNat; omega
+    · split at h
+      · simp only [Option.some.injEq] at h; right; apply char_eq_of_toNat; omega
+      · cases h
+
+theorem hex4_surrogate {a b c d : Char} {u : Nat} (h : hex4 [a, b, c, d] = some u)
+    (lo : 0xD800 ≤ u) (hi : u ≤ 0xDFFF) : a = 'd' ∨ a = 'D' := by
+  simp only [hex4, List.foldlM_cons, List.foldlM_nil] at h
+  cases ha : hexDigit a <;> simp [ha] at h
+  rename_i da
+  cases hb : hexDigit b <;> simp [hb] at h
+  rename_i db
+  cases hc : hexDigit c <;> simp [hc] at h
+  rename_i dc
+  cases hd : hexDigit d <;> simp [hd] at h
+  rename_i dd
+  have := hexDigit_lt ha; have := hexDigit_lt hb; have := hexDigit_lt hc; have := hexDigit_lt hd
+  have h13 : da = 13 := by omega
+  subst h13
+  exact hexDigit_d ha
+
+/-- A backslash, `u` and `d` or `D` in a row: how every surrogate escape starts. -/
+def SurrogateStart (cs : List Char) : Prop :=
+  ∃ pre x post, cs = pre ++ '\\' :: 'u' :: x :: post ∧ (x = 'd' ∨ x = 'D')
+
+theorem SurrogateStart.cons {c : Char} {cs : List Char} (h : SurrogateStart cs) : SurrogateStart (c :: cs) := by
+  obtain ⟨pre, x, post, rfl, hx⟩ := h
+  exact ⟨c :: pre, x, post, rfl, hx⟩
+
+theorem SurrogateStart.here {x : Char} {post : List Char} (hx : x = 'd' ∨ x = 'D') :
+    SurrogateStart ('\\' :: 'u' :: x :: post) := ⟨[], x, post, rfl, hx⟩
+
+theorem loneSurrogate_start {cs : List Char} {b : Bool} {w : String}
+    (h : loneSurrogate cs b = some w) : SurrogateStart cs := by
+  fun_induction loneSurrogate cs b <;>
+    first
+    | (simp at h; done)
+    | exact SurrogateStart.here (hex4_surrogate (by assumption) (by omega) (by omega))
+    | ((repeat apply SurrogateStart.cons); solve_by_elim)
+
+
+/-- Whether byte `i` is `v`. -/
+def byteIs (b : ByteArray) (i : Nat) (v : UInt8) : Bool :=
+  if h : i < b.size then b[i] == v else false
+
+/-- A backslash, `u` and `d` or `D` at byte `i`. -/
+def surrogateEscapeAt (b : ByteArray) (i : Nat) : Bool :=
+  byteIs b i 92 && byteIs b (i + 1) 117 && (byteIs b (i + 2) 100 || byteIs b (i + 2) 68)
+
+/-- Whether such a run starts at byte `i` or after it. -/
+def surrogateEscapeFrom (b : ByteArray) (i : Nat) : Bool :=
+  if i < b.size then surrogateEscapeAt b i || surrogateEscapeFrom b (i + 1) else false
+termination_by b.size - i
+
+theorem surrogateEscapeFrom_of_at {b : ByteArray} {i j : Nat} (hij : i ≤ j)
+    (h : surrogateEscapeAt b j = true) : surrogateEscapeFrom b i = true := by
+  have hj : j < b.size := by
+    by_cases hj : j < b.size
+    · exact hj
+    · simp [surrogateEscapeAt, byteIs, hj] at h
+  induction i using surrogateEscapeFrom.induct b with
+  | case1 i hi ih =>
+    rw [surrogateEscapeFrom]; simp only [hi, if_true, Bool.or_eq_true]
+    rcases Nat.lt_or_eq_of_le hij with hlt | heq
+    · exact Or.inr (ih (by omega))
+    · subst heq; exact Or.inl h
+  | case2 i hi => omega
+
+theorem byteIs_toByteArray {l : List UInt8} {i : Nat} {v : UInt8} :
+    byteIs l.toByteArray i v = (l[i]? == some v) := by
+  unfold byteIs
+  by_cases hi : i < l.length
+  · simp [hi, List.getElem_toByteArray]
+  · simp [hi]
+
+theorem start_bytes {cs : List Char} (h : SurrogateStart cs) :
+    ∃ j, surrogateEscapeAt cs.utf8Encode j = true := by
+  obtain ⟨pre, x, post, rfl, hx⟩ := h
+  refine ⟨(pre.flatMap String.utf8EncodeChar).length, ?_⟩
+  have hb : String.utf8EncodeChar '\\' = [92] := rfl
+  have hu : String.utf8EncodeChar 'u' = [117] := rfl
+  simp only [surrogateEscapeAt, List.utf8Encode, byteIs_toByteArray]
+  rcases hx with rfl | rfl
+  · have hd : String.utf8EncodeChar 'd' = [100] := rfl
+    simp [List.flatMap_append, hb, hu, hd]
+  · have hd : String.utf8EncodeChar 'D' = [68] := rfl
+    simp [List.flatMap_append, hb, hu, hd]
+
+/-- A text's lone surrogate escape, `loneSurrogate`'s, looked for only where
+the text's bytes hold the start of a surrogate escape: one pass over the
+bytes, without the text's list of characters (`wireSurrogate_eq`). -/
+def wireSurrogate (text : String) : Option String :=
+  if surrogateEscapeFrom text.toByteArray 0 then loneSurrogate text.toList else none
+
+theorem wireSurrogate_eq (text : String) : wireSurrogate text = loneSurrogate text.toList := by
+  unfold wireSurrogate
+  split
+  · rfl
+  · rename_i hno
+    cases h : loneSurrogate text.toList with
+    | none => rfl
+    | some w =>
+      exfalso
+      obtain ⟨j, hj⟩ := start_bytes (loneSurrogate_start h)
+      rw [String.utf8Encode_toList] at hj
+      exact hno (surrogateEscapeFrom_of_at (Nat.zero_le j) hj)
+
 /-- A document's JSON, or its refusal. A file that cannot be read is no
 refusal of a document: its error is thrown, and the command fails without a
 `reject:` line. -/
@@ -55,7 +202,7 @@ def readJson (path : String) : IO (Except String Json) := do
   let bytes ← IO.FS.readBinFile path
   let some text := String.fromUTF8? bytes
     | return .error s!"{path}: a text that is not valid UTF-8 is refused"
-  if let some what := loneSurrogate text.toList then
+  if let some what := wireSurrogate text then
     return .error s!"{path}: a string that is not well-formed Unicode, {what}, is refused"
   return Json.parse text
 

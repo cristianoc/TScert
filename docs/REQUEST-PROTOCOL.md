@@ -63,11 +63,18 @@ text in UTF-8, and every string it holds, key or value, is well-formed
 Unicode: a `\u` escape of a surrogate is one of a pair. Each reader refuses a
 document breaking either before it reads a value: Lean (`RequestCli.readJson`
 refuses bytes that are not UTF-8, and `RequestCli.loneSurrogate` a lone
-surrogate escape, which Lean's JSON parser would read as U+FFFD), the
+surrogate escape, which Lean's JSON parser would read as U+FFFD; it reads the
+text's characters only where its bytes hold a backslash, `u` and `d` or `D`
+in a row, the start of every surrogate escape, `RequestCli.wireSurrogate_eq`), the
 producer (`Json.parse`), and the TypeScript tools (`wireText` for the bytes,
 `requireWellFormed` for the strings). A writer refuses such a string before
 writing it: the parser's gate a source string holding a lone surrogate
 ([source fragment](SOURCE-FRAGMENT.md#refused-on-principle)).
+
+Decoders read the value Lean's JSON parser makes of the text: key order,
+whitespace and escapes are no part of a document, a key written twice holds
+its last value, and a natural number is an integer literal, in exponent form
+too (`0e0`, `-0`), never a fraction (`0.0`).
 
 Decoding is strict: it decodes, re-encodes and compares, so every field is
 required, an unknown field is refused, recursively, and a field whose absence
@@ -353,8 +360,21 @@ codes before it; the program is then checked seeing them all.
 
 A node's evidence (`NodeEvidence`) has the fields:
 
-- `expression`: the derivation tree of its expression, each node
-  `{"node": {"claim": {context, term, type}, "rule": r, "premises": [...]}}`;
+- `ordinary`: the ordinary typing derivation of its expression, whose root
+  is the node's sequent: `{"proof": {"tree": d}}`, a derivation tree `d`,
+  each node `{"node": {"claim": {context, term, type}, "rule": r, "premises": [...]}}`;
+  `"effect"`, the proof its step evidence carries; or `null`, none, where
+  the step evidence establishes the step alone, which a node without step
+  evidence never is;
+- `sequent`: `{context, term, type}`, the node's sequent where `ordinary` is
+  `null` and the step evidence carries no proof, and `null` otherwise, where
+  the sequent is the root of `ordinary`'s derivation or of the step's proof.
+  The steps carrying a proof at the node's sequent are `ordinary`, `pure`,
+  `reading`, `created`, `typedRead`, `allocated` and `written`
+  ([step evidence](#step-evidence)); a `slicedRead`'s proof is at the
+  location's contract. A node spelling its sequent otherwise is refused,
+  and every consumer reads a node as the one with its derivation written
+  out (`ControlFlow.checkGraphResult_explicit`);
 - `edges`: one subtype-evidence list per outgoing edge, one entry per
   destination slot;
 - `knowledge`, `effect`, `output`: the [heap facts](#heap-facts) at entry,

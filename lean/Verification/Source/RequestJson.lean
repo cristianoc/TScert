@@ -234,7 +234,20 @@ deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for PromiseCalls.Implication
 deriving instance ToJson, FromJson for PromiseCalls.Yield
+deriving instance ToJson, FromJson for OrdinaryEvidence
 deriving instance ToJson, FromJson for NodeEvidence
+
+@[nospecialize] private def derivedNodeEvidenceFromJson [FromJson ι] : Json → Except String (NodeEvidence ι) := fromJson?
+
+/-- A node is read in its one spelling (`NodeEvidence.wellFormed`): its
+sequent stated once, by its ordinary derivation's root, by its step's proof
+or by itself, and an ordinary derivation wherever it has no step evidence. -/
+instance (priority := high) [FromJson ι] : FromJson (NodeEvidence ι) :=
+  ⟨fun j => do
+    let c ← derivedNodeEvidenceFromJson j
+    unless c.wellFormed do
+      throw "a node states its sequent once, by its ordinary derivation, its step's proof or itself, and has an ordinary derivation without step evidence"
+    return c⟩
 deriving instance ToJson, FromJson for PointClaim
 deriving instance ToJson, FromJson for CodeEntry
 
