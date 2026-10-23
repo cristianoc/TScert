@@ -2014,6 +2014,11 @@ What is proved and what is audited:
 
 ## Library globals
 
+**Audited against:** TypeScript 7.0.2's standard library and `@types/node`
+22.20.2 and 22.10.7 (`tools/package.json`,
+`pipeline/library-project/package.json`); host behaviour observed under Node 25.2.1
+(2026-10-19).
+
 A standard library global is read only through the reviewed overlay
 (`library-globals.mts`), one entry per signature, with exactly the
 declaration text it was reviewed against. With $`s`$ a selected signature,
@@ -2393,8 +2398,7 @@ types each constant a distinct `unique symbol`.
 
 Node's `process` and `console` are read through the overlay at the members
 the repository's code uses, each pinned to its declaration in the pinned
-`@types/node` installations, their origin the package `@types/node`,
-observed under Node 25.2.1 (2026-10-19). A member read at a stated contract,
+`@types/node` installations, their origin the package `@types/node`. A member read at a stated contract,
 and every reviewed method, is a readonly view: no write of it is admitted,
 through `process` or through the process a registration returns
 (`invalid-node-process-replace-result`, `invalid-node-process-replace-alias`).
@@ -2454,6 +2458,11 @@ the calculus does not prove Node's scheduler.
 
 ## Library modules
 
+**Audited against:** `@types/node` 22.20.2 and 22.10.7 (`tools/package.json`,
+`pipeline/library-project/package.json`); host
+behaviour from Node 25.2.1's `lib/` sources and probes run under Node 25.2.1
+(2026-10-19).
+
 A function a client imports from one of Node's modules (`node:fs`, or `fs`)
 is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
@@ -2493,8 +2502,7 @@ unrestricted in its effect unless its entry states one. The entries:
   then `null` (`invalid-node-exec-env-object`). A record type states nothing
   of the keys it does not name, so `env` is stated at strings. Every other
   option the host reads it validates without converting, throwing on a type
-  it does not accept: an object at each such key ran no code of the client's
-  under Node 25.2.1.
+  it does not accept: an object at each such key ran no code of the client's.
 - `execFileSync` has a second stated form, the **restricted form**. Its
   options state every key the synchronous path reads, each at a type Node
   validates without running code of the client's:
@@ -2506,7 +2514,7 @@ unrestricted in its effect unless its entry states one. The entries:
   it names at `undefined` or `false` is absent or holds that value. The form
   states the empty footprint on normal return and on a throw
   ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)). A call
-  meeting only the first form keeps an unrestricted effect. The audit of Node 25.2.1's
+  meeting only the first form keeps an unrestricted effect. The audit of Node's
   `lib/child_process.js` and `lib/internal/child_process.js` covers every
   write the call makes before it returns, and before each throw: a
   validation error, a failure to spawn, and a failed command.
@@ -2570,7 +2578,7 @@ unrestricted in its effect unless its entry states one. The entries:
 - `spawnSync(command, args, options)` at options $`O`$ stating
   `encoding: "utf8"`, `stdio` and `env` absent, and an optional `timeout`,
   `cwd`, `maxBuffer` and `input`, runs the command and returns a fresh
-  record (Node 25.2.1):
+  record:
   $`(\mathtt{string},\ \mathsf{readonly}\ \mathtt{string}[\,],\ O)\Rightarrow\{\mathtt{pid}\colon\mathtt{number};\ \mathtt{status}\colon\mathtt{number}\mid\mathtt{null};\ \mathtt{signal}\colon\mathtt{string}\mid\mathtt{null};\ \mathtt{stdout},\mathtt{stderr}\colon\mathtt{string}\mid\mathtt{undefined};\ \mathtt{error}^?\colon\mathtt{unknown}\}`$,
   stating no effect: the host reads the options' properties
   (`node-spawn-sync`). Both streams are piped, so each output is a string
@@ -2579,8 +2587,8 @@ unrestricted in its effect unless its entry states one. The entries:
   Node); `stdio` naming no pipe leaves it `null` and is outside the stated
   call (`invalid-node-spawn-sync-stdio`, run under Node).
 - `readdirSync(path, o)` with a string path reads `o.encoding` and
-  `o.signal`, then `o.recursive`, `o.encoding` and `o.withFileTypes` (Node
-  25.2.1's `lib/fs.js`). The four are stated,
+  `o.signal`, then `o.recursive`, `o.encoding` and `o.withFileTypes` (Node's
+  `lib/fs.js`). The four are stated,
   $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{false}\mid\mathtt{undefined};\ \mathtt{signal}^?\colon\mathtt{undefined}\}`$,
   so under the caller contract ([trust surface](DESIGN.md#trust-surface))
   each is a data property whose reads agree. `recursive: true` walks the
@@ -2615,12 +2623,12 @@ unrestricted in its effect unless its entry states one. The entries:
   $`()\Rightarrow\mathtt{unknown}`$, its effect unrestricted
   (`invalid-node-readdir-test-result`, run under Node: a replaced test
   answers a number).
-  The declared `Dirent.path` is absent under Node 25.2.1, so the entry states
+  The declared `Dirent.path` is absent at run time, so the entry states
   none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
   whose parameter TypeScript types as `Dirent` is refused.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
-  too (Node 25.2.1's `lib/path.js`). `join` of any number of strings,
+  too (Node's `lib/path.js`). `join` of any number of strings,
   `resolve` of any number and `relative` of two compute one too, but `join`
   calls `posix.normalize` and `resolve` and `relative` call `process.cwd()`
   for a relative path, writable properties other code may replace, so they
@@ -2659,8 +2667,7 @@ declaration's text, pinned as every entry is), so a changed declaration is
 refused and reviewed again; a generic entry's binders are the binding's type
 parameters.
 
-**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run under
-Node), a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
+**Footprints.** By probes run under Node, a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
 ToBoolean, `Object.is` and a comparison with `null` and `undefined`. A failing
 call builds an `AssertionError`: it calls no `inspect.custom` hook, but it
 reads the compared values' accessors while building the message, sets and
