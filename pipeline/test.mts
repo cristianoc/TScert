@@ -4413,7 +4413,8 @@ control(async (): Promise<void> => {
   // view (a `length` view at a number, a writable field, an optional field,
   // a dictionary's index, a key every object reads through its prototype,
   // the field of a receiver coerced to its base, a class value's static
-  // field or a constructor's readonly field, a captured cell's value) is
+  // field or a constructor's readonly field, each stated with the arms the
+  // honest per-member derivation states, a captured cell's value) is
   // refused by the table check, beside an accepted entry differing in that
   // part (a copy, a `length` view at a type excluding a number, an entry at
   // a wider result); an entry stating a location's contents or a heap link
@@ -4498,6 +4499,21 @@ control(async (): Promise<void> => {
   const errors = must(readOf(unit(e0, "errorName"), "name").context[0], "the error slot's type") as number[]; // asserted: a context entry is a type
   const statics = readOf(unit(e0, "classTag"), "tag");
   const classes = must(statics.context[0], "the class slot's type") as number[]; // asserted: a context entry is a type
+  type Derivation = { node: { claim: Claim; rule: unknown; premises: Derivation[] } };
+  /** The arms a per-member split states: each member's own read type, and
+   * the comparison its arm makes to the split's result. */
+  const armsOf = (u: Unit, field: string): Arm[] => {
+    const derivations = nested(u).filter((v) => typeof v === "object" && v !== null && "node" in v)
+      .map((v) => v as Derivation); // asserted: a derivation node, as the wire spells it
+    const split = must(derivations.find((d) => (JSON.stringify(d.node.rule) ?? "").startsWith('{"unionVar"') &&
+      (JSON.stringify(d.node.claim.term) ?? "").includes(`"field":"${field}"`)), `a split read of ${field}`);
+    return split.node.premises.map((p) => {
+      const rule = p.node.rule;
+      return typeof rule === "object" && rule !== null && "sub" in rule
+        ? { view: must(p.node.premises[0], "the arm's read").node.claim.type, proof: (rule.sub as { proof: unknown }).proof } // asserted: a `sub` rule's fields, as the wire spells them
+        : { view: p.node.claim.type, proof: null };
+    });
+  };
   const views = readOf(unit(e0, "constructorTag"), "tag");
   const constructors = must(views.context[0], "the constructor slot's type") as number[]; // asserted: a context entry is a type
   const cellRead = readOf(unit(e0, "kindOfCell").codes, "value");
@@ -4545,10 +4561,10 @@ control(async (): Promise<void> => {
     ["index", added({ receiver: [dictionary], field: "other", result: str, arms: [{ view: str, proof: null }] }), /does not justify/],
     ["prototype-key", added({ receiver: S.receiver, field: "toString", result: str, arms: [{ view: str, proof: null }, { view: str, proof: null }] }), /does not justify/],
     ["coerced-receiver", added({ receiver: errors, field: "name", result: str, arms: errors.map(() => ({ view: str, proof: null })) }), /does not justify/],
-    ["class-static", added({ receiver: classes, field: "tag", result: statics.type,
-      arms: classes.map(() => ({ view: statics.type, proof: null })) }), /does not justify/],
+    ["class-static", added({ receiver: classes, field: "tag", result: statics.type, arms: armsOf(unit(e0, "classTag"), "tag") }),
+      /does not justify/],
     ["constructor-view", added({ receiver: constructors, field: "tag", result: views.type,
-      arms: constructors.map(() => ({ view: views.type, proof: null })) }), /does not justify/],
+      arms: armsOf(unit(e0, "constructorTag"), "tag") }), /does not justify/],
     ["cell-contents", added({ receiver: cell, field: "value", result: S.receiver, arms: [{ view: S.receiver, proof: null }] }), /does not justify/],
     ["other-receiver", added({ receiver: [must(S.receiver[0], "A")], field: "k", result: S.result, arms: [armA] }, true), typing],
     ["other-result", added(structuredClone(wider), true), typing],
