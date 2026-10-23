@@ -812,9 +812,13 @@ kernel's list scans: `TabRen` reading every table row for each premise
 (`premTable`), label containment across lists of different orders
 (`subsetIn`'s fallback), a meet row read against every label of a target
 (`meetBelow`), and clause equality in the validator's `Same` test. Each is
-linear per premise and quadratic per row. The criterion is therefore
-revised to what the design can reach: the time outside reading the
-documents linear in the width, which the hashed lookups of §8's steps give.
+linear per premise and quadratic per row. The criterion is revised to the
+part the design acts on: the sampled time outside reading and writing the
+documents, measured at each width of the series, at width 136 within 12
+times its time at width 5 (the widths' ratio, 136/5, is 27), and within 1.5
+times its time at width 87 scaled by 136/87. That the hashed lookups of §8's
+first step reach it is conjectured; bucket scans, structural equality and
+the number of premises remain, and the step's measurement decides.
 
 ## 8. Migration
 

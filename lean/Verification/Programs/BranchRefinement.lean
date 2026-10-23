@@ -420,13 +420,13 @@ theorem restriction_sound [DecidableEq ι] {G : NormalGraph ι} {a b : ι} {f : 
   · cases hb
 
 /-- The candidates of one clause each, with that clause, unfolded once. -/
-def candidateRows (G : NormalGraph ι) (candidates : Ty ι) : List (ι × Clause (Ty ι)) :=
+@[nospecialize] def candidateRows (G : NormalGraph ι) (candidates : Ty ι) : List (ι × Clause (Ty ι)) :=
   candidates.filterMap fun b => match expand G [b] with
     | [c'] => some (b, c')
     | _ => none
 
 /-- `restriction` over candidates unfolded once (`candidateRows`). -/
-def restrictionIn [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+@[nospecialize] def restrictionIn [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
     (rows : List (ι × Clause (Ty ι))) : Option ι :=
   match expand G [a] with
   | [c] => (rows.find? fun r => r.1 != a && restricts G c r.2 f ts).map (·.1)
@@ -463,21 +463,21 @@ theorem restrictionIn_eq [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : Pro
   · rfl
 
 /-- A type's hash by the graph's label hash. -/
-def tyHash (G : NormalGraph ι) (T : Ty ι) : UInt64 := T.foldl (fun x l => mixHash x (G.labelHash l)) 7
+@[nospecialize] def tyHash (G : NormalGraph ι) (T : Ty ι) : UInt64 := T.foldl (fun x l => mixHash x (G.labelHash l)) 7
 
 /-- One view's step of `viewsHash`: its key, and its type unless the key is
 `f`, which `restricts` changes. -/
-def viewStep (G : NormalGraph ι) (f : PropKey) (acc : UInt64) (v : PropKey × Ty ι) : UInt64 :=
+@[nospecialize] def viewStep (G : NormalGraph ι) (f : PropKey) (acc : UInt64) (v : PropKey × Ty ι) : UInt64 :=
   mixHash acc (mixHash (hash v.1) (if v.1 == f then 0 else tyHash G v.2))
 
 /-- The views' hash with the views of `f` at no type. -/
-def viewsHash (G : NormalGraph ι) (f : PropKey) (vs : List (PropKey × Ty ι)) : UInt64 :=
+@[nospecialize] def viewsHash (G : NormalGraph ι) (f : PropKey) (vs : List (PropKey × Ty ι)) : UInt64 :=
   vs.foldl (viewStep G f) 13
 
 /-- The key `restricts` keeps: a record clause's first invariant operand and
 its views but at `f`, hashed by the graph's label hash. A candidate
 `restricts` accepts has its source's key (`restricts_key`). -/
-def restrictKey (G : NormalGraph ι) (f : PropKey) : Clause (Ty ι) → UInt64
+@[nospecialize] def restrictKey (G : NormalGraph ι) (f : PropKey) : Clause (Ty ι) → UInt64
   | .refs a _ vs _ _ _ _ => mixHash (a.foldl (fun acc p => mixHash acc (mixHash (hash p.1) (tyHash G p.2))) 11)
       (viewsHash G f vs)
   | _ => 0
@@ -523,7 +523,7 @@ theorem restricts_key [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty �
     rw [viewsHash_eq hl hv]
 
 /-- Unfolded candidates by key, each key's in list order. -/
-def rowIndex (G : NormalGraph ι) (f : PropKey) (rows : List (ι × Clause (Ty ι))) :
+@[nospecialize] def rowIndex (G : NormalGraph ι) (f : PropKey) (rows : List (ι × Clause (Ty ι))) :
     Std.HashMap UInt64 (List (ι × Clause (Ty ι))) :=
   rows.foldr (fun r m => m.insert (restrictKey G f r.2) (r :: m.getD (restrictKey G f r.2) [])) {}
 
@@ -539,7 +539,7 @@ theorem rowIndex_getD (G : NormalGraph ι) (f : PropKey) (rows : List (ι × Cla
     · simp [hk, ih]
 
 /-- `restrictionIn` reading only the candidates of the source's key. -/
-def restrictionAt [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
+@[nospecialize] def restrictionAt [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag)
     (idx : Std.HashMap UInt64 (List (ι × Clause (Ty ι)))) : Option ι :=
   match expand G [a] with
   | [c] => ((idx.getD (restrictKey G f c) []).find? fun r => r.1 != a && restricts G c r.2 f ts).map (·.1)

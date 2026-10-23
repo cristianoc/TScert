@@ -1151,7 +1151,7 @@ through it is a member of $`B`$ through it, built-in invariant included
 (`mixed_expand_mpr`), with no premise. Two spellings of one type, such as a
 union of member labels and one label holding their clauses, or a record and
 its meet with the source universe, are then related clause by clause without
-a table row.
+additional premise rows.
 
 Here $`\mathsf{cl}_G(A)`$ lists the clauses of $`A`$'s clause rows, and
 $`\mathsf{mcl}_G(A,B)`$ the clauses $`\vec c`$ of each meet row $`p\sqcap\vec c`$ of
