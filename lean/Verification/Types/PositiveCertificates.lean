@@ -1296,6 +1296,16 @@ searched for its rows. The check decides (`compareUsing`). -/
       (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any
         fun b => checkClauseWith G images.sub R known es p.1 e b))
 
+/-- A source clause neither among the target's clauses nor with a candidate,
+one of whose elements has no candidate either: no valid closed family covers
+the pair, since every covering it chooses is by a candidate
+(`SelectionPreservation.valid_selected`). Search does not grow a table for
+such a pair, nor expand such a row's demand, with or without selection. -/
+@[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
+  let own := ClauseIndex.of (clausesOf G T)
+  (sourceClauses G S).any fun a => !own.has a && (ClauseSelection.candidates G a T).isEmpty &&
+    a.elements.any fun e => (ClauseSelection.candidates G e T).isEmpty
+
 /-- Grow the table from its frontier: each row adds the pairs its coverage
 compares (`demandPairs`, and quantified members after renaming), each read
 through `Var` where it applies, that no inclusion, row or renamed row already
@@ -1330,8 +1340,11 @@ the execution budget. -/
     match cand.foldl step (.ok (fb.table, [])) with
     | .error why => { fb with refused := some why }
     | .ok (tbl, fresh) =>
-      if fresh.isEmpty then { fb with table := tbl }
-      else growTable G images known fuel { fb with table := tbl } fresh
+      -- A row no valid closed family covers is not expanded: its demand serves
+      -- only its own coverings.
+      let next := fresh.filter fun p => !structurallyHopeless G p.1 p.2
+      if next.isEmpty then { fb with table := tbl }
+      else growTable G images known fuel { fb with table := tbl } next
 
 /-- Delete the rows a table does not cover, premises read in the table
 itself, until every row is covered: the greatest fixed point below the
@@ -1471,6 +1484,7 @@ share the guarded dependency kernel used by quantified instantiation. -/
   let G' := PositiveRules.reassign G e
   let images' := images.reassign e
   if subsetUsing G' images' S T then .established () else
+  if structurallyHopeless G' S T then .notEstablished else
   comparePrepared G images S T known
     (growTable G' images' [] images.budget.rounds { table := [(S, T)] } [(S, T)])
 
@@ -1485,7 +1499,9 @@ theorem compareStructuralCore_sound [DecidableEq ι] {G : NormalGraph ι}
   split at h
   · exact subsetUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
       (by assumption)
-  · exact comparePrepared_sound h hk
+  · split at h
+    · simp [ComparisonResult.accepted] at h
+    · exact comparePrepared_sound h hk
 
 /-- Structural comparison reading candidates (`SearchBudget.select`), redone
 reading every target clause where that is not established: selection never
@@ -1874,6 +1890,7 @@ structural dependencies. Its bound premises use the supplied comparison operatio
     { instantiation := some c, members := dependencies.flatten }
   ComparisonResult.orElseState (root, next) fun prior =>
     let e := ParameterAssignment.empty .mixed
+    if structurallyHopeless (PositiveRules.reassign G e) S T then (.notEstablished, prior) else
     let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
       { table := [(S, T)] } [(S, T)]
     let (tested, last) := mapResultsState (fun k current =>
@@ -1904,14 +1921,17 @@ theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images
     · apply compareInstancesState_sound hc
       rw [selection]
       exact root
-    · let e : MixedAssignment ι := ParameterAssignment.empty .mixed
+    · split at fallback
+      · simp [ComparisonResult.accepted] at fallback
+      let e : MixedAssignment ι := ParameterAssignment.empty .mixed
       let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
         { table := [(S, T)] } [(S, T)]
       let checkMember (k : KnownInstance ι) (current : σ) :=
         let (checked, next) := compareInstArrsState G images compare [] k.1 k.2.1 k.2.2.1 k.2.2.2 current
         ((k, checked), next)
       rcases traversal : mapResultsState checkMember (members fb.table) next with ⟨tested, last⟩
-      simp only [ComparisonResult.accepted_exhaustion, Bool.or_false] at fallback
+      simp only [ComparisonResult.orElseState_accepted, ComparisonResult.accepted_map,
+        ComparisonResult.accepted_exhaustion, Bool.or_false] at fallback
       change (comparePrepared G images S T
         (knownOf (((mapResultsState checkMember (members fb.table) next).1.filter fun k => k.2.accepted).map Prod.fst)) fb).accepted = true at fallback
       rw [traversal] at fallback

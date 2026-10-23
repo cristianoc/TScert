@@ -459,6 +459,10 @@ default:
   (`Same`), then reads the candidates and then every target clause
   (`checkEntries`, its existential over `candidates ++ clausesOf`);
 - a source clause that is a target clause demands no pair (`demandPairs`);
+- a pair one of whose source clauses is no target clause and has no
+  candidate, nor has one of its elements, is in no valid closed family
+  (`valid_selected`): no table is grown from it, and as a row its demand is
+  not expanded, with or without selection (`structurallyHopeless`);
 - a structural comparison or a comparison step not established with
   selection is redone with selection off (`InstanceImageCheck.general`, in
   `compareStructural` and `compareStepState`), so the restricted search
