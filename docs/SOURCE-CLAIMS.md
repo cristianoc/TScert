@@ -255,7 +255,9 @@ A call expression can propose an instance with:
 ```
 
 Its names must match the callable's binders. An entry's required `resolution`
-is `null`, or for a qualified binder `{"certificate": c}`, with `c`
+is `null`, or for a qualified binder `{"certificate": c}`
+([ResolutionWire.lean](../lean/Verification/Source/ResolutionWire.lean),
+`Instance`), with `c`
 one of `{"k":"stable"}`, `{"k":"native","child":c}`, `{"k":"promise"}`,
 `{"k":"union","arms":[c, ...]}` or `{"k":"binder","binder":name}`; the
 consumer checks the certificate against the entry's complete input type: a
@@ -319,7 +321,14 @@ reconstructs the graph from the Fragment for claim association and typed
 elaboration. A supplied graph carries proposal data, with no acceptance
 authority.
 
-Each node's `executions` array contains `{source, plan}` for its expressions.
+Each node's `executions` array contains `{source, plan}` for its expressions
+([ExecutionRoots.lean](../lean/Verification/Source/ExecutionRoots.lean),
+`actionExpressions`): every expression its action evaluates, in source
+preorder, one per source span (the outer expression where a wrapper and its
+operand share a span). A closure's value belongs to the node creating it, and
+its defaults and body to its own graph; the entry node of an expression-bodied
+closure lists its parameters' defaults first, which run before the body
+expression.
 A saved value is an intermediate result retained for later operations. Its
 descriptor is `{id, name, source, role}`; `id` is a local identity, `name` is
 the internal binding name, `source` records its origin, and `role` records
