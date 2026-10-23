@@ -639,6 +639,14 @@ def decidedChain [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm 
     | none => ([], t)
   | t => ([], t)
 
+/-- A list's elements not in `seen`, each once, in the order of their first
+occurrence, with `seen` grown by them: `eraseDups` where the hash agrees
+with equality, as every label type's does. -/
+@[nospecialize] def keepFirst {α : Type} [BEq α] [Hashable α] (seen : Std.HashSet α) (l : List α) :
+    Std.HashSet α × Array α :=
+  l.foldl (fun (seen, kept) a => if seen.contains a then (seen, kept) else (seen.insert a, kept.push a))
+    (seen, #[])
+
 /-- The type a term's parts determine (typing by synthesis): a variable's
 slot type, and a field's or view's type read from a receiver whose
 synthesized type is one record clause. None for any other term. Search tries
@@ -754,7 +762,7 @@ came from a different context. No execution budget is inspected. -/
     -- proves `undefined`, as a call's does.
     | .construct f args =>
       let own := match f with | .var i => (Γ[i]?).toList | _ => []
-      return (own ++ pool).eraseDups.findSearch? fun F => do
+      return (keepFirst {} (own ++ pool)).2.toList.findSearch? fun F => do
         let [.ctors L S _ _ _] := expand G F | none
         let flags := args.map fun a => match a with | .spread _ => true | _ => false
         let candidates : List (CallEffects.MethodArrow (Ty ι) ⊕ CallEffects.MethodRestArrow (Ty ι)) :=
@@ -814,7 +822,7 @@ came from a different context. No execution budget is inspected. -/
         if j.term == a then some j.type else none
       let variableType := match a with | .var i => (Γ[i]?).toList | _ => []
       let preferred := variableType ++ exactTypes ++ termTypes
-      return (preferred ++ pool).eraseDups.findSearch? (fun B => do
+      return (keepFirst {} (preferred ++ pool)).2.toList.findSearch? (fun B => do
         let ea ← recur Γ a B
         let eb ← recur (B :: Γ) b A
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
@@ -1173,14 +1181,6 @@ came from a different context. No execution budget is inspected. -/
           pure (.node ⟨Γ,.ite c t e,A⟩ .ifBool [pc,pt,pe])
     | _ => return none
 
-/-- A list's elements not in `seen`, each once, in the order of their first
-occurrence, with `seen` grown by them: `eraseDups` where the hash agrees
-with equality, as every label type's does. -/
-@[nospecialize] def keepFirst {α : Type} [BEq α] [Hashable α] (seen : Std.HashSet α) (l : List α) :
-    Std.HashSet α × Array α :=
-  l.foldl (fun (seen, kept) a => if seen.contains a then (seen, kept) else (seen.insert a, kept.push a))
-    (seen, #[])
-
 /-- Gather graph labels, every operand of their clauses and supplied union
 types. Hints may add intermediate types; they cannot change claims or bypass
 evidence checking. -/
@@ -1439,7 +1439,7 @@ where
         | some A => do
           -- A partly covered arm is read at a label of the pool its
           -- record restricts to (member-split): the claims name it.
-          let sliced ← fieldSliceS G A g.field ts q pool.flatten.eraseDups
+          let sliced ← fieldSliceS G A g.field ts q (keepFirst {} pool.flatten).2.toList
           if sliced == A then pure none else
           pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
     pure (fewestLast (slot ++ fields))
@@ -1532,7 +1532,7 @@ where
       | none => none
     let slots := answers.filterMap fun q => yieldAt i q (PromiseCalls.memberSlotSlice G (Γ[i]?.getD []) ts q)
     let fields ← (answers.flatMap fun q => (reads i).map (q, ·)).filterMapM fun (q, g) => do
-      let sliced ← fieldSliceS G (Γ[g.cell]?.getD []) g.field ts q pool.flatten.eraseDups
+      let sliced ← fieldSliceS G (Γ[g.cell]?.getD []) g.field ts q (keepFirst {} pool.flatten).2.toList
       pure (yieldAt g.cell q sliced)
     pure (slots ++ fields)
 
