@@ -263,53 +263,30 @@ hashing are untrusted; collision resistance is not assumed.
 **Cited — measured, 2026-10-23.** See the
 [Certificate size](../../WORK.md#status) row: certificate bytes fall by
 roughly five times on the three `fragment-expressions.mts` slices and the
-two heap-knowledge slices, check memory with them. The residual bytes of
-`collect` and `closeStatements` are their distinct links (55.7 MB of
-`collect`'s 77.5 MB), Stage 4's target. Checking proper dominates
-`moduleFunction`'s check after this stage.
+two heap-knowledge slices, check memory with them; the heap-knowledge
+slices' remaining bytes were distinct links, Stage 4's target. Checking
+proper dominates `moduleFunction`'s check.
 
 ## Stage 4: allocation freshness and slot-relative heap knowledge
 
-**Cited.** [HeapLinks.lean](../../lean/Verification/Semantics/HeapLinks.lean)
-defines distinctness as inequality of two field locations.
-[HeapExpressionRules.lean](../../lean/Verification/Programs/HeapExpressionRules.lean)
-derives fresh-allocation separation from older contract fields.
-[HeapKnowledge.lean](../../lean/Verification/Semantics/HeapKnowledge.lean)
-transports knowledge through slot shifts and projections.
-The measured input/output link differences are almost their combined size
-because pushing a result shifts slots; raw per-node deltas offer little help.
+**Proved and cited.** Heap knowledge separates locations by
+[separation facts](../PROGRAM-TYPING.md#separation-facts): one fact per
+allocation, separating every own location of the fresh object from the
+contract fields of the slots it was allocated after, addressed by level, so
+a push renames no fact; the lowering's statement-entry assertions state a
+private cell's separation as an explicit-field fact. The design, its proofs
+and its tests are in [heap freshness](heap-freshness.md); the wire is the
+[evidence document](../REQUEST-PROTOCOL.md#evidence-document)'s
+`separations` table.
 
-**Conjectured.** Represent each allocated cell's freshness once, with its
-allocation provenance and the older locations from which it is separated.
-Resolve current slots through a checked slot-relative map to stable local
-value identities. Derive field-location inequality on demand rather than
-materializing every cell/field pair. Allocation-event identities must be local
-to the justified execution state: a source allocation site alone cannot
-identify repeated loop allocations. Distinct slot names do not imply separation.
+**Trust.** The knowledge semantics and the checker's separation operations
+are proved (`HeapSeparation`); the decoder's lookup of the `separations`
+table is audited as the other tables' lookups. The producer's projection and
+join are untrusted: every edge is checked.
 
-Retain explicit residual separation facts where freshness provenance does not
-justify them. Joins keep only justified common information. Projections,
-aliases, dropped results, writes, calls and handlers preserve exactly their
-existing guarantees. Read links remain heap-dependent; separation concerns
-locations and survives heap updates. A freshness token supplies no claim
-that arbitrary imported objects or later aliases are distinct.
-
-**Required lemmas.** Fresh allocation establishes the compact invariant;
-its separation query entails `HeapLinks.Holds`' location inequality.
-Prove transport through mappings and joins, write-frame preservation,
-normal/exceptional effect soundness, and reassignment compatibility.
-Prove old accepted knowledge has a suitable compact representation where
-claimed, with a residual representation for other cases.
-
-**Trust.** Heap-knowledge semantics, decoders and effect/edge checkers change
-trusted code. Producer knowledge propagation remains untrusted.
-This has higher semantic risk than structural sharing and is a separate item.
-
-**Conjectured gain.** The target is 404.2 MB in `collect` and 259.5 MB in
-`closeStatements`, approximately 98% of baseline bytes, before replacement
-facts. No compact-size prediction is measured. JSON reading and decoding
-occupy approximately 88% of `collect` check samples, making representation
-reduction the principal opportunity. Earlier-stage savings overlap.
+**Cited — measured.** See the [Certificate size](../../WORK.md#status) row:
+`collect`'s and `closeStatements`' evidence falls from 77.5 and 51.5 MB to
+4.35 and 3.87 MB, their search and check CPU and check memory with it.
 
 ## Stage 5: a general fact arena, conditional on residual cost
 

@@ -1,297 +1,106 @@
 # Draft: separation facts for heap knowledge
 
 The design of [certificate sharing's](certificate-sharing.md#stage-4-allocation-freshness-and-slot-relative-heap-knowledge)
-stage 4; its status is the Certificate size row of [WORK](../../WORK.md#status).
-Base: TScert main at ec59551. Claims are labelled **proved** (with the Lean
-name), **cited** (with the document or measurement and its scope) or
-**conjectured**.
+stage 4; its status and measurements are the Certificate size row of
+[WORK](../../WORK.md#status). The rules are stated formally in
+[separation facts](../PROGRAM-TYPING.md#separation-facts), the wire in the
+[evidence document](../REQUEST-PROTOCOL.md#evidence-document). Claims are
+labelled **proved** (with the Lean name) or **cited** (with the document
+and its scope).
 
-## 1. Current state
+## 1. The representation
 
-**Cited (code at ec59551).** Heap knowledge `K = (Σ, Π, Λ)` holds cell facts,
-value facts and links (`HeapKnowledge.Knowledge`). A distinct link
-$`x.f\neq y.g`$ states that field `f` of the object in slot `x` and field
-`g` of the object in slot `y` are different locations
-(`HeapLinks.Holds`). It is heap-independent, so it survives writes and
-calls (`HeapLinks.stable`). Its one consumer is the write rule: a write to
-$`x.f`$ keeps the cell facts at locations a distinct link separates from it
-(`HeapLinks.distinctFrom`, `writeOutput`, `write_sound`). Its producers are:
+Heap knowledge is cell facts, value facts, read and alias links, and a
+separation $`S=(d,A)`$. Level $`\ell<d`$ names slot $`d-1-\ell`$: pushing a
+result renames every slot and no level, so a fact is one value from the
+allocation that states it until a drop, a copy, a projection or a join
+changes it, and one entry of the evidence document's `separations` table
+wherever knowledge names it. A slot at or past the depth has no level, and
+no fact names it.
 
-- allocation (`allocOutput`, `alloc_sound`, `fresh_holds`): for the fresh
-  object in the result slot, one link per pair of its field and a field
-  $`(s,g)\in\mathrm{contractFields}(\Gamma)`$, the fields every record of
-  slot `s`'s type names;
-- the lowering's statement-entry assertions (`distinctLinks`,
-  [Source model](../SOURCE-MODEL.md#current-content-assertions)): for each
-  private cell `i`, links $`i.\mathsf{value}\neq j.g`$ to the fields of the
-  slots older than the cell and of the cells and fresh constants newer than
-  it, restated at each cut and proved by every incoming edge.
+A fact $`(x,F,O)`$ separates the fields $`F`$ of the object at level $`x`$
+($`F=\star`$: every own location of it) from the listed fields of the object
+at each partner level. It is a product: the subject's freshness is stated
+once, whatever the number of partners' fields, and field-location
+inequality is derived on demand by the query $`\mathrm{apart}`$, which a
+write consults to keep the cell facts it separates from the written field.
 
-Links are slot-indexed: pushing a result renames every slot, so every node's
-links are new links, and allocation multiplies fields by contract fields.
+The identity of a value is its level, local to the execution state the
+knowledge describes: a level names the value one slot holds there, never an
+allocation site, so a loop's repeated allocation is the object its
+iteration's slot holds, and an edge into the loop head maps its facts like
+every other fact. A separation without facts has one spelling, $`(0,[\,])`$,
+which the start node's empty knowledge and the cut equality compare.
 
-**Cited (measurement, 2026-10-23, evidence of the census slices at ec59551).**
+## 2. Where facts come from
 
-| Slice | Evidence MB | Distinct links | Their bytes MB | Link references in knowledge MB |
-| --- | ---: | ---: | ---: | ---: |
-| `collect` | 77.5 | 524,166 of 525,806 | 55.0 | 18.9 |
-| `closeStatements` | 51.5 | 345,945 total links | 35.9 | 12.2 |
+- **Allocation** states $`(D,\star,O_\Gamma)`$: every own location of the
+  fresh object lies past the old heap, every contract field of a slot of
+  $`\Gamma`$ in it. Imported and argument objects in $`\Gamma`$ are partners
+  by their contract fields; a slot obtained later is not.
+- **The lowering's statement entries** state, for each private cell, one
+  explicit fact of its field `value`, partners the slots allocated before it
+  and the cells and fresh constants allocated after it: the residual form.
+  Every incoming edge proves it, the second orientation of the edge rule
+  justifying the pairs with objects allocated after the cell.
+- **Copies** take the copied slot's facts in both roles; no rule relates a
+  value and its copy.
+- **Writes, calls, observations, reads** keep the separation, pushed. A
+  handler's edge carries the throwing node's entry knowledge, so no fact of
+  the interrupted expression's own allocation reaches it.
+- **The producer's projection and join** (untrusted) map facts to every
+  target slot a mapping takes from their slots, and keep the pairs every
+  joined state justifies: a whole-object fact's pairs another state
+  justifies only for some fields stay as residual facts of those fields.
 
-In `collect`'s 1,329 knowledge entries, the 2,798,774 distinct-link
-references group into 3,940 (entry, cell) pairs; each cell is separated
-from 255 (slot, field) pairs on average; cell and value facts occupy 1.42 MB.
-Every distinct link is product-shaped: per entry and cell, its links are
-exactly the cell's fields times its partners' fields.
-
-## 2. The representation
-
-**Conjectured.** Knowledge gains a fourth component, its separation
-$`S=(d,A)`$, and loses distinct links: a link is a read or an alias link.
-
-- $`d`$, the depth, fixes the slot-relative map: **level** $`\ell<d`$ names
-  slot $`d-1-\ell`$, and slot $`i<d`$ has level $`\ell_i=d-1-i`$. A slot
-  $`i\geq d`$ has no level: no fact can name it. A push renames every slot
-  and no level.
-- $`A`$ is a finite list of **separation facts** $`a=(x,F,O)`$: a subject
-  level $`x`$, its fields $`F`$, either $`\star`$ (every own location of the
-  object) or a finite set of keys, and its partners $`O`$, a nonempty finite
-  list of pairs $`(y,G)`$ of a level and a finite set of keys.
-
-Its meaning, for an environment $`\rho`$, where $`\mathrm{loc}_\star(v)`$ is
-the set of $`v`$'s own locations (the locations its field map lists),
-$`\mathrm{loc}_F(v)`$ the locations of $`v`$'s fields named in $`F`$, and
-$`v.g\mapsto l`$ that $`v`$'s field `g` is at $`l`$; a value that is no
-object has none:
-
-```math
-⟦(d,A)⟧\rho \iff \forall (x,F,O)\in A.\;
-  x<d \;\wedge\; \forall (y,G)\in O.\; y<d \;\wedge\;
-  \forall g\in G.\;\mathrm{Apart}_\rho(d-1-x,\,F,\;d-1-y,\,g)
-```
-
-```math
-\mathrm{Apart}_\rho(i,F,j,g)\iff\forall l\in\mathrm{loc}_F(\rho(i)).\;\forall l'.\;
-  \rho(j).g\mapsto l'\Rightarrow l\neq l'
-```
-
-It mentions no heap: it holds across every heap change, as distinct links
-do. A fact is a product: it states the separation of the subject's fields
-$`F`$ from every partner key, once. Where $`F`$ is a finite set the fact is
-the conjunction of its pairs, $`\mathrm{Apart}_\rho(i,\{f\},j,g)`$, which is
-symmetric:
-
-```math
-\mathrm{Apart}_\rho(i,\{f\},j,g)\iff\mathrm{Apart}_\rho(j,\{g\},i,f)
-\qquad
-\mathrm{Apart}_\rho(i,\star,j,g)\Rightarrow\mathrm{Apart}_\rho(i,\{f\},j,g)
-```
-
-**Canonical form.** Every operation returns its result through
-$`\mathrm{norm}(d,A)`$, which removes the facts without partners and is
-$`(0,[\,])`$ where none is left: knowledge that states no separation has one
-spelling, which the start node's check (empty knowledge) and the cut checks
-(equality with the lowering's assertion) compare.
-
-**Identities.** The identity of a value is its level, local to the
-execution state the knowledge describes: a level names the value one slot
-holds in that state, never an allocation site. An allocation repeated by a
-loop puts each object in the slot its iteration binds; a fact about that
-slot is about the object it holds now, and an edge into the loop head maps
-it like every other fact. **Provenance** is a checked relation: an
-allocation establishes its fact from the heap's state at that moment, and
-every later fact is the image of an established one under the rules below.
-
-## 3. The rules
-
-Each rule's output is a function of its input knowledge (and, where named,
-the sequent's context $`\Gamma`$); the checker computes it, the node states
-it, and the two are compared, as for the other components. Write
-$`\mathrm{lv}(i)`$ for slot $`i`$'s level, defined only for $`i<d`$.
-
-**Push** (every rule pushing a result, `shift`):
-$`(d,A)\mapsto\mathrm{norm}(d+1,A)`$.
-
-**Drop the result** (`dropResult`): slot 0 is level $`d-1`$; the result is
-$`\mathrm{norm}(d-1,A')`$, where $`A'`$ removes the facts whose subject is
-$`d-1`$ and the partners at $`d-1`$.
-
-**Rebase** to a depth $`D\geq d`$: every level $`\ell\mapsto\ell+D-d`$; the
-slots named are unchanged.
-
-**Copy** of slot $`i`$ (`copy`; the pure read of a variable and the linked
-read): where $`i<d`$, the copy, level $`d`$ of the pushed knowledge, holds
-slot $`i`$'s value, so it receives slot $`i`$'s facts in both roles:
-
-```math
-A\mapsto A^{+}\cup\{(d,F,O)\mid(\mathrm{lv}(i),F,O)\in A^{+}\}
-\qquad
-A^{+}=\{(x,F,\;O\cup\{(d,G)\mid(\mathrm{lv}(i),G)\in O\})\mid(x,F,O)\in A\}
-```
-
-and the result is $`\mathrm{norm}(d+1,\cdot)`$. Where $`i\geq d`$ it is the
-push. A copy relates the copy and the original only where a fact already
-related slot $`i`$ to itself (a residual separating two fields of one
-object); no rule introduces separation between a value and its copy.
-
-**Allocation** (`allocOutput`; the literal, the merge and the computed-key
-allocation): with $`D=\max(d,|\Gamma|)`$ and $`A`$ rebased to $`D`$,
-
-```math
-\frac{\Gamma\vdash_G r\leftarrow\mathrm{alloc}(\dots):B
-      \qquad O_\Gamma=\{(D-1-s,\;G_s)\mid G_s=\{g\mid(s,g)\in\mathrm{contractFields}(\Gamma)\}\neq\emptyset\}}
-     {(d,A)\vdash r\leftarrow\mathrm{alloc}(\dots)\dashv\mathrm{norm}(D+1,\;A\cup\{(D,\star,O_\Gamma)\})}
-```
-
-Every slot of $`\Gamma`$ has a level at depth $`D`$, so every contract
-field `allocOutput` separates now is a partner, those of argument and
-imported objects in $`\Gamma`$ included. Its premise is the existing one:
-every own location of the fresh object is at least the old heap's length
-(`slots_ge`), and every contract field of a slot of $`\Gamma`$ is a location
-of the old heap (`fieldOperand_sound`, `HeapOk`).
-
-**Separation query** (`apart`), for field `f` of slot `i` and field `g` of
-slot `s`, both below $`d`$ (else false), with $`\star`$ containing every key
-and $`O(y)`$ the union of the key sets $`O`$ pairs with $`y`$:
-
-```math
-\mathrm{apart}_S(i.f,\;s.g)\iff\exists(x,F,O)\in A.\;
-  (x=\mathrm{lv}(i)\wedge f\in F\wedge g\in O(\mathrm{lv}(s)))\;\vee\;(x=\mathrm{lv}(s)\wedge g\in F\wedge f\in O(\mathrm{lv}(i)))
-```
-
-**Write** $`x.f\leftarrow v`$ (`writeOutput`): it keeps the cell facts
-$`z.g\mapsto R`$ with $`\mathrm{apart}_S(x.f,\;z.g)`$, as it keeps those a
-distinct link separates now, and keeps $`S`$, pushed.
-
-**Calls, observations, reads**: $`S`$ is kept and pushed where the result is
-pushed (`ordinaryOutput`, `observe`, `readFrame`). **Handlers**: a handler's
-edge carries the node's *entry* knowledge (`handlerFacts`), so the facts an
-interrupted allocation would have established never reach it; the entry's
-separation is pushed past the thrown value.
-
-**Edge** with mapping $`m`$ (target slot $`j`$ receives source slot
-$`m(j)`$) from a source $`(d_s,A_s)`$ to a target $`(d_t,A_t)`$
-(`HeapKnowledge.check`, and `checkGraphAssertions` with $`m`$ the identity):
-let $`\tau(\ell)=d_s-1-m(d_t-1-\ell)`$, defined where $`\ell<d_t`$ and
-$`m(d_t-1-\ell)<d_s`$. The source is read as its set of pairs
-
-```math
-P_s=\{(x,\star,y,g)\mid(x,\star,O)\in A_s,\,g\in O(y)\}\cup\{(x,f,y,g)\mid(x,F,O)\in A_s,\,f\in F\neq\star,\,g\in O(y)\}
-```
-
-and every target fact $`(x,F,O)`$ has its levels defined, and each of its
-pairs is justified, one pair at a time, in either orientation: for every
-$`(y,G)\in O`$ and $`g\in G`$,
-
-```math
-F=\star:\;(\tau x,\star,\tau y,g)\in P_s
-\qquad
-f\in F\neq\star:\;\{(\tau x,\star,\tau y,g),(\tau x,f,\tau y,g),(\tau y,\star,\tau x,f),(\tau y,g,\tau x,f)\}\cap P_s\neq\emptyset
-```
-
-This accepts every pair the distinct-link check accepts now, under either
-orientation, and a grouped target justified by several source facts.
-
-**Projection** (`project`, the producer's): a source fact's subject and
-partners are mapped to every target slot the mapping takes from their slot
-(each preimage, as `HeapLinks.pull` maps links), at depth
-$`|\Gamma_{\mathrm{target}}|`$. **Join** (`meet`, the producer's), of
-projections at one depth: each fact of the first state keeps the partner
-keys whose pairs every other state justifies, by the edge rule's pair test
-at the identity mapping; a pair of a whole-object fact that another state
-justifies only for some fields of the subject is kept for each field
-another state names of it, one residual fact per field. A fact left without partners is removed. Both are
-untrusted: every edge is checked by the edge rule.
-
-**Cut**: the lowering's assertion states, for each private cell `i`, the
-one fact $`(\mathrm{lv}(i),\{\mathsf{value}\},O_i)`$, where $`O_i`$ groups by
-slot the links `distinctLinks` states now, at $`d=|\Gamma|`$; the second
-orientation of the edge rule justifies its pairs with the cells and fresh
-constants allocated after the cell.
-
-## 4. What stays explicit
-
-**Conjectured.** A fact with explicit fields $`F`$ is the residual form. Any
-set of distinct links has a representation with the same meaning, one
-explicit fact per link: $`x.f\neq y.g`$ is the fact
-$`(\ell_x,\{f\},[(\ell_y,\{g\})])`$ (`HeapSeparation.ofPairs_iff`). The
-lowering's cut assertions keep this form, grouped by cell. Allocation states
-the compact form. Separation is never inferred: a slot obtained after an
-allocation (a read, a call's result, an imported object read later) is no
-partner of its fact; a later alias inherits exactly the facts of the slot it
-copies; distinct slots are separated only where a fact says so.
-
-## 5. Lemmas
+## 3. Proofs
 
 **Proved** ([HeapSeparation.lean](../../lean/Verification/Semantics/HeapSeparation.lean),
-namespace `HeapSeparation`, unless named otherwise; the rules are stated in
-[separation facts](../PROGRAM-TYPING.md#separation-facts)).
+namespace `HeapSeparation`, unless named otherwise).
 
 1. `norm_holds`, `shift_holds`, `drop_holds`, `rebase_holds`, `copy_holds`:
    each operation preserves the meaning for the environment it produces; a
-   slot without a level contributes nothing (`copy` of such a slot is the
-   push, `apart` of it is false).
-2. `allocate_holds`, with `HeapExpressionRules.fresh_apart`: after an
-   allocation of a fresh object at the heap's end, the output separation
-   holds; `alloc_sound`, `fresh_holds`, `merge_alloc_sound` and
+   slot without a level contributes nothing (`copy` of it is the push,
+   `apart` of it false).
+2. `allocate_holds`, with `HeapExpressionRules.fresh_apart`: the
+   allocation's fact holds after an allocation of a fresh object at the
+   heap's end; `alloc_sound`, `fresh_holds`, `merge_alloc_sound` and
    `makeKey_alloc_sound` use it.
-3. `apart_sound`: $`\mathrm{apart}_S(i.f,s.g)`$ and $`⟦S⟧\rho`$ give
-   $`l\neq l'`$ for the locations of $`\rho(i).f`$ and $`\rho(s).g`$;
-   `write_sound` uses it.
+3. `apart_sound`: the query gives the inequality of the two field
+   locations; `write_sound` uses it.
 4. `check_sound`: an accepted edge transports the meaning to
    $`\mathrm{mapEnv}\;m\;\rho`$; `HeapKnowledge.check_sound` has the
    component, and with it `checkGraphAssertions` and every edge check.
 5. Heap independence: the meaning takes no heap, so `ordinaryOutput_holds`,
    `handlerFacts_holds`, `withStable_sound` and the call and promise rules
    carry it across writes, calls, normal and exceptional edges.
-6. Representation: `ofPairs_iff` (§4), and `allocate_apart`, the
-   allocation's completeness against the pairwise rule: after an
-   allocation, $`\mathrm{apart}`$ answers true for every field of the fresh
-   object and every pair of $`\mathrm{contractFields}(\Gamma)`$.
-7. Reassignment: the separation operations mention the graph only through
+6. Representation: any set of pairwise location inequalities has a
+   separation of the same meaning, one explicit fact each (`ofPairs_iff`);
+   after an allocation the query answers for every field of the fresh
+   object and every pair of $`\mathrm{contractFields}(\Gamma)`$
+   (`allocate_apart`).
+7. Reassignment: the operations mention the graph only through
    `contractFields`; the existing reassignment proofs hold unchanged.
 
-`SourceClaimJson.checkJson_safe` keeps its premise and conclusion: knowledge
-holds at every node by `checkStep_sound` and the edge lemmas, extended by the
-fourth conjunct of `HeapKnowledge.Holds`. The producer's projection and join
-are untrusted and carry no proof; their completeness (that the edges they
-build are accepted) is what the pipeline cases and the five census slices
-measure: no verified outcome may change. That is preservation measured on
-those inputs, not a universal completeness theorem.
+`SourceClaimJson.checkJson_safe` keeps its premise and conclusion:
+knowledge holds at every node by `checkStep_sound` and the edge lemmas, with
+the separation a fourth conjunct of `HeapKnowledge.Holds`. The producer's
+projection and join carry no proof; that the edges they build are accepted
+is measured by the pipeline cases and the census slices, preservation on
+those inputs.
 
-## 6. The wire
+## 4. Trust
 
-**Conjectured.** The evidence document gains a `separations` table of
-facts, interned like the other tables; a knowledge entry carries its depth
-and the positions of its facts. Since levels survive pushes, a fact is one
-entry from its allocation until a drop, a copy, a projection or a join
-changes it. Links lose `distinct` and `other`. The decoder reads the table
-strictly, as the others, and resolves fact positions as it resolves link
-positions, refusing a position past the table. The diagnostic's knowledge
-reader (`diagnostic.mts`) follows the new shape.
+Trusted and proved: the knowledge semantics (`HeapSeparation.Holds`) and the
+checker's separation operations. Trusted and audited: the evidence
+decoder's lookup of the `separations` table, as the other tables'.
+Unchanged in role: the lowering and request machinery that selects cuts and
+compares node knowledge with their assertions. Untrusted: the producer's
+propagation, projection and join, the encoder's interning, and the content
+of each proposed assertion, which every incoming edge proves. No assumption
+is added.
 
-## 7. Trust
-
-Changed trusted code: the knowledge semantics (`Separation.Holds`), the
-checker functions of §3 (proved by §5), the evidence decoder's lookup of the
-new table (audited, as the other tables' lookups), and the lowering and
-request machinery that selects cuts and compares node knowledge with their
-assertions (unchanged in role; its assertions change form). Untrusted: the
-producer's propagation, projection and join, the encoder's interning, and the
-content of each proposed assertion, which every incoming edge proves. No
-assumption is added.
-
-## 8. Size
-
-**Cited (measured, 2026-10-23).** The five census slices before and after
-are in the Certificate size row of [WORK](../../WORK.md#status): `collect`'s
-evidence falls from 77.50 to 4.35 MB and `closeStatements`' from 51.50 to
-3.87 MB, their search and check CPU and check memory with them;
-`collect`'s 2,798,774 distinct-link references are 3,940 references to 402
-separation facts (1.24 MB), the counts the regrouping of its distinct links
-by level predicted. An edge check hashes the source's pairs once and looks
-each target pair up; a write's query scans the facts once per cell fact.
-
-## 9. Tests
+## 5. Tests
 
 Pipeline cases: `fresh-separation` (positive): a captured `let`, a heap
 cell, allocated by each loop iteration, at a join, before a call and before
@@ -309,9 +118,8 @@ at its depth, and a separation at a depth one off (a stale slot map) are
 each refused by heap knowledge at the edge entering the node and accepted
 with the separation check bypassed; the cell's explicit fact removed from
 every node of the body, the knowledge consistent from edge to edge, is
-refused at a node whose stated output it established; a knowledge entry naming a position past the separations table
-is refused by the decoder. The second orientation of the edge rule is
-exercised by every cut asserting a cell's explicit fact after an
-allocation. The producer's join, which no source case reaches with a
-whole-object and an explicit fact for one pair, is exercised by
-`Tests/SeparationControls.lean`.
+refused at a node whose stated output it established; a knowledge entry
+naming a position past the separations table is refused by the decoder.
+The producer's join, which no source case reaches with a whole-object and
+an explicit fact for one pair, is exercised by
+`lean/Verification/Tests/SeparationControls.lean`.
