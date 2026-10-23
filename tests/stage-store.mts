@@ -62,7 +62,8 @@ if (process.argv[2] === "--writer") {
   });
   const input = "concurrent input", key = sha256(input);
   if (kind === "timeout")
-    store.publishTimeout("lower", key, { input, attempt, elapsedMs: 300, limitMs: 300, policy: "test" });
+    store.publishTimeout("lower", key, { input, attempt, elapsedMs: 300, limitMs: 300, policy: "test",
+      cpu: { unavailable: "test" } });
   else
     store.publishFinished("lower", key, { input, exitStatus: 0, stdout: Buffer.from("whole"), stderr: Buffer.alloc(0),
       outputs: [], measurement: { attempt, elapsedMs: 1, limitMs: 1000, cpu: { unavailable: "test" } } });
@@ -255,6 +256,47 @@ if (eligible) {
   delete process.env["TSCERT_RETRY_TIMEOUTS"];
   process.stdout.write("timeouts: reused at their limit or below, executed past at a longer one, executed again when " +
     "retried; finished results replay\n");
+}
+
+{
+  // The runner (`pipeline/runner/stage-runner.c`) passes the program's
+  // output bytes, exit status and signal through unchanged, reports its CPU
+  // time, and on a timeout leaves no process of the stage running.
+  freshStore("runner");
+  const bytes = String.raw`printf 'out\000\377\376 \342\202\254\n'; printf 'err\000\200\n' >&2`;
+  const cases: [string, string][] = [["exits", `${bytes}; exit 2`], ["succeeds", bytes],
+    ["signals", `${bytes}; kill -USR1 $$`]];
+  for (const [name, body] of cases) {
+    const program = script(`runner-${name}.sh`, body, ["/usr/bin/printf"]);
+    const input = file(`runner-${name}.json`, name);
+    const staged = invoke(lower(program, input), 10_000, true);
+    const direct = spawnSync(program, ["--lower-control-flow", input]);
+    assert.deepEqual(staged.stdoutBytes, direct.stdout, `${name}: stdout`);
+    assert.deepEqual(staged.stderrBytes, direct.stderr, `${name}: stderr`);
+    assert.equal(staged.status, direct.status, `${name}: status`);
+    assert.equal(staged.signal, direct.signal, `${name}: signal`);
+    assert.ok("userMs" in staged.record.cpu, `${name}: CPU time`);
+  }
+  const missing = invoke(lower(join(dir, "no-such-program"), file("runner-missing.json", "")), 10_000, true);
+  assert.equal(missing.record.execution, "failed");
+  assert.equal(missing.error && "code" in missing.error ? missing.error.code : null, "ENOENT");
+  // A busy program's CPU time and peak memory; a timed-out one's CPU time up to its kill, and its
+  // descendants killed with it.
+  const busy = invoke(lower(script("runner-busy.sh", "i=0; while [ $i -lt 100000 ]; do i=$((i+1)); done"),
+    file("runner-busy.json", "")), 10_000, true);
+  assert.ok("userMs" in busy.record.cpu && busy.record.cpu.userMs > 20 && (busy.record.cpu.peakBytes ?? 0) > 0,
+    JSON.stringify(busy.record.cpu));
+  const pids = join(dir, "runner-pids");
+  const spinning = script("runner-timeout.sh", `/bin/sleep 30 & echo $! > ${pids}; while :; do :; done`,
+    ["/bin/sleep"]);
+  const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 600, true);
+  assert.equal(timed.record.execution, "timed-out");
+  assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 100, JSON.stringify(timed.record.cpu));
+  const descendant = Number(readFileSync(pids, "utf8"));
+  assert.ok(descendant > 0);
+  assert.throws(() => process.kill(descendant, 0), /ESRCH/, "a descendant of a timed-out stage survived");
+  process.stdout.write("runner: output bytes, status and signal pass through; CPU time reported, up to a timeout's " +
+    "kill, which leaves no process of the stage running\n");
 }
 
 if (eligible) {
@@ -527,6 +569,7 @@ if (platform() === "darwin") {
     for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts",
       "stage-execution.mts", "in-process-execution.mts"])
       copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    symlinkSync(resolve(import.meta.dirname, "../pipeline/runner"), join(copied, "runner"));
     // A module loaded only by a name the code computes.
     writeFileSync(join(copied, "hidden.mts"), 'const n = 1 / "/"; await import(name); const s = "//";\n');
     const driver = join(copied, "test.mts");

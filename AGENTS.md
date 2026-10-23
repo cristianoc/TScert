@@ -18,7 +18,7 @@ make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
 make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
-make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
+make build       # build-lean, build-producer and build-runner: the Lean verifier, the OCaml producer and the stage runner
 make setup       # the node dependencies
 make clean-store # remove stage entries and timeout observations; keep source snapshots
 make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions

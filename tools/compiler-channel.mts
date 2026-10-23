@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { API } from "typescript/unstable/sync";
 import { compilerFileSystem, findPackage, installed, privateLauncher, takeQueryFailure, treeDigest, unobservable } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
+import { compilerEnding, compilerStarted } from "./compiler-processes.mts";
 
 /** The compiler process, as the client's channel holds it. */
 interface CompilerProcess {
@@ -94,7 +95,9 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   } catch (error) {
     throw new CompilerFailure("spawn", error);
   }
-  guard(privateClient(api));
+  const client = privateClient(api);
+  guard(client);
+  compilerStarted(client.channel.child.pid);
   return api;
 }
 
@@ -217,10 +220,18 @@ export function openFrontEndCompiler(cwd: string, overlay: ReadonlyMap<string, s
 /** The compiler process of an API, for a test that waits for its end. */
 export const compilerProcess = (api: API): CompilerProcess => privateClient(api).channel.child;
 
+/** A compiler process about to end, announced to its observer
+ * (`compiler-processes.mts`). */
+const observeEnd = (api: API): void => compilerEnding(privateClient(api).channel.child.pid);
+
 /** Ends the compiler process without a request: the client closes its
  * channel's pipes and signals the process, then the process is killed,
  * which it cannot ignore. */
 export function abandonCompiler(api: API): void {
+  observeEnd(api);
+  abandon(api);
+}
+function abandon(api: API): void {
   const client = privateClient(api);
   try {
     client.close();
@@ -237,15 +248,16 @@ export function abandonCompiler(api: API): void {
  * without a further request. A failure closing it abandons it and is
  * reported, as a tool failure, with what was in flight as context. */
 export function releaseCompiler(api: API, thrown: { error: unknown } | null): void {
+  observeEnd(api);
   const failure = thrown && toolFailureOf(thrown.error);
   if (failure && !failure.readable) {
-    abandonCompiler(api);
+    abandon(api);
     return;
   }
   try {
     api.close();
   } catch (error) {
-    abandonCompiler(api);
+    abandon(api);
     const context = thrown ? `, closing the compiler after: ${messageOf(thrown.error).split("\n")[0] ?? ""}` :
       ", closing the compiler";
     throw new CompilerFailure("close", error, context);

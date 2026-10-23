@@ -11,13 +11,15 @@
 // key, reuses a timeout observed there, or executes through its adapter, and
 // publishes what an execution produced.
 //   node pipeline/stages.mts clean    removes entries and timeout observations
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { isOperation, observationsHold, type Observation } from "../tools/files.mts";
-import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, sha256, stageNames, text,
+import { observeCompilers } from "../tools/compiler-processes.mts";
+import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -154,12 +156,12 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const { input } = bound;
     let ineligible = bound.ineligible;
     let key = ineligible === null ? sha256(input) : null;
-    const record = (execution: Execution, exitStatus: number | null, replay: Replay | null): AttemptRecord => ({
+    const record = (execution: Execution, exitStatus: number | null, replay: Replay | null, cpu: Cpu): AttemptRecord => ({
       attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: { program: bound.program, directory },
       forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
-      cpu: replay ? replay.stored.cpu : { unavailable: "the child process's CPU time is not measured" }, replay,
+      cpu: replay ? replay.stored.cpu : cpu, replay,
     });
-    options.recorder?.start(record("interrupted", null, null), startedAt);
+    options.recorder?.start(record("interrupted", null, null, { unavailable: "the attempt was interrupted" }), startedAt);
     const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
     if (replaying && !forced) {
       const found = replaying.store.finished(call.stage, replaying.key, input);
@@ -168,7 +170,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
         deliver(bound, found.result.outputs);
         const done = record("replayed", found.result.exitStatus, { lookupMs: found.lookupMs,
           validationMs: found.validationMs, materializationMs: performance.now() - materializing,
-          stored: found.result.measurement });
+          stored: found.result.measurement }, found.result.measurement.cpu);
         options.recorder?.finish(done);
         return { status: found.result.exitStatus, signal: null, error: undefined, stdoutBytes: found.result.stdout,
           stderrBytes: found.result.stderr, stdout: text(found.result.stdout), stderr: text(found.result.stderr),
@@ -180,7 +182,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
         const { observation } = observed;
         const done = record("timeout-replayed", null, { lookupMs: observed.lookupMs, validationMs: 0,
           materializationMs: 0, stored: { attempt: observation.attempt, elapsedMs: observation.elapsedMs,
-            limitMs: observation.limitMs, cpu: { unavailable: "a timeout's CPU time is not measured" } } });
+            limitMs: observation.limitMs, cpu: observation.cpu } }, observation.cpu);
         options.recorder?.finish(done);
         return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
           stdout: "", stderr: "", record: done };
@@ -190,7 +192,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const elapsedMs = performance.now() - started;
     ineligible ??= codeFailure(processCode);
     if (ineligible !== null) key = null;
-    const done = record(run.ran, run.status, null);
+    const done = record(run.ran, run.status, null, run.cpu);
     // The code that ran is the code the key names, or nothing is published.
     const publishing = replaying && key !== null ? replaying : null;
     if (publishing && run.ran === "executed")
@@ -199,7 +201,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           cpu: done.cpu } });
     if (publishing && run.ran === "timed-out")
       publishing.store.publishTimeout(call.stage, publishing.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
-        policy: resourcePolicy });
+        policy: resourcePolicy, cpu: done.cpu });
     options.recorder?.finish(done);
     return { status: run.status, signal: run.signal, error: run.error, stdoutBytes: run.stdoutBytes,
       stderrBytes: run.stderrBytes, stdout: run.stdout, stderr: run.stderr, record: done };
@@ -257,6 +259,36 @@ function storedObservations(input: string, manifest: { readonly [key: string]: C
   return observedInput(manifest, observations) === input ? observations : null;
 }
 
+/** The compiler processes each running in-process attempt started: the CPU
+ * time of those that ended and the largest of their peak memories, how many
+ * were not read, and those still running.
+ * A compiler process is read by the runner (`stage-runner --cpu`) just
+ * before it ends (`compiler-processes.mts`), and counts for every attempt
+ * that was running when it started and still is. */
+type CompilerCpu = { userMs: number; systemMs: number; peakBytes: number | null; ended: number; unread: number;
+  running: Set<number> };
+const runningAttempts: CompilerCpu[] = [];
+observeCompilers({
+  started: (pid: number): void => {
+    for (const attempt of runningAttempts) attempt.running.add(pid);
+  },
+  ending: (pid: number): void => {
+    const counting = runningAttempts.filter((attempt) => attempt.running.delete(pid));
+    if (counting.length === 0) return;
+    const p = spawnSync(runnerBuild, ["--cpu", String(pid)], { encoding: "utf8" });
+    const used = p.status === 0 ? /^cpu (\d+) (\d+) (\d+)\n$/.exec(p.stdout) : null;
+    for (const attempt of counting) {
+      attempt.ended++;
+      if (!used) attempt.unread++;
+      else {
+        attempt.userMs += Number(used[1]) / 1000;
+        attempt.systemMs += Number(used[2]) / 1000;
+        attempt.peakBytes = Math.max(attempt.peakBytes ?? 0, Number(used[3]));
+      }
+    }
+  },
+});
+
 /** Run an in-process stage through its adapter (`bindInProcess`,
  * `runInProcess`), recording its attempt: an exception it throws is an
  * operational failure, recorded and thrown on. A replay-eligible invocation
@@ -265,6 +297,16 @@ function storedObservations(input: string, manifest: { readonly [key: string]: C
  * now, and is published where they are complete. */
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
+  const compilers: CompilerCpu = { userMs: 0, systemMs: 0, peakBytes: null, ended: 0, unread: 0, running: new Set() };
+  runningAttempts.push(compilers);
+  try {
+    return attemptInProcess(call, options, compilers);
+  } finally {
+    runningAttempts.splice(runningAttempts.indexOf(compilers), 1);
+  }
+}
+function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null },
+    compilers: CompilerCpu): { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
   const started = performance.now();
   const startedAt = Date.now();
@@ -279,12 +321,15 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
   let recorded: Canonical = manifest;
   const record = (execution: Execution, replay: Replay | null): AttemptRecord => {
     const used = process.cpuUsage(cpu);
+    const measured: Cpu = compilers.unread > 0
+      ? { unavailable: `${compilers.unread} of the attempt's ${compilers.ended} compiler processes were not read` }
+      : compilers.running.size > 0 ? { unavailable: "a compiler process the attempt started outlived it" }
+      : { userMs: used.user / 1000 + compilers.userMs, systemMs: used.system / 1000 + compilers.systemMs,
+        peakBytes: compilers.peakBytes, covers: compilers.ended > 0 ? "the pipeline's process and the compiler processes it started"
+          : "the pipeline's process" };
     return {
       attempt, stage: call.stage, key, ineligible, manifest: recorded, context: null, forced, limitMs: null, execution,
-      exitStatus: null, elapsedMs: performance.now() - started,
-      cpu: replay ? replay.stored.cpu : { userMs: used.user / 1000, systemMs: used.system / 1000,
-        covers: "the pipeline's process" },
-      replay,
+      exitStatus: null, elapsedMs: performance.now() - started, cpu: replay ? replay.stored.cpu : measured, replay,
     };
   };
   options.recorder?.start(record("interrupted", null), startedAt);

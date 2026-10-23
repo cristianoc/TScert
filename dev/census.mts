@@ -4,7 +4,9 @@
 // they name, and each slice run through the pipeline, in the directory's
 // copy beside a copy of tools/. Each run writes a census record (DESIGN.md,
 // "The stage store"): per slice its source identity, outcome and the
-// ordered references to its stage invocations with their timings.
+// ordered references to its stage invocations with their elapsed and CPU
+// times and peak memory. `report` and the end of a run print each stage's
+// cost, CPU time first, and the slices that cost the most CPU.
 // Processes split the slices with `--shard i/n` and share the stage store.
 //   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shard i/n]
 //       [--out dir] [--record file]
@@ -358,6 +360,7 @@ async function census(args: string[]): Promise<void> {
   };
   writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
   summarize(record.slices);
+  process.stdout.write(costReport(record.slices));
   process.stdout.write(coverageReport(directory, record.inventory.units, sliceOutcomes, false));
   process.stdout.write(`record: ${recordPath}\n`);
 }
@@ -375,6 +378,75 @@ function summarize(slices: readonly SliceRecord[]): void {
     blockers.set(blocker(s.detail), (blockers.get(blocker(s.detail)) ?? 0) + 1);
   for (const [b, n] of [...blockers].sort((a, b) => b[1] - a[1])) process.stdout.write(`${String(n).padStart(4)} ${b}\n`);
   process.stdout.write(`verified: ${slices.filter((s) => s.status === "verified").map((s) => `${s.file}#${s.fn}`).join(", ")}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// Cost: CPU time first, elapsed time second, peak memory
+
+/** What an invocation's result cost: the CPU time, elapsed time and peak
+ * memory of the execution that produced it, this attempt's own or, for a
+ * replay, the stored execution's; null where it is not measured. */
+type Cost = { cpuMs: number | null; elapsedMs: number; peakBytes: number | null };
+function cost(r: InvocationReference): Cost {
+  const measured = "userMs" in r.cpu ? r.cpu : null;
+  return { cpuMs: measured ? measured.userMs + measured.systemMs : null,
+    elapsedMs: r.replay ? r.replay.storedElapsedMs : r.elapsedMs, peakBytes: measured?.peakBytes ?? null };
+}
+const ran = (r: InvocationReference): boolean => r.execution === "executed" || r.execution === "timed-out" ||
+  r.execution === "failed";
+
+/** A distribution's total, median, 90th percentile and maximum, and how many
+ * values are missing. */
+type Spread = { n: number; missing: number; total: number; median: number; p90: number; max: number };
+function spread(values: readonly (number | null)[]): Spread {
+  const known = values.filter((v): v is number => v !== null).sort((a, b) => a - b);
+  const at = (q: number): number => known.length ? known[Math.min(known.length - 1, Math.ceil(q * known.length) - 1)] : 0;
+  return { n: known.length, missing: values.length - known.length, total: known.reduce((a, b) => a + b, 0),
+    median: at(0.5), p90: at(0.9), max: known.at(-1) ?? 0 };
+}
+/** Milliseconds as seconds, or n/a where none is known; a partial total
+ * names how many are missing. */
+function seconds(s: Spread, field: "total" | "median" | "p90" | "max"): string {
+  if (s.n === 0) return "n/a";
+  return (s[field] / 1000).toFixed(field === "total" ? 1 : 2) + (field === "total" && s.missing ? `+${s.missing}n/a` : "");
+}
+const megabytes = (s: Spread, field: "median" | "p90" | "max"): string =>
+  s.n === 0 ? "n/a" : (s[field] / 1048576).toFixed(0);
+
+/** Each stage's cost over a census's invocations: CPU, then elapsed, then
+ * peak memory; and the slices that cost the most CPU. */
+function costReport(slices: Iterable<SliceRecord>, top: number = 10): string {
+  const rows = [...slices];
+  const byStage = new Map<StageName, InvocationReference[]>();
+  for (const s of rows) for (const r of s.invocations) byStage.set(r.stage, [...(byStage.get(r.stage) ?? []), r]);
+  const lines = ["stage cost (each result's producing execution; seconds, peak MB):",
+    `  ${"stage".padEnd(12)} ${"ran".padStart(5)} ${"replay".padStart(6)} │ ${"CPU".padStart(10)} ${"med".padStart(6)} ` +
+    `${"p90".padStart(6)} ${"max".padStart(7)} │ ${"elapsed".padStart(10)} ${"med".padStart(6)} ${"p90".padStart(6)} ` +
+    `${"max".padStart(7)} │ ${"peak med".padStart(8)} ${"p90".padStart(5)} ${"max".padStart(5)}`];
+  for (const [stage, invocations] of [...byStage].sort((a, b) =>
+    spread(b[1].map((r) => cost(r).cpuMs)).total - spread(a[1].map((r) => cost(r).cpuMs)).total)) {
+    const costs = invocations.map(cost);
+    const c = spread(costs.map((x) => x.cpuMs)), e = spread(costs.map((x) => x.elapsedMs));
+    const m = spread(costs.map((x) => x.peakBytes));
+    lines.push(`  ${stage.padEnd(12)} ${String(invocations.filter(ran).length).padStart(5)} ` +
+      `${String(invocations.filter((r) => !ran(r)).length).padStart(6)} │ ${seconds(c, "total").padStart(10)} ` +
+      `${seconds(c, "median").padStart(6)} ${seconds(c, "p90").padStart(6)} ${seconds(c, "max").padStart(7)} │ ` +
+      `${seconds(e, "total").padStart(10)} ${seconds(e, "median").padStart(6)} ${seconds(e, "p90").padStart(6)} ` +
+      `${seconds(e, "max").padStart(7)} │ ${megabytes(m, "median").padStart(8)} ${megabytes(m, "p90").padStart(5)} ` +
+      `${megabytes(m, "max").padStart(5)}`);
+  }
+  const perSlice = rows.map((s) => {
+    const costs = s.invocations.map(cost);
+    return { s, cpu: spread(costs.map((x) => x.cpuMs)), elapsed: spread(costs.map((x) => x.elapsedMs)),
+      peak: spread(costs.map((x) => x.peakBytes)),
+      bytes: s.artifactBytes ? Object.values(s.artifactBytes).reduce((a, b) => a + b, 0) : null };
+  });
+  lines.push(`slices by CPU (top ${Math.min(top, perSlice.length)}; seconds, peak MB, document bytes):`);
+  for (const { s, cpu, elapsed, peak, bytes } of perSlice.sort((a, b) => b.cpu.total - a.cpu.total).slice(0, top))
+    lines.push(`  ${seconds(cpu, "total").padStart(10)} CPU ${seconds(elapsed, "total").padStart(8)} elapsed ` +
+      `${megabytes(peak, "max").padStart(5)} MB ${String(bytes ?? "n/a").padStart(9)} B  ${s.file}#${s.fn} ` +
+      `${isTimeout(s) ? "timeout" : `${s.status}/${s.phase}`}`);
+  return lines.join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -419,9 +491,12 @@ function readReference(value: unknown): InvocationReference {
   const foundStage = stages.find((s) => s === stage);
   const foundExecution = executions.find((e) => e === execution);
   const c: { [key: string]: unknown } = typeof cpu === "object" && cpu !== null ? { ...cpu } : {};
+  // A record written before peak memory was measured has none.
+  const peak = c["peakBytes"];
   const readCpu: Cpu | null = typeof c["unavailable"] === "string" ? { unavailable: c["unavailable"] }
-    : typeof c["userMs"] === "number" && typeof c["systemMs"] === "number" && typeof c["covers"] === "string"
-      ? { userMs: c["userMs"], systemMs: c["systemMs"], covers: c["covers"] } : null;
+    : typeof c["userMs"] === "number" && typeof c["systemMs"] === "number" && typeof c["covers"] === "string" &&
+        (peak === undefined || peak === null || typeof peak === "number")
+      ? { userMs: c["userMs"], systemMs: c["systemMs"], peakBytes: peak ?? null, covers: c["covers"] } : null;
   if (typeof attempt !== "string" || !foundStage || !(key === null || typeof key === "string") || !foundExecution ||
       !(limitMs === null || typeof limitMs === "number") || typeof elapsedMs !== "number" || !readCpu)
     throw Error(`not an invocation reference: ${JSON.stringify(value).slice(0, 200)}`);
@@ -580,7 +655,7 @@ function classifiedInventory(census: Census): { units: UnitRecord[]; note: strin
 const isTimeout = (s: SliceRecord): boolean => s.detail.startsWith("timeout:");
 
 /** Compare two censuses: gains and losses of verified slices, timeouts,
- * outcome changes, and each stage's time, executed and replayed. */
+ * outcome changes, and each stage's cost: CPU time, elapsed time and peak memory. */
 function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord>): void {
   const verified = (m: Map<string, SliceRecord>): Set<string> =>
     new Set([...m].filter(([, s]) => s.status === "verified").map(([k]) => k));
@@ -603,25 +678,21 @@ function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord
     const old = before.get(k);
     if (old) process.stdout.write(`  ${k}: ${old.status}/${old.phase} ${blocker(old.detail)} → ${s.status}/${s.phase} ${blocker(s.detail)}\n`);
   }
-  const stageTimes = (m: Map<string, SliceRecord>): Map<string, { n: number; ms: number }> => {
-    const sums = new Map<string, { n: number; ms: number }>();
-    for (const s of m.values())
-      for (const r of s.invocations) {
-        const k = `${r.stage} ${r.execution}`;
-        const sum = sums.get(k) ?? { n: 0, ms: 0 };
-        sum.n++;
-        sum.ms += r.elapsedMs;
-        sums.set(k, sum);
-      }
-    return sums;
+  const stageCosts = (m: Map<string, SliceRecord>): Map<string, { n: number; cpu: Spread; elapsed: Spread; peak: Spread }> => {
+    const costs = new Map<string, Cost[]>();
+    for (const s of m.values()) for (const r of s.invocations) costs.set(r.stage, [...(costs.get(r.stage) ?? []), cost(r)]);
+    return new Map([...costs].map(([stage, list]) => [stage, { n: list.length, cpu: spread(list.map((c) => c.cpuMs)),
+      elapsed: spread(list.map((c) => c.elapsedMs)), peak: spread(list.map((c) => c.peakBytes)) }]));
   };
-  const [ta, tb] = [stageTimes(before), stageTimes(after)];
-  process.stdout.write("stage time (count, seconds): before → after\n");
-  for (const k of [...new Set([...ta.keys(), ...tb.keys()])].sort()) {
-    const x = ta.get(k), y = tb.get(k);
-    process.stdout.write(`  ${k.padEnd(28)} ${String(x?.n ?? 0).padStart(5)} ${((x?.ms ?? 0) / 1000).toFixed(1).padStart(8)} → ` +
-      `${String(y?.n ?? 0).padStart(5)} ${((y?.ms ?? 0) / 1000).toFixed(1).padStart(8)}\n`);
-  }
+  const [ta, tb] = [stageCosts(before), stageCosts(after)];
+  process.stdout.write("stage cost (each result's producing execution; count, CPU s, elapsed s, peak max MB): " +
+    "before → after\n");
+  const row = (x: { n: number; cpu: Spread; elapsed: Spread; peak: Spread } | undefined): string => x
+    ? `${String(x.n).padStart(5)} ${seconds(x.cpu, "total").padStart(10)} ${seconds(x.elapsed, "total").padStart(8)} ` +
+      `${megabytes(x.peak, "max").padStart(5)}`
+    : `${"0".padStart(5)} ${"".padStart(10)} ${"".padStart(8)} ${"".padStart(5)}`;
+  for (const k of [...new Set([...ta.keys(), ...tb.keys()])].sort())
+    process.stdout.write(`  ${k.padEnd(12)} ${row(ta.get(k))} → ${row(tb.get(k))}\n`);
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
@@ -644,6 +715,7 @@ if (import.meta.filename === resolve(process.argv[1] ?? "")) {
         const c = readCensus(first);
         const found = classifiedInventory(c);
         if (found.note) process.stdout.write(`${found.note}\n`);
+        process.stdout.write(costReport(c.slices.values()));
         process.stdout.write(coverageReport(c.source.directory, found.units, c.slices, perFunction));
       } else if (args[0] === "report" && sources === null && first !== undefined && second !== undefined &&
           rest.length === 2) {
