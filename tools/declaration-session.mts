@@ -24,7 +24,7 @@ import { dirname, resolve } from "node:path";
 import type { API, Project, Snapshot } from "typescript/unstable/sync";
 /** What a snapshot request asks. */
 type UpdateSnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
-import { abandonCompiler, compilerChoice, openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
+import { abandonCompiler, compilerChoice, openDocuments, openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { activeFamilies } from "./family-activation.mts";
 import { importLedger, ledgerAnswers, ledgerState, newLedger, processInconsistency, processRetirement, unobservable, validateLedger,
   withLedger, type Ledger, type Noted } from "./files.mts";
@@ -80,15 +80,16 @@ const telemetry: SessionTelemetry = { opens: 0, reuses: 0, replacements: 0, last
 export const declarationSessionTelemetry = (): SessionTelemetry => ({ ...telemetry });
 
 /** The idle session and what it holds, for the controls: its generation,
- * uses, directory, project, open projects, overlay and ledger size; null
+ * uses, directory, project, open projects and documents, overlay and ledger size; null
  * where none is retained. */
 export type RetainedSession = { generation: number; uses: number; cwd: string; config: string; projects: string[];
-  overlay: number; ledger: number };
+  documents: number; overlay: number; ledger: number };
 export function retainedDeclarationSession(): RetainedSession | null {
   const s = retained;
   if (!s) return null;
   return { generation: s.generation, uses: s.uses, cwd: s.cwd, config: s.config,
-    projects: s.idle ? s.idle.getProjects().map((p) => p.configFileName) : [], overlay: s.overlay.size, ledger: ledgerState(s.ledger).answers };
+    projects: s.idle ? s.idle.getProjects().map((p) => p.configFileName) : [], documents: openDocuments(s.api).length,
+    overlay: s.overlay.size, ledger: ledgerState(s.ledger).answers };
 }
 
 /** Tests only: `run` in fresh compilers, the retained session, retention
@@ -178,7 +179,7 @@ function discard(s: Session, reason: string): void {
  * `descriptor`, or null. */
 function incompatibility(s: Session, descriptor: string): string | null {
   if (s.descriptor !== descriptor) return "another project, directory, compiler or family configuration";
-  if (s.overlay.size !== 0) return "the session's base state is not clean";
+  if (s.overlay.size !== 0 || openDocuments(s.api).length !== 0) return "the session's base state is not clean";
   return validateLedger(s.ledger);
 }
 
@@ -289,9 +290,9 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
 /** Restore a session's base state after a collection: the overlay cleared,
  * the compiler told of every path a probe replaced, the named project reacquired in a snapshot of its own, the
  * collection's snapshots (`obsolete`) released, and the state checked:
- * exactly that project open and no overlay. No request of a session opens a
- * document (`update`); one opened outside the project shows as another
- * project. Why it is not restored, or null. */
+ * exactly that project open, no overlay and no open document (as the
+ * compiler's requests count them, `openDocuments`). Why it is not restored,
+ * or null. */
 function restore(s: Session, replaced: readonly string[], obsolete: readonly (Snapshot | null)[]): string | null {
   try {
     return withLedger(s.ledger, () => {
@@ -326,6 +327,8 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
         return `the session holds the projects ${JSON.stringify(projects)}, not only ${s.config}`;
       if (!s.idle.getProject(s.config)) return `the session does not hold ${s.config}`;
       if (s.overlay.size !== 0) return "the session's overlay is not empty";
+      const open = openDocuments(s.api);
+      if (open.length !== 0) return `the session holds the open documents ${JSON.stringify(open)}`;
       return null;
     });
   } catch (error) {

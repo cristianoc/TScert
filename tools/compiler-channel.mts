@@ -87,7 +87,17 @@ function guard(client: PrivateClient): void {
   guarded.add(prototype);
 }
 
-/** A compiler process opened through the API, its requests guarded. */
+/** The documents each compiler holds open, with how many times each was
+ * opened: every snapshot request of an API goes through `openCompiler`'s
+ * wrapper, which counts the files it opens and closes. */
+const documents = new WeakMap<API, Map<string, number>>();
+/** The documents `api` holds open. */
+export const openDocuments = (api: API): string[] => [...(documents.get(api)?.keys() ?? [])];
+type SnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
+const documentKey = (document: unknown): string => typeof document === "string" ? document : String(JSON.stringify(document));
+
+/** A compiler process opened through the API, its requests guarded and the
+ * documents it holds open counted. */
 export function openCompiler(options: ConstructorParameters<typeof API>[0]): API {
   let api: API;
   try {
@@ -97,6 +107,19 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   }
   const client = privateClient(api);
   guard(client);
+  const open = new Map<string, number>();
+  documents.set(api, open);
+  const request = api.updateSnapshot.bind(api);
+  Object.assign(api, { updateSnapshot: (params?: SnapshotParams) => {
+    const snapshot = request(params);
+    for (const document of params?.openFiles ?? []) open.set(documentKey(document), (open.get(documentKey(document)) ?? 0) + 1);
+    for (const document of params?.closeFiles ?? []) {
+      const key = documentKey(document), count = (open.get(key) ?? 0) - 1;
+      if (count > 0) open.set(key, count);
+      else open.delete(key);
+    }
+    return snapshot;
+  } });
   compilerStarted(client.channel.child.pid);
   return api;
 }

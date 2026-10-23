@@ -263,17 +263,15 @@ function storedObservations(input: string, manifest: { readonly [key: string]: C
  * attempt's time is its own and not its enclosing attempt's. Each attempt is
  * a frame of a stack. Its pipeline time is the process's (`process.cpuUsage`)
  * over the attempt but its nested attempts'. The compiler processes' time
- * goes to the innermost observed attempt running, the only stages that use
- * compilers: a compiler process outlives an attempt where its
+ * goes to the innermost attempt running: a compiler process outlives an attempt where its
  * session is retained (`tools/declaration-session.mts`), so each is read by
  * the runner (`stage-runner --cpu`) at the start and end of each interval in
- * which the attempt is the innermost observed one, when it starts (from zero) and just before
+ * which the attempt is the innermost one, when it starts (from zero) and just before
  * it ends (`compiler-processes.mts`); the attempt adds the differences. A
  * process is named by its generation, which a reused process id does not
  * repeat. */
 type Sample = { userMs: number; systemMs: number; peakBytes: number };
 type Frame = {
-  observed: boolean;
   started: number;
   cpu: NodeJS.CpuUsage;
   /** The pipeline time of the attempts nested in this one, in microseconds. */
@@ -324,18 +322,17 @@ function count(frame: Frame, generation: number, from: Sample | null, to: Sample
 /** The running compilers' readings. */
 const readings = (): Map<number, Sample | null> =>
   new Map(liveCompilers().map((compiler) => [compiler.generation, sample(compiler)]));
-/** End an observed frame's interval at `now` (a process that ended unannounced
- * has no reading, and counts as not read), or begin one. */
+/** End a frame's interval at `now` (a process that ended unannounced has no
+ * reading, and counts as not read), or begin one. */
 function closeInterval(frame: Frame, now: Map<number, Sample | null>): void {
-  if (!frame.observed) return;
   for (const [generation, from] of frame.baseline) count(frame, generation, from, now.get(generation) ?? null);
   frame.baseline.clear();
 }
 function openInterval(frame: Frame, now: Map<number, Sample | null>): void {
-  if (frame.observed) frame.baseline = new Map(now);
+  frame.baseline = new Map(now);
 }
-/** The innermost observed attempt running. */
-const counting = (): Frame | undefined => [...frames].reverse().find((frame) => frame.observed);
+/** The innermost attempt running. */
+const counting = (): Frame | undefined => frames.at(-1);
 observeCompilers({
   started: (compiler: LiveCompiler): void => {
     counting()?.baseline.set(compiler.generation, zero);
@@ -349,35 +346,30 @@ observeCompilers({
     top.baseline.delete(compiler.generation);
   },
 });
-/** An attempt's frame begun: its clocks started, then, for an observed one,
- * the interval of the observed attempt it interrupts ended and its own begun
- * at the same readings. */
-function beginFrame(observed: boolean): Frame {
-  const frame: Frame = { observed, started: performance.now(), cpu: process.cpuUsage(), nested: { user: 0, system: 0 },
+/** An attempt's frame begun: its clocks started, then the interval of the
+ * attempt it interrupts ended and its own begun at the same readings, where
+ * a compiler runs. */
+function beginFrame(): Frame {
+  const frame: Frame = { started: performance.now(), cpu: process.cpuUsage(), nested: { user: 0, system: 0 },
     userMs: 0, systemMs: 0, peakBytes: null, counted: 0, unread: 0, baseline: new Map(), ended: false };
-  if (observed) {
-    const now = readings();
-    const top = counting();
-    if (top) closeInterval(top, now);
-    openInterval(frame, now);
-  }
+  const now = readings();
+  const top = counting();
+  if (top) closeInterval(top, now);
+  openInterval(frame, now);
   frames.push(frame);
   return frame;
 }
-/** An attempt's frame ended: an observed one's interval closed and the
- * enclosing observed attempt's resumed at the same readings; the enclosing
- * attempt told of this attempt's pipeline time; the attempt's own pipeline
- * time, in microseconds. */
+/** An attempt's frame ended: its interval closed and the enclosing attempt's
+ * resumed at the same readings, and told of this attempt's pipeline time; the
+ * attempt's own pipeline time, in microseconds. */
 function endFrame(frame: Frame): NodeJS.CpuUsage {
   frame.ended = true;
   const at = frames.lastIndexOf(frame);
   if (at >= 0) frames.splice(at, 1);
-  if (frame.observed) {
-    const now = readings();
-    closeInterval(frame, now);
-    const resumed = counting();
-    if (resumed) openInterval(resumed, now);
-  }
+  const now = readings();
+  closeInterval(frame, now);
+  const resumed = counting();
+  if (resumed) openInterval(resumed, now);
   const inclusive = process.cpuUsage(frame.cpu);
   const parent = frames.at(-1);
   if (parent) {
@@ -395,8 +387,7 @@ function endFrame(frame: Frame): NodeJS.CpuUsage {
  * now, and is published where they are complete. */
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
-  // Only an observed stage uses the front end's compilers.
-  const frame = beginFrame(call.observed !== undefined);
+  const frame = beginFrame();
   try {
     return attemptInProcess(call, options, frame);
   } finally {

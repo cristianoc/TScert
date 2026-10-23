@@ -104,6 +104,7 @@ function clean(config: string, what: string): void {
   const s = retainedDeclarationSession();
   assert.ok(s, `${what}: a session is retained`);
   assert.deepEqual(s.projects, [config], what);
+  assert.equal(s.documents, 0, what);
   assert.equal(s.overlay, 0, what);
 }
 
@@ -436,9 +437,11 @@ released("a document requested", { kind: "document-request", document: join(base
   const outside = join(dir, "outside", "document.ts");
   mkdirSync(dirname(outside), { recursive: true });
   writeFileSync(outside, "export const x = 1;\n");
-  released("a document left open", { kind: "document-left", document: outside },
+  released("a document outside the project left open", { kind: "document-left", document: outside },
     /restoration failed: the session holds the projects/);
 }
+released("a document of the project left open", { kind: "document-left", document: join(base.examples, "lib.ts") },
+  /restoration failed: the session holds the open documents/);
 
 // --- a record begun during a reused collection holds the session's ledger:
 // what it computes may read the compiler the ledger's answers determine
@@ -500,12 +503,17 @@ released("a document requested", { kind: "document-request", document: join(base
   const ended = new Set(compilerAccounts.keys());
   const node0 = process.cpuUsage(), session0 = reading();
   const records: AttemptRecord[] = [];
+  const plainMs: number[] = [];
   const outer = invokeInProcess({ stage: "diagnostics", inputs: [{ role: "control", bytes: "nested cpu" }],
     observed: { compiler: compilerImplementation }, codec: textCodec, run: (): string => {
       records.push(parse(at(names[3])).record);
+      // Read independently around the non-observed attempt: its own time.
+      const plainNode = process.cpuUsage(), plainSession = reading();
       records.push(invokeInProcess({ stage: "assemble", inputs: [{ role: "control", bytes: "plain" }], codec: textCodec,
         run: (): string => JSON.stringify(clientErrors(join(base.examples, `${names[0]}.ts`), base.config)) },
         { force: true, recorder: null }).record);
+      const used = process.cpuUsage(plainNode);
+      plainMs.push((used.user + used.system) / 1000 + reading() - plainSession);
       return "";
     } }, { force: true, recorder: null }).record;
   const node = process.cpuUsage(node0);
@@ -514,6 +522,10 @@ released("a document requested", { kind: "document-request", document: join(base
   const counted = ms(outer.cpu) + records.reduce((sum, r) => sum + ms(r.cpu), 0);
   assert.ok(Math.abs(total - counted) <= Math.max(30, total / 10), `nested attempts counted ${counted} ms of ${total} ms`);
   assert.ok(ms(records[0]?.cpu ?? outer.cpu) > 0 && ms(outer.cpu) < counted, "each attempt counts its own time");
+  // The non-observed attempt's record holds the compiler time it caused.
+  const plain = ms(records[1]?.cpu ?? outer.cpu), around = plainMs[0] ?? 0;
+  assert.ok(plain <= around + 1 && around - plain <= Math.max(15, around / 10),
+    `the non-observed attempt counted ${plain} ms of the ${around} ms read around it`);
   process.stdout.write(`sessions: nested attempts counted ${counted.toFixed(1)} ms (outer ${ms(outer.cpu).toFixed(1)} ms) ` +
     `of the ${total.toFixed(1)} ms the process and the compilers used\n`);
   // A reading not taken makes the attempt's CPU time unavailable.

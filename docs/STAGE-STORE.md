@@ -337,10 +337,12 @@ program reports no error. Its probes replace project files through the
 overlay. After its result or its refusal, the collection restores the base
 state: the overlay cleared, the compiler notified of every path a probe
 replaced, the collection's snapshots released, and the new snapshot checked
-to hold only `p`, with no overlay entry. A session's one request function
-refuses a request naming a file to open; a document opened otherwise
-outside `p` shows as another project, which the check refuses. A tool
-failure releases the session. A restoration that fails, or a state other than the
+to hold only `p`, with no overlay entry and no open document. The front end
+counts a compiler's open documents at its snapshot requests, the only
+requests that open or close one (`openDocuments`,
+`tools/compiler-channel.mts`); a session's own requests name no file to
+open, which its request function refuses. A tool failure releases the
+session. A restoration that fails, or a state other than the
 base one, releases it and makes every record being made incomplete, so the
 attempt that used it publishes nothing.
 
@@ -410,9 +412,9 @@ at the same paths:
 - a record begun during a reused collection holds the ledger; a change, at
   an attempt's end, to what only a session the attempt used and released
   read, by itself or in a nested stage that ended before, publishes nothing;
-- an incomplete read, a failed restoration, an overlay, a second project or
-  a document outside the project left, and a request to open a document,
-  publish nothing and release the session; an incomplete
+- an incomplete read, a failed restoration, an overlay, a second project, a
+  document of the project or outside it left open, and a request to open a
+  document, publish nothing and release the session; an incomplete
   Node read also marks the process for retirement and refuses its further
   observed execution; a changed Node answer of the ledger makes the process
   inconsistent; a worker killed while it holds a session takes its
@@ -420,8 +422,10 @@ at the same paths:
 - the attempts' readings of each compiler that ended sum to its lifetime's
   time within its idle time (at most 20 ms or a tenth); an observed attempt
   around a parse and a non-observed attempt using a session counts, with
-  them, what the process and the compilers used (within 30 ms or a tenth);
-  a reading not taken makes the attempt's CPU time unavailable.
+  them, what the process and the compilers used (within 30 ms or a tenth),
+  and the non-observed attempt's record what was read around it (within
+  15 ms or a tenth); a reading not taken makes the attempt's CPU time
+  unavailable.
 
 ## Locations
 
@@ -621,12 +625,11 @@ unavailable, with its reason.
   and decides timeouts, so it is part of the execution adapter: a process
   stage's key covers its identity.
 - An in-process stage records the pipeline process's own CPU time over the
-  attempt (`process.cpuUsage`); an observed one adds, for each compiler
+  attempt (`process.cpuUsage`) and adds, for each compiler
   process running during it (`tools/compiler-processes.mts`, which names a
   process by a generation a reused process id does not repeat), the
   difference of two readings by `stage-runner --cpu <pid>`: at the start of
-  each interval in which the attempt is the innermost observed one running
-  (the only stages using compilers), or zero
+  each interval in which the attempt is the innermost one running, or zero
   for a process started during it, and at that interval's end, or just
   before the process's channel closes, after the requests releasing its
   snapshots. A retained compiler's time is therefore divided among the
