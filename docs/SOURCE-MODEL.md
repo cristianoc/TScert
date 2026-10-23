@@ -376,7 +376,7 @@ as a library may tag the arrays it manages with a symbol key. Stores may be spar
 source `T[]` requires **readability**: every in-bounds read, including a hole's
 `undefined`, meets `T`. Density is a separate, stronger guarantee. All three
 spellings (`T[]`, `Array<T>`, `ReadonlyArray<T>`) use the same element-family
-interpretation, including generic substitution. Element writes currently require
+interpretation, including generic substitution. Element writes require
 an in-bounds position or appending; they preserve each presence mode.
 Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through

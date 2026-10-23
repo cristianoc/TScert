@@ -88,8 +88,7 @@ Result combination uses the same compatibility check and shared-execution
 argument as unary overloads. Graph signatures use domain lists directly,
 and `checkArrowWith` checks `CallArrow` derivations (`checkArrowWith_sound`). Search splits unions at any parameter position. Function-creation rules
 check that every signature offers at least the descriptor's arity and type the
-body under the parameters the code takes, followed by captures. Application evidence and source
-lowering still expose unary calls; accepted source programs have not widened.
+body under the parameters the code takes, followed by captures.
 
 The final `acceptUsing` check binds the evidence to **all the requested point claims**
 as well as calling `checkEntryUsing` on the actual program and external input context. Thus a valid certificate
