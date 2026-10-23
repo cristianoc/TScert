@@ -2019,6 +2019,14 @@ What is proved and what is audited:
 `pipeline/library-project/package.json`); host behaviour observed under Node 25.2.1
 (2026-10-19).
 
+The overlay files (`library-globals.mts` here, `library-modules.mts` for
+[library modules](#library-modules), `array-prototype.mts` for
+[prototype contracts](#prototype-contracts)) restate this review in a
+comment beside each entry; the catalogue owns it, and each file's header
+cites the section it implements.
+
+### The overlay
+
 A standard library global is read only through the reviewed overlay
 (`library-globals.mts`), one entry per signature, with exactly the
 declaration text it was reviewed against. With $`s`$ a selected signature,
@@ -2137,7 +2145,12 @@ at all. The overloads at `{}` read the values of keys the object's type
 need not state, by [[Get]], and state no preservation
 (`object-entries-sparse`, `invalid-object-entries-preserving`).
 
-The entries, each with the code its restriction keeps from running:
+### Reviewed entries
+
+The entries below are grouped by global, each with the code its restriction
+keeps from running.
+
+#### Conversions and `Math`
 
 - `Boolean(v, …)` is ToBoolean of its first argument, which runs no code and
   reads no property, and ignores the rest: $`(\mathtt{unknown},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{boolean}`$,
@@ -2154,6 +2167,20 @@ The entries, each with the code its restriction keeps from running:
   no conversion code runs on, and write nothing: as declared, within the empty
   footprint (`library-parse-int`, `library-math-ceil`). No argument of their
   parameter types converts by code.
+- `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
+  `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
+  object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
+  $`\mathsf{Prim}=\mathtt{null}\mid\mathtt{undefined}\mid\mathtt{boolean}\mid\mathtt{number}\mid\mathtt{string}\mid\mathtt{bigint}\mid\mathtt{symbol}`$,
+  so a hole a spread reads is admitted and an object is not
+  (`invalid-math-max-object`, `invalid-math-min-spread-object`,
+  `invalid-from-code-point-object`, `invalid-from-char-code-object`):
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{number}`$ and
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{string}`$. A symbol or a bigint
+  throws a TypeError and an invalid code point a RangeError, outcomes; the
+  number may be `NaN`, `Infinity` or `-Infinity`.
+
+#### `Object` and `Reflect`
+
 - `Object.fromEntries(entries)` steps its argument's iterator, reads each
   element's 0 and 1, converts the key and defines it on a fresh object. Over
   an array the iterator is the host's and a pair an array of data, so it runs
@@ -2161,6 +2188,45 @@ The entries, each with the code its restriction keeps from running:
   $`\forall T.\ (\mathtt{readonly}\ (\mathtt{readonly}\ [\mathtt{string},\ T])[\,])\Rightarrow\{[k:\mathtt{string}]:T\}`$,
   within the empty footprint (`object-from-entries`). A program's iterable
   runs its iterator (`invalid-from-entries-iterable`, run under Node).
+- `Object.getOwnPropertyDescriptor(o, k)` converts `o` by ToObject (a
+  TypeError of `null` or `undefined`) and `k` by ToPropertyKey, which runs an
+  object's `toString` (`invalid-own-property-descriptor-key-object`), then
+  looks the key up by `o`'s [[GetOwnProperty]], which calls no getter. That
+  lookup runs no code on the objects a program holds, none of which is a
+  proxy ([trust surface](DESIGN.md#trust-surface)). The result is
+  `undefined` or a fresh descriptor, nothing known of what it holds
+  (`invalid-own-property-descriptor-value`). Its object is a non-host value
+  ($`\mathsf{NonHost}`$ below), since a host object's own fields are the
+  package's internal ones:
+
+```math
+\mathtt{getOwnPropertyDescriptor}:(\mathsf{NonHost},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
+```
+
+```math
+\mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
+```
+- `Object.values(o)` and `Object.entries(o)` at TypeScript's `{}` overload
+  read the values of `o`'s own enumerable string keys:
+  $`(\mathsf{NonHost})\Rightarrow\mathtt{unknown}[]`$ and
+  $`(\mathsf{NonHost})\Rightarrow[\mathtt{string},\mathtt{unknown}][]`$;
+  their dictionary overloads are stated at a dictionary.
+
+$`\mathsf{NonHost}`$, which no source spells, is every value but a host
+object ([restricted values](HOST-FAMILIES.md#restricted-values)): the
+primitives, the callables and the objects owning no `[[host]]`, the record
+clause bounded by an exclusion of that key. A type is below it when each of
+its clauses is: an object clause names an invariant field or an index, or
+bounds its own keys without the key (`CoversBounds`), so `{ a: number }` is
+below it and `{ readonly a: number }`, `object` and `unknown` are not
+(`host-exclusion-reflection`, `object-values-readonly-refused`).
+
+`Reflect` is a namespace, whose functions are no annotated variable's
+members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
+getter, code no type of `o` states: it is refused.
+
+#### `Array.from`, `RegExp` and `instanceof Error`
+
 - `Array.from(xs)` of an array copies it through the host's iterator,
   a hole read as `undefined`: $`\forall T.\ (\mathtt{readonly}\ T[\,])\Rightarrow T[\,]`$
   within the empty footprint (`array-from-copy`). `Array.from(items, f)` of a
@@ -2183,6 +2249,9 @@ The entries, each with the code its restriction keeps from running:
   nothing: an object gets `Error.prototype` without `Error` constructing it,
   its `message` any value (`invalid-instanceof-error-message`, run under
   Node; [source fragment](SOURCE-FRAGMENT.md)).
+
+#### Node's timers, `structuredClone` and `console`
+
 - Node's `clearTimeout(t)` of any value cancels a timer by id or by object,
   reading and writing an object's `_onTimeout`, which may be an accessor:
   $`(\mathtt{unknown})\Rightarrow\mathtt{undefined}`$, stating no effect.
@@ -2206,58 +2275,12 @@ The entries, each with the code its restriction keeps from running:
   run under Node: such a getter shrinks a mapped array); a transfer list is
   not admitted. `JSON.stringify` of such an array serializes its elements
   alone (run under Node).
-- `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
-  `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
-  object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
-  $`\mathsf{Prim}=\mathtt{null}\mid\mathtt{undefined}\mid\mathtt{boolean}\mid\mathtt{number}\mid\mathtt{string}\mid\mathtt{bigint}\mid\mathtt{symbol}`$,
-  so a hole a spread reads is admitted and an object is not
-  (`invalid-math-max-object`, `invalid-math-min-spread-object`,
-  `invalid-from-code-point-object`, `invalid-from-char-code-object`):
-  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{number}`$ and
-  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{string}`$. A symbol or a bigint
-  throws a TypeError and an invalid code point a RangeError, outcomes; the
-  number may be `NaN`, `Infinity` or `-Infinity`.
-- `Object.getOwnPropertyDescriptor(o, k)` converts `o` by ToObject (a
-  TypeError of `null` or `undefined`) and `k` by ToPropertyKey, which runs an
-  object's `toString` (`invalid-own-property-descriptor-key-object`), then
-  looks the key up by `o`'s [[GetOwnProperty]], which calls no getter. That
-  lookup runs no code on the objects a program holds, none of which is a
-  proxy ([trust surface](DESIGN.md#trust-surface)). The result is
-  `undefined` or a fresh descriptor, nothing known of what it holds
-  (`invalid-own-property-descriptor-value`). Its object is a non-host value
-  ($`\mathsf{NonHost}`$ below), since a host object's own fields are the
-  package's internal ones:
-
-```math
-\mathtt{getOwnPropertyDescriptor}:(\mathsf{NonHost},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
-```
-
-```math
-\mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
-```
-
-- `Object.values(o)` and `Object.entries(o)` at TypeScript's `{}` overload
-  read the values of `o`'s own enumerable string keys:
-  $`(\mathsf{NonHost})\Rightarrow\mathtt{unknown}[]`$ and
-  $`(\mathsf{NonHost})\Rightarrow[\mathtt{string},\mathtt{unknown}][]`$;
-  their dictionary overloads are stated at a dictionary.
 - `console.log(…)` formats every reachable key of an object argument; its
   arguments are stated at $`\mathsf{Prim}`$:
   $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{undefined}`$
   (`console-log-object-refused`).
 
-$`\mathsf{NonHost}`$, which no source spells, is every value but a host
-object ([restricted values](HOST-FAMILIES.md#restricted-values)): the
-primitives, the callables and the objects owning no `[[host]]`, the record
-clause bounded by an exclusion of that key. A type is below it when each of
-its clauses is: an object clause names an invariant field or an index, or
-bounds its own keys without the key (`CoversBounds`), so `{ a: number }` is
-below it and `{ readonly a: number }`, `object` and `unknown` are not
-(`host-exclusion-reflection`, `object-values-readonly-refused`).
-
-`Reflect` is a namespace, whose functions are no annotated variable's
-members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
-getter, code no type of `o` states: it is refused.
+### `JSON` and `Error`
 
 Overloads stated alike are one signature. A statement may name a library
 interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
@@ -2331,7 +2354,11 @@ its `toString` or `valueOf` (`invalid-json-stringify-boxed-key`,
 argument. A `toJSON` hook, a replacer function and `Error`'s options run
 code of the client's, which may write what a footprint excludes
 (`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
-`invalid-error-options`, each run under Node). An entry may
+`invalid-error-options`, each run under Node).
+
+### `Array.isArray` and `instanceof Array`
+
+An entry may
 read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:
@@ -2348,7 +2375,11 @@ calculus (`test`), and the variable's declaration as the right operand of
 
 The branch rule is the tag rule on $`\mathsf{isArray}`$
 ([SEMANTICS](SEMANTICS.md#operational-language)); the declared guard `arg is
-any[]` is not read. An entry may read a member, or a construct signature, as
+any[]` is not read.
+
+### `Promise` and `Symbol`
+
+An entry may read a member, or a construct signature, as
 a call of an [intrinsic](#async-functions-and-await) stating the same step
 (`intrinsic`), instantiated at each call by $`\textsf{instances}`$:
 
@@ -2375,7 +2406,9 @@ call signature alone, a fresh symbol of a string or number description:
 \%\mathrm{SymbolKeyFor}\%:(\mathsf{symbol})\Rightarrow\mathsf{string}\mid\mathsf{undefined}
 ```
 
-**Symbol keys.** A computed key `[k]`, in a type, a literal or a read,
+### Symbol keys
+
+A computed key `[k]`, in a type, a literal or a read,
 names a `const k: unique symbol` (or a readonly property so declared), and
 the symbol it names is what made the constant: `Symbol()` makes a fresh one,
 the declaration's own, and `Symbol.for(s)`, with $`s`$ a string literal, the
@@ -3012,7 +3045,7 @@ apply to external values and code as well as the checked source. The
 annotation's prototype and own-key bounds prevent a writable structural
 alias from replacing those members. Reading `constructor` yields `unknown`;
 the inherited constructor is present. No object the program makes meets the
-contract ([source objects and the tag](#source-objects-and-the-tag)). The native identity and standard
+contract ([objects owning `then`](#objects-owning-then)). The native identity and standard
 prototype behavior remain [host assumptions](DESIGN.md#trust-surface). Source
 augmentations of the standard `Promise` interface are refused: native
 factory results meet the reviewed standard declaration, and an augmentation
@@ -3084,7 +3117,7 @@ The instance is the producer's proposal, checked as any instance of a
 scheme ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
-### Source objects and the tag
+### Objects owning `then`
 
 An object the program makes may own a `then` member, a field or a method of
 any type (`then-member-fields`). Two facts keep such an object from passing
@@ -3165,6 +3198,19 @@ the forged controls of `tag-fake-holder` give a declaration the native
 methods, and without the tag it is refused at the return). Other well-known
 symbols keep their own restrictions: a declaration's `[Symbol.iterator]` is
 read as declared.
+
+**Identity by structure.** A value the program builds is kept out of
+`Promise<T>` by structure: certified code writes no `[Symbol.toStringTag]`,
+which the native prototype record requires. A native internal slot (the
+`[[PromiseState]]` that [ECMA-262](REFERENCES.md#ecma-262)'s `IsPromise`
+tests) accepts the same programs, and is the cheaper mechanism for a program
+that writes its own `[Symbol.toStringTag]` or subclasses `Promise`, or for
+one mechanism shared by `Set`, `Map`, `Date`, `RegExp` and `Promise`. A
+survey of 12.9 M lines of library and tooling code in `node_modules`
+(2026-10-19, no application code) found custom thenables in 19 packages,
+about 30 hand-written tags and about 7 `Promise` subclasses in 5 packages,
+against `extends Error` 1,150 times in 236 packages; TScert's own source
+has none of the first three.
 
 **A callable `then` reaching a resolution is refused.** The obligations above
 stay at each resolving operation:

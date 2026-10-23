@@ -3782,7 +3782,7 @@ for (const copy of [false, true]) control(async (): Promise<void> => {
   }
 });
 control(async (): Promise<void> => {
-  // F5 (HOST-FAMILIES.md, "Trust"): the package's enum objects are never
+  // F5 (HOST-FAMILIES.md, "Trust rows"): the package's enum objects are never
   // written. Claims bypassing the producer that read `ts.SyntaxKind` at the
   // writable record its alias is bound to are refused by the search at that
   // read: the enum object's type is its declaration's, whatever is claimed.

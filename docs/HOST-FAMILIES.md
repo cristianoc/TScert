@@ -168,7 +168,9 @@ resolution, since a manifest or a re-export can select other code among
 files already hashed. The checks establish consistency between the reviewed
 table and the installation the front end itself runs, under F3.
 
-## The parts
+## The parts of a family
+
+A family is built from the five parts below.
 
 ### Tag sets
 
@@ -604,7 +606,7 @@ extraction (`const { assign } = Object`) or argument
 only where its entry says so (`value`: `Boolean` alone), and only a
 transparent entry may.
 
-#### Lean
+#### Host objects in Lean
 
 The host classification is the reserved key `[[host]]` (`hostKey`) of an
 object's field map, beside the model's `[[proto]]`, `[]` and `[[code]]`. No
@@ -1220,14 +1222,14 @@ description excludes no member (its omitted `jsDoc` and
 run under a description excluding `Call.callee` refuses the read its run
 without the exclusion verifies (`pipeline/test.mts`).
 
-#### Limits
+#### Stable members: limits
 
 A closure's entry states no read link and no witness, so a callback reading
 `m.name.text` after a test of `m.name` outside the callback reads the
 member's declared type. A node list's
 element is no path segment.
 
-#### Trust
+#### Stable members: trust
 
 Linked reads and guards on any argument add none: a read of a structural
 input's member is a data property's by the caller contract, a read of a host

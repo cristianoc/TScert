@@ -306,7 +306,7 @@ copy takes: the copy of such an object holds all of it. -/
       refuse "a key-adding write of a symbol key on an object whose type does not list its keys: the copy of an object takes its string keys, and the symbol keys it may own are not known"
     mergeType F X
   -- No object the source makes holds `Symbol.toStringTag`
-  -- (SOURCE-CONTRACTS.md, "Source objects and the tag"): a key-adding write
+  -- (SOURCE-CONTRACTS.md, "Objects owning `then`"): a key-adding write
   -- of a key that may be it is refused.
   let tagged := fun (i : Nat) => T.tags.contains i
   let tagRefusal := "a key-adding write at a key that may be `Symbol.toStringTag`: no object the program makes holds the tag the native `Promise` contract requires of a prototype"

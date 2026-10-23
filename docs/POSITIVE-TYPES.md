@@ -706,7 +706,13 @@ index contracts (below); `refs` covers `refs`, and `dict` through an own-key
 bound (below). Write
 $`\Delta^{\pm}(A,B)`$ for $`\Delta(A,B)\land\Delta(B,A)`$.
 
-**Records.** With $`\Phi=\varphi_0\cdots\varphi_m`$ the source's invariant
+Lean: `CoversFields`, `CoversViews`, `numIn`, `covers_views_sound`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `Uninhabited`, `CoversMethods`, `CoversBound`, `CoversBounds`,
+`CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
+`covers_readonly_sound`, `covers_tuple_sound`.
+
+#### Records
+
+With $`\Phi=\varphi_0\cdots\varphi_m`$ the source's invariant
 operands, each target component is found in the source:
 
 ```math
@@ -793,6 +799,8 @@ So `{ [k: string]: number }` is `{ [k: number]: number }`, mutable as it is,
 while a mutable `{ [k: string]: S; [k: number]: N }` is not a mutable
 `{ [k: string]: S }` unless $`S\subseteq N`$.
 
+#### Dictionaries and records
+
 A dictionary is covered by a record whose members its own cover, as a
 record's are; the record states no index, so the dictionary's index contracts
 are forgotten. So `Serializable<Todo>`, a `Todo` whose every key holds `Json`,
@@ -834,7 +842,9 @@ A record without such a bound, or whose bound admits a key it does not
 name, may hold further keys at any type, and covers no index; so does an
 array, whose bound only excludes keys.
 
-**Methods.** A target method $`m`$ is covered by a source method of the same
+#### Methods
+
+A target method $`m`$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
 type $`S`$ is within, or a type $`m`$'s host must meet, or, when a key bound of
 the source excludes the key, by such a function along its prototype chain.
@@ -951,7 +961,9 @@ are the host; the types their hosts must meet are contravariant, as above.
 Variadic member signatures are covered likewise, the target's extra fixed
 parameters taken into the source's rest.
 
-**Arrays and packs.** A writable `list` target contract is covered by a
+#### Arrays and packs
+
+A writable `list` target contract is covered by a
 writable source contract with as many required and optional positions, each
 position equivalent to the target's (`CoversShape`): no location is retyped,
 so mutable arrays are invariant. A readonly target only reads each element
@@ -1002,10 +1014,6 @@ E'=\varnothing\Rightarrow E=\varnothing\land|\vec R|+|\vec O|\le|\vec R'|+|\vec 
 
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
-
-Lean: `CoversFields`, `CoversViews`, `numIn`, `covers_views_sound`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `KeyBound.keeps`, `KeepsKeys`, `Uninhabited`, `CoversMethods`, `CoversBound`, `CoversBounds`,
-`CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
-`covers_readonly_sound`, `covers_tuple_sound`.
 
 ### Function and class coverage
 

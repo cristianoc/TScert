@@ -2863,7 +2863,7 @@ kind, continuation or rule; each is a shape of ordinary nodes and edges.
   has given it a name of its own ([shadowing](SOURCE-ELABORATION.md#derived-source-forms)), so
   the lowering never meets two bindings of one name.
 
-## State
+## Heap state and assertions
 
 What is known about the heap and the environment as execution proceeds, layered
 over both of the above: expression typing decides whether an operation is
@@ -3076,7 +3076,8 @@ rather than $`=`$ so as not to claim otherwise.
 
 #### The reference operations
 
-These four rules are the heart of the state discipline. Each is proved in
+The four rules below (allocation, reading, writing, and every other
+expression) are the heart of the state discipline. Each is proved in
 `HeapExpressionRules.lean`, and each is the postcondition the checker computes,
 not one it assumes.
 
@@ -3101,7 +3102,9 @@ buys precision, not soundness.
 $`r`$ is reserved throughout for the result of the operation being typed, and
 never names one of its operands.
 
-**Allocation** puts $`x`$'s value in a fresh cell and returns it, so the result is
+##### Allocation
+
+Allocation puts $`x`$'s value in a fresh cell and returns it, so the result is
 a reference whose contents are whatever $`x`$ was known to equal. Nothing already
 known is disturbed: a cell that did not exist cannot be one an existing atom
 names, so all of $`\Sigma`$ survives.
@@ -3123,7 +3126,9 @@ field of every record-typed slot (the distinct links of `allocOutput`), whether
 or not its contents are known: a cell holding an object keeps what is known of
 the others, and a later write to either keeps what is known of the other.
 
-**Reading** has two rules for the same term, and neither subsumes the other.
+##### Reading
+
+Reading has two rules for the same term, and neither subsumes the other.
 
 The first applies whenever the read types and $`x`$'s type is a plain reference. It
 claims nothing about the contents; what it records is where the result came from,
@@ -3200,7 +3205,9 @@ where an atom exists only the second does. Where both apply the second yields
 strictly more, the evidence records which was used, and soundness does not depend
 on the choice — only precision does.
 
-**Writing** stores $`y`$'s value in the field $`f`$ of the object $`x`$ names. The
+##### Writing
+
+Writing stores $`y`$'s value in the field $`f`$ of the object $`x`$ names. The
 result is `null`. Where $`y`$'s value is a known primitive it establishes the new
 contents for $`x`$ and every variable recorded equal to it; it keeps the atoms
 about locations a distinct link $`z.g\neq x.f`$ separates from the written one;
@@ -3224,7 +3231,9 @@ establishes no new contents and keeps the separated atoms all the same:
 where $`\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid z.g\neq x.f\}`$ (`writeOutput`,
 `write_sound`).
 
-**Every other expression**, calls included, empties the heap part and leaves the
+##### Every other expression
+
+Every other expression, calls included, empties the heap part and leaves the
 equalities untouched:
 
 ```math
@@ -3237,6 +3246,8 @@ extended with a comma, exactly as $`\Gamma`$ is. $`\emptyset`$ is the empty heap
 part: nothing is known about any cell. $`\Pi`$ carries over verbatim, because no
 equality mentions the heap. There is no separating conjunction here — these
 facts are duplicable, and carry no ownership or disjointness.
+
+##### No general frame rule
 
 The shape a type theorist will look for is missing on purpose: **there is no
 general frame rule.** A write through $`x`$ discards what is known about $`z`$ even
@@ -3496,7 +3507,7 @@ the key is present (`linkFacts_holds`):
 [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) compares `numberEqual` with IEEE equality on NaN, infinities and adjacent doubles.
 A slot equality $`x=y`$ permits a checked write through either alias to
 establish the new contents for both, as the
-[write rule](#the-reference-operations) above states; every other cell
+[write rule](#writing) above states; every other cell
 observation is discarded. Read links are invalidated by writes and calls, while
 slot equalities survive. Together these let source lowering discard a receiver
 temporary without losing a write to its original cell.

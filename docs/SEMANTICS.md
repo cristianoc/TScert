@@ -439,7 +439,7 @@ $`x\mapsto R`$ is not a claim about $`x`$'s value but about the
 location that value *is*: there exist $`\ell`$ and $`v`$ with $`\rho(x)=\ell`$,
 $`h(\ell)=v`$ and $`v\in R`$. That one indirection is where aliasing enters, and it
 is why the checked rules have
-[no frame rule](PROGRAM-TYPING.md#the-reference-operations): two names can hold
+[no frame rule](PROGRAM-TYPING.md#no-general-frame-rule): two names can hold
 the same location, and no assertion can say they do not.
 
 Two of these forms are deliberately outside the typing judgment. A location
