@@ -20,7 +20,7 @@
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
@@ -65,6 +65,10 @@ type SliceRecord = {
   detail: string;
   functions: number;
   invocations: InvocationReference[];
+  /** The bytes of each JSON document the slice's run wrote (the Fragment,
+   * the claims, the evidence), by file name; null where the record predates
+   * them or the run wrote none. */
+  artifactBytes: { [name: string]: number } | null;
 };
 type CensusRecord = {
   source: { commit: string; dirty: boolean; directory: string; files: string[] | null; functions: string[] | null };
@@ -307,10 +311,11 @@ async function census(args: string[]): Promise<void> {
       const o = await checkApart(path, project);
       return { ...base, status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0],
         functions: o.status === "verified" ? o.functions.length : 0,
-        invocations: readInvocationLog(join(o.artifacts, invocationLog)).map(reference) };
+        invocations: readInvocationLog(join(o.artifacts, invocationLog)).map(reference),
+        artifactBytes: documentBytes(o.artifacts) };
     } catch (error) {
       return { ...base, status: "error", phase: "-", detail: String(error).split("\n")[0], functions: 0,
-        invocations: invocationsOfRequest(path) };
+        invocations: invocationsOfRequest(path), artifactBytes: null };
     }
   };
   const finish = async (s: Slice): Promise<SliceRecord> => {
@@ -375,16 +380,33 @@ function summarize(slices: readonly SliceRecord[]): void {
 // ---------------------------------------------------------------------------
 // Records read back, and compared
 
+/** The bytes of each JSON document in a run's directory, by file name. */
+function documentBytes(directory: string): { [name: string]: number } {
+  const bytes: { [name: string]: number } = {};
+  for (const name of readdirSync(directory).filter((n) => n.endsWith(".json")).sort())
+    bytes[name] = statSync(join(directory, name)).size;
+  return bytes;
+}
+function readArtifactBytes(value: unknown): SliceRecord["artifactBytes"] {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object") throw Error("artifactBytes is not a record");
+  const bytes: { [name: string]: number } = {};
+  for (const [name, n] of Object.entries(value)) {
+    if (typeof n !== "number") throw Error(`artifactBytes.${name} is not a number`);
+    bytes[name] = n;
+  }
+  return bytes;
+}
 function readSliceRecord(value: unknown): SliceRecord {
   if (typeof value !== "object" || value === null) throw Error("not a slice record");
   const v: { [key: string]: unknown } = { ...value };
-  const { slice, file, fn, lines, sourceSha256, status, phase, detail, functions, invocations } = v;
+  const { slice, file, fn, lines, sourceSha256, status, phase, detail, functions, invocations, artifactBytes } = v;
   if (typeof slice !== "string" || typeof file !== "string" || typeof fn !== "string" || typeof lines !== "number" ||
       typeof sourceSha256 !== "string" || typeof status !== "string" || typeof phase !== "string" ||
       typeof detail !== "string" || typeof functions !== "number" || !Array.isArray(invocations))
     throw Error(`not a slice record: ${JSON.stringify(value).slice(0, 200)}`);
   return { slice, file, fn, lines, sourceSha256, status, phase, detail, functions,
-    invocations: invocations.map(readReference) };
+    invocations: invocations.map(readReference), artifactBytes: readArtifactBytes(artifactBytes) };
 }
 function readReference(value: unknown): InvocationReference {
   if (typeof value !== "object" || value === null) throw Error("not an invocation reference");
