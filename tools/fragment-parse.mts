@@ -64,6 +64,10 @@ let compiler: API | null = null;
 // with no entry falls through to the real file.
 const contents = new Map<string, string>();
 const opened = new Set<string>();
+/** How many compilers the parser opened in this process, for the controls:
+ * each parse opens its own. */
+let openings: number = 0;
+export const parserOpenings = (): number => openings;
 
 /**
  * The project that owns a file: whichever `tsconfig.json` above it claims it,
@@ -71,7 +75,10 @@ const opened = new Set<string>();
  * needs the same project (and the same compiler process) the gate used.
  */
 function projectFor(absolute: string): Project {
-  compiler ??= openFrontEndCompiler(dirname(absolute), contents);
+  if (!compiler) {
+    compiler = openFrontEndCompiler(dirname(absolute), contents);
+    openings++;
+  }
   // A file the compiler already holds is re-read rather than reused: the text
   // for a path can change between two opens in one process, and reusing the
   // first tree would leave every span pointing into a file that is no longer

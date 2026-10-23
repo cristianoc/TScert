@@ -181,12 +181,20 @@ function current(from: string): Current {
       changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
 }
 let using: Current = current(import.meta.dirname);
+/** How many times the installation in use was chosen: a compiler opened
+ * under one choice is not another's. */
+let choices: number = 0;
 /** The compiler's implementation, as this process loaded it. */
 export const compilerImplementation = (): CompilerImplementation => using.implementation;
+/** The compiler's identity as a retained session compares it
+ * (`declaration-session.mts`): the installation's choice and identity. */
+export const compilerChoice = (): string =>
+  JSON.stringify([choices, "identity" in using.implementation ? using.implementation.identity : using.implementation.unobserved]);
 /** Tests only: the compiler installed in the `node_modules` of `directory`
  * from now on, or the front end's own for null. */
 export function useInstallationForTests(directory: string | null): void {
   using = current(directory ?? import.meta.dirname);
+  choices++;
 }
 
 /** The launcher of the confined compiler, made once per installation. */

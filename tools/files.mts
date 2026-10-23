@@ -61,11 +61,11 @@ export type Observation = readonly [Operation, string, string | null];
 
 /** An answer as noted: its observation, and whether Node's resolver or
  * loader may hold it in a cache. */
-type Noted = { observation: Observation; node: boolean };
+export type Noted = { observation: Observation; node: boolean };
 /** A record being made: the answers by operation and path, the cached
  * values whose observations it holds, why it is incomplete, if it is, and
  * why Node's caches may disagree with the file system, if they may. */
-type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null;
+export type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null;
   inconsistent: string | null };
 const recordings: Recording[] = [];
 /** The outermost records made in this process so far. */
@@ -172,6 +172,64 @@ const holds = (n: Noted): boolean => {
 /** Whether every observation gives its answer when made again now. */
 export function observationsHold(observations: readonly Observation[]): boolean {
   return observations.every((observation) => holds({ observation, node: false }));
+}
+
+/** A record kept over a compiler session's lifetime (STAGE-STORE.md,
+ * "Retained declaration sessions"): every answer its compiler was given, each
+ * with its Node-origin bit, why it is incomplete and why Node's caches may
+ * disagree with the file system, if they may. */
+export type Ledger = { readonly recording: Recording };
+export const newLedger = (): Ledger =>
+  ({ recording: { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess } });
+/** The number of answers a ledger holds, and its state. */
+export const ledgerState = (ledger: Ledger): { answers: number; incomplete: string | null; inconsistent: string | null } =>
+  ({ answers: ledger.recording.answers.size, incomplete: ledger.recording.incomplete,
+    inconsistent: ledger.recording.inconsistent });
+/** A ledger's answers, each with its Node-origin bit, for the controls. */
+export const ledgerAnswers = (ledger: Ledger): Noted[] => [...ledger.recording.answers.values()];
+/** `run`, every answer it is given also noted in `ledger`. */
+export function withLedger<T>(ledger: Ledger, run: () => T): T {
+  recordings.push(ledger.recording);
+  try {
+    return run();
+  } finally {
+    recordings.splice(recordings.indexOf(ledger.recording), 1);
+  }
+}
+/** Why `ledger` does not hold now, or null: its answers made again, each with
+ * its Node-origin bit, outside every record being made, so that only the
+ * process's first answers of Node's reads see them. A Node answer that
+ * differs makes the process inconsistent, and so every record being made. */
+export function validateLedger(ledger: Ledger): string | null {
+  const { recording } = ledger;
+  if (recording.incomplete !== null) return `the ledger is incomplete: ${recording.incomplete}`;
+  if (recording.inconsistent !== null) return `the ledger is inconsistent: ${recording.inconsistent}`;
+  const suspended = recordings.splice(0);
+  let failed: string | null = null;
+  try {
+    // Every Node answer is made again, for the process's first answers to
+    // see it, after the first answer that differs as well.
+    for (const n of recording.answers.values())
+      if ((failed === null || n.node) && !holds(n))
+        failed ??= `${n.observation[0]} ${n.observation[1]} answers otherwise now`;
+  } finally {
+    recordings.push(...suspended);
+  }
+  if (staleProcess !== null) inconsistent(staleProcess);
+  if (failed === null && staleProcess !== null) failed = `the process is inconsistent: ${staleProcess}`;
+  if (failed === null && retiringProcess !== null) failed = `the process is retiring: ${retiringProcess}`;
+  return failed;
+}
+/** Note every answer of `ledger`, with its Node-origin bit, its incompleteness
+ * and its inconsistency in each record being made but the ledger's own. */
+export function importLedger(ledger: Ledger): void {
+  const { recording } = ledger;
+  for (const r of recordings) {
+    if (r === recording) continue;
+    for (const n of recording.answers.values()) noteIn(r, n.observation, n.node);
+    if (recording.incomplete !== null) r.incomplete ??= recording.incomplete;
+    if (recording.inconsistent !== null) r.inconsistent ??= recording.inconsistent;
+  }
 }
 
 /** A value of a process cache, with the observations it was computed from

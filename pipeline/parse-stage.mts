@@ -1,9 +1,12 @@
 // The observed stages of the entry point (STAGE-STORE.md, "Observed stages"): the
-// parse and TypeScript's diagnostics, each run in this process with fresh
-// compilers, their values stored as text and decoded field by field.
+// parse and TypeScript's diagnostics, each run in this process with a fresh
+// parser and declaration compilers fresh or retained (STAGE-STORE.md,
+// "Retained declaration sessions"), their values stored as text and decoded
+// field by field.
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mts";
+import { settleDeclarationSession } from "../tools/declaration-session.mts";
 import { messageOf, passToolFailure } from "../tools/thrown.mts";
 import { activeFamilies } from "../tools/family-activation.mts";
 import { compilerImplementation } from "../tools/compiler-channel.mts";
@@ -25,11 +28,13 @@ export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | un
 }
 
 /** The TypeScript diagnostics stage: the errors TypeScript reports for
- * `file` in its project, an observed stage. */
+ * `file` in its project, an observed stage. The active family descriptions
+ * are an input: a retained session is compatible with them alone. */
 export function diagnosticsCall(file: string, tsconfigPath: string | undefined): InProcessCall<SeenDiagnostic[]> {
   return {
     stage: "diagnostics",
-    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
+    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" },
+      { role: "families", bytes: JSON.stringify(activeFamilies()) }],
     run: () => diagnosticsStage(file, tsconfigPath),
     codec: diagnosticsCodec,
     observed: { compiler: compilerImplementation },
@@ -42,7 +47,7 @@ export type Parsed = { code: number; out: string; detail: string; seen: SeenDiag
 
 /** The parser run on `file`, read in the project `tsconfigPath` (or its own)
  * with imports resolved as `resolution`'s, by a compiler opened for it and
- * released after it. */
+ * released after it; a retained declaration session checked at its end. */
 function parseStage(file: string, tsconfigPath: string | undefined, resolution: string): Parsed {
   const seen: SeenDiagnostic[] = [];
   closeParser();
@@ -56,6 +61,7 @@ function parseStage(file: string, tsconfigPath: string | undefined, resolution: 
     return { code: 1, out: "", detail: messageOf(error), seen };
   } finally {
     closeParser();
+    settleDeclarationSession();
   }
 }
 
@@ -67,6 +73,8 @@ function diagnosticsStage(file: string, tsconfigPath: string | undefined): SeenD
   } catch (error) {
     passToolFailure(error);
     return [];
+  } finally {
+    settleDeclarationSession();
   }
 }
 
