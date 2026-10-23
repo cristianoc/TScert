@@ -137,7 +137,7 @@ function must<T>(value: T | null | undefined, message: string): T {
 type WireSequent = { term: unknown; context: unknown[] };
 type WireDerivation = { node: { claim: WireSequent } };
 type WireNode = { ordinary: "effect" | { proof: { tree: WireDerivation } } | null; sequent: WireSequent | null;
-  effect: { [step: string]: { proof?: WireDerivation } } | null };
+  effect: { [step: string]: { proof?: WireDerivation; [field: string]: unknown } } | null };
 /** A node's sequent: its ordinary derivation's root, the sequent it states,
  * or its step's proof's root. */
 function nodeSequent(node: WireNode): WireSequent {
@@ -4324,52 +4324,83 @@ control(async (): Promise<void> => {
 control(async (): Promise<void> => {
   // A node states its sequent once (REQUEST-PROTOCOL.md, "Evidence"): by its
   // ordinary derivation, by the proof its step carries, or by itself. Every
-  // consumer reads a node as the one with its derivation written out, so the
-  // written-out spelling of a referenced proof is accepted beside the honest
-  // document; a reference no step supplies, a second statement of the
-  // sequent, a node without step evidence or derivation, and a derivation
-  // whose root is not the step proof's sequent are refused.
-  const artifacts = run("aliases");
+  // consumer reads a node as the one with its derivation written out, so a
+  // referenced proof written out, a proof-less step's sequent stated alone
+  // and an ordinary derivation without step evidence are accepted beside the
+  // honest document. A second statement of the sequent, a reference no step
+  // supplies, a node stating its sequent nowhere (a sliced read's proof, at
+  // the location's contract, supplies none), and a node without step
+  // evidence or derivation are refused by the decoder; a step proof at
+  // another sequent than the node's derivation by the step check.
   type Evidence = { main: { functions: { certificate: WireNode[] }[] } };
-  const honest = (): Evidence =>
-    JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
   const nodes = (e: Evidence): WireNode[] => e.main.functions.flatMap((f) => f.certificate);
   const proofOf = (n: WireNode): WireDerivation | undefined =>
     Object.values(must(n.effect, "the producer gives every node step evidence"))[0]?.proof;
+  const stepOf = (n: WireNode): string => must(Object.keys(must(n.effect, "step evidence"))[0], "a step");
   const referencing = (n: WireNode): boolean => n.ordinary === "effect";
   const proofFree = (n: WireNode): boolean => n.ordinary !== "effect" && proofOf(n) === undefined;
+  const spelling = /a node states its sequent once/;
+  const forgery = (artifacts: string) => {
+    const honest = (): Evidence =>
+      JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
+    const forge = (name: string, change: (e: Evidence) => void): string => {
+      const e = honest();
+      change(e);
+      const path = join(artifacts, `forged-node-${name}-evidence.json`);
+      writeFileSync(path, JSON.stringify(e));
+      return path;
+    };
+    const at = (pick: (n: WireNode) => boolean, change: (n: WireNode) => void) => (e: Evidence): void =>
+      change(must(nodes(e).find(pick), "the forged node"));
+    const check = (evidence: string): Invoked => tested(verifierCall(verifier, ["--check-source-claims",
+      join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts), evidence]));
+    return { honest, forge, at, check };
+  };
+  const aliases = run("aliases");
+  const { honest, forge, at, check } = forgery(aliases);
   assert.ok(nodes(honest()).some(referencing), "a node referencing its step's proof");
   assert.ok(nodes(honest()).some(proofFree), "a node whose step carries no proof");
-  const forge = (name: string, pick: (n: WireNode) => boolean, change: (n: WireNode) => void): string => {
-    const e = honest();
-    change(must(nodes(e).find(pick), `${name}: its node`));
-    const path = join(artifacts, `forged-node-${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(e));
-    return path;
-  };
-  const check = (evidence: string): Invoked => tested(verifierCall(verifier, ["--check-source-claims",
-    join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts), evidence]));
-  const written = check(forge("written-out", referencing, (n) => {
-    n.ordinary = { proof: { tree: must(proofOf(n), "the referenced proof") } };
+  for (const [name, change] of [
+    ["written-out", at(referencing, (n) => { n.ordinary = { proof: { tree: must(proofOf(n), "the referenced proof") } }; })],
+    ["stated-alone", at(proofFree, (n) => { n.sequent = nodeSequent(n); n.ordinary = null; })],
+  ] as const) {
+    const accepted = check(forge(name, change));
+    assert.equal(accepted.status, 0, `${name}: ${accepted.stdout}${accepted.stderr}`);
+  }
+  for (const [name, change] of [
+    ["twice", at(referencing, (n) => { n.sequent = nodeSequent(n); })],
+    ["stated-beside-proof", at(referencing, (n) => { n.sequent = nodeSequent(n); n.ordinary = null; })],
+    ["no-step-proof", at(proofFree, (n) => { n.ordinary = "effect"; })],
+    ["stated-nowhere", at(proofFree, (n) => { n.ordinary = null; })],
+    ["sliced-read-proof", at(proofFree, (n) => {
+      const proof = n.ordinary !== null && n.ordinary !== "effect" ? n.ordinary.proof.tree : undefined;
+      n.effect = { slicedRead: { tag: "isNul", answer: false, slot: 0, proof: must(proof, "the node's own derivation"),
+        sub: { instantiation: null, members: [] } } };
+      n.ordinary = null;
+    })],
+    ["no-step-no-derivation", at(referencing, (n) => { n.effect = null; n.ordinary = null; })],
+  ] as const) assert.match(invoke(join(aliases, "claims.json"), forge(name, change), aliases), spelling, name);
+  // A step proof at another node's sequent beside the node's own derivation
+  // written out: a well-spelled node whose step check refuses the proof.
+  const otherRoot = check(forge("other-root", (e) => {
+    const all = nodes(e).filter(referencing);
+    const n = must(all[0], "a referencing node");
+    const proof = must(proofOf(n), "its proof");
+    const other = must(all.map(proofOf).find((p) => p !== undefined &&
+      JSON.stringify(p.node.claim) !== JSON.stringify(proof.node.claim)), "a proof at another sequent");
+    n.ordinary = { proof: { tree: proof } };
+    n.effect = { [stepOf(n)]: { proof: other } };
   }));
-  assert.equal(written.status, 0, written.stdout + written.stderr);
-  const spelling = /a node states its sequent once/;
-  for (const [name, pick, change] of [
-    ["twice", referencing, (n: WireNode) => { n.sequent = nodeSequent(n); }],
-    ["stated-beside-proof", referencing, (n: WireNode) => { n.sequent = nodeSequent(n); n.ordinary = null; }],
-    ["no-step-proof", proofFree, (n: WireNode) => { n.ordinary = "effect"; }],
-    ["no-step-no-derivation", referencing, (n: WireNode) => { n.effect = null; n.ordinary = null; }],
-  ] as const) assert.match(invoke(join(artifacts, "claims.json"), forge(name, pick, change), artifacts), spelling, name);
-  // A derivation whose root differs from the sequent the step's proof is at:
-  // a well-spelled node the step check refuses.
-  const disagreeing = check(forge("other-root", referencing, (n) => {
-    const tree: WireDerivation = structuredClone(must(proofOf(n), "the referenced proof"));
-    tree.node.claim.context = [...tree.node.claim.context, tree.node.claim.context[0] ?? []];
-    n.ordinary = { proof: { tree } };
-  }));
-  assert.equal(disagreeing.status, 1, disagreeing.stdout + disagreeing.stderr);
-  assert.doesNotMatch(disagreeing.stdout + disagreeing.stderr, spelling);
-  process.stdout.write("node headers: a referenced proof written out accepted; a sequent stated twice, a reference without a step proof, a node without step or derivation refused by the decoder, a derivation at another sequent by the check\n");
+  assert.equal(otherRoot.status, 1, otherRoot.stdout + otherRoot.stderr);
+  assert.match(otherRoot.stdout + otherRoot.stderr, /the evidence does not establish this node's typing/);
+  // An ordinary derivation without step evidence: the step an ordinary
+  // step's proof gives, written as the node's derivation, is that step.
+  const methods = forgery(run("callables/methods"));
+  const ordinaryStep = methods.check(methods.forge("no-step", methods.at(
+    (n) => referencing(n) && n.effect !== null && "ordinary" in n.effect,
+    (n) => { n.ordinary = { proof: { tree: must(proofOf(n), "the ordinary step's proof") } }; n.effect = null; })));
+  assert.equal(ordinaryStep.status, 0, ordinaryStep.stdout + ordinaryStep.stderr);
+  process.stdout.write("node headers: a referenced proof written out, a proof-less step's sequent stated alone and an ordinary derivation without step accepted; a sequent stated twice or nowhere, a reference without a step proof, a sliced read's proof as the header and a node without step or derivation refused by the decoder; a step proof at another sequent by the step check\n");
 });
 control(async (): Promise<void> => {
   // The evidence decoder reads the parsed JSON value (REQUEST-PROTOCOL.md,

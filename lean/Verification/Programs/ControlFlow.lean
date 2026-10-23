@@ -29,7 +29,7 @@ abbrev Program := List Node
 /-- The typing derivation a step's evidence carries whose root is the node's
 sequent: every constructor stating `claim e = j` of its proof (`checkStepResult`).
 A sliced read's proof is at the location's contract, another sequent. -/
-def _root_.Verification.HeapExpressionRules.StepEvidence.proof? :
+@[nospecialize] def _root_.Verification.HeapExpressionRules.StepEvidence.proof? :
     HeapExpressionRules.StepEvidence ι → Option (Evidence ι)
   | .ordinary e | .pure e | .reading e | .created e | .typedRead _ e | .allocated e | .written _ _ _ e => some e
   | .observedRead .. | .slicedRead .. | .knownValue .. | .linkedRead .. => none
@@ -92,7 +92,7 @@ abbrev Certificate (ι : Type) := List (NodeEvidence ι)
 
 /-- The node's sequent: the root of its ordinary derivation, the stated
 sequent, or the root of its step's proof. A well-formed node has one. -/
-def NodeEvidence.header (c : NodeEvidence ι) : Sequent ι :=
+@[nospecialize] def NodeEvidence.header (c : NodeEvidence ι) : Sequent ι :=
   match c.ordinary, c.sequent, c.effect.bind HeapExpressionRules.StepEvidence.proof? with
   | some (.proof e), _, _ => claim e
   | _, some j, _ => j
@@ -102,7 +102,7 @@ def NodeEvidence.header (c : NodeEvidence ι) : Sequent ι :=
 /-- The derivation every consumer reads: the ordinary derivation, the step's
 proof it selects, or, without one, the sequent alone as a `var` leaf, which
 establishes no typing where the term is not that variable. -/
-def NodeEvidence.expression (c : NodeEvidence ι) : Evidence ι :=
+@[nospecialize] def NodeEvidence.expression (c : NodeEvidence ι) : Evidence ι :=
   match c.ordinary, c.effect.bind HeapExpressionRules.StepEvidence.proof? with
   | some (.proof e), _ => e
   | some .effect, some p => p
@@ -112,7 +112,7 @@ def NodeEvidence.expression (c : NodeEvidence ι) : Evidence ι :=
 at its root; a step's proof supplies it where no ordinary derivation is
 given; a sequent is stated only where neither does; a node without step
 evidence has an ordinary derivation. -/
-def NodeEvidence.wellFormed (c : NodeEvidence ι) : Bool :=
+@[nospecialize] def NodeEvidence.wellFormed (c : NodeEvidence ι) : Bool :=
   match c.ordinary, c.sequent, c.effect.bind HeapExpressionRules.StepEvidence.proof? with
   | some (.proof _), none, _ => true
   | some .effect, none, some _ => true
@@ -122,7 +122,7 @@ def NodeEvidence.wellFormed (c : NodeEvidence ι) : Bool :=
 
 /-- The same node with its derivation written out: what a document stating
 every node's derivation in full gives. -/
-def NodeEvidence.explicit (c : NodeEvidence ι) : NodeEvidence ι :=
+@[nospecialize] def NodeEvidence.explicit (c : NodeEvidence ι) : NodeEvidence ι :=
   { c with ordinary := some (.proof c.expression), sequent := none }
 
 @[simp] theorem NodeEvidence.explicit_expression (c : NodeEvidence ι) :
