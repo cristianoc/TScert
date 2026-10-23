@@ -7,17 +7,16 @@ over [TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean) (types
 Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
-The ordinary and graph rules below are used by the current verifier, as are the
-[current-content rules](#current-content-rules-semantic-layer): supplied source
-observations reach checked obligations, specified under
+The verifier checks every rule below, the expression, graph and
+[current-content rules](#current-content-rules-semantic-layer) alike; supplied
+source observations reach checked obligations as specified under
 [source observation checkpoints](#source-observation-checkpoints). This document owns
 the core expression, control-flow and heap rule statements, their side
-conditions and soundness scope. Source verification also requires
+conditions and soundness scope, and
+[how a rule is added](#lean-files-and-adding-a-rule). Source verification also requires
 [evidence search and source elaboration](SOURCE-ELABORATION.md) and
 [declaration and library contracts](SOURCE-CONTRACTS.md);
-[Callables](CALLABLES.md) specifies invocation and property contracts and the
-proposed broader callable rules. These documents state the obligations source
-claims and callable extensions must meet.
+[Callables](CALLABLES.md) explains the callable model these rules type.
 [Design](DESIGN.md) owns the principles, architecture and trust boundary.
 
 ## Notation
@@ -128,6 +127,32 @@ A bigint literal has the same pair, `bigintLit` and `bigint`:
 \frac{}{\Gamma\vdash_G i\mathtt{n}:\mathsf{BigInt}}.
 ```
 
+Subsumption applies a checked [subtype certificate](POSITIVE-TYPES.md) $`p`$
+(`sub`), and `let` binds its initializer's value:
+
+```math
+\frac{\Gamma\vdash_G t:A\quad\mathrm{check}(G,A,B,p)=\mathsf{true}}
+     {\Gamma\vdash_G t:B}
+\qquad
+\frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
+     {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
+```
+
+`let` has its own operational constructor, `letE a b`: it evaluates `a`, then
+substitutes the resulting value into `b` in one nonallocating step, with no
+function value or function-type label involved.
+[ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean)
+shows the machine taking no step of the body while the initializer is stuck.
+
+The clause `top` is semantic top: every closed calculus value inhabits it.
+The clause `source` contains every closed JavaScript primitive and object,
+including arrays through their identity. Source `unknown` and `void` denote
+`source`, as specified by the [source-value boundary](SOURCE-MODEL.md#source-value-boundary).
+`undefined` is a particular value, which a body produces by completing;
+there is no void value or tag.
+
+### Functions, calls and receivers
+
 Functions take ordered parameter lists and a receiver. Write $`\vec A`$ for a
 signature's parameter types, $`|\vec A|`$ for its length and $`R`$ for its
 receiver: the `this` a call passes, which is not a parameter. In the
@@ -178,6 +203,33 @@ contravariant under subsumption like each domain
 ([`CallArrow`](POSITIVE-TYPES.md#function-and-class-coverage)), so a
 function indifferent to its receiver, typed at $`\top`$, meets any receiver
 requirement, and one that reads its receiver cannot be widened to arbitrary ones.
+
+A call writes a prefix of the positions the selected signature declares:
+$`|\vec a|=|\vec A|`$, and $`\vec U`$ are the positions it omits. Omission is
+admissible exactly when each omitted contract admits `undefined`: that is part
+of what the signature promises (below), and closure code keeps the promise
+because `CallArguments.parameters` pads a short actual list, so the body
+dispatched for $`f(\vec a)`$ is the same term as for the call that writes those
+`undefined`s out (`CallArguments.parameters_pad`, in `frame_envOk`, the
+frame every code is entered with). With $`\vec U`$ empty this is the exact-arity rule.
+No actual is invented: the call term keeps the arguments the source writes.
+
+Optionality is therefore a property of a declared contract, not a separate
+arity record: `x?: T` is carried as `T | undefined`, which is what the body
+reads and what licenses the omission. Declared arity is not observable in this
+fragment, so a call may also omit a trailing position a producer declared as
+`T | undefined` without writing `?`, which TypeScript rejects; the verifier
+proves such a call safe rather than enforcing that surface rule. An empty
+parameter list is a zero-argument call, not an absent one. A tuple rest
+parameter and a tuple spread are a fixed number of positions each, so they need
+no rule of their own here: the signature carries the positions, and the array a
+rest parameter binds is allocated by the ordinary store and allocation rules.
+Into fixed parameters, or into a rest that is one tuple contract (an argument
+pack's instance), each spread's positions are ordinary element reads of
+its operand's store, made once every actual is evaluated, in position order,
+and the call takes them as actuals where the spread is written; the lowering
+admits no actual that runs code after the first spread, so the reads see what
+JavaScript's spreads, each read where it is written, would.
 
 Every closure's body is a graph ([graph code](SEMANTICS.md#graph-code)),
 checked where its code is, not where it is created. Code $`\kappa`$ of arity
@@ -266,6 +318,50 @@ effect. The evidence is `Rule.funGraphSelf`: as `funGraph`'s, each signature an
 entry of the code table, its context the captures' types then $`F`$
 (`graphCodesCheckedSelf`).
 
+### Call schemes
+
+A scheme row $`j`$, $`G(j)=\forall\vec p.\,(L,S)`$, is a quantified callable
+contract ([scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows)). Write
+$`\eta_0`$ for the assignment outside its binders and
+$`\mathrm{Inst}_G(\eta_0,j,\vec B)`$ when $`\vec B`$ assigns the binders within
+the graph's domain (`G.domain.allowed`) and within their bounds, $`\eta_0`$
+unchanged outside them (`Bounded`), as
+[POSITIVE-TYPES](POSITIVE-TYPES.md#quantified-scheme-layer) defines. A value
+meets the row when it is a callee, invocable for a call scheme and
+constructible for a construct scheme (`Callee`), and meets every instance's
+signatures at every lower level, the same value in the same world
+(`schemeSemWithArgs`, `boundedSem`, `instanceTWithArgs`):
+
+```math
+⟦j⟧_{G,\eta_0}(n,W,v)\iff\mathrm{Callee}(v)\ \land\ \forall m\le n.\ \forall\vec B.\
+\mathrm{Inst}_G(\eta_0,j,\vec B)\Rightarrow
+\mathrm{Calls}(L[\vec B/\vec p],m,W|_m,v)\land\mathrm{Rests}(S[\vec B/\vec p],m,W|_m,v)
+```
+
+The introduction rule **Call-Scheme-I** and the elimination rule
+**Call-Scheme-E** are the two directions of this definition, each its
+unfolding:
+
+```math
+\frac{\mathrm{Callee}(v)\qquad\forall m\le n.\ \forall\vec B.\ \mathrm{Inst}_G(\eta_0,j,\vec B)\Rightarrow
+      \mathrm{Calls}(L[\vec B/\vec p],m,W|_m,v)\land\mathrm{Rests}(S[\vec B/\vec p],m,W|_m,v)}
+     {⟦j⟧_{G,\eta_0}(n,W,v)}\ (\textsf{Call-Scheme-I})
+```
+
+```math
+\frac{⟦j⟧_{G,\eta_0}(n,W,v)\qquad\mathrm{Inst}_G(\eta_0,j,\vec B)\qquad m\le n}
+     {\mathrm{Calls}(L[\vec B/\vec p],m,W|_m,v)\land\mathrm{Rests}(S[\vec B/\vec p],m,W|_m,v)}\ (\textsf{Call-Scheme-E})
+```
+
+The value, the level, the world and $`\eta_0`$ are outside the quantifier, so
+a proof of the premise is uniform in the binders, and captured mutable cells
+keep one invariant at every instantiation. A call names its instance: the
+callee is read at the instance's signatures, below the scheme by a checked
+instance table (`compareInstArrsState`), which constructs one such
+$`\vec B`$ after the type arguments' bounds are checked. Elimination selects a
+signature of the same value; it allocates nothing and leaves $`\eta_0`$
+unchanged.
+
 A generic closure is graph code at a scheme row $`j`$, $`G(j)=\forall\vec p.\,(L,S)`$
 with binders $`\vec p`$ (parameter rows) and signatures $`L`$ and $`S`$ over them
 (`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:
@@ -288,8 +384,8 @@ here (`meaning_assign_free`):
      {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):j}\ (\texttt{funScheme})
 ```
 
-Soundness is **Call-Scheme-I** ([callable scheme rules](CALLABLES.md#overloads-polymorphism-and-binding))
-with each instance's signatures read in the graph reassigned at that instance.
+Soundness is Call-Scheme-I with each instance's signatures read in the graph
+reassigned at that instance (`HasTyUsing.sound`, its `funScheme` case).
 The evidence is `Rule.funGraph` at a scheme row: the checker reads the row's
 signatures instead of an arrow clause's (`graphCodesChecked`, `schemeOf`). A
 binder with a bound of clause rows is read, in the signatures and inside the
@@ -304,33 +400,30 @@ signature, below the scheme by a checked instance (`compareInstArrsState`), a me
 mapped to the meet of its parameters' type arguments with its clauses
 (`meetOk`).
 
-A call writes a prefix of the positions the selected signature declares:
-$`|\vec a|=|\vec A|`$, and $`\vec U`$ are the positions it omits. Omission is
-admissible exactly when each omitted contract admits `undefined`: that is part
-of what the signature promises (below), and closure code keeps the promise
-because `CallArguments.parameters` pads a short actual list, so the body
-dispatched for $`f(\vec a)`$ is the same term as for the call that writes those
-`undefined`s out (`CallArguments.parameters_pad`, in `frame_envOk`, the
-frame every code is entered with). With $`\vec U`$ empty this is the exact-arity rule.
-No actual is invented: the call term keeps the arguments the source writes.
+A generic unit's body is checked once, with its binders as parameter rows,
+which no rule reads. Acceptance does not read the assignment
+(`Parametricity.accept_reassign`), so the ordinary safety theorem holds at every
+reassignment $`\eta`$, the inputs and the result read at the same $`\eta`$
+(**Generic-Body**, proved: `Parametricity.accepted_at`,
+`RequestJson.verify_safe_at`, `SourceExtraction.checkRequests_safe_at`):
 
-Optionality is therefore a property of a declared contract, not a separate
-arity record: `x?: T` is carried as `T | undefined`, which is what the body
-reads and what licenses the omission. Declared arity is not observable in this
-fragment, so a call may also omit a trailing position a producer declared as
-`T | undefined` without writing `?`, which TypeScript rejects; the verifier
-proves such a call safe rather than enforcing that surface rule. An empty
-parameter list is a zero-argument call, not an absent one. A tuple rest
-parameter and a tuple spread are a fixed number of positions each, so they need
-no rule of their own here: the signature carries the positions, and the array a
-rest parameter binds is allocated by the ordinary store and allocation rules.
-Into fixed parameters, or into a rest that is one tuple contract (an argument
-pack's instance), each spread's positions are ordinary element reads of
-its operand's store, made once every actual is evaluated, in position order,
-and the call takes them as actuals where the spread is written; the lowering
-admits no actual that runs code after the first spread, so the reads see what
-JavaScript's spreads, each read where it is written, would.
-That array is fresh, so a rest parameter's contract may also be `readonly`
+```math
+\frac{\mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)=\mathsf{true}
+      \quad\mathrm{EnvOk}_{G[\eta]}(\vec I,\rho,n,W)\quad\mathrm{WorldAdm}(W)\quad\mathrm{HeapOk}(n,W,h)}
+     {\mathrm{SafeGraph}(P,⟦R⟧^{\eta},n,W,h,\mathsf{at}(s,\rho))}\quad\text{for every }\eta
+```
+
+A bounded binder is read as the meet of its row and its bound, and one bounded
+by another binder as the meet of the two
+([binders met](SOURCE-CONTRACTS.md#binders-met-with-ground-types)); at every
+instantiation within the bounds the meets are the binders. The binders of a
+generic class are those of the unit declaring it, the module's initialization
+unit, so its constructor and methods are certified at every instantiation the
+same way.
+
+### Rest parameters and variadic calls
+
+The array a rest parameter binds is fresh, so its contract may also be `readonly`
 (`readonly T[]`, a readonly tuple) or name one through a declared alias: the
 body sees the fresh array through that view, which gives up only writes. A
 generic alias is read through its equation at the reference's arguments,
@@ -414,7 +507,7 @@ A list shorter than $`\vec A`$ passes the empty pack, which an element rest
 admits and a tuple rest with required positions does not.
 
 A value meets a signature when every admitted list of values invokes it safely
-at $`B`$, at every later world and budget (`Safety.Promise`, `callsT`, `restsT`).
+at $`B`$, at every later world and budget (`Promise` in Safety.lean, `callsT`, `restsT`).
 This instantiates the [common behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts),
 which also explains overload conjunction, callable fields and quantification.
 Code enters only where it is created: graph code pads a short list
@@ -430,7 +523,7 @@ ordinary steps before the run starts (`graphRest_invoke`):
 
 A pack holds its actuals at their positions only below the current level. The
 allocation is a step, after which the budget is one lower, so that is all the
-fresh store's contracts need (`arr_alloc_rule_below`, `pack_alloc_safe`).
+fresh store's contracts need (`arr_alloc_rule_below`, `RestCalls.argument_alloc_safe`).
 
 So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
@@ -532,10 +625,7 @@ at level zero the call exists and nothing past it is owed.
      {(\vec P\to B)\le(\vec Q,\ldots Q'\to D)}
 ```
 
-```math
-\frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
-     {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
-```
+### Bound functions and method members
 
 A bound function (`bindE`) is allocated from saved slots: the target $`f`$, the
 receiver $`r`$ and the prefix $`\vec p`$, whose types the rule reads from the
@@ -665,12 +755,7 @@ values past the fixed positions in front of any list it admits:
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots P'\to B)}
 ```
 
-Here $`\lambda\vec x.t`$ denotes source function creation, graph code whose
-body is $`t`$'s graph (`funGraph`): it allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
-then substitutes the resulting value into `b` in one nonallocating step.
-Neither a function value nor a function-type graph label is needed. The
-producer and consumer use this constructor directly. [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) shows the machine
-taking no step of the body while the initializer is stuck.
+### Construction
 
 A class value is construct-only code: JavaScript gives a function object
 `[[Call]]` and `[[Construct]]` separately, and a class has only the second,
@@ -741,7 +826,7 @@ refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide, that
 supplies its effect: `new (params: Specific) => R` is a `new (params: never) => R`.
 
-#### Packed binders
+### Packed binders
 
 A binder a declaration uses both as a value and as a rest's argument lists
 (`class RestRunner<T extends readonly unknown[]> { args: T; callback: (...args: T) => number }`)
@@ -815,7 +900,7 @@ nothing. A declaration's packed parameter's argument at an application is
 its instance's value and lists (`packOf`), and a packed binder's lists are
 spelled with its packed name, `T#pack`.
 
-#### Variadic construct signatures
+### Variadic construct signatures
 
 A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow^{\varepsilon} B`$,
 its effect $`\varepsilon`$ plain, admits the lists whose first $`|\vec Q|`$ actuals are at $`\vec Q`$ and whose
@@ -847,6 +932,8 @@ This is the variadic premise of `ctorGraph`. A class value whose code binds
 a position the rest may leave out at a type without `undefined` is refused
 there, though TypeScript accepts it (`invalid-constructor-rest-class`, run
 under Node).
+
+### Objects and records
 
 An object is a finite map from field names to heap locations, fixed at
 allocation. Let $`\varphi`$ range over field maps $`\overline{f{:}A}`$ with distinct
@@ -911,6 +998,16 @@ Both rules read $`\varphi`$ off a single reference clause. Eliminating a
 conjunction of record contracts to such a view can be justified by subsumption;
 no direct multi-contract program rule is assumed, so a field supplied only by a
 second operand of an intersection needs such a view before these rules apply.
+
+A record clause also carries _views_: fields read through a capability. A
+view names a location whose stored contract implies the stated family, so a
+read through it, by `readView`, observes that family; nothing permits a write
+through it, and the backing invariant, which may be stronger, is never
+retyped. An invariant field is below a view of the same name whose contract it
+implies, and a view is below a weaker view, so a mutable Boolean cell is
+viewed as readonly Boolean without ever acquiring a persistent readonly-`true`
+guarantee from its current contents; current-content observations stay
+separate and subject to invalidation. `readonly` fields are these views.
 
 An index view over a key class $`\theta`$ constrains every **present** field
 under a key of $`\theta`$ at its element contract $`A`$ (every string key, the
@@ -1074,14 +1171,11 @@ $`\overline{C}`$ the writable indexes:
 Its evidence is `alloc` at a dictionary type. The producer claims the literal
 so wherever its contract has a writable index.
 
-```math
-\frac{\Gamma\vdash_G t:A\quad\mathrm{check}(G,A,B,p)=\mathsf{true}}
-     {\Gamma\vdash_G t:B}
-```
+### Callable objects
 
 One object can carry both a field map and invocation code; the graph clause
 $`\mathsf{Callable}(\varphi;L)`$ combines them. Four rules give it the same four
-operations, and they are implemented and proved, not proposed:
+operations, each proved (`HasTyUsing.sound`):
 `callableGraph` allocates it, typing each field's initializer as `alloc` does
 and offering its graph code's signatures as `funGraph` does,
 
@@ -1098,22 +1192,7 @@ one code-table entry per signature; `callCallable`, `readCallable` and
 creation allocates the object, and its code, checked in the table, is not
 run.
 
-The clause `top` is semantic top: every closed calculus value inhabits it.
-The clause `source` contains every closed JavaScript primitive and object,
-including arrays through their identity. Source `unknown` and `void` denote
-`source`, as specified by the [source-value boundary](SOURCE-MODEL.md#source-value-boundary).
-`undefined` is a particular value, which a body produces by completing;
-there is no void value or tag.
-
-A record clause also carries _views_: fields read through a capability. A
-view names a location whose stored contract implies the stated family, so a
-read through it, by `readView`, observes that family; nothing permits a write
-through it, and the backing invariant, which may be stronger, is never
-retyped. An invariant field is below a view of the same name whose contract it
-implies, and a view is below a weaker view, so a mutable Boolean cell is
-viewed as readonly Boolean without ever acquiring a persistent readonly-`true`
-guarantee from its current contents; current-content observations stay
-separate and subject to invalidation. `readonly` fields are these views.
+### Arrays
 
 An array is an object whose store field holds a _store_: the location of each
 element in order, or a hole. Identity, aliasing and mutation are the object's;
@@ -1218,7 +1297,7 @@ empty array), `invalid-array-last-sparse`, `invalid-array-last-after-pop`,
 `invalid-array-before-last` (`length - 2`) and
 `invalid-compiler-api-node-list-last` are refused, each run under Node.
 
-#### A literal with spreads
+### A literal with spreads
 
 A store literal evaluates its parts left to right, and a spread of a ready
 store is replaced by the store's elements once every earlier part is a value,
@@ -1242,6 +1321,8 @@ once for both (`store_parts_safe`, `spread_parts_safe`). A source literal
 spread is followed by an element that runs code copies the spread where it is
 written, `[...xs]`, the one-part instance of the rule, so the later element
 cannot change what the literal holds. A literal without a spread is `arrLit`.
+
+### Members of primitives and nullish values
 
 A string owns its `length` and its code units ([semantics](SEMANTICS.md#operational-language),
 "Strings"). `lenStr` reads the length of an operand whose every clause is a
@@ -1385,6 +1466,8 @@ of the lowering. At a shared sequence continuation, an origin mentioning a
 local that the evaluated plan may rebind is invalidated (`executionRebound`);
 no pipeline case reaches that invalidation with a plain read, whose plan
 saves its operand immediately before reading it.
+
+### Operators
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its
@@ -1530,6 +1613,8 @@ The comma operator $`a,b`$ evaluates $`a`$, discards its value and yields $`b`$'
 unread slot, and the claim at the comma is proved from $`b`$'s value, as a
 cast's is from its operand's: no rule of its own.
 
+### Conditionals and shape tests
+
 A tag test
 whose answer the operand's type does not settle is typed by `test` as a Boolean
 holding both literals, so `ifBool` can branch on it; a settled answer still
@@ -1656,7 +1741,7 @@ clauses. `HasTyUsing.ifBoolVar` proves this rule sound: the selected branch's ac
 value justifies the changed binding, and all others retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
 Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
-below, currently connected to Boolean dispatch.
+below.
 
 ### Eliminating a variable's union type
 
@@ -1787,11 +1872,68 @@ the safety of its term. Checker recursion follows the finite evidence tree;
 there is no user-supplied fuel and no semantic level in the evidence. The
 image checker is chosen by Lean code; evidence cannot name one.
 
-The explicit sequents keep this initial in-memory format easy to inspect, at the
-cost of repeating terms and contexts. This is not a commitment to a serialized
-format. The [in-memory producer](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims)
-uses this interface; a decoder or compact representation can be developed
-against it.
+Evidence trees are in-memory values, never serialized; each node repeats its
+explicit sequent, terms and contexts included. The
+[in-memory producer](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims)
+builds them.
+
+### Lean files and adding a rule
+
+The expression judgment and its checker live in
+[Programs/](../lean/Verification/Programs/):
+
+- [ProgramTyping.lean](../lean/Verification/Programs/ProgramTyping.lean):
+  the inductive judgment `HasTyWith` (one constructor per rule of this
+  section), `HasTyUsing` its instance at the ordinary subtyping checker, and
+  `HasTyUsing.sound`, the fundamental theorem, by induction on derivations;
+- [ProgramCertificates.lean](../lean/Verification/Programs/ProgramCertificates.lean):
+  evidence trees (`Evidence`, a `Sequent`, a `Rule` and premise trees), each
+  rule's declarative premises `LocalUsing` and their check
+  (`localCheckUsing`), `local_sound` (premises to a `HasTyUsing` step), and
+  `checkTreeUsing` with `checkTreeUsing_sound`;
+- [TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean),
+  [OperatorTyping.lean](../lean/Verification/Programs/OperatorTyping.lean),
+  [VariadicTyping.lean](../lean/Verification/Programs/VariadicTyping.lean),
+  [RestCalls.lean](../lean/Verification/Programs/RestCalls.lean),
+  [GraphCode.lean](../lean/Verification/Programs/GraphCode.lean) and
+  [CallableObjects.lean](../lean/Verification/Programs/CallableObjects.lean):
+  environments and code entries, operators, variadic signatures, rest calls,
+  graph code and callable objects, the lemmas the rules' cases use;
+- [CellClaims.lean](../lean/Verification/Programs/CellClaims.lean): the
+  decoder of a single-record type atom into a cell's record contract
+  (`decodeFields`, `decodeShapes`, `conjuncts` for a conjunction, `primitive`)
+  and the labels of reference cells (`reference`, `viewReference`), used by
+  the type reader (`FragmentTypes`) and the lowering of cells
+  (`SourceExtraction`);
+- [CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean)
+  and [DirectProof.lean](../lean/Verification/Programs/DirectProof.lean): the
+  untrusted search that builds evidence trees from supplied claims; search
+  results are checked again by `checkTreeUsing`.
+
+A new expression rule touches each layer once:
+
+1. **The rule.** Its statement in this document, as an inference rule in this
+   section's notation, with its side conditions.
+2. **The judgment.** A `HasTyWith` constructor whose premises are exactly the
+   rule's, its name added to the `export HasTyWith` list, and its case in
+   `HasTyUsing.sound`. A semantic safety premise in a constructor is not
+   admitted: each case is proved from the model's lemmas.
+3. **The evidence.** A `Rule` constructor carrying whatever the checker needs
+   that the sequent does not state (certificates, code-table entries, label
+   choices), its premises in `LocalUsing` and `localCheckUsing`, and its case
+   in `local_sound`, so `checkTreeUsing_sound` covers it. The types it
+   carries are added to `RequestJson.validEvidence`.
+4. **The search.** The node proposed where the rule applies: in
+   `CertificateProducer` or a `DirectProof` recipe, and in the lowering
+   (`Source/Lowering/`) where the rule needs a term of its own.
+5. **The producer.** The OCaml producer (`ocaml-producer/`) proposes claims at
+   the types the rule gives, where the source needs them.
+6. **The cases.** A positive and a negative pipeline case in
+   `pipeline/cases.mts`, the negative one also run under Node
+   (`tests/node-runs.mts`) when it guards a JavaScript behaviour, and a
+   forged-claim control in `pipeline/test.mts` when the rule reads a claim
+   whose program point extraction chooses
+   ([which tests to keep](../AGENTS.md#which-tests-to-keep)).
 
 ## Control flow
 
@@ -2238,7 +2380,7 @@ fact entailment against its destination under the executable slot map. Ordinary
 expressions discard cell facts; the [effect rules](#checked-expression-postconditions)
 justify stronger postconditions. Fact transfer is checked on both branch edges;
 Boolean branch outcomes refine cells only through checked, still-valid read
-links. Tag outcomes currently retain facts without adding cell refinements.
+links. Tag outcomes retain facts without adding cell refinements.
 `checkGraphUsing` enumerates **every node in the actual program**. It requires one
 certificate per node, binds expression evidence to that node's actual code,
 checks scope, and obtains successor labels directly from the continuation.
@@ -2483,54 +2625,7 @@ Four implementations discharge the tested-slot obligation:
   \mathsf{Dict}\bigl(\varphi;\ \psi\cup\{k{:}D\mid(\theta{:}D)\in\iota,\ \theta\ \text{surely admits}\ k\};\ \iota;\ \omega;\ \beta;\ \chi\bigr)
 ```
 
-**Proposal, under review: a key found on an open object.** This paragraph is
-a design, not the current rules, and a change to the model: it adds an
-invariant to what `checkJson_safe`'s premise says about inputs. A value that
-`typeof v === "object"`, `v !== null` and `"k" in v` admit (`if (typeof v
-=== "object" && v !== null && "k" in v) return v.k`) holds an object of an
-open record clause $`c`$, stating no key $`k`$ and no bound excluding it. The
-test $`\mathsf{hasKey}(k)`$ has no answer on $`c`$ (above), the true branch
-keeps $`c`$, and the read $`v.k`$ TypeScript then admits has no rule: the
-producer stops at "field read on non-object" (4 `tools/` slices and 2
-drivers, 2026-10-19). The proposed rule reads it at $`\top`$:
-
-```math
-\frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\ \text{a string key}\notin\mathrm{objectProtoKeys}\quad c\ \text{excludes host values}}
-     {\Gamma\vdash v.k:\top}\ \textsf{read-unstated}
-```
-
-Under the current premises its safety does not hold: the record meaning
-(`recT`) constrains the named fields only, so an unnamed key of an open
-record may hold a location outside the heap, which `HeapOk` does not cover;
-an unconstrained `[[proto]]` can leave the lookup without a result; and a
-host object's property is no inert data (its audited stable members aside,
-allocating getters are refused, and JavaScript's OrdinaryGet can run a
-getter, throw or diverge). The rule needs:
-
-- **a lookup invariant**, part of the premise on inputs and preserved by
-  every step: every object's field locations are valid heap locations and
-  its prototype links lead through such objects, so a lookup of any key
-  steps to a value (the own entry, then the chain's, then `undefined`);
-  with its preservation and the read rule proved in Lean;
-- **the plain-data caller assumption** extended to state it of the
-  properties a value's type leaves unstated and of the prototype chain a
-  read traverses: a checked class's instance meets it through its modeled
-  prototypes, and an arbitrary external instance does not by its shape;
-- **host values excluded** ($`c`$ excludes host values, the existing
-  $`\mathrm{excludesHost}`$) unless a reviewed contract grants the read;
-- **`objectProtoKeys` kept refused** (`__proto__`, `constructor`,
-  `toString`, …), and symbol keys outside the rule until an explicit
-  extension states them;
-- **array own-key exclusions preserved**: reading at $`\top`$ grants no
-  ownership and no write, so an array's excluded keys stay excluded.
-
-Reading at $`\top`$, and not depending on the `in` test's answer, are sound
-once the lookup is justified. Controls: the positive shape above and a
-decoder over `JSON.parse`'s result; a read at `toString` after
-`"toString" in v`, a host value and a symbol key stay refused; a write at the
-key is not admitted by this rule.
-
-For the current primitive profile, null filtering gives:
+For the primitive profile, null filtering gives:
 
 ```math
 F_{\mathrm{null},\mathrm{true}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{null},
@@ -2538,8 +2633,8 @@ F_{\mathrm{null},\mathrm{true}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{null},
 F_{\mathrm{null},\mathrm{false}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{bool}.
 ```
 
-A regression also proves a semantic refinement of a mixed label that the current
-filtering checker cannot establish. This records the precision boundary explicitly.
+A regression proves a semantic refinement of a mixed label that the
+filtering checker cannot establish: the checker's precision boundary.
 A Boolean shape test does not establish equality to `true`; these observations
 have separate tests to prevent conflation.
 
@@ -3224,8 +3319,9 @@ fact hold there:
 edge keeps none: a handler's facts are `handlerFacts`, the heap-independent
 part of the input.
 
-`typedRead_sound`, `slicedRead_sound`, `linkedRead_sound`, `read_sound`, `reading_sound` (by
-`read_frame`), `alloc_sound` (with `merge_alloc_sound` and
+`typedRead_sound`, `slicedRead_sound`, `linkedRead_sound`, `read_sound`, `reading_sound` (its
+postcondition `readFrame`: the heap is kept and the result's source cell
+recorded), `alloc_sound` (with `merge_alloc_sound` and
 `store_alloc_sound`) and `write_sound` prove the read, allocation and write
 rules above. The read rule is
 
@@ -3378,8 +3474,8 @@ Boolean guards use the following rule, proved by `observeBoolean_holds`:
 ```
 
 The points-to atom must hold in the current heap. Note that
-$`\mathrm{read}(x)`$ is the language's read expression; the assertion that
-used to share its name is now $`x\mapsto y`$. A tag observation does the same with
+$`\mathrm{read}(x)`$ is the language's read expression, and $`x\mapsto y`$ the
+points-to assertion. A tag observation does the same with
 what it leaves of $`y`$'s predicate (`observeTag_holds`): each atom whose clause
 answers the other way is dropped, and a family found equal to one of its
 values is that value (`observeAtom`: `number` equal to a number other than a

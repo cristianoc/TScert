@@ -9,19 +9,16 @@ matching cells. Each rule of the framework is syntax-directed: the compared
 clauses' own syntax excludes the target arms that cannot cover them.
 
 The framework is a [catalogue](#3-the-catalogue) of rules, each with the
-structure it needs, its soundness lemma, its fallback and its measured
-coverage, and a [measurement](#5-measurement) that ranks the fallbacks by cost.
-That ranking is how the next rule is found: discriminated unions by a literal
-field are the first entry, and the data names the next ones
-([candidates](#6-candidates-the-data-names)).
+structure it needs, its soundness lemma and its fallback. A new rule is
+chosen by the fallbacks that cost the most search time.
 
-R1–R5 are implemented in the structural engine
-([implementation](#9-the-implementation)); R6 and R7 are not. Each claim
-carries its status: **proved** (with the theorem and where it lives),
-**sketched** (an argument in this document), **cited** (with the source's
-scope), **measured** (with date and commit), or **open**. The lemmas of R1–R5
-are in `lean/Verification/Types/ClauseSelection.lean`; the others are proved
-in a file outside the repository against the library at commit 84b326a.
+R1–R5 are the structural engine's candidate selection
+([implementation](#7-the-implementation)); R6 and R7 are specified here
+([WORK](../WORK.md#status) tracks them). Each claim carries its label:
+**proved** (with the theorem; the lemmas of R1–R5 are in
+`lean/Verification/Types/ClauseSelection.lean`), **stated** (a lemma whose
+proof is not in the repository), **sketched** (an argument in this
+document), **cited** (with the source's scope), or **open**.
 
 The types, their meaning and the subtyping rules the framework restricts are
 those of [POSITIVE-TYPES](POSITIVE-TYPES.md): a type $`A`$ is a finite union
@@ -87,9 +84,10 @@ v\in⟦A⟧_n(W)\ \Longrightarrow\ v\in\gamma(C(A)),
 
 and on primitive shapes the converse holds for a plain type (every label a
 clause row) with no `top` or `source` clause: a literal clause holds its value at every level and world, a
-family every value of its shape. The string case of both directions is proved
-(`str_excluded`, `str_included`); the other primitive shapes follow by the
-same case analysis on the clause (sketched).
+family every value of its shape. The string case of both directions is
+stated (`str_excluded`, `str_included`; proof not in the repository); the
+other primitive shapes follow by the same case analysis on the clause
+(sketched).
 
 A record clause **fixes** a key $`f`$ through an invariant field or a
 readonly view at $`f`$, `length` excepted (a `length` view is also met
@@ -134,20 +132,20 @@ pairs:
 ### 2.2 What every rule inherits
 
 - **Soundness: proved.** The rule's premises imply the general rule's, since
-  $`\mathsf{cand}_B(a)\subseteq\mathsf{cl}_G(B)`$ (`valid_of_valid'`, in an
-  abstract model of the table check; for the Lean checker it is the
-  monotonicity of `List.any` over a sublist). A wrong exclusion costs
-  coverage, never soundness.
-- **Completeness relative to the general rule: proved conditionally in an
-  abstract model, open for the checker.** In the model a table is a set of
-  pairs, a pair is covered when each source clause has a covering target
-  clause whose premises are read in the table, and a covering reads only its
-  own demand pairs. Under two hypotheses, that every table the full check
-  accepts is sound and that each rule has its selection lemma, the two checks
-  accept the same tables (`valid'_of_valid`); under two more, locality of a
-  covering in its demand pairs and closure of the reachable set, a valid table
+  $`\mathsf{cand}_B(a)\subseteq\mathsf{cl}_G(B)`$
+  (`ClauseSelection.mem_candidates`). A wrong exclusion costs coverage, never
+  soundness.
+- **Completeness relative to the general rule: stated in an abstract model,
+  open for the checker.** In the model a table is a set of pairs, a pair is
+  covered when each source clause has a covering target clause whose
+  premises are read in the table, and a covering reads only its own demand
+  pairs. Under two hypotheses, that every table the full check accepts is
+  sound and that each rule has its selection lemma, the two checks accept
+  the same tables (`valid'_of_valid`); under two more, locality of a covering
+  in its demand pairs and closure of the reachable set, a valid table
   restricted to the pairs reachable through candidates stays valid
-  (`valid'_within`). For the checker, the first obligation is proved:
+  (`valid'_within`). Both are stated, their proofs not in the repository.
+  For the checker, the first obligation is proved:
   selection holds for the hypothesis-dependent premise relation `Prem` of a
   valid closed entry, so every covering a completed certificate chooses is
   by a candidate and the same table, read with candidates only, is a valid
@@ -162,8 +160,8 @@ pairs:
 - **Fallback:** a clause no rule applies to keeps every target clause as a
   candidate, which is the general rule.
 
-So a new rule needs exactly its selection lemma, and its value is measured by
-how many candidates it removes where the time is.
+So a new rule needs exactly its selection lemma, and its value is how many
+candidates it removes where the search spends its time.
 
 ### 2.3 Other kinds of rule
 
@@ -177,8 +175,7 @@ Two further kinds of structure-directed rule are not exclusions:
 
 ## 3. The catalogue
 
-Each entry states its eligibility, its exclusion, its selection lemma and
-its status. The coverage columns are [measured](#5-measurement).
+Each entry states its eligibility, its exclusion and its selection lemma.
 
 ### R1. Outer shape
 
@@ -208,7 +205,8 @@ its status. The coverage columns are [measured](#5-measurement).
 - **Excludes** $`b`$ when $`b`$ fixes $`f`$ at a plain $`B_f`$, the source has
   an entry at $`f`$, and every source entry $`(f{:}A)`$ has its own literal
   $`\ell_A\in L(A)`$ with $`\ell_A\notin\gamma(C(B_f))`$.
-- **Lemma 3 (proved, `refs_exclude`, `fields_exclude`, `views_exclude`):** let
+- **Lemma 3 (stated, `refs_exclude`, `fields_exclude`, `views_exclude`;
+  proof not in the repository):** let
   $`\Delta`$ be sound and the target fix $`f`$ at $`B`$ (in $`\varphi'`$, or
   in $`\psi'`$ with $`f\ne\mathtt{length}`$); if some $`n,W,v`$ has
   $`v\in⟦A⟧_n(W)`$ for every source entry $`(f{:}A)\in\Phi\,\psi`$ and
@@ -218,8 +216,8 @@ its status. The coverage columns are [measured](#5-measurement).
   \Delta;S\nvdash\mathsf{Ref}(\Phi;\psi;\ldots)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\ldots).
   ```
 
-  The literal form the exclusion uses is `ClauseSelection.covers_litExcl`
-  (proved, for record and dictionary clauses on both sides and every
+  The literal form the exclusion uses is proved (`ClauseSelection.covers_litExcl`,
+  for record and dictionary clauses on both sides and every
   singleton: string, number, boolean, bigint, symbol, null, undefined): each
   source entry at $`f`$ holds some literal that no clause of the plain type
   $`B`$ admits; whichever entry coverage selects supplies its own
@@ -295,8 +293,8 @@ $`T_{\mathsf{truthy}}(S)=S\setminus\{\texttt{""}\}`$.
 bit pattern, so $`\mathsf{numLit}(+0)`$ and $`\mathsf{numLit}(-0)`$ are two
 cells. A test is JavaScript's $`\mathrm{numberEqual}`$: a test against $`+0`$
 keeps both cells on its true edge, and a NaN cell is on every false edge. The
-slice is defined by the step's own test and is exact for it (proved,
-`numSlice_sound`, `numSlice_exact`):
+slice is defined by the step's own test and is exact for it (stated,
+`numSlice_sound`, `numSlice_exact`; proof not in the repository):
 
 ```math
 x\in T_{\mathsf{numEq}(b),q}(S)\iff x\in S\land\mathrm{numberEqual}(x,b)=q .
@@ -328,7 +326,8 @@ the heap premise of Lemma 7.
 
 ### 4.1 Discriminant separation
 
-**Lemma 7 (qualified separation; proved, `separation`).** Let $`a`$ and $`a'`$
+**Lemma 7 (qualified separation; stated, `separation`, proof not in the
+repository).** Let $`a`$ and $`a'`$
 be record clauses with entries $`f{:}K`$ and $`f{:}K'`$, each an invariant
 field or a view other than `length`, such that every clause of $`K`$ answers a
 test $`t`$ with $`q`$ and every clause of $`K'`$ answers it with $`\lnot q`$
@@ -395,171 +394,18 @@ Laws that fail:
   `true`, respectively `false` (sketched). A field type is a lifetime
   contract of its location, and another alias may write the other Boolean.
 
-## 5. Measurement
-
-### 5.1 The instrumentation
-
-A profiling mode of the verifier's structural engine, enabled by the
-environment variable `TSCERT_PROFILE` (a file path), writes one JSON line per
-table growth (`growTable` at the root of a comparison) and per validation
-(`comparePrepared`: the greatest fixed point and the table check), in search
-and in checking alike. Each line records:
-
-- the time, and its start, so nested comparisons are subtracted from the time
-  of the comparison containing them (exclusive time);
-- the outer shapes and arm counts of the root source and target, with a mark
-  for parameter, scheme or meet rows;
-- for the table: its rows, the source clauses, and the **clause pairs**: for
-  each row, its enumerated source clauses (`sourceClauses` and `meetSources`)
-  times its target clauses, the pairs the general coverage test may examine;
-  and the candidates among them under R1–R3, R1–R4 and R1–R5, by the class of
-  each row's target (one clause, record union, union of one
-  primitive shape, mixed, universe, rows);
-- for each source clause keeping more than one candidate, its **fallback
-  reason**: a universe target, several arms of one non-object shape, a record
-  source with no literal field (by array, dictionary or record, and the
-  candidates' kinds), a target arm not fixing the source's literal keys, or
-  candidates sharing the source's literal.
-
-The clause pairs are hypothetical: the coverage test stops at the first
-covering clause, `demandPairs` enumerates sources differently, and validation
-can regrow a table after discovering known members, so the counts are neither
-predicate executions nor generated dependencies. The candidates are computed
-beside the general rule, which still decides. Tested on 2026-10-18: all 1,518
-pipeline cases keep their expected outcome with the mode on and off, and the
-decoders' evidence is byte-identical with and without it. That is result and
-evidence preservation on these inputs, not operational neutrality: the mode
-adds time, which can change an outcome at the 30 s limit, and a failed write
-of a line reruns the computation it timed. The timed regions omit other
-comparison paths (the preliminary label-inclusion check, instance search,
-the premise judgment), and a nested line's logging cost stays inside its
-parent's time. The mode is a scratch patch
-of `Types/PositiveCertificates.lean` with a new `Types/ComparisonProfile.lean`,
-outside the repository: its writer is an `implemented_by` replacement of a
-pure function inside the checker, which makes the compiled checker run code
-the proofs do not describe. That is a review obligation for a trusted
-component, which a measurement tool should not add; a version for the
-repository would wrap the engine from outside the checker's proof scope.
-
-Kind tests and refinement are not comparisons of the structural engine; the
-evidence they produce is measured from the evidence document.
-
-### 5.2 The dataset
-
-Measured on 2026-10-18 at commit 84b326a with the scratch patch, wall-clock
-times on a machine shared with other work, one run each. The datasets:
-`termsOf` (the slice of `calculus.mts` holding `decodeTerm` and
-`decodeCode`, verified by running the verifier directly, outside the
-pipeline's 30 s limit), `statementsOnPath` against the 347-literal reading
-([a measured slice](COMPILER-API.md#a-measured-slice)), all pipeline cases,
-and every top-level function of `tools/` and `dev/` sliced into its own file
-(313 and 24 slices).
-
-| Dataset | Run | Comparisons | Grow and validate | Clause pairs | R1–R3 | R1–R4 | R1–R5 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `termsOf` search | 32.9 s | 23,790 | 25.7 s | 473,597 | 85,828 | 58,830 | 40,151 |
-| `termsOf` check | 5.4 s | 1,998 | 3.5 s | 31,021 | 3,468 | 3,249 | 3,073 |
-| `statementsOnPath` search | 23.6 s | 1,120 | 1.05 s | 64,982 | 689 | 684 | 684 |
-| `statementsOnPath` check | 13.6 s | 96 | 0.11 s | 263 | 110 | 110 | 110 |
-| pipeline cases | 1,811 runs | 156,212 | 16.0 s | 224,374 | 146,325 | 141,265 | 139,563 |
-| `tools/` slices | 168 runs | 233,077 | 118.4 s | 1,696,484 | 181,523 | 142,450 | 118,521 |
-| `dev/` slices | 44 runs | 224,546 | 9.2 s | 271,842 | 135,780 | 134,412 | 134,364 |
-
-"Run" is the command's wall time in a separate run of the instrumented
-verifier, and for the census the number of verifier processes. "Grow and validate" is exclusive time summed over both kinds of line;
-clause pairs and candidates are counted on growth lines only, summed over
-their tables' rows; every count below uses that basis.
-
-### 5.3 What the data shows
-
-- **The decoders' time is mostly in this engine, and the catalogue removes
-  most of its clause pairs.** In `termsOf`'s search, growth and validation
-  take 25.7 s of a 32.9 s run. R1–R5 leave 40,151 of 473,597 clause pairs (a
-  factor 11.8), and every enumerated source clause of the recorded tables
-  keeps at most one candidate; opaque premises and the work outside these
-  tables are not counted. Rows whose target is a record union hold 409,883
-  of the pairs and keep 27,180.
-- **Each rule contributes there.** R1–R3 take the pairs to 85,828 and R4 to
-  58,830. In a run with R1–R4 only, every source clause keeping more than one
-  candidate was an array source against `Json`'s array and object arms (4,922
-  over growth and validation lines), which R5 removes.
-- **`statementsOnPath`'s timed comparisons are a small part of its run.** They
-  take 1.05 s of 23.6 s of search and 0.11 s of 13.6 s of checking. Its largest
-  tables compare a union of 348 number literals with one of 33 (62,946 clause
-  pairs in unions of one primitive shape, 124 candidates under R2), which R7
-  would make one set inclusion. Its evidence is 108 MB, of which 19.8 MB are
-  482,498 `numLit` atoms; the serialized `context` fields sum to 82.5 MB (a
-  field nested inside another counted in both). Contexts contain literals, so
-  the two sizes overlap and savings in them do not add. The size of the
-  representation is measured; that it causes the remaining run time is not.
-- **The census slices follow the decoders.** Over the `tools/` slices the
-  catalogue leaves 118,521 of 1,696,484 pairs (a factor 14); unions of one
-  primitive shape, mostly string literals, hold 525,929 pairs and keep 4,822.
-  98 source clauses keep more than one candidate: 88 whose candidates share
-  their literal and 10 with a target arm not fixing their literal keys.
-- **The pipeline cases are small.** They spend 16.0 s over 1,811 runs and
-  their tables have little union structure (a factor 1.6). Of their 2,395
-  source clauses keeping more than one candidate, 2,019 meet a target arm not
-  fixing their literal keys.
-- **Comparisons repeat.** Lines with the same shape signature (kind,
-  result, root shapes, row and pair counts) recur within a run: `termsOf`'s
-  search has 23,790 lines and 377 signatures, the repeats taking 24.8 s of its
-  25.7 s; the `tools/` slices have 233,077 lines and 5,904 signatures per run.
-  A signature is a proxy: different types with equal counts share one, so
-  these numbers bound the repetition from above.
-
-What the data does not show: the time the rules would save. A factor 11.8 in
-candidates is no prediction of a factor 11.8 in time: the time per pair
-varies, the coverage test stops at its first success, building the index
-costs time, and the restricted tables would have other rows than those
-measured here. The profile ranks fallback reasons by count; the time of the
-comparisons containing a reason bounds what removing it could save, and is
-not time spent on those pairs.
-
-## 6. Candidates the data names
-
-1. **Reuse of established comparisons within a run** (open, a new kind of
-   rule). The signature counts suggest that much of the decoders' comparison
-   time repeats comparisons, but a signature is no identity. The engine's
-   cache lives within one comparison request. Reusing an established
-   inclusion across requests of one run is sound wherever the result means
-   the same inclusion: a structural result holds at every parameter
-   assignment (`compareUsing_sound`). First the identity of a comparison must
-   be measured, which needs the labels together with the graph, the
-   assignment and the checker context the result was read in; transport of a
-   result across a growing equation store needs its own lemma.
-2. **Compact cell sets, R7** (specified). The `statementsOnPath` evidence and
-   its number-literal tables are what R7 represents as one atom.
-3. **Open target arms** (open). In the pipeline cases, a record source whose
-   literal keys a target arm leaves open is the top fallback. A rule here
-   needs a fact that the target arm cannot hold the source's literal: an
-   own-key bound excluding the key, or a key the source lacks (R4 reversed
-   does not hold: records are open).
-4. **Shared literals** (open). Arms sharing a literal, such as overlapping
-   record arms, keep several candidates; a second discriminant key, read by
-   R3 as it stands, may separate them.
-
-## 7. Evidence
+## 5. Evidence
 
 What the checker **recomputes**: the structural table (subtype evidence
 carries instance choices only, `SubtypeChoices`; the checker reruns table
 growth, the greatest fixed point and its validation, `checkUsing`), the
 candidates (a function of the compared types), and a test's slices. What the
 evidence **stores**: the instance choices, and the program-typing derivation
-node by node.
+node by node. The selection rules change only the first part; R7, making a
+test one node with two slices and a kind set one atom, would change the
+second.
 
-The measured bulk is in the second part. In `statementsOnPath`'s 108 MB,
-the 7,016 `flsLit` and 7,004 `ifFalse` certificates are one per literal of a
-`kind` tested against a constant ([a measured slice](COMPILER-API.md#a-measured-slice)),
-and the `numLit` atoms are 19.8 MB (§5.3). The selection rules do not change
-these. R7, making a test one node with two slices and a kind set one atom,
-and sharing a kind set or context repeated across nodes, as a field of the
-one declared evidence type under the [wire conventions](../CLAUDE.md#conventions),
-are experiments: their effect on time is to be measured by phase (derivation
-construction, refinement, serialization, parsing, checking, allocation),
-with unique and repeated contexts and sets counted.
-
-## 8. Prior work
+## 6. Prior work
 
 - **Algorithmic subtyping and its completeness.**
   [Pierce 2002](REFERENCES.md#pierce-2002) presents algorithmic subtyping as
@@ -600,7 +446,7 @@ with unique and repeated contexts and sets counted.
   types; disjointness of the arms' meanings holds only as Lemma 7 states it,
   at a successor level under a heap satisfying the world.
 
-## 9. The implementation
+## 7. The implementation
 
 `ClauseSelection.candidates G a B` is the target clauses of $`B`$ that R1–R5
 leave for the source clause $`a`$. With `SearchBudget.select` on, the
@@ -612,351 +458,60 @@ default:
 - the table check reads the candidates first and then every target clause
   (`checkEntries`, its existential over `candidates ++ clausesOf`);
 - a structural comparison or a comparison step not established with
-  selection is redone with selection off (`compareStructural`,
-  `compareStepState`), so the restricted search establishes nothing less than
-  the general one.
+  selection is redone with selection off (`InstanceImageCheck.general`, in
+  `compareStructural` and `compareStepState`), so the restricted search
+  establishes nothing less than the general one.
 
 **Soundness (proved).** A candidate is a target clause
 (`ClauseSelection.mem_candidates`), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
 `compareStepState_sound` hold with their statements unchanged, as does
-`checkJson_safe`. Completeness of the restricted table search alone stays
-the open bridge of §2.2; the rerun stands in for it.
+`checkJson_safe`. Completeness of the restricted table search alone is the
+open bridge of [§2.2](#22-what-every-rule-inherits); the rerun stands in for
+it.
 
-### 9.1 Measured
+**Answered requests.** The producer's candidate search asks the same subtype
+requests many times: for an expression it tries the claimed type and then
+every type of the unit's pool, coercing each to the target. The producer
+answers a request asked again from its first answer: a table from source and
+target to `subtypeSearch`'s whole result, an exhaustion included
+(`CertificateProducer.Answered`), threaded through every search of a
+document. The table is keyed by source and target alone because every
+request of a document reads one graph and one image check, built once from
+the frozen store: a checked store's graph is its equations' and its image
+check reads only the equations, the variances and the budget (proved,
+`Checked.graph_eq`, `Checked.images_eq`). The checker recomputes every
+comparison, so the table concerns search only.
 
-On 2026-10-18 at the merge of main 71fe5e6, before (the merge alone) and
-after (with the selection), user time, median of 3 runs of the verifier on
-the same artifacts, on a machine other work was loading (load averages 4 to
-30 during the runs; wall time exceeded user time by up to 2.3 times in the
-earlier runs of the day). `termsOf`, `decodeTerm` and `decodeCode` are
-three slices of `calculus.mts` holding the same functions, and measure the
-same.
-
-| Unit | Search before | Search after | Check before | Check after |
-| --- | --- | --- | --- | --- |
-| `termsOf` | 30.2 s | 23.5 s | 5.0 s | 3.2 s |
-| `printGraph` | 48.6 s | 38.0 s | 9.7 s | 6.8 s |
-| `pageBody` | 12.7 s | 13.8 s | 4.9 s | 4.8 s |
-| `card` | 10.2 s | 11.1 s | 4.0 s | 4.1 s |
-| `statementsOnPath` | 16.0 s | 16.9 s | 11.7 s | 11.8 s |
-
-The engine's own counts, from one profiled run of each (the scratch profile
-of §5.1, growth lines only; "restricted" counts the comparisons with
-selection on, "reruns" those redone with it off):
-
-| Unit, search | Demand pairs before | restricted | reruns | Clause pairs before | restricted | Engine time before | restricted | reruns |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `termsOf` | 470,306 | 41,560 | 215,809 | 473,597 | 13,204 | 26.1 s | 9.3 s | 9.8 s |
-| `printGraph` | 872,480 | 92,331 | 461,345 | 854,027 | 24,573 | 37.6 s | 16.5 s | 13.6 s |
-| `pageBody` | 62,218 | 61,874 | 16,860 | 49,650 | 29,340 | 1.6 s | 1.8 s | 0.5 s |
-| `card` | 36,879 | 36,707 | 13,613 | 36,897 | 19,687 | 1.1 s | 1.1 s | 0.4 s |
-| `statementsOnPath` | 82,999 | 20,361 | 62,951 | 64,982 | 684 | 1.06 s | 1.23 s | 0.80 s |
-
-- **Where selection works,** the restricted engine generates an eleventh of
-  the demand pairs and reads a thirty-sixth of the clause pairs on
-  `termsOf`, and its time falls from 26.1 s to 9.3 s.
-- **The reruns cost as much as they save elsewhere, and rescue nothing
-  measured.** On `termsOf`, 9,143 of the 11,895 comparisons are not
-  established, as many as the general engine leaves unestablished,
-  and each is redone in full: 9.8 s, none established. Over the seven units,
-  no rerun establishes its comparison.
-- **The index's cost.** Computing every source clause's candidates once over
-  each grown table takes 0.57 s on `termsOf`'s search and 0.55 s on
-  `statementsOnPath`'s, where it exceeds what selection saves; the engine
-  recomputes candidates in each round of the greatest fixed point, so its
-  cost is a multiple of that pass.
-- **Evidence** is byte-identical before and after on all five units: the
-  restricted engine chooses the same derivations there.
-- **The suite and the census.** `make suite` passes before and after (63 s
-  and 73 s of wall time, the second under a load average of 82). The `tools/`
-  census at the 60 s limit verifies 79 slices before and 83 after, its 4
-  search timeouts gone (176 s and 153 s of wall time); the `dev/` census
-  verifies 23 of 24 both times (65 s and 52 s).
-
-### 9.2 Measured since
-
-At 496dd97 (main with candidate selection), user time, median of 3, load
-averages 3 to 5:
-
-- **Candidates prepared once per table** for every round of the greatest
-  fixed point (a scratch patch, not committed): `termsOf` search 26.3 s →
-  26.0 s, `printGraph` 41.7 s → 41.6 s, `pageBody` 13.9 s → 15.4 s, `card`
-  12.4 s → 12.2 s, `statementsOnPath` 18.9 s → 17.3 s; `printGraph`'s check
-  7.6 s → 6.8 s, the other checks within 0.15 s. No consistent gain.
-- **Where `statementsOnPath`'s search goes** (macOS `sample`, 1 ms interval,
-  one run): of about 17,400 samples on the working thread, 5,866 are in
-  `EquationGraphs.arityOk` under `Label.ofTree?`, the scope check of a label
-  built from a tree, which looks a header up in the signature, a list, by
-  index. The structural engine's growth and validation were 1.23 s of the
-  run (§9.1). The cost is outside union comparison; R6 and R7 address
-  neither.
-- **The scope check over the signature as an array** (`Tree.scopedIn`,
-  `Equations.headers`), against the build without it, the same session, load
-  averages 2 to 6: `statementsOnPath` search 16.8 s → 10.9 s and check
-  12.3 s → 5.8 s; `printGraph` 38.0 s → 37.2 s and 6.8 s → 6.3 s; `pageBody`
-  13.8 s → 13.4 s and 4.8 s → 4.5 s; `card` 11.1 s → 10.8 s and 4.1 s → 3.8 s;
-  `termsOf` 23.5 s → 24.0 s and 3.3 s → 3.2 s. Evidence byte-identical on
-  all of them.
-
-### 9.3 Where the search time goes
-
-Measured on 2026-10-18 at a071881, user time; step times are medians of 3
-runs, profiles one run each with the scratch profile (§5.1), whose request
-lines record each subtype request's identity: the graph it is asked in (its
-address in the process), and the hashes of its source and target.
-
-**Time by step.** The parser, the lowering and the producer take under a
-second of each unit; the time is search and check:
-
-| Unit | Search | Check | Lowering + producer |
-| --- | --- | --- | --- |
-| `termsOf` | 23.9 s | 3.2 s | 0.1 s |
-| `printGraph` | 38.8 s | 6.6 s | 0.02 s |
-| `pageBody` | 13.5 s | 4.5 s | 0.3 s |
-| `card` | 11.1 s | 4.1 s | 0.3 s |
-| `statementsOnPath` | 11.2 s | 6.3 s | 0.1 s |
-| ten verified slices of `regexp.mts` and `regexp-shape.mts` | 29.8 s together | 20.3 s together | 0.1 s |
-
-**Reruns.** Every rerun follows a restricted attempt that completed without
-establishing its comparison, none stopped by growth or the budget, and no
-rerun establishes its comparison: `termsOf` 9,143 reruns (12.1 s), `printGraph`
-41,383 (18.4 s), `pageBody` 9,970 (1.6 s), `card` 6,518 (1.3 s),
-`statementsOnPath` 430 (0.9 s). From 89% (`card`) to 99% of them read
-tables with ordinary premises only (no meet source, no renamed scheme pair, no instance member);
-the rest have rows whose target holds call signatures. Instance members and
-renamed pairs occur in none.
-
-**Repeated requests.** Within one search, most subtype requests are asked
-again with the same graph, source and target, and every repeated identity
-gave the same answer each time it was asked:
-
-| Unit, search | Outermost requests | Distinct | Time | Time in repeats | Repeats refused | Their time |
-| --- | --- | --- | --- | --- | --- | --- |
-| `termsOf` | 107,721 | 3,926 | 24.9 s | 14.7 s | 6,015 | 11.9 s |
-| `printGraph` | 230,522 | 12,129 | 41.7 s | 22.8 s | 31,973 | 19.8 s |
-| `pageBody` | 336,373 | 8,325 | 6.7 s | 3.4 s | 6,407 | 2.4 s |
-| `card` | 283,936 | 4,885 | 4.7 s | 2.8 s | 4,889 | 2.1 s |
-| `statementsOnPath` | 15,113 | 366 | 2.9 s | 1.6 s | 262 | 1.3 s |
-
-The reruns sit mostly inside repeated requests: on `termsOf`, 6,017 reruns
-(10.8 s) are inside repeats and 2,700 (1.3 s) inside first requests. In the
-checker the requests do not repeat (`termsOf`: 220 requests, 219 distinct).
-
-**What this says.** Removing the reruns (the dependency representation of
-§9.6, step 1) would remove at most their 12.1 s on `termsOf` and 18.4 s on
-`printGraph`. Answering a request already answered in the same graph would
-remove the repeats, 14.7 s and 22.8 s, which include most of the reruns'
-time: the same refused comparisons are asked again, and each time they run
-restricted and then in full. Reuse within one graph needs no transport
-across store growth; across the graph's growth (316 graph addresses in
-`termsOf`'s search) it does. That a refused answer stays refused is a
-fact about the search, not about the types, so reusing refusals concerns
-coverage only: an accepted result is still checked.
-
-**The `FieldTerm` experiment.** Naming the record of an object type term's
-field as an interface (`interface FieldTerm { name: PropertyKey; optional:
-boolean; readonly: boolean; type: TypeTerm; span: Span }`, in a copy of
-`tools/`) makes `execResult`'s pipeline run take 311 s of wall time (201 s of
-user time) and end in the source step, a tool failure of the compiler's API
-(`RemoteNode.forEachChild` from `declaration-graph.mts`), where it otherwise
-verifies in 2.7 s. A CPU profile of that run puts 305 of its 308 s under
-`computed-types.mts` (`computedType`, `indexedAccess`, `aliasApplication`,
-`distributed`), 165 s of it waiting on the compiler API's channel (`read`).
-The time is in the front end's evaluation of computed types, before any
-search: none of recursive structural comparison, union expansion, repeated
-requests or reruns.
-
-### 9.4 Reuse of answered requests
-
-**Why requests repeat.** The producer's candidate search asks them: for an
-expression, `expressionWithUsing` tries the claimed type and then every type
-of the unit's pool (`List.findCheck?` over `A :: pool`), coercing each
-candidate to the target, so each expression asks the same pairs again. A
-sample of `termsOf`'s search puts 12,959 of its samples under those
-candidate searches and 4,210 under the producer's checks of the trees it
-builds (`checkTreeResult` from `HeapExpressionRules.checkedOutput`). The
-order already tries the claimed type first; the repetition is the pool's, so
-the answer is reused rather than the order changed.
-
-**Across graph states.** The graph changes rarely within a search (296 times
-in `termsOf`'s 107,721 outermost requests, 693 in `printGraph`'s 230,522), and
-a request almost always comes in the graph of the request before it. Besides
-the repeats within a state (`termsOf` 103,795, 13.5 s of profiled time;
-`printGraph` 218,393, 21.0 s), 1,416 requests of `termsOf` (6.4 s) and 4,882 of
-`printGraph` (11.5 s) are first in their state but were asked in an earlier
-one: what reuse across states, with a transport of answers, would add.
-
-**The reuse.** The producer answers a request asked again in the same
-search context from its first answer, threading the answered requests
-through the search (§9.5). Measured with an address-keyed store, the first
-form of the reuse, at 09ddb9b: of `termsOf`'s requests, 101,503 answered from
-the store and 3,497 searched (32 changes of state); `pageBody` 323,824 and
-6,176; `statementsOnPath` 14,689 and 311.
-
-Measured at 09ddb9b (the context then without its dictionaries) against
-8780e6e on 2026-10-19, user time, median of 3, on
-a machine other work loaded (load averages 3 to 25); evidence byte-identical
-on all seven units:
-
-| Unit | Search before | Search after | Check before | Check after |
-| --- | --- | --- | --- | --- |
-| `termsOf` | 25.2 s | 13.7 s | 3.5 s | 3.3 s |
-| `decodeTerm` | 23.0 s | 13.9 s | 3.1 s | 3.6 s |
-| `decodeCode` | 23.7 s | 14.1 s | 3.2 s | 3.7 s |
-| `printGraph` | 36.9 s | 31.6 s | 6.2 s | 6.5 s |
-| `pageBody` | 14.4 s | 14.4 s | 4.9 s | 5.0 s |
-| `card` | 11.5 s | 11.8 s | 4.4 s | 4.3 s |
-| `statementsOnPath` | 11.7 s | 12.9 s | 6.4 s | 6.2 s |
-
-
-Where the repeats were cheap (`pageBody`, `card`, `statementsOnPath`) the
-reuse saves nothing measurable; the profile's per-request lines had inflated
-their share. The seven searches run at once take 47.8 s and 38.8 s of wall
-time before, 35.2 s and 43.2 s after (two rounds each, load 9 to 16):
-`printGraph` sets that time, and the rounds do not separate.
-
-**The step limit.** At a 30 s step limit, under the census's parallel load
-(load averages 28 to 33, other work running), 12 of the slices that verify at
-60 s time out in search: `termsOf`, `decodeTerm`, `decodeCode`, `showTerm`, `showCode`,
-`decodeTarget`, `untypedAmbientField`, four of `regexp.mts` (`members`,
-`nativeRegExp`, `structuralRegExp`, `libraryRegExpTerm`), and `printGraph`.
-The limit stays 60 s. That run is a stress measurement; a decision on the
-limit needs per-step wall and CPU time at the suite's own concurrency on an
-otherwise idle machine.
-
-### 9.5 Reuse across graph objects: a design
-
-**What a "graph state" is.** Evidence search runs after the equations are
-frozen: `freezePlans` turns the lowering's growing store into one `Frozen`
-value, and every request it yields has the frozen store as its types
-(`SourceRequest.over`: `types := F.store`). That store's graph reads only
-the equations, `graph _ := E.graph`, the row map of their signature, bodies,
-built-ins and domain; its image check reads the equations, the store's
-variances and its budget (`images c := eitherImages (finiteInstanceImages
-E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)`). Each call of
-`RequestJson.graph` and `StoreView.images` builds these objects afresh.
-Logging the equations behind each graph built (a scratch patch, 2026-10-19,
-at b484bee): `termsOf`'s search builds 358 graphs, 333 distinct objects, from
-one equation set; `pageBody`'s 852 (573 objects) from one; `printGraph`'s 664
-(564 objects) from three, its own and those its certified imports bring. The
-"graph states" of §9.4 are rebuilt objects of one frozen equation set, not a
-graph that grows: no head, row or hypothesis is added between them.
-
-**The transport lemma.** For stores `c` and `c'` of one frozen equation set
-`E`,
-
-```math
-\mathrm{graph}(c)=\mathrm{graph}(c')=E.\mathrm{graph},\qquad
-c.\mathrm{variances}=c'.\mathrm{variances}\land c.\mathrm{budget}=c'.\mathrm{budget}
-\Rightarrow \mathrm{images}(c)=\mathrm{images}(c'),
-```
-
-both by the definitions (proved: `Checked.graph_eq`, by `rfl`, and
-`Checked.images_eq`, a congruence). `subtypeSearch` is a function of the graph, the image
-check, the three dictionaries, the source and the target, so its answer in
-one object is its answer in the other: its whole result transports, an
-exhaustion included, and no monotonicity question arises, since nothing
-grows. The
-document's requests share one store (`types := F.store`), so the condition
-holds between all of them.
-
-**The key.** An answer depends on the equation set (its signature, bodies,
-built-ins and domain), the store's variances and budget, the dictionaries, the
-source and the target; never on the store's head table, which the frozen
-graph does not read. Answers do not transport between different equation
-sets: `printGraph`'s three are separate, a domain change (`withDomain`, which
-builds `{ E with domain := D }`) makes another, and so would a store whose
-variances or budget differ.
-
-**How the producer carries answers.** `produceDocument` builds the graph and
-the image check once, from the frozen store, and passes them to every
-producer step of every request (`ExpressionClaims.produceUsing`,
-`renderKnownUsing`, `RequestJson.produceResponseUsing`, `produceGraphUsing`
-and what they call), in place of the per-call `RequestJson.graph` and
-`StoreView.images`. The checker keeps calling them as it does, and
-acceptance is unchanged. A request with a qualified body keeps its own graph
-and image check, over which its body checker is stated.
-
-The answered requests are a pure table (`CertificateProducer.Answered`,
-source and target to `subtypeSearch`'s whole result, an exhaustion
-included), created by `produceDocument` for its graph and image check and
-threaded through every search in them: `subtypeUsing` reads and extends it,
-every caller of `subtypeUsing` passes it on (`expressionWithUsing`,
-`memberProofsUsing`, `coerce`, `edgeUsing`, `expressionEffectUsing`,
-`nodeYields`, the node and graph production, the rendered plans of
-`DirectProof`), and a qualified body's search starts its own. A search step is
-a `CheckResult` computation over the table (`SearchM`) whose failed
-alternatives keep the answers they found, while their failures stay theirs;
-node production (`ProduceM`) keeps them across its retry. The table's key is
-the source and the target: the graph, the image check and the class
-dictionaries are fixed for its life by the function that holds it, so no
-address is compared. `DirectProof.SubtypeCache` holds the table beside the
-current render's exhaustion (`active`), which stays the render's own.
-
-Measured on 2026-10-19, user time, median of 3, the machine quiet (load
-averages 1 to 3); evidence byte-identical to the search without any reuse on
-all seven units, and every pipeline case keeps its outcome; peak resident
-memory unchanged to the megabyte:
-
-| Unit | Search, one graph per document (a7d3bda) | Search, threaded answers | Peak memory |
-| --- | --- | --- | --- |
-| `termsOf` | 13.5 s | 10.0 s | 460 MB |
-| `decodeTerm` | 13.5 s | 10.5 s | 460 MB |
-| `decodeCode` | 13.5 s | 9.9 s | 460 MB |
-| `printGraph` | 28.6 s | 19.5 s | 1,004 MB |
-| `pageBody` | 13.9 s | 10.3 s | 1,715 MB |
-| `card` | 11.3 s | 8.4 s | 1,422 MB |
-| `statementsOnPath` | 12.5 s | 9.7 s | 4,133 MB |
-
-The checks are unchanged (`termsOf` 3.1 s and 3.2 s, `printGraph` 6.2 s and
-6.2 s). One graph per document alone left the address-keyed store's hits
-nearly as they were (`termsOf`: 102,468 answered, 3,532 searched), every
-change of its context a rebuilt class dictionary (the label type's
-`DecidableEq` in all 34, `Instantiates` in 25, `Hashable` in 13); the threaded
-table, whose dictionaries the holder fixes, does not forget at those.
-
-### 9.6 Next steps
-
-The steps are for the owner to choose. In order:
-
-1. **Discovery of the selected certificate.** `valid_selected` keeps a
-   completed certificate valid under selection. That the selected search
-   finds it needs, beyond it: the certificate restricted to the root and the
-   dependencies of its coverings, with every premise and every piece of
-   evidence kept; and a selected discovery whose universe contains that
-   restriction, with pruning monotone on it. The engine does not represent
-   those dependencies: `demandPairs` enumerates `clausesOf` where coverage
-   reads `sourceClauses ++ meetSources`; `TabRen` discharges a premise
-   through another row; `rowArrows` derives arrow evidence from every row,
-   and `compareStepStateCore` reads instance members from every row of the
-   table; growth detection (`grows`) depends on the rows already inserted.
-   The design change this needs is one dependency representation that
-   discovery produces and coverage, arrow evidence and member discovery
-   read: each covering naming the pairs and the evidence it uses. That
-   changes the engine's interface, and waits for the owner.
-2. **The rerun.** Removed exactly where the preservation theorem applies,
-   once it covers discovery; kept elsewhere.
-3. **R7, R6 and evidence sharing for `statementsOnPath`**, ranked by what
-   remains of its run after the scope check.
+**Where the search time sits.** In `statementsOnPath`'s search (macOS
+`sample`, one run, 2026-10-18), about a third of the working thread's
+samples were in the scope check of labels built from trees
+(`EquationGraphs.arityOk` under `Label.ofTree?`), and the structural
+engine's growth and validation took 1.2 s of a 17 s search. That time is
+outside union comparison, and R6 and R7 do not address it.
 
 ## Lean
 
-In the library (`Types/ClauseSelection.lean`): `excludes`, `candidates`,
-`mem_candidates`, `any_candidates`, `covers_shape` (Lemma 1), `covers_prim`
-(Lemma 2), `covers_litExcl` (Lemma 3), `covers_keyExcl` (Lemma 4),
-`covers_boundExcl` (Lemma 5), `covers_candidate`; in
-`Types/SelectionPreservation.lean`: `prem_sound_closed`, `valid_selected`; in
-`Types/PositiveCertificates.lean`: `SearchBudget.select`,
-`InstanceImageCheck.general`, `compareStructural`, `compareStepState`.
+In `Types/ClauseSelection.lean`: `excludes`, `candidates`, `mem_candidates`,
+`any_candidates`, `covers_shape` (Lemma 1), `covers_prim` (Lemma 2),
+`covers_litExcl` (Lemma 3, literal form), `covers_keyExcl` (Lemma 4),
+`covers_boundExcl` (Lemma 5), `covers_candidate`. In
+`Types/SelectionPreservation.lean`: `prem_sound_closed`, `valid_selected`.
+In `Types/PositiveCertificates.lean`: `SearchBudget.select`,
+`InstanceImageCheck.general`, `demandPairs`, `coveredIn`, `checkEntries`,
+`compareStructural`, `compareStepState` and their soundness theorems,
+`checkStructural_sound`, `compareUsing_sound`. Elsewhere in the library:
+`semWithArgs_shape`, `meet_sound`, `sourceClause_sound`
+(`Types/PositiveNormalization.lean`); `field_value`, `fieldSlice_sound`,
+`tagSlice_sound` (`Programs/BranchRefinement.lean`); `family_sound`
+(`Types/PairFamilies.lean`); `CertificateProducer.Answered`
+(`Programs/CertificateProducer.lean`); `Checked.graph_eq`,
+`Checked.images_eq` (`Source/Equations/Store.lean`).
 
-Proved outside the repository against the library at commit 84b326a, each
-depending on no axiom beyond `propext`, `Classical.choice` and `Quot.sound`:
-`covers_shape` (Lemma 1), `str_excluded` and `str_included` (§1.3),
-`views_exclude`, `fields_exclude`, `refs_exclude`, `refs_exclude_lit`,
-`refs_exclude_lits` (Lemma 3), `refs_exclude_absent` (Lemma 4), `dict_needs_among` (Lemma 5),
-`separation` (Lemma 7), `numSlice_sound` and `numSlice_exact` (R7), and
-`valid_of_valid'`, `valid'_of_valid` and `valid'_within` (§2.2, conditional
-lemmas about an abstract model). The library's own: `semWithArgs_shape`, `meet_sound`,
-`sourceClause_sound`, `field_value`, `fieldSlice_sound`, `tagSlice_sound`,
-`checkStructural_sound`, `family_sound`, `compareUsing_sound`.
+Stated, with proofs not in the repository: `str_excluded` and
+`str_included` (§1.3); `views_exclude`, `fields_exclude`, `refs_exclude`,
+`refs_exclude_lit`, `refs_exclude_lits` (Lemma 3, general form);
+`refs_exclude_absent` (Lemma 4, semantic form); `dict_needs_among` (Lemma 5,
+semantic form); `separation` (Lemma 7); `numSlice_sound` and
+`numSlice_exact` (R7); `valid_of_valid'`, `valid'_of_valid` and
+`valid'_within` (§2.2, about an abstract model).

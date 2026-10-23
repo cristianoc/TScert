@@ -612,6 +612,8 @@ to parameters and quantified variables by position.
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/SchemeInstances.lean`, `Types/PairFamilies.lean`, `Types/PositiveCertificates.lean` |
 | Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsState_sound`, `compareStructural_sound`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](../lean/Verification/Types/EquationFamilies.lean) |
+| A graph with qualified rows keeps an ordinary template's meaning (`DomainRegion.denote`) | [Types/QualifiedTemplateEmbedding.lean](../lean/Verification/Types/QualifiedTemplateEmbedding.lean) |
+| The dependency region of a definition, closed and ordinary, keeps its meaning under a descriptor domain (`checkOrdinaryRegion`, `OrdinaryRegion.domainRegion`) | [Types/EquationDomains.lean](../lean/Verification/Types/EquationDomains.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](../lean/Verification/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](../lean/Verification/Types/EquationJson.lean) |
 | Lowering source declarations (5) | [Source/Equations/Lowering.lean](../lean/Verification/Source/Equations/Lowering.lean) |

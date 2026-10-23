@@ -1436,7 +1436,7 @@ code, through which one may construct the class ([classes](SOURCE-CONTRACTS.md#c
 ## Source closures and their annotations
 
 A source closure `(x₁: D₁, …, xₙ: Dₙ): Rₛ => t` is checked at the arrows its
-claim names, by the creation rule of [Callables](CALLABLES.md#typing-rules): each claimed
+claim names, by the creation rule of [program typing](PROGRAM-TYPING.md#functions-calls-and-receivers): each claimed
 arrow $`(R,\vec A,B)`$ types the body at its own receiver, its first $`n`$
 parameters and its result. The source adds two requirements. Each claimed
 parameter is within the annotation's, $`A_j\sqsubseteq_G D_j`$ for $`j\le n`$
