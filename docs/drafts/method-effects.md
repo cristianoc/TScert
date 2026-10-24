@@ -395,7 +395,7 @@ added, and four extend existing rows.
 | *(extended, the parser row)* The parser reads `Within` (§3) and refuses it where §3 does. | `tools/type-term.mts` (`signatures`), `tools/declaration-graph.mts`, `tools/fragment-expressions.mts` (`lambda`), `fragment-statements.mts` (`functionDecl`) |
 | *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
 | *(extended, T3 of the compiler API, D7)* `forEachChild` runs no code of the program but its visitors, so a call of it whose visitors are within a closed footprint $`\varepsilon`$ is within $`\varepsilon`$; it is read with one signature per closed footprint (§12). | `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
-| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` and `serializingRequests` in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
+| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` and `serializingRequests` in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
 
 Inference gains no trust: a forged statement claim fails at the first
 node outside it.
@@ -581,11 +581,13 @@ The requests are the methods of the named views
 `API.close`, `Snapshot`'s two, `Program`'s six, `Checker`'s 25,
 `NodeHandle.resolve`, `Type`'s four and `Signature`'s three (`hostViews` in
 `tools/compiler-api.mts`, each with its reviewed text). T6 states that a
-request may call its instance's retained `fs` callbacks synchronously and
-returns a value of its declared type or throws; with T4, the host's own
-state is observed by no transparent operation. So a request changes no
-location the program holds but through its instance's callbacks, and the
-contract bounds those:
+request may call its instance's retained `fs` callbacks synchronously,
+serializing what each returns with `JSON.stringify` (which runs a `toJSON`
+the result holds), and returns a value of its declared type or throws;
+with T4, the host's own state is observed by no transparent operation. So
+a request changes no location the program holds but through its
+instance's callbacks and their results' serialization, and the contract
+bounds those:
 
 - *The statement.* Each request whose arguments are primitives and host
   objects is read at `{value: any, store: grow}`; the six that may receive
@@ -608,15 +610,18 @@ contract bounds those:
   end's only compiler channel; its callers pass `compilerFileSystem`'s five
   callbacks (`tools/files.mts`) and `tools/unchecked.mts`'s, fixed code
   audited below. An instance a verified program receives from outside is an
-  input, and that it was opened with callbacks within the statement is an
-  external-input assumption, a row of the trust surface.
+  input, and that it was opened with callbacks within the statement,
+  their results' serialization included, is an external-input assumption
+  (T8).
 - *The audit.* `compilerFileSystem`'s callbacks read the file system and
   note each answer in the open recordings' maps (`noteIn`, `set`), mark a
   recording incomplete or the process inconsistent (field and module-cell
   writes), and `kept` writes the module cell `queryFailure`;
   `openCompiler`'s wrappers write its document maps; `unchecked.mts`'s read
   library files. None pops, shifts, splices, truncates, sorts or reverses a
-  store it did not allocate: within `{value: any, store: grow}`.
+  store it did not allocate, and each returns a string, a Boolean,
+  `undefined`, `null` or a fresh list of names, a JSON value whose
+  serialization runs no code: within `{value: any, store: grow}`.
 
 **Fixed and substitutable callees.** The contract-closure rule (§10)
 distinguishes two kinds of call. A *substitutable* callee is read off a

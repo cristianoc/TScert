@@ -322,9 +322,10 @@ export const serializingRequests: readonly string[] = [
  * API"): a method a named view lists whose arguments are primitives and
  * host objects, which the client sends as primitives and the host objects'
  * ids (audited, `api.js`), so it runs no code of the program but its
- * instance's retained `fs` callbacks; every instance a run meets is opened
- * with callbacks within `{value: any, store: grow}` (`openCompiler`'s,
- * audited, and an external instance's by T8), and the host's own state is
+ * instance's retained `fs` callbacks and the `toJSON` of what they return,
+ * which the client serializes; every instance a run meets is opened with
+ * callbacks within `{value: any, store: grow}`, their results' serialization
+ * included (`openCompiler`'s, audited, and an external instance's by T8), and the host's own state is
  * observed by no transparent operation (T4): so a call is within
  * `{value: any, store: grow}` on normal return. */
 export const isRequest = (owner: string, entry: { name: string; text: string }): boolean =>

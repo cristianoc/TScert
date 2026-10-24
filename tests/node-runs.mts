@@ -1698,6 +1698,13 @@ for (const [file, call] of [
     `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
     { "typescript/unstable/sync": sync });
   assert.deepEqual([ran.stdout, ran.status], ["shrunk", 0], "invalid-compiler-api-retained-fs: a request runs the popping callback");
+  // The client serializes a callback's result: a `toJSON` it holds runs
+  // during the request, though the callback itself changes nothing.
+  const returned = runNode("invalid-compiler-api-callback-tojson",
+    `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
+    { "typescript/unstable/sync": sync });
+  assert.deepEqual([returned.stdout, returned.status], ["shrunk", 0],
+    "invalid-compiler-api-callback-tojson: serializing the callback's result runs its toJSON");
   // A request serializing an object of the program with `JSON.stringify`
   // runs its `toJSON`: popping the mapped array leaves a hole.
   const serialized = runNode("invalid-compiler-api-request-tojson", [

@@ -610,9 +610,13 @@ on normal return (`isRequest`, `requestReading`): the client sends the
 primitives and the host objects' ids, so the serialization with
 `JSON.stringify` runs no code of the program (audited, `api.js`); the call
 changes no location of the model but through its instance's retained
-callbacks (T6), the host's
+callbacks and the client's `JSON.stringify` of what they return, which
+runs a `toJSON` the result holds (T6), the host's
 own state is observed by no transparent operation (T4), and every instance
-a verified program meets is opened with callbacks within that footprint. A
+a verified program meets is opened with callbacks within that footprint,
+their results' serialization included
+(`invalid-compiler-api-callback-tojson`, whose callback's result pops an
+array under Node). A
 verified program opens none: `new API(…)` is outside the admitted language
 (its declaration's type parameter default is refused, and no view lists
 the constructor; `invalid-compiler-api-retained-fs`, whose retained
@@ -620,7 +624,8 @@ callback pops an array under Node). The front end's instances are opened by
 `openCompiler` (`tools/compiler-channel.mts`), with `compilerFileSystem`'s
 callbacks (`tools/files.mts`) or `tools/unchecked.mts`'s, which read files,
 record answers in fresh or owned maps and write module cells, removing no
-element of a store they did not allocate (audited). An instance a verified
+element of a store they did not allocate, and return strings, Booleans and
+fresh lists of names, JSON values (audited). An instance a verified
 program receives from outside is an input, whose callbacks within the
 footprint are an assumption of T8. A `map` callback calling a request gives
 a dense result (`compiler-api-request-effect`). No bound holds on a throw.
@@ -857,10 +862,12 @@ the corpus runs are regression evidence, not proofs.
 - **T6 (sync API).** Each member of a host view, called with the receiver
   and arguments of its declared types, makes its request, during which it
   may call the instance's retained `fs` callbacks synchronously with string
-  arguments, and then returns a value of its declared type or throws; it
+  arguments, serializing what each returns with `JSON.stringify`, and then
+  returns a value of its declared type or throws; it
   runs no other client code but what serializing its payload runs of the
   program's objects among its arguments (their `toJSON` methods and
-  getters), and changes no stable member of an object it returned earlier.
+  getters) and what serializing the callbacks' results runs (their
+  `toJSON` methods), and changes no stable member of an object it returned earlier.
   With T4 and callbacks within
   $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$,
   a call of a member whose arguments are primitives and host objects is
@@ -872,7 +879,8 @@ the corpus runs are regression evidence, not proofs.
 - **T8 (external code).** Every value code outside the linked certified closure
   gives a certified function or closure meets the classified
   interpretation recursively, and every sync API instance it gives was
-  opened with `fs` callbacks within
+  opened with `fs` callbacks that, with the serialization of their
+  results, stay within
   $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$:
   its arguments, the results of external
   functions it calls, the arguments external code passes to its callbacks,
