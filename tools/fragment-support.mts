@@ -55,6 +55,13 @@ export function freeOffsets(within: Node, file: ts.SourceFile): Within<{ value: 
   return free;
 }
 
+/** A property key's JSON text: a string's JSON string, or `{"symbol":n}`
+ * for the symbol of index `n`. It serializes only a string, so it calls no
+ * `toJSON`. */
+export function propertyKeyText(key: PropertyKey): Within<{ value: "keep"; store: "keep" }, string> {
+  return typeof key === "string" ? JSON.stringify(key) : `{"symbol":${key.symbol}}`;
+}
+
 /** The span of an `if`'s closing parenthesis: the first character past its
  * condition that is neither white space nor a comment. */
 export function conditionParen(node: ts.IfStatement, file: ts.SourceFile): Span {

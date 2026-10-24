@@ -661,15 +661,17 @@ By a search of these modules, every store-shrinking operation (`pop`,
 acts on an array the code allocated (`[...list].sort`, `pending.pop()` of a
 local worklist, `work.pop()` of `externalStatements`' local), and the
 collections' mutators (`Map.set`, `clear`) are within `{value: any, store:
-keep}`. Serializing, as enumerating a value's own fields does, runs its
-`toJSON` and the getters of its fields, and the caller contract admits
-both in any field beyond the stated ones; so every `JSON.stringify` of these modules
-serializes a value the gate built: a string, an identity key's array of
-strings and a span (`identityKey`), a property key the gate read off a
-member's name (the type-parameter namers of `classBody` and `lambda`), the
-index signatures' type terms `members` has just read (`sameIndex`, which
-states no effect and is audited at its one caller), or `type-probe.mts`'
-arrays of positions. So every value of `TermScope` meets the statement.
+keep}`. By the [caller contract](../DESIGN.md#trust-surface), a value
+meeting a structural type is a plain data object: every field it owns,
+stated or not, is a data property, so a spread, a field read or
+`Object.entries` of it runs no getter. A data field may hold a function,
+and `JSON.stringify` calls the one at `toJSON`, so every `JSON.stringify`
+of these modules serializes a JSON value the code built: a string, a span,
+an identity key's array of strings and a span (`identityKey`), a property
+key's text (`propertyKeyText`, which reads the key's stated fields), or
+`type-probe.mts`' arrays of positions; `sameIndex` compares two type terms
+field by field, without serializing (`sameData`). So every value of
+`TermScope` meets the statement.
 
 **Catches.** A `never`-typed call contributes no normal-return obligation
 only where its exception escapes. The closure's catches (`parseModules`,
