@@ -605,9 +605,9 @@ holds none.
   measured for the rest: step 1 deletes image equivalence, and a case or
   census slice it loses is a coverage result that revises the design (§8).
 - **Structure:** discovery and deletion stay today's; selected discovery
-  reads candidates as today, now through the index, and the rerun without
-  selection stays (§8, the rerun). The depth-first form, where it is taken,
-  carries `discovery_complete`.
+  reads candidates as today, now through the index. The check keeps the
+  rerun without selection; search compares without it (§8, the rerun). The
+  depth-first form, where it is taken, carries `discovery_complete`.
 
 What is not proved is measured: every pipeline case keeps its expected
 outcome, and the eight census slices keep theirs; any other change is a
@@ -843,23 +843,51 @@ the row, and each row's target clauses with their index once for its demand,
 its deletion rounds and its validation. Each step's measurement is WORK's
 row.
 
-Remaining:
+Remaining, the width-sensitive search cost first:
 
-1. **Hashed kernel lookups.** Under the graph's label hash, `TabRen`'s rows
+1. **Search compares without the rerun.** A comparison search asks
+   (`subtypeSearch`) that selected discovery does not establish is not
+   redone without selection (`SearchBudget.rerun`, off in `subtypeSearch`
+   alone); every check, and every other caller of the comparison, keeps
+   the rerun. Measured, 2026-10-24, over six census slices
+   (`moduleFunction`, `inertRead`, `resolve`, `forOfPattern`, `pattern`,
+   `collect`) and the width-136 input, by a traced copy: 1,214 reruns,
+   none establishing a comparison; 1,174 within search's comparisons, 3 in
+   the document's final check, 37 in other checks; their traced elapsed
+   time is 0.41 s at width 136, 0.37 s in `forOfPattern` and 0.17 s in
+   `moduleFunction`. The sampled time outside the front end at width 136 is
+   0.61 s. Search is untrusted: a comparison only the rerun establishes is
+   one search does not find, a coverage result the cases and the census
+   slices measure; the check decides as today.
+2. **Checker memo.** `Subtyping.check` state-passing, and the checker's
+   field slices (`memberFieldSlice`) answered once per key: the largest
+   remaining cost of `moduleFunction`, not width-sensitive. Measured,
+   2026-10-24: in `moduleFunction`'s search, the checks evaluate 1,244
+   member-test field slices for 196 distinct keys, and the final check 634
+   for the same 196; the yield checks take 0.83 of 4.6 sampled seconds.
+3. **The final check reads the memo**: `--produce-source-claims`'s check
+   of the document answering the inclusions search established (§3.8).
+   Measured, 2026-10-24: the final check takes 0.33 of `moduleFunction`'s
+   4.6 sampled seconds, 0.16 of them in comparisons. It reads each request's
+   own image check, fixed by the request's store, so this needs the store,
+   or the request check, to carry the proved inclusions.
+4. **Validator and discovery read the candidate index** (§3.3), with
+   `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
+   Measured, 2026-10-24: `ClauseSelection` 1 % of `moduleFunction`'s and
+   5 % of width 136's sampled work.
+5. **Hashed kernel lookups**: under the graph's label hash, `TabRen`'s rows
    bucketed by their source labels, label containment through a hash set
    where the orders differ, and a meet row's parts read once per premise;
-   each with its equality lemma to the list form it replaces.
-2. **The final check reads the memo**: `--produce-source-claims`'s check
-   of the document answering the inclusions search established (§3.8).
-3. **Validator and discovery read the candidate index** (§3.3), with
-   `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
-4. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
-5. **Checker memo.** `Subtyping.check` state-passing.
-6. **Rerun.** Deleted only with an operational theorem: selected discovery,
-   at today's fuel and growth, finds a valid table wherever unrestricted
-   discovery does; `selected_complete` is a part of it.
-7. **Coverage by assumption**, where structural comparison remains a
-   measured cost after steps 1–6: the dependency representation,
+   each with its equality lemma to the list form it replaces. Measured,
+   2026-10-24: `premTable`, `subsetIn` and `meetBelow` each at most 1 % of
+   `moduleFunction`'s and 2 % of width 136's sampled work.
+6. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
+7. **Rerun deleted from the check** only with an operational theorem:
+   selected discovery, at today's fuel and growth, finds a valid table
+   wherever unrestricted discovery does; `selected_complete` is a part of
+   it.
+8. **Coverage by assumption**, where structural comparison remains a
+   measured cost after the steps above: the dependency representation,
    `discovery_complete`, and discovery and deletion replaced.
 
 This draft is deleted when the last step taken lands.
