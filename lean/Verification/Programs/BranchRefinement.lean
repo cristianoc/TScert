@@ -250,7 +250,7 @@ keeps the fact's labels the slot's type does not exclude
 
 /-- The fields a record clause fixes: its invariant fields and its views,
 the length view aside. -/
-def fixedFields (c : Clause (Ty ι)) : List (PropKey × Ty ι) :=
+@[nospecialize] def fixedFields (c : Clause (Ty ι)) : List (PropKey × Ty ι) :=
   match c with
   | .refs a _ vs _ _ _ _ => a ++ vs.filter (·.1 != lengthKey)
   | _ => []
