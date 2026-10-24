@@ -1,0 +1,12 @@
+<section id="map" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:32px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Example that verifies</p><p style="font-size:24px;color:#5b6662">abridged from test case method-effect-map.ts</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:60px;font-weight:500;line-height:1.15">A method that only appends keeps map’s result hole-free</h2>
+<div style="display:flex;gap:44px;align-items:start">
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;background:#eef1ef;padding:28px;border-radius:12px;line-height:1.5;flex:1">export class Log {<br>&#160;&#160;entries: number[] = [];<br>&#160;&#160;note(n: number): Within&lt;<br>&#160;&#160;&#160;&#160;{ value: "any"; store: "grow" }, number&gt; {<br>&#160;&#160;&#160;&#160;this.entries.push(n);<br>&#160;&#160;&#160;&#160;return n + 1;<br>&#160;&#160;}<br>}<br>export function notes(log: Log,<br>&#160;&#160;&#160;&#160;xs: number[]): number[] {<br>&#160;&#160;const r: number[] = xs.map((x) =&gt; log.note(x));<br>&#160;&#160;return r;<br>}</p>
+<div style="flex:1;display:flex;flex-direction:column;gap:18px">
+<p style="font-size:26px;color:#1d2422;line-height:1.42;"><b style="font-weight:600">Checked at the method:</b> its body only pushes onto a field, which is within value: any, store: grow.</p>
+<p style="font-size:26px;color:#1d2422;line-height:1.42;"><b style="font-weight:600">Used at the call:</b> the callback calls a method stating store: grow, so TScert uses one of map’s hole-free signatures, and the assignment to r verifies. If log is an instance of a subclass the program declares, that subclass’s note is checked against the same statement.</p>
+<p style="font-size:26px;color:#1d2422;line-height:1.42;"><b style="font-weight:600">Without a statement</b> such a call is refused: test case invalid-map-method-call-effect.ts has a class whose method states no effect, called the same way.</p>
+</div>
+</div>
+</section>

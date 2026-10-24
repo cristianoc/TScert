@@ -1,0 +1,19 @@
+<section id="owncode" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Using it on TScert’s own code</p>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">More terms, for TScert’s own source</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">Slice and census</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">A slice is one top-level function of tools/ (TScert’s TypeScript front end) plus the definitions of its own file it uses, run alone through TScert; definitions of other files, such as Gate’s class, are read at their declared types. It stops at the first place TScert refuses. The census runs every slice: 466 slices, one per function of tools/, in the census run at commit 6a3a864 (2026-10-24), the baseline, which predates the statements.</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">Gate</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">The class holding the state of TScert’s parser for TypeScript. Besides its data fields, its methods are of two kinds: its own, such as span, and fields holding module functions of other files, such as expr and pattern (later slides), called as gate.expr(…).</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">The 16 measured</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">16 functions of three parser files (fragment-statements.mts, fragment-expressions.mts, fragment-classes.mts): the 11 that the design document (docs/drafts/method-effects.md) names for measuring, and 5 others whose measurements WORK.md, the project’s status file, records; ea02ba0’s commit message names 15 of them. Each runs as a slice; the stages lowering (the parsed program to TScert’s calculus, the core language its checker reasons about), producer, search, checker and explanation (the stage that locates and explains a refusal) each may take 300 s before it counts as a timeout.</p>
+</div>
+</div>
+<p style="font-size:24px;color:#1d2422;line-height:1.38;">The 16: enumMembers, enumOpen, resolve, moduleFunction, inertRead, collect, inert, patternDefaults, steppedPattern (these 9 verify); pattern, forOfPattern, protocolPattern, patternStmt, abrupt, neverAssigned (stopping at pattern’s map); classBody.</p>
+</section>

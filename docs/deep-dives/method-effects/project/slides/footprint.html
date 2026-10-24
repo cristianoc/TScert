@@ -1,0 +1,13 @@
+<section id="footprint" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">The footprint F</p>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:60px;font-weight:500;line-height:1.15">Two dials: ordinary locations and arrays</h2>
+<p style="font-size:24px;color:#1d2422;line-height:1.38;">In TScert’s model an array is a <b style="font-weight:600">store</b>, the list of its element locations, and each element is a location holding a value. store bounds changes to stores: which indices hold an element. value bounds changes to every other location, the <b style="font-weight:600">ordinary</b> ones: object fields, variables, and the contents of array elements. Each dial orders its settings keep, then grow (store only), then any; one footprint is within another when each of its dials allows no more. Memory the call allocates itself is always free to change.</p>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:24%;text-align:left;font-weight:600">Setting</th><th style="width:46%;text-align:left;font-weight:600">Allows, on memory that existed before the call</th><th style="width:30%;text-align:left;font-weight:600">For example</th></tr>
+<tr><td>value: keep</td><td>no change to ordinary locations</td><td>—</td></tr>
+<tr><td>value: any</td><td>any change to ordinary locations</td><td>writing a field or a captured variable</td></tr>
+<tr><td>store: keep</td><td>no change to any store</td><td>—</td></tr>
+<tr><td>store: grow</td><td>every hole-free prefix of an array (indices 0 to k−1, all holding elements) stays hole-free; unshift moves elements, which rewrites their contents and so also needs value: any</td><td>push, unshift</td></tr>
+<tr><td>store: any</td><td>any change to stores</td><td>pop, shift, shortening length, reverse (on an array the call did not allocate; on one with holes, reverse moves them)</td></tr>
+</table>
+</section>

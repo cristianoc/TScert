@@ -1,0 +1,16 @@
+<section id="forms2" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:20px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Where you can write it, continued</p><p style="font-size:24px;color:#5b6662">adapted from method-effect-field.ts, method-effect-onthrow.ts</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">A field holding a module function, and a throw as an exit</h2>
+<div style="display:grid;grid-template-columns:1fr;gap:22px">
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:28px;font-weight:600">A field holding a module function</h3>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;line-height:1.4;background:#eef1ef;padding:12px 16px;border-radius:12px">function scaled(this: Scale, n: number): Within&lt;{ value: "keep"; store: "keep" }, number&gt; {<br>&#160;&#160;return n * this.factor; }<br>class Scale { factor: number = 2; scaled: typeof scaled = scaled; }</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">A module function is a top-level function of a module; this: Scale is TypeScript’s this-parameter. The field’s type is the function’s own, statement included, so a call s.scaled(x), for s: Scale, relies on it; a function written into the field is checked against that type. (Runner’s helper field, on “Examples refused”, has the type of a function stating nothing.) TScert’s own parser holds many functions this way (later slides).</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:28px;font-weight:600">A throw as a possible exit</h3>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;line-height:1.4;background:#eef1ef;padding:12px 16px;border-radius:12px">positive(n: number): Within&lt;{ value: "keep"; store: "keep"; onThrow: true }, number&gt; {<br>&#160;&#160;if (n &lt; 0) throw new Error("negative"); return n; }<br>// c: Check, the class of positive; xs: number[]<br>const r: number[] = xs.map((x) =&gt; { try { return c.positive(x); } catch { return 0; } });</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">The callback returns normally from its catch block, so what positive changes when it throws counts toward the callback’s return: with onThrow, nothing, and map’s result is hole-free. Without onThrow the throw is unbounded (refused variant: invalid-method-effect-stated-throw-caught.ts).</p>
+</div>
+</div>
+</section>
