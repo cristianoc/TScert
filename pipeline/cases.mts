@@ -581,6 +581,8 @@ export const cases: Case[] = [
   positive("method-effect-static", "a static method stating the empty footprint: its binding is checked at its annotation, the statement included"),
   { file: "invalid-method-effect-generic", area: "a statement on a generic method: a closure's code is checked at the binder bounds its claim states, which need not cover its own", kind: "negative",
     status: "unsupported", phase: "source", diagnostic: /`Within` on a generic closure or method is outside the fragment/ },
+  { file: "invalid-method-effect-generic-class", area: "a statement on a method of a generic class, which quantifies the class's binders", kind: "negative",
+    status: "unsupported", phase: "source", diagnostic: /`Within` on a generic closure or method is outside the fragment/ },
   gap("generic-stated-declaration-refused", "a stated generic function declaration called in a `map` callback: its instances are read at the declared signature without a footprint, so the result is sparse", "unverified", "search",
     /source expression obligation at \[525,554\): evidence search failed: no derivation of its binding-annotation claim/),
   positive("method-effect-onthrow", "a method stating the empty footprint on a throw too: a `map` callback catching its throw starts its handler within the footprint, so the result is dense"),

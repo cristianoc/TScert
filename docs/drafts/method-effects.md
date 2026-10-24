@@ -400,10 +400,12 @@ node outside it.
 
 ## 9. Cases
 
-Each negative case runs under Node where a run can show the hole. A forged
-claim of a verified case is refused in search and in checking, and certified
-with the check removed (the `stated` mutation); one of a refused case is
-refused in search, which has no evidence to check against.
+Each negative case runs under Node where a run can show the hole. The
+controls on a forged stated declaration and on a stated closure claimed at a
+weaker effect are refused in search and in checking, and certified with the
+check removed (the `stated` mutation); those on a narrowed domain, a dropped
+statement and a statement written into a generic closure's Fragment are
+refused in search.
 
 Positive:
 

@@ -347,6 +347,10 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
             span: gate.span(binders[i].name) })) };
         const closure = gate.lambda(member, receiver, key);
         if (closure.k !== "lambda") throw new Error("a method lowers to a closure");
+        // A generic class's method quantifies the class's binders: a
+        // statement on it is a generic closure's (`lambda`).
+        if (closure.stated)
+          gate.fail(member.type ?? member, "`Within` on a generic closure or method is outside the fragment: its code is checked at the binder bounds its claim states, which need not cover its own");
         return { ...closure, typeParams: [...parameters, ...closure.typeParams] };
       } finally {
         gate.leaveTypeParams();
