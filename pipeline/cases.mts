@@ -955,6 +955,8 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-node-method-effect", "the callback-free node methods at the empty footprint, on a throw too (T3): `map` callbacks calling `getStart`, `getText`, `getSourceFile` and `getLineAndCharacterOfPosition` give dense results, and a `findIndex` callback calling `getEnd` passes each visit an element"),
     project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-node-dispatch-footprint", "a node method called with plain actuals on a `Node` the module's `isTypeNode` guard declares as a union, as `erased` calls `getSourceFile` and `untypedAmbientField`'s closure `getStart`: the call is dispatched on the union in one node, so a function's body and an arrow's expression body calling it are proposed the unbounded footprint"),
+    project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-visitor-effect", "a `map` callback calling `forEachChild` with a visitor popping the mapped array: `forEachChild` keeps its declared signature, which states no effect, so the result may hold holes (run under Node)",
     /source expression obligation at \[380,471\): evidence search failed: no derivation of its binding-annotation claim/),
     project: "pipeline/compiler-api-project" },

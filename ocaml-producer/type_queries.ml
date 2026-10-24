@@ -742,6 +742,27 @@ let rec atom_arms declarations seen = function
   | a -> [a]
 let union_arms declarations atoms =
   List.sort_uniq compare (List.concat_map (atom_arms declarations []) atoms)
+(* The alternatives a type stands for, each declaration it names unfolded,
+   through unions, into its definition's: `Node` is a union of node kinds. *)
+let rec unfolded_arms declarations seen t = match t with
+  | Atoms atoms -> List.concat_map (fun a -> match a with
+    | Named (id,args) when not (List.mem id seen) ->
+      (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+       | Some d -> unfolded_arms declarations (id::seen) d
+       | None -> [Atoms [a]])
+    | a -> [Atoms [a]]) atoms
+  | Union ts -> List.concat_map (unfolded_arms declarations seen) ts
+  | Rigid _ | Meet _ -> [t]
+(* Whether the lowering dispatches a method call on its object in one node
+   (Lean's `executionDispatch`), which no bounded node rule admits: the
+   object's claim, its declarations unfolded (`unfolded_arms`), has several
+   alternatives, and every actual is a name or a literal. Lean dispatches
+   only where the callee's claim has several labels too or the object has no
+   primitive arm, so a call this answers true for but Lean does not dispatch
+   is proposed unbounded, which Lean accepts. *)
+let dispatches_call declarations (object_claim:ty) args =
+  plain_actuals args
+  && List.length (List.sort_uniq compare (unfolded_arms declarations [] object_claim)) > 1
 (* `ToBoolean` of every value of an atom, through the declaration it names:
    a declaration all of whose arms settle it one way (a named union of
    records, always truthy) settles it so. *)
