@@ -307,14 +307,28 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
   ] },
 ];
 
-/** A request of the sync API (T6, COMPILER-API.md, "The sync API"): a
- * method a named view lists. It may call its instance's retained `fs`
- * callbacks, and every instance a run meets is opened with callbacks within
- * `{value: any, store: grow}` (`openCompiler`'s, audited, and an external
- * instance's by the external-input assumption), and the host's own state is
+/** The listed methods whose arguments may hold an object of the program:
+ * a `DocumentIdentifier` object, a `DocumentPosition` or the snapshot's
+ * parameters, which the client puts into its payload and serializes with
+ * `JSON.stringify`, so a `toJSON` method of the program's runs during the
+ * request (`invalid-compiler-api-request-tojson`, run under Node). Each is
+ * read at its declared signature, which states no effect. */
+export const serializingRequests: readonly string[] = [
+  "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
+  "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics", "Checker.resolveName",
+];
+
+/** A stated request of the sync API (T6, COMPILER-API.md, "The sync
+ * API"): a method a named view lists whose arguments are primitives and
+ * host objects, which the client sends as primitives and the host objects'
+ * ids (audited, `api.js`), so it runs no code of the program but its
+ * instance's retained `fs` callbacks; every instance a run meets is opened
+ * with callbacks within `{value: any, store: grow}` (`openCompiler`'s,
+ * audited, and an external instance's by T8), and the host's own state is
  * observed by no transparent operation (T4): so a call is within
  * `{value: any, store: grow}` on normal return. */
-export const isRequest = (entry: { text: string }): boolean => !entry.text.startsWith("readonly ");
+export const isRequest = (owner: string, entry: { name: string; text: string }): boolean =>
+  !entry.text.startsWith("readonly ") && !serializingRequests.includes(`${owner}.${entry.name}`);
 
 /** A request's reading: each of its signatures at `{value: any, store:
  * grow}`, on normal return only. */

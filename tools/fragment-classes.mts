@@ -24,7 +24,7 @@ import { ordinaryEffect } from "./type-graph.mts";
 /** An enum's members, in order, with the values the declaration graph
  * reported: `null` for a member TypeScript computes no value for, whose
  * value is known only at run time (a number, as TypeScript requires). */
-export function enumMembers(this: Gate, name: string): EnumMember[] {
+export function enumMembers(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, EnumMember[]> {
   const gate: Gate = this;
   const info = gate.enums.get(name);
   if (!info) return gate.fail(null, `enum ${name} missing`);
@@ -44,7 +44,7 @@ export function enumMembers(this: Gate, name: string): EnumMember[] {
 /** Whether an enum's object has keys its declaration does not name: an
  * ambient enum's, the environment's, or one with a member whose value,
  * and so whose reverse mapping's key, is known only at run time. */
-export function enumOpen(this: Gate, name: string): boolean {
+export function enumOpen(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   return !!gate.enums.get(name)?.ambient || gate.enumMembers(name).some((m) => m.value === null);
 }
@@ -57,7 +57,7 @@ export function enumOpen(this: Gate, name: string): boolean {
  * and, built by `%Enum:E%`, the reverse keys of the values TypeScript
  * computes, each at `string`; an ambient enum's, the environment's, its
  * members alone. */
-export function enumObjectTerm(this: Gate, name: string, span: Span): TypeTerm {
+export function enumObjectTerm(this: Gate, name: string, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const gate: Gate = this;
   if (gate.enumOpen(name))
     return enumMembersTerm(gate.enumMembers(name).map((m) => ({ name: m.name, value: m.value ?? undefined })), span,
@@ -75,7 +75,7 @@ export function enumObjectTerm(this: Gate, name: string, span: Span): TypeTerm {
 /** The type `E`: the union of its members' literal types, `number` for a
  * member whose value is known only at run time; `never` for an enum
  * without members. */
-export function enumTerm(this: Gate, name: string, span: Span): TypeTerm {
+export function enumTerm(this: Gate, name: string, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const gate: Gate = this;
   const parts = gate.enumMembers(name).map((m): TypeTerm =>
     m.value === null ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
@@ -90,7 +90,7 @@ export function enumTerm(this: Gate, name: string, span: Span): TypeTerm {
  * Each entry's value has a claim site of its own: a member's at its
  * initializer, or at its name where it has none, and a reverse entry's
  * from the member to the end of the declaration. */
-export function enumEntries(this: Gate, name: string): { key: string; value: string | number; pos: Span }[] {
+export function enumEntries(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, { key: string; value: string | number; pos: Span }[]> {
   const gate: Gate = this;
   const entries = new Map<string, { key: string; value: string | number; pos: Span }>();
   const members = gate.enumMembers(name);

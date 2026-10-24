@@ -4911,7 +4911,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // A view's methods are the sync API's requests, read at their
       // statement (T6, `requestReading`).
       const request = (f: { name: PropertyKey }): boolean =>
-        !!named?.members.some(m => m.name === f.name && isRequest(m));
+        !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
         .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),

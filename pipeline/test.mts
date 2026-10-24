@@ -2452,6 +2452,9 @@ control(async (): Promise<void> => {
     ["compiler-api-visitor-effect", "(n) => {", 3, false, writeValues, true],
     ["compiler-api-request-effect", "(n) =>", 3, false, writeValues, true],
     ["compiler-api-request-effect", "(n) =>", 3, true, growStores, true],
+    ["invalid-compiler-api-request-tojson", "() =>", 3, false, growStores, false],
+    ["compiler-api-visitor-pop-sparse", "(n) => {", 3, false, keepAll, true],
+    ["compiler-api-visitor-pop-sparse", "(n) => {", 3, false, growStores, true],
   ] as const) {
     const artifacts = run(file);
     const claims = readClaims(artifacts);

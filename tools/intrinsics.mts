@@ -126,7 +126,7 @@ const span: [number, number] = [0, 0];
 const atom = (name: AtomName): Within<{ value: "any"; store: "grow" }, TypeTerm> => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
-const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
+const fn = (params: TypeTerm[], result: TypeTerm): Within<{ value: "any"; store: "grow" }, Signature> =>
   ({ k: "function", effect: ordinaryEffect, receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];

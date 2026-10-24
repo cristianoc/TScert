@@ -1,6 +1,7 @@
 // Examples and native-contract counterexamples run under Node: each result is
 // what the case's outcome and the contracts it relies on say. No build needed.
 import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
 {
@@ -1696,4 +1697,31 @@ for (const [file, call] of [
     `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
     { "typescript/unstable/sync": sync });
   assert.deepEqual([ran.stdout, ran.status], ["shrunk", 0], "invalid-compiler-api-retained-fs: a request runs the popping callback");
+  // A request serializing an object of the program with `JSON.stringify`
+  // runs its `toJSON`: popping the mapped array leaves a hole.
+  const serialized = runNode("invalid-compiler-api-request-tojson", [
+    `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+    `const api = new API({});`,
+    `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(project)} });`,
+    `const program = snapshot.getProject(${JSON.stringify(project)}).program;`,
+    `const r = wrong(program, [1, 2, 3]);`,
+    `api.close();`,
+    `console.log(r.length === 3 && !(2 in r) ? "hole" : "dense");`,
+  ].join("\n"));
+  assert.deepEqual([serialized.stdout, serialized.status], ["hole", 0],
+    "invalid-compiler-api-request-tojson: the request runs the argument's toJSON");
+  // The installed `forEachChild` runs a visitor popping the mapped array on
+  // each child of a real source file: the result holds a hole.
+  const file = new URL("../pipeline/compiler-api-project/node-names.ts", import.meta.url).pathname;
+  const visited = runNode("invalid-compiler-api-visitor-effect", [
+    `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+    `const api = new API({});`,
+    `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(project)} });`,
+    `const sf = snapshot.getProject(${JSON.stringify(project)}).program.getSourceFile(${JSON.stringify(file)});`,
+    `const r = wrong([sf, sf, sf]);`,
+    `api.close();`,
+    `console.log(r.length === 3 && !(2 in r) ? "hole" : "dense");`,
+  ].join("\n"));
+  assert.deepEqual([visited.stdout, visited.status], ["hole", 0],
+    "invalid-compiler-api-visitor-effect: the installed forEachChild runs the popping visitor");
 }

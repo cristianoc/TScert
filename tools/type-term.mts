@@ -612,7 +612,7 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
 
 /** `term` with each of its declaration's parameters replaced by the term at
  * that position of `args`. */
-export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm {
+export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => substitute(t, args);
   const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
     params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });

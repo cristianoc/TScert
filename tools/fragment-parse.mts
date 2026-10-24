@@ -777,7 +777,7 @@ export class Gate {
    * omitted ones completed at them. */
   declaredReference(node: ts.TypeReferenceNode, name: string, span: Span,
       declared: { required: number; total: number; declaration: DeclarationIdentity }, closed: TypeTerm[],
-      read: (part: TypeNode) => TypeTerm): TypeTerm {
+      read: (part: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
     const args = node.typeArguments ?? [];
     if (args.length < declared.required || args.length > declared.total) {
       const count = declared.required === declared.total

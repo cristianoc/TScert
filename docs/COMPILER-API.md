@@ -603,10 +603,14 @@ callbacks write of the client's state. A callback that throws, re-enters the
 API, or returns outside its type makes the request throw and leaves the
 instance throwing on every later request; a throw is an allowed outcome.
 
-**Requests' footprint.** Each method a view lists is a request, read at the
-footprint $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
-on normal return (`isRequest`, `requestReading`): it changes no location of
-the model but through its instance's retained callbacks (T6), the host's
+**Requests' footprint.** A method a view lists whose arguments are
+primitives and host objects is read at the footprint
+$`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
+on normal return (`isRequest`, `requestReading`): the client sends the
+primitives and the host objects' ids, so the serialization with
+`JSON.stringify` runs no code of the program (audited, `api.js`); the call
+changes no location of the model but through its instance's retained
+callbacks (T6), the host's
 own state is observed by no transparent operation (T4), and every instance
 a verified program meets is opened with callbacks within that footprint. A
 verified program opens none: `new API(…)` is outside the admitted language
@@ -620,6 +624,14 @@ element of a store they did not allocate (audited). An instance a verified
 program receives from outside is an input, whose callbacks within the
 footprint are an assumption of T8. A `map` callback calling a request gives
 a dense result (`compiler-api-request-effect`). No bound holds on a throw.
+The methods whose arguments may hold an object of the program
+(`API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
+`Program.getSourceFile`, `Program.getSemanticDiagnostics`,
+`Program.getSyntacticDiagnostics`, `Checker.resolveName`:
+`serializingRequests`) put it into the payload, whose serialization runs
+its `toJSON`; each is read at its declared signature, which states no
+effect (`invalid-compiler-api-request-tojson`, whose `toJSON` pops the
+mapped array under Node).
 
 **Lifetimes.** The guarantee is type safety without source correspondence:
 a request returns a value of its declared type or throws, whatever
@@ -846,10 +858,13 @@ the corpus runs are regression evidence, not proofs.
   and arguments of its declared types, makes its request, during which it
   may call the instance's retained `fs` callbacks synchronously with string
   arguments, and then returns a value of its declared type or throws; it
-  runs no other client code and changes no stable member of an object it
-  returned earlier. With T4 and callbacks within
+  runs no other client code but what serializing its payload runs of the
+  program's objects among its arguments (their `toJSON` methods and
+  getters), and changes no stable member of an object it returned earlier.
+  With T4 and callbacks within
   $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$,
-  a request's call is within that footprint on normal return. A result need not describe the handles passed when they
+  a call of a member whose arguments are primitives and host objects is
+  within that footprint on normal return. A result need not describe the handles passed when they
   come from another snapshot, project or instance.
 - **T7 (stated type guards; proposed with them).** For each stated guard
   $`g`$ promising $`X`$: when $`g`$ returns `true` on a value of a host type, the members $`X`$
