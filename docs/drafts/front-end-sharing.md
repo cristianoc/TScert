@@ -312,6 +312,14 @@ ledger's validation per parse and is worth the conjecture (net savings
 against maintenance and trust); otherwise this section records the
 measurement and the parser keeps a fresh compiler per parse.
 
+*Measured, not built* (2026-10-24, after §3.4): six parses of tools/ slices
+in one process, modules' entries warm, a parser compiler kept open across
+them (unsound, for the bound) against a fresh one per parse: 7.53 and 7.40 s
+against 7.80 and 8.00 s, about 70 ms a parse, some 30 s of the census's
+430 s before the session's own ledger validation per parse. The saving does
+not pay for a further conjecture and a second session discipline; the
+parser keeps a fresh compiler per parse.
+
 **One compiler for parsing and collection: not taken.** The snapshot lives
 in the store's source directory, outside the named project, so the
 declaration session would hold a second project; and a project-less check
@@ -363,6 +371,14 @@ at the client's spans) stay per collection.
 It is built if, measured after §3.1–3.6, its saving over the census exceeds
 its maintenance and trust cost (the code it adds to the trusted collection,
 and the conjecture below); otherwise this section records the measurement.
+
+*Measured, not built* (2026-10-24, after §3.1–3.6): the parses of 14 slices
+spread over tools/ in one process (11.2 s of CPU): `collect` 0.65 s of the
+parse stage's 9.3 s of sampled node time, 7%, its first computation per
+worker included; the collection's queries 3.5 s and the process caches'
+validation and computation 1.6 s. A declaration entry saves at most that
+7%, less each worker's first computations, for the largest change to the
+trusted collection the design names; it is not built.
 
 **Trust.** It adds a conjecture of the same kind as session fidelity: *a
 declaration's definition and effect log, computed in a session whose ledger
@@ -474,8 +490,8 @@ Estimates (conjectured) from the 6a3a864 census's 932 s of parse and the
 | --- | ---: |
 | §3.1–3.3 attempt answers, resolutions, query answers | measured: 1,069.5 → 573.5 s (297120f → this step, the 466 slices both censuses share, cold stores, 2026-10-24) |
 | §3.4 module entries and §3.6 duplicate slices | measured together: 577.1 → 430.3 s (parse and module stages, the 473 slices both censuses share, cold stores, 2026-10-24), against about 240 s expected |
-| §3.5 parser session | → about 210 s |
-| §3.7 declaration entries, if built | → about 150 s |
+| §3.5 parser session | not built: about 30 s at most (measured bound) |
+| §3.7 declaration entries | not built: at most 7% of the parse (measured bound) |
 
 The measured step missed its expectation for three causes, each measured
 in the same census: the module lowerings depend on the selection where

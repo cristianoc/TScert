@@ -42,7 +42,10 @@ const absence = (error: unknown): boolean => {
 const absent = (what: string): Error => Object.assign(Error(`ENOENT: no such ${what}`), { code: "ENOENT" });
 /** Names in the order the compiler's file system lists them: by their
  * UTF-8 bytes. */
-const byBytes = (a: string, b: string): number => Buffer.compare(Buffer.from(a), Buffer.from(b));
+const byBytes = (a: string, b: string): number =>
+  // Below U+D800 the order of UTF-16 code units is that of UTF-8 bytes.
+  !/[\ud800-￿]/.test(a) && !/[\ud800-￿]/.test(b) ? (a < b ? -1 : a > b ? 1 : 0)
+    : Buffer.compare(Buffer.from(a), Buffer.from(b));
 
 // ---------------------------------------------------------------------------
 // Observations
