@@ -1686,13 +1686,14 @@ export function collectDeclarations(file: string, options: {
         const overloads = nodes.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
         if (!overloads.length || !nodes.every(ts.isFunctionDeclaration) || nodes.length - overloads.length > 1)
           throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+        // A declaration's unit is certified at one signature: a statement on
+        // an overload, or on the implementation, has no check, one overload
+        // beside its implementation included.
+        if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(n, what), n.type, n).stated))
+          throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
           if (overloads.some(o => o.typeParameters?.length))
             throw Error(`an overloaded generic function is outside the fragment: ${what}`);
-          // A declaration's unit is certified at one signature: a statement
-          // on an overload, or on the implementation, has no check.
-          if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(n, what), n.type, n).stated))
-            throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
           const forms = overloads.flatMap(o => {
             const at: Span = [o.getStart(source), o.end];
             for (const part of [...o.parameters, ...(o.type ? [o.type] : [])])

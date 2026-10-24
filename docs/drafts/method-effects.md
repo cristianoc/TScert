@@ -400,8 +400,10 @@ node outside it.
 
 ## 9. Cases
 
-Each negative case runs under Node where a run can show the hole; each
-forged claim is refused in search and in checking.
+Each negative case runs under Node where a run can show the hole. A forged
+claim of a verified case is refused in search and in checking, and certified
+with the check removed (the `stated` mutation); one of a refused case is
+refused in search, which has no evidence to check against.
 
 Positive:
 
@@ -415,7 +417,9 @@ Positive:
   object literal's method, called in a `find` callback, result at `T`;
 - `method-effect-arrow`: a stated arrow in a fresh literal's field;
 - `method-effect-static`: a stated static method;
-- `method-effect-generic`: a generic method stated `keep`;
+- `generic-stated-declaration-refused` (a gap): a stated generic
+  declaration, certified at its statement, whose instances callers read at
+  its declared signature without a footprint;
 - `method-effect-onthrow`: a statement with `onThrow` whose caller catches.
 
 Negative:
@@ -487,19 +491,17 @@ the measurement reports with every statement a slice relies on and whether
 that statement's definition is certified by a verified slice.
 
 **What this step states.** The statements whose contract closure is closed
-today:
+today (which are certified is [WORK](../../WORK.md#class-methods-effects)'s):
 
-- the class methods of `Gate` that the draft's group A callbacks call,
-  `span`, `local`, `hasTypeParam` and `typeParamName`, each reading the
-  node's position (`getStart`, D4), a `Map` (`get`, `has`) or an array
-  (`some`): `{value: keep, store: keep}`; `fail` is typed `never` and needs
-  none. No verified slice lowers `Gate`, so these are uncertified
-  statements, each a few lines whose callees the record lists;
+- the class methods of `Gate` that the draft's group A callbacks call:
+  `span`, `local` and `hasTypeParam`, each reading the node's position
+  (`getStart`, D4), a `Map` (`get`, `has`) or an array (`some`), at
+  `{value: keep, store: keep}`, and `typeParamName`, iterating an array, at
+  `{value: any, store: keep}`; `fail` is typed `never` and needs none;
 - the method fields' module functions `patternDefaults` and `inert`
   (`{value: keep, store: keep}`: reads, guards, `flatMap`/`every` callbacks
   calling themselves) and `steppedPattern` (`{value: any, store: keep}`:
-  its `forEach` callback writes a captured cell), each certified in the
-  slices that hold it.
+  its `forEach` callback writes a captured cell).
 
 **What stays blocked: `expr`'s contract closure.** `pattern`'s object-pattern
 callback calls `gate.expr`, and so do the callbacks of `forOfPattern`,
@@ -531,6 +533,17 @@ kind as this step's, together with D5's rewrite, whose `shift`s lie in that
 closure (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`): the rewrite
 lands with the statements that need it, since no statement of this step
 calls them.
+
+**Certifying the closure's bodies** needs one more node rule. A statement's
+method call on an object of several labels with plain actuals, as
+`node.getStart(this.file)` on `node: Node` in `span`, is lowered as one node
+that reads the member and invokes it (`dispatchCallTerm`): its callee is no
+value, which the bounded check's selected-call rule requires, so the
+producer proposes no footprint for it and a body holding one is certified
+only at `top`. The rule extends to such a node by composing the head's
+inspection, which keeps the heap a prefix, with the call at its selected
+signature; until then the statements on `Gate`'s members stay uncertified
+whichever run lowers `Gate`.
 
 **Slices measured** before and after (`make census FILES=… FUNCTIONS=…`):
 the targeted five, which stay blocked at `gate.expr`; `patternDefaults`,

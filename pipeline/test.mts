@@ -2953,6 +2953,26 @@ mutationControl(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A generic closure states no effect: its rows bind its binders at the
+  // bounds its claim states, which need not cover its own. The parser
+  // refuses the statement; with one written into the Fragment of a verified
+  // generic closure, Lean refuses it too, in search.
+  const artifacts = run("generic-function-type-annotation");
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const lambda = fragment.search(/"k":"lambda","pos":\[\d+,\d+\],"typeParams":\[\{/);
+  assert.ok(lambda >= 0, "a generic closure");
+  const unstated = fragment.indexOf('"stated":null', lambda);
+  assert.ok(unstated > lambda, "its statement");
+  const fragmentPath = join(artifacts, "forged-generic-stated-fragment.json");
+  writeFileSync(fragmentPath, fragment.slice(0, unstated) +
+    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false}' + fragment.slice(unstated + '"stated":null'.length));
+  const produce = produceWith(artifacts, join(artifacts, "claims.json"), "forged-generic-stated", fragmentPath);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(produce.stdout + produce.stderr, /a generic closure states no effect/);
+  process.stdout.write("stated generic closure: a statement written into the Fragment refused in search\n");
+});
+
+control(async (): Promise<void> => {
   // A class method's statement is part of the instance type's member, so
   // the class's construction is checked against it whatever the method's
   // own obligation (L3): with the Fragment's `stated` of `bump` dropped and

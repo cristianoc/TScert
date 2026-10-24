@@ -1658,6 +1658,7 @@ for (const [file, call] of [
     "(() => { const r = new Runner(); r.helper = (ys, x) => { ys.pop(); return x; }; return 1 in wrong(r, [1, 2]) ? \"dense\" : undefined; })()"],
   ["invalid-method-effect-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
   ["invalid-method-effect-rest-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
+  ["invalid-method-effect-callback-argument", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
   ["invalid-compiler-api-visitor-effect",
     "1 in wrong([{ forEachChild: (v) => v() }, { forEachChild: (v) => v() }]) ? \"dense\" : undefined"],
 ]) assert.equal(runExample(file, call), undefined, `${file}: the statement is not met`);

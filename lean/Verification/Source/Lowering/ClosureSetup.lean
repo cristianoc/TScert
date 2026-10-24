@@ -295,6 +295,11 @@ scheme row's variadic signatures. -/
     if async then
       throw (locatedRefusal T pos .bindingAnnotation
         "an async definition states no effect: its call returns a promise where its body throws")
+    -- A generic closure's rows bind its binders at the bounds its claim
+    -- states, which need not cover its own: no row is over its whole domain.
+    if !typeParams.isEmpty then
+      throw (locatedRefusal T pos .bindingAnnotation
+        "a generic closure states no effect: its code is checked at the binder bounds its claim states")
     let reason := "a stated closure's claim must offer its stated effect over its annotated parameters"
     let some written := ret | throw (locatedRefusal T pos .bindingAnnotation reason)
     let R ← lower (Fragment.callableType written)

@@ -3147,7 +3147,9 @@ definition, whose call returns where its body throws
 ([async](#definition-and-application-rules)); on a constructor or a
 construct signature; on any signature of an overloaded declaration, whose
 unit is certified at one; on a declaration with a resolution-qualified
-type parameter, whose unit claims no footprint; and a statement written
+type parameter, whose unit claims no footprint; on a generic closure or
+method, whose code is checked at the binder bounds its claim states, which
+need not cover its own; and a statement written
 outside the program's sources (a declaration file, a package, an ambient
 declaration) or reached from the type of a value declared there, through
 `typeof`, an alias, an interface or an indexed access, other than a member

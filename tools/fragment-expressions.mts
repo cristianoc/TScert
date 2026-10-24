@@ -1976,8 +1976,12 @@ export function lambda(this: Gate,
     // A guard closure's annotation is its plain result and its promise.
     const guard = gate.guardOf(node);
     gate.guardBody = guard !== null;
-    // A result `Within<F, T>` states the closure's effect, `F`, of `T`.
+    // A result `Within<F, T>` states the closure's effect, `F`, of `T`. A
+    // generic closure's binders are bounded as its claim states, so no
+    // check covers the domain its own bounds state: it states none.
     const written = gate.statedResult(node.type, node);
+    if (written.stated && (node.typeParameters?.length || typeParams.length))
+      gate.fail(node.type ?? node, "`Within` on a generic closure or method is outside the fragment: its code is checked at the binder bounds its claim states, which need not cover its own");
     const declaredResult: TypeTerm | null = guard ? guardResult(guard)
       : written.result || instance ? gate.typeOf(written.result, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;

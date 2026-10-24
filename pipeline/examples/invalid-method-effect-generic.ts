@@ -1,6 +1,6 @@
-// A generic method stating the empty footprint, at each instance its
-// binders take: a `map` callback calling it at `number` is within the empty
-// footprint.
+// A statement on a generic method: a closure's code is checked at the
+// binder bounds its claim states, which need not cover its own, so no
+// certification covers its whole domain.
 export class Pick {
   first<T>(
     xs: readonly T[],
