@@ -1447,8 +1447,8 @@ computed once, when the row is inserted. -/
               checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw .growth
-      -- A row no valid closed family covers is not expanded: its demand serves
-      -- only its own coverings.
+      -- A row no valid closed family covers (`structurallyHopelessIn`) is not
+      -- expanded; a row reachable only through it is not discovered.
       return (tbl ++ [p], if structurallyHopelessIn G p.1 t then fresh else fresh ++ [(p, reached)])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
     match cand.foldl step (.ok (fb.table, [])) with

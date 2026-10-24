@@ -301,16 +301,15 @@ scheme row, its binders standing for the other's. Untrusted:
   some ⟨final.table, θs, D, V⟩
 
 
-/-- Untrusted instance alternatives from unification, unification without the
-results, and row matching. Only the common comparison operation validates
-these choices. -/
-@[nospecialize] def instanceCandidates [DecidableEq ι] [Hashable ι] [Instantiates ι]
-    (G : NormalGraph ι) (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
-    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : List (PositiveCertificates.Instance ι) :=
-  -- Where unification of the whole signatures fails (a result the target
-  -- spells otherwise, `Pair<[number, string]>` for `Pair<[T, U]>`), the
-  -- binders are found from the signatures without their results, and the
-  -- instance's own signatures, by the renaming's substitution, are matched.
+/-- The instance unification proposes: of the whole signatures, or, where that
+fails (a result the target spells otherwise, `Pair<[number, string]>` for
+`Pair<[T, U]>`), of the signatures without their results, the instance's own
+signatures, by the renaming's substitution, then matched. Images are the
+substitution: the instance rule compares each target signature with an image
+by inclusion, so no image is respelled. -/
+@[nospecialize] def unifiedInstance [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (sub : Option (Renaming G)) (s : SchemeRow ι)
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : Option (PositiveCertificates.Instance ι) :=
   let exact : Option (PositiveRules.Ops ι) := do
     let r ← sub
     let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
@@ -321,32 +320,22 @@ these choices. -/
     let L' ← exact
     let (θs, table) ← Instantiates.propose s L' M
     some (θs, table)
-  -- Images are the substitution: the instance rule compares each target
-  -- signature with an image by inclusion, so no image is respelled.
-  let syntactic : List (PositiveCertificates.Instance ι) := match proposal with
-    | none => []
-    | some (θs, table) => [⟨table, θs, [], []⟩]
-  syntactic ++ (matchedInstance G fuel s L M).toList
+  proposal.map fun (θs, table) => ⟨table, θs, [], []⟩
+
+/-- Untrusted instance alternatives: the unified instance, then the row-matched
+one. Only the common comparison operation validates these choices. -/
+@[nospecialize] def instanceCandidates [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
+    (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : List (PositiveCertificates.Instance ι) :=
+  (unifiedInstance G sub s L M).toList ++ (matchedInstance G fuel s L M).toList
 
 /-- `instanceCandidates` as proposals: the row-matched instance is computed
 only when the engine reaches it, after the unified one is refuted. -/
 @[nospecialize] def instanceProposals [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (sub : Option (Renaming G)) (fuel : Nat) (s : SchemeRow ι)
     (L : PositiveRules.Ops ι) (M : List (RestArrow (List ι))) : PositiveCertificates.Proposals ι :=
-  let exact : Option (PositiveRules.Ops ι) := do
-    let r ← sub
-    let noResult (a : Arrow (List ι)) : Arrow (List ι) := { a with result := [] }
-    let (θs, _) ← Instantiates.propose { s with signatures := s.signatures.map noResult }
-      (L.map noResult) []
-    some (s.signatures.map (Arrow.map (r.substitute (s.binders.zip θs))))
-  let proposal := (Instantiates.propose s L M).orElse fun _ => do
-    let L' ← exact
-    let (θs, table) ← Instantiates.propose s L' M
-    some (θs, table)
-  let syntactic : PositiveCertificates.Proposals ι := match proposal with
-    | none => []
-    | some (θs, table) => [Thunk.pure (some ⟨table, θs, [], []⟩)]
-  syntactic ++ [Thunk.mk fun _ => matchedInstance G fuel s L M]
+  ((unifiedInstance G sub s L M).toList.map fun c => Thunk.pure (some c)) ++
+    [Thunk.mk fun _ => matchedInstance G fuel s L M]
 
 /-- How deep instance matching follows a type's rows: search only. -/
 def instanceFuel : Nat := 64

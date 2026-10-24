@@ -469,7 +469,10 @@ default:
 - a pair one of whose source clauses is no target clause and has no
   candidate, nor has one of its elements, is in no valid closed family
   (`valid_selected`): no table is grown from it, and as a row its demand is
-  not expanded, with or without selection (`structurallyHopeless`);
+  not expanded, with or without selection (`structurallyHopeless`); a row
+  reachable only through such a row is not discovered, though another row's
+  `TabRen` premise could read it, so this narrows discovery, which the cases
+  and the census slices measure;
 - in a check, a structural comparison or a comparison step not established
   with selection is redone with selection off (`InstanceImageCheck.general`,
   in `compareStructural` and `compareStepState`), so the restricted search
