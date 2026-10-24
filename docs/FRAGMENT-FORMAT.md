@@ -40,6 +40,7 @@ A function (`FunctionAst`) has these fields:
 | `params`     | Parameters, each `name`, `pos` and `type`, with `rest: true` for a rest parameter.                                                                                                                                                                                                                                                        |
 | `retType`    | The result annotation; for a guard, its plain result, `boolean` or `void`.                                                                                                                                                                                                                                                               |
 | `guard`      | `null`, or the promise of a result annotation `x is T` or `asserts x is T`: `param`, the parameter's position among the actuals, `asserts`, `type` (`T`) and `span`.                                                                                                                                                                     |
+| `completion` | `sync`, or `async` for a definition with its own `async` modifier, whose footprint is then [`top`](FOOTPRINTS.md#the-checked-callback-contract).                                                                                                                                                                                            |
 | `body`       | The statements.                                                                                                                                                                                                                                                                                                                           |
 | `strict`     | Whether the function's code is strict; a sloppy call converts a receiver that is not an object.                                                                                                                                                                                                                                          |
 
@@ -110,8 +111,9 @@ checks the complete contract before elaboration can use it.
 
 A `lambda`'s `result` is a source annotation or `null`; an absent annotation
 leaves the result type to a checked producer proposal, and `guard` carries a
-guard's promise as a function's does. Its `receiver` is `null` for an arrow
-or `{type,strict}` for an ordinary function.
+guard's promise as a function's does, and `completion` its completion kind
+as a function's does. Its `receiver` is `null` for an arrow or
+`{type,strict}` for an ordinary function.
 
 The call constructors (`apply`, `invoke`, `new`, `callWithReceiver`,
 `bindWithReceiver`, `applyWithReceiver`) keep their operands distinct in the

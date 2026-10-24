@@ -157,7 +157,27 @@ locations below the heap the body started in; the runs compose by
   (`spread_values_post`, `spread_head_post`). A signature excepting its
   receiver's store is within $`\Phi`$ where the receiver is a slot holding a
   fresh store, or $`\Phi`$ lets everything change
-  (`Effect.within_below`).
+  (`Effect.within_below`);
+- a node **without a normal return**: its term, by the node's own checked
+  ordinary typing, has a type no value meets, so its run is within every
+  $`\Phi`$ on normal return (rule below).
+
+```math
+\frac{\Gamma_l\vdash t_l:B\ \text{(the node's checked ordinary typing)}\qquad \mathrm{expand}_G(B)=\varnothing}
+     {\text{node } l \text{ within } \Phi \text{ on normal return}}\ \textsf{no-return}
+```
+
+$`B`$ is the result type of the node's evidence, at which its ordinary
+safety holds, after instantiation; its emptiness is the decision that makes
+a slot of a type no value meets an unreachable entry: a type of clause rows
+expanding to no clause (`ExpressionEffects.emptyType`; proved:
+`emptyType_sound`, and `noReturn_sound`, by `of_value_property` from the
+node's safety, every normal postcondition holding vacuously). `never` and a
+generic call instantiated at `never` are empty; `Promise<never>` and a
+guard's `boolean` are not. The rule bounds normal returns only: a node under
+a handler, or in a body claiming `onThrow`, still bounds its throw by the
+rule below, whatever its type, so a caller catching the throw of a
+never-returning call gains nothing.
 
 A node with an exceptional handler is within the bound on a throw as well,
 since its handler turns the throw into a normal path: the node's throw is an
@@ -174,10 +194,27 @@ constructor's code (`ctorGraph`). A callable value carries its footprint
 through ordinary signature checking, substitution and application; an unknown
 function states `{value: any, store: any}`.
 
+An async definition's footprint is `{value: any, store: any}`. An async
+call returns a promise where its body throws, so a footprint its body meets
+on normal return bounds no run of the call; the model reads the body's
+throw as a throw ([async functions](SOURCE-CONTRACTS.md#async-functions-and-await)).
+The Fragment states every callable definition's completion kind, `sync` or
+`async`, from its own `async` modifier (`completion`,
+[FRAGMENT-FORMAT](FRAGMENT-FORMAT.md)); Lean refuses an async declaration
+unit, async graph code and a qualified read of an async unit claiming any
+other footprint, before any certification is tried (`RequestJson.asyncEffects`;
+proved: `SourceRequests.checkRequests_async`):
+
+```math
+\frac{\mathrm{completion}(d)=\mathsf{async}\qquad \mathrm{claim}(d)=\Phi}
+     {\Phi=\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{any}\}}\ \textsf{async-effect}
+```
+
 The producer proposes each footprint, untrusted: a body's is the join of its
 nodes' (`footprint_expr`, `footprint_stmts` in `ocaml-producer/source.ml`),
 a variable write `{value: any, store: keep}`, a call or construction the join
-of every signature its callee may take; declarations are proposed at the least
+of every signature its callee may take, a call its own typing claims at
+`never` the empty footprint, an async definition none; declarations are proposed at the least
 fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
 every node.
 

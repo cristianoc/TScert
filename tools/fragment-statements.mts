@@ -1608,6 +1608,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       params,
       retType,
       guard,
+      completion: isAsync ? "async" : "sync",
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,
     };

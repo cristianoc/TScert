@@ -474,11 +474,10 @@ fields hold their initialisers.
   states, for every callable definition (function declaration, function
   expression, arrow, object-literal method, class and static method), its
   **completion kind**, `sync` or `async`, written by the parser from the
-  definition's own `async` modifier. Today neither `FunctionAst` nor a
-  Fragment lambda retains it (`tools/fragment.mts`; `lambda` and
-  `functionDecl` discard the flag, and `asyncCompletion` adds no intrinsic
-  to a body that ends in a throw), so a throw-only async body lowers like
-  a synchronous one and nothing in its graph distinguishes them. Lean
+  definition's own `async` modifier (`completion`), since a throw-only
+  async body lowers like a synchronous one (`asyncCompletion` adds no
+  intrinsic to a body that ends in a throw) and nothing in its graph
+  distinguishes them. Lean
   binds every certified unit and code entry to its definition's kind and,
   for `async`, refuses a footprint below `top` before any certification
   alternative is tried, the pure-body rule included, located at the
@@ -508,8 +507,9 @@ and one is added.
 | *(changed, assumed values)* An imported value meets its declaration, a guard's declared promise **and a stated effect (`Within`) included**; … (rest unchanged). A statement occurs only in program modules' declarations; whether the exporting module's run certifies it is not a premise of the importer's acceptance (§6), and that the linked program meets every statement rests on module composition, an open theorem. | `IMPORT` in SOURCE-CONTRACTS; `Within` in `tools/effects.d.ts` |
 | *(added, assumed of the host)* External code preserves every effect-bearing contract of the program's values it holds or returns: it writes no function field of a program value with a function outside the field's statement, creates no own member on a program class's instance that shadows a prototype member, deletes no such member, writes no member of a program class's prototype or static method binding, replaces no instance's prototype, and passes to verified code no instance of a subclass whose override exceeds the base's statement. Conforming to a program type means TScert's contract, statements included, not TypeScript's assignability, which erases `Within`. | `EnvOk` over the input types; the caller contract row; the class lowering in `tools/fragment-classes.mts` |
 
-The trusted front end gains the reading of `Within` (§3), part of the
-parser row's "represents the source faithfully". Inference gains no
+The trusted front end gains the reading of `Within` (§3) and each callable
+definition's completion kind (L6), part of the parser row's "represents the
+source faithfully". Inference gains no
 trust: a forged statement claim fails at the first node outside it.
 
 A separate prerequisite with its own row change: §10's first callbacks

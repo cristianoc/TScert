@@ -267,9 +267,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
       let iteration name = Option.bind (module_type name) iteration_footprint in
-      let bound = if rest then None else
-        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~iteration ~readable d))
-          (footprint_expr ~callable ~iteration ~readable body) defaults in
+      (* A call this typing claims at `never` never returns normally. *)
+      let no_return (e:expr) = latest_claim e.pos = Some (Atoms []) in
+      let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~no_return ~iteration ~readable d))
+          (footprint_expr ~callable ~no_return ~iteration ~readable body) defaults in
       (* Where every node of the body and its defaults bounds its throw, the
          footprint is proposed on a throw too. *)
       let on_throw = List.for_all (fun (_,d) -> throws_expr ~callable d) defaults && throws_expr ~callable body in

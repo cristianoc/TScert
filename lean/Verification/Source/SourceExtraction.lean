@@ -281,7 +281,8 @@ did not mention grow it, and the request carries the result. -/
     codeSources := built.codeSources
     nodePlans := built.nodePlans
     footprint := fc.footprint
-    onThrow := fc.onThrow }
+    onThrow := fc.onThrow
+    async := f.async }
 
 end
 

@@ -222,6 +222,8 @@ export type Expr =
       /* A guard's promise, where the result annotation is `x is T` or
          `asserts x is T`; `result` is then its plain result. */
       guard: Guard | null;
+      /* How a call of it completes: its own `async` modifier. */
+      completion: Completion;
       body: Expr;
     }
   /* A closure's body written as statements: a block, or an expression body
@@ -355,6 +357,12 @@ export interface Guard {
   span: Span;
 }
 
+/** How a call of a callable definition completes, read from the
+ * definition's own `async` modifier: `sync`, the body's normal return and
+ * throw are the call's; `async`, the call returns a promise, which the body's
+ * throw rejects (SOURCE-CONTRACTS.md, "Async functions and await"). */
+export type Completion = "sync" | "async";
+
 export interface FunctionAst {
   name: string;
   namePos: Span;
@@ -363,6 +371,7 @@ export interface FunctionAst {
   /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
   guard: Guard | null;
+  completion: Completion;
   body: Stmt[];
   /** Whether the function's code is strict: a sloppy call converts a
    * receiver that is not an object. */

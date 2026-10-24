@@ -247,6 +247,10 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
     | throw s!"a qualified read names a unit without claims: {location}#{name}"
   let footprint : Footprints.Closed ← fromJson? (← jField uc "footprint")
   let onThrow ← (← jField uc "onThrow").getBool?
+  -- An async unit's footprint is `top` (`RequestJson.asyncEffects`), read
+  -- from its own module's Fragment.
+  if !RequestJson.asyncEffects (← Fragment.decodeCompletion (← jField unit "completion")) footprint then
+    throw s!"a qualified read names an async unit claimed below `top`: {location}#{name}"
   return (localName, footprint, onThrow)
 
 /-- The qualified reads of one document: each read its claims list names an
