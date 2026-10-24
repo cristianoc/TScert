@@ -300,7 +300,10 @@ async function census(args: string[]): Promise<void> {
     if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
       rmSync(join(root, name), { force: true });
   for (const s of chosen) writeStable(join(root, s.slice), s.text);
-  const selected = shardPart ? chosen.filter((_, i) => i % shardPart[1] === shardPart[0] - 1) : chosen;
+  // A shard takes every n-th slice file, with every function sharing it: one text is checked in one shard.
+  const sliceFiles = [...new Set(chosen.map((s) => s.slice))];
+  const selected = shardPart
+    ? chosen.filter((s) => sliceFiles.indexOf(s.slice) % shardPart[1] === shardPart[0] - 1) : chosen;
   process.stderr.write(`${selected.length} of ${all.length} slices\n`);
 
   const project = join(out, "tools");
