@@ -190,7 +190,7 @@ export function enumStmt(this: Gate, node: ts.EnumDeclaration): Stmt[] {
  * (`enumMemberReads`), the member's constant or value, refused for a
  * member not yet initialized; any other read of the enum is of an object
  * not yet built. */
-export function enumRead(this: Gate, node: Expression): Expr | null {
+export function enumRead(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr | null> {
   const gate: Gate = this;
   const current = gate.enumInit;
   if (!current) return null;
@@ -871,7 +871,7 @@ export function registerEquation(this: Gate, declaration: DeclarationIdentity, t
 /** The key a member name spells: its text, or a private name's symbol,
  * the key of the member TypeScript binds it to, which no code outside
  * the class spells. */
-export function memberKey(this: Gate, name: ts.MemberName): PropertyKey {
+export function memberKey(this: Gate, name: ts.MemberName): Within<{ value: "any"; store: "grow" }, PropertyKey> {
   const gate: Gate = this;
   if (ts.isIdentifier(name)) return name.text;
   const symbol = gate.privateKeys.get(gate.span(name).join(":"));
@@ -882,7 +882,7 @@ export function memberKey(this: Gate, name: ts.MemberName): PropertyKey {
 /** `C.#x` of a static private member of the file's class `C`, with `C`
  * the class TypeScript binds it to: the binding the class statement gives
  * the member. Null for a private name no static member declares. */
-export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): { binding: string; cls: string } | null {
+export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, { binding: string; cls: string } | null> {
   const gate: Gate = this;
   const name = node.name;
   if (!ts.isPrivateIdentifier(name)) return null;
@@ -905,7 +905,7 @@ export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): { 
  * value exists: the class's construct-only code, bound before the static
  * initializers (`freshName`), where constructing runs no code that
  * could read the class value (`selfConstructs`). Null for any other `new`. */
-export function selfConstruction(this: Gate, node: ts.NewExpression): Expr | null {
+export function selfConstruction(this: Gate, node: ts.NewExpression): Within<{ value: "any"; store: "grow" }, Expr | null> {
   const gate: Gate = this;
   const callee = node.expression;
   if (!ts.isIdentifier(callee)) return null;
@@ -920,7 +920,7 @@ export function selfConstruction(this: Gate, node: ts.NewExpression): Expr | nul
 }
 
 /** Whether `body` reads class `cls`: an identifier TypeScript binds to it. */
-export function readsClass(this: Gate, body: Node, cls: string): boolean {
+export function readsClass(this: Gate, body: Node, cls: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const visit = (n: Node): boolean =>
     (ts.isIdentifier(n) && gate.classReads.get(gate.span(n).join(":")) === cls) ||
@@ -930,7 +930,7 @@ export function readsClass(this: Gate, body: Node, cls: string): boolean {
 
 /** The class whose static field initializer or static block `node` is in,
  * and whether a closure created there holds it. */
-export function staticInitOf(this: Gate, node: Node): { cls: string; closure: boolean } | null {
+export function staticInitOf(this: Gate, node: Node): Within<{ value: "any"; store: "grow" }, { cls: string; closure: boolean } | null> {
   let closure = false;
   for (let at: Node = node; at.parent; at = at.parent) {
     const parent = at.parent;
@@ -947,7 +947,7 @@ export function staticInitOf(this: Gate, node: Node): { cls: string; closure: bo
 
 /** The class binding an identifier of an instance member reads, where
  * TypeScript binds it to the class being lowered. */
-export function ownClass(this: Gate, node: Node): string | null {
+export function ownClass(this: Gate, node: Node): Within<{ value: "any"; store: "grow" }, string | null> {
   const gate: Gate = this;
   const cls = gate.classReads.get(gate.span(node).join(":"));
   if (!cls || cls !== gate.selfClass?.name) return null;

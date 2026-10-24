@@ -123,7 +123,7 @@ export const throwUninitializedName = "%ThrowUninitialized%";
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 const span: [number, number] = [0, 0];
-const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
+const atom = (name: AtomName): Within<{ value: "any"; store: "grow" }, TypeTerm> => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
@@ -237,12 +237,12 @@ export function restFromIntrinsic(k: number):
 
 /** A number's spelling as a literal: its `Number::toString`, which reads back
  * as the same double, and `-0` for negative zero, which that spells `0`. */
-export function numberText(value: number): string {
+export function numberText(value: number): Within<{ value: "any"; store: "grow" }, string> {
   return Object.is(value, -0) ? "-0" : String(value);
 }
 
 /** The literal type of an enum member's value. */
-export function literalTerm(value: string | number, at: [number, number]): TypeTerm {
+export function literalTerm(value: string | number, at: [number, number]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return typeof value === "string"
     ? { k: "literal", name: "string", text: value, span: at }
     : { k: "literal", name: "number", text: numberText(value), span: at };

@@ -14,12 +14,12 @@ import type { CallEffect } from "./type-graph.mts";
  * observation, a resolvable one also its result. */
 export function resolutionSlots(name: string, qualification: "resolvable"): ResolutionSlots & { result: string };
 export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): ResolutionSlots;
-export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): ResolutionSlots {
+export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): Within<{ value: "any"; store: "grow" }, ResolutionSlots> {
   return { observation: `#observe:${name}`, result: qualification === "resolvable" ? `#resolve:${name}` : null };
 }
 
 /** The names a qualified parameter's projections own. */
-const ownedSlots = (slots: ResolutionSlots | null): string[] =>
+const ownedSlots = (slots: ResolutionSlots | null): Within<{ value: "any"; store: "grow" }, string[]> =>
   slots ? [slots.observation, ...(slots.result === null ? [] : [slots.result])] : [];
 
 // Numeric literals in the fragment are plain decimals; every other spelling
@@ -29,8 +29,8 @@ const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
 /** Visit every source type constructor, with the generic method binders in scope.
  * Readers use the same walk for annotation admissibility and name checking. */
-export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: ReadonlySet<string>) => void,
-    bound: ReadonlySet<string> = new Set()): void {
+export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: ReadonlySet<string>) => Within<{ value: "any"; store: "grow" }, void>,
+    bound: ReadonlySet<string> = new Set()): Within<{ value: "any"; store: "grow" }, void> {
   visit(term, bound);
   const go = (part: TypeTerm): void => visitType(part, visit, bound);
   switch (term.k) {
@@ -67,7 +67,7 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
 }
 
 /** Admissibility of a source annotation, independent of its input representation. */
-export function validateAnnotation(term: TypeTerm, fail: (span: Span, message: string) => never): void {
+export function validateAnnotation(term: TypeTerm, fail: (span: Span, message: string) => never): Within<{ value: "any"; store: "grow" }, void> {
   visitType(term, part => {
     if (part.k !== "intersection") return;
     const binder = (t: TypeTerm): boolean => t.k === "binder" || (t.k === "union" && t.parts.some(binder));
@@ -86,7 +86,7 @@ export function validateAnnotation(term: TypeTerm, fail: (span: Span, message: s
  * decimal, or, where that text is `Infinity` (a literal past the largest
  * double, `1e309`), the decimal source text, which rounds to the infinity.
  * None for a literal of neither form. */
-export function numericLexeme(node: ts.NumericLiteral, source: SourceFile): string | null {
+export function numericLexeme(node: ts.NumericLiteral, source: SourceFile): Within<{ value: "any"; store: "grow" }, string | null> {
   if (DECIMAL.test(node.text)) return node.text;
   const written = source.getFullText().slice(node.getStart(source), node.end).replace(/_/g, "");
   return node.text === "Infinity" && DECIMAL.test(written) ? written : null;
@@ -94,7 +94,7 @@ export function numericLexeme(node: ts.NumericLiteral, source: SourceFile): stri
 
 /** A bigint literal's value as its canonical decimal integer: `0x10n`, `1_0n`
  * and `16n` are all `16`. */
-export function bigintText(literal: string, negative: boolean): string {
+export function bigintText(literal: string, negative: boolean): Within<{ value: "any"; store: "grow" }, string> {
   const value = BigInt(literal.slice(0, -1).replace(/_/g, ""));
   return String(negative ? -value : value);
 }
@@ -102,14 +102,14 @@ export function bigintText(literal: string, negative: boolean): string {
 /** `{}`, an object type with no member: it constrains no key, and is every
  * value but `null` and `undefined`, a primitive included, not an empty
  * record. */
-function emptyObject(span: Span): TypeTerm {
+function emptyObject(span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "union", span, parts: (["boolean", "number", "string", "bigint", "symbol", "object"] as const)
     .map(name => ({ k: "atom", name, span })) };
 }
 
 /** The property key a numeric literal names: `ToString` of its value, as
  * JavaScript converts it. */
-export function numericKey(literal: string): string {
+export function numericKey(literal: string): Within<{ value: "any"; store: "grow" }, string> {
   return String(Number(literal.replace(/_/g, "")));
 }
 
@@ -122,7 +122,7 @@ export const GENERIC_METHOD_RECEIVER =
 
 /** A method form's receiver: the declaration it is a member of, its host,
  * met with the type a `this` parameter states, which the host must meet. */
-function hostReceiver(form: FunctionTerm, span: Span): TypeTerm {
+function hostReceiver(form: FunctionTerm, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const self: TypeTerm = { k: "self", span };
   return form.receiver ? { k: "intersection", parts: [self, form.receiver], span } : self;
 }
@@ -160,7 +160,7 @@ export const REST_PACK_BOUND: string =
 /** A rest parameter's type, a declared alias read through its equation at
  * the reference's arguments, as TypeScript reads one: the array a call
  * collects is viewed at that equation. */
-export function restTerm(scope: TermScope, type: TypeTerm): TypeTerm {
+export function restTerm(scope: TermScope, type: TypeTerm): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   for (let seen = 0; type.k === "reference" && seen < 16; seen++) {
     const equation = scope.equation?.(type);
     if (!equation) break;
@@ -171,7 +171,7 @@ export function restTerm(scope: TermScope, type: TypeTerm): TypeTerm {
 
 /** Why a rest parameter's type is no contract for the array a call
  * collects, by its form. */
-export function restRefusal(type: TypeTerm): string {
+export function restRefusal(type: TypeTerm): Within<{ value: "any"; store: "grow" }, string> {
   switch (type.k) {
     case "parameter":
       return `${REST_CONTRACT}: one typed by a declaration's type parameter inside the declaration types its ` +
@@ -197,17 +197,17 @@ export type TermScope = {
   source: SourceFile;
   fail(node: Node | null, message: string): never;
   /** A type reference: a binder in scope or a declaration. */
-  named(node: TypeReferenceNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
+  named(node: TypeReferenceNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** Whether a reference names the verifier's `Within` (`resolvable.d.ts`),
    * by the declaration TypeScript binds it to: a signature's statement of
    * its effect (`statedResult`). A scope without it reads no statement. */
-  stated?(node: TypeReferenceNode): boolean;
+  stated?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, boolean>;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
-  awaited?(node: TypeReferenceNode): boolean;
-  associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): TypeTerm;
+  awaited?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, boolean>;
+  associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** A resolved associated-result alias expanded in this lexical scope. */
-  associatedAlias?(node: TypeReferenceNode): TypeAliasDeclaration | null;
+  associatedAlias?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeAliasDeclaration | null>;
   expandingAliases?: ReadonlySet<TypeAliasDeclaration>;
   /** An annotation states records as the source fragment always has: named,
    * required fields and at most one readonly string index. A declaration body
@@ -219,44 +219,44 @@ export type TermScope = {
   /** A computed key `[x]` or `[o.x]`: the index of the `unique symbol`
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
-  symbol?(name: Identifier | ts.PropertyAccessExpression): number;
+  symbol?(name: Identifier | ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, number>;
   /** A computed key `[x]` or `[o.x]` naming an entity of a string or number
    * literal type, as an enum member or a constant is: the key its value
    * names; null for any other. */
-  literalKey?(name: Identifier | ts.PropertyAccessExpression): string | null;
+  literalKey?(name: Identifier | ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, string | null>;
   /** A class member's private name `#x`: the index of the symbol the
    * declaration document lists for it, a key no code outside the class
    * spells. A scope without it reads no private name. */
-  privateName?(name: ts.PrivateIdentifier): number;
+  privateName?(name: ts.PrivateIdentifier): Within<{ value: "any"; store: "grow" }, number>;
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
    * type and the enum's object type (SOURCE-CONTRACTS.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
-  enumerated?(node: TypeNode, span: Span): TypeTerm | null;
+  enumerated?(node: TypeNode, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
   /** A type TypeScript computes from other types (`COMPUTED`): `typeof x`,
    * `keyof T`, `T[K]`, a template literal type. The scope evaluates it to the
    * equivalent type the fragment states, or refuses it with the reason; `read`
    * reads an operand in this scope. A scope without it reads none. */
-  computed?(node: TypeNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
+  computed?(node: TypeNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** A mapped type's keys, or a library mapped type's key argument
    * (`Record<K, V>`), as the union of literals and primitives TypeScript
    * computes for it, `"a" | "b"` for an alias of those, or null. A scope
    * without it reads the keys as written. */
-  keys?(node: TypeNode): TypeTerm | null;
+  keys?(node: TypeNode): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
   /** A mapped type over `keyof X` at a finite record `X`: each property of
    * the type TypeScript resolves it to, with the modifiers it copies from
    * `X` and its own overrides, or null where TypeScript resolves no such
    * record. A scope without it reads only a mapped type writing both. */
-  modifiers?(node: ts.MappedTypeNode): readonly MappedMember[] | null;
+  modifiers?(node: ts.MappedTypeNode): Within<{ value: "any"; store: "grow" }, readonly MappedMember[] | null>;
   /** A reference to a declared type alias of an array, a tuple or another
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
-  equation?(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
+  equation?(reference: Extract<TypeTerm, { k: "reference" }>): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
 };
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
  * declaration reader evaluates (SOURCE-CONTRACTS.md, "Computed types"). */
-export function computedForm(node: TypeNode): string | null {
+export function computedForm(node: TypeNode): Within<{ value: "any"; store: "grow" }, string | null> {
   if (ts.isTypeQueryNode(node)) return "typeof";
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) return "keyof";
   if (ts.isIndexedAccessTypeNode(node)) return "an indexed access type";
@@ -292,7 +292,7 @@ const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.Synta
   ts.SyntaxKind.BigIntKeyword, ts.SyntaxKind.SymbolKeyword, ts.SyntaxKind.VoidKeyword];
 
 /** An intersection's operands, nested intersections and parentheses flattened. */
-function intersectionOperands(node: ts.IntersectionTypeNode): TypeNode[] {
+function intersectionOperands(node: ts.IntersectionTypeNode): Within<{ value: "any"; store: "grow" }, TypeNode[]> {
   const operands: TypeNode[] = [];
   const flatten = (t: TypeNode): void => {
     t = unwrap(t);
@@ -305,16 +305,16 @@ function intersectionOperands(node: ts.IntersectionTypeNode): TypeNode[] {
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 
-const spanOf = (scope: TermScope, node: Node): Span => [node.getStart(scope.source), node.end];
+const spanOf = (scope: TermScope, node: Node): Within<{ value: "any"; store: "grow" }, Span> => [node.getStart(scope.source), node.end];
 
-const unwrap = (node: TypeNode): TypeNode => {
+const unwrap = (node: TypeNode): Within<{ value: "any"; store: "grow" }, TypeNode> => {
   while (ts.isParenthesizedTypeNode(node)) node = node.type;
   return node;
 };
 
 /** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
  * value bound when a call omits that position. */
-export function optionalTerm(type: TypeTerm, span: Span): TypeTerm {
+export function optionalTerm(type: TypeTerm, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "union", parts: [type, { k: "atom", name: "undefined", span }], span };
 }
 
@@ -326,7 +326,7 @@ export type RestPositions = { k: "positions"; positions: TypeTerm[] } | { k: "el
  * required positions is a fixed number of further arguments, an array, mutable
  * or readonly, any number of them. Anything else has no reading as a
  * signature. `k` decides the arm. */
-export function restPositions(type: TypeTerm): RestPositions | null {
+export function restPositions(type: TypeTerm): Within<{ value: "any"; store: "grow" }, RestPositions | null> {
   // The array a call collects is fresh: it is an array of its element, and
   // viewing it as `readonly` gives up only writes.
   if (type.k === "array") return { k: "element", element: type.element };
@@ -335,7 +335,7 @@ export function restPositions(type: TypeTerm): RestPositions | null {
   return null;
 }
 
-export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null = null): TypeTerm {
+export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const term = readTypeTerm(scope, node, at);
   const location = node ?? at;
   if (scope.annotation && location)
@@ -343,7 +343,7 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
   return term;
 }
 
-function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null): TypeTerm {
+function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (!node) return scope.fail(at, "missing type annotation");
   const span = spanOf(scope, node);
   const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm => ({ k: "atom", name, span });
@@ -509,7 +509,7 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
 /** A construct signature's forms, one per accepted argument list: it has no
  * receiver, and its rest, if any, is a function's. */
 function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.ConstructSignatureDeclaration,
-    span: Span): TypeTerm[] {
+    span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm[]> {
   if (ts.isConstructorTypeNode(node) && node.modifiers?.length)
     scope.fail(node, "an abstract constructor type is outside the fragment");
   if (!node.type) scope.fail(node, "a constructor type needs its result type");
@@ -535,7 +535,7 @@ export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readon
 /** A property of a mapped type over `keyof X` and its modifiers. */
 export type MappedMember = { name: string; optional: boolean; readonly: boolean };
 
-export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
+export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ value: "any"; store: "grow" }, Mapped> {
   if (node.nameType) scope.fail(node, "a mapped type with an 'as' clause is outside the fragment");
   if (node.members?.length) scope.fail(node, "a mapped type with members is outside the fragment");
   const parameter = node.typeParameter;
@@ -567,7 +567,7 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
  * `number`, a number index, which number literals add nothing to; over
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
-export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): TypeTerm {
+export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -645,7 +645,7 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
 }
 
 /** A tuple element's kind and type, read through its name when it has one. */
-function tupleMember(element: TypeNode): { kind: "required" | "optional" | "rest"; type: TypeNode } {
+function tupleMember(element: TypeNode): Within<{ value: "any"; store: "grow" }, { kind: "required" | "optional" | "rest"; type: TypeNode }> {
   if (ts.isNamedTupleMember(element))
     return { kind: element.dotDotDotToken ? "rest" : element.questionToken ? "optional" : "required",
       type: element.type };
@@ -654,7 +654,7 @@ function tupleMember(element: TypeNode): { kind: "required" | "optional" | "rest
   return { kind: "required", type: element };
 }
 
-function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span: Span): TypeTerm {
+function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const required: TypeTerm[] = [], optional: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   for (const element of node.elements) {
@@ -685,7 +685,7 @@ function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span
  * (`T & U`, `T & "fixed"`). An annotation's union operand holding a type
  * parameter, `(T | null) & A`, is refused: it would distribute into meets
  * each known only at an instance. */
-function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Span): TypeTerm {
+function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (computedForm(node) !== null && scope.computed)
     return scope.computed(node, span, part => typeTerm(scope, part));
   const operands = intersectionOperands(node);
@@ -712,7 +712,7 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
  * binders, named by spelling, which shadow the enclosing ones. */
 function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterDeclaration[],
     parameters: readonly ts.ParameterDeclaration[], result: TypeNode, at: Node, span: Span):
-    { binders: Extract<TypeTerm, { k: "scheme" }>["binders"]; forms: FunctionTerm[] } {
+    Within<{ value: "any"; store: "grow" }, { binders: Extract<TypeTerm, { k: "scheme" }>["binders"]; forms: FunctionTerm[] }> {
   const own = typeParameters.map(p => p.name.text);
   const binders: Extract<TypeTerm, { k: "scheme" }>["binders"] = typeParameters.map(p => ({
     name: p.name.text, bound: null, resolution: null, default: null,
@@ -760,7 +760,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
     result: TypeNode | undefined, at: Node, span: Span, declared: boolean = false,
     // A result the caller states instead of reading `result`, such as the
     // receiver a library overlay puts for a `this` result.
-    given?: TypeTerm): FunctionTerm[] {
+    given?: TypeTerm): Within<{ value: "any"; store: "grow" }, FunctionTerm[]> {
   const head = parameters[0];
   const stated = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
   if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
@@ -834,7 +834,7 @@ export const WITHIN_PLACE = "`Within` states a written signature's effect, at it
 
 /** The call effect a statement gives its signature: its footprint and
  * on-throw flag, no promise, no fresh result, no receiver-store exception. */
-export const statedEffect = (stated: StatedEffect): CallEffect =>
+export const statedEffect = (stated: StatedEffect): Within<{ value: "any"; store: "grow" }, CallEffect> =>
   ({ ...footprintEffect(stated.footprint), onThrow: stated.onThrow });
 
 /** A result annotation's statement of its signature's effect,
@@ -849,7 +849,7 @@ export const statedEffect = (stated: StatedEffect): CallEffect =>
  * constructor or a construct signature, whose effect is its class's
  * construction. */
 export function statedResult(scope: TermScope, result: TypeNode | undefined, at: Node | null):
-    { stated: StatedEffect | null; result: TypeNode | undefined } {
+    Within<{ value: "any"; store: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
   const node = result && unwrap(result);
   if (!node || !ts.isTypeReferenceNode(node) || !scope.stated?.(node)) return { stated: null, result };
   const [footprint, type, ...others] = node.typeArguments ?? [];
@@ -867,7 +867,7 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
 }
 
 /** A statement's footprint, written in place as a type literal. */
-function statementOf(scope: TermScope, written: TypeNode): StatedEffect {
+function statementOf(scope: TermScope, written: TypeNode): Within<{ value: "any"; store: "grow" }, StatedEffect> {
   const node = unwrap(written);
   const shape = "a footprint is written in place as `{ value: \"keep\" | \"any\"; store: \"keep\" | \"grow\" | \"any\" }`, with `onThrow: true` where it holds on a throw too";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
@@ -900,7 +900,7 @@ function statementOf(scope: TermScope, written: TypeNode): StatedEffect {
  * value is no actual; `asserts x` without a type, which promises the argument
  * truthy, no type of the fragment. */
 export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary: readonly ts.ParameterDeclaration[]):
-    { plain: TypeTerm; effect: CallEffect; type: TypeTerm } {
+    Within<{ value: "any"; store: "grow" }, { plain: TypeTerm; effect: CallEffect; type: TypeTerm }> {
   const name = node.parameterName;
   if (!ts.isIdentifier(name))
     return scope.fail(node, "a guard on `this` (`this is T`) is outside the fragment: its promise is about the receiver, which is no actual of the call");
@@ -920,14 +920,14 @@ export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary
 
 /** Several signatures as one term: their intersection, which a value meets by
  * meeting each. */
-export function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
+export function oneTerm(terms: FunctionTerm[], span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return terms.length === 1 && terms[0] ? terms[0] : { k: "intersection", parts: terms, span };
 }
 
 /** A member's key: an identifier, a declaration's string literal, or a
  * computed `[x]` whose `x` the scope resolves to a `unique symbol` constant.
  * Anything else has no key here. */
-function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | null {
+function propertyKey(scope: TermScope, name: Node | undefined): Within<{ value: "any"; store: "grow" }, PropertyKey | null> {
   if (!name) return null;
   if (ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))) return name.text;
   // A numeric name is the property its value names, `ToString` of it:
@@ -949,7 +949,7 @@ function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | nu
  * methods, host-relative members as an interface's are; one optional or
  * generic has no declaration to be read in. */
 export function members(scope: TermScope, list: readonly TypeElement[], at: Node, span: Span,
-    methods: boolean | "nested"): TypeTerm {
+    methods: boolean | "nested"): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
   const calls: FunctionTerm[] = [];
@@ -1093,7 +1093,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 }
 
 /** Whether two index signatures state the same contract. */
-function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): boolean {
+function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): Within<{ value: "any"; store: "grow" }, boolean> {
   // An object at the top, which the replacer keeps: always a text.
   const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
   return a.readonly === b.readonly && spanless(a.value) === spanless(b.value);
@@ -1101,7 +1101,7 @@ function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boo
 
 /** The key kinds an index signature's parameter type names: `string`,
  * `number`, `symbol`, or a union of them. */
-function indexKinds(scope: TermScope, node: TypeNode): ("string" | "number" | "symbol")[] {
+function indexKinds(scope: TermScope, node: TypeNode): Within<{ value: "any"; store: "grow" }, ("string" | "number" | "symbol")[]> {
   const kinds: ("string" | "number" | "symbol")[] = [];
   const add = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(add);

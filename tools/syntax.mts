@@ -20,21 +20,21 @@ type Child = "name" | "propertyName" | "label" | "type" | "questionToken" | "pos
 type Children = "modifiers" | "typeParameters" | "parameters";
 
 /** One child of `node`, where its kind carries it and it is present. */
-export function childOf(node: Node, key: Child): Node | undefined {
+export function childOf(node: Node, key: Child): Within<{ value: "any"; store: "grow" }, Node | undefined> {
   const value: unknown = Reflect.get(node, key);
   return isNode(value) ? value : undefined;
 }
 
 /** A list of children of `node`: empty where its kind carries none or none
  * is written. */
-export function childrenOf(node: Node, key: Children): readonly Node[] {
+export function childrenOf(node: Node, key: Children): Within<{ value: "any"; store: "grow" }, readonly Node[]> {
   const value: unknown = Reflect.get(node, key);
   return Array.isArray(value) ? value.filter(isNode) : [];
 }
 
 /** The name a declaration or member declares, where its kind has one. */
-export const nameOf = (node: Node): Node | undefined => childOf(node, "name");
+export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node | undefined> => childOf(node, "name");
 
 /** Whether a member is written `static`. */
-export const isStatic = (node: Node): boolean =>
+export const isStatic = (node: Node): Within<{ value: "any"; store: "grow" }, boolean> =>
   childrenOf(node, "modifiers").some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
