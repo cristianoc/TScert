@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 // ../tools/strip-types.mts erases the annotations of an example run as JavaScript.
 import { stripTypes } from "../tools/strip-types.mts";
@@ -36,10 +37,16 @@ console.log(JSON.stringify(${expression}));
 };
 /** Run an example as an ES module in a Node process of its own, then
  * `statements`: what the process prints, its status and the signal that
- * ended it, for a control whose process exits by a listener or a signal. */
-export const runNode = (file: string, statements: string): { stdout: string; status: number | null; signal: string | null } => {
+ * ended it, for a control whose process exits by a listener or a signal.
+ * `imports` maps a package specifier the example imports to the module
+ * file Node loads for it, as the package's export map resolves it. */
+export const runNode = (file: string, statements: string, imports: Readonly<Record<string, string>> = {}):
+    { stdout: string; status: number | null; signal: string | null } => {
   const out = runDirectory("node-");
-  writeFileSync(join(out, "main.mjs"), `${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}\n${statements}\n`);
+  const text = Object.entries(imports).reduce((t, [specifier, path]) =>
+    t.replaceAll(`from ${JSON.stringify(specifier)}`, `from ${JSON.stringify(pathToFileURL(path).href)}`),
+    stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8")));
+  writeFileSync(join(out, "main.mjs"), `${text}\n${statements}\n`);
   const run = spawnSync(process.execPath, [join(out, "main.mjs")], { encoding: "utf8", timeout: 30_000 });
   assert.ifError(run.error);
   return { stdout: run.stdout.trim(), status: run.status, signal: run.signal };

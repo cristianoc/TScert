@@ -7,7 +7,7 @@
  * which package is the host, and which of its enums the contract reads as
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
-import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription } from "./host-families.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
@@ -306,6 +306,28 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
   ] },
 ];
+
+/** A request of the sync API (T6, COMPILER-API.md, "The sync API"): a
+ * method a named view lists. It may call its instance's retained `fs`
+ * callbacks, and every instance a run meets is opened with callbacks within
+ * `{value: any, store: grow}` (`openCompiler`'s, audited, and an external
+ * instance's by the external-input assumption), and the host's own state is
+ * observed by no transparent operation (T4): so a call is within
+ * `{value: any, store: grow}` on normal return. */
+export const isRequest = (entry: { text: string }): boolean => !entry.text.startsWith("readonly ");
+
+/** A request's reading: each of its signatures at `{value: any, store:
+ * grow}`, on normal return only. */
+export function requestReading(type: TypeTerm): TypeTerm {
+  const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
+    receiverStore: false, onThrow: false };
+  const at = (t: TypeTerm): TypeTerm =>
+    t.k === "function" && t.effect.promise === null ? { ...t, effect }
+    : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
+    : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
+    : t;
+  return at(type);
+}
 
 /** The host package's node list interface, read as a dense readonly array of
  * its elements (COMPILER-API.md, "Node lists in the model"), never through

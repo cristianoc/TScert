@@ -24,7 +24,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
@@ -4904,10 +4904,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }));
       // The host produces each member: a branded string there is read as a
       // string, and one the client would produce refused (reading rule 5).
+      // A view's methods are the sync API's requests, read at their
+      // statement (T6, `requestReading`).
+      const request = (f: { name: PropertyKey }): boolean =>
+        !!named?.members.some(m => m.name === f.name && isRequest(m));
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
         .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
-          type: hostBrands(f.type, true, context.isBrand,
+          type: hostBrands(request(f) ? requestReading(f.type) : f.type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality

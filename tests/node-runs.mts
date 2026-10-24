@@ -1684,3 +1684,16 @@ for (const [file, call] of [
   const ran = runNode(file, `process.on("unhandledRejection", () => {}); console.log(1 in ${call} ? "dense" : "hole");`);
   assert.deepEqual([ran.stdout, ran.status], ["hole", 0], `${file}: the async call returned, and the result has a hole`);
 }
+// A retained `fs` callback of the sync API popping an array the program
+// holds: the request after the construction calls it, and the array
+// shrinks, beyond the requests' `{value: any, store: grow}`; a verified
+// program makes no instance (`invalid-compiler-api-retained-fs` is refused
+// at the constructor's declaration).
+{
+  const project = new URL("../pipeline/compiler-api-project/tsconfig.json", import.meta.url).pathname;
+  const sync = new URL("../tools/node_modules/typescript/dist/api/sync/api.js", import.meta.url).pathname;
+  const ran = runNode("invalid-compiler-api-retained-fs",
+    `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
+    { "typescript/unstable/sync": sync });
+  assert.deepEqual([ran.stdout, ran.status], ["shrunk", 0], "invalid-compiler-api-retained-fs: a request runs the popping callback");
+}

@@ -2409,7 +2409,8 @@ control(async (): Promise<void> => {
 // footprint: a visitor growing an array the callback allocated is within
 // `{value: any, store: grow}`, and its callback within neither the empty
 // footprint nor `{value: any, store: keep}`; a popping one within neither
-// the empty footprint nor `grow`. A refused control marked `consumed` also checks the
+// the empty footprint nor `grow`. One calling a sync API request is within
+// `{value: any, store: grow}` and not `{value: any, store: keep}`. A refused control marked `consumed` also checks the
 // fixture's honest evidence against the forged claim, which must refuse; its
 // fixture verifies, so that evidence exists: program 7 at a result type
 // admitting holes (`map-unstable-pop-sparse`) is consumed so. A negative
@@ -2449,6 +2450,8 @@ control(async (): Promise<void> => {
     ["invalid-compiler-api-visitor-effect", "(n) => {", 3, false, growStores, false],
     ["compiler-api-visitor-effect", "(n) => {", 3, false, keepAll, true],
     ["compiler-api-visitor-effect", "(n) => {", 3, false, writeValues, true],
+    ["compiler-api-request-effect", "(n) =>", 3, false, writeValues, true],
+    ["compiler-api-request-effect", "(n) =>", 3, true, growStores, true],
   ] as const) {
     const artifacts = run(file);
     const claims = readClaims(artifacts);

@@ -603,6 +603,24 @@ callbacks write of the client's state. A callback that throws, re-enters the
 API, or returns outside its type makes the request throw and leaves the
 instance throwing on every later request; a throw is an allowed outcome.
 
+**Requests' footprint.** Each method a view lists is a request, read at the
+footprint $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
+on normal return (`isRequest`, `requestReading`): it changes no location of
+the model but through its instance's retained callbacks (T6), the host's
+own state is observed by no transparent operation (T4), and every instance
+a verified program meets is opened with callbacks within that footprint. A
+verified program opens none: `new API(…)` is outside the admitted language
+(its declaration's type parameter default is refused, and no view lists
+the constructor; `invalid-compiler-api-retained-fs`, whose retained
+callback pops an array under Node). The front end's instances are opened by
+`openCompiler` (`tools/compiler-channel.mts`), with `compilerFileSystem`'s
+callbacks (`tools/files.mts`) or `tools/unchecked.mts`'s, which read files,
+record answers in fresh or owned maps and write module cells, removing no
+element of a store they did not allocate (audited). An instance a verified
+program receives from outside is an input, whose callbacks within the
+footprint are an assumption of T8. A `map` callback calling a request gives
+a dense result (`compiler-api-request-effect`). No bound holds on a throw.
+
 **Lifetimes.** The guarantee is type safety without source correspondence:
 a request returns a value of its declared type or throws, whatever
 snapshot, project or instance the handles it receives came from. That a
@@ -829,14 +847,19 @@ the corpus runs are regression evidence, not proofs.
   may call the instance's retained `fs` callbacks synchronously with string
   arguments, and then returns a value of its declared type or throws; it
   runs no other client code and changes no stable member of an object it
-  returned earlier. A result need not describe the handles passed when they
+  returned earlier. With T4 and callbacks within
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$,
+  a request's call is within that footprint on normal return. A result need not describe the handles passed when they
   come from another snapshot, project or instance.
 - **T7 (stated type guards; proposed with them).** For each stated guard
   $`g`$ promising $`X`$: when $`g`$ returns `true` on a value of a host type, the members $`X`$
   adds over `Type` return values of their declared types.
 - **T8 (external code).** Every value code outside the linked certified closure
   gives a certified function or closure meets the classified
-  interpretation recursively: its arguments, the results of external
+  interpretation recursively, and every sync API instance it gives was
+  opened with `fs` callbacks within
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$:
+  its arguments, the results of external
   functions it calls, the arguments external code passes to its callbacks,
   and every location reachable from them hold no host object where their
   contract excludes one. An external callable's contract respects the
