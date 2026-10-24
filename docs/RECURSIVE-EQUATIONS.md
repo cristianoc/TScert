@@ -132,7 +132,12 @@ that substitution, or checks a proof that a named image is equal to it. The
 checker and its soundness proofs, expression typing
 and control flow included, are stated over an interface: an image check with
 a proof that it computes correct images. Substitution is one instance of it,
-and the closure check of a finite table another.
+and the closure check of a finite table another. The interface also carries
+inclusions already proved in the graph, each with its proof at every
+parameter assignment; a comparison of one of them is established without
+comparing (`InstanceImageCheck.known`, `compareUsing_sound`). The check of a
+document holds none; the producer's own checks hold those its search
+established.
 
 ## 4. Subtyping
 

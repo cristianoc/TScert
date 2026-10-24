@@ -572,12 +572,14 @@ trusted code and no wire.
 
 ### 3.8 One memo for search and its check
 
-Search's own check of its evidence (`checkTreeS`, the final check of
-`--produce-source-claims`) runs in the process that established its
-comparisons, over the same graph and image check. The memo of §3.5 is
-passed to it: a comparison search established is answered with its
-`CheckedComparison`. The check stage, in its own process, starts with an
-empty memo.
+Search's own check of each graph and code it produces runs in the process
+that established its comparisons, over the same graph. Search records each
+inclusion it establishes with its proof (`Answered.proved`), and its checks
+read them as the image check's proved inclusions (`Answered.images`,
+`InstanceImageCheck.known`), which `compareUsing` establishes without
+comparing. The final check of `--produce-source-claims` reads each request's
+own image check, which holds none, and the check stage, in its own process,
+holds none.
 
 ### 3.9 What is preserved
 
@@ -798,19 +800,19 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 6.9 s, `inertRead` 21.1 → 5.5,
-`resolve` 20.4 → 5.0, `forOfPattern` 115.0 → 5.7, `pattern` 15.1 → 2.9,
+measured: `moduleFunction` 29.1 → 6.5 s, `inertRead` 21.1 → 5.4,
+`resolve` 20.4 → 4.9, `forOfPattern` 115.0 → 5.4, `pattern` 15.1 → 2.8,
 `patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
 check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
 3.4 → 2.3. Each lies within its expected interval. The width series is
-0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.56 / 0.94 / 1.29 / 2.08 / 3.41 s. The
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.53 / 0.93 / 1.25 / 1.99 / 3.20 s. The
 width criterion is on the part the design acts on: the sampled time outside
 the front end (reading the fragment and the claims, lowering and freezing
 them) and the evidence write, at width 136 within 12 times its time at
 width 5 (the widths' ratio, 136/5, is 27), and within 1.5 times its time at
 width 87 scaled by 136/87. Measured at widths 5 / 30 / 87 / 136 it is
-0.11 / 0.21 / 0.60 / 1.04 s, within both bounds (1.32 and 1.41); the front
-end takes 0.21 / 0.47 / 0.97 / 1.64 s, which the input's own growth sets.
+0.10 / 0.18 / 0.54 / 0.89 s, within both bounds (1.20 and 1.27); the front
+end takes 0.21 / 0.46 / 0.96 / 1.60 s, which the input's own growth sets.
 
 ## 8. Migration
 
@@ -834,7 +836,9 @@ family covers; clause membership by an index under the label hash, in
 search and in the validator, which reads a pair's target clauses once, as
 its opaque rows do; the row-matched instance computed when the engine reaches
 it, and reading no row where a target signature has no scheme signature of
-its effect and arity. Each step's measurement is WORK's row.
+its effect and arity; search's checks of its graphs and codes answering the
+inclusions it established from their proofs. Each step's measurement is
+WORK's row.
 
 Remaining:
 
@@ -842,7 +846,8 @@ Remaining:
    bucketed by their source labels, label containment through a hash set
    where the orders differ, and a meet row's parts read once per premise;
    each with its equality lemma to the list form it replaces.
-2. **One memo for search and its check** (§3.8).
+2. **The final check reads the memo**: `--produce-source-claims`'s check
+   of the document answering the inclusions search established (§3.8).
 3. **Validator and discovery read the candidate index** (§3.3), with
    `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
 4. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.

@@ -495,8 +495,13 @@ document. The table is keyed by source and target alone because every
 request of a document reads one graph and one image check, built once from
 the frozen store: a checked store's graph is its equations' and its image
 check reads only the equations, the variances and the budget (proved,
-`Checked.graph_eq`, `Checked.images_eq`). The checker recomputes every
-comparison, so the table concerns search only.
+`Checked.graph_eq`, `Checked.images_eq`). The table records each inclusion
+a request established, with its proof (`Answered.proved`, from
+`subtypeSearch_sound`). Search's own check of each graph and code it
+produces reads them as the image check's proved inclusions
+(`Answered.images`), so a comparison search established is not decided
+again there; the final check of the document and the check stage decide
+every comparison.
 
 **Where the search time sits.** In `statementsOnPath`'s search (macOS
 `sample`, one run, 2026-10-18), about a third of the working thread's

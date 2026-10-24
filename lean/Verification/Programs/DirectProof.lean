@@ -42,8 +42,8 @@ def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c
 (`CertificateProducer.Answered`), and the current render's exhaustion. The
 graph and its image checker are fixed for one cache's life, so the two types
 are the key. -/
-structure SubtypeCache (ι : Type) [BEq ι] [Hashable ι] where
-  answers : CertificateProducer.Answered ι := {}
+structure SubtypeCache {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) where
+  answers : CertificateProducer.Answered G := {}
   /-- The first unfinished coercion in the current render only. -/
   active : Option (Exhaustion ι) := none
 
@@ -51,12 +51,12 @@ section
 variable [DecidableEq ι] [Hashable ι] [CertificateProducer.Instantiates ι]
 
 /-- Rendering fails, or rebuilds evidence, with the searches done so far. -/
-abbrev RenderM (ι : Type) [DecidableEq ι] [Hashable ι] := OptionT (StateM (SubtypeCache ι))
+abbrev RenderM {ι : Type} [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) := OptionT (StateM (SubtypeCache G))
 
 /-- `coerce`, each search done once per cache: the same search again returns
 what it did the first time. -/
 def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (e : Evidence ι) (A : Ty ι) :
-    RenderM ι (Evidence ι) := do
+    RenderM G (Evidence ι) := do
   if (claim e).type = A then return e
   let (found, answers) := subtypeUsing G images (claim e).type A (← get).answers
   modify fun c => { c with answers, active := c.active <|> found.exhaustion }
@@ -67,7 +67,7 @@ def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (e : Evidence �
 from that context to the planned type. This handles justified changes of supplied
 statement environments without assuming the planned context holds. -/
 def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) :
-    Nat → List (Ty ι) → Plan ι → RenderM ι (Evidence ι)
+    Nat → List (Ty ι) → Plan ι → RenderM G (Evidence ι)
   | 0, _, _ => failure
   | depth+1, Γ, p => do
    match p with
@@ -127,7 +127,7 @@ def Plan.depth : Plan ι → Nat
 
 /-- Render with the searches of earlier renders over the same graph and pool. -/
 def renderWith (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (p : Plan ι)
-    (cache : SubtypeCache ι) : CheckResult ι (Evidence ι) × SubtypeCache ι :=
+    (cache : SubtypeCache G) : CheckResult ι (Evidence ι) × SubtypeCache G :=
   let (answer, next) := (renderAt G images pool p.depth Γ p).run.run { cache with active := none }
   (⟨answer, if answer.isSome then none else next.active⟩, next)
 

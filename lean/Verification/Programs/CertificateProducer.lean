@@ -424,6 +424,11 @@ theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (A B : Ty ι) : CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
   CheckResult.fromComparison images.budget.rounds A B (comparisonUsing G images A B)
 
+theorem subtypeSearch_sound [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {A B : Ty ι} (h : (subtypeSearch G images A B).accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B) :=
+  comparisonUsing_sound (by rwa [subtypeSearch, CheckResult.accepted_fromComparison] at h)
+
 /-! ### Search with answered requests
 
 The subtype requests one search context answered, by source and target. A
@@ -439,7 +444,7 @@ deriving instance Hashable for Tag
 exhaustion included; and the read summaries search proposed in one request's
 scope, each checked once when added, with the answer per receiver, key and
 result (`summaryUsing`). -/
-structure Answered (ι : Type) [BEq ι] [Hashable ι] where
+structure Answered {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   subtypes : Std.HashMap (Ty ι × Ty ι) (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
   summaries : Array (ReadSummary ι) := #[]
   summaryAnswers : Std.HashMap (Ty ι × PropKey × Ty ι) (CheckResult ι Nat) := {}
@@ -447,11 +452,28 @@ structure Answered (ι : Type) [BEq ι] [Hashable ι] where
   by the object's type, the field, the tags, the answer and the candidates:
   a pure function of these, so an entry is its value. -/
   fieldSlices : Std.HashMap (Ty ι × PropKey × List Tag × Bool × Ty ι) (Ty ι) := {}
+  /-- The inclusions the answered requests established, each proved. -/
+  proved : Std.HashSet (Ty ι × Ty ι) := {}
+  proved_sound : ∀ S T, proved.contains (S, T) = true →
+      ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+    intro _ _ h
+    simp at h
+
+/-- The proved inclusions as the image check reads them: the producer's own
+checks answer an established comparison without deciding it again. -/
+@[nospecialize] def Answered.images [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} (s : Answered G)
+    (images : InstanceImageCheck G) : InstanceImageCheck G :=
+  { images with
+    known := fun S T => images.known S T || s.proved.contains (S, T)
+    known_sound := fun S T h => by
+      rcases Bool.or_eq_true_iff.mp h with h | h
+      · exact images.known_sound S T h
+      · exact s.proved_sound S T h }
 
 /-- `PromiseCalls.memberFieldSlice`, answered again from the table where its
 inputs were asked before. -/
 @[nospecialize] def fieldSliceS [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (A : Ty ι) (f : PropKey)
-    (ts : List Tag) (q : Bool) (candidates : Ty ι) : StateM (Answered ι) (Ty ι) := fun s =>
+    (ts : List Tag) (q : Bool) (candidates : Ty ι) : StateM (Answered G) (Ty ι) := fun s =>
   let key := (A, f, ts, q, candidates)
   match s.fieldSlices.get? key with
   | some r => (r, s)
@@ -459,18 +481,30 @@ inputs were asked before. -/
     let r := PromiseCalls.memberFieldSlice G A f ts q candidates
     (r, { s with fieldSlices := s.fieldSlices.insert key r })
 
+/-- An established inclusion recorded with its proof. -/
+@[nospecialize] def Answered.prove [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} (s : Answered G)
+    (A B : Ty ι) (h : ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B)) : Answered G :=
+  { s with
+    proved := s.proved.insert (A, B)
+    proved_sound := fun S T hm => by
+      rw [Std.HashSet.contains_insert] at hm
+      rcases Bool.or_eq_true_iff.mp hm with he | hm
+      · obtain ⟨rfl, rfl⟩ := Prod.mk.inj (beq_iff_eq.mp he)
+        exact h
+      · exact s.proved_sound S T hm }
+
 /-- A search step threading the answered requests: a `CheckResult`
 computation whose answers persist across its failed alternatives. -/
-def SearchM (ι : Type) [BEq ι] [Hashable ι] (α : Type) : Type :=
-  Answered ι → CheckResult ι α × Answered ι
+def SearchM {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) (α : Type) : Type :=
+  Answered G → CheckResult ι α × Answered G
 
 namespace SearchM
-variable {ι : Type} [BEq ι] [Hashable ι]
+variable {ι : Type} [BEq ι] [Hashable ι] {G : NormalGraph ι}
 
-@[inline] def lift (r : CheckResult ι α) : SearchM ι α := fun s => (r, s)
+@[inline] def lift (r : CheckResult ι α) : SearchM G α := fun s => (r, s)
 
 /-- As `CheckResult.bind`, the answers threaded. -/
-@[nospecialize] def bind (x : SearchM ι α) (f : α → SearchM ι β) : SearchM ι β := fun s =>
+@[nospecialize] def bind (x : SearchM G α) (f : α → SearchM G β) : SearchM G β := fun s =>
   let (r, s) := x s
   match r.value with
   | none => (⟨none, r.exhaustion⟩, s)
@@ -478,12 +512,12 @@ variable {ι : Type} [BEq ι] [Hashable ι]
     let (t, s) := f a s
     (if t.value.isSome then t else { t with exhaustion := r.exhaustion <|> t.exhaustion }, s)
 
-instance : Monad (SearchM ι) where
+instance : Monad (SearchM G) where
   pure a := lift (pure a)
   bind := bind
 
 /-- As `CheckResult.orElse`, the answers of the failed attempt kept. -/
-@[nospecialize] def orElse (x : SearchM ι α) (next : Unit → SearchM ι α) : SearchM ι α := fun s =>
+@[nospecialize] def orElse (x : SearchM G α) (next : Unit → SearchM G α) : SearchM G α := fun s =>
   let (r, s) := x s
   match r.value with
   | some a => (⟨some a, none⟩, s)
@@ -492,50 +526,50 @@ instance : Monad (SearchM ι) where
     (if t.value.isSome then { t with exhaustion := none }
      else { t with exhaustion := r.exhaustion <|> t.exhaustion }, s)
 
-instance : Alternative (SearchM ι) where
+instance : Alternative (SearchM G) where
   failure := lift failure
   orElse := orElse
 
-instance : MonadLift Option (SearchM ι) where
+instance : MonadLift Option (SearchM G) where
   monadLift o := lift (CheckResult.fromOption o)
 
-instance : MonadLift (CheckResult ι) (SearchM ι) where
+instance : MonadLift (CheckResult ι) (SearchM G) where
   monadLift := lift
 
-instance : Coe (CheckResult ι α) (SearchM ι α) := ⟨lift⟩
+instance : Coe (CheckResult ι α) (SearchM G α) := ⟨lift⟩
 
-instance : Coe (Option α) (SearchM ι α) := ⟨fun o => lift (CheckResult.fromOption o)⟩
+instance : Coe (Option α) (SearchM G α) := ⟨fun o => lift (CheckResult.fromOption o)⟩
 
 /-- As `CheckResult.map`. -/
-@[nospecialize] def map (f : α → β) (x : SearchM ι α) : SearchM ι β := fun s =>
+@[nospecialize] def map (f : α → β) (x : SearchM G α) : SearchM G β := fun s =>
   let (r, s) := x s
   (r.map f, s)
 
 /-- The whole result as a value, the answers kept: for a caller that reads
 its exhaustion. -/
-@[nospecialize] def result (x : SearchM ι α) : SearchM ι (CheckResult ι α) := fun s =>
+@[nospecialize] def result (x : SearchM G α) : SearchM G (CheckResult ι α) := fun s =>
   let (r, s) := x s
   (pure r, s)
 
 /-- `x`'s value where it has one, else `y`, `x`'s exhaustion dropped, as an
 `if let some e := x then e else y` over pure results. -/
-@[nospecialize] def firstOr (x : SearchM ι α) (y : SearchM ι α) : SearchM ι α := fun s =>
+@[nospecialize] def firstOr (x : SearchM G α) (y : SearchM G α) : SearchM G α := fun s =>
   let (r, s) := x s
   match r.value with
   | some a => (pure a, s)
   | none => y s
 
 /-- A step whose result is read as a value of a state computation. -/
-@[inline] def toState (x : SearchM ι α) : StateM (Answered ι) (CheckResult ι α) := fun s => x s
+@[inline] def toState (x : SearchM G α) : StateM (Answered G) (CheckResult ι α) := fun s => x s
 
 /-- A state computation as a step. -/
-@[inline] def ofState (x : StateM (Answered ι) (CheckResult ι α)) : SearchM ι α := fun s => x s
+@[inline] def ofState (x : StateM (Answered G) (CheckResult ι α)) : SearchM G α := fun s => x s
 
 end SearchM
 
 /-- As `List.findCheck?`, the answers threaded through the candidates. -/
-@[nospecialize] def _root_.List.findSearch? {ι : Type} [BEq ι] [Hashable ι] (xs : List β)
-    (f : β → SearchM ι α) : SearchM ι α :=
+@[nospecialize] def _root_.List.findSearch? {ι : Type} [BEq ι] [Hashable ι] {G : NormalGraph ι} (xs : List β)
+    (f : β → SearchM G α) : SearchM G α :=
   match xs with
   | [] => failure
   | x :: xs => (f x).orElse fun _ => xs.findSearch? f
@@ -545,21 +579,22 @@ again from its first answer, `subtypeSearch`'s for the same graph, image
 check, source and target. Untrusted: the consumer checks every result. -/
 @[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
-    SearchM ι (PositiveCertificates.SubtypeChoices ι) := fun s =>
+    SearchM G (PositiveCertificates.SubtypeChoices ι) := fun s =>
   match s.subtypes.get? (A, B) with
   | some r => (r, s)
   | none =>
     let r := subtypeSearch G images A B
-    (r, { s with subtypes := s.subtypes.insert (A, B) r })
+    let s := { s with subtypes := s.subtypes.insert (A, B) r }
+    (r, if h : r.accepted = true then s.prove A B (subtypeSearch_sound h) else s)
 
 /-- The read summaries of the current request's scope, as its table. -/
-@[inline] def currentSummaries [BEq ι] [Hashable ι] : SearchM ι (List (ReadSummary ι)) := fun s =>
+@[inline] def currentSummaries [BEq ι] [Hashable ι] {G : NormalGraph ι} : SearchM G (List (ReadSummary ι)) := fun s =>
   (pure s.summaries.toList, s)
 
 /-- An evidence tree checked as the consumer checks it, against the current
 table of read summaries. -/
 @[nospecialize] def checkTreeS [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : SearchM ι Unit := fun s =>
+    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : SearchM G Unit := fun s =>
   (checkTreeResult G images e codes s.summaries.toList, s)
 
 /-- The index of a read summary for a read of `f` at a receiver of type `C`
@@ -569,11 +604,11 @@ the table; the answer, a failure included, is kept per receiver, key and
 result. Untrusted: the consumer checks the table and each use. -/
 @[nospecialize] def summaryUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (images : InstanceImageCheck G) (C : Ty ι) (f : PropKey) (B : Ty ι) :
-    SearchM ι Nat := fun s =>
+    SearchM G Nat := fun s =>
   match s.summaryAnswers.get? (C, f, B) with
   | some r => (r, s)
   | none =>
-    let arms : SearchM ι (List (SummaryArm ι)) := (members G C).mapM fun a => do
+    let arms : SearchM G (List (SummaryArm ι)) := (members G C).mapM fun a => do
       let [c] := expand G [a] | none
       let some (_, vs) := namedMembers c | none
       let V ← vs.lookup f
@@ -601,7 +636,7 @@ parameter within the member's and the member's result within the claimed;
 for each variadic one, a member's of as many fixed parameters, likewise, the
 claimed rest within the member's too. -/
 @[nospecialize] def memberProofsUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (O : Ty ι) (k : PropKey)
-    (F : Ty ι) : SearchM ι (List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) ×
+    (F : Ty ι) : SearchM G (List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) ×
       List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι) ×
       List (PositiveCertificates.SubtypeChoices ι)) := do
   let m ← ProgramTyping.memberOf G O k
@@ -628,7 +663,7 @@ search proposes a comparison with each aliased label read as its alias, which
 only a body check that admits those aliases accepts. -/
 @[nospecialize] def coerce [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (aliases : List (ι × ι)) (e : ProgramCertificates.Evidence ι) (A : Ty ι) :
-    SearchM ι (ProgramCertificates.Evidence ι) := do
+    SearchM G (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
   let p ← (subtypeUsing G images (claim e).type A).orElse fun _ =>
     if aliases.isEmpty then none else
@@ -696,7 +731,7 @@ types; every premise is proved in the actual context, even when the suggestion
 came from a different context. No execution budget is inspected. -/
 @[nospecialize] def expressionWithUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (suggestions : List (Sequent ι)) (aliases : List (ι × ι)) :
-    Nat → List (Ty ι) → Tm → Ty ι → SearchM ι (ProgramCertificates.Evidence ι)
+    Nat → List (Ty ι) → Tm → Ty ι → SearchM G (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => failure
   | fuel+1, Γ, t, A => Id.run do
     -- A slot no value meets makes the context unsatisfiable: splitting it
@@ -833,7 +868,7 @@ came from a different context. No execution budget is inspected. -/
       let schemes := match Γ[i]? with
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
-      let direct : SearchM ι (ProgramCertificates.Evidence ι) := (A :: schemes ++ pool).findSearch? fun F => do
+      let direct : SearchM G (ProgramCertificates.Evidence ι) := (A :: schemes ++ pool).findSearch? fun F => do
         let (ps, rs, vs) ← memberProofsUsing G images (← Γ[i]?) k F
         (checkTreeS G images (leaf F (.bindMember ps rs vs))).bind fun _ =>
           coerce G images aliases (leaf F (.bindMember ps rs vs)) A
@@ -990,7 +1025,7 @@ came from a different context. No execution budget is inspected. -/
         pure (coerceBy sub (.node ⟨Γ,t,B⟩ r [ea]) A)
       -- A read of a slot holding a union, each member's view of the key
       -- within `A`: one checked summary of the request's table.
-      let summarized : SearchM ι (ProgramCertificates.Evidence ι) := do
+      let summarized : SearchM G (ProgramCertificates.Evidence ι) := do
         let .var i := a | none
         let C ← Γ[i]?
         if (ProgramTyping.members G C).length ≤ 1 then none else do
@@ -1189,7 +1224,7 @@ came from a different context. No execution budget is inspected. -/
         let pc ← recur Γ c C
         let pb ← recur Γ (if q then t else e) A
         pure (.node ⟨Γ,.ite c t e,A⟩ (.ifKnown q) [pc,pb])
-      let refined : SearchM ι (ProgramCertificates.Evidence ι) := do
+      let refined : SearchM G (ProgramCertificates.Evidence ι) := do
         let .var i := c | none
         let C ← Γ[i]?
         if !decide (Answers G C .isBool true) then none else do
@@ -1229,14 +1264,14 @@ inductive Failure (ι : Type) where
 
 /-- A node's production, threading the answered requests: a failure keeps
 the answers its attempts found. -/
-abbrev ProduceM (ι : Type) [BEq ι] [Hashable ι] := EStateM (Failure ι) (Answered ι)
+abbrev ProduceM {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) := EStateM (Failure ι) (Answered G)
 
 /-- A search step's whole result, in production. -/
-@[inline] def searchIn [BEq ι] [Hashable ι] (x : SearchM ι α) : ProduceM ι (CheckResult ι α) :=
+@[inline] def searchIn [BEq ι] [Hashable ι] {G : NormalGraph ι} (x : SearchM G α) : ProduceM G (CheckResult ι α) :=
   fun s => let (r, s) := x s; .ok r s
 
 /-- A state computation over the answers, in production. -/
-@[inline] def stateIn [BEq ι] [Hashable ι] (x : StateM (Answered ι) α) : ProduceM ι α :=
+@[inline] def stateIn [BEq ι] [Hashable ι] {G : NormalGraph ι} (x : StateM (Answered G) α) : ProduceM G α :=
   fun s => let (a, s) := x s; .ok a s
 
 /-- Ordinary and observed edges share slot selection and coverage search. The
@@ -1246,7 +1281,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
     (observed : Option (Nat × BranchRefinement.Observation) := none)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
     (cells : HeapFacts.Facts := []) :
-    SearchM ι (EdgeEvidence ι) := do
+    SearchM G (EdgeEvidence ι) := do
   let c ← claims[target.label]?
   -- An edge out of a context no environment meets is never taken
   -- (`vacuous-edge`): the checker needs no slot evidence.
@@ -1309,7 +1344,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
-    SearchM ι (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
+    SearchM G (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
   -- A node's derivation is first sought among its own types: its claim and
   -- its context's, which are its operands' claims. The pool is consulted
   -- only where those leave a choice open.
@@ -1421,7 +1456,7 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
 @[nospecialize] def nodeYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι))
     (implies : List (PromiseCalls.Implication ι)) (e : Evidence ι)
-    (out k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+    (out k : HeapKnowledge.Knowledge) : StateM (Answered G) (List (PromiseCalls.Yield ι)) :=
   match PromiseCalls.promiseOf G e with
   | some (effect, a, T) =>
     if out == HeapExpressionRules.ordinaryOutput k ||
@@ -1450,7 +1485,7 @@ where
   its value was read from, as the answer leaves them, where it leaves less;
   each yield's type is its slice, which the empty choices relate to itself
   without a search. -/
-  memberYields (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+  memberYields (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered G) (List (PromiseCalls.Yield ι)) := do
     let slot ← answers.filterMapM fun q => match Γ[i]? with
       | none => pure none
       | some A =>
@@ -1474,7 +1509,7 @@ where
     ys.mergeSort fun a b => a.type.length ≥ b.type.length
   /-- The objects a current read link says the tested slot's value was read
   from: each at the arms whose field answers the test so. -/
-  throughFields (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+  throughFields (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered G) (List (PromiseCalls.Yield ι)) :=
     k.links.filterMapM fun g =>
       if g.alias || g.optional || g.value != i then pure none else
         match Γ[g.cell]? with
@@ -1484,7 +1519,7 @@ where
           if sliced == A then pure none else do
           let r ← (subtypeUsing G images sliced sliced).toState
           pure (r.value.map fun p => { conditional := true, target := g.cell, type := sliced, evidence := some p })
-  tested (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+  tested (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered G) (List (PromiseCalls.Yield ι)) :=
     match Γ[i]? with
     | some A =>
       let sliced := BranchRefinement.tagSlice G A tag q
@@ -1522,7 +1557,7 @@ The producer tries bounded selections and orderings against the edge
 obligations. Untrusted: the checker decides. -/
 @[nospecialize] def sliceYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (e : Evidence ι)
-    (k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+    (k : HeapKnowledge.Knowledge) : StateM (Answered G) (List (PromiseCalls.Yield ι)) :=
   match PromiseCalls.promiseOf G e with
   | some _ => pure []
   | none =>
@@ -1538,18 +1573,18 @@ where
   reads (i : Nat) : List HeapLinks.Link :=
     k.links.filter fun g => !g.alias && !g.optional && g.value == i
   /-- A conditional yield at `j` of `sliced`, by a subtype choice of it. -/
-  sliceAt (j : Nat) (sliced : Ty ι) : StateM (Answered ι) (Option (PromiseCalls.Yield ι)) := do
+  sliceAt (j : Nat) (sliced : Ty ι) : StateM (Answered G) (Option (PromiseCalls.Yield ι)) := do
     match Γ[j]? with
     | none => pure none
     | some _ => do
       let r ← (subtypeUsing G images sliced sliced).toState
       pure (r.value.map fun p => { conditional := true, target := j, type := sliced, evidence := some p })
-  tagged (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+  tagged (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered G) (List (PromiseCalls.Yield ι)) := do
     let slot ← sliceAt i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag q)
     let fields ← (reads i).filterMapM fun g =>
       sliceAt g.cell (BranchRefinement.fieldSlice G (Γ[g.cell]?.getD []) g.field tag q)
     pure (slot.toList ++ fields)
-  membership (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+  membership (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered G) (List (PromiseCalls.Yield ι)) := do
     let yieldAt := fun (j : Nat) (q : Bool) (sliced : Ty ι) =>
       match Γ[j]? with
       | some _ =>
@@ -1595,7 +1630,7 @@ promise's evidence. -/
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : List (PointClaim ι))
     (k : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
     (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
-    (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM ι (NodeEvidence ι) := do
+    (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM G (NodeEvidence ι) := do
   let unconditional := PromiseCalls.yieldFacts ys false
   let conditional := PromiseCalls.yieldFacts ys true
   let refine := fun Γ facts shift => PromiseCalls.refineBy Γ facts shift
@@ -1610,7 +1645,7 @@ promise's evidence. -/
     | some p => pure p
     | none => throw (match searched.exhaustion with
       | some stop => Failure.exhaustedEdge l t.label index stop
-      | none => Failure.edge l t.label index) : ProduceM ι (EdgeEvidence ι))
+      | none => Failure.edge l t.label index) : ProduceM G (EdgeEvidence ι))
   let branchTarget := fun (Γ : List (Ty ι)) o (t : Target) (index : Nat) => (do
     let searched ← searchIn (edgeUsing G images claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
       (HeapKnowledge.observeTyped G Γ out 0 o).cells)
@@ -1618,7 +1653,7 @@ promise's evidence. -/
     | some p => pure p
     | none => throw (match searched.exhaustion with
       | some stop => Failure.exhaustedEdge l t.label index stop
-      | none => Failure.edge l t.label index) : ProduceM ι (EdgeEvidence ι))
+      | none => Failure.edge l t.label index) : ProduceM G (EdgeEvidence ι))
   let ps ← (match node.continuation with
     | .ret => pure []
     | .bind t => (target (pushedRefine unconditional) t 0).map (fun p => [p])
@@ -1629,7 +1664,7 @@ promise's evidence. -/
         (branchTarget (pushedRefine (PromiseCalls.yieldFacts ys false true)) (.boolean false) n 1).map (fun pn => [py,pn]))
     | .tagBind t y n => (branchTarget (pushedRefine
         (PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G t c.type))) (.tag t true) y 0).bind (fun py =>
-        (branchTarget (pushedRefine unconditional) (.tag t false) n 1).map (fun pn => [py,pn])) : ProduceM ι (List (EdgeEvidence ι)))
+        (branchTarget (pushedRefine unconditional) (.tag t false) n 1).map (fun pn => [py,pn])) : ProduceM G (List (EdgeEvidence ι)))
   -- A handler receives the thrown value at a type admitting every value: the
   -- type its target states for the slot it lands in, else one from the pool.
   let hd ← (match node.handler with
@@ -1645,7 +1680,7 @@ promise's evidence. -/
       | none => throw (match searched.exhaustion with
         | some stop => .exhaustedEdge l t.label (successors node.continuation).length stop
         | none => .edge l t.label (successors node.continuation).length)
-    : ProduceM ι (Option (Ty ι × EdgeEvidence ι)))
+    : ProduceM G (Option (Ty ι × EdgeEvidence ι)))
   -- A return under a promise goal: evidence that the argument, as the yields
   -- leave it, is within the promise.
   let within := fun (facts : List (Nat × Ty ι)) (T : Ty ι) =>
@@ -1653,7 +1688,7 @@ promise's evidence. -/
       | some B => do
         let r ← searchIn (subtypeUsing G images B T)
         pure (r.value.map (p, ·))
-      | none => pure none : ProduceM ι (Option (Nat × PositiveCertificates.SubtypeChoices ι)))
+      | none => pure none : ProduceM G (Option (Nat × PositiveCertificates.SubtypeChoices ι)))
   let promise ← match node.continuation, goal with
     | .ret, .guards T _ => if BranchRefinement.impossible G c.type (.boolean true) then pure none else within conditional T
     | .ret, .asserts T _ => within unconditional T
@@ -1678,7 +1713,7 @@ promise's evidence. -/
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (implies : List (PromiseCalls.Implication ι) := []) (arguments : List Nat := [])
     (goal : ControlFlow.Goal ι := .plain []) :
-    ProduceM ι (NodeEvidence ι) := do
+    ProduceM G (NodeEvidence ι) := do
   let some c := claims[l]? | throw .claimCount
   let searched ← searchIn (expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions
     known codes aliases checker)
@@ -1719,7 +1754,7 @@ promise's evidence. -/
     let candidates := [choices, choices.reverse] ++
       (ordered.take 8).flatMap fun y =>
         [choices.filter (fun z => !same z y) ++ [y], [y]]
-    let rec retry : List (List (PromiseCalls.Yield ι)) → ProduceM ι (NodeEvidence ι)
+    let rec retry : List (List (PromiseCalls.Yield ι)) → ProduceM G (NodeEvidence ι)
       | [] => attempt []
       | ys :: rest => tryCatch (attempt ys) fun _ => retry rest
     retry (candidates.take 18)
@@ -1813,7 +1848,7 @@ Every edge is still checked by the independent consumer. -/
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (goal : ControlFlow.Goal ι := .plain []) :
-    ProduceM ι (ControlFlow.Certificate ι) := do
+    ProduceM G (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   -- Arrays: every pass visits nodes and their predecessors by label.
   let arguments := (argumentSlots P claims start goal.slot).toArray
@@ -1918,8 +1953,9 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (aliases : List (ι × ι) := []) (answers : Answered ι := {}) :
-    Except (Failure ι) (ControlFlow.Certificate ι) × Answered ι :=
+    (aliases : List (ι × ι) := []) (answers : Answered G := {})
+    (recheck : Option ((i : InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none) :
+    Except (Failure ι) (ControlFlow.Certificate ι) × Answered G :=
   let promised := match R with
     | .guards T _ | .asserts T _ => [T]
     | .plain _ => []
@@ -1927,7 +1963,13 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
       requirements cuts codes aliases checker R).run answers with
   | .error e answers => (.error e, answers)
   | .ok C answers => Prod.mk (
-    let checked := acceptResult G images R P claims C start inputs codes checker answers.summaries.toList
+    -- Where `recheck` builds the search's checker at any image check, the
+    -- certificate is checked with the inclusions search established
+    -- answered from their proofs (`Answered.images`).
+    let checked := match recheck with
+      | some f => let images' := answers.images images
+        acceptResult G images' R P claims C start inputs codes (f images') answers.summaries.toList
+      | none => acceptResult G images R P claims C start inputs codes checker answers.summaries.toList
     if checked.accepted then .ok C
     else match checked.exhaustion with
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)

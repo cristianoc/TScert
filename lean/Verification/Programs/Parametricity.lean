@@ -38,6 +38,10 @@ theorem images_reassign_fixed (images : InstanceImageCheck G) :
 theorem budget_reassign (images : InstanceImageCheck G) :
     (images.reassign η).budget = images.budget := rfl
 
+/-- Reassigning parameter meanings preserves the proved inclusions. -/
+theorem known_reassign (images : InstanceImageCheck G) :
+    (images.reassign η).known = images.known := rfl
+
 /-! Every checker below takes a proved instance image checker. Its check is
 the same function at every reassignment (`InstanceImageCheck.reassign`). -/
 variable (images : InstanceImageCheck G)
@@ -58,7 +62,7 @@ theorem compareUsing_reassign (S T : List ι) (instantiation : List ι → List 
     (members : Table ι → List (KnownInstance ι)) :
     compareUsing (reassign G η) (images.reassign η) S T instantiation members =
       compareUsing G images S T instantiation members := by
-  simp only [compareUsing, budget_reassign, compareUsingCore_reassign]
+  simp only [compareUsing, budget_reassign, known_reassign, compareUsingCore_reassign]
 
 theorem check_reassign (S T : List ι) (p : SubtypeChoices ι) :
     PositiveCertificates.checkUsing (reassign G η) (images.reassign η) S T p =

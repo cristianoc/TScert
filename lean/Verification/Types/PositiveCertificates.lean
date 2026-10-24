@@ -975,6 +975,13 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
     intro h r hr
     simp only [Thunk.get, hr] at h
     exact h
+  /-- Inclusions already proved in this graph, each answered without
+  comparing (`compareUsing`): the producer's own checks read the ones its
+  search established. -/
+  known : List ι → List ι → Bool := fun _ _ => false
+  known_sound : ∀ S T, known S T = true → ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+    intro _ _ h
+    cases h
 
 /-- Finite closed-table images use the domain's proved ordinary admission law. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
@@ -1029,6 +1036,8 @@ serves every reassignment (`Parametricity`). -/
   builtinsOk_sound h r hr := by
     rw [builtinsFree_reassign]
     exact images.builtinsOk_sound h r hr
+  known := images.known
+  known_sound := images.known_sound
 
 /-- The same check with candidate selection off: every target clause is read. -/
 @[nospecialize] def InstanceImageCheck.general [DecidableEq ι] {G : NormalGraph ι}
@@ -2196,13 +2205,17 @@ choose instances for the comparisons requested by the engine. -/
 @[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
+  if images.known S T then .established {} else
   compareUsingCore G images instantiation members images.budget.rounds [] S T
 
 theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T instantiation members}
     (h : (compareUsing G images S T instantiation members).accepted = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
-  compareUsingCore_sound h
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareUsing at h
+  split at h
+  · exact images.known_sound S T (by assumption)
+  · exact compareUsingCore_sound h
 
 /-- Find a supplied instance for the comparison the engine requests. Root choices
 and supporting choices carry the same instance data and receive the same validation. -/
