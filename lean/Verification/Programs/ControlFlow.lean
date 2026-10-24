@@ -468,7 +468,7 @@ where
   argumentWithin (facts : List (Nat × Ty ι)) (T : Ty ι) : CheckResult ι Unit :=
     match c.promise with
     | some (p, proof) =>
-      if c.arguments.contains p then match (refineBy (entry c) facts 0)[p]? with
+      if c.arguments.contains p then match (refineBy G (entry c) facts 0)[p]? with
         | some B => ProgramCertificates.checkSubtypeUsing G images B T proof
         | none => failure
       else failure
@@ -544,31 +544,31 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
   (CheckResult.ofBool (checkYields G images c codes sums slices)).bind fun _ =>
   match node.continuation, c.edges with
   | .ret, [] => checkReturnResult G images Rty c
-  | .bind l, [p] => checkTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+  | .bind l, [p] => checkTargetResult G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
       l p c.output (edgeImplications c.implies c.yields true)
       (pushedSources c.arguments (aliasedRead c.arguments node.expression))
-  | .effect l, [p] => checkTargetResult G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0)
+  | .effect l, [p] => checkTargetResult G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0)
       l p (HeapKnowledge.dropResult c.output) c.implies c.arguments
   | .branch y n, [py,pn] =>
       (CheckResult.ofBool (decide (expand G (result c) = [.bool]))).bind fun _ =>
-      (checkTargetResult G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields true) 0) 0) y py
+      (checkTargetResult G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields true) 0) 0) y py
         (HeapKnowledge.dropResult c.output) c.implies c.arguments).bind fun _ =>
-      checkTargetResult G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0) n pn
+      checkTargetResult G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0) n pn
         (HeapKnowledge.dropResult c.output) c.implies c.arguments
   | .branchBind y n, [py,pn] =>
       (CheckResult.ofBool (onlyBoolean G (result c))).bind fun _ =>
-      (checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
+      (checkBranchTargetResult G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
         (.boolean true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))).bind fun _ =>
-      checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
+      checkBranchTargetResult G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
         (.boolean false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | .tagBind t y n, [py,pn] =>
       (checkBranchTargetResult G images P C
-        (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields (truthyBoolean G t (result c))) 1) 0)
+        (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields (truthyBoolean G t (result c))) 1) 0)
         (.tag t true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))).bind fun _ =>
-      checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+      checkBranchTargetResult G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
         (.tag t false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | _, _ => failure
@@ -594,29 +594,29 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
   checkYields G images c codes sums &&
   match node.continuation, c.edges with
   | .ret, [] => (checkReturnResult G images Rty c).accepted
-  | .bind l, [p] => checkTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+  | .bind l, [p] => checkTargetUsing G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
       l p c.output (edgeImplications c.implies c.yields true)
       (pushedSources c.arguments (aliasedRead c.arguments node.expression))
-  | .effect l, [p] => checkTargetUsing G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0)
+  | .effect l, [p] => checkTargetUsing G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0)
       l p (HeapKnowledge.dropResult c.output) c.implies c.arguments
   | .branch y n, [py,pn] => decide (expand G (result c) = [.bool]) &&
-      checkTargetUsing G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields true) 0) 0) y py
+      checkTargetUsing G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields true) 0) 0) y py
         (HeapKnowledge.dropResult c.output) c.implies c.arguments &&
-      checkTargetUsing G images P C (refineBy (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0) n pn
+      checkTargetUsing G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult c.output).links (yieldFacts c.yields false) 0) 0) n pn
         (HeapKnowledge.dropResult c.output) c.implies c.arguments
   | .branchBind y n, [py,pn] => onlyBoolean G (result c) &&
-      checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
+      checkBranchTargetUsing G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
         (.boolean true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression)) &&
-      checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
+      checkBranchTargetUsing G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
         (.boolean false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | .tagBind t y n, [py,pn] =>
       checkBranchTargetUsing G images P C
-        (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields (truthyBoolean G t (result c))) 1) 0)
+        (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields (truthyBoolean G t (result c))) 1) 0)
         (.tag t true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression)) &&
-      checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+      checkBranchTargetUsing G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
         (.tag t false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | _, _ => false
@@ -761,32 +761,32 @@ def ReturnOk [DecidableEq ι] (G : NormalGraph ι) (goal : Goal ι) (Γ : List (
   match goal with
   | .plain R => A = R ∨ A = []
   | .guards T _ => onlyBoolean G A = true ∧ ((∀ n W v, meaning G A n W v → v = .tru → False) ∨
-      ∃ p B, p ∈ arg ∧ (refineBy Γ (yieldFacts ys true) 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T))
+      ∃ p B, p ∈ arg ∧ (refineBy G Γ (yieldFacts ys true) 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T))
   | .asserts T _ => (∀ n W v, meaning G A n W v → v = .undef) ∧ (A = [] ∨
-      ∃ p B, p ∈ arg ∧ (refineBy Γ (yieldFacts ys false) 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T))
+      ∃ p B, p ∈ arg ∧ (refineBy G Γ (yieldFacts ys false) 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T))
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (A : Ty ι) (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι))
     (ys : List (Yield ι)) (arg : List Nat) (aliased : Bool) : Continuation → Prop
   | .ret => ReturnOk G Rty Γ A ys arg
-  | .bind l => TargetOk G C (refineBy (A :: Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false) 1) 0) l facts
+  | .bind l => TargetOk G C (refineBy G (A :: Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false) 1) 0) l facts
       (edgeImplications xs ys true) (pushedSources arg aliased)
-  | .effect l => TargetOk G C (refineBy Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys false) 0) 0) l
+  | .effect l => TargetOk G C (refineBy G Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys false) 0) 0) l
       (HeapKnowledge.dropResult facts) xs arg
   | .branch y n => Represents G A .bool ∧
-      TargetOk G C (refineBy Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys true) 0) 0) y
+      TargetOk G C (refineBy G Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys true) 0) 0) y
         (HeapKnowledge.dropResult facts) xs arg ∧
-      TargetOk G C (refineBy Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys false) 0) 0) n
+      TargetOk G C (refineBy G Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys false) 0) 0) n
         (HeapKnowledge.dropResult facts) xs arg
   | .branchBind y n => onlyBoolean G A = true ∧
-      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys true) 1) 0) (.boolean true) y facts
+      BranchTargetOk G C (refineBy G (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys true) 1) 0) (.boolean true) y facts
         (edgeImplications xs ys true) (pushedSources arg aliased) ∧
-      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false true) 1) 0) (.boolean false) n facts
+      BranchTargetOk G C (refineBy G (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false true) 1) 0) (.boolean false) n facts
         (edgeImplications xs ys true) (pushedSources arg aliased)
   | .tagBind t y n =>
-      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys (truthyBoolean G t A)) 1) 0) (.tag t true) y facts
+      BranchTargetOk G C (refineBy G (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys (truthyBoolean G t A)) 1) 0) (.tag t true) y facts
         (edgeImplications xs ys true) (pushedSources arg aliased) ∧
-      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false) 1) 0) (.tag t false) n facts
+      BranchTargetOk G C (refineBy G (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false) 1) 0) (.tag t false) n facts
         (edgeImplications xs ys true) (pushedSources arg aliased)
 
 theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C Γ l p facts xs sources}
@@ -840,7 +840,7 @@ theorem return_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     {c : NodeEvidence ι} (hc : (checkReturnResult G images goal c).accepted = true) :
     ReturnOk G goal (entry c) (result c) c.yields c.arguments := by
   have within : ∀ {facts T}, (checkReturnResult.argumentWithin G images c facts T).accepted = true →
-      ∃ p B, p ∈ c.arguments ∧ (refineBy (entry c) facts 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T) := by
+      ∃ p B, p ∈ c.arguments ∧ (refineBy G (entry c) facts 0)[p]? = some B ∧ FamLe (meaning G B) (meaning G T) := by
     intro facts T h
     unfold checkReturnResult.argumentWithin at h
     split at h
@@ -991,36 +991,33 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
     HeapKnowledge.check_sound hfact (HeapKnowledge.observeTyped_holds he hf hq)⟩
 
-/-- A context refined by facts its values meet. -/
+/-- A context refined by facts its values meet, with a heap meeting the
+world (`PromiseCalls.envOk_refineBy`). -/
 theorem refined_env [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {u : Tm} {answered falsified : Bool} (he : EnvOk G Γ ρ n W) (hy : YieldsOk G ys ρ n W u)
+    {u : Tm} {answered falsified : Bool} {h : Heap} (hh : HeapOk (n+1) W h) (he : EnvOk G Γ ρ (n+1) W)
+    (hy : YieldsOk G ys ρ (n+1) W u)
     (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls) :
-    EnvOk G (refineBy Γ (yieldFacts ys answered falsified) 0) ρ n W :=
-  PromiseCalls.envOk_refineBy he fun f hf => by
+    EnvOk G (refineBy G Γ (yieldFacts ys answered falsified) 0) ρ (n+1) W :=
+  PromiseCalls.envOk_refineBy hh he fun f hf => by
     simpa using PromiseCalls.yieldFacts_holds hy ha hfl f hf
-
-theorem refined_push [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {A : Ty ι} {u : Tm} {answered falsified : Bool} (he : EnvOk G Γ ρ n W) (hu : meaning G A n W u)
-    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls) :
-    EnvOk G (refineBy (A :: Γ) (yieldFacts ys answered falsified) 1) (push u ρ) n W :=
-  PromiseCalls.envOk_refineBy (he.push hu) fun f hf => by
-    simpa [push] using PromiseCalls.yieldFacts_holds hy ha hfl f hf
 
 /-- The same, at the slots alias links relate too. -/
 theorem refined_env_aliased [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
-    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls)
+    {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h h' : Heap} (hh : HeapOk (n+1) W h')
+    (he : EnvOk G Γ ρ (n+1) W)
+    (hy : YieldsOk G ys ρ (n+1) W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls)
     (hl : HeapLinks.Holds links ρ h) :
-    EnvOk G (refineBy Γ (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 0) 0) ρ n W :=
-  PromiseCalls.envOk_refineBy he (PromiseCalls.aliasFacts_holds hl fun f hf => by
+    EnvOk G (refineBy G Γ (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 0) 0) ρ (n+1) W :=
+  PromiseCalls.envOk_refineBy hh he (PromiseCalls.aliasFacts_holds hl fun f hf => by
     simpa using PromiseCalls.yieldFacts_holds hy ha hfl f hf)
 
 theorem refined_push_aliased [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {A : Ty ι} {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
-    (hu : meaning G A n W u) (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru)
+    {A : Ty ι} {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h h' : Heap}
+    (hh : HeapOk (n+1) W h') (he : EnvOk G Γ ρ (n+1) W)
+    (hu : meaning G A (n+1) W u) (hy : YieldsOk G ys ρ (n+1) W u) (ha : answered = true → u = .tru)
     (hfl : falsified = true → u = .fls) (hl : HeapLinks.Holds links (push u ρ) h) :
-    EnvOk G (refineBy (A :: Γ) (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 1) 0) (push u ρ) n W :=
-  PromiseCalls.envOk_refineBy (he.push hu) (PromiseCalls.aliasFacts_holds hl fun f hf => by
+    EnvOk G (refineBy G (A :: Γ) (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 1) 0) (push u ρ) (n+1) W :=
+  PromiseCalls.envOk_refineBy hh (he.push hu) (PromiseCalls.aliasFacts_holds hl fun f hf => by
     simpa [push] using PromiseCalls.yieldFacts_holds hy ha hfl f hf)
 
 theorem pushed_arguments {arg : List Nat} {aliased : Bool} {ρ v0 u}
@@ -1038,14 +1035,15 @@ theorem pushed_arguments {arg : List Nat} {aliased : Bool} {ρ v0 u}
       exact hal rfl
 
 theorem goal_return [DecidableEq ι] {G : NormalGraph ι} {goal : Goal ι} {Γ A ys arg ρ n W v0 t}
+    {h : Heap} (hh : HeapOk (n+1) W h)
     (hr : ReturnOk G goal Γ A ys arg) (he : EnvOk G Γ ρ (n+1) W) (ht : meaning G A (n+1) W t)
     (hy : YieldsOk G ys ρ (n+1) W t) (ha : ArgumentsOk arg ρ v0) :
     GoalHolds G goal v0 n (trunc n (Nat.le_succ n) W) t := by
   have promised : ∀ {answered p B T}, (answered = true → t = .tru) → p ∈ arg →
-      (refineBy Γ (yieldFacts ys answered) 0)[p]? = some B → FamLe (meaning G B) (meaning G T) →
+      (refineBy G Γ (yieldFacts ys answered) 0)[p]? = some B → FamLe (meaning G B) (meaning G T) →
       meaning G T n (trunc n (Nat.le_succ n) W) v0 := by
     intro answered p B T hans hp hB hle
-    have henv := refined_env (falsified := false) he hy hans (fun h => by cases h)
+    have henv := refined_env (falsified := false) hh he hy hans (fun h => by cases h)
     have hv0 : ρ p = v0 := ha p hp
     rw [← hv0]
     exact (meaning_adm G T).down n W _ (hle _ _ _ (henv.2 p B hB))
@@ -1109,39 +1107,37 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   | eval t ρ k x =>
     obtain ⟨Γ, A, out, xs, ys, arg, aliased, he, hi, ha, hal, ht, hk, hx⟩ := hs
     rcases ht with (⟨hv, ⟨hA, hy⟩, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
-    · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
-      have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
-      have ha' := (meaning_adm G A).down n W t hA
+    · have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
       have hy' := hy.transfer n (Nat.le_succ n) U (WExt_refl _)
       cases k with
       | ret =>
         exact Or.inr ⟨U, h, .done t, WExt_refl _, hw', .ret hv, hh',
-          ⟨hv, goal_return hk he hA hy ha⟩⟩
+          ⟨hv, goal_return hh hk he hA hy ha⟩⟩
       | bind l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
-          (target_state hk (refined_push_aliased he' ha' hy' (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1)
+          (target_state hk ((refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _))
             (PromiseCalls.edgeImplications_holds hi' hy') (pushed_arguments ha hal) hf)⟩
       | effect l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
-          (target_state hk (refined_env_aliased he' hy' (answered := false) (fun h => by cases h) (fun h => by cases h)
-            (HeapKnowledge.dropResult_holds hf).2.2.1) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+          (target_state hk ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+            (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
       | branch y no =>
         have hb := represents_raw hk.1 (n+1) W t hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
-            (target_state hk.2.1 (refined_env_aliased he' hy' (answered := true) (fun _ => rfl) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+            (target_state hk.2.1 ((refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
         · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
-            (target_state hk.2.2 (refined_env_aliased he' hy' (answered := false) (fun h => by cases h) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+            (target_state hk.2.2 ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
       | branchBind y no =>
         have hb := onlyBoolean_sound hk.1 hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-            (branch_target_state hk.2.1 (refined_push_aliased he hA hy (answered := true) (fun _ => rfl) (fun h => by cases h) hf.2.2.1) hh rfl
+            (branch_target_state hk.2.1 (refined_push_aliased hh he hA hy (answered := true) (fun _ => rfl) (fun h => by cases h) hf.2.2.1) hh rfl
               (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-            (branch_target_state hk.2.2 (refined_push_aliased he hA hy (answered := false) (falsified := true) (fun h => by cases h) (fun _ => rfl) hf.2.2.1) hh rfl
+            (branch_target_state hk.2.2 (refined_push_aliased hh he hA hy (answered := false) (falsified := true) (fun h => by cases h) (fun _ => rfl) hf.2.2.1) hh rfl
               (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
       | tagBind tag y no =>
         cases htag : tagHoldsIn h tag t with
@@ -1149,14 +1145,14 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
             (by
               simpa [htag] using (branch_target_state hk.1
-                (refined_push_aliased he hA hy (answered := truthyBoolean G tag A)
+                (refined_push_aliased hh he hA hy (answered := truthyBoolean G tag A)
                   (fun hb => truthyBoolean_sound hb hA htag) (fun h => by cases h) hf.2.2.1) hh (tagHolds_of_heap htag)
                 (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
         | false =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
             (by
               simpa [htag] using (branch_target_state hk.2
-                (refined_push_aliased he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh (tagHolds_of_heap htag)
+                (refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh (tagHolds_of_heap htag)
                 (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
     · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)

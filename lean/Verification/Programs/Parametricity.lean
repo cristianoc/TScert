@@ -306,6 +306,9 @@ theorem checkYields_reassign (c : NodeEvidence ι) (codes : CodeEntry ι → Boo
   simp only [checkTree_reassign]
   rfl
 
+omit [DecidableEq ι] in
+theorem refineBy_reassign : PromiseCalls.refineBy (reassign G η) = PromiseCalls.refineBy G := rfl
+
 theorem checkReturn_reassign (goal : ControlFlow.Goal ι) (c : NodeEvidence ι) :
     (checkReturnResult (reassign G η) (images.reassign η) goal c).accepted =
       (checkReturnResult G images goal c).accepted := by
@@ -313,6 +316,7 @@ theorem checkReturn_reassign (goal : ControlFlow.Goal ι) (c : NodeEvidence ι) 
       (checkReturnResult.argumentWithin G images c facts T).accepted := by
     intro facts T
     unfold checkReturnResult.argumentWithin
+    rw [refineBy_reassign]
     split
     · split
       · split

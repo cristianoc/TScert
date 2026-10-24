@@ -437,8 +437,9 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     // object's tag field, against the entry's exact tag set, after the
     // obligation that the argument is within the guard's domain. An
     // immutable name is tested where it is held; any other argument but a
-    // name is evaluated once, into a slot of its own. A name that is
-    // assigned, may throw on its read or is a library value is an ordinary
+    // name is evaluated once, into a slot of its own. A name whose binding a
+    // write names (`unassigned`), that may throw on its read or is a library
+    // value is an ordinary
     // call's argument, at the guard's plain signature.
     const callee = ts.isPropertyAccessExpression(node.expression) ? gate.namespaceMember(node.expression)
       : ts.isIdentifier(node.expression) ? gate.local(node.expression) : undefined;
@@ -448,7 +449,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     let argument: Expression | undefined = tested;
     while (argument && ts.isParenthesizedExpression(argument)) argument = argument.expression;
     if (guard && argument && ts.isIdentifier(argument) && !node.questionDotToken &&
-        !gate.assignedNames().has(argument.text) && gate.readCannotThrow(argument) &&
+        gate.unassigned(argument) &&
         !gate.libraryValues.has(gate.span(argument).join(":")))
       return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
@@ -845,7 +846,8 @@ export function chainLink(this: Gate,
   // `o` as its receiver (ECMA-262, OptionalChain: the reference's base is the
   // call's `this`): the call of the tested value with the receiver read
   // again, which is the value read before where `o` is `this` or a name
-  // whose read cannot throw nor run code and that the file assigns nowhere.
+  // whose read cannot throw nor run code and whose binding no write names
+  // (`unassigned`).
   if (node.questionDotToken && ts.isElementAccessExpression(target))
     gate.fail(node, "an optional call of a method read at a computed key is outside the fragment");
   if (node.questionDotToken && ts.isPropertyAccessExpression(target)) {
@@ -855,7 +857,7 @@ export function chainLink(this: Gate,
     // its own.
     const at = gate.span(target.name);
     const receiver: Expr | null = base.kind === ts.SyntaxKind.ThisKeyword ? { k: "this", pos: at }
-      : ts.isIdentifier(base) && !gate.assignedNames().has(base.text) && gate.readCannotThrow(base) &&
+      : ts.isIdentifier(base) && gate.unassigned(base) &&
         !gate.libraryValues.has(gate.span(base).join(":")) ? { k: "id", pos: at, name: gate.local(base) }
       : null;
     if (!receiver)

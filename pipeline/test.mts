@@ -928,6 +928,36 @@ control(async (): Promise<void> => {
   process.stdout.write("forged never call: a call of a function that returns claimed at the empty type refused\n");
 });
 control(async (): Promise<void> => {
+  // A family guard is the inline membership test of a name only where no
+  // write in its binding's scope names it (`unassigned`): a nested closure's
+  // write keeps the guard an ordinary call; another function's write of its
+  // own `e` does not.
+  const lowered = (file: string): boolean =>
+    readFileSync(join(run(file), "fragment.json"), "utf8").includes('"tagMember"');
+  assert.ok(lowered("compiler-api-guard-own-binding"),
+    "compiler-api-guard-own-binding: the guard of a never-assigned binding is not the membership test");
+  assert.ok(!lowered("compiler-api-guard-closure-write"),
+    "compiler-api-guard-closure-write: the guard of a binding a closure assigns is the membership test");
+  process.stdout.write("guard binding: a closure's write keeps the guard an ordinary call, another binding's does not\n");
+});
+control(async (): Promise<void> => {
+  // A guard that can hold of its actual leaves its `true` branch reachable:
+  // the promise filtered by the slot's type keeps the promise's labels
+  // (`fact-filter`, PROGRAM-TYPING.md), so the branch's value forged at a
+  // string is refused where evidence is produced and where it is checked.
+  const good = run("compiler-api-guard-closure-write");
+  const source = readFileSync(sourceKey(good), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "f"), "f");
+  const arm = source.indexOf("? 0 : 1") + 2;
+  const claim = must(fn.expressions.find(e => e.pos[0] === arm && e.pos[1] === arm + 1), "the true branch's value");
+  claim.type = [rowOf(claims, "str")];
+  const forged = writeClaims(good, "guard-live-branch", claims);
+  refusedAt(good, forged, "guard-live-branch", "evidence search failed");
+  invoke(forged, join(good, "evidence.json"), good);
+  process.stdout.write("forged guard branch: a branch a guard that can hold leaves reachable is checked\n");
+});
+control(async (): Promise<void> => {
   // A contextual closure parameter's record is the parser's reading of its
   // context. The closure's claim must stay within it: claimed at the record
   // without its field, with the field at another type, or with an optional
