@@ -218,6 +218,8 @@ statements that need it (D5, 2026-10-23).
   field is popped by writing the field with its remainder, and a list
   consumed in order is read at a counter; a field or cell write is within
   `{value: any, store: keep}`.
+- **Commit:** 5299b40 (`tools/fragment-parse.mts`,
+  `tools/fragment-statements.mts`).
 
 ## Changes for a tool's defect
 
