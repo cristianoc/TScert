@@ -464,8 +464,9 @@ default:
   (`opaqueFamilyWith_iff`);
 - a source clause that is a target clause demands no pair (`demandPairs`);
   growth computes a row's demand once, when it inserts the row
-  (`growTableFrom`), and reads each row's target clauses with their index
-  once (`TargetClauses`) for its demand and its deletion rounds (`gfp`);
+  (`growTableFrom`), reading the row's target clauses with their index once
+  for its demand and its hopelessness (`TargetClauses`), and deletion reads
+  them once for all its rounds (`gfp`);
 - a pair one of whose source clauses is no target clause and has no
   candidate, nor has one of its elements, is in no valid closed family
   (`valid_selected`): no table is grown from it, and as a row its demand is

@@ -742,7 +742,8 @@ structure SearchBudget where
   rounds : Nat := 4096
   /-- Whether table growth and coverage read only the target clauses that can
   cover a source clause (`ClauseSelection.candidates`, R1–R5 of
-  docs/UNION-SHAPES.md); a comparison this refuses is redone without. -/
+  docs/UNION-SHAPES.md); a comparison this refuses is redone without where
+  `rerun` holds. -/
   select : Bool := true
   /-- Whether a comparison selection does not establish is redone without it:
   off for search's own comparisons, on for every check. -/
@@ -1630,8 +1631,9 @@ theorem compareStructuralCore_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact comparePrepared_sound h hk
 
 /-- Structural comparison reading candidates (`SearchBudget.select`), redone
-reading every target clause where that is not established: selection never
-loses a comparison the general search establishes. -/
+reading every target clause where that is not established and the budget
+reruns (`SearchBudget.rerun`): with the rerun, selection loses no comparison
+the general search establishes. -/
 @[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
   let r := compareStructuralCore G images S T known
@@ -2088,7 +2090,8 @@ theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images
       exact compareInstArrsState_sound hc checked' η
 
 /-- One comparison step reading candidates (`SearchBudget.select`), redone
-reading every target clause where that is not established. -/
+reading every target clause where that is not established and the budget
+reruns (`SearchBudget.rerun`). -/
 @[nospecialize] def compareStepState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
     (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
