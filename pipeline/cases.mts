@@ -207,7 +207,7 @@ export const cases: Case[] = [
   positive("json-stringify-recursive", "`JSON.stringify` at a recursive dictionary of JSON values, within the empty footprint: `map` stays dense"),
   negative("invalid-json-stringify-tojson", "`JSON.stringify` calls a `toJSON` its argument holds, client code that may shrink the mapped array: an object with a method is no JSON value (run under Node)",
     /No rule derives this invoke at string/),
-  negative("invalid-stated-effect-stringify", "a function stating {value: any, store: grow} serializes a record, whose value may hold a `toJSON` popping the mapped array: a record is no JSON value, so the statement is not established (run under Node)",
+  negative("invalid-stated-effect-stringify", "a function stating {value: any, store: grow} serializes a record, whose value may hold a `toJSON` or a getter beyond its stated fields popping the mapped array: a record is no JSON value, so the statement is not established (run under Node)",
     /No rule derives this invoke at string/),
   negative("invalid-json-stringify-replacer", "a replacer function is client code `JSON.stringify` calls on every member (run under Node): the stated call's replacer is `null`, absent or a list of keys",
     /source expression obligation at \[284,311\)/),

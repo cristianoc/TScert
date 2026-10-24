@@ -20,16 +20,23 @@ implements `TermScope`). Each entry gives:
 
 A caller verifying relative to a statement does not certify it (§12).
 
-The operations the audit lists act within `{value: any, store: grow}`:
+The operations the audit lists act within `{value: any, store: grow}`.
 `enumEntries`' and `enumMembersTerm`'s `sort` acts on the array `filter`
-just returned, and `Gate.closureParamType`'s `JSON.stringify` serializes an
-array of two strings and a span, a JSON value. Of the functions stating
-nothing, `fail` and `refuseReceiverForm` return `never` and
-`functionLikeNode` and `isNode` are type predicates.
+just returned. Serializing runs a value's `toJSON` and the getters of its
+fields, which the caller contract admits in a field beyond the stated ones,
+so each `JSON.stringify` listed serializes a value the gate built:
+`Gate.closureParamType`'s an array of two strings and a span; `lambda`'s a
+property key the gate read off a member's name; `sameIndex`'s the index
+signatures' type terms `members`, its one caller, has just read, which is
+why `sameIndex` states no effect and `members`' statement rests on this
+audit. Of the other functions stating nothing, `fail` and
+`refuseReceiverForm` return `never` and `functionLikeNode` and `isNode`
+are type predicates.
 
-Measured on 2026-10-24 at commit 8658112, with each census stage limited to
-300 s: of 183 functions, 61 are certified, 75 have a slice that does not
-verify, 22 top-level functions have no slice of their own (the census
+Measured on 2026-10-24 at commit 8658112, and for `sameIndex`, `members`,
+`lambda` and `identityKey` at the commit that writes this inventory, with
+each census stage limited to 300 s: of 181 functions, 60 are certified, 74
+have a slice that does not verify, 22 top-level functions have no slice of their own (the census
 slices function declarations), and 25 are `Gate` members, which the census
 does not slice.
 
@@ -40,7 +47,7 @@ does not slice.
 
 ### tools/fragment-classes.mts
 
-- `enumEntries`: {value: any, store: grow}; not certified (its slice is unverified); audited: its operations `all.filter((e) => index(e.key)).sort` are listed below; calls `Gate.fail`, `enumMembers`.
+- `enumEntries`: {value: any, store: grow}; not certified (its slice is unverified); audited: `all.filter((e) => index(e.key)).sort`, which the header audits; calls `Gate.fail`, `enumMembers`.
 - `enumMembers`: {value: any, store: grow}; certified (its slice verifies); calls `Gate.fail`.
 - `enumObjectTerm`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `enumEntries`, `enumMembers`, `enumOpen`, `enumMembersTerm`, `literalTerm`.
 - `enumOpen`: {value: any, store: grow}; certified (its slice verifies); calls `enumMembers`.
@@ -66,7 +73,7 @@ does not slice.
 - `hasInstanceClass`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `hasInstanceAlong`.
 - `inertRead`: {value: any, store: grow}; certified (its slice verifies); calls `resolve`.
 - `knownLocal`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `confined`, `localArrow`.
-- `lambda`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `Gate.asyncCompletion`, `Gate.closureParamType`, `Gate.enterTypeParams`, `Gate.fail`, `Gate.intrinsic`, `Gate.leaveTypeParams`, `Gate.local`, `Gate.optionalTypeOf`, `Gate.restType`, `Gate.span`, `Gate.statedResult`, `Gate.typeOf`, `Gate.useStrict`, `expr`, `guardOf`, `guardResult`, `initializedBefore`, `pattern`, `statements`, `booleanForm`, `booleanReturn`, `completes`, `firstOptional`, `parameterName`, `propertyKeyText`, `optionalTerm`.
+- `lambda`: {value: any, store: grow}; not certified (its slice is unverified); audited: `JSON.stringify(member)`, which the header audits; calls `Gate.asyncCompletion`, `Gate.closureParamType`, `Gate.enterTypeParams`, `Gate.fail`, `Gate.intrinsic`, `Gate.leaveTypeParams`, `Gate.local`, `Gate.optionalTypeOf`, `Gate.restType`, `Gate.span`, `Gate.statedResult`, `Gate.typeOf`, `Gate.useStrict`, `expr`, `guardOf`, `guardResult`, `initializedBefore`, `pattern`, `statements`, `booleanForm`, `booleanReturn`, `completes`, `firstOptional`, `parameterName`, `optionalTerm`.
 - `letWrites`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation.
 - `localArrow`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `Gate.libraryName`, `localValues`, `memberMayBeWritten`, `memberOf`, `moduleFunction`, `resolve`.
 - `localValues`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation; calls `letWrites`, `resolve`.
@@ -147,7 +154,6 @@ does not slice.
 - `namesRead`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation.
 - `parameterName`: {value: any, store: grow}; not certified (no slice of its own); audited: no store-shrinking or serializing operation.
 - `patternNames`: {value: any, store: grow}; certified (its slice verifies).
-- `propertyKeyText`: {value: keep, store: keep}; certified (its slice verifies).
 - `prototypeName`: {value: any, store: grow}; not certified (no slice of its own); audited: no store-shrinking or serializing operation.
 - `runsCode`: {value: any, store: grow}; certified (its slice verifies).
 - `runsCodeOrWrites`: {value: any, store: grow}; certified (its slice verifies).
@@ -166,7 +172,7 @@ does not slice.
 - `asyncCompletion`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation; calls `Gate.intrinsic`, `Gate.span`.
 - `awaitExpr`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation; calls `Gate.intrinsic`, `Gate.span`, `expr`.
 - `blockTypeAt`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation; calls `Gate.span`.
-- `closureParamType`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: its operations `JSON.stringify([target.module, target.span, target.name])` are listed below; calls `Gate.fail`, `Gate.hasTypeParam`, `Gate.optionalTypeOf`, `Gate.span`, `Gate.typeOf`, `visitType`.
+- `closureParamType`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: `JSON.stringify([target.module, target.span, target.name])`, which the header audits; calls `Gate.fail`, `Gate.hasTypeParam`, `Gate.optionalTypeOf`, `Gate.span`, `Gate.typeOf`, `visitType`.
 - `declaredReference`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation; calls `Gate.fail`, `Gate.span`.
 - `enterTypeParams`: {value: any, store: grow}; not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation; calls `Gate.fail`, `Gate.qualificationBound`, `Gate.typeOf`, `resolutionSlots`.
 - `fail`: states nothing (never returns); not certified (a `Gate` member, which the census does not slice); audited: no store-shrinking or serializing operation.
@@ -191,7 +197,7 @@ does not slice.
 
 ### tools/intrinsics.mts
 
-- `enumMembersTerm`: {value: any, store: grow}; not certified (its slice is unverified); audited: its operations `keyed.filter(f => index(f.key)).sort` are listed below; calls `literalTerm`.
+- `enumMembersTerm`: {value: any, store: grow}; not certified (its slice is unverified); audited: `keyed.filter(f => index(f.key)).sort`, which the header audits; calls `literalTerm`.
 - `literalTerm`: {value: any, store: grow}; certified (its slice verifies); calls `numberText`.
 - `numberText`: {value: any, store: grow}; certified (its slice verifies).
 
@@ -220,7 +226,7 @@ does not slice.
 - `intersection`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation; calls `Gate.termScope`, `computedForm`, `intersectionOperands`, `typeTerm`.
 - `intersectionOperands`: {value: any, store: grow}; certified (its slice verifies); calls `unwrap`.
 - `mapped`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation; calls `Gate.termScope`, `members`, `typeTerm`.
-- `members`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation; calls `Gate.termScope`, `constructorForms`, `hostReceiver`, `indexKinds`, `oneTerm`, `propertyKey`, `quantified`, `sameIndex`, `signatures`, `spanOf`, `typeTerm`.
+- `members`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation, and it calls `sameIndex`, which states nothing; calls `Gate.termScope`, `constructorForms`, `hostReceiver`, `indexKinds`, `oneTerm`, `propertyKey`, `quantified`, `sameIndex`, `signatures`, `spanOf`, `typeTerm`.
 - `numericKey`: {value: any, store: grow}; certified (its slice verifies).
 - `numericLexeme`: {value: any, store: grow}; certified (its slice verifies).
 - `oneTerm`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation.
@@ -234,8 +240,7 @@ does not slice.
 - `restPositions`: {value: any, store: grow}; certified (its slice verifies).
 - `restRefusal`: {value: any, store: grow}; not certified (its slice is unverified); audited: no store-shrinking or serializing operation.
 - `restTerm`: {value: any, store: grow}; certified (its slice verifies); calls `Gate.termScope`.
-- `sameData`: {value: keep, store: keep}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation.
-- `sameIndex`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation; calls `sameData`.
+- `sameIndex`: states nothing; not certified (its slice is unverified); audited: `JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value)`, which the header audits.
 - `signatures`: {value: any, store: grow}; not certified (its slice is unsupported); audited: no store-shrinking or serializing operation; calls `Gate.termScope`, `optionalTerm`, `promiseOf`, `restPositions`, `restRefusal`, `restTerm`, `spanOf`, `statedEffect`, `statedResult`, `typeTerm`.
 - `spanOf`: {value: any, store: grow}; not certified (no slice of its own); audited: no store-shrinking or serializing operation; calls `Gate.termScope`.
 - `statedEffect`: {value: any, store: grow}; not certified (no slice of its own); audited: no store-shrinking or serializing operation; calls `footprintEffect`.

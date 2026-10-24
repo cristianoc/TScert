@@ -444,6 +444,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-json-stringify-tojson", "(() => { const xs = [1, 2, 3]; return wrong(xs, { toJSON() { xs.pop(); return \"\"; } }); })()"],
     ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
     ["invalid-stated-effect-stringify", "(() => { const xs = [1, 2, 3]; return wrong(xs, { k: \"a\", span: 0, toJSON() { xs.pop(); return \"\"; } }); })()"],
+    ["invalid-stated-effect-stringify", "(() => { const xs = [1, 2, 3]; return wrong(xs, { k: \"a\", span: 0, get extra() { xs.pop(); return 0; } }); })()"],
     ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { get cause() { xs.pop(); return 0; } }); })()"],
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
