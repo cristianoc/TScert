@@ -13,7 +13,7 @@ import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
-import { present } from "../tools/files.mts";
+import { present, sharingForTests } from "../tools/files.mts";
 import { runStep } from "../pipeline/verify-source.mts";
 import { verifierCall } from "../pipeline/stage-execution.mts";
 
@@ -34,7 +34,8 @@ function forcedParse(name: string, text: string, force: Record<string, string>):
   for (const [key, value] of Object.entries(force)) process.env[key] = value;
   let report = "";
   try {
-    parseFile(file, false, config);
+    // Each site asks its own query: no answer is served from an earlier one.
+    sharingForTests(false, () => parseFile(file, false, config));
   } catch (error) {
     report = messageOf(error);
   } finally {
@@ -111,8 +112,9 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
     syncBuiltinESMExports();
   }
   // The compiler reads the module through the front end's file system, first
-  // where the declaration reader opens the project.
-  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): read [^:]*lib\.ts: ERR_ACCESS_DENIED: forced .*\(line \d+, col \d+\)$/, report);
+  // where the parser's compiler, fresh for the parse, opens the file's
+  // project: a failure in the file.
+  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): read [^:]*lib\.ts: ERR_ACCESS_DENIED: forced .*\(in [^)]*importer\.ts\)$/, report);
   const denied = join(dir, "denied.d.ts");
   const resolveFailure = failing("realpath", denied, "EACCES", { syscall: "realpath" });
   fs.realpathSync = Object.assign((...args: Parameters<typeof resolveReal>) => (resolveFailure(...args), resolveReal(...args)), resolveReal);

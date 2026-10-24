@@ -2,8 +2,8 @@
 // declaration sessions"), each through the production stage adapters
 // (`parseCall`, `diagnosticsCall`, `invokeInProcess`) over a private copy of
 // the value-import examples and their named project:
-// - a parse in a reused session is byte for byte the parse in fresh
-//   compilers at the same paths, refusals as well as successes, in forward,
+// - a parse in a reused session, its work shared, is byte for byte the parse in fresh
+//   compilers with no work shared at the same paths, refusals as well as successes, in forward,
 //   reverse and A–B–A orders, and with distinct snapshot directories sharing
 //   one resolution project; the session is opened once and reused, the
 //   parser opened afresh by every parse; diagnostics between parses reuse it
@@ -32,7 +32,7 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { parserOpenings } from "../tools/fragment-parse.mts";
-import { nodeResolve, observed, processInconsistency, processRetirement, unobservable } from "../tools/files.mts";
+import { nodeResolve, observed, processInconsistency, processRetirement, sharingForTests, unobservable } from "../tools/files.mts";
 import { compilerImplementation } from "../tools/compiler-channel.mts";
 import { textCodec } from "../pipeline/in-process-execution.mts";
 import { clientErrors } from "../tools/declaration-graph.mts";
@@ -89,14 +89,14 @@ function snapshot(examples: string, name: string, directory: string): { bytes: B
 
 type Request = { name: string; directory: string; config: string | undefined; examples: string };
 type Parse = { value: Parsed; record: AttemptRecord };
-function parse(r: Request, force: boolean = true): Parse {
+function parse(r: Request, force: boolean = true, recorder: Recorder = new Recorder(null)): Parse {
   const s = snapshot(r.examples, r.name, r.directory);
   return invokeInProcess(parseCall(s.bytes, s.file, r.config, r.config ? s.resolution : s.file),
-    { force, recorder: new Recorder(null) });
+    { force, recorder });
 }
-/** The parse of `r` in fresh compilers: no session retained. */
+/** The parse of `r` in fresh compilers, no work shared: no session retained, no answer kept (STAGE-STORE.md, "Shared work"). */
 function fresh(r: Request): Parsed {
-  return asideForTests(() => parse(r).value);
+  return asideForTests(() => sharingForTests(false, () => parse(r).value));
 }
 const telemetry = declarationSessionTelemetry;
 const generation = (): number | null => retainedDeclarationSession()?.generation ?? null;
@@ -507,7 +507,10 @@ released("a document of the project left open", { kind: "document-left", documen
   const plainMs: number[] = [];
   const outer = invokeInProcess({ stage: "diagnostics", inputs: [{ role: "control", bytes: "nested cpu" }],
     observed: { compiler: compilerImplementation }, codec: textCodec, run: (): string => {
-      records.push(parse(at(names[3])).record);
+      // The parse and the stages nested in it, each attempt's time its own.
+      const nested = new Recorder(null);
+      parse(at(names[3]), true, nested);
+      records.push(...nested.records);
       // Read independently around the non-observed attempt: its own time.
       const plainNode = process.cpuUsage(), plainSession = reading();
       records.push(invokeInProcess({ stage: "assemble", inputs: [{ role: "control", bytes: "plain" }], codec: textCodec,
@@ -522,9 +525,9 @@ released("a document of the project left open", { kind: "document-left", documen
     [...compilerAccounts].filter(([g, a]) => !ended.has(g) && a.lifetimeMs !== null).reduce((sum, [, a]) => sum + (a.lifetimeMs ?? 0), 0);
   const counted = ms(outer.cpu) + records.reduce((sum, r) => sum + ms(r.cpu), 0);
   assert.ok(Math.abs(total - counted) <= Math.max(30, total / 10), `nested attempts counted ${counted} ms of ${total} ms`);
-  assert.ok(ms(records[0]?.cpu ?? outer.cpu) > 0 && ms(outer.cpu) < counted, "each attempt counts its own time");
+  assert.ok(records.every((r) => ms(r.cpu) > 0) && ms(outer.cpu) < counted, "each attempt counts its own time");
   // The non-observed attempt's record holds the compiler time it caused.
-  const plain = ms(records[1]?.cpu ?? outer.cpu), around = plainMs[0] ?? 0;
+  const plain = ms(records.at(-1)?.cpu ?? outer.cpu), around = plainMs[0] ?? 0;
   assert.ok(plain <= around + 1 && around - plain <= Math.max(15, around / 10),
     `the non-observed attempt counted ${plain} ms of the ${around} ms read around it`);
   process.stdout.write(`sessions: nested attempts counted ${counted.toFixed(1)} ms (outer ${ms(outer.cpu).toFixed(1)} ms) ` +

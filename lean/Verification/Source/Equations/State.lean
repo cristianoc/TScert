@@ -123,6 +123,9 @@ structure State where
   doc : Array Definition
   /-- `doc`'s indices by identity (`identityIndex doc`). -/
   identities : Std.HashMap Json (List Nat) := {}
+  /-- `doc`'s packed parameters, by index (`packedParameters` of each
+  declaration's expression): read at every reference, computed once. -/
+  packings : Array (List Nat) := #[]
   heads : Array Draft := #[]
   /-- `heads`' rows at no arguments, each instantiated when first read and
   kept while its head is unchanged (`EquationStore.graph`). -/
@@ -162,6 +165,11 @@ structure State where
   tags : List Nat := []
 
 abbrev M := StateT State (Except String)
+
+/-- The packed parameters of the declaration at `i` (`State.packings`); none
+for an index the document does not hold, as `doc[i]!`'s default expression
+has none. -/
+def packedOf (i : Nat) : M (List Nat) := return (← get).packings[i]?.getD []
 
 
 end Verification.EquationLowering

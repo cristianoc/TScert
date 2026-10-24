@@ -604,6 +604,18 @@ first that exists, and the resolved file. These are the observations a
 replayed parse records for a resolution.
 **Discussed in** [STAGE-STORE: observed stages](STAGE-STORE.md#observed-stages).
 
+### SKStore
+
+SkipLabs. *SKStore: a generic framework for reactive programming.* The Skip
+language's documentation, `skiplang/docs/SKStore.md`, in
+[github.com/SkipLabs/skip](https://github.com/SkipLabs/skip).
+
+**Used for** the model of shared work: input directories, derived entries
+computed from named inputs, lazy entries computed on demand, and a
+computation's dependencies being exactly what it read, so that sharing and
+invalidation follow from its read set.
+**Discussed in** [the front-end sharing draft](drafts/front-end-sharing.md#2-the-model).
+
 ### Lean 4
 
 Leonardo de Moura and Sebastian Ullrich. *The Lean 4 theorem prover and

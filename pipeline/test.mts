@@ -6111,7 +6111,10 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     assert.notEqual(coldArtifacts, warmArtifacts);
     assert.deepEqual(warmOutcome, coldOutcome, `${name}: the same outcome`);
     assert.deepEqual(contents(warmArtifacts), contents(coldArtifacts), `${name}: the same documents and logs`);
-    assert.deepEqual(warm.records.map((r) => r.stage), cold.records.map((r) => r.stage), `${name}: the same stages`);
+    // A replayed parse runs no stage nested in it: its imported modules' stages ran in the cold run only.
+    const outer = (records: readonly AttemptRecord[]): string[] => records.filter((r) => r.stage !== "module").map((r) => r.stage);
+    assert.deepEqual(outer(warm.records), outer(cold.records), `${name}: the same stages`);
+    assert.ok(project === null || cold.records.some((r) => r.stage === "module"), `${name}: its modules' stages ran cold`);
     for (const r of cold.records) assert.ok(ranStage(r), `${name}: cold ${r.stage} executed`);
     for (const r of warm.records) {
       assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
