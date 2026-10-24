@@ -750,10 +750,26 @@ reassociated:
 
 which JavaScript evaluates in the same order to the same value (a falsy
 $`a`$ is the result either way, and so on). Read so, $`c`$ is checked where $`a`$
-and $`b`$ each answered, and the inner operator is typed at the whole's
-claim, which covers every value it yields. A variable tested by both $`a`$
+and $`b`$ each answered. A variable tested by both $`a`$
 and $`b`$ is split twice; the inner split takes, of its planned arms, those
 of the labels the outer one left.
+
+<a id="residuals"></a>
+The inner $`b\mathbin{\&\&}c`$ is a residual: an expression the derived
+form builds that the source does not contain, as are
+$`b\mathbin{op}c`$ of $`(a, b)\mathbin{op}c\equiv a, (b\mathbin{op}c)`$
+and $`!b`$ of $`!(a, b)`$. A plan observes a nonempty span exactly at the
+entry of the source expression owning it, and the producer types that
+expression in the state found there. The inner operator of a regrouped
+chain yields no source expression's value: it is observed at the empty
+span where its first operand starts (`ExpressionPlan.residual`), which no
+source expression and no claim has, and its value, read for its
+truthiness, is typed by its operands' claims. A comma's residual yields
+the value of the expression it is derived from, after the comma's left
+operand: it is typed at that expression's claim and not observed. So in
+`rest && rest.kind === 1 && rest.dot`, the first read of `rest` is typed
+where `rest` is still untested (`logical-chain-entry`,
+`invalid-logical-chain-entry`).
 
 ### Closure branches
 

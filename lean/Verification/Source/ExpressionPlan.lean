@@ -68,6 +68,17 @@ private def readSaved (binding : Saved) : Expr := .var binding.source binding.na
 has it, an expression starting there being the negation itself. -/
 def negationMark (negation : Span) : Span := (negation.1, negation.1 + 1)
 
+/-- The span of a residual whose value is no source expression's: an
+expression a derived form builds that the source does not contain, such as
+`b && c` of `(a && b) && c` read as `a && (b && c)`. A nonempty span
+observed in a plan is the entry of the source expression owning it; such a
+residual is placed at the empty span where its first operand starts, which
+no source expression and no claim has (`Claims.Wire` refuses an empty claim
+span), and its operands keep their own. A residual computing the value of
+the source expression it is derived from (`b && c` of `(a, b) && c`) keeps
+that expression's span and claim and is not observed. -/
+def residual (first : Expr) : Span := (first.span.1, first.span.1)
+
 /-- A test: an expression whose value is a Boolean by its form. -/
 def testForm : Expr → Bool
   | .shapeTest .. | .tagMember .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
@@ -109,7 +120,10 @@ private partial def reference (root : Span) (target : Expr)
         operand root key "key" fun key => next (.field target receiver (some key))
   | _ => next (.local "" target.span)
 
-private partial def expression (root : Span) (e : Expr) : Builder Plan := do
+/-- `e`'s plan, observed at its span unless `e` is a residual keeping the
+    span of the source expression whose value it computes, which is
+    observed where it starts (`residual`). -/
+private partial def expression (root : Span) (e : Expr) (observed : Bool := true) : Builder Plan := do
   let atom := fun prepared => Plan.atom e.span (.evaluate e prepared (effect e))
   let core : Plan ← match e with
     | .var .. | .lit .. | .lambda .. | .ctor .. | .block .. => pure (atom e)
@@ -153,9 +167,11 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
     | .comma _ left right => operand root left "discard" fun _ => do
         operand root right "value" fun right => do pure (atom (.var e.span right.name))
     -- `(a, b) && c` is `a, (b && c)`, `||` alike: `a` runs, then the
-    -- operator over `b`, whose test then refines `c`'s operands.
+    -- operator over `b`, whose test then refines `c`'s operands. `b && c`
+    -- computes the whole's value, at the whole's claim, and is observed
+    -- only as the whole, around `a` and itself.
     | .logical p andOp (.comma _ l r) right =>
-        operand root l "discard" fun _ => expression root (.logical p andOp r right)
+        operand root l "discard" fun _ => expression root (.logical p andOp r right) (observed := false)
     | .logical _ andOp left right => logical root e left right andOp "condition"
     | .coalesce _ left right =>
         let binding ← saved root left.span "condition"
@@ -251,7 +267,7 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         objectSources root e sources target
     | .arrayAssign _ targets rest rhs => operand root rhs "receiver" fun array => do
         arrayAssignments root e array targets rest
-  return .observe e.span core
+  return if observed then .observe e.span core else core
 
 /-- `a && b` and `a || b`: the left operand, saved, then the right one where
     it is truthy (`&&`) or falsy (`||`), else the saved left value. -/
@@ -271,27 +287,30 @@ private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (
     outcome, a Boolean. The plan's value is then that synthetic truth, never
     the operator's value: it carries no source obligation, so it is placed
     at an empty span no claim names, and the operands keep their own. -/
-private partial def truthOf (root : Span) (cond : Expr) : Builder Plan :=
+private partial def truthOf (root : Span) (cond : Expr) (observed : Bool := true) : Builder Plan :=
   match cond with
   -- `a, b` as a condition: `a` runs for its effects, then `b` is the
   -- condition, its tests refining in the state `a` leaves (JavaScript's
   -- comma); `(a, b) && c`, `(a, b) || c` and `!(a, b)` likewise run `a`
-  -- first.
+  -- first, then `b && c`, `b || c` or `!b`, which compute the whole's value
+  -- at the whole's claim after `a` and so are not observed as it.
   | .comma _ left right => operand root left "discard" fun _ => truthOf root right
   | .logical p andOp (.comma _ l r) right =>
-    operand root l "discard" fun _ => truthOf root (.logical p andOp r right)
+    operand root l "discard" fun _ => truthOf root (.logical p andOp r right) (observed := false)
   | .not p (.comma _ l r) =>
-    operand root l "discard" fun _ => truthOf root (.not p r)
+    operand root l "discard" fun _ => truthOf root (.not p r) (observed := false)
   -- `(a || b) || c` is `a || (b || c)` for its truthiness and its
   -- evaluation, `&&` alike: the left operand's operands are dispatched on
-  -- in turn, the same operator's right operand its new right one's.
+  -- in turn, the same operator's right operand its new right one's. The
+  -- regrouped whole computes the whole's value where it starts and keeps
+  -- its span; `b || c`, evaluated where `a` answered, is a residual.
   | .logical p andOp (.logical _ andOp' l1 l2) right =>
     if andOp == andOp' && !testForm (.logical p andOp' l1 l2) then
-      truthOf root (.logical p andOp l1 (.logical p andOp l2 right))
-    else logicalTruth root cond
-  | _ => logicalTruth root cond
+      truthOf root (.logical p andOp l1 (.logical (residual l2) andOp l2 right)) observed
+    else logicalTruth root cond observed
+  | _ => logicalTruth root cond observed
 where
-  logicalTruth (root : Span) (cond : Expr) : Builder Plan :=
+  logicalTruth (root : Span) (cond : Expr) (observed : Bool) : Builder Plan :=
   match cond with
   -- A negated operand that is no test, `!a || b` or `!a && b`: the left
   -- dispatch is `a`'s truthiness, its arms exchanged. Where `!a` decides,
@@ -301,7 +320,7 @@ where
   -- `b`'s. `a` is evaluated once, then `b` exactly where `!a` does not
   -- decide, as the operator evaluates them.
   | .logical _ andOp (.not negation left) right =>
-    if testForm left then expression root cond
+    if testForm left then expression root cond observed
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"
@@ -313,7 +332,7 @@ where
       return .choose truth left.span .truthy binding lhs
         (if andOp then keep else rhs) (if andOp then rhs else keep)
   | .logical _ andOp left right =>
-    if testForm left then expression root cond
+    if testForm left then expression root cond observed
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"
@@ -322,7 +341,7 @@ where
       let keep := Plan.atom truth (.evaluate (.var truth binding.name) (.var truth binding.name) .none)
       return .choose truth left.span .truthy binding lhs
         (if andOp then rhs else keep) (if andOp then keep else rhs)
-  | _ => expression root cond
+  | _ => expression root cond observed
 
 private partial def callArguments (root : Span) (call : Expr) (args : List Expr) (spreads : List Nat) (index : Nat)
     (next : List Saved → Builder Plan) : Builder Plan :=

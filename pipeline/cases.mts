@@ -3112,6 +3112,8 @@ export const cases: Case[] = [
   negative("invalid-type-parameter-function-meet", "a function of no known signature is not one returning a number"),
   positive("logical-chain-narrowing", "a chain of `&&` or of `||` reads as right-nested, the same evaluation and value: each operand sees what every earlier one answered, in a condition and in a value, a variable tested twice"),
   negative("invalid-logical-chain-narrowing", "`a || b && c` is `a || (b && c)`: where it holds, `a` alone may have", /The available claim for x is number \| \{ a: number \}/),
+  positive("logical-chain-entry", "a chain whose middle operand is a test, as a conditional's or a statement's condition, of `&&` or `||` and after a comma: its first read is typed where the chain starts, the residual right-nested operator observed at an empty span"),
+  negative("invalid-logical-chain-entry", "where `rest && rest.kind === 1 && rest.dot` fails, `rest` may be `undefined`", /The available claim for rest is undefined \| \{/),
   positive("for-loops", "`for` with the update at the body's end and at `continue`, `let` scoped to the loop, `for(;;)`, no initializer, an unannotated `let` before a `for`; a nested block's scope"),
   negative("invalid-for-loops", "the update runs after a `continue` too"),
   positive("for-in-empty", "`for...in` over an empty object literal in a module stating no array type: the key array contract is declared all the same"),

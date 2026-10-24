@@ -909,6 +909,34 @@ control(async (): Promise<void> => {
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 });
 control(async (): Promise<void> => {
+  // A chain read right-nested types its first operand where the chain
+  // starts; the residual `b && c` is observed at an empty span, which names
+  // no source expression. The first read of `rest` claimed without
+  // `undefined`, as if the chain's later operands had answered, is refused
+  // where evidence is produced and where it is checked.
+  const good = run("logical-chain-entry");
+  const source = readFileSync(sourceKey(good), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "inConditional"), "inConditional function");
+  const start = source.indexOf("rest && rest.kind", source.indexOf("function inConditional"));
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "rest".length), "the first read of rest");
+  const undefinedRow = rowOf(claims, "undef");
+  const claimed = read.type;
+  if (!Array.isArray(claimed) || !claimed.includes(undefinedRow))
+    throw new Error("the first read of rest is claimed as a union with undefined");
+  read.type = claimed.filter(t => t !== undefinedRow);
+  const forged = writeClaims(good, "chain-entry-defined", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+      sourceKey(good), join(good, mode === "--produce-source-claims"
+        ? "chain-entry-defined-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+  process.stdout.write("forged chain entry: a chain's first read claimed as if later operands had answered refused\n");
+});
+control(async (): Promise<void> => {
   // A call claimed at the empty type leaves a slot no value meets in its
   // statement's context, whose edge onward is then never taken
   // (`vacuous-edge`, PROGRAM-TYPING.md). The claim is the call's, checked at
