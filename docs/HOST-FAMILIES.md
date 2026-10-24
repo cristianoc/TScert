@@ -68,7 +68,12 @@ It states:
   optional, the tag and the corrected members included, but the listed
   exclusions, with the regression check that reads each twice on a corpus;
 - **guards:** the [guard table](#the-guard-table), each entry an export's
-  identity and reviewed text, its kind, domain and exact tag set.
+  identity and reviewed text, its kind, domain, exact tag set and behaviour
+  on `undefined`;
+- **undefined inputs:** the guard kinds (node, tag) whose audited behaviour
+  on `undefined` the review admits
+  ([undefined arguments](#undefined-arguments)); an entry of another kind
+  is `unadmitted`.
 
 ## Activation
 
@@ -699,13 +704,18 @@ to the digest of the audited closure (C0). Each entry records:
 - its **domain**: for a node guard the family type its parameter is
   declared at, for a tag guard the tag's primitive;
 - its exact tag set $`K_g\subseteq\mathcal T_F`$: the tags for which the
-  guard returns `true`, for every member of the domain.
+  guard returns `true`, for every member of the domain;
+- its **behaviour on `undefined`** $`u_g`$, outside the domain: `throws`, a
+  `TypeError` thrown before any other step; `false`, the answer `false`
+  with no other step; or `unadmitted`, an argument the domain obligation
+  refuses ([undefined arguments](#undefined-arguments)).
 
 The entry states that, for every argument in its domain, the guard
 returns `true` exactly when the argument's tag (a tag guard: the argument)
 is in $`K_g`$, reads nothing of its argument but the tag, runs no other
 code, throws nothing, and returns the same answer whatever it receives
-beyond its one parameter (further arguments, a receiver).
+beyond its one parameter (further arguments, a receiver); and that on
+`undefined` it behaves as $`u_g`$ states, whatever else it receives.
 
 [Activation](#activating-a-guard-table) checks each entry against the
 package as Node loads it before the table is used; a mismatch leaves the
@@ -754,7 +764,10 @@ constant. The contract, every condition checked on the resolved files:
   through an import binding the entry's edges record, resolving to the
   enum's audited runtime object, each member of which C1 checks is an own
   data property holding a primitive;
-- the body declares nothing but $`y`$ and assigns nothing.
+- the body declares nothing but $`y`$ and assigns nothing;
+- each comparison has a constant on one side and $`e`$ on the other, each
+  helper's argument is an $`e`$, and no member read or call is an optional
+  chain.
 
 The generator (`dev/guard-table.mts`) reads a description's entry point, tag
 field and tag enum, and computes $`K_g`$ by evaluating $`c`$ over
@@ -764,8 +777,9 @@ resolve, gets no entry: it loses its predicate and any preservation effect.
 The generator's output is compared with each family's reviewed table in a
 fast check (`tests/compiler-api-guards.mts`),
 and a Node run of every entry on an object of each tag compares its answers
-with $`K_g`$; both are regression evidence for the review, not proofs of
-the entry's statement.
+with $`K_g`$, and a run on `undefined`, with further arguments and a
+receiver and without, with $`u_g`$; both are regression evidence for the
+review, not proofs of the entry's statement.
 
 #### Calls
 
@@ -823,7 +837,8 @@ kept, and the tag is read once, as the guard reads it.
 `tagMember`, checking $`x`$'s claim at $`P`$, the family type with its
 marker, whatever the producer claims; a value the checker cannot type there
 (an `unknown`, `null`, an arbitrary object) refuses the call, located at the
-call. The Fragment decoder refuses a `tagMember` without its domain, an
+call. Where $`u_g`$ is `throws` or `false`, the obligation is of the
+argument's value other than `undefined` ([undefined arguments](#undefined-arguments)). The Fragment decoder refuses a `tagMember` without its domain, an
 empty $`K_g`$ included.
 
 **A call on any other argument** (a call's result, a member path) is an
@@ -850,6 +865,111 @@ $`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,
 and refines $`x`$ on both edges (`isModifierKind(kind)`); a broad number
 stays a number on the `false` edge. On any other argument it is an ordinary
 call at `tag-guard-value`.
+
+#### Undefined arguments
+
+A guard's behaviour on `undefined` is part of its entry, $`u_g`$, so a call
+on a value that may be `undefined` (`ts.isIdentifier(n.parent)`, whose
+`parent` a correction reads optional) is the guard's own behaviour there,
+then its test on the rest. With $`s : A`$ the argument's slot, and
+$`A_{\mathtt{u}}`$ and $`A_{\lnot\mathtt{u}}`$ the slices of $`A`$ where the
+value is and is not `undefined` ($`\mathsf{tagSlice}_G(A,\mathsf{isUndef},\cdot)`$):
+
+```math
+\frac{g\ \text{an entry of}\ F,\quad u_g\in\{\mathsf{throws},\mathsf{false}\},\quad K_g,\quad \Gamma\vdash s : A,\quad A_{\mathtt{u}}\neq\emptyset}
+     {g(s)\ \leadsto\ \mathsf{tagBind}\ \mathsf{isUndef}(s):\ \mathsf{true}\mapsto r_g,\ \ \mathsf{false}\mapsto s : P\ \text{checked};\ \mathsf{member}(K_g,\ s.\tau)}\ \textsf{host-guard-undefined}
+```
+
+with $`r_g`$ the throw of a fresh `TypeError` where $`u_g = \mathsf{throws}`$,
+the error the calculus's abstraction of one, a fresh object owning no key,
+as at [a member of `null` or `undefined`](PROGRAM-TYPING.md#members-of-primitives-and-nullish-values),
+and `false` where $`u_g = \mathsf{false}`$. The domain obligation and the
+membership test are `host-guard-operand`'s, at $`A_{\lnot\mathtt{u}}`$.
+Where $`A`$ has no `undefined` slice, or $`u_g = \mathsf{unadmitted}`$, the
+call is `host-guard-operand`'s, so an `undefined` argument of an
+unadmitted entry fails the obligation. The edges refine $`s`$
+([member-yield](PROGRAM-TYPING.md#a-membership-test)) to
+
+```math
+\begin{aligned}
+\mathtt{true}&:\ \mathsf{slice}_{\mathsf{true}}(A_{\lnot\mathtt{u}})\\
+\mathtt{false}&:\ \mathsf{slice}_{\mathsf{false}}(A_{\lnot\mathtt{u}})\ \ \text{where}\ u_g=\mathsf{throws},\qquad \mathsf{slice}_{\mathsf{false}}(A_{\lnot\mathtt{u}})\cup A_{\mathtt{u}}\ \ \text{where}\ u_g=\mathsf{false}
+\end{aligned}
+```
+
+so a guard's `true` holds of a present value, and a throwing guard's normal
+return holds of one on both edges. A handler of the throw receives the
+heap of the call and no refinement of $`s`$. The rule is a lowering, no
+typing rule: Lean writes the call (`LoweringAtoms.memberAt` for a test of a
+slot, `closureExpr`'s `tagMember` case for an operand) as the dispatch, the
+fresh error and its throw (`raiseTypeError`) or `false`, and the
+membership test, each node certified by the calculus's existing rules, and
+checks each edge's context as every edge's.
+
+**The audit.** $`u_g`$ is the generator's proposal (`dev/guard-table.mts`),
+which the review authorizes. The generator evaluates the accepted body on
+`undefined` through the recognition grammar, as it evaluates it on each tag
+value, with JavaScript's semantics of each form: $`x`$ is `undefined`, the
+read $`x.\tau`$ of it throws a `TypeError`, a constant is its value, `===`
+and the ranges compare as JavaScript compares (`undefined` equals no
+constant and is in no range), `||` and `&&` evaluate their right operand
+only where JavaScript does, and a helper's call evaluates its argument,
+then the helper's body on it. Every step of the grammar but that read has
+no effect. So:
+
+- where the evaluation reads $`x.\tau`$, it throws there before any step
+  with an effect, and $`u_g`$ is `throws`: every node guard whose body
+  reads its tag before any other test (`return x.τ === κ`, `const y = x.τ;
+  …`, `switch (x.τ)`, `return h(x.τ)`, `return h(x)` of such an $`h`$);
+- where it answers `false`, it ran no other step, and $`u_g`$ is `false`:
+  a public tag guard, whose equalities compare its argument with constants;
+- otherwise, and for a kind the description's undefined inputs do not
+  list, $`u_g`$ is `unadmitted`.
+
+The grammar compares the argument's tag, or a local holding it, or the
+argument, with a constant, one on each side of a comparison, calls a helper
+on the argument or its tag, and reads no optional chain; the generator
+refuses any other comparison (`x === x`, `κ === κ`), a helper's call on a
+constant, and `x?.τ`, each of which can answer `true` of `undefined` and of
+a value of the primitive no tag is (the stand-in's `isSameType`,
+`isConstantType`, `isNameOfConstant`, `isNameOptional`, each without
+entry).
+
+A function answering `true` on `undefined` (`x === undefined || x.τ ===
+κ`) reads $`x`$ beyond its tag, so it is outside the recognition contract
+and has no entry. The audit is of `undefined` alone: `null` and every other
+value outside the domain keep the obligation. Its result:
+
+| Family | Kind | Entries | $`u_g`$ |
+| --- | --- | ---: | --- |
+| compiler API | node guard | 308 | `throws` |
+| compiler API | tag guard | 29 | `unadmitted`; tag guards are not among the description's undefined inputs (each answers `false` under Node) |
+| stand-in | node guard (`isName`, `isExpression`) | 2 | `throws` |
+| stand-in | tag guard (`isNameType`) | 1 | `false` |
+
+C2's Node run of every entry on `undefined`, with further arguments and a
+receiver and without, compares its behaviour with $`u_g`$, for both
+families, and a description forged to state another behaviour fails it
+(`tests/compiler-api-guards.mts`). The behaviour rests on F3 of the
+[trust rows](#trust-rows), which states it of the same resolved functions
+as the rest of the entry; it adds no trust row. Cases:
+`compiler-api-guard-undefined` (a loop up `parent`, a path under `&&`, a
+local, the `false` edge, a caught throw, the argument evaluated once, a
+callback); `invalid-compiler-api-guard-undefined-object` (a program object
+of a parenthesized expression's kind, which the guard answers `true` of
+under Node, refused at the domain obligation);
+`invalid-compiler-api-guard-undefined-user` (a user guard's `true` on
+`undefined` keeps it); `invalid-compiler-api-guard-undefined-catch` (a
+handler's `parent` may be absent); `invalid-compiler-api-guard-undefined-tag`
+(a compiler-API tag guard's argument that may be `undefined`, refused at
+the domain obligation); and, over the stand-in (`pipeline/test.mts`), a
+`false` guard's `false` edge keeping `undefined`. Forged claims, bypassing
+the producer, are refused by the search and by the checker: that edge's
+value claimed present, `parent` claimed present in a handler of the throw,
+and a guard's argument claimed to hold a non-node beside a node, refused at
+the call by the domain obligation; so are a document stating every call's
+behaviour `unadmitted`, at a call's domain obligation, and one leaving it
+out, by the decoder (`pipeline/test.mts`).
 
 #### Guards as values
 
@@ -1328,8 +1448,9 @@ bind them to the reviewed files.
   clients do after creation changes it; an optional one is present with one
   value or absent, reading `undefined`, for the object's life.
 - **F3 (guard identity).** Each guard table entry's statement (the exact tag
-  set $`K_g`$, the tag the only member read, no other effect, and an answer
-  independent of further arguments and of the receiver) holds of the
+  set $`K_g`$, the tag the only member read, no other effect, an answer
+  independent of further arguments and of the receiver, and the behaviour
+  $`u_g`$ on `undefined` where the description admits its kind) holds of the
   function Node runs for its export identity, resolved as the entry records,
   under the audited digest. Activation reads that resolution from the
   verifying process's Node; F3 assumes the program runs under the same Node
@@ -1403,9 +1524,14 @@ nothing else; under a description of another digest, or of an installation
 Node does not find, its programs are refused. Its units are tagged by
 `type`, a string, whose constants are the string enum `UnitType`; its guard table
 lists `isName`, an equality, and `isExpression`, through a helper of its
-tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
+tag, which throw on `undefined`, and `isNameType`, a tag guard of the string
+enum answering `false` there, each activated over the stand-in's own
+modules, its undefined inputs both kinds; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
-entry. Each listed guard's call is the membership test of the family's
+entry, nor has `isNameOrAbsent`, which answers `true` on `undefined`, nor
+have `isNameOptional`, `isSameType`, `isConstantType` and
+`isNameOfConstant`, outside the grammar
+([undefined arguments](#undefined-arguments)). Each listed guard's call is the membership test of the family's
 string constants and narrows both edges; the unlisted one narrows nothing.
 Its description states no stable-member exclusion, so a callee tested and
 read past a call verifies; under one excluding `Call.callee` the same read

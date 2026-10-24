@@ -469,6 +469,10 @@ type logical = Nullish | OrElse | AndAlso
 
 (* This is a typed view of the shared Fragment, not a new source language.
    Unknown cases fail here; inference exhaustively matches implemented cases. *)
+(* A family guard's audited behaviour on `undefined` (HOST-FAMILIES.md,
+   "Undefined arguments"): refused at its domain, a thrown `TypeError`, or
+   `false`. *)
+type guard_undefined = Unadmitted | Throws | AnswersFalse
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
@@ -478,9 +482,10 @@ and expr_node =
   | Unary of unary * expr
   (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
   | TypeofTest of string * bool * expr
-  (* A family guard's call of an immutable name: the operand, then whether
-     its value, or its field (`Some`), is one of the tags. *)
-  | TagMember of string option * literal list * expr
+  (* A family guard's call: the operand, then whether its value, or its
+     field (`Some`), is one of the tags; and the guard's audited behaviour
+     on `undefined` (HOST-FAMILIES.md, "Undefined arguments"). *)
+  | TagMember of string option * literal list * guard_undefined * expr
   (* `key in e`: the key, then whether the operand has it. *)
   | HasKey of expr * expr
   (* `e instanceof C` of a class of the file: the operand, then a read of the
@@ -656,7 +661,7 @@ let rec pattern_reads = function
 let rec children e = match e.node with
   | Id _ | Literal _ -> []
   | BlockBody ss -> List.concat_map statement_children ss
-  | Not e | TypeofTest (_,_,e) | TagMember (_,_,e) | Read (e,_) | Cast (_,_,e) | Unary (_,e) -> [e]
+  | Not e | TypeofTest (_,_,e) | TagMember (_,_,_,e) | Read (e,_) | Cast (_,_,e) | Unary (_,e) -> [e]
   | Ctor (e,statics) -> e :: List.map snd statics
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
@@ -792,7 +797,7 @@ let rec footprint_expr ?(fresh=[]) ~callable ~no_return ~iteration ~readable (e:
   match e.node with
   | Id name -> if List.mem name readable then Some empty_footprint else None
   | Literal _ -> Some empty_footprint
-  | Not a | TypeofTest (_,_,a) | TagMember (_,_,a) | Cast (_,_,a) -> go a
+  | Not a | TypeofTest (_,_,a) | TagMember (_,_,_,a) | Cast (_,_,a) -> go a
   | Arith (_,a,b) | Comma (a,b) -> all [a;b]
   | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
   | Conditional (c,a,b) -> all [c;a;b]
@@ -898,7 +903,7 @@ and throws_expr ~callable (e:expr) : bool =
     | _ -> false in
   match e.node with
   | Id _ | Literal _ | Lambda _ -> true
-  | Not a | TypeofTest (_,_,a) | TagMember (_,_,a) | Cast (_,_,a) | Read (a,_) -> go a
+  | Not a | TypeofTest (_,_,a) | TagMember (_,_,_,a) | Cast (_,_,a) | Read (a,_) -> go a
   | Arith (_,a,b) | Comma (a,b) | Logical (_,a,b) | Coalesce (a,b) | Index (a,b) | Equality (_,a,b)
   | HasKey (a,b) ->
     go a && go b
@@ -990,7 +995,10 @@ let rec expr binders j =
   | "arrayTest" -> TypeofTest ("array",true,sub "e")
   | "tagMember" ->
     TagMember ((match field "field" j with Null -> None | f -> Some (str f)),
-      List.map literal (items "tags" j),sub "e")
+      List.map literal (items "tags" j),
+      (match text "onUndefined" j with
+       | "unadmitted" -> Unadmitted | "throws" -> Throws | "false" -> AnswersFalse
+       | b -> unsupported ("a guard's behaviour on undefined " ^ b)),sub "e")
   | "inTest" -> HasKey (sub "key",sub "e")
   | "instanceTest" -> InstanceTest (text "key" j,sub "e",sub "proto")
   | "arith" -> Arith (arithmetic (text "op" j),sub "l",sub "r")

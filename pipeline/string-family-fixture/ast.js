@@ -1,6 +1,13 @@
 // The stand-in family's guards: `isName` an equality, `isExpression` through
-// a helper of its tag, and `isNameLoosely`, whose answer depends on an option
-// argument, outside the recognition contract.
+// a helper of its tag, `isNameType` a guard of the tag itself, which answers
+// `false` on `undefined`; and outside the recognition contract
+// `isNameLoosely`, whose answer depends on an option argument,
+// `isNameOrAbsent`, which answers `true` on `undefined`, `isNameOptional`,
+// which reads the tag through an optional chain and answers `false` there,
+// `isSameType`, which compares its argument with itself, `isConstantType`,
+// which compares two constants, and `isNameOfConstant`, which calls a helper
+// on a constant: the last three answer `true` on `undefined` and on strings
+// no tag is.
 import { UnitType } from "./kinds.js";
 export { UnitType };
 function isExpressionKind(type) {
@@ -15,4 +22,22 @@ export function isExpression(node) {
 }
 export function isNameLoosely(node, loose) {
     return loose ? node.type !== UnitType.Literal : node.type === UnitType.Name;
+}
+export function isNameType(type) {
+    return type === UnitType.Name;
+}
+export function isNameOrAbsent(node) {
+    return node === undefined || node.type === UnitType.Name;
+}
+export function isNameOptional(node) {
+    return node?.type === UnitType.Name;
+}
+export function isSameType(type) {
+    return type === type;
+}
+export function isConstantType(type) {
+    return UnitType.Name === UnitType.Name;
+}
+export function isNameOfConstant(type) {
+    return isNameType(UnitType.Name);
 }

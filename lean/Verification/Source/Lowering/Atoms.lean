@@ -44,6 +44,17 @@ new observation of their source expression. -/
         return (⟨0,← answer.getDM (contents R),fld⟩ : HeapFacts.Fact)
       checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
 
+/-- The throw of a fresh object owning no key, emitted for `Δ`: the
+abstraction `binopThrows` throws for a `TypeError` JavaScript allocates
+(`Calculus.thrownError`). -/
+@[nospecialize] def raiseTypeError (pos : Span) (Δ : List (Ty Tree)) (scope : List (ScopeBinding Tree))
+    (label : String) : Compiler Target := do
+  let E ← lower (SourceTypes.use (.refs [] [] [] [] [] [⟨true, []⟩]))
+  recordHints [E]
+  let raise ← emitAt pos (.throw (.var 0)) .ret ([E] :: Δ) [] label
+    (scope := held ⟨"",some pos⟩ :: scope)
+  emitAt pos (.makeAt .absent [] []) (.bind raise) Δ [E] label (scope := scope)
+
 /-- JavaScript throws a `TypeError` at a member access of `null` or
 `undefined`, before the access (PROGRAM-TYPING, "a member of `null` or
 `undefined`"). The operand in slot `o` of `K` is tested: a nullish one
@@ -57,12 +68,7 @@ slot of `aliases`, which holds the same value. -/
     (fun i => if i == o then 0 else i+1))⟩ : Target)
   let past := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range K.length)).map
     (fun i => if i == o || aliases.contains i then 0 else i+1))⟩ : Target)
-  let Δ := K.set o N
-  let E ← lower (SourceTypes.use (.refs [] [] [] [] [] [⟨true, []⟩]))
-  recordHints [E]
-  let raise ← emitAt pos (.throw (.var 0)) .ret ([E] :: Δ) [] "nullish-member"
-    (scope := held ⟨"",some pos⟩ :: scope)
-  let raise ← emitAt pos (.makeAt .absent [] []) (.bind raise) Δ [E] "nullish-member" (scope := scope)
+  let raise ← raiseTypeError pos (K.set o N) scope "nullish-member"
   let some B := K[o]? | throw "internal nullish guard slot"
   emitAt pos (.var o) (.tagBind .isNullish (refined raise) (past next)) K B "tag-dispatch" (scope := scope)
 
@@ -422,32 +428,54 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
 field into a slot of its own and the test of that, at the continuation
 `cont` gives past the slots the nodes add. The read's link states what the
 field holds, which the test's yields refine the slot's object by
-(`PromiseCalls.memberYield`). -/
+(`PromiseCalls.memberYield`). Where the guard's audited behaviour admits
+`undefined` and the slot may hold it, a dispatch on `undefined` comes first
+(`guard-undefined`, HOST-FAMILIES.md, "Undefined arguments"): its value
+throws a fresh `TypeError` (`throws`) or answers `false` (`answersFalse`),
+and the test above runs on the rest, at the domain's obligation. -/
 @[nospecialize] def memberAt (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (i : Nat)
     (cont : Nat → Continuation) : Compiler Target := do
-  let .tagMember p domain field tags _ := e | throw "internal extraction error: a family guard's test"
+  let .tagMember p domain field tags onUndefined _ := e | throw "internal extraction error: a family guard's test"
   let A ← exprType fc e
-  -- The value within the guard's domain, an obligation of its slot; the
-  -- operand's claim is its evaluation's, the test's claim its node's.
   let D ← lower (Fragment.translate domain)
-  let check := DirectProof.var Γ i D
-  obligation p check.goal (some check) "guard-domain" scope
+  let G := SourceTypes.graph (← table)
   let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
-  -- The test's derivation is one node per tag (`memberPlan`), whatever the
-  -- tested value's type.
-  match field with
-  | none => emitPlanned p (memberPlan Γ i X A tags) (cont 0) Γ A "tag-dispatch" (scope := scope)
-  | some fld =>
-    let G := SourceTypes.graph (← table)
-    -- The field's type as the value's arms read it, or, where some arm
-    -- reads it otherwise, the tags' primitive, which the read's own
-    -- derivation must establish.
-    let R ← tryCatch (do pure (← readCell G Γ fld (DirectProof.cast Γ (← byClause X) (DirectProof.var Γ i X))).type)
-      fun _ => do pure [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
-    let test ← emitPlanned p (memberPlan (R :: Γ) 0 R A tags) (cont 1) (R :: Γ) A "tag-dispatch"
-      (scope := held ⟨"",some p⟩ :: scope)
-    emitAt p (.readAt fld (.var i)) (.bind test) Γ R "tag-dispatch" (scope := scope)
+  -- The test on the domain, the slot at `Γ`'s type.
+  let test := fun (Γ : List (Ty Tree)) => do
+    -- The value within the guard's domain, an obligation of its slot; the
+    -- operand's claim is its evaluation's, the test's claim its node's.
+    let check := DirectProof.var Γ i D
+    obligation p check.goal (some check) "guard-domain" scope
+    let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
+    -- The test's derivation is one node per tag (`memberPlan`), whatever the
+    -- tested value's type.
+    match field with
+    | none => emitPlanned p (memberPlan Γ i X A tags) (cont 0) Γ A "tag-dispatch" (scope := scope)
+    | some fld =>
+      -- The field's type as the value's arms read it, or, where some arm
+      -- reads it otherwise, the tags' primitive, which the read's own
+      -- derivation must establish.
+      let R ← tryCatch (do pure (← readCell G Γ fld (DirectProof.cast Γ (← byClause X) (DirectProof.var Γ i X))).type)
+        fun _ => do pure [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
+      let test ← emitPlanned p (memberPlan (R :: Γ) 0 R A tags) (cont 1) (R :: Γ) A "tag-dispatch"
+        (scope := held ⟨"",some p⟩ :: scope)
+      emitAt p (.readAt fld (.var i)) (.bind test) Γ R "tag-dispatch" (scope := scope)
+  let absent := BranchRefinement.tagSlice G X .isUndef true
+  match onUndefined with
+  | .unadmitted => test Γ
+  | _ =>
+    if absent.isEmpty then test Γ else
+    -- One dispatch on the slot's value, each arm emitted for `Γ` with the
+    -- slot at its slice, the dispatched value standing for it.
+    let refined := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range Γ.length)).map
+      (fun j => if j == i then 0 else j+1))⟩ : Target)
+    let defined ← test (Γ.set i (BranchRefinement.tagSlice G X .isUndef false))
+    let undefinedArm ← match onUndefined with
+      | .answersFalse => emitAt p .fls (cont 0) (Γ.set i absent) [Labels.fls] "guard-undefined" (scope := scope)
+      | _ => raiseTypeError p (Γ.set i absent) scope "guard-undefined"
+    emitAt p (.var i) (.tagBind .isUndef (refined undefinedArm) (refined defined)) Γ X "tag-dispatch"
+      (scope := scope)
 
 /-- A family guard's test of its argument (`Fragment.Expr.tagMember`,
 HOST-FAMILIES.md, "A guard on any argument"): of a name, at the name's slot;
@@ -457,7 +485,7 @@ which the test reads and which `cont`'s mappings drop. -/
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (cont : Nat → Continuation)
     (operand : Fragment.Expr → Target → Compiler Target) :
     Compiler Target := do
-  let .tagMember p _ _ _ a := e | throw "internal extraction error: a family guard's test"
+  let .tagMember p _ _ _ _ a := e | throw "internal extraction error: a family guard's test"
   match a with
   | .var _ saved =>
     -- A saved operand read from an immutable name is tested at that name's
@@ -664,7 +692,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let node ← emitAt e.span (.ite tested .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileAtom recursive fc scope Γ a node
-  | .tagMember _ _ _ _ _ =>
+  | .tagMember _ _ _ _ _ _ =>
     -- A family guard's test as a value: its nodes (`memberNodes`), its
     -- Boolean bound for `next`.
     memberNodes fc scope Γ e (fun k =>

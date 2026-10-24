@@ -662,6 +662,41 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(nodeListLast.lastElement), "the fixture exports lastElement");
   const emptyPattern = first(join(dir, "empty-pattern.ts"), "const {} = o;\n", Number(syntaxKind.ObjectBindingPattern));
   assert.equal(nodeListLast.lastElement(emptyPattern), undefined, "lastElement returns undefined on an empty pattern");
+  // Node guards on a `parent` that may be absent (HOST-FAMILIES.md,
+  // "Undefined arguments"): each returns where `parent` is present and the
+  // guard throws a `TypeError` where it is absent, a source file's; a
+  // program object of a parenthesized expression's kind passes the guard; a
+  // user guard's `true` and a handler of the throw return the absent
+  // `parent`.
+  const absent = (() => {
+    const file = join(dir, "absent.ts");
+    writeFileSync(file, "x;\n");
+    return openText(file, "x;\n");
+  })();
+  const undefinedGuards = await fixture("compiler-api-guard-undefined");
+  assert.ok(unary(undefinedGuards.parentNamed), "the fixture exports parentNamed");
+  assert.ok(unary(undefinedGuards.caught), "the fixture exports caught");
+  assert.ok(unary(undefinedGuards.counted), "the fixture exports counted");
+  assert.ok(unary(undefinedGuards.parentKind), "the fixture exports parentKind");
+  assert.ok(unary(undefinedGuards.outermost), "the fixture exports outermost");
+  assert.equal(undefinedGuards.parentNamed(name), false, "parentNamed returns where parent is present");
+  assert.equal(undefinedGuards.counted(name), 1, "the guard's argument is evaluated once");
+  assert.equal(typeof undefinedGuards.parentKind(name), "number", "parentKind returns a kind");
+  assert.equal(undefinedGuards.outermost(name), name, "outermost returns the node below its parentheses");
+  const parentNamed = undefinedGuards.parentNamed;
+  assert.throws(() => parentNamed(absent), TypeError, "isIdentifier throws on an absent parent");
+  assert.equal(undefinedGuards.caught(absent), false, "the handler returns false");
+  assert.ok(unary(undefinedGuards.handlerParent), "the fixture exports handlerParent");
+  assert.equal(undefinedGuards.handlerParent(absent), undefined, "handlerParent's handler returns the absent parent");
+  const objectGuard = await fixture("invalid-compiler-api-guard-undefined-object");
+  assert.ok(nullary(objectGuard.made), "the fixture exports made");
+  assert.equal(objectGuard.made(), true, "isParenthesizedExpression answers true of a program object of its kind");
+  const userGuard = await fixture("invalid-compiler-api-guard-undefined-user");
+  assert.ok(unary(userGuard.parentOf), "the fixture exports parentOf");
+  assert.equal(userGuard.parentOf(absent), undefined, "parentOf returns a source file's absent parent");
+  const caughtGuard = await fixture("invalid-compiler-api-guard-undefined-catch");
+  assert.ok(unary(caughtGuard.handled), "the fixture exports handled");
+  assert.equal(caughtGuard.handled(absent), undefined, "handled returns a source file's absent parent");
   // Guards returning a family guard's test under `&&` and `||`: each answers
   // `true` of an identifier, which they promise is a function declaration.
   const binary = (v: unknown): v is (x: unknown, y: unknown) => unknown => typeof v === "function";
@@ -741,5 +776,5 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(holdsUndefined(record.names([entry], () => { entry.node = spreadMember; })),
     "the replaced node's name is undefined");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
 }

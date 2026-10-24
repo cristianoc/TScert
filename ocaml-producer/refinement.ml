@@ -422,9 +422,11 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      may equal, kept as it is; where `false`, each atom less the tags'
      values, an arm whose field the tags' values cover dropped, and an arm of
      a generic declaration at its stable tag, partly covered, read at the
-     rest of its tag (member-split). *)
-  | TagMember (field,tags,tested) ->
+     rest of its tag (member-split). `undefined` answers no `true`, and
+     where the guard throws on it, no `false` either (`guard-undefined`). *)
+  | TagMember (field,tags,undefined,tested) ->
     let atoms = List.filter_map (fun l -> singleton_atom (literal_type l)) tags in
+    let defined t = if truth || undefined = Throws then restrict ~declarations Undef false t else t in
     let rec passing t = match t with
       | Atoms xs -> Atoms (List.filter (fun x ->
           List.exists (fun a -> restrict ~declarations a true (Atoms [x]) <> Atoms []) atoms) xs)
@@ -470,6 +472,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     let by_field f t = split f (discriminate bounds declarations t (Name f) through) in
     (* A name, where it is held; a path, through the read the test refined
        (HOST-FAMILIES.md, "A guard on any argument"). *)
+    let own t = own (defined t) and by_field f t = by_field f (defined t) in
     (match tested.node,field with
      | Id name,None -> refine_value env name own
      | Id name,Some f -> refine_value env name (by_field f)

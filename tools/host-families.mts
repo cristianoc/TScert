@@ -57,6 +57,11 @@ export type GuardEntry = {
   kind: "node" | "tag";
   domain: string;
   tags: readonly string[];
+  /** What the guard does on `undefined`, outside its domain
+   * (HOST-FAMILIES.md, "Undefined arguments"): throws a `TypeError` before
+   * any other step, returns `false` having run nothing else, or is
+   * `unadmitted`, an argument the domain obligation refuses. */
+  onUndefined: GuardUndefined;
   module: string;
   helpers: readonly string[];
   /** Each binding the closure imports: the importing module, the local
@@ -64,6 +69,9 @@ export type GuardEntry = {
   edges: readonly (readonly [string, string, string, string])[];
   text: string;
 };
+/** A guard's audited behaviour on `undefined` (HOST-FAMILIES.md, "Undefined
+ * arguments"). */
+export type GuardUndefined = "unadmitted" | "throws" | "false";
 /** A family's guard table: the entry point and the resolution conditions
  * its entries were resolved under, the entry point's module and complete
  * executable closure (file digests and static edges), the helpers'
@@ -109,6 +117,10 @@ export type FamilyDescription = {
   /** The guard table: the guards read from an audited entry, every other
    * guard of the family read without predicate. */
   guards: GuardTable;
+  /** The guard kinds whose audited behaviour on `undefined` the review
+   * admits (HOST-FAMILIES.md, "Undefined arguments"): an entry of another
+   * kind is `unadmitted` there. */
+  undefinedInputs: readonly GuardEntry["kind"][];
 };
 
 /** The package's declarations as the interpreter reads them, resolved by

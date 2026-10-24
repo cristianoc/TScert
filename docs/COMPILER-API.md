@@ -208,9 +208,11 @@ are ordinary types.
    the `emitted-enum` rule ([enums](SOURCE-CONTRACTS.md#enums)): the value
    `E` is $`\mathcal O^{\rho}(E)`$, whose runtime object C1 checks against
    the declaration, and `E.M` the literal type of `M`'s value. The
-   type `E` at a position of a host declaration is `number`, since
-   TypeScript admits any number at a numeric enum type and the flag enums
-   hold combinations there. A literal member type `SyntaxKind.Identifier`
+   type `E` of an enum with a numeric member at a position of a host
+   declaration is `number`, since TypeScript admits any number at a numeric
+   enum type and the flag enums hold combinations there; that of an enum of
+   strings alone is the union of its members' literals, which are all
+   TypeScript admits there. A literal member type `SyntaxKind.Identifier`
    is the literal. Reading an enum as a value requires the import, resolved
    by Node from each importing module through program re-exports, to bind
    the object C1 checks ([activation](HOST-FAMILIES.md#activation)).
@@ -441,6 +443,14 @@ so reading `n.name` after it is refused, and `isExpression(n)` to the 46
 kinds the implementation accepts. A tag guard's call on a binding of a
 `SyntaxKind` (`isAdditiveOperator(op)`) is the membership test of the binding
 itself, which refines it on both edges.
+
+Every node guard of the table reads `kind` first, so it throws a
+`TypeError` on `undefined`; the description admits node guards'
+behaviour on `undefined` ([undefined arguments](HOST-FAMILIES.md#undefined-arguments)),
+so `isCallExpression(n.parent)` throws where `parent` is absent and holds of
+a present `parent` on both edges. The tag guards answer `false` on
+`undefined`; the description does not admit their behaviour there, so a
+tag guard's argument stays within `number`.
 
 ## Corrections
 
@@ -679,7 +689,8 @@ as regression evidence.
   exported guard, gives exactly the reviewed table, its unlisted exports
   exactly those outside the recognition contract; every entry run under
   Node on an object of each kind (and on every number in a range around
-  $`\mathcal K`$ for a tag guard) answers exactly its tag set.
+  $`\mathcal K`$ for a tag guard) answers exactly its tag set, and on
+  `undefined` behaves as its entry states.
 - **C3, shapes (regression evidence).** `make compiler-api-shapes`
   (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
   the installed declarations and walks every node of `tools/*.mts`,

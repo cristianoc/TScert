@@ -8,6 +8,7 @@ import type { Atom } from "./claim.mts";
 import type { DeclarationDocument, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
+import type { GuardUndefined } from "./host-families.mts";
 
 /** The name an optional chain's body reads its saved receiver by; no source
  * identifier is spelled so (Fragment.lean's `chainName`). */
@@ -111,7 +112,7 @@ export type Expr =
      its argument, evaluated once, within the guard's domain, then whether
      its value, or its object's `field`, is one of the tags, each tested in
      turn. */
-  | { k: "tagMember"; pos: Span; domain: TypeTerm; field: string | null; tags: Atom[]; e: Expr }
+  | { k: "tagMember"; pos: Span; domain: TypeTerm; field: string | null; tags: Atom[]; onUndefined: GuardUndefined; e: Expr }
   | { k: "write"; pos: Span; field: PropertyKey; receiver: Expr; rhs: Expr }
   /* `target ??= rhs`, `||=` or `&&=` on a field, an element or, for the
      Boolean forms, a name: the target's parts once, its value read, the test

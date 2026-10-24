@@ -68,7 +68,7 @@ is given, less the dropped keys: one record per pair of their clauses
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 partial def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. => true
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ e => readOnly e
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .optional _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
   | .comma _ a b | .inKeys _ a b => readOnly a && readOnly b

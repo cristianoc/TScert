@@ -41,7 +41,7 @@ import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
-import type { TagValue } from "./host-families.mts";
+import type { GuardUndefined, TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
@@ -310,7 +310,8 @@ export class Gate {
   /** The import bindings of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"), by local name: its kind, its exact tag
    * values and the domain its declared parameter states. */
-  readonly hostGuards: Map<string, { domain: TypeTerm; field: string | null; tags: readonly (number | string)[] }> = new Map();
+  readonly hostGuards: Map<string, { domain: TypeTerm; field: string | null; tags: readonly (number | string)[];
+    onUndefined: GuardUndefined }> = new Map();
   /** Statement calls of `node:assert/strict`'s `assert` and `ok` read as the
    * calculus's own test, by span. */
   readonly assertionCalls: Set<string> = new Set();
@@ -1876,7 +1877,8 @@ function lowerFile(file: string, carriesContext: boolean,
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
         importedEnum: (local, members, reverse) => gate.importedEnums.set(local, { members, reverse }),
-        hostGuard: (local, _entry, domain, field, tags) => gate.hostGuards.set(local, { domain, field, tags }),
+        hostGuard: (local, entry, domain, field, tags) =>
+          gate.hostGuards.set(local, { domain, field, tags, onUndefined: entry.onUndefined }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {

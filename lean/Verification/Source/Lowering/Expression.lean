@@ -176,26 +176,47 @@ slots are introduced only after the operand supplying their type is checked. -/
       let K := a.type :: Γ
       pure (DirectProof.letE Γ a (← selectPlan G K 0 A .truthy
         (DirectProof.node K .fls [Labels.fls] .flsLit) (DirectProof.node K .tru [Labels.tru] .truLit)))
-  | .tagMember _ domain field tags a => do
+  | .tagMember _ domain field tags onUndefined a => do
     -- The operand, at its guard's domain, then its value's or its field's
     -- test against each tag in turn (`memberPlan`), the field read once.
+    -- Where the guard's audited behaviour admits `undefined` and the operand
+    -- may be it, a selection on `undefined` first (`guard-undefined`): a
+    -- fresh `TypeError` thrown (`throws`) or `false` (`answersFalse`) there,
+    -- the test on the rest, at the domain.
     let B ← exprType fc a
     let operand ← closureExpr recursive fc scope Γ a
     let D ← lower (Fragment.translate domain)
-    let check := DirectProof.var (B::Γ) 0 D
-    obligation e.span check.goal (some check) "guard-domain" (held ⟨"",some a.span⟩ :: scope)
-    let K := operand.type :: Γ
-    match field with
-    | none => pure (DirectProof.letE Γ operand (memberPlan K 0 operand.type A tags))
-    | some fld =>
-      -- A named union is read clause by clause, as a union of its arms.
-      let O ← byClause operand.type
-      -- Where some arm reads the field otherwise, the read at the tags'
-      -- primitive, which the obligation's check decides, at the call.
-      let read ← tryCatch (readCell G K fld (DirectProof.cast K O (DirectProof.var K 0 operand.type))) fun _ => do
-        let R := [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
-        pure (DirectProof.node K (.readAt fld (.var 0)) R .read [DirectProof.var K 0 operand.type])
-      pure (DirectProof.letE Γ operand (DirectProof.letE K read (memberPlan (read.type :: K) 0 read.type A tags)))
+    let test := fun (X : Ty Tree) => do
+      let check := DirectProof.var (X::Γ) 0 D
+      obligation e.span check.goal (some check) "guard-domain" (held ⟨"",some a.span⟩ :: scope)
+      let K := X :: Γ
+      match field with
+      | none => pure (memberPlan K 0 X A tags)
+      | some fld =>
+        -- A named union is read clause by clause, as a union of its arms.
+        let O ← byClause X
+        -- Where some arm reads the field otherwise, the read at the tags'
+        -- primitive, which the obligation's check decides, at the call.
+        let read ← tryCatch (readCell G K fld (DirectProof.cast K O (DirectProof.var K 0 X))) fun _ => do
+          let R := [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
+          pure (DirectProof.node K (.readAt fld (.var 0)) R .read [DirectProof.var K 0 X])
+        pure (DirectProof.letE K read (memberPlan (read.type :: K) 0 read.type A tags))
+    let absent := BranchRefinement.tagSlice G operand.type .isUndef true
+    match onUndefined with
+    | .unadmitted => pure (DirectProof.letE Γ operand (← test B))
+    | _ =>
+      if absent.isEmpty then return DirectProof.letE Γ operand (← test B)
+      let defined ← test (BranchRefinement.tagSlice G operand.type .isUndef false)
+      let H := absent :: Γ
+      let undefinedArm ← match onUndefined with
+        | .answersFalse => pure (DirectProof.cast H A (DirectProof.node H .fls [Labels.fls] .flsLit))
+        | _ => do
+          let E ← lower (SourceTypes.use (.refs [] [] [] [] [] [⟨true, []⟩]))
+          recordHints [E]
+          let error := DirectProof.node H (.makeAt .absent [] []) [E] .alloc
+          pure (DirectProof.node H (.throw error.term) A .throw [error])
+      pure (DirectProof.letE Γ operand
+        (← selectPlan G (operand.type :: Γ) 0 A .isUndef undefinedArm defined))
   | .cast _ annot a => do
     -- The value is the operand's; the claim at the cast follows from the
     -- operand's, and an annotation is one more type the operand must meet.

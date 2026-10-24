@@ -31,6 +31,7 @@ each item's design and evidence, not its progress.
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
+| [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
@@ -393,6 +394,20 @@ with `if (d.initializer) return 1;`, or with `d` read before the test
 (`read-narrows-path`'s `returned`), verifies, and so does the negated test
 over a compiler node (`ts.VariableDeclarationList`'s first declaration).
 Which receiver type the negation's lowering hands the read is unknown.
+
+<a id="field-equality-past-guard-disjunction"></a>
+**A field's equality past a guard disjunction.** With `h: ts.Node`,
+`if ((ts.isPrefixUnaryExpression(h) || ts.isPostfixUnaryExpression(h)) &&
+(h.operator === ts.SyntaxKind.PlusPlusToken || h.operator ===
+ts.SyntaxKind.MinusMinusToken)) return true; else if
+((ts.isForOfStatement(h) || ts.isForInStatement(h)) && h.initializer === n)
+return true;` is refused at the `else if`'s incoming edge, whose claim of
+the saved `operator` read is the operators but the two tested (2026-10-24).
+It is the first refusal of the slices of `fragment-expressions.mts`'s
+`letWrites` and `localValues` (300 s, 2026-10-24), once their guards on a
+`parent` that may be absent pass
+([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
+edge the claim mismatches, and why, is unknown.
 
 <a id="literal-guard-json-read"></a>
 **A literal guard over `JsonValue | undefined`.**

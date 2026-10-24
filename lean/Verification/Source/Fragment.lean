@@ -87,6 +87,14 @@ inductive UnaryOp where
   | neg | plus | bitNot | typeof
   deriving Repr, DecidableEq
 
+/-- A family guard's audited behaviour on `undefined`, outside its domain
+(HOST-FAMILIES.md, "Undefined arguments"): `unadmitted`, an argument the
+domain obligation refuses; `throws`, a `TypeError` before any other step;
+`answersFalse`, `false` with no other step. -/
+inductive GuardUndefined where
+  | unadmitted | throws | answersFalse
+  deriving Repr, DecidableEq, Inhabited
+
 /-- The test a logical assignment makes on the target's current value. -/
 inductive LogicalOp where
   | nullish | orElse | andAlso
@@ -211,8 +219,10 @@ inductive Expr where
   /-- A family guard's call (HOST-FAMILIES.md, "A guard on any argument"):
   the operand, evaluated once, at one more obligation, its guard's domain, then the test of
   its value, or of its field `field`, against each tag of the set in turn,
-  `true` where one holds (`PromiseCalls.memberOn`). The field is read once. -/
-  | tagMember (pos : Span) (domain : Json) (field : Option PropKey) (tags : List Tag) (e : Expr)
+  `true` where one holds (`PromiseCalls.memberOn`). The field is read once.
+  `onUndefined` is the guard's audited behaviour on `undefined`. -/
+  | tagMember (pos : Span) (domain : Json) (field : Option PropKey) (tags : List Tag)
+      (onUndefined : GuardUndefined) (e : Expr)
   /-- Strict equality awaiting a checked singleton operand from source claims. -/
   | equality (pos : Span) (equal : Bool) (left right : Expr)
   | singletonTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
@@ -438,7 +448,7 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .tagMember _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.freeNames
+  | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.freeNames
   | .ctor _ e fs => e.freeNames ++ fs.flatMap (·.2.freeNames)
   | .construct _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.flatMap Expr.freeNames
@@ -474,7 +484,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   -- A read off a name instantiates it, as a call does, where it is a
   -- generic class value whose static field it reads.
   | .read p _ (.var q n) => [(p, q, n, [])]
-  | .shapeTest _ _ _ e | .tagMember _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.callees
+  | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.callees
   | .ctor _ e fs => e.callees ++ fs.flatMap (·.2.callees)
   | .construct p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
@@ -601,7 +611,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -838,7 +848,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "tagMember" => do
     -- A family guard's call, which the parser writes only for a guard of the
     -- audited table at its exact tag set: its one argument, evaluated once.
-    fieldsExactly j ["k","pos","domain","field","tags","e"]
+    fieldsExactly j ["k","pos","domain","field","tags","onUndefined","e"]
     let d ← jField j "domain"
     if d == .null then throw "a family guard's call states its guard's domain"
     let field ← match ← jField j "field" with
@@ -851,8 +861,13 @@ partial def decodeExpr (j : Json) : Except String Expr := do
         pure (Tag.numEq b)
       | .vstr s => pure (Tag.strEq s)
       | _ => throw "a tag is a number or a string"
+    let onUndefined ← match ← jStr (← jField j "onUndefined") with
+      | "unadmitted" => pure GuardUndefined.unadmitted
+      | "throws" => pure .throws
+      | "false" => pure .answersFalse
+      | b => throw s!"a family guard's behaviour on undefined is unadmitted, throws or false, not {b}"
     let e ← decodeExpr (← jField j "e")
-    return .tagMember p d field tags.eraseDups e
+    return .tagMember p d field tags.eraseDups onUndefined e
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard
     -- library's `Array` through its reviewed overlay entry.

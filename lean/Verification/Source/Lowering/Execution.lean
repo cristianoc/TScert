@@ -656,7 +656,7 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
     | none => e
   | .not p e => .not p (executionPredicate G Γ scope origins e)
   | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate G Γ scope origins e)
-  | .tagMember p d f ts e => .tagMember p d f ts (executionPredicate G Γ scope origins e)
+  | .tagMember p d f ts u e => .tagMember p d f ts u (executionPredicate G Γ scope origins e)
   | .singletonTest p tag eq side l r => .singletonTest p tag eq side (operand l) (operand r)
   | .arith p op l r => .arith p op (operand l) (operand r)
   | read@(.read p fld e) =>

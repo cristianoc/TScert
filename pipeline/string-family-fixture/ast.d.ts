@@ -37,3 +37,9 @@ export declare function isNameLoosely(
   node: Unit,
   loose?: boolean,
 ): node is Name;
+export declare function isNameType(type: UnitType): type is UnitType.Name;
+export declare function isNameOrAbsent(node: Unit | undefined): node is Name;
+export declare function isNameOptional(node: Unit): node is Name;
+export declare function isSameType(type: UnitType): type is UnitType.Name;
+export declare function isConstantType(type: UnitType): type is UnitType.Name;
+export declare function isNameOfConstant(type: UnitType): type is UnitType.Name;

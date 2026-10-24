@@ -4420,6 +4420,130 @@ control(async (): Promise<void> => {
   process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an omitted member's read refused where the description lists it\n");
 });
 control(async (): Promise<void> => {
+  // Guards on a value that may be `undefined` (HOST-FAMILIES.md, "Undefined
+  // arguments"), over the stand-in family, whose table admits both kinds:
+  // `isName`, a node guard, throws there, so its `false` edge holds a unit;
+  // `isNameType`, a tag guard of equalities, answers `false`, so its `true`
+  // edge holds the name's tag and its `false` edge keeps `undefined`,
+  // returned where a tag is promised and refused; `isNameOrAbsent`, which
+  // answers `true` there, has no entry and narrows nothing. Under Node each
+  // refused function returns `undefined` where its result promises none.
+  const dir = join(import.meta.dirname, "string-family-fixture-project");
+  const project = tsconfigOf(dir);
+  const example = (file: string): string => join(dir, `${file}.ts`);
+  useFamiliesForTests([compilerApiFamily, stringFamily]);
+  try {
+    const kept = check(example("undefined"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    // Bypassing the producer: `tagOrNone`'s `false` edge claimed to hold a
+    // tag alone, where the guard answers `false` on `undefined`, is refused
+    // by the search and by the checker with the honest run's evidence, at
+    // the conditional, whose `false` edge from the guard's answer on
+    // `undefined` establishes no such claim.
+    const { artifacts } = kept;
+    const text = readFileSync(example("undefined"), "utf8");
+    const conditional = text.indexOf("isNameType(t) ? UnitType.Name : t");
+    const at = text.indexOf(": t;", conditional) + 2;
+    const claims = readClaims(artifacts);
+    const read = must(claims.functions.find((f) => f.name === "tagOrNone")?.expressions
+      .find((e) => e.pos[0] === at && e.pos[1] === at + 1), "the false edge's read of t");
+    const absent = rowOf(claims, "undef");
+    const honest = read.type;
+    assert.ok(Array.isArray(honest) && honest.includes(absent), "the honest claim keeps undefined");
+    read.type = honest.filter((l) => l !== absent);
+    const forged = writeClaims(artifacts, "forged-guard-false-edge", claims);
+    const edge = `at [${conditional},${at + 1})`;
+    refusedAt(artifacts, forged, "forged-guard-false-edge", edge);
+    assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts).includes(edge));
+    for (const [file, text] of [["invalid-undefined-false", "isNameType(t) ? UnitType.Name : t"],
+        ["invalid-absent", "isNameOrAbsent(u) ? u : null"]] as const) {
+      const refused = check(example(file), project);
+      const at = readFileSync(example(file), "utf8").indexOf(text);
+      assert.ok(refused.status === "unverified" && refused.detail.includes(`at [${at},`) &&
+        refused.detail.includes("no derivation of its return-contract claim"), `${file}: ${JSON.stringify(refused)}`);
+    }
+  } finally {
+    useFamiliesForTests(null);
+  }
+  const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `import { other } from ${JSON.stringify(pathToFileURL(example("invalid-undefined-false")).href)};\n` +
+    `import { named } from ${JSON.stringify(pathToFileURL(example("invalid-absent")).href)};\n` +
+    `import { unitStart } from ${JSON.stringify(pathToFileURL(example("undefined")).href)};\n` +
+    `let threw = "";\ntry { unitStart(undefined); } catch (e) { threw = e instanceof TypeError ? "TypeError" : "other"; }\n` +
+    `console.log(JSON.stringify([other(undefined), named(undefined), threw]));\n`],
+    { encoding: "utf8", cwd: dir });
+  assert.equal(ran.stdout.trim(), JSON.stringify([null, null, "TypeError"]), `under Node: ${ran.stderr}`);
+  process.stdout.write("guards on undefined, over the stand-in family: a node guard's false edge holds a unit, a tag guard's true edge its tag; the tag guard's false edge keeps undefined, forged claims stating it present refused by the search and the checker, and a guard answering true on it has no entry, each refused at its return, where under Node it returns undefined; the node guard throws a TypeError on it\n");
+});
+control(async (): Promise<void> => {
+  // A node guard on a `parent` that may be absent (HOST-FAMILIES.md,
+  // "Undefined arguments"), its claims forged bypassing the producer, each
+  // refused by the search and by the checker with the honest evidence:
+  // `parent` claimed present in the handler of the guard's throw
+  // (`handlerParent`), and the guard's argument claimed to hold a string
+  // beside a node or `undefined` (`parentNamed`), which the domain
+  // obligation on the dispatch's defined arm refuses at the call.
+  const artifacts = run("compiler-api-guard-undefined");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claimAt = (claims: SourceClaims, fn: string, text: string, from: string) => {
+    const at = source.indexOf(text, source.indexOf(from));
+    return { at, claim: must(claims.functions.find((f) => f.name === fn)?.expressions
+      .find((e) => e.pos[0] === at && e.pos[1] === at + text.length), `${fn}'s ${text}`) };
+  };
+  const handler = readClaims(artifacts);
+  const caught = claimAt(handler, "handlerParent", "n.parent", "return n.parent;");
+  const absent = rowOf(handler, "undef");
+  const honest = caught.claim.type;
+  assert.ok(Array.isArray(honest) && honest.includes(absent), "the handler's parent may be absent");
+  caught.claim.type = honest.filter((l) => l !== absent);
+  const present = writeClaims(artifacts, "forged-guard-handler", handler);
+  const span = `at [${caught.at},${caught.at + "n.parent".length})`;
+  refusedAt(artifacts, present, "forged-guard-handler", span);
+  assert.ok(invoke(present, join(artifacts, "evidence.json"), artifacts).includes(span));
+  const widened = readClaims(artifacts);
+  const operand = claimAt(widened, "parentNamed", "n.parent", "return ts.isIdentifier(n.parent) &&");
+  const text = rowOf(widened, "str");
+  const read = operand.claim.type;
+  assert.ok(Array.isArray(read), "the argument's claim is a union");
+  // A label list in canonical order: the document's rows first, by number.
+  operand.claim.type = [...[...read.filter((l) => typeof l === "number"), text].sort((a, b) => a - b),
+    ...read.filter((l) => typeof l !== "number")];
+  const call = source.indexOf("ts.isIdentifier(n.parent) &&");
+  const at = `at [${call},${call + "ts.isIdentifier(n.parent)".length})`;
+  const outside = writeClaims(artifacts, "forged-guard-domain", widened);
+  refusedAt(artifacts, outside, "forged-guard-domain", at);
+  assert.ok(invoke(outside, join(artifacts, "evidence.json"), artifacts).includes(at));
+  // The parser's document forged: every guard call's behaviour on
+  // `undefined` stated `unadmitted`, refused at the domain obligation of a
+  // call whose argument may be `undefined`; and left out, refused by the
+  // document's decoder.
+  const forgeCalls = (name: string, change: (call: object) => void): string => {
+    const fragment: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (typeof v === "object" && v !== null) {
+        if ("k" in v && v.k === "tagMember") change(v);
+        Object.values(v).forEach(walk);
+      }
+    };
+    walk(fragment);
+    const path = join(artifacts, `${name}.json`);
+    const text = JSON.stringify(fragment);
+    assert.ok(text !== undefined, "the document is JSON");
+    writeFileSync(path, text);
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, path);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    return searched.stdout + searched.stderr;
+  };
+  const unadmitted = /closure expression claim at \[(\d+),(\d+)\): evidence search failed/
+    .exec(forgeCalls("forged-guard-unadmitted", (c) => Reflect.set(c, "onUndefined", "unadmitted")));
+  assert.match(source.slice(Number(unadmitted?.[1]), Number(unadmitted?.[2])), /^ts\.is\w+\(\w+\.parent\)$/,
+    "refused at a guard's call on a parent");
+  const unstated = forgeCalls("forged-guard-unstated", (c) => Reflect.deleteProperty(c, "onUndefined"));
+  assert.match(unstated, /onUndefined/);
+  process.stdout.write("guards on undefined, forged claims: parent present in the throw's handler, refused at its read, and a string beside the guard's argument, refused at the call by the domain obligation, by the search and the checker; the document's behaviour on undefined stated unadmitted, refused at a call's domain obligation, and left out, refused by its decoder\n");
+});
+control(async (): Promise<void> => {
   // Each correction of the compiler API's family (COMPILER-API.md,
   // "Corrections"), bypassing the producer: its negative fixture returns the
   // corrected member at its declared type. Read without that correction it
