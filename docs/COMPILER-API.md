@@ -689,8 +689,9 @@ as regression evidence.
   exported guard, gives exactly the reviewed table, its unlisted exports
   exactly those outside the recognition contract; every entry run under
   Node on an object of each kind (and on every number in a range around
-  $`\mathcal K`$ for a tag guard) answers exactly its tag set, and on
-  `undefined` behaves as its entry states.
+  $`\mathcal K`$ for a tag guard) answers exactly its tag set, and every
+  node guard, whose behaviour on `undefined` the description admits, throws
+  a `TypeError` there.
 - **C3, shapes (regression evidence).** `make compiler-api-shapes`
   (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
   the installed declarations and walks every node of `tools/*.mts`,

@@ -4513,11 +4513,23 @@ control(async (): Promise<void> => {
   const outside = writeClaims(artifacts, "forged-guard-domain", widened);
   refusedAt(artifacts, outside, "forged-guard-domain", at);
   assert.ok(invoke(outside, join(artifacts, "evidence.json"), artifacts).includes(at));
+  // `null` beside the argument's node or `undefined`: the audit is of
+  // `undefined` alone, so the domain obligation refuses it.
+  const nullable = readClaims(artifacts);
+  const nulled = claimAt(nullable, "parentNamed", "n.parent", "return ts.isIdentifier(n.parent) &&");
+  const nul = rowOf(nullable, "nul");
+  const before = nulled.claim.type;
+  assert.ok(Array.isArray(before), "the argument's claim is a union");
+  nulled.claim.type = [...[...before.filter((l) => typeof l === "number"), nul].sort((a, b) => a - b),
+    ...before.filter((l) => typeof l !== "number")];
+  const withNull = writeClaims(artifacts, "forged-guard-null", nullable);
+  refusedAt(artifacts, withNull, "forged-guard-null", at);
+  assert.ok(invoke(withNull, join(artifacts, "evidence.json"), artifacts).includes(at));
   // The parser's document forged: every guard call's behaviour on
   // `undefined` stated `unadmitted`, refused at the domain obligation of a
   // call whose argument may be `undefined`; and left out, refused by the
   // document's decoder.
-  const forgeCalls = (name: string, change: (call: object) => void): string => {
+  const forgeCalls = (name: string, change: (call: object) => void): { searched: string; checked: string } => {
     const fragment: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
     const walk = (v: unknown): void => {
       if (Array.isArray(v)) v.forEach(walk);
@@ -4533,15 +4545,21 @@ control(async (): Promise<void> => {
     writeFileSync(path, text);
     const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, path);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    return searched.stdout + searched.stderr;
+    const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, path);
+    return { searched: searched.stdout + searched.stderr, checked };
   };
-  const unadmitted = /closure expression claim at \[(\d+),(\d+)\): evidence search failed/
-    .exec(forgeCalls("forged-guard-unadmitted", (c) => Reflect.set(c, "onUndefined", "unadmitted")));
-  assert.match(source.slice(Number(unadmitted?.[1]), Number(unadmitted?.[2])), /^ts\.is\w+\(\w+\.parent\)$/,
-    "refused at a guard's call on a parent");
+  const unadmitted = forgeCalls("forged-guard-unadmitted", (c) => Reflect.set(c, "onUndefined", "unadmitted"));
+  const searchedAt = /closure expression claim at \[(\d+),(\d+)\): evidence search failed/.exec(unadmitted.searched);
+  assert.match(source.slice(Number(searchedAt?.[1]), Number(searchedAt?.[2])), /^ts\.is\w+\(\w+\.parent\)$/,
+    "the search refuses a guard's call on a parent");
+  // The honest evidence names the type of the error the dispatch throws,
+  // which the forged document's lowering never states: the checker refuses
+  // the evidence against it.
+  assert.match(unadmitted.checked, /application of unknown head/);
   const unstated = forgeCalls("forged-guard-unstated", (c) => Reflect.deleteProperty(c, "onUndefined"));
-  assert.match(unstated, /onUndefined/);
-  process.stdout.write("guards on undefined, forged claims: parent present in the throw's handler, refused at its read, and a string beside the guard's argument, refused at the call by the domain obligation, by the search and the checker; the document's behaviour on undefined stated unadmitted, refused at a call's domain obligation, and left out, refused by its decoder\n");
+  assert.match(unstated.searched, /onUndefined/);
+  assert.match(unstated.checked, /onUndefined/);
+  process.stdout.write("guards on undefined, forged claims: parent present in the throw's handler, refused at its read, and a string or null beside the guard's argument, refused at the call by the domain obligation, by the search and the checker; the document's behaviour on undefined stated unadmitted, refused at a call's domain obligation, and left out, refused by its decoder; the honest evidence refused against either\n");
 });
 control(async (): Promise<void> => {
   // Each correction of the compiler API's family (COMPILER-API.md,

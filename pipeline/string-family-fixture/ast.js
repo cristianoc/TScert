@@ -5,9 +5,11 @@
 // `isNameOrAbsent`, which answers `true` on `undefined`, `isNameOptional`,
 // which reads the tag through an optional chain and answers `false` there,
 // `isSameType`, which compares its argument with itself, `isConstantType`,
-// which compares two constants, and `isNameOfConstant`, which calls a helper
-// on a constant: the last three answer `true` on `undefined` and on strings
-// no tag is.
+// which compares two constants, also in parentheses (`isParenthesizedType`),
+// `isNameOfConstant`, which calls a helper on a constant: these answer
+// `true` on `undefined` and on strings no tag is; and `isCallAfterConstant`,
+// whose local holds a constant, not its tag, so it throws on `undefined`
+// only after a step the grammar does not have.
 import { UnitType } from "./kinds.js";
 export { UnitType };
 function isExpressionKind(type) {
@@ -40,4 +42,11 @@ export function isConstantType(type) {
 }
 export function isNameOfConstant(type) {
     return isNameType(UnitType.Name);
+}
+export function isParenthesizedType(type) {
+    return (UnitType.Name) === UnitType.Name;
+}
+export function isCallAfterConstant(node) {
+    const kind = UnitType.Call;
+    return node.type === kind;
 }

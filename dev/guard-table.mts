@@ -119,6 +119,7 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
   const tagOf = (v: boolean | TagValue | undefined): TagValue | undefined =>
     typeof v === "boolean" ? refuse("a test's answer read as a tag") : v;
   const constant = (e: ts.Expression, edges: Map<string, Edge>): TagValue | null => {
+    while (ts.isParenthesizedExpression(e)) e = e.expression;
     if (description.tag.primitive === "number" && ts.isNumericLiteral(e)) return Number(e.text);
     if (description.tag.primitive === "string" && ts.isStringLiteral(e)) return e.text;
     if (ts.isPropertyAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.expression) && e.expression.text === enumName &&
@@ -254,12 +255,14 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
       if (!d || first.declarationList.declarations.length !== 1 || !ts.isIdentifier(d.name) || !d.initializer)
         return refuse(`${name} declares more than its tag`);
       const tag = operand(d.initializer);
+      if (constant(d.initializer, edges) !== null) refuse(`${name} declares a constant`);
       local = d.name.text;
       const c = condition(second.expression);
       return (t) => c(tagOf(tag(t)));
     }
     if (statements.length === 1 && first && ts.isSwitchStatement(first)) {
       const subject = operand(first.expression);
+      if (constant(first.expression, edges) !== null) refuse(`${name} switches on a constant`);
       const cases: TagValue[] = [];
       let sawDefault = false;
       for (const clause of first.caseBlock.clauses) {

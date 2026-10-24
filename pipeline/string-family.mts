@@ -10,7 +10,7 @@ import type { FamilyDescription } from "../tools/host-families.mts";
 export const stringFamily: FamilyDescription = {
   package: { name: "string-family-fixture", version: "1.0.0" },
   installation: { from: "pipeline/string-family-fixture-project",
-    digest: "189048e6c43d98d380d7886755c308e1ec3a519f218b906471dc998e9d0fb9fe" },
+    digest: "a40b3afc6790a1d1632711cc81ab2104af62cb005bb434580b83cd0bcc18a6d3" },
   marker: "StringFixture",
   root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
   tag: { field: "type", primitive: "string", constants: { enum: "UnitType" } },
@@ -27,7 +27,7 @@ export const stringFamily: FamilyDescription = {
     entryModule: "ast.js",
     closure: {
       files: {
-        "ast.js": "f7743a8fe9b9ed4bc1c178e0677af2d995f9c26bff2d005eb565e49299a6ee10",
+        "ast.js": "1b6a28bf5c5ce65f9087f22df09b628db3fad34bcdbac4de95bfd6ad8181c38f",
         "kinds.js": "7cb37e251aae0c597bb7f572bd109efb935cc15860ae9e892521adf431f70e6d",
       },
       edges: [["ast.js", "UnitType", "kinds.js", "UnitType", [], "import"]],
@@ -47,11 +47,13 @@ export const stringFamily: FamilyDescription = {
         text: "export function isNameType(type) {\n    return type === UnitType.Name;\n}" },
     ],
     excluded: [
+      ["isCallAfterConstant", "isCallAfterConstant declares a constant"],
       ["isConstantType", "isConstantType compares UnitType.Name === UnitType.Name, not its argument with a constant"],
       ["isNameLoosely", "isNameLoosely takes 2 parameters"],
       ["isNameOfConstant", "isNameOfConstant calls isNameType on a constant"],
       ["isNameOptional", "isNameOptional reads an optional chain"],
       ["isNameOrAbsent", "isNameOrAbsent reads node"],
+      ["isParenthesizedType", "isParenthesizedType compares (UnitType.Name) === UnitType.Name, not its argument with a constant"],
       ["isSameType", "isSameType compares type === type, not its argument with a constant"],
     ],
   },

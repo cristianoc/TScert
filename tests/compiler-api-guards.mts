@@ -6,7 +6,7 @@
 // entry, run under Node on an object of each tag value (a tag guard on every
 // value around the tag values), answers exactly its tag set, and the same
 // with further arguments and another receiver, as a callback receives them;
-// and on `undefined`, each entry behaves as its `onUndefined` states.
+// and on `undefined`, each entry stating a behaviour there behaves so.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { spawnSync } from "node:child_process";

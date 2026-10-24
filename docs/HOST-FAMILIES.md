@@ -766,7 +766,8 @@ constant. The contract, every condition checked on the resolved files:
   data property holding a primitive;
 - the body declares nothing but $`y`$ and assigns nothing;
 - each comparison has a constant on one side and $`e`$ on the other, each
-  helper's argument is an $`e`$, and no member read or call is an optional
+  helper's argument, $`y`$'s initializer and a `switch`'s subject is an
+  $`e`$, parentheses aside, and no member read or call is an optional
   chain.
 
 The generator (`dev/guard-table.mts`) reads a description's entry point, tag
@@ -777,8 +778,9 @@ resolve, gets no entry: it loses its predicate and any preservation effect.
 The generator's output is compared with each family's reviewed table in a
 fast check (`tests/compiler-api-guards.mts`),
 and a Node run of every entry on an object of each tag compares its answers
-with $`K_g`$, and a run on `undefined`, with further arguments and a
-receiver and without, with $`u_g`$; both are regression evidence for the
+with $`K_g`$, and a run on `undefined` of each entry whose $`u_g`$ is
+`throws` or `false`, with further arguments and a receiver and without,
+with $`u_g`$; both are regression evidence for the
 review, not proofs of the entry's statement.
 
 #### Calls
@@ -929,10 +931,12 @@ no effect. So:
 The grammar compares the argument's tag, or a local holding it, or the
 argument, with a constant, one on each side of a comparison, calls a helper
 on the argument or its tag, and reads no optional chain; the generator
-refuses any other comparison (`x === x`, `κ === κ`), a helper's call on a
-constant, and `x?.τ`, each of which can answer `true` of `undefined` and of
-a value of the primitive no tag is (the stand-in's `isSameType`,
-`isConstantType`, `isNameOfConstant`, `isNameOptional`, each without
+refuses any other comparison (`x === x`, `κ === κ`, also parenthesized), a
+helper's call on a constant, a local holding a constant, and `x?.τ`, each
+of which can answer `true` of `undefined` and of a value of the primitive
+no tag is, or reach the tag read after a step the grammar does not have
+(the stand-in's `isSameType`, `isConstantType`, `isParenthesizedType`,
+`isNameOfConstant`, `isCallAfterConstant`, `isNameOptional`, each without
 entry).
 
 A function answering `true` on `undefined` (`x === undefined || x.τ ===
@@ -947,9 +951,10 @@ value outside the domain keep the obligation. Its result:
 | stand-in | node guard (`isName`, `isExpression`) | 2 | `throws` |
 | stand-in | tag guard (`isNameType`) | 1 | `false` |
 
-C2's Node run of every entry on `undefined`, with further arguments and a
-receiver and without, compares its behaviour with $`u_g`$, for both
-families, and a description forged to state another behaviour fails it
+C2's Node run of every entry whose $`u_g`$ is `throws` or `false` on
+`undefined`, with further arguments and a receiver and without, compares
+its behaviour with $`u_g`$, for both families; an `unadmitted` entry states
+no behaviour there and is not run on it, and a description forged to state another behaviour fails it
 (`tests/compiler-api-guards.mts`). The behaviour rests on F3 of the
 [trust rows](#trust-rows), which states it of the same resolved functions
 as the rest of the entry; it adds no trust row. Cases:
@@ -966,10 +971,11 @@ the domain obligation); and, over the stand-in (`pipeline/test.mts`), a
 `false` guard's `false` edge keeping `undefined`. Forged claims, bypassing
 the producer, are refused by the search and by the checker: that edge's
 value claimed present, `parent` claimed present in a handler of the throw,
-and a guard's argument claimed to hold a non-node beside a node, refused at
-the call by the domain obligation; so are a document stating every call's
-behaviour `unadmitted`, at a call's domain obligation, and one leaving it
-out, by the decoder (`pipeline/test.mts`).
+and a guard's argument claimed to hold a string or `null` beside a node,
+refused at the call by the domain obligation; so are a document stating
+every call's behaviour `unadmitted`, at a call's domain obligation, and one
+leaving it out, by the decoder, and the honest evidence against either
+(`pipeline/test.mts`).
 
 #### Guards as values
 
@@ -1529,8 +1535,8 @@ enum answering `false` there, each activated over the stand-in's own
 modules, its undefined inputs both kinds; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
 entry, nor has `isNameOrAbsent`, which answers `true` on `undefined`, nor
-have `isNameOptional`, `isSameType`, `isConstantType` and
-`isNameOfConstant`, outside the grammar
+have `isNameOptional`, `isSameType`, `isConstantType`, `isParenthesizedType`,
+`isNameOfConstant` and `isCallAfterConstant`, outside the grammar
 ([undefined arguments](#undefined-arguments)). Each listed guard's call is the membership test of the family's
 string constants and narrows both edges; the unlisted one narrows nothing.
 Its description states no stable-member exclusion, so a callee tested and
