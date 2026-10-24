@@ -263,9 +263,22 @@ empty, decided pair by pair and ending at the first consistent meet. -/
 theorem meetsNone_iff {A B : List (Clause α)} : meetsNone A B = true ↔ meetLists A B = [] := by
   simp [meetsNone, meetLists, List.flatMap_eq_nil_iff, List.filter_eq_nil_iff]
 
-/-- Two types of clause rows whose clauses meet in none. -/
+/-- Two types of clause rows whose clauses meet in none, decided label by
+label, ending at the first pair of labels with a consistent meet. -/
 @[nospecialize] def typesDisjoint (G : NormalGraph ι) (K L : Ty ι) : Bool :=
-  G.plainTy K && G.plainTy L && meetsNone (expand G K) (expand G L)
+  G.plainTy K && G.plainTy L && K.all fun k => L.all fun l => meetsNone (clausesOf G [k]) (clausesOf G [l])
+
+theorem meetsNone_labels {G : NormalGraph ι} {K L : Ty ι} :
+    (K.all fun k => L.all fun l => meetsNone (clausesOf G [k]) (clausesOf G [l])) =
+      meetsNone (clausesOf G K) (clausesOf G L) := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [meetsNone, clausesOf, List.all_eq_true, List.mem_flatMap, List.flatMap_cons, List.flatMap_nil,
+    List.append_nil]
+  constructor
+  · rintro h a ⟨k, hk, ha⟩ b ⟨l, hl, hb⟩
+    exact h k hk l hl a ha b hb
+  · intro h k hk l hl a ha b hb
+    exact h a ⟨k, hk, ha⟩ b ⟨l, hl, hb⟩
 
 /-- Two clauses no value meets. -/
 @[nospecialize] def clausesDisjoint (G : NormalGraph ι) (c d : Clause (Ty ι)) : Bool :=
@@ -279,10 +292,20 @@ clause of `A`. -/
     let ds := expand G [b]
     (expand G A).all fun c => ds.all fun d => clausesDisjoint G c d
 
+/-- Two clauses of a label that `clausesDisjoint` does not find disjoint:
+the label is excluded by no type it is a label of. -/
+@[nospecialize] def selfOverlaps (G : NormalGraph ι) (b : ι) : Bool :=
+  G.plain b &&
+    let ds := expand G [b]
+    ds.any fun c => ds.any fun d => !clausesDisjoint G c d
+
 /-- A fact's type `B` filtered by a slot's type `A`: the labels of `B`
-that `A` does not exclude, none where `A` excludes them all. -/
-@[nospecialize] def factFilter (G : NormalGraph ι) (A B : Ty ι) : Ty ι :=
-  B.filter fun b => !labelExcluded G A b
+that `A` does not exclude, none where `A` excludes them all. A label of `A`
+the graph's hint `overlapping` names is kept without comparing clauses: the
+hint is each label's `selfOverlaps`, computed once, and then the filter is
+the same (`factFilter_hint`). -/
+@[nospecialize] def factFilter [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Ty ι :=
+  B.filter fun b => (A.contains b && G.overlapping b) || !labelExcluded G A b
 
 /-- A record clause's member, with a heap meeting the world, owns each field
 the clause fixes at a location the heap holds. -/
@@ -307,10 +330,13 @@ theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K
 
 theorem typesDisjoint_sound {G : NormalGraph ι} {K L : Ty ι} {n W u}
     (hd : typesDisjoint G K L = true) (hK : meaning G K n W u) (hL : meaning G L n W u) : False := by
-  simp only [typesDisjoint, Bool.and_eq_true, meetsNone_iff] at hd
+  simp only [typesDisjoint, Bool.and_eq_true] at hd
+  have hn : meetLists (expand G K) (expand G L) = [] := by
+    rw [← meetsNone_iff, expand_of_plain hd.1.1, expand_of_plain hd.1.2, ← meetsNone_labels]
+    exact hd.2
   have hm := (meetLists_row G _ _ _ (expand G K) (expand G L) n W u).mpr
     ⟨(expand_sem G K hd.1.1 n W u).mp hK, (expand_sem G L hd.1.2 n W u).mp hL⟩
-  rw [hd.2] at hm
+  rw [hn] at hm
   obtain ⟨_, hm, _⟩ := hm
   cases hm
 
@@ -343,14 +369,46 @@ theorem labelExcluded_sound {G : NormalGraph ι} {A : Ty ι} {b : ι} {n W h v}
   exact clausesDisjoint_sound (hx.2 c hc d hd) hcv hdv hh
 
 /-- A value of both types is of the fact's type filtered by the slot's. -/
-theorem factFilter_sound {G : NormalGraph ι} {A B : Ty ι} {n W h v}
+theorem factFilter_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {n W h v}
     (hA : meaning G A (n+1) W v) (hB : meaning G B (n+1) W v) (hh : HeapOk (n+1) W h) :
     meaning G (factFilter G A B) (n+1) W v := by
   obtain ⟨b, hb, hv⟩ := hB
   refine ⟨b, List.mem_filter.mpr ⟨hb, ?_⟩, hv⟩
   cases hx : labelExcluded G A b
-  · rfl
+  · simp
   · exact (labelExcluded_sound hx hA ⟨b, by simp, hv⟩ hh).elim
+
+/-- A label of `A` whose clauses overlap is excluded by no type it is a
+label of. -/
+theorem labelExcluded_of_selfOverlaps [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {b : ι}
+    (ho : selfOverlaps G b = true) (hb : A.contains b = true) : labelExcluded G A b = false := by
+  simp only [selfOverlaps, Bool.and_eq_true, List.any_eq_true, Bool.not_eq_true'] at ho
+  obtain ⟨hp, c, hc, d, hd, hcd⟩ := ho
+  cases hx : labelExcluded G A b
+  · rfl
+  · simp only [labelExcluded, Bool.and_eq_true, List.all_eq_true] at hx
+    have hcA : c ∈ expand G A := by
+      have hbA : b ∈ A := by simpa using hb
+      rw [expand_of_plain hx.1.1, clausesOf, List.mem_flatMap]
+      rw [expand_of_plain (by simp [NormalGraph.plainTy, hp]), clausesOf, List.mem_flatMap] at hc
+      obtain ⟨b', hb', hc'⟩ := hc
+      simp only [List.mem_singleton] at hb'
+      exact ⟨b, hbA, hb' ▸ hc'⟩
+    rw [hx.2 c hcA d hd] at hcd
+    cases hcd
+
+/-- Where the graph's hint names only labels whose clauses overlap, the
+filter keeps exactly the labels `A` does not exclude. -/
+theorem factFilter_hint [DecidableEq ι] {G : NormalGraph ι} (hint : ∀ b, G.overlapping b = true → selfOverlaps G b = true)
+    (A B : Ty ι) : factFilter G A B = B.filter fun b => !labelExcluded G A b := by
+  unfold factFilter
+  congr 1
+  funext b
+  cases ho : G.overlapping b
+  · simp
+  · cases hb : A.contains b
+    · simp
+    · simp [labelExcluded_of_selfOverlaps (hint b ho) hb]
 
 /-! ### What a membership test's `false` answer removes
 

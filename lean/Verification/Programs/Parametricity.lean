@@ -306,7 +306,6 @@ theorem checkYields_reassign (c : NodeEvidence ι) (codes : CodeEntry ι → Boo
   simp only [checkTree_reassign]
   rfl
 
-omit [DecidableEq ι] in
 theorem refineBy_reassign : PromiseCalls.refineBy (reassign G η) = PromiseCalls.refineBy G := rfl
 
 theorem checkReturn_reassign (goal : ControlFlow.Goal ι) (c : NodeEvidence ι) :

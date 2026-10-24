@@ -29,7 +29,7 @@ each item's design and evidence, not its progress.
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
-| [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | open: an investigation, cause unknown | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
+| [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
@@ -375,15 +375,18 @@ Each is a refusal whose cause is not established.
 <a id="search-cost-parser-slices"></a>
 **The search's cost on the parser's slices.** Between the censuses of
 38ed032 and d5c2754 (300 s step limit, 2026-10-24) the search's elapsed
-time over all slices rises from 224 s to 1036 s and its CPU time from
-197 s to 948 s. The rise is in the slices of `fragment-expressions.mts` and
-`fragment-statements.mts`: `moduleFunction` 5 s → 55 s, `inertRead`
-4 s → 52 s, `resolve` 3 s → 50 s, `forOfPattern` 8 s → 51 s, and
-`confined`, refused in 8 s before, reaches the limit. The commits between
-them change guards decided by binding, a guard's fact filtered by the
-slot's type, the marking of a condition's derived expressions and the
-disjointness test of two clause lists; which of them the time follows is
-not established.
+time over all slices rises from 224 s to 1036 s. The rise follows 3726ae4,
+which filters a fact's type by the slot's type
+([refinement by a fact](docs/PROGRAM-TYPING.md#refinement-by-a-fact)):
+there, the slices of `moduleFunction` and `confined` go from 4.1 s and
+5.7 s to past 300 s. Most filters read a fact type and a slot type of about
+109 node types sharing their labels, and each shared label was compared
+with the slot type's clauses in turn, its own among them, at every one of
+about 40 000 filters of a slice. A label of the slot's type whose own
+clauses overlap is kept without that comparison, from a hint computed once
+per label, with the same filtered list; two field types are found disjoint
+label pair by label pair. With both, the two slices' search takes 5.3 s and
+21.8 s, `confined` refused at a later obligation.
 
 <a id="generic-equality-condition"></a>
 **Generic equality in a condition.** A strict or loose

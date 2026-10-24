@@ -894,7 +894,7 @@ def freeze (s : State) : Except String Frozen := do
     | none => throw s!"{d.name}: its row was never lowered"
   let E ← Equations.ofRaw (rawHeads s.heads bodies)
   let E := { E with builtins := if s.arrays then builtinsOf E s.proto (s.keys.get? unknownKey) s.excluded else none }
-  let E := E.memo
+  let E := E.memo.withOverlaps
   let ⟨p⟩ ← primitive E
   tagPrototypes s
   let promise ← nativePromise s E

@@ -389,6 +389,11 @@ structure NormalGraph (ι : Type) where
   /-- A hash of labels, for lookups that compare by equality within the
   bucket it names: any function serves, meaning reads none. -/
   labelHash : ι → UInt64 := fun _ => 0
+  /-- Labels whose clauses overlap, as a hint a fact's filter reads to keep
+  a label of the slot's type without comparing its clauses
+  (`BranchRefinement.factFilter`): any function serves, since keeping a
+  label is sound, and meaning reads none. -/
+  overlapping : ι → Bool := fun _ => false
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/

@@ -2916,6 +2916,17 @@ rows whose clauses meet in none. The exclusion reads that one level of
 fields: two fields whose types are disjoint only by their own fields are not
 compared.
 
+The checker keeps a label of $`A`$ whose own clauses overlap without
+comparing it with $`A`$'s other clauses: some pair of its clauses is not
+found disjoint (`BranchRefinement.selfOverlaps`), and that pair is among the
+pairs $`\mathrm{excl}(A, b)`$ compares. Whether a label's clauses overlap is
+computed at most once, on demand, per label whose row the equations cache, on the equations' own
+graph (`Equations.withOverlaps`, read as the graph's `overlapping` hint).
+Where the hint names only such labels the filtered list is
+$`T \setminus_A`$ (`BranchRefinement.factFilter_hint`, proved); that
+`withOverlaps` computes the hint so holds by its construction. Any hint is
+sound, since keeping a label of $`T`$ is.
+
 `fact-filter` is proved (`BranchRefinement.factFilter_sound`). A value of $`A`$
 and $`T`$ is in a label $`b`$ of $`T`$; were $`b`$ excluded, the value would
 be in disjoint clauses $`c`$ and $`d`$. An empty meet admits no value

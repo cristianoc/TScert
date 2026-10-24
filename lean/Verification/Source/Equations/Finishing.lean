@@ -97,12 +97,24 @@ def compact (s : State) : Except String Built := do
     | none => throw s!"{d.name}: its row was never lowered"
   return { state := s, rename := f, drafts, bodies }
 
+/-- The same equations, with whether each label whose row is cached has
+overlapping clauses (`BranchRefinement.selfOverlaps`) computed at most once,
+on the equations' own graph: the graph's `overlapping` hint. -/
+def _root_.Verification.EquationGraphs.Equations.withOverlaps (E : Equations) : Equations :=
+  let G := E.graph
+  let m : Std.HashMap Tree (Label E.signature × Thunk Bool) :=
+    E.named.foldl (fun m l => m.insert l.1 (l, Thunk.mk fun _ => BranchRefinement.selfOverlaps G l)) {}
+  { E with overlaps := fun l => match m[l.1]? with
+      | some p => if l = p.1 then some p.2.get else none
+      | none => none }
+
 /-- Validated equations, with the built-ins. -/
 def Built.equations (b : Built) : Except String Equations := do
   let E := (← Equations.ofRaw (rawHeads b.drafts b.bodies)).memo
   let proto := b.state.proto.map b.rename
   let unknown := (b.state.keys.get? unknownKey).map b.rename
-  return { E with builtins := if b.state.arrays then builtinsOf E proto unknown b.state.excluded else none }
+  return Equations.withOverlaps
+    { E with builtins := if b.state.arrays then builtinsOf E proto unknown b.state.excluded else none }
 
 /-- The store the units grow, from the compacted heads: their rows, their
 keys (a key that spells a head index spelled again with the new one), the

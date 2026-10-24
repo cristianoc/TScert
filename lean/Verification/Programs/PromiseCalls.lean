@@ -88,7 +88,7 @@ theorem yieldFacts_holds {G : NormalGraph ι} {ys : List (Yield ι)} {ρ n W u} 
 
 /-- A context with the slots of `facts`, past `shift` slots, refined: each
 at the fact's type filtered by its own (`BranchRefinement.factFilter`). -/
-@[nospecialize] def refineBy (G : NormalGraph ι) (Γ : List (Ty ι)) (facts : List (Nat × Ty ι)) (shift : Nat) :
+@[nospecialize] def refineBy [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (facts : List (Nat × Ty ι)) (shift : Nat) :
     List (Ty ι) :=
   facts.foldl (fun Δ f => match Δ[f.1 + shift]? with
     | some A => Δ.set (f.1 + shift) (BranchRefinement.factFilter G A f.2)
@@ -108,7 +108,7 @@ theorem envOk_set {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W i T}
 
 /-- A context refined by facts its values meet, given a heap meeting the
 world: the meet's exclusions read the heap's field contents. -/
-theorem envOk_refineBy {G : NormalGraph ι} {ρ n W shift} {h : Heap} (hh : HeapOk (n+1) W h) :
+theorem envOk_refineBy [DecidableEq ι] {G : NormalGraph ι} {ρ n W shift} {h : Heap} (hh : HeapOk (n+1) W h) :
     ∀ {Γ : List (Ty ι)} {facts : List (Nat × Ty ι)}, EnvOk G Γ ρ (n+1) W →
       (∀ f ∈ facts, meaning G f.2 (n+1) W (ρ (f.1 + shift))) → EnvOk G (refineBy G Γ facts shift) ρ (n+1) W
   | _, [], he, _ => he

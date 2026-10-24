@@ -243,6 +243,7 @@ def Equations.memo (E : Equations) : Equations :=
       | none => m) {}
   { signature := E.signature, body, builtins := E.builtins, domain := E.domain
     literal := fun k => literals[k]?
+    named := rows.toList.filterMap (·.map (·.1.1)) ++ named.toList.map (·.2.1.1)
     cached := fun l => match l.1 with
       | .app h .nil => match rows[h]? with
         | some (some p) => if l = p.1.1 then some p.1.2 else none

@@ -821,6 +821,11 @@ structure Equations where
   /-- The label whose row is one literal, where one is cached
   (`NormalGraph.literal`): read only after its row is checked. -/
   literal : LitKey → Option (Label signature) := fun _ => none
+  /-- The labels whose rows are cached (`Equations.memo`). -/
+  named : List (Label signature) := []
+  /-- Whether a label's clauses overlap, where computed once
+  (`NormalGraph.overlapping`, a hint any answer of which is sound). -/
+  overlaps : Label signature → Option Bool := fun _ => none
 
 /-- The row of a label that is not a meet. -/
 def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
@@ -896,7 +901,7 @@ theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equation
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   { NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal with
-    labelHash := fun l => hash l.1 }
+    labelHash := fun l => hash l.1, overlapping := fun l => (equations.overlaps l).getD false }
 
 /-- The form of a label's row that is not a meet, read from its head's
 template without instantiating it (`Equations.baseForm_eq`). -/
@@ -942,7 +947,8 @@ from the form: a test of a row's form instantiates no template. The
 compiler runs it in place of `graph` (`graph_eq_forms`). -/
 def Equations.graphForms (equations : Equations) : NormalGraph (Label equations.signature) :=
   { NormalGraph.ofRowMapForms equations.row equations.form equations.builtins equations.domain
-      equations.literal with labelHash := fun l => hash l.1 }
+      equations.literal with
+    labelHash := fun l => hash l.1, overlapping := fun l => (equations.overlaps l).getD false }
 
 @[csimp] theorem Equations.graph_eq_forms : @Equations.graph = @Equations.graphForms := by
   funext E
