@@ -265,9 +265,9 @@ import no file system, module or process API.
 *State follows the observations.* Each parse opens its parser fresh and
 releases it at its end. A declaration compiler is opened for its collection
 and released after it, or is a worker's
-[retained declaration session](#retained-declaration-sessions), whose ledger
-of every answer its compiler was given is part of the observations of each
-stage that uses it. The compilers' state is a function of the requests the
+[retained declaration session](#retained-declaration-sessions). Every
+compiler's ledger of every answer it was given is part of the observations
+of each stage that uses it ([shared work](#shared-work)). The compilers' state is a function of the requests the
 front end makes, which its code and inputs determine, and of answers the
 stage's observations include. The process's own caches of file-system-derived values (installation roots and
 inventories, activated guard tables, declaration origins) keep the
@@ -380,10 +380,11 @@ own, so a session that read more gives an entry more observations: an
 invalidation that may be wider than a fresh compiler's.
 
 *Fidelity.* Conjectured: for fixed inputs and unchanged answers, a parse in
-a reused session is the parse in fresh compilers, its Fragment or refusal
-and its ordered diagnostics byte for byte. It rests on the compiler's caches
-being correct across snapshots whose answers hold and on the exact
-restoration of the base state, a trusted obligation of the front end
+a reused session, its work shared ([shared work](#shared-work)), is the parse
+in fresh compilers with no work shared, its Fragment or refusal and its
+ordered diagnostics byte for byte. It rests on the compiler's caches being
+correct across snapshots whose answers hold, on query omission and on the
+exact restoration of the base state, a trusted obligation of the front end
 ([trust surface](DESIGN.md#trust-surface)) and no Lean result. The controls
 of `tests/session-reuse.mts`, run by `make test` through the production
 adapters with replay disabled, compare each reused parse with the fresh one
@@ -434,6 +435,64 @@ slices whose source both share, parse CPU 1,385 s and 857 s, the CPU of all
 executed stages 3,321 s and 2,862 s; the 404 outcomes equal, and of their
 parses 329 byte-identical and 75 differing only in the source offsets of
 declarations in front-end files whose text the two commits differ in.
+
+## Shared work
+
+Work whose result depends only on its inputs is kept and served again,
+each kind at the lifetime its inputs fix, its read set the observations it
+was computed from ([the design](drafts/front-end-sharing.md)). Store
+entries and process caches are described above; within a process three
+further kinds of work are kept.
+
+*Attempt answers.* Within an attempt (the outermost observed stage's record
+being made), the front end's own `kind`, `real`, `dirents` and `entries`
+operations at a path answer what they answered first in the attempt, and
+the answer is noted again in every record being made (`attemptAnswer`,
+`tools/files.mts`). Three kinds of read stay fresh: a read outside every
+record (a ledger's validation suspends them); a read standing for Node's
+(a Node-origin observation, and every read of the probes before and after
+Node's resolution, `fresh`), so that their agreement and the process's
+first answers compare the file system's answers; and `read`, whose bytes
+the caller uses.
+The store's assumption that the file system is stable while a stage reads
+it is thereby made operative for the front end's own reads: the attempt's
+computation is a function of the answers its record holds. A path whose
+answer changes between two of the front end's reads in one attempt is not
+seen within it; the end-of-stage ledger validation and the replay's
+validation remain the checks of stability.
+
+*Resolutions.* Node's resolution of a specifier from a module
+(`nodeResolve`) is a process cache: resolved once, its observations made
+again at its first use in each attempt (`remembered`).
+
+*Compiler ledgers and query answers.* Every front-end compiler has one
+ledger, every answer the file system gave it over its lifetime, kept by
+its channel (`compilerLedger`, `tools/compiler-channel.mts`): a retained
+declaration session's is the session's ledger, and a compiler opened for
+one parse or one collection has its own. Before every request the channel
+notes the compiler's ledger in each record being made that does not hold it
+yet (`importLedger`), and the request runs with the ledger kept, so its
+answers reach the ledger and every record being made. Records are made in
+a stack and a ledger grows only while it is kept: every record holding a
+ledger that is still being made sees every later answer, incompleteness and
+inconsistency of it, so a record is noted a ledger once. A query of a
+snapshot, a request of the channel's audited list (`snapshotQueries`) whose
+parameters name an unreleased snapshot, is served the text the snapshot
+first answered to the same method and parameters; a snapshot's answers go
+with its release. It rests on a conjecture, *query omission*: asking such a
+query again answers the text it first answered, and omitting the repeated
+request changes no answer the compiler gives afterwards to any request, of
+that snapshot or another, over its lifetime.
+
+*Tests.* `tests/shared-work.mts` shows, without a stage: a later read of an
+attempt answering its first answer and noting it in a record begun after
+it; the next attempt, a ledger's validation and a Node-origin read reading
+afresh; a change within an attempt seen with sharing off; a repeated query
+of a snapshot served and another snapshot's asked; and a compiler's ledger,
+with its incompleteness, held by every record that uses the compiler. The
+fidelity controls of `tests/session-reuse.mts` compare each parse, its work
+shared in a reused session, with the parse in fresh compilers with no work
+shared (`sharingForTests`), byte for byte.
 
 ## Locations
 

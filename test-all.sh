@@ -123,6 +123,8 @@ run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 run_test "Stage store" node tests/stage-store.mts
 # The keyed closures are identified and hold no policy, store or orchestration module, and the stages' code reads the file system only through tools/files.mts; the observed stages' replay controls run beside the controls.
 run_test "Keyed closures; observed stages read through files.mts" node tests/observed-stages.mts --reads
+# tests/shared-work.mts checks the work shared within a process: an attempt's answers, query answers and every compiler's ledger.
+run_test "Shared work" node tests/shared-work.mts
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/compiler-api-guards.mts compares each family's guard table, the compiler API's and the stand-in's, with its generator and runs every entry under Node (C2).

@@ -432,7 +432,7 @@ Estimates (conjectured) from the 6a3a864 census's 932 s of parse and the
 
 | Step | Census parse |
 | --- | ---: |
-| §3.1–3.3 attempt answers, resolutions, query answers | 932 → about 500 s |
+| §3.1–3.3 attempt answers, resolutions, query answers | measured: 1,069.5 → 573.5 s (297120f → this step, the 466 slices both censuses share, cold stores, 2026-10-24) |
 | §3.4 module entries | → about 330 s |
 | §3.6 duplicate slices | → about 240 s; their search and check too |
 | §3.5 parser session | → about 210 s |

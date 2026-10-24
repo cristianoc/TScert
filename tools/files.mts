@@ -138,6 +138,9 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
   if (stage && recordings.length === 0) epoch++;
   const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
     ledger: false };
+  // The outermost stage's record bounds the attempt's answers.
+  const begins = stage && attempt === null;
+  if (begins) attempt = attemptOf(recording);
   // A record begun while a compiler session's ledger is being kept holds the
   // ledger: what it computes may read the session's compiler, whose state
   // the ledger's answers determine.
@@ -148,12 +151,69 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
     value = run();
   } finally {
     recordings.splice(recordings.indexOf(recording), 1);
+    if (begins) attempt = null;
   }
   const noted = [...recording.answers.values()].sort((a, b) => {
     const [x, y] = [a.observation, b.observation];
     return x[0] === y[0] ? byBytes(x[1], y[1]) : x[0] < y[0] ? -1 : 1;
   });
   return { value, noted, incomplete: recording.incomplete, inconsistent: recording.inconsistent };
+}
+
+/** The answers of the attempt running (STAGE-STORE.md, "Shared work"), by
+ * operation and path: the outermost stage's record being made, and each
+ * answer the front end's own `kind`, `real`, `dirents` and `entries` gave
+ * during it. The store assumes the file system stable while a stage reads
+ * it; within the attempt such an operation at a path answers what it
+ * answered first, noted again in every record being made, so the attempt's
+ * computation is a function of the answers its observations record. Outside
+ * every record, as while a ledger is validated, and for a read standing for
+ * Node's, each operation reads afresh. */
+let sharingOn: boolean = true;
+/** How many probes around Node's own reads are running (`fresh`): their
+ * reads are made afresh, so the probes before and after a Node operation
+ * compare what the file system answers. */
+let probing: number = 0;
+function fresh<T>(run: () => T): T {
+  probing++;
+  try {
+    return run();
+  } finally {
+    probing--;
+  }
+}
+/** Whether work is shared (STAGE-STORE.md, "Shared work"): the attempt's
+ * answers here and the compiler's query answers (`compiler-channel.mts`). */
+export const sharing = (): boolean => sharingOn;
+/** Tests only: `run` with work shared or not, for comparing the two. */
+export function sharingForTests<T>(on: boolean, run: () => T): T {
+  const was = sharingOn;
+  sharingOn = on;
+  try {
+    return run();
+  } finally {
+    sharingOn = was;
+  }
+}
+type Kind = "file" | "directory" | null;
+type AttemptAnswers = { owner: Recording; kind: Map<string, { answer: Kind }>;
+  real: Map<string, { answer: string | null }>; dirents: Map<string, Listed<Dirent[] | null>>;
+  entries: Map<string, Listed<Entries>> };
+type Listed<E> = { entries: E; answer: string | null };
+let attempt: AttemptAnswers | null = null;
+const attemptOf = (owner: Recording): AttemptAnswers =>
+  ({ owner, kind: new Map(), real: new Map(), dirents: new Map(), entries: new Map() });
+function attemptAnswer<R extends { answer: string | null }>(answers: (a: AttemptAnswers) => Map<string, R>,
+    operation: Operation, path: string, node: boolean, read: () => R): R {
+  // A read standing for Node's is made afresh and not kept: Node's agreement
+  // and the process's first answers compare what the file system answers.
+  const live = !node && probing === 0 && sharingOn && attempt !== null && recordings.includes(attempt.owner)
+    ? answers(attempt) : null;
+  const known = live?.get(path);
+  const result = known ?? read();
+  if (live && !known) live.set(path, result);
+  note(operation, path, result.answer, node);
+  return result;
 }
 
 /** The answer `operation` gives at `path` now, read afresh and noted. */
@@ -194,6 +254,7 @@ export const ledgerState = (ledger: Ledger): { answers: number; incomplete: stri
 export const ledgerAnswers = (ledger: Ledger): Noted[] => [...ledger.recording.answers.values()];
 /** `run`, every answer it is given also noted in `ledger`. */
 export function withLedger<T>(ledger: Ledger, run: () => T): T {
+  if (recordings.includes(ledger.recording)) return run();
   recordings.push(ledger.recording);
   try {
     return run();
@@ -226,13 +287,18 @@ export function validateLedger(ledger: Ledger): string | null {
   return failed;
 }
 /** Note every answer of `ledger`, with its Node-origin bit, its incompleteness
- * and its inconsistency in each record being made but the ledger's own; a
- * record begun while the ledger is kept (`withLedger`) holds them from its
- * start. */
+ * and its inconsistency in each record being made but the ledger's own that
+ * does not hold it yet; a record begun while the ledger is kept
+ * (`withLedger`) holds them from its start. Once per record: records are
+ * made in a stack, and a ledger grows only while it is kept, so every later
+ * answer, incompleteness or inconsistency of the ledger reaches every record
+ * holding it that is still being made. */
 export function importLedger(ledger: Ledger): void {
   for (const r of recordings) if (r !== ledger.recording) inheritLedger(r, ledger.recording);
 }
 function inheritLedger(into: Recording, kept: Recording): void {
+  if (into.holding.has(kept)) return;
+  into.holding.add(kept);
   for (const n of kept.answers.values()) noteIn(into, n.observation, n.node);
   if (kept.incomplete !== null) into.incomplete ??= kept.incomplete;
   if (kept.inconsistent !== null) into.inconsistent ??= kept.inconsistent;
@@ -293,31 +359,32 @@ function readAnswer(path: string, node: boolean): { bytes: Buffer | null; answer
 }
 /** What a path names, links followed: a directory, any other file, or
  * nothing. */
-function kindOf(path: string, node: boolean): "file" | "directory" | null {
-  let answer: "file" | "directory" | null;
-  try {
-    answer = statSync(path).isDirectory() ? "directory" : "file";
-  } catch (error) {
-    if (!absence(error)) throw new IoFailure("stat", path, error);
-    answer = null;
-  }
-  note("kind", path, answer, node);
-  return answer;
+function kindOf(path: string, node: boolean): Kind {
+  return attemptAnswer((a) => a.kind, "kind", path, node, (): { answer: Kind } => {
+    try {
+      return { answer: statSync(path).isDirectory() ? "directory" : "file" };
+    } catch (error) {
+      if (!absence(error)) throw new IoFailure("stat", path, error);
+      return { answer: null };
+    }
+  }).answer;
 }
 /** A path's real path, every link resolved, or null. */
 function realOf(path: string, node: boolean): string | null {
-  let answer: string | null;
-  try {
-    answer = realpathSync(path);
-  } catch (error) {
-    if (!absence(error)) throw new IoFailure("resolve", path, error);
-    answer = null;
-  }
-  note("real", path, answer, node);
-  return answer;
+  return attemptAnswer((a) => a.real, "real", path, node, () => {
+    try {
+      return { answer: realpathSync(path) };
+    } catch (error) {
+      if (!absence(error)) throw new IoFailure("resolve", path, error);
+      return { answer: null };
+    }
+  }).answer;
 }
 /** A directory's entries, by name, each with its own kind. */
-function direntsOf(path: string): { entries: Dirent[] | null; answer: string | null } {
+function direntsOf(path: string): Listed<Dirent[] | null> {
+  return attemptAnswer((a) => a.dirents, "dirents", path, false, () => direntsRead(path));
+}
+function direntsRead(path: string): Listed<Dirent[] | null> {
   let entries: Dirent[] | null;
   try {
     entries = readdirSync(path, { withFileTypes: true }).sort((a, b) => byBytes(a.name, b.name));
@@ -327,20 +394,21 @@ function direntsOf(path: string): { entries: Dirent[] | null; answer: string | n
   }
   const kind = (e: Dirent): string => e.isSymbolicLink() ? "l" : e.isDirectory() ? "d" : e.isFile() ? "f" : "o";
   const answer = entries === null ? null : sha256(JSON.stringify(entries.map((e) => [e.name, kind(e)])));
-  note("dirents", path, answer, false);
   return { entries, answer };
 }
 /** A directory's files and directories as the compiler's own file system
  * lists them: by name, a link by what it names, a link naming nothing and
  * any other entry left out; nothing where the directory is absent. */
 type Entries = { files: string[]; directories: string[] };
-function entriesOf(path: string): { entries: Entries; answer: string | null } {
+function entriesOf(path: string): Listed<Entries> {
+  return attemptAnswer((a) => a.entries, "entries", path, false, () => entriesRead(path));
+}
+function entriesRead(path: string): Listed<Entries> {
   let listed: Dirent[];
   try {
     listed = readdirSync(path, { withFileTypes: true }).sort((a, b) => byBytes(a.name, b.name));
   } catch (error) {
     if (!absence(error)) throw new IoFailure("list", path, error);
-    note("entries", path, null, false);
     return { entries: { files: [], directories: [] }, answer: null };
   }
   const files: string[] = [], directories: string[] = [];
@@ -360,7 +428,6 @@ function entriesOf(path: string): { entries: Entries; answer: string | null } {
   }
   const entries = { files, directories };
   const answer = sha256(JSON.stringify(entries));
-  note("entries", path, answer, false);
   return { entries, answer };
 }
 
@@ -677,9 +744,17 @@ function observeResolution(specifier: string, parent: string): boolean {
  * file URL with no query or fragment, else `null`, as where Node throws.
  * Run through a resolve hook, which calls Node's resolution with that parent
  * and resolves nothing else; it loads nothing. Its reads are observed before
- * and after it, and must agree; its target after it. */
+ * and after it, and must agree; its target after it. A process cache
+ * (`remembered`): resolved once, its observations made again at its first use
+ * in each attempt (STAGE-STORE.md, "Shared work"). */
 export function nodeResolve(specifier: string, parent: string): string | null {
-  const before = observedNoting(() => observeResolution(specifier, parent), false, false);
+  return remembered(resolutions, `${specifier}\0${parent}`, () => resolveObserved(specifier, parent));
+}
+/** Each resolution made in this process, with the observations it was made
+ * from (`remembered`). */
+const resolutions = new Map<string, Remembered<string | null>>();
+function resolveObserved(specifier: string, parent: string): string | null {
+  const before = observedNoting(() => fresh(() => observeResolution(specifier, parent)), false, false);
   const probe = "tscert:resolve";
   const found: { url: string | null } = { url: null };
   const hooks = registerHooks({
@@ -698,7 +773,7 @@ export function nodeResolve(specifier: string, parent: string): string | null {
   } finally {
     hooks.deregister();
   }
-  const after = observedNoting(() => observeResolution(specifier, parent), false, false);
+  const after = observedNoting(() => fresh(() => observeResolution(specifier, parent)), false, false);
   if (JSON.stringify(before.noted) !== JSON.stringify(after.noted))
     inconsistent(`the files Node read resolving ${specifier} from ${parent} changed meanwhile`);
   const url = found.url;

@@ -2,8 +2,8 @@
 // declaration sessions"), each through the production stage adapters
 // (`parseCall`, `diagnosticsCall`, `invokeInProcess`) over a private copy of
 // the value-import examples and their named project:
-// - a parse in a reused session is byte for byte the parse in fresh
-//   compilers at the same paths, refusals as well as successes, in forward,
+// - a parse in a reused session, its work shared, is byte for byte the parse in fresh
+//   compilers with no work shared at the same paths, refusals as well as successes, in forward,
 //   reverse and A–B–A orders, and with distinct snapshot directories sharing
 //   one resolution project; the session is opened once and reused, the
 //   parser opened afresh by every parse; diagnostics between parses reuse it
@@ -32,7 +32,7 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { parserOpenings } from "../tools/fragment-parse.mts";
-import { nodeResolve, observed, processInconsistency, processRetirement, unobservable } from "../tools/files.mts";
+import { nodeResolve, observed, processInconsistency, processRetirement, sharingForTests, unobservable } from "../tools/files.mts";
 import { compilerImplementation } from "../tools/compiler-channel.mts";
 import { textCodec } from "../pipeline/in-process-execution.mts";
 import { clientErrors } from "../tools/declaration-graph.mts";
@@ -93,9 +93,9 @@ function parse(r: Request, force: boolean = true): Parse {
   return invokeInProcess(parseCall(s.bytes, s.file, r.config, r.config ? s.resolution : s.file),
     { force, recorder: new Recorder(null) });
 }
-/** The parse of `r` in fresh compilers: no session retained. */
+/** The parse of `r` in fresh compilers, no work shared: no session retained, no answer kept (STAGE-STORE.md, "Shared work"). */
 function fresh(r: Request): Parsed {
-  return asideForTests(() => parse(r).value);
+  return asideForTests(() => sharingForTests(false, () => parse(r).value));
 }
 const telemetry = declarationSessionTelemetry;
 const generation = (): number | null => retainedDeclarationSession()?.generation ?? null;
