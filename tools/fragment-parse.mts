@@ -20,13 +20,13 @@ import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
-import { readText, writeText } from "./files.mts";
+import { noteInput, readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { requireWellFormed } from "./wire-strings.mts";
+import { requireWellFormed, wellFormedRefusal } from "./wire-strings.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -1014,7 +1014,26 @@ export class Gate {
 
 /** A program module a lowered file imports a function from: its file, and
  * its identity in the declaration documents (`DeclarationIdentity.module`). */
-type ImportedModule = { absolute: string; location: string };
+export type ImportedModule = { absolute: string; location: string };
+
+/** An imported module to lower: its file, its identity in the importer's
+ * documents, the project the run reads, and the run's tag selection of each
+ * host family (HOST-FAMILIES.md, "Residuals"), where the checked file made
+ * one. */
+export type ModuleRequest = { absolute: string; location: string; tsconfigPath: string | undefined;
+  selection: ReadonlyMap<string, readonly TagValue[]> | undefined };
+/** An imported module lowered, as `M`, with the program modules it imports
+ * functions from; or the gate's refusal of it. */
+export type LoweredModule<M> = { module: M; imported: ImportedModule[] } | { refused: string };
+/** The name of a module stage's read of the run's selection of the host
+ * family `marker`. */
+export const selectionRead = (marker: string): string => `selection/${marker}`;
+/** The family a read `selectionRead` names, or null for another name. */
+export const selectionMarker = (name: string): string | null =>
+  name.startsWith("selection/") ? name.slice("selection/".length) : null;
+/** A module's entry as text, with the refusal of its first string that is
+ * not well-formed Unicode, if it has one. */
+export type ModuleText = { text: string; illFormed: string | null };
 
 /**
  * The fragment of `file`, with every program module it imports a function
@@ -1028,49 +1047,115 @@ type ImportedModule = { absolute: string; location: string };
 export function parseFile(file: string, carriesContext: boolean = false,
   tsconfigPath?: string, resolutionFile: string = file,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
+  return failingAsTool(file, () => {
+    const { ast, modules } = parseModules(file, carriesContext, tsconfigPath, resolutionFile, seen, lowerModule);
+    const whole = { ...ast, modules };
+    // A source string the wire cannot carry as itself (SOURCE-FRAGMENT.md).
+    requireWellFormed(whole, "gate");
+    return whole;
+  });
+}
+
+/** The fragment of `file` as `parseFile` gives it, as its JSON text, each
+ * imported module lowered by `lower` (the parse stage's: `module`, an
+ * observed stage of its own) and spliced into the document as its text, in
+ * the order the run reaches it: the bytes `JSON.stringify` writes of the
+ * same value. The first string that is not well-formed Unicode is refused
+ * in document order, as `parseFile` refuses it. */
+export function parseFragment(file: string, tsconfigPath: string | undefined, resolutionFile: string,
+  seen: (diagnostic: SeenDiagnostic) => void, lower: (request: ModuleRequest) => LoweredModule<ModuleText>): string {
+  return failingAsTool(file, () => {
+    const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower);
+    requireWellFormed(ast, "gate");
+    for (const m of modules) if (m.illFormed !== null) throw Error(m.illFormed);
+    const text = JSON.stringify(ast);
+    const empty = `,"modules":[]}`;
+    if (!text.endsWith(empty)) throw Error("tool failure: the fragment does not end with its modules");
+    return `${text.slice(0, -empty.length)},"modules":[${modules.map((m) => m.text).join(",")}]}`;
+  });
+}
+
+/** `run`, a parse of `file`; after a tool failure the parser's compiler
+ * released, and a failure no read located reported as one, in the file. */
+function failingAsTool<T>(file: string, run: () => T): T {
   try {
-    return parseModules(file, carriesContext, tsconfigPath, resolutionFile, seen);
+    return run();
   } catch (error) {
     const failure = toolFailureOf(error);
     if (!failure) throw error;
     release({ error });
-    // A failure no read located is reported as one, in the file.
     if (messageOf(error).startsWith("tool failure:")) throw error;
     throw new Error(toolFailureText(failure, `(in ${file})`), { cause: error });
   }
 }
 
-function parseModules(file: string, carriesContext: boolean, tsconfigPath: string | undefined,
-  resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined): Ast {
+/** The lowering of an imported module as a run of that module alone lowers
+ * it, in a parser compiler of its own, opened at the module's directory and
+ * released after it; the gate's refusal of it, or, on a tool failure, that
+ * failure reported in the module. */
+export function lowerModule(request: ModuleRequest): LoweredModule<ModuleAst> {
+  release(null);
+  let lowered: Lowered;
+  try {
+    const selection = request.selection;
+    // Each read of the run's selection, by family, is a read of the stage's
+    // named input (STAGE-STORE.md, "Shared work").
+    lowered = lowerFile(request.absolute, false, request.tsconfigPath, request.absolute, undefined,
+      request.location, selection ? { given: (marker) => {
+        const tags = selection.get(marker);
+        noteInput(selectionRead(marker), JSON.stringify(tags ?? null) ?? "null");
+        return tags;
+      } } : {});
+  } catch (error) {
+    // The gate's refusal leaves the module out; a tool failure is no
+    // refusal, and is reported in that module.
+    const failure = toolFailureOf(error);
+    if (!failure) return { refused: messageOf(error) };
+    release({ error });
+    throw new Error(toolFailureText(failure, `(lowering the imported module ${request.location})`), { cause: error });
+  } finally {
+    release(null);
+  }
+  // A module's lowering is its entry (`location` is given).
+  if (!lowered.module) throw Error("tool failure: an imported module lowered without its entry");
+  return { module: lowered.module, imported: lowered.imported };
+}
+
+/** `lowerModule`'s lowering with the module's entry as text. */
+export function lowerModuleText(request: ModuleRequest): LoweredModule<ModuleText> {
+  const lowered = lowerModule(request);
+  return "refused" in lowered ? lowered
+    : { module: { text: JSON.stringify(lowered.module), illFormed: wellFormedRefusal(lowered.module, "gate") },
+      imported: lowered.imported };
+}
+
+/** The fragment of `file` without its modules, and each program module it
+ * imports a function from, directly or through another, as `lower` lowers
+ * it, in the order the run reaches it; a module `lower` refuses left out. */
+function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: string | undefined,
+  resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined,
+  lower: (request: ModuleRequest) => LoweredModule<M>): { ast: Ast; modules: M[] } {
   // One tag selection of each host family for the run (HOST-FAMILIES.md,
   // "Residuals"): the checked file's, every imported module lowered with it.
   let selection: ReadonlyMap<string, readonly TagValue[]> | undefined;
   const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } });
-  const modules: ModuleAst[] = [];
+  // The file's parser compiler is released before any module is lowered: a
+  // module's lowering uses none of its state, and a stage nested in this one
+  // holds the ledger of every compiler it uses (STAGE-STORE.md, "Shared
+  // work").
+  release(null);
+  const modules: M[] = [];
   const done = new Set<string>();
   const work = [...main.imported];
   for (let next = work.shift(); next; next = work.shift()) {
     if (done.has(next.location)) continue;
     done.add(next.location);
-    let lowered: Lowered;
-    try {
-      lowered = lowerFile(next.absolute, false, tsconfigPath, next.absolute, undefined, next.location,
-        selection ? { given: selection } : {});
-    } catch (error) {
-      // An imported module the gate refuses is left out; a tool failure is
-      // no refusal, and is reported in that module.
-      const failure = toolFailureOf(error);
-      if (failure)
-        throw new Error(toolFailureText(failure, `(lowering the imported module ${next.location})`), { cause: error });
-      continue;
-    }
-    if (lowered.module) modules.push(lowered.module);
+    const lowered = lower({ absolute: next.absolute, location: next.location, tsconfigPath, selection });
+    if ("refused" in lowered) continue;
+    modules.push(lowered.module);
     work.push(...lowered.imported);
   }
-  const ast = { ...main.ast, modules };
-  // A source string the wire cannot carry as itself (SOURCE-FRAGMENT.md).
-  requireWellFormed(ast, "gate");
-  return ast;
+  return { ast: main.ast, modules };
 }
 
 /** A lowered file: its fragment, the module entry it is as an imported
@@ -1107,7 +1192,8 @@ function renamedModule<T>(value: T, from: string, to: string): T {
 function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
-  family: { given?: ReadonlyMap<string, readonly TagValue[]>; selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void }): Lowered {
+  family: { given?: (marker: string) => readonly TagValue[] | undefined;
+    selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void }): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);

@@ -29,7 +29,7 @@ import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
-import type { StageName } from "../pipeline/stage-execution.mts";
+import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
   from "./statement-coverage.mts";
@@ -289,7 +289,12 @@ async function census(args: string[]): Promise<void> {
     fileHashes.push({ file, sourceSha256: sha256(text) });
   }
   closeParser();
-  const chosen = functions ? all.filter((s) => functions.includes(s.fn)) : all;
+  // Functions whose slices have one text (a mutually recursive group) share one slice file, the first's: the
+  // same inputs, so the check of each after the first replays the first's stages (STAGE-STORE.md, "Shared work").
+  const named = new Map<string, string>();
+  for (const s of all) if (!named.has(s.text)) named.set(s.text, s.slice);
+  const shared = all.map((s): Slice => ({ ...s, slice: named.get(s.text) ?? s.slice }));
+  const chosen = functions ? shared.filter((s) => functions.includes(s.fn)) : shared;
   const sliceNames = new Set(chosen.map((s) => s.slice));
   for (const name of readdirSync(root))
     if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
@@ -331,7 +336,7 @@ async function census(args: string[]): Promise<void> {
     return row;
   };
   // Slices of one text (the functions of one mutually recursive group) run one after another, so each after
-  // the first replays the stages their equal inputs key; groups run in parallel.
+  // the first replays the stages of their shared slice file; groups run in parallel.
   const groups = new Map<string, Slice[]>();
   for (const s of selected) {
     const text = createHash("sha256").update(s.text).digest("hex");
@@ -486,9 +491,7 @@ function readReference(value: unknown): InvocationReference {
   const { attempt, stage, key, execution, limitMs, elapsedMs, cpu, replay } = v;
   const executions: readonly AttemptRecord["execution"][] = ["executed", "replayed", "timeout-replayed", "timed-out",
     "failed", "interrupted"];
-  const stages: readonly StageName[] = ["parse", "lower", "propose", "assemble", "search", "check", "explain",
-    "diagnostics"];
-  const foundStage = stages.find((s) => s === stage);
+  const foundStage = stageNames.find((s) => s === stage);
   const foundExecution = executions.find((e) => e === execution);
   const c: { [key: string]: unknown } = typeof cpu === "object" && cpu !== null ? { ...cpu } : {};
   // A record written before peak memory was measured has none.

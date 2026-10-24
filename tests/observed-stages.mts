@@ -1,5 +1,6 @@
 // The observed stages' tests (STAGE-STORE.md, "Observed stages"): a parse
-// replays after an unchanged run, and a change to an imported module, to a
+// replays after an unchanged run, its imported modules' stages replay where the parse executes
+// again and execute where a file of the project changed, and a change to an imported module, to a
 // declaration file reached through node_modules, to the tsconfig, to the
 // family descriptions or to the TypeScript package, and a module added where
 // it changes resolution, each make it execute; forged entries are refused;
@@ -166,7 +167,83 @@ if (process.argv[2] === "--run") {
     else parseSource(source, project, runDirectory("observed-"), recorder);
   }
   const record = recorder.records.find((r) => r.stage === (stage === "resolution" || stage === "mutation" ? "parse" : stage));
-  process.stdout.write(JSON.stringify({ execution: record?.execution, ineligible: record?.ineligible, key: record?.key }));
+  process.stdout.write(JSON.stringify({ execution: record?.execution, ineligible: record?.ineligible, key: record?.key,
+    modules: recorder.records.filter((r) => r.stage === "module").map((r) => r.execution) }));
+  process.exit(0);
+}
+
+// A module stage reads the run's tag selection by family (STAGE-STORE.md,
+// "Shared work"): an entry replays where the families it consulted carry the
+// same tags, whatever the others carry, and misses where one it consulted
+// differs or is absent; its reads are never the enclosing record's.
+if (process.argv[2] === "--selection") {
+  const { moduleCall } = await import("../pipeline/parse-stage.mts");
+  const { compilerApiFamily } = await import("../tools/compiler-api.mts");
+  const [fixtureDir, examples] = process.argv.slice(3);
+  const marker = compilerApiFamily.marker;
+  const invoke = (absolute: string, project: string, selection: Map<string, (number | string)[]>): string => {
+    const made = observed(() => invokeInProcess(moduleCall({ absolute, location: `./${absolute.split("/").at(-1)}`,
+      tsconfigPath: project, selection }), { force: false, recorder: null }));
+    assert.ok(!made.observations.some(([o]) => o === "input"), "a module's input reads are never its enclosing record's");
+    return made.value.record.execution;
+  };
+  const names = join(examples, "compiler-api-project", "node-names.ts");
+  const config = join(examples, "compiler-api-project", "tsconfig.json");
+  const tags = (...t: number[]) => new Map<string, (number | string)[]>([[marker, t]]);
+  assert.equal(invoke(names, config, tags(ts.SyntaxKind.Identifier)), "executed");
+  assert.equal(invoke(names, config, tags(ts.SyntaxKind.Identifier)), "replayed", "the same selection");
+  assert.equal(invoke(names, config, new Map([...tags(ts.SyntaxKind.Identifier), ["unconsulted", [1]]])), "replayed",
+    "a family the module does not consult");
+  assert.equal(invoke(names, config, tags(ts.SyntaxKind.Identifier, ts.SyntaxKind.NumericLiteral)), "executed",
+    "the consulted family's tags differ");
+  assert.equal(invoke(names, config, new Map()), "executed", "the consulted family absent");
+  assert.equal(invoke(names, config, tags(ts.SyntaxKind.Identifier)), "replayed", "the first selection again");
+  // A module that consults no family shares one entry across selections.
+  const dep = join(fixtureDir, "dep.ts"), project = join(fixtureDir, "tsconfig.json");
+  assert.equal(invoke(dep, project, tags(ts.SyntaxKind.Identifier)), "executed");
+  assert.equal(invoke(dep, project, tags(ts.SyntaxKind.NumericLiteral)), "replayed", "no family consulted");
+  // A process cache computed from a named input is kept for none, and the
+  // stage reading it through the cache publishes nothing.
+  const { noteInput, remembered } = await import("../tools/files.mts");
+  type Kept<V> = Map<string, import("../tools/files.mts").Remembered<V>>;
+  const cache: Kept<number> = new Map();
+  let computed = 0;
+  const read = (): number => remembered(cache, "k", () => {
+    computed++;
+    noteInput("selection/x", "null");
+    return computed;
+  });
+  const stage = observed(() => [read(), read()]);
+  assert.deepEqual(stage.value, [1, 2], "computed again, kept for none");
+  assert.match(stage.incomplete ?? "", /named input/);
+  // So is one around a stage that reads its named input.
+  const around: Kept<number> = new Map();
+  let inner = 0;
+  const viaStage = (): number => remembered(around, "k", () => observed(() => {
+    inner++;
+    noteInput("selection/x", "null");
+    return inner;
+  }).value);
+  assert.deepEqual(observed(() => [viaStage(), viaStage()]).value, [1, 2], "a cache around a stage reading an input");
+  // And one around a stage replaying an entry that read its named input.
+  const replays: Kept<string> = new Map();
+  let now = tags(ts.SyntaxKind.Identifier);
+  const viaReplay = (): string => remembered(replays, "k", () => invokeInProcess(moduleCall({ absolute: names,
+    location: "./node-names.ts", tsconfigPath: config, selection: now }), { force: false, recorder: null }).record.execution);
+  observed(() => {
+    assert.equal(viaReplay(), "replayed");
+    now = tags(ts.SyntaxKind.StringLiteral);
+    assert.equal(viaReplay(), "executed", "a cache around a replayed stage keeps nothing: the new selection executes");
+  });
+  // A stage whose call does not answer its named input publishes nothing.
+  const unanswered = invokeInProcess({ stage: "parse", inputs: [{ role: "control", bytes: "unanswered input" }],
+    observed: { compiler: compilerImplementation }, codec: textCodec, run: (): string => {
+      noteInput("selection/x", "null");
+      return "";
+    } }, { force: false, recorder: null }).record;
+  assert.equal(unanswered.key, null, "no entry for an input its invocation does not answer");
+  assert.match(unanswered.ineligible ?? "", /not this invocation's/);
+  process.stdout.write("module entries: the selection read by family\n");
   process.exit(0);
 }
 
@@ -269,7 +346,7 @@ write("node_modules/pkg/index.d.ts", "export declare function lib(x: number): nu
 write("mod/index.ts", "export function m(x: number): number {\n  return x;\n}\n");
 const main = join(fixture, "main.ts"), project = join(fixture, "tsconfig.json");
 
-type Attempt = { execution: string; ineligible: string | null; key: string | null };
+type Attempt = { execution: string; ineligible: string | null; key: string | null; modules: string[] };
 /** One stage in a fresh process. */
 function run(stage: "parse" | "diagnostics" | "resolution" | "mutation" = "parse", families: string = "reviewed", installation: string = "-", parent: string = main): Attempt {
   const p = spawnSync(process.execPath, [import.meta.filename, "--run", stage, parent, project, families, installation],
@@ -280,7 +357,9 @@ function run(stage: "parse" | "diagnostics" | "resolution" | "mutation" = "parse
     throw Error(`no attempt: ${p.stdout}`);
   const ineligible = "ineligible" in parsed && typeof parsed.ineligible === "string" ? parsed.ineligible : null;
   const key = "key" in parsed && typeof parsed.key === "string" ? parsed.key : null;
-  return { execution: parsed.execution, ineligible, key };
+  const modules = "modules" in parsed && Array.isArray(parsed.modules)
+    ? parsed.modules.filter((m: unknown): m is string => typeof m === "string") : [];
+  return { execution: parsed.execution, ineligible, key, modules };
 }
 /** The stage executes, publishing an entry, then replays it. */
 function executesThenReplays(what: string, stage: "parse" | "diagnostics" = "parse", families: string = "reviewed",
@@ -430,8 +509,28 @@ rmSync(join(fixture, "local.js"));
 if (process.argv[2] !== "--node-only") {
   // --- a parse replays after an unchanged run; each change makes it execute
   executesThenReplays("a first parse");
+  // --- each imported module's lowering is a stage of its own, nested in the
+  // parse (STAGE-STORE.md, "Shared work"): a parse executing again replays
+  // the modules' entries, and a changed module executes alone
+  const parseEntries = (): void => {
+    rmSync(join(root, "entries", "parse"), { recursive: true });
+    rmSync(join(root, "observed", "parse"), { recursive: true });
+  };
+  parseEntries();
+  const again = run();
+  assert.equal(again.execution, "executed");
+  assert.deepEqual(again.modules, ["replayed", "replayed"], `the modules' entries replay: ${JSON.stringify(again)}`);
   write("dep.ts", "export function dep(x: number): number {\n  return x + 1;\n}\n");
-  executesThenReplays("an imported module changed");
+  const changed = run();
+  assert.equal(changed.execution, "executed", "an imported module changed: the parse's entry no longer holds");
+  // Each module's read set holds the declaration session's ledger, every
+  // file of the project its compiler read: a project file's change misses
+  // every module's entry.
+  assert.deepEqual(changed.modules, ["executed", "executed"], `the modules execute again: ${JSON.stringify(changed)}`);
+  assert.equal(run().execution, "replayed", "an imported module changed, then unchanged");
+  const selection = spawnSync(process.execPath, [import.meta.filename, "--selection", fixture, join(repository, "pipeline")],
+    { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(dir, "selection-store") } });
+  assert.equal(selection.status, 0, selection.stderr);
   write("node_modules/pkg/index.d.ts", "export declare function lib(x: number): number;\nexport declare const other: string;\n");
   executesThenReplays("a declaration file reached through node_modules changed");
   write("tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2023", module: "preserve",

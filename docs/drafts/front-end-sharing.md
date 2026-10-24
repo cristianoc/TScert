@@ -203,31 +203,67 @@ with the entry and without it, in the orders the session controls use (§5).
 **Entry.** A new observed stage, `module`: the lowering of one imported
 program module as a run of that module alone lowers it (`parseModules`,
 `tools/fragment-parse.mts`). Its pre-key is the module's absolute path, its
-identity in the importer's documents (`location`), the named project, the
-active family descriptions and the run's tag selection of each host family
-(HOST-FAMILIES.md, residuals), canonically ordered; its read set is its
-observations. Its value is the module's entry as text (`ModuleAst`) and the
+identity in the importer's documents (`location`), the named project and the
+active family descriptions; its read set is its observations, the
+file-system answers it read and its reads of the run's tag selection
+(below). Its value is the module's entry as text (`ModuleAst`) and the
 modules it imports, or the gate's refusal (the module left out, as now); a
 tool failure is no value. The parse invokes it once per module it reaches;
 executed, the stage opens a parser compiler of its own and releases it, and
 collects in the declaration session; replayed, it opens nothing.
 
+**The selection, a named input read.** The run's tag selection of each host
+family (HOST-FAMILIES.md, residuals) is computed by the checked file's
+parse and given to every module it lowers; it differs from slice to slice.
+A module's lowering reads it by family (`familySelection(marker)`, at the
+one site that consults it, the host family of a declaration it collects).
+Each read is an observation of the stage's own record, `["input",
+"selection/<marker>", <the tags as JSON, or null>]`: a named input read, as
+a file-system answer is a file read. A candidate entry replays when each of
+its input observations gives the same answer for the invocation's own
+selection, and each file-system observation holds. A module that consults no
+family, or the same families at the same tags, shares one entry across runs
+whose selections differ elsewhere.
+
+Measured (the census after §3.4 with the selection in the pre-key,
+2026-10-24): 145 module invocations, 86 executed, 59 replayed; of 12
+modules, three gave one value across 14, 23 and 9 selections, two a value
+per selection. The selection as a pre-key input missed the sharing the
+values allow; as a read it keys each entry by exactly the families it
+consults.
+
+*Scope of an input observation.* It is noted in the record of the stage
+whose named input it reads and in the records begun within it, never in an
+enclosing stage's record: the enclosing parse computed the selection from
+its own reads, which its own observations bind. A record that cannot
+evaluate an input observation (a process cache's, if one ever held one, or
+a stage whose call does not answer it as recorded) publishes nothing, and
+every process cache's computation being made when a named input is read,
+within the stage or around it, is kept for none: its next use computes it
+again under its own stage's input.
+
 The parse's pre-key is unchanged. Its observations are a conservative read
-set: the answers its own lowering read, and for each module the read set of
-the module's entry, executed or made again on replay (§2), with the answers
-of candidates whose validation failed. A replayed module entry's read set is
+set: the answers its own lowering read, and for each module the
+file-system observations of the module's entry, executed or made again on
+replay (§2), with the answers of candidates whose validation failed; a
+module's input observations stay its own. A replayed module entry's read set is
 the one its own execution recorded, a session's ledger of another worker
-included. A parse entry is therefore keyed by at least every answer its
+included; that ledger holds every file of the project the session's
+compiler read, so a change to any of them misses every module's entry. A parse entry is therefore keyed by at least every answer its
 result depends on, and may replay less often than before, never wrongly.
 
 **Trust.** The module's lowering is specified as "a run of that module alone":
 the stage makes it one, in a parser compiler of its own at the module's
-directory. Today it shares the importer's parser compiler (its working
-directory, the importer's open document, the programs it built); the
-change adds the obligation *module isolation*: a module lowered in a parser
-compiler of its own is the module lowered in the importer's, byte for byte.
-It is tested by the Fragments of every pipeline case, parsed before the
-change and after it, store off (§5). Its collection's fidelity is the
+directory; the parse releases its own parser compiler before it lowers any
+module, so no module's record holds the importing file's parser ledger
+(§3.5). The obligation *module isolation* states the step's change: a
+module lowered in a parser compiler of its own is the module lowered in the
+importer's (with its working directory, the importer's open document and
+the programs it built), byte for byte. It is tested by the Fragments of
+every pipeline case, parsed with the importer's compiler and with the
+module stage, its entries executed and replayed, each with entries cleared
+(§5); measured 2026-10-24: all 2,081 equal, Fragment, refusal and
+diagnostics. Its collection's fidelity is the
 session's. New in the trust row: a stored module entry is the parser's own
 lowering of exactly the inputs its key binds, as for the parse. The
 Fragment assembled from replayed entries is the one assembled from executed
@@ -382,9 +418,10 @@ Reconsidered with the census's numbers after indexing.
 - *Parse:* unchanged (source bytes, snapshot path, resolution file, project,
   families; observations, the module stages' included).
 - *Module:* stage `module`; inputs `module` (absolute path), `location`,
-  `project` (or empty), `families` (JSON of the active descriptions),
-  `selection` (each family's marker with its sorted tag values); observed,
-  with the compiler's identity; its observations.
+  `project` (or empty), `families` (JSON of the active descriptions);
+  observed, with the compiler's identity; its observations, the selection's
+  reads among them, each family consulted with its tags as the run gives
+  them.
 - *Diagnostics:* unchanged.
 - *Process stages:* unchanged.
 
@@ -400,11 +437,14 @@ No key loses an input. The module stage is a new stage name in
   executed, a reused parser session) equal to those of fresh compilers with
   the store off, in forward, reverse and A–B–A orders, refusals included
   (`tests/session-reuse.mts`).
-- *Module entries.* A module entry replays opening no compiler; a changed
-  module, project file or family selection misses it; the parse's entry
-  holds the module's observations, executed and replayed (a change to a file
-  only the module read refuses the parse's entry); a refused module is left
-  out in both.
+- *Module entries.* A parse executing again replays its modules' entries; a
+  changed project file misses them; the parse's entry holds the modules'
+  file-system observations, executed and replayed; a module's entry replays
+  where a family it does not consult changes and misses where a consulted
+  family's tags change or the family is absent; a module consulting no family
+  replays across selections; no input observation reaches the enclosing
+  record, executed or replayed; a process cache computed from a named input
+  is kept for none and its stage publishes nothing.
 - *Query answers.* A repeated query of a snapshot answers from the entry; a
   released snapshot's answers are gone; a query of another snapshot asks the
   compiler.
@@ -433,10 +473,19 @@ Estimates (conjectured) from the 6a3a864 census's 932 s of parse and the
 | Step | Census parse |
 | --- | ---: |
 | §3.1–3.3 attempt answers, resolutions, query answers | measured: 1,069.5 → 573.5 s (297120f → this step, the 466 slices both censuses share, cold stores, 2026-10-24) |
-| §3.4 module entries | → about 330 s |
-| §3.6 duplicate slices | → about 240 s; their search and check too |
+| §3.4 module entries and §3.6 duplicate slices | measured together: 577.1 → 430.3 s (parse and module stages, the 473 slices both censuses share, cold stores, 2026-10-24), against about 240 s expected |
 | §3.5 parser session | → about 210 s |
 | §3.7 declaration entries, if built | → about 150 s |
+
+The measured step missed its expectation for three causes, each measured
+in the same census: the module lowerings depend on the selection where
+they consult a family (145 module invocations, 40 executed, 75.5 s; two
+modules give 13 and 6 values across the census's selections); a module
+lowered in a parser compiler of its own builds its project's program again
+(`expr`'s parse with its modules 7.10 → 9.63 s); and the main slice's
+collection, unchanged by these steps, remains the parse's largest part. The
+duplicates' parse, search and check replay (`tryStmt`'s and `expandMapped`'s
+slices run none: 2.92 s and 1.73 s of parse before).
 
 Per phase: collection loses its repeated file-system answers and queries
 (§3.1–3.3); imported modules' collection and program cost about once per
@@ -468,7 +517,10 @@ store needs no cleaning: a new code identity misses every old entry.
 - §3.3: query omission (conjectured; tested).
 - §3.4: module isolation (conjectured; tested over every pipeline case), and
   a stored module entry is the parser's own lowering of exactly the inputs
-  its key binds (store binding, as for the parse).
+  its key binds (store binding, as for the parse); the selection's reads
+  complete: the lowering reads the selection only through
+  `familySelection` (an audited single read site, as the file system is read
+  only through `tools/files.mts`).
 - §3.5: every compiler's ledger held by every record using it (a rule, by
   construction); if the parser session is built, its fidelity and directory
   independence (conjectured; tested as the declaration session's).

@@ -151,7 +151,8 @@ execution of a replay-eligible invocation retains its complete stage key.
 
 | Stage | Inputs in addition to its implementation and execution context |
 | --- | --- |
-| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the complete filesystem observations of parsing, declaration collection and host activation |
+| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
+| module | an imported module's path and identity in the importer's documents; the project; active host-family descriptions; whether the run gives a tag selection; its observations, its reads of the selection by family among them ([shared work](#shared-work)) |
 | lower | the exact Fragment document |
 | propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
 | assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
@@ -262,7 +263,7 @@ import no file system, module or process API.
   with the reason recorded and no entry published. The modules the
   front end loads at start-up are these.
 
-*State follows the observations.* Each parse opens its parser fresh and
+*State follows the observations.* Each parse and each module lowering opens its parser fresh and
 releases it at its end. A declaration compiler is opened for its collection
 and released after it, or is a worker's
 [retained declaration session](#retained-declaration-sessions). Every
@@ -484,6 +485,38 @@ query again answers the text it first answered, and omitting the repeated
 request changes no answer the compiler gives afterwards to any request, of
 that snapshot or another, over its lifetime.
 
+*Imported modules.* Each program module a parse reaches is lowered by a
+stage of its own, `module`, nested in the parse (`moduleCall`,
+`pipeline/parse-stage.mts`): the module's lowering as a run of that module
+alone lowers it, in a parser compiler of its own at the module's directory
+(`lowerModule`, `tools/fragment-parse.mts`), its value the module's entry
+as text, its imports, or the gate's refusal. The parse releases its own
+parser compiler before it lowers a module, and splices each module's text
+into its Fragment in the order it reaches the modules, the bytes
+`JSON.stringify` writes of the same value. A nested invocation is forced and
+recorded as its enclosing one is (`invokeNested`). Executed, the module's
+answers are noted in the parse's record as they are made; replayed, its
+file-system observations are made again while the parse's record is made:
+either way the parse's observations hold them. A module's read set holds the
+declaration session's ledger, every file of the project its compiler read,
+so a change to any of them misses every module's entry.
+
+*Named inputs read.* The run's tag selection of each host family
+(HOST-FAMILIES.md, residuals) is computed by the checked file's parse and
+given to every module it lowers. A module's lowering reads it by family, at
+one site (`familySelection`, `tools/declaration-graph.mts`), and each read is
+an observation `["input", "selection/<marker>", <the tags as JSON, or null>]`
+of the module stage's record alone (`noteInput`, `tools/files.mts`). A
+candidate entry replays when each input observation answers the same for
+the invocation's own selection (`observed.inputs` of its call) and each
+file-system observation holds; input observations are never noted in the
+enclosing parse's record, which computed the selection from its own reads.
+An execution publishes only where its invocation answers each input read as
+recorded. Every process cache's computation being made when a named input
+is read, within the stage or around it, is incomplete, and its value is kept
+for none. A module consulting no family, or the same families at the same tags,
+shares one entry across runs whose selections differ elsewhere.
+
 *Tests.* `tests/shared-work.mts` shows, without a stage: a later read of an
 attempt answering its first answer and noting it in a record begun after
 it; the next attempt, a ledger's validation and a Node-origin read reading
@@ -492,7 +525,17 @@ of a snapshot served and another snapshot's asked; and a compiler's ledger,
 with its incompleteness, held by every record that uses the compiler. The
 fidelity controls of `tests/session-reuse.mts` compare each parse, its work
 shared in a reused session, with the parse in fresh compilers with no work
-shared (`sharingForTests`), byte for byte.
+shared (`sharingForTests`), byte for byte. `tests/observed-stages.mts` shows a
+parse executing again replay its modules' entries and a project file's change
+miss them; and, in a process of its own (`--selection`), a module's entry
+replay where an unconsulted family changes and miss where a consulted
+family's tags change or it is absent, a module consulting no family replay
+across selections, no input observation reach the enclosing record, and a
+process cache reading an input, or around a stage reading one, be kept for
+none, and a stage whose call does not answer its input publish nothing. The
+Fragments of every pipeline case, parsed with the importer's parser compiler
+and with module stages executed and replayed, are equal (measured
+2026-10-24, all 2,081).
 
 ## Locations
 

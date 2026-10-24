@@ -112,8 +112,9 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
     syncBuiltinESMExports();
   }
   // The compiler reads the module through the front end's file system, first
-  // where the declaration reader opens the project.
-  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): read [^:]*lib\.ts: ERR_ACCESS_DENIED: forced .*\(line \d+, col \d+\)$/, report);
+  // where the parser's compiler, fresh for the parse, opens the file's
+  // project: a failure in the file.
+  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): read [^:]*lib\.ts: ERR_ACCESS_DENIED: forced .*\(in [^)]*importer\.ts\)$/, report);
   const denied = join(dir, "denied.d.ts");
   const resolveFailure = failing("realpath", denied, "EACCES", { syscall: "realpath" });
   fs.realpathSync = Object.assign((...args: Parameters<typeof resolveReal>) => (resolveFailure(...args), resolveReal(...args)), resolveReal);

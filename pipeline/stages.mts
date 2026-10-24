@@ -17,7 +17,7 @@ import { appendFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
-import { isOperation, observationsHold, type Observation } from "../tools/files.mts";
+import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
 import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
@@ -388,11 +388,20 @@ function endFrame(frame: Frame): NodeJS.CpuUsage {
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
   const frame = beginFrame();
+  enclosing.push(options);
   try {
     return attemptInProcess(call, options, frame);
   } finally {
+    enclosing.pop();
     if (!frame.ended) endFrame(frame);
   }
+}
+/** The options of the in-process invocations running, innermost last. */
+const enclosing: { force: boolean; recorder: Recorder | null }[] = [];
+/** An in-process stage invoked while another runs, a parse's module stage:
+ * forced where the enclosing invocation is, and recorded by its recorder. */
+export function invokeNested<T>(call: InProcessCall<T>): { value: T; record: AttemptRecord } {
+  return invokeInProcess(call, enclosing.at(-1) ?? { force: false, recorder: null });
 }
 function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null },
     frame: Frame): { value: T; record: AttemptRecord } {
@@ -434,9 +443,17 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
       if (call.observed) {
         const validating = performance.now();
         const observations = storedObservations(found.result.input, manifest);
-        const holds = observations !== null && observationsHold(observations);
+        // A named input's read answers as the invocation's own input does;
+        // every other observation as the file system does now.
+        const inputs = call.observed.inputs;
+        const holds = observations !== null &&
+          observations.every(([o, name, answer]) => o !== "input" || (inputs !== undefined && inputs(name) === answer)) &&
+          observationsHold(observations.filter(([o]) => o !== "input"));
         validationMs += performance.now() - validating;
         if (!holds) continue;
+        // The replayed value depends on the inputs it read, as an executed one
+        // does: a process cache computing it keeps none.
+        for (const [o, name] of observations) if (o === "input") inputRead(name);
         key = candidate;
         recorded = { ...manifest, observations: observations.length };
       }

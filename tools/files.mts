@@ -51,8 +51,8 @@ const byBytes = (a: string, b: string): number => Buffer.compare(Buffer.from(a),
  * names, links followed; its real path; a directory's entries with their own
  * kinds; a directory's files and directories as the compiler lists them,
  * links followed. */
-export type Operation = "read" | "kind" | "real" | "dirents" | "entries";
-const operations: readonly Operation[] = ["read", "kind", "real", "dirents", "entries"];
+export type Operation = "read" | "kind" | "real" | "dirents" | "entries" | "input";
+const operations: readonly Operation[] = ["read", "kind", "real", "dirents", "entries", "input"];
 export const isOperation = (value: unknown): value is Operation => operations.some((o) => o === value);
 
 /** An observation: its operation, the absolute path and the answer, null
@@ -66,7 +66,7 @@ export type Noted = { observation: Observation; node: boolean };
  * values whose observations it holds, why it is incomplete, if it is, and
  * why Node's caches may disagree with the file system, if they may. */
 export type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null; ledger: boolean;
-  inconsistent: string | null };
+  inconsistent: string | null; stage?: true; readsInput?: true };
 const recordings: Recording[] = [];
 /** The outermost records made in this process so far. */
 let epoch: number = 0;
@@ -95,6 +95,30 @@ function noteIn(recording: Recording, observation: Observation, node: boolean): 
   if (known && known.observation[2] !== answer)
     recording.incomplete ??= `${operation} ${path} answered differently within the stage`;
   else recording.answers.set(key, { observation, node: node || (known?.node ?? false) });
+}
+
+/** A read of the innermost stage's named input `name` (STAGE-STORE.md,
+ * "Shared work"), an observation `["input", name, answer]` of that stage's
+ * record alone: the stage's invocation evaluates it again before a replay,
+ * and before it publishes. An enclosing stage's record computed the input
+ * from reads of its own, and holds none. Every record of a process cache's
+ * computation being made, within the stage or around it, is incomplete and
+ * computed from a named input: its value is kept for none. */
+export function noteInput(name: string, answer: string): void {
+  let at = recordings.length - 1;
+  while (at >= 0 && recordings[at]?.stage !== true) at--;
+  const owner = recordings[at];
+  if (owner) noteIn(owner, ["input", name, answer], false);
+  inputRead(name);
+}
+/** A named input `name` read, by a stage executed or replayed: every process
+ * cache's computation being made is incomplete and kept for none. */
+export function inputRead(name: string): void {
+  for (const r of recordings)
+    if (r.stage !== true && !r.ledger) {
+      r.incomplete ??= `a named input (${name}) read by a record no invocation evaluates`;
+      r.readsInput = true;
+    }
 }
 
 /** Every record being made is incomplete, for `reason`: a read it cannot
@@ -134,10 +158,10 @@ export function observed<T>(run: () => T): Observed<T> {
     inconsistent: made.inconsistent };
 }
 function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
-    { value: T; noted: Noted[]; incomplete: string | null; inconsistent: string | null } {
+    { value: T; noted: Noted[]; incomplete: string | null; inconsistent: string | null; readsInput: boolean } {
   if (stage && recordings.length === 0) epoch++;
   const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
-    ledger: false };
+    ledger: false, ...(stage ? { stage: true } : {}) };
   // The outermost stage's record bounds the attempt's answers.
   const begins = stage && attempt === null;
   if (begins) attempt = attemptOf(recording);
@@ -157,7 +181,8 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
     const [x, y] = [a.observation, b.observation];
     return x[0] === y[0] ? byBytes(x[1], y[1]) : x[0] < y[0] ? -1 : 1;
   });
-  return { value, noted, incomplete: recording.incomplete, inconsistent: recording.inconsistent };
+  return { value, noted, incomplete: recording.incomplete, inconsistent: recording.inconsistent,
+    readsInput: recording.readsInput === true };
 }
 
 /** The answers of the attempt running (STAGE-STORE.md, "Shared work"), by
@@ -219,6 +244,8 @@ function attemptAnswer<R extends { answer: string | null }>(answers: (a: Attempt
 /** The answer `operation` gives at `path` now, read afresh and noted. */
 function answerOf(operation: Operation, path: string, node: boolean): string | null {
   switch (operation) {
+    // A named input's read is the invocation's to evaluate (`noteInput`).
+    case "input": throw Error(`the named input ${path} is no file-system answer`);
     case "read": return readAnswer(path, node).answer;
     case "kind": return kindOf(path, node);
     case "real": return realOf(path, node);
@@ -331,6 +358,9 @@ export function remembered<K, V>(cache: Map<K, Remembered<V>>, key: K, compute: 
   // where it is incomplete or inconsistent, so are they.
   if (made.incomplete !== null) unobservable(made.incomplete);
   if (made.inconsistent !== null) inconsistent(made.inconsistent);
+  // A value computed from a stage's named input is the stage's alone: kept
+  // for none.
+  if (made.readsInput) return made.value;
   const entry: Remembered<V> = { value: made.value, noted: made.noted, incomplete: made.incomplete, epoch };
   for (const recording of recordings) recording.holding.add(entry);
   cache.set(key, entry);
