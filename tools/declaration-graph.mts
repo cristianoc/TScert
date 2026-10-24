@@ -23,8 +23,8 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
-import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
+import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
@@ -107,7 +107,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never): TypeTerm {
+    fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
@@ -123,8 +123,8 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 /** The arguments of a reference to `library`: at a mapped type's key
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
-export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => TypeTerm,
-    keys?: (node: TypeNode) => TypeTerm | null): TypeTerm[] {
+export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
+    keys?: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>): Within<{ value: "any"; store: "grow" }, TypeTerm[]> {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
@@ -4730,10 +4730,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // the tags `tags` the reading covers; a generic owner's tag parameter
       // is read at `value` where a synthetic shape reads it.
       type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const footprintEffect: CallEffect = { ...emptyEffect, onThrow: true };
-      const atFootprint = (type: TypeTerm): TypeTerm =>
-        type.k === "function" && type.effect.promise === null ? { ...type, effect: footprintEffect }
-        : type.k === "intersection" ? { ...type, parts: type.parts.map(atFootprint) } : type;
       const readMember = (f: FlatMember, tags: readonly TagValue[], value: TagValue | null): Field => {
         const file = f.owner.getSourceFile();
         const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
@@ -4742,10 +4738,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
           throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
         const substituted = names.length && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
-        // A method the family states at the empty footprint, its text
-        // reviewed (`familyTable`), is read there, on a throw too (T3).
-        const type = table.description.footprints.some(m => m.owner === f.owner.name.text && m.member === f.name)
-          ? atFootprint(substituted) : substituted;
+        // A method the family states a footprint for, its text reviewed
+        // (`familyTable`), is read at it (T3).
+        const stated = table.description.footprints.find(m => m.owner === f.owner.name.text && m.member === f.name);
+        const type = stated ? footprintReading(stated.kind, substituted) : substituted;
         return { ...field, readonly: true,
           optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
           type: hostBrands(type, true, context.isBrand,
@@ -4912,10 +4908,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }));
       // The host produces each member: a branded string there is read as a
       // string, and one the client would produce refused (reading rule 5).
+      // A view's methods are the sync API's requests, read at their
+      // statement (T6, `requestReading`).
+      const request = (f: { name: PropertyKey }): boolean =>
+        !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
         .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
-          type: hostBrands(f.type, true, context.isBrand,
+          type: hostBrands(request(f) ? requestReading(f.type) : f.type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality

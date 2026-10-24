@@ -62,10 +62,15 @@ It states:
   node's life, each with its text and why: a read that allocates, or a
   member the package assigns on a node it built earlier; each is omitted
   from every shape, so no ordinary read or read link reaches one;
-- **footprints:** the methods whose calls change no location of the model,
-  on normal return or throw, each with its text: each is read at the empty
-  footprint with `onThrow` (a [statement](SOURCE-ELABORATION.md#stated-effects)
-  the family's audit supplies), every other method at its declaration;
+- **footprints:** the methods whose footprint the family's audit states
+  (a [statement](SOURCE-ELABORATION.md#stated-effects) it supplies), each
+  with its text and its kind: an `empty` method's calls change no location
+  of the model, on normal return or throw, and it is read at the empty
+  footprint with `onThrow`; a `callbacks` method's own steps change no
+  location of the model and the only client code it runs is its
+  function-typed arguments, and it is read at each closed footprint
+  $`\varepsilon`$, those arguments' types and its call at $`\varepsilon`$,
+  on normal return; every other method is read at its declaration;
 - **marker:** the value $`m_F`$ of `[[host]]`, the reserved key every host
   object owns ([the host classification](#the-host-classification));
 - **stable members:** every property member of a shape, required or
@@ -1513,7 +1518,7 @@ The description of `typescript` 7.0.2's syntax trees
   assign on the file they are given (reading rule 1);
 - footprints: the callback-free node methods of
   [node methods and callbacks](COMPILER-API.md#node-methods-and-callbacks),
-  under T3;
+  `empty`, and `forEachChild`, `callbacks`, under T3;
 - stable members: every property member of a shape, required or optional,
   no exclusion; checked by C4;
 - guards: the table of the exports of `typescript/unstable/ast` whose

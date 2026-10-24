@@ -19,7 +19,7 @@ export const isTagSymbol = (s: { module: string; name: string }): boolean =>
   s.module === "typescript/lib/lib.es2015.symbol.wellknown.d.ts" && s.name === "toStringTag";
 export const TAG_WRITE = "a write at `Symbol.toStringTag` is outside the fragment: no object the program makes holds the tag the native `Promise`, `Set` and `Map` contracts require";
 /** An expression inside its parentheses. */
-export const skipParentheses = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParentheses(e.expression) : e;
+export const skipParentheses = (e: Node): Within<{ value: "any"; store: "grow" }, Node> => ts.isParenthesizedExpression(e) ? skipParentheses(e.expression) : e;
 
 /** Why a generator is refused: its body stops at each `yield` and resumes
  * where it stopped when `next` is called again, and no term of the calculus
@@ -33,7 +33,7 @@ export const GENERATOR = "a generator function is outside the fragment: its body
  * to the next token after it: where a lowering of the statement states the
  * entries of the statements it adds (`sites`), and where the claim reader
  * finds them. */
-export function freeOffsets(within: Node, file: ts.SourceFile): number[] {
+export function freeOffsets(within: Node, file: ts.SourceFile): Within<{ value: "any"; store: "grow" }, number[]> {
   const start = within.getStart(file);
   const text = file.text;
   let to = within.end;
@@ -53,6 +53,13 @@ export function freeOffsets(within: Node, file: ts.SourceFile): number[] {
   for (let o = start + 1; o < to; o++)
     if (!starts.has(o) && !nested.some(([a, b]) => a <= o && o < b)) free.push(o);
   return free;
+}
+
+/** A property key's JSON text: a string's JSON string, or `{"symbol":n}`
+ * for the symbol of index `n`. It serializes only a string, so it calls no
+ * `toJSON`. */
+export function propertyKeyText(key: PropertyKey): Within<{ value: "keep"; store: "keep" }, string> {
+  return typeof key === "string" ? JSON.stringify(key) : `{"symbol":${key.symbol}}`;
 }
 
 /** The span of an `if`'s closing parenthesis: the first character past its
@@ -84,7 +91,7 @@ export const SPREAD_POSITION = "a spread of a program's iterable is outside the 
  * precede a required parameter: callers supply undefined in that position. */
 /** The binding a class's static member is: a name no source binding can
  * spell, apart from the instance methods' `C.m`. */
-export const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
+export const staticName = (cls: string, member: string): Within<{ value: "any"; store: "grow" }, string> => `static ${cls}.${member}`;
 
 /** Why an instance member reads none of its class's private static fields. */
 export const INSTANCE_STATIC = "an instance member or constructor reading a private static field of its own class is outside the fragment: it is a binding the class defines after its methods and constructor, whose closures cannot hold it";
@@ -96,7 +103,7 @@ export const STATIC_INIT_CLOSURE = "a closure created by a static initializer or
 /** Whether class `cls`, declared at the file's top level, declares a static
  * field named `name` by a property name: an own data property of its class
  * value. */
-export function staticFieldOf(file: SourceFile, cls: string, name: string): boolean {
+export function staticFieldOf(file: SourceFile, cls: string, name: string): Within<{ value: "any"; store: "grow" }, boolean> {
   return file.statements.some((s) => ts.isClassDeclaration(s) && s.name?.text === cls &&
     s.members.some((m) => ts.isPropertyDeclaration(m) && ts.isIdentifier(m.name) && m.name.text === name &&
       !!m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword)));
@@ -106,7 +113,7 @@ export function staticFieldOf(file: SourceFile, cls: string, name: string): bool
  * construction, an iteration, a tagged template, an `await` or `yield`;
  * `except` names constructions that count as running none. A closure it
  * creates runs nothing until called. */
-export function runsCode(node: Node, except: (n: ts.NewExpression) => boolean = () => false): boolean {
+export function runsCode(node: Node, except: (n: ts.NewExpression) => Within<{ value: "any"; store: "grow" }, boolean> = () => false): Within<{ value: "any"; store: "grow" }, boolean> {
   const visit = (n: Node): boolean => {
     if (ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isFunctionDeclaration(n)) return false;
     if (ts.isNewExpression(n) && except(n)) return (n.arguments ?? []).some(visit);
@@ -126,7 +133,7 @@ export function runsCode(node: Node, except: (n: ts.NewExpression) => boolean = 
  * initializers and blocks run none but those constructions, so no code of
  * the class, which reads the class value, runs before the class value is
  * bound. */
-export function selfConstructs(declaration: ClassDeclaration): boolean {
+export function selfConstructs(declaration: ClassDeclaration): Within<{ value: "any"; store: "grow" }, boolean> {
   if (declaration.heritageClauses?.some((h) => h.token === ts.SyntaxKind.ExtendsKeyword)) return false;
   const cls = declaration.name?.text;
   const own = (n: ts.NewExpression) => ts.isIdentifier(n.expression) && n.expression.text === cls;
@@ -149,7 +156,7 @@ export function selfConstructs(declaration: ClassDeclaration): boolean {
 
 /** The static method of class `cls`, declared at the file's top level, named
  * `name` (a property name or a private name's text). */
-export function staticMethodOf(file: SourceFile, cls: string, name: string): ts.MethodDeclaration | undefined {
+export function staticMethodOf(file: SourceFile, cls: string, name: string): Within<{ value: "any"; store: "grow" }, ts.MethodDeclaration | undefined> {
   for (const s of file.statements)
     if (ts.isClassDeclaration(s) && s.name?.text === cls)
       for (const m of s.members)
@@ -168,12 +175,12 @@ export const HAS_INSTANCE = "[Symbol.hasInstance]";
 
 /** The binding holding a class's prototype object: a name no source binding
  * can spell, apart from an instance method's `C.m` and a static member's. */
-export const prototypeName = (cls: string): string => `${cls}.[[prototype]]`;
+export const prototypeName = (cls: string): Within<{ value: "any"; store: "grow" }, string> => `${cls}.[[prototype]]`;
 
 /** The key a class's prototype object owns and no other object does, which
  * `x instanceof C` looks for along `x`'s prototype chain: a name no source
  * key can spell (Lean's `Fragment.reservedSourceKey`). */
-export const classKey = (cls: string): string => `[[${cls}.prototype]]`;
+export const classKey = (cls: string): Within<{ value: "any"; store: "grow" }, string> => `[[${cls}.prototype]]`;
 
 /** A class as a class extending it reads it: its constructor's parameters,
  * its methods (each the binding holding its closure, its base's included,
@@ -201,14 +208,14 @@ export const messageArgumentName = (cls: string): string => `${cls}.[[messageArg
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose
  * own keys are exactly known. */
-export const freshName = (cls: string): string => `${cls}.[[class]]`;
+export const freshName = (cls: string): Within<{ value: "any"; store: "grow" }, string> => `${cls}.[[class]]`;
 
 /** The class's own binding of its name, which its instance methods, its
  * constructor and its instance field initializers read: JavaScript's class
  * scope binding, initialized before anything in the class body can run. A
  * name no source binding can spell; the initialization unit reads it as the
  * module value the class is (SOURCE-CONTRACTS.md, "Classes"). */
-export const selfName = (cls: string): string => `${cls}.[[self]]`;
+export const selfName = (cls: string): Within<{ value: "any"; store: "grow" }, string> => `${cls}.[[self]]`;
 
 /** The binding holding a derived instance's base part. */
 export const baseName = (cls: string): string => `${cls}.[[base]]`;
@@ -219,7 +226,7 @@ export type ObjectPart = { name: PropertyKey; e: Expr; computed?: true } | { spr
 /** The hidden name a parameter written as a pattern or with a default
  * binds: a name no source binding can spell. The body's first statements
  * bind the source's names from it, in parameter order (`functionAst`). */
-export const parameterName = (index: number): string => `parameter ${index}`;
+export const parameterName = (index: number): Within<{ value: "any"; store: "grow" }, string> => `parameter ${index}`;
 
 /** Why a class member not named by a plain identifier is refused: each form
  * of name, by what it would mean. */
@@ -242,7 +249,7 @@ export function unnamedMember(member: ts.ClassElement, isStatic: boolean): strin
 
 /** The names an expression reads, closures' included: a superset of what
  * it may read when it runs. */
-export function namesRead(e: unknown, out: Set<string> = new Set()): Set<string> {
+export function namesRead(e: unknown, out: Set<string> = new Set()): Within<{ value: "any"; store: "grow" }, Set<string>> {
   if (Array.isArray(e)) e.forEach((x: unknown) => namesRead(x, out));
   else if (e !== null && typeof e === "object") {
     if ("k" in e && e.k === "id" && "name" in e && typeof e.name === "string") out.add(e.name);
@@ -252,7 +259,7 @@ export function namesRead(e: unknown, out: Set<string> = new Set()): Set<string>
 }
 
 /** The names a pattern binds, in the order it binds them. */
-export function patternNames(t: PatternAst): string[] {
+export function patternNames(t: PatternAst): Within<{ value: "any"; store: "grow" }, string[]> {
   switch (t.k) {
     case "name": return [t.name];
     case "object": return [...t.props.flatMap((q) => patternNames(q.target)),
@@ -264,12 +271,12 @@ export function patternNames(t: PatternAst): string[] {
 
 /** The label of the block a `switch` is lowered to: a name no source can
  * spell. */
-export const switchLabel = (node: ts.SwitchStatement, file: SourceFile): string => `%switch@${node.getStart(file)}%`;
+export const switchLabel = (node: ts.SwitchStatement, file: SourceFile): Within<{ value: "any"; store: "grow" }, string> => `%switch@${node.getStart(file)}%`;
 
 /** The statement a `break` leaves or a `continue` repeats: the nearest
  * enclosing loop, or for a `break` also `switch`, not crossing into another
  * function. */
-export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Node | undefined {
+export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Node | undefined> {
   for (let parent = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
     if (ts.isWhileStatement(parent) || ts.isForStatement(parent) || ts.isForOfStatement(parent) ||
         ts.isForInStatement(parent) || (ts.isBreakStatement(node) && ts.isSwitchStatement(parent)))
@@ -279,7 +286,7 @@ export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Node
 
 /** Whether a statement list can complete normally, rather than always
  * ending in a jump, a `return` or a `throw` (Lean's `abrupt`, negated). */
-export function completes(ss: Stmt[]): boolean {
+export function completes(ss: Stmt[]): Within<{ value: "any"; store: "grow" }, boolean> {
   const last = ss.at(-1);
   if (!last) return true;
   switch (last.k) {
@@ -295,7 +302,7 @@ export function completes(ss: Stmt[]): boolean {
 
 export function firstOptional(
   parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
-): number {
+): Within<{ value: "any"; store: "grow" }, number> {
   const i = parameters.findIndex((p) => !!p.questionToken);
   return i < 0 ? parameters.length : i;
 }
@@ -316,7 +323,7 @@ export type EnumEntry = { name: string; node: ts.EnumMember; span: Span; nameSpa
 
 /** Whether an element access is written rather than read: the target of an
  * assignment, a compound assignment or an update, or `delete`'s operand. */
-export function writtenElement(node: ts.ElementAccessExpression): boolean {
+export function writtenElement(node: ts.ElementAccessExpression): Within<{ value: "any"; store: "grow" }, boolean> {
   let at: Node = node;
   while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
   const parent = at.parent;
@@ -349,7 +356,7 @@ export function typeParameterMentioned(node: FunctionDeclaration, parameter: Typ
 
 /** `Object.assign(arrow, literal)`: the callable form, a function with
  * properties. Its call, arrow and object literal, or null. */
-export function callableAssign(node: Node): CallableAssign | null {
+export function callableAssign(node: Node): Within<{ value: "any"; store: "grow" }, CallableAssign | null> {
   if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) ||
       !ts.isIdentifier(node.expression.expression) || node.expression.expression.text !== "Object" ||
       node.expression.name.text !== "assign" || node.arguments.length !== 2)
@@ -364,7 +371,7 @@ export function callableAssign(node: Node): CallableAssign | null {
 export type CallableAssign = { call: ts.CallExpression; fn: ts.ArrowFunction; initial: ts.ObjectLiteralExpression };
 
 /** The key of `k in o`, its parentheses dropped. */
-export function inKey(node: ts.BinaryExpression): Expression {
+export function inKey(node: ts.BinaryExpression): Within<{ value: "any"; store: "grow" }, Expression> {
   let key: Expression = node.left;
   while (ts.isParenthesizedExpression(key)) key = key.expression;
   return key;
@@ -374,7 +381,7 @@ export function inKey(node: ts.BinaryExpression): Expression {
  * compound or logical one, an update, a destructuring assignment or a
  * `for...of`/`for...in` head naming it. By spelling, so a binding of
  * another scope with the same name counts too. */
-export function writesName(within: Node, name: string): boolean {
+export function writesName(within: Node, name: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const targets = (e: Node): boolean => {
     while (ts.isParenthesizedExpression(e)) e = e.expression;
     if (ts.isIdentifier(e)) return e.text === name;
@@ -411,7 +418,7 @@ export function writesName(within: Node, name: string): boolean {
  * implicit conversions of an object that run its code elsewhere (`o + ""`,
  * a relational comparison) are refused by the model (SOURCE-FRAGMENT.md, "Refused on
  * principle"), and a read runs none: an object holds data properties only. */
-export function runsCodeOrWrites(node: Node): boolean {
+export function runsCodeOrWrites(node: Node): Within<{ value: "any"; store: "grow" }, boolean> {
   const target = (e: Node): Node => {
     while (ts.isParenthesizedExpression(e)) e = e.expression;
     return e;
@@ -448,7 +455,7 @@ export function runsCodeOrWrites(node: Node): boolean {
  * property, so no iteration changes what the chain finds. No declaration in
  * those statements, nor any of the body's own, spells the key's or `P`'s
  * name, which a read would then name instead. Empty where there is none. */
-export function forInEntryReads(node: ts.ForInStatement): ts.ElementAccessExpression[] {
+export function forInEntryReads(node: ts.ForInStatement): Within<{ value: "any"; store: "grow" }, ts.ElementAccessExpression[]> {
   const list = node.initializer;
   if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1) return [];
   const key = list.declarations[0]?.name;
@@ -514,10 +521,10 @@ export function forInEntryReads(node: ts.ForInStatement): ts.ElementAccessExpres
 
 /** The module constant holding the value of member `member` of enum `name`
  * where that value is known only at run time (`enumStmt`). */
-export const enumMemberName = (name: string, member: string): string => `%${name}.${member}%`;
+export const enumMemberName = (name: string, member: string): Within<{ value: "any"; store: "grow" }, string> => `%${name}.${member}%`;
 
 /** An enum member's value as a literal expression. */
-export function literalExpr(value: string | number, pos: Span): Expr {
+export function literalExpr(value: string | number, pos: Span): Within<{ value: "any"; store: "grow" }, Expr> {
   return typeof value === "string"
     ? { k: "lit", pos, lit: { a: "stringlit", v: value } }
     : { k: "lit", pos, lit: { a: "numberlit", v: numberText(value) } };
@@ -551,7 +558,7 @@ export function shadowName(id: Identifier, source: SourceFile): string {
  * its block's (a `switch`'s clauses sharing one), a `for` head's binding the
  * loop's, a `var` its function's, a caught value its `catch` clause's, a
  * named function or class expression its own. */
-export function bindingScope(node: Node): Node {
+export function bindingScope(node: Node): Within<{ value: "any"; store: "grow" }, Node> {
   const block = (n: Node): Node => (ts.isCaseClause(n) || ts.isDefaultClause(n)) && n.parent ? n.parent : n;
   const functionOf = (n: Node): Node => {
     let at: Node | undefined = n.parent;
@@ -614,7 +621,7 @@ export function shadowingLocals(source: SourceFile): Map<string, Identifier> {
  * shape, a key, an instance or a family guard's tags, an equality, a
  * negation, a comparison, or `&&` and `||` of such. Its value is then its
  * truth. */
-export function booleanForm(e: Expr): boolean {
+export function booleanForm(e: Expr): Within<{ value: "any"; store: "grow" }, boolean> {
   switch (e.k) {
     case "typeofTest": case "arrayTest": case "inTest": case "instanceTest": case "tagMember": case "not": return true;
     case "bin": return e.op === "===" || e.op === "!==" || e.op === "==" || e.op === "!=" ||
@@ -629,7 +636,7 @@ export function booleanForm(e: Expr): boolean {
  * it tests, as a guard's promise is checked at each return. The literals are
  * at the two code units from `at`, which no expression has (a `return`
  * keyword's, an arrow's `=>`), each the span of its own `return`. */
-export function booleanReturn(pos: Span, e: Expr, at: number): Stmt {
+export function booleanReturn(pos: Span, e: Expr, at: number): Within<{ value: "any"; store: "grow" }, Stmt> {
   return {
     k: "if", pos, cond: e,
     then: [{ k: "return", pos: [at, at + 1], e: { k: "lit", pos: [at, at + 1], lit: { a: "booleanlit", v: "true" } } }],

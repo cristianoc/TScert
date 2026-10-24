@@ -565,8 +565,16 @@ operation (T4), so its call changes no location of the model, on normal
 return or throw: the family description states each at the empty footprint
 with `onThrow` (`footprints`, each with its reviewed text), and a callback
 calling only them is within the empty footprint
-(`compiler-api-node-method-effect`). `forEachChild` keeps its declared
-signature, whose effect is unrestricted (`invalid-compiler-api-visitor-effect`).
+(`compiler-api-node-method-effect`). `forEachChild`'s own steps change no
+location of the model either, and the only client code it runs is its
+visitors, so it is read at each closed footprint $`\varepsilon`$: both
+visitors' types and its call at $`\varepsilon`$, on normal return
+(`footprints`, kind `callbacks`; the mechanism of the array members'
+callbacks, [native footprints](SOURCE-CONTRACTS.md#native-footprints)). A
+callback calling it with a visitor within $`\varepsilon`$ is within
+$`\varepsilon`$ (`compiler-api-visitor-effect`), and one whose visitor pops
+an array it reads is within no footprint keeping array stores
+(`invalid-compiler-api-visitor-effect`).
 
 `forEachChild<T>(visitNode, visitList?)` takes two visitors, both the
 client's functions: `visitNode` runs on each child node and `visitList`,
@@ -574,9 +582,9 @@ when given, on each child list (a $`\mathsf{NodeList}`$), in the package's
 child order, stopping at the first truthy result, which it returns, else
 `undefined`. A visitor may write the client's own storage and never a host
 object; the traversal reads only the buffer, so the visited children are
-fixed whatever the visitor does. The call's effect on the caller's heap is
-the visitor's, by the ordinary rule for a function value passed to a
-callee. The visitor runs synchronously, during the call; an exception it
+fixed whatever the visitor does, and a node list's store never changes
+(T4), so no visitor changes what a later visit is passed. The call's effect
+on the caller's heap is its visitors'. The visitor runs synchronously, during the call; an exception it
 throws propagates out of `forEachChild`, which then has no normal
 completion, and nothing is carried onto that exceptional edge.
 
@@ -594,6 +602,41 @@ discards the caller's facts about the heap, which accounts for whatever the
 callbacks write of the client's state. A callback that throws, re-enters the
 API, or returns outside its type makes the request throw and leaves the
 instance throwing on every later request; a throw is an allowed outcome.
+
+**Requests' footprint.** A method a view lists whose arguments are
+primitives and host objects is read at the footprint
+$`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
+on normal return (`isRequest`, `requestReading`): the client sends the
+primitives and the host objects' ids, so the serialization with
+`JSON.stringify` runs no code of the program (audited, `api.js`); the call
+changes no location of the model but through its instance's retained
+callbacks and the client's `JSON.stringify` of what they return, which
+runs a `toJSON` the result holds (T6), the host's
+own state is observed by no transparent operation (T4), and every instance
+a verified program meets is opened with callbacks within that footprint,
+their results' serialization included
+(`invalid-compiler-api-callback-tojson`, whose callback's result pops an
+array under Node). A
+verified program opens none: `new API(…)` is outside the admitted language
+(its declaration's type parameter default is refused, and no view lists
+the constructor; `invalid-compiler-api-retained-fs`, whose retained
+callback pops an array under Node). The front end's instances are opened by
+`openCompiler` (`tools/compiler-channel.mts`), with `compilerFileSystem`'s
+callbacks (`tools/files.mts`) or `tools/unchecked.mts`'s, which read files,
+record answers in fresh or owned maps and write module cells, removing no
+element of a store they did not allocate, and return strings, Booleans and
+fresh lists of names, JSON values (audited). An instance a verified
+program receives from outside is an input, whose callbacks within the
+footprint are an assumption of T8. A `map` callback calling a request gives
+a dense result (`compiler-api-request-effect`). No bound holds on a throw.
+The methods whose arguments may hold an object of the program
+(`API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
+`Program.getSourceFile`, `Program.getSemanticDiagnostics`,
+`Program.getSyntacticDiagnostics`, `Checker.resolveName`:
+`serializingRequests`) put it into the payload, whose serialization runs
+its `toJSON`; each is read at its declared signature, which states no
+effect (`invalid-compiler-api-request-tojson`, whose `toJSON` pops the
+mapped array under Node).
 
 **Lifetimes.** The guarantee is type safety without source correspondence:
 a request returns a value of its declared type or throws, whatever
@@ -782,8 +825,9 @@ the corpus runs are regression evidence, not proofs.
   only with children of the receiver, in a fixed order, and propagate a
   visitor's exception; they change no stable member; they return values of
   their declared types or throw. With T4, a call of one but `forEachChild`
-  changes no location of the model, on normal return or throw, which the
-  family description states (`footprints`).
+  changes no location of the model, on normal return or throw, and a call
+  of `forEachChild` changes none but through its visitors, which the family
+  description states (`footprints`).
 - **T4 (restricted values).** A host object behaves as the record of its
   stated members and a node list as the dense readonly array of its
   elements under every transparent operation of
@@ -818,16 +862,27 @@ the corpus runs are regression evidence, not proofs.
 - **T6 (sync API).** Each member of a host view, called with the receiver
   and arguments of its declared types, makes its request, during which it
   may call the instance's retained `fs` callbacks synchronously with string
-  arguments, and then returns a value of its declared type or throws; it
-  runs no other client code and changes no stable member of an object it
-  returned earlier. A result need not describe the handles passed when they
+  arguments, serializing what each returns with `JSON.stringify`, and then
+  returns a value of its declared type or throws; it
+  runs no other client code but what serializing its payload runs of the
+  program's objects among its arguments (their `toJSON` methods and
+  getters) and what serializing the callbacks' results runs (their
+  `toJSON` methods), and changes no stable member of an object it returned earlier.
+  With T4 and callbacks within
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$,
+  a call of a member whose arguments are primitives and host objects is
+  within that footprint on normal return. A result need not describe the handles passed when they
   come from another snapshot, project or instance.
 - **T7 (stated type guards; proposed with them).** For each stated guard
   $`g`$ promising $`X`$: when $`g`$ returns `true` on a value of a host type, the members $`X`$
   adds over `Type` return values of their declared types.
 - **T8 (external code).** Every value code outside the linked certified closure
   gives a certified function or closure meets the classified
-  interpretation recursively: its arguments, the results of external
+  interpretation recursively, and every sync API instance it gives was
+  opened with `fs` callbacks that, with the serialization of their
+  results, stay within
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$:
+  its arguments, the results of external
   functions it calls, the arguments external code passes to its callbacks,
   and every location reachable from them hold no host object where their
   contract excludes one. An external callable's contract respects the

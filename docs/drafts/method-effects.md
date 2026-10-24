@@ -386,14 +386,16 @@ type and the CLI path are unchanged.
 ## 8. Trust
 
 One row of the [trust surface](../DESIGN.md#trust-surface) changes, one is
-added, and two extend existing rows.
+added, and four extend existing rows.
 
 | Assumption | Where it is stated |
 | --- | --- |
 | *(changed, assumed values)* An imported value meets its declaration, a guard's declared promise **and a stated effect (`Within`) included**; … (rest unchanged). A statement occurs only in program modules' declarations; whether the exporting module's run certifies it is not a premise of the importer's acceptance (§6), and that the linked program meets every statement rests on module composition, an open theorem. | `IMPORT` in SOURCE-CONTRACTS; `Within` in `tools/resolvable.d.ts` |
 | *(added, assumed of the host)* External code preserves every effect-bearing contract of the program's values it holds or returns: it writes no function field of a program value with a function outside the field's statement, creates no own member on a program class's instance that shadows a prototype member, deletes no such member, writes no member of a program class's prototype or static method binding, replaces no instance's prototype, and passes to verified code no instance of a subclass whose override exceeds the base's statement. Conforming to a program type means TScert's contract, statements included, not TypeScript's assignability, which erases `Within`. | `EnvOk` over the input types; the caller contract row; the class lowering in `tools/fragment-classes.mts` |
 | *(extended, the parser row)* The parser reads `Within` (§3) and refuses it where §3 does. | `tools/type-term.mts` (`signatures`), `tools/declaration-graph.mts`, `tools/fragment-expressions.mts` (`lambda`), `fragment-statements.mts` (`functionDecl`) |
-| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` keeps its declared signature. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T3 of the compiler API, D7)* `forEachChild` runs no code of the program but its visitors, so a call of it whose visitors are within a closed footprint $`\varepsilon`$ is within $`\varepsilon`$; it is read with one signature per closed footprint (§12). | `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` and `serializingRequests` in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
 
 Inference gains no trust: a forged statement claim fails at the first
 node outside it.
@@ -464,7 +466,7 @@ assumption while the module's own run is refused.
 
 ## 10. Measurement
 
-The census of ffd7b87, slices at 300 s: `fragment-statements.mts#pattern`,
+In the census of ffd7b87 (the draft's base, whose functions state no effect), slices at 300 s: `fragment-statements.mts#pattern`,
 `#forOfPattern`, `#protocolPattern`, `#patternStmt`, `#abrupt` unverified
 (each "no derivation of its binding-annotation claim" at a `map`'s result);
 `#patternDefaults`, `#steppedPattern`,
@@ -492,10 +494,10 @@ relative to every imported declaration (§6): conditional evidence, which
 the measurement reports with every statement a slice relies on and whether
 that statement's definition is certified by a verified slice.
 
-**What this step states.** The statements whose contract closure is closed
-today (which are certified is [WORK](../../WORK.md#class-methods-effects)'s):
+**The statements.** Three groups:
 
-- the class methods of `Gate` that the draft's group A callbacks call:
+- the class methods of `Gate` that array callbacks reaching no `expr` call
+  (in `classBody`, `neverAssigned` and `moduleFunction`):
   `span`, `local` and `hasTypeParam`, each reading the node's position
   (`getStart`, D4), a `Map` (`get`, `has`) or an array (`some`), at
   `{value: keep, store: keep}`, and `typeParamName`, iterating an array, at
@@ -503,67 +505,227 @@ today (which are certified is [WORK](../../WORK.md#class-methods-effects)'s):
 - the method fields' module functions `patternDefaults` and `inert`
   (`{value: keep, store: keep}`: reads, guards, `flatMap`/`every` callbacks
   calling themselves) and `steppedPattern` (`{value: any, store: keep}`:
-  its `forEach` callback writes a captured cell).
+  its `forEach` callback writes a captured cell);
+- `expr`'s contract closure (§12): every function `expr` and the gate's
+  `TermScope` object reach, at `{value: any, store: grow}` unless a smaller
+  footprint holds, with D5's rewrite of the `shift`s in that closure
+  (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`). The closure
+  crosses two host boundaries, `forEachChild` (D7) and the checker's
+  requests the declaration reader's scopes make (D8 (a)), each closed by
+  an extension of a trust row (§8). [The inventory](method-effects-inventory.md)
+  gives each function of the closure its statement and its basis.
 
-**What stays blocked: `expr`'s contract closure.** `pattern`'s object-pattern
-callback calls `gate.expr`, and so do the callbacks of `forOfPattern`,
-`protocolPattern`, `patternStmt` and `abrupt`'s slices. `expr`'s closure,
-by a syntactic scan of the calls reachable through `Gate`'s method fields
-and members, is 166 functions of the `fragment-*` modules, `type-term.mts`
-and their helpers, and it crosses two boundaries no annotation can close
-honestly:
-
-- `forEachChild` (20 of the 166 call it), whose declared signature states
-  no effect: D4 leaves it out, so a call of it is unrestricted whatever its
-  visitor does. A callback-dependent signature, at each footprint
-  $`\varepsilon`$ the call within $`\varepsilon`$ where its visitors are,
-  as `forEach`'s overlay states, would rest on T3 as stated (it calls only
-  its visitors, synchronously, and changes no stable member) and T4: an
-  extension of D4 for the owner to decide;
-- the type reader's scope: `Gate.typeOf` calls `typeTerm(this.scope, …)`,
-  `scope: TermScope`, whose function fields (`named`, `fail`, `computed`, …)
-  state no effect. The declaration reader's own scopes are values of that
-  type and call the checker, a host request read at an ordinary signature
-  (T6). A statement on `TermScope`'s members would be false of them unless
-  T6's requests are bounded through the retained `fs` callbacks' effects (a
-  trust extension), or the gate's scope gets a type of its own (a change of
-  TScert's source, under the no-rewrite rule). Either is the owner's
-  decision.
-
-With those decided, `expr`'s closure is a set of statements of the same
-kind as this step's, together with D5's rewrite, whose `shift`s lie in that
-closure (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`): the rewrite
-lands with the statements that need it, since no statement of this step
-calls them.
-
-**Certifying the closure's bodies** needs one more node rule. A statement's
-method call on an object of several labels with plain actuals, as
-`node.getStart(this.file)` on `node: Node` in `span`, is lowered as one node
-that reads the member and invokes it (`dispatchCallTerm`): its callee is no
-value, which the bounded check's selected-call rule requires, so the
-producer proposes no footprint for it and a body holding one is certified
-only at `top`. The rule extends to such a node by composing the head's
-inspection, which keeps the heap a prefix, with the call at its selected
-signature; until then the statements on `Gate`'s members stay uncertified
+**A dispatched call.** A method call on an object of several labels with
+plain actuals, as `node.getStart(this.file)` on `node: Node` in `span`, is
+lowered as one node that reads the member and invokes it
+(`dispatchCallTerm`): its callee is no value, which the bounded check's
+selected-call rule requires, so the producer proposes the unbounded
+footprint for it (`Type_queries.dispatches_call`) and a body holding one is
+certified only at `top`. A node rule composing the head's inspection, which
+keeps the heap a prefix, with the call at its selected signature would
+certify such bodies; the statements on `Gate`'s members are uncertified
 whichever run lowers `Gate`.
 
-**Slices measured** before and after (`make census FILES=… FUNCTIONS=…`):
-the targeted five, which stay blocked at `gate.expr`; `patternDefaults`,
-`steppedPattern` and `inert`, whose slices must keep verifying at their
-statements; and the group A enclosing functions the census admits:
-`fragment-classes.mts#classBody`, `fragment-statements.mts#neverAssigned`,
-`fragment-expressions.mts#moduleFunction` as a dependent.
+**Slices measured** before and after a change of the statements (`make
+census FILES=… FUNCTIONS=…`): the five functions whose callbacks call
+`gate.expr` (`pattern`, `forOfPattern`, `protocolPattern`, `patternStmt`,
+`abrupt`); `patternDefaults`, `steppedPattern` and `inert`, whose slices
+verify at their statements; the functions enclosing the array callbacks
+of the first group (`fragment-classes.mts#classBody`,
+`fragment-statements.mts#neverAssigned`,
+`fragment-expressions.mts#moduleFunction`); and the functions of the
+inventory. Their outcomes, each with its commit, are
+[WORK](../../WORK.md#class-methods-effects)'s.
 
 ## 11. Decisions
 
 The owner's decisions are recorded in
 [WORK](../../WORK.md#class-methods-effects): D1 (a), D2 the `Within<…>`
 spelling, D3 `no-return` first, D4 the node methods' footprints, D5 the
-`shift` rewrites, D6 an override refused at the subclass. Open for the
-owner, before `expr`'s closure (§10):
+`shift` rewrites, D6 an override refused at the subclass, and (2026-10-24)
+D7, `forEachChild` given one signature per callback effect, and D8 (a), the
+checker's requests stated as an audited host contract. §12 designs them.
 
-- **D7** a callback-dependent footprint signature for `forEachChild`, as an
-  extension of D4 resting on T3 and T4;
-- **D8** the type reader's scope: statements on `TermScope`'s members with
-  a bound on the checker's requests (a T6 extension), or a scope type of the
-  gate's own (a source change).
+## 12. `expr`'s contract closure
+
+**D7: `forEachChild` at each callback effect.** `forEachChild<T>(visitNode,
+visitList?)` is read as the conjunction, over the six closed footprints
+$`\varepsilon`$, of its declared signature with both visitors' function types
+at $`\varepsilon`$ and the call at $`\varepsilon`$, the mechanism the array
+members' overlay uses (`atEachFootprint`), stated in the family description
+(`footprints`, with the member's reviewed text and the kind `callbacks`). The
+native-contract audit, under T3 and T4 (cited, [COMPILER-API](../COMPILER-API.md#trust)):
+
+- *callbacks:* `visitNode` and, when given, `visitList`, the client's own
+  functions, are the only client code the call runs, synchronously, during
+  the call; no conversion, iteration protocol or thenable runs (the visitors'
+  results are tested for truthiness, which on a value runs nothing);
+- *arguments:* each child node, and each child list as a node list, of the
+  receiver, in the package's child order; the traversal reads only the
+  buffer, so the children passed are fixed whatever a visitor does;
+- *aliases:* a visitor may write the client's storage, never a host object
+  (stable members are readonly views, T1); a node list's store never changes
+  (T4), so no visitor changes what a later visit is passed;
+- *result:* the first truthy result, else `undefined`, at the declared
+  `T | undefined`;
+- *exceptions:* a visitor's throw propagates and nothing else throws but the
+  host's request-free reads; the call states no `onThrow`.
+
+So with both visitors within $`\varepsilon`$ the call is within
+$`\varepsilon`$ on normal return: its own steps change no location of the
+model (T3, T4), and its client code is the visitors'.
+
+**D8 (a): the checker's requests, an audited host contract (T6 extended).**
+The requests are the methods of the named views
+([COMPILER-API](../COMPILER-API.md#the-sync-api)): `API.updateSnapshot`,
+`API.close`, `Snapshot`'s two, `Program`'s six, `Checker`'s 25,
+`NodeHandle.resolve`, `Type`'s four and `Signature`'s three (`hostViews` in
+`tools/compiler-api.mts`, each with its reviewed text). T6 states that a
+request may call its instance's retained `fs` callbacks synchronously,
+serializing what each returns with `JSON.stringify` (which runs a `toJSON`
+the result holds), and returns a value of its declared type or throws;
+with T4, the host's own state is observed by no transparent operation. So
+a request changes no location the program holds but through its
+instance's callbacks and their results' serialization, and the contract
+bounds those:
+
+- *The statement.* Each request whose arguments are primitives and host
+  objects is read at `{value: any, store: grow}`; the six that may receive
+  an object of the program (`API.updateSnapshot`,
+  `Snapshot.getDefaultProjectForFile`, `Program.getSourceFile`,
+  `Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics` and
+  `Checker.resolveName`, `serializingRequests`) are read at their declared
+  signatures, since serializing their payload runs the object's `toJSON`
+  and getters ([COMPILER-API](../COMPILER-API.md#the-sync-api)). The
+  statement is read without `onThrow` (a caller catching a request's failure has no bound on
+  the heap the failure leaves), stated in the view lists beside each
+  member's reviewed text and read where the views are read.
+- *The instances it holds of, enforced where they are made.* A verified
+  program makes no instance: `new API(…)` is outside the admitted language
+  (the gate refuses the constructor's declaration, and no view lists it;
+  were it admitted, its `fs` callbacks would be read at the statement and
+  checked at the call). TScert's own instances are made by
+  `openCompiler` (`tools/compiler-channel.mts`), the one place that
+  constructs one, which `tests/observed-stages.mts --reads` keeps the front
+  end's only compiler channel; its callers pass `compilerFileSystem`'s five
+  callbacks (`tools/files.mts`) and `tools/unchecked.mts`'s, fixed code
+  audited below. An instance a verified program receives from outside is an
+  input, and that it was opened with callbacks within the statement,
+  their results' serialization included, is an external-input assumption
+  (T8).
+- *The audit.* `compilerFileSystem`'s callbacks read the file system and
+  note each answer in the open recordings' maps (`noteIn`, `set`), mark a
+  recording incomplete or the process inconsistent (field and module-cell
+  writes), and `kept` writes the module cell `queryFailure`;
+  `openCompiler`'s wrappers write its document maps; `unchecked.mts`'s read
+  library files. None pops, shifts, splices, truncates, sorts or reverses a
+  store it did not allocate, and each returns a string, a Boolean,
+  `undefined`, `null` or a fresh list of names, a JSON value whose
+  serialization runs no code: within `{value: any, store: grow}`.
+
+**Fixed and substitutable callees.** The contract-closure rule (§10)
+distinguishes two kinds of call. A *substitutable* callee is read off a
+value a caller supplies: a member or field of a parameter's, a field's or an
+element's type, or a callback parameter; any value of the type may hold any
+function there, so its type must state the effect. A *fixed* callee is code
+the call always runs: a module function declaration no code reassigns, or a
+constant closure the body captures; its effect is its body's, transitively:
+an audit of its code, and of every substitutable callee its code calls,
+establishes it for an uncertified statement, and its claim does in a
+certified run. A closure's identity bounds nothing it captures: an audit
+following a supplied closure states its provenance, every call site
+supplying it, and recurses through its dependencies.
+
+**`TermScope`'s statements and every value of it.** `TermScope`'s function
+members, and the `read` callbacks `named` and `computed` take, state
+`{value: any, store: grow}`. Its values are object literals:
+
+- the gate's `termScope` (`fragment-parse.mts`): closures reading the gate's
+  maps and arrays, calling `fail` (typed `never`) and `declaredReference`;
+- the inner scopes of `type-term.mts` (`{ ...scope, named, … }`): closures
+  calling the outer scope's members, which are stated, and `typeTerm`;
+- the declaration reader's (`valueScope`, `scopeOf` in `collect`, the
+  sweep's `sweepScope`, the mapped templates' and the probes'): closures over
+  the reader's own code, the D8 requests, and four supplied callbacks, each
+  with its provenance: `collect`'s `context` (its one caller, `collectFrom`,
+  passing the reader's closures), `valueScope`'s `captured` (its callers'
+  closures building a binder term), `sweepScope`'s `binder` (the sweep's
+  closures naming a binder), and `collectDeclarations`' `options.seen`, which
+  `clean` calls with each TypeScript error it meets (from `lookup`,
+  `declarationOf` and `computedContext.annotation`) and whose every supplier
+  is a closure pushing onto a list its caller allocated (`(d) => seen.push(d)`
+  in `pipeline/parse-stage.mts` and `fragment-parse.mts`'s command line;
+  every other caller passes none), within `{value: any, store: grow}` on
+  normal return and on a throw; the audit recurses through them into
+  `computed-types.mts`, `type-probe.mts` and `written-applications.mts`;
+- the scopes of `array-prototype.mts` and `library-globals.mts`' overlays:
+  closures reading the reviewed entries.
+
+By a search of these modules, every store-shrinking operation (`pop`,
+`shift`, `splice`, `sort`, `reverse`, `fill`, `copyWithin`, a `length` write)
+acts on an array the code allocated (`[...list].sort`, `pending.pop()` of a
+local worklist, `work.pop()` of `externalStatements`' local), and the
+collections' mutators (`Map.set`, `clear`) are within `{value: any, store:
+keep}`. By the [caller contract](../DESIGN.md#trust-surface), a value
+meeting a structural type is a plain data object: every field it owns,
+stated or not, is a data property, so a spread, a field read or
+`Object.entries` of it runs no getter. A data field may hold a function,
+and `JSON.stringify` calls the one at `toJSON`, so every `JSON.stringify`
+of these modules serializes a JSON value the code built: a string, a span,
+an identity key's array of strings and a span (`identityKey`), a property
+key's text (`propertyKeyText`, which reads the key's stated fields), or
+`type-probe.mts`' arrays of positions; `sameIndex` compares two type terms
+field by field, without serializing (`sameData`). So every value of
+`TermScope` meets the statement.
+
+**Catches.** A `never`-typed call contributes no normal-return obligation
+only where its exception escapes. The closure's catches (`parseModules`,
+the declaration reader's refusal handlers turning a failure into a refusal,
+`aliasOf`, which returns `null` where `lookup` throws, so after `clean` and
+its `seen` callback, and `kept`'s rethrow) resume after code whose every operation, failing
+or not, is within `{value: any, store: grow}`, by the search above: a throw
+leaves the heap within the statement of the entry heap, so resuming keeps it.
+
+**The statements, a reviewable inventory.** Every function `expr` reaches
+through `Gate`'s fields and members and by direct call states
+`{value: any, store: grow}` unless a smaller footprint holds; the inventory,
+generated by the scan of §10 and listed in
+[the inventory](method-effects-inventory.md), gives each callee its basis: a stated contract (a `Gate` member
+or field, a `TermScope` member, the claim-site record `{ entry(): number;
+span(): Span }` of `sites`, `closeStatements` and `Gate.hoist`,
+`enterTypeParams`' `rename`), a certified claim (its slice verifies), an
+audited fixed implementation, or a host contract (the node methods (D4),
+`forEachChild` (D7), the host guards, the reviewed overlays of natives and
+library globals). With D5's rewrite (§5) the closure holds no store-shrinking
+operation on a store it did not allocate. A generic definition in the
+closure states nothing (§3).
+
+**Certifying the bodies.** Each stated function is certified where a slice
+holding it verifies (L2); a caller verifying relative to a statement does
+not certify it (§10), and the measurement reports which statements are
+certified. A body holding a statement's method call dispatched on an object
+of several labels needs the node rule of §10. Its premises: the head is an
+inspection term (the member's read and binding, typed by union elimination
+of the object's slot), the receiver and the actuals are values already, and
+every dispatch alternative's callable contract states an effect within the
+bound; its run is the head's inspection, which keeps the heap a prefix and
+carries typing through heap and world extension, then the call at the
+covering effect, the footprint relative to the node's entry heap, on normal
+return only (no exceptional bound follows from the inspection). It lands if
+a measured slice refuses at such a node. The producer's typing of a `map`
+callback's node parameter as `Node residual | SourceFile` where a
+`SourceFile` binding is in scope is repaired if it blocks a measured slice.
+
+**Cases.** D7: visitors in both positions; an omitted list visitor; the two
+visitors at different effects (the call at their join); a destructive
+visitor in a `map` callback (refused, run under Node); a forged claim of a
+`forEachChild` call within the empty footprint with a popping visitor
+(refused in search and in checking). D8: a retained `fs` callback popping a
+captured array, run under Node (a later request shrinks the array), refused
+at its construction.
+
+**Measured** before and after: the slices of `pattern`, `forOfPattern`,
+`protocolPattern`, `patternStmt`, `abrupt`, `neverAssigned`, `expr` and
+`moduleFunction`, and every slice verified on main that holds a function
+this step states, so a statement a body does not meet shows as a lost
+slice.

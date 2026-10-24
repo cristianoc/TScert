@@ -14,7 +14,7 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 
-export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
+export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: Node, mutable: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (mutable)
     gate.fail(node, "a `let` pattern whose bindings are assigned in a `for` head is outside the fragment: its bindings are cells, which only a statement of a block lowers them to (one never assigned is a `const` pattern)");
@@ -60,7 +60,7 @@ export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: 
  * Binding a name runs nothing, so binding each after the steps is binding
  * it at its step. A default or a nested pattern, which run code between
  * the steps (and IteratorClose on a throw of theirs), is outside it. */
-export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean): Stmt {
+export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (gate.hoist?.stmt !== node)
     gate.fail(node, "an array pattern over a program's iterable is outside the fragment here: its steps are statements, with cells, before the declaration, which a function's or a closure's body has and a module's top level or a `for` initializer does not");
@@ -134,8 +134,8 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
 
 /** One step of a collecting loop: the step, its `done` leaving by `leave`,
  * and the value pushed onto the fresh array `items`. */
-export function collectStep(this: Gate, next: string, result: string, items: string, leave: () => Stmt,
-    site: { entry(): number; span(): Span }): Stmt[] {
+export function collectStep(this: Gate, next: string, result: string, items: string, leave: () => Within<{ value: "any"; store: "grow" }, Stmt>,
+    site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const step = gate.protocolStep(next, result, leave, site);
   const e = site.entry();
@@ -149,8 +149,8 @@ export function collectStep(this: Gate, next: string, result: string, items: str
  * (`protocolForOf`). A `return` the iterator's type declares a required
  * method (`method`) is a method member, read bound to the iterator
  * (`o.m.bind(o)`, which reads it once) and always present. */
-export function closeStatements(this: Gate, iteratorAt: () => Expr, tag: string, site: { entry(): number; span(): Span },
-    method: boolean): Stmt[] {
+export function closeStatements(this: Gate, iteratorAt: () => Within<{ value: "any"; store: "grow" }, Expr>, tag: string, site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> },
+    method: boolean): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const member = `%return@${tag}`, closed = `%closed@${tag}`;
   const e1 = site.entry();
   if (method) {
@@ -189,7 +189,7 @@ export function closeStatements(this: Gate, iteratorAt: () => Expr, tag: string,
  * before the statement it is in (`hoist`): the steps of `protocolForOf`,
  * closing nothing (a spread steps until done), each value pushed onto the
  * array, which the spread then stands for. */
-export function collect(this: Gate, operand: Expression): Expr {
+export function collect(this: Gate, operand: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const hoist = gate.hoist;
   if (!hoist) throw Error("internal: a spread collected outside its statement");
@@ -223,7 +223,7 @@ export function collect(this: Gate, operand: Expression): Expr {
  * initializer, and evaluation is followed in JavaScript's order: an array
  * literal's elements, a call's or construction's callee then arguments, a
  * member read's object. */
-export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
+export function hoistTarget(this: Gate, s: Statement): Within<{ value: "any"; store: "grow" }, ts.SpreadElement | null> {
   const gate: Gate = this;
   let e: Expression | undefined;
   if (ts.isExpressionStatement(s)) e = s.expression;
@@ -297,7 +297,7 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
  * an enum, a namespace, a named function or class expression's own name, a
  * binding of another `switch` clause, an ambient or unresolved name is not
  * one. */
-export function readCannotThrow(this: Gate, id: ts.Identifier): boolean {
+export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   for (let at: Node | undefined = id.parent; at; at = at.parent) {
     // A parameter is bound before the body runs and before the later
@@ -357,15 +357,15 @@ export function readCannotThrow(this: Gate, id: ts.Identifier): boolean {
 }
 
 /** Whether a binding name, an identifier or a pattern, binds `name`. */
-const bindsName = (b: ts.BindingName, name: string): boolean =>
+const bindsName = (b: ts.BindingName, name: string): Within<{ value: "any"; store: "grow" }, boolean> =>
   ts.isIdentifier(b) ? b.text === name
     : b.elements.some(e => !ts.isOmittedExpression(e) && !!e.name && bindsName(e.name, name));
 
 /** Whether `n` lies within `region`. */
-const within = (n: Node, region: Node): boolean => n.pos >= region.pos && n.end <= region.end;
+const within = (n: Node, region: Node): Within<{ value: "any"; store: "grow" }, boolean> => n.pos >= region.pos && n.end <= region.end;
 
 /** The local names an import declaration binds. */
-const importedNames = (st: ts.ImportDeclaration): string[] => {
+const importedNames = (st: ts.ImportDeclaration): Within<{ value: "any"; store: "grow" }, string[]> => {
   const clause = st.importClause;
   if (!clause) return [];
   const bindings = clause.namedBindings;
@@ -381,7 +381,7 @@ const functionLikeNode = (n: Node): n is ts.FunctionDeclaration | ts.FunctionExp
 
 /** The names the file assigns anywhere: an assignment, a compound or
  * logical one, an update, a destructuring assignment. */
-export function assignedNames(this: Gate): Set<string> {
+export function assignedNames(this: Gate): Within<{ value: "any"; store: "grow" }, Set<string>> {
   const gate: Gate = this;
   if (gate.assigned) return gate.assigned;
   const names = new Set<string>();
@@ -411,7 +411,7 @@ export function assignedNames(this: Gate): Set<string> {
   return names;
 }
 
-export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Expr | null][]): void {
+export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Expr | null][]): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
   const own = new Set(targets.flatMap(([t]) => patternNames(t)));
   const bound = new Set<string>();
@@ -499,7 +499,7 @@ export function steppedPattern(this: Gate, fresh: boolean,
 }
 
 export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
-    { node: Node; hole: boolean; before: Node[]; after: Node[] }[] {
+    Within<{ value: "any"; store: "grow" }, { node: Node; hole: boolean; before: Node[]; after: Node[] }[]> {
   return left.elements.map((el) => {
     if (ts.isOmittedExpression(el)) return { node: el, hole: true, before: [], after: [] };
     const assigned = ts.isBinaryExpression(el) && el.operatorToken.kind === ts.SyntaxKind.EqualsToken;
@@ -513,7 +513,7 @@ export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
   });
 }
 
-export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh: boolean = false): PatternAst {
+export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh: boolean = false): Within<{ value: "any"; store: "grow" }, PatternAst> {
   const gate: Gate = this;
   if (ts.isIdentifier(node)) {
     if (node.text === "undefined")
@@ -569,7 +569,7 @@ export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fr
   return { k: "object", pos: gate.span(node), props, rest };
 }
 
-export function block(this: Gate, node: Statement): Stmt[] {
+export function block(this: Gate, node: Statement): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   if (!ts.isBlock(node)) {
     if (ts.isVariableStatement(node))
@@ -586,7 +586,7 @@ export function block(this: Gate, node: Statement): Stmt[] {
  * declaration there is hoisted, and a `let`, `const` or `class` there binds
  * its name in the whole block, so a live reference to it would be to that
  * binding, forever uninitialized. */
-export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
+export function statements(this: Gate, list: readonly Statement[]): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const end = list.findIndex((s) => abrupt(s));
   const live = end < 0 ? list : list.slice(0, end + 1);
@@ -627,7 +627,7 @@ export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
  * nothing, wherever it is; it binds a type name over its block, which the
  * type readers resolve as TypeScript does (SOURCE-CONTRACTS.md,
  * "Block-scoped type declarations"). */
-function typeStatement(s: Statement): boolean {
+function typeStatement(s: Statement): Within<{ value: "any"; store: "grow" }, boolean> {
   return ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s);
 }
 
@@ -640,7 +640,7 @@ function typeStatement(s: Statement): boolean {
  * A function literal that is a constant's whole initializer runs only after
  * the constant holds it, so its mentions of the constant are the closure's
  * self entry. A pattern's binding so mentioned is refused. */
-export function markEarly(this: Gate, live: readonly Statement[]): void {
+export function markEarly(this: Gate, live: readonly Statement[]): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
   const functionLike = (n: Node): boolean => ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n);
   const declared = new Map<string, ts.VariableDeclaration>();
@@ -697,10 +697,10 @@ export function markEarly(this: Gate, live: readonly Statement[]): void {
 /** A statement, preceded by the statements its lowering runs before it:
  * the collection of a spread of a program's iterable (`collect`), or the
  * steps of an array pattern over one (`protocolPattern`). */
-export function hoisting(this: Gate, s: Statement): Stmt[] {
+export function hoisting(this: Gate, s: Statement): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const savedHoist = gate.hoist, savedHoisted = gate.hoisted;
-  let site: { entry(): number; span(): Span } | null = null;
+  let site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> } | null = null;
   const lazy = () => site ??= gate.sites(s);
   gate.hoist = { stmt: s, spread: gate.hoistTarget(s),
     site: { entry: () => lazy().entry(), span: () => lazy().span() } };
@@ -721,7 +721,7 @@ export function hoisting(this: Gate, s: Statement): Stmt[] {
  * JavaScript reads and defaults the pattern's positions, then initializes
  * the bindings, in the same order either way. Each cell is claimed at its
  * name, as the value it starts with is. Null for any other statement. */
-export function letPattern(this: Gate, s: ts.VariableStatement): Stmt[] | null {
+export function letPattern(this: Gate, s: ts.VariableStatement): Within<{ value: "any"; store: "grow" }, Stmt[] | null> {
   const gate: Gate = this;
   const list = s.declarationList;
   const [d] = list.declarations;
@@ -760,7 +760,7 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Stmt[] | null {
 
 /** The offset of `token` at or after `from`, past whitespace and comments:
  * a punctuator or keyword of `at` the tree has no node for. */
-export function token(this: Gate, from: number, token: string, at: Node): number {
+export function token(this: Gate, from: number, token: string, at: Node): Within<{ value: "any"; store: "grow" }, number> {
   const gate: Gate = this;
   const text = gate.file.text;
   let i = from;
@@ -786,7 +786,7 @@ export function token(this: Gate, from: number, token: string, at: Node): number
  * binding for the whole loop, where
  * JavaScript copies it into each iteration: the two differ only for a
  * closure capturing it, which is refused. */
-export function forStmt(this: Gate, node: ts.ForStatement): Stmt {
+export function forStmt(this: Gate, node: ts.ForStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const open = gate.token(node.getStart(gate.file) + "for".length, "(", node);
   const init = node.initializer;
@@ -830,7 +830,7 @@ export function forStmt(this: Gate, node: ts.ForStatement): Stmt {
 /** `for (const k in o) body` is `for (const k of %ForIn%(o)) body`: the
  * keys the loop visits, a string each (`intrinsics.mts`), the call at the
  * declaration, the intrinsic read at `in`. */
-export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
+export function forInStmt(this: Gate, node: ts.ForInStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const list = node.initializer;
   if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1 ||
@@ -885,7 +885,7 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
  * reads its element in place, and a program's iterator may keep what it
  * yields), at the entry `pos`, its read of the element at `at`. */
 export function forOfPattern(this: Gate, d: ts.VariableDeclaration, name: ts.BindingPattern, element: string,
-    pos: Span, at: Span): Stmt {
+    pos: Span, at: Span): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const target = gate.pattern(name, new Set(), false);
   gate.initializedBefore(d, [[target, null]]);
@@ -920,7 +920,7 @@ export function forOfPattern(this: Gate, d: ts.VariableDeclaration, name: ts.Bin
  * TypeError IteratorClose throws otherwise being then impossible. Each part
  * has a claim site of its own: a token of the header or a run of them. */
 export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.VariableDeclarationList,
-    name: ts.BindingName, method: boolean): Stmt {
+    name: ts.BindingName, method: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const s = node.getStart(gate.file);
   const p = gate.token(s + "for".length, "(", node);
@@ -939,12 +939,15 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
     callee: { k: "read", pos: [o, o + "of".length], field: { symbol }, e: gate.expr(node.expression) } };
   const nextBound: Expr = { k: "bindWithReceiver", pos: [s, q + 1], args: [],
     callee: { k: "read", pos: [p, q + 1], field: "next", e: iteratorAt() }, receiver: iteratorAt() };
-  // The close's sites: the header's runs of tokens the steps do not use.
+  // The close's sites: the header's runs of tokens the steps do not use,
+  // each list read in order at its own counter.
   const entries = [o, o + 1, q];
   const spans: Span[] = [[n0, e1], [s, end], [e0, q + 1], [o, q + 1], [c, q + 1], [p, e1]];
+  let nextEntry = 0;
+  let nextSpan = 0;
   const close = gate.closeStatements(iteratorAt, `${s}`, {
-    entry: () => entries.shift() ?? gate.fail(node, "internal: the close's entries"),
-    span: () => spans.shift() ?? gate.fail(node, "internal: the close's sites"),
+    entry: () => entries[nextEntry++] ?? gate.fail(node, "internal: the close's entries"),
+    span: () => spans[nextSpan++] ?? gate.fail(node, "internal: the close's sites"),
   }, method);
   // A pattern binds the step's value to a name no source spells, and
   // destructures it first in the closing region: ForIn/OfBodyEvaluation
@@ -984,7 +987,7 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
  * of it starts and that lie in no function nested in it, whose statements
  * have sites of their own. Each is an entry once (`entry`), and the spans
  * from them are expression sites (`span`); none is a source node's site. */
-export function sites(this: Gate, within: Node): { entry(): number; span(): Span } {
+export function sites(this: Gate, within: Node): Within<{ value: "any"; store: "grow" }, { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }> {
   const gate: Gate = this;
   const text = gate.file.text;
   let to = within.end;
@@ -1014,8 +1017,8 @@ export function sites(this: Gate, within: Node): { entry(): number; span(): Span
  * declarators `%iterator = iterable[Symbol.iterator](), %next =
  * %iterator.next.bind(%iterator)`, `next` read once and called on the
  * iterator at each step (`protocolStep`). */
-export function protocolStart(this: Gate, iterable: Expr, site: { entry(): number; span(): Span }, tag: string, at: Node):
-    { bindings: BindingAst[]; iterator: string; next: string; iteratorAt: () => Expr } {
+export function protocolStart(this: Gate, iterable: Expr, site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }, tag: string, at: Node):
+    Within<{ value: "any"; store: "grow" }, { bindings: BindingAst[]; iterator: string; next: string; iteratorAt: () => Within<{ value: "any"; store: "grow" }, Expr> }> {
   const gate: Gate = this;
   const iterator = `%iterator@${tag}`, next = `%next@${tag}`;
   const symbol = gate.wellKnownIterator;
@@ -1038,8 +1041,8 @@ export function protocolStart(this: Gate, iterable: Expr, site: { entry(): numbe
 /** One step of the protocol, `%next()`, bound to `result`, and the test of
  * its `done`, which leaves by `leave`: three statements, with their
  * entries. The value is `result`'s `value`, read by the caller next. */
-export function protocolStep(this: Gate, next: string, result: string, leave: () => Stmt,
-    site: { entry(): number; span(): Span }): { stmts: Stmt[]; value: () => Expr } {
+export function protocolStep(this: Gate, next: string, result: string, leave: () => Within<{ value: "any"; store: "grow" }, Stmt>,
+    site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }): Within<{ value: "any"; store: "grow" }, { stmts: Stmt[]; value: () => Within<{ value: "any"; store: "grow" }, Expr> }> {
   const nextAt = site.span();
   const e1 = site.entry();
   const call: Expr = { k: "apply", pos: site.span(), callee: { k: "id", pos: nextAt, name: next }, args: [] };
@@ -1074,7 +1077,7 @@ export function protocolStep(this: Gate, next: string, result: string, leave: ()
  * at the keyword, the one to the switch's end at the clauses' `{`. The clauses
  * share one scope in JavaScript, so a name one declares directly must not
  * be read in another clause or in a label. */
-export function switchStmt(this: Gate, node: ts.SwitchStatement): Stmt {
+export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const clauses = node.caseBlock.clauses;
   for (const c of clauses) {
@@ -1150,7 +1153,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Stmt {
  * `unknown`, the only annotation admitted: anything may be thrown. The
  * finalizer runs on every way out of the body and the handler, which the
  * lowering states by running it on each (`SourceExtraction`). */
-export function tryStmt(this: Gate, node: ts.TryStatement): Stmt {
+export function tryStmt(this: Gate, node: ts.TryStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const handler = node.catchClause;
   let param: { name: string; namePos: Span } | null = null;
@@ -1173,7 +1176,7 @@ export function tryStmt(this: Gate, node: ts.TryStatement): Stmt {
 
 /** Whether a statement never completes normally: a jump, or a list or both
  * arms of an `if` that reach one. A loop may complete. */
-function abrupt(s: Statement): boolean {
+function abrupt(s: Statement): Within<{ value: "any"; store: "grow" }, boolean> {
   return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
     ts.isThrowStatement(s) ||
     (ts.isBlock(s) && s.statements.some((t) => abrupt(t))) ||
@@ -1183,7 +1186,7 @@ function abrupt(s: Statement): boolean {
       (abrupt(s.tryBlock) && (!s.catchClause || abrupt(s.catchClause.block)))));
 }
 
-export function stmt(this: Gate, node: Statement): Stmt {
+export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   // `assert(v, m);` of `node:assert/strict`, which the declaration graph
   // found to be the reviewed one, with no message or a literal one: the
@@ -1256,7 +1259,7 @@ export function stmt(this: Gate, node: Statement): Stmt {
 
 /** A `let` or `const` declaration list, the statement `at` spans: a
  * variable statement, or a `for` loop's initializer. */
-export function declarations(this: Gate, list: ts.VariableDeclarationList, at: Node): Stmt {
+export function declarations(this: Gate, list: ts.VariableDeclarationList, at: Node): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   // `var` is function-scoped and hoisted, so it is not this binding form.
   if (!(list.flags & ts.NodeFlags.Const) && !(list.flags & ts.NodeFlags.Let))
@@ -1346,7 +1349,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
  * logical assignment, update or destructuring assignment names one. A
  * write is found by the name the fragment gives the binding (`local`), so
  * a same-named binding elsewhere in that scope keeps the list a `let`. */
-export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead: boolean = false): boolean {
+export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead: boolean = false): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const [first] = list.declarations;
   // A loop head's binding is bound by each iteration, not by an initializer.
@@ -1383,7 +1386,7 @@ export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loop
 }
 
 /** Loops, branches, blocks, `switch`, `try` and `throw`. */
-export function controlStmt(this: Gate, node: Statement): Stmt {
+export function controlStmt(this: Gate, node: Statement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (ts.isWhileStatement(node))
     return {

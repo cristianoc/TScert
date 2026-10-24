@@ -13,10 +13,10 @@ import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
-export function expr(this: Gate, node: Expression): Expr {
+export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   // As in `atomsOf`: Expression is one base interface, so each form of
   // expression is recognized by its own predicate.
@@ -714,7 +714,7 @@ export function expr(this: Gate, node: Expression): Expr {
  * spread of any other value is a part of its own, copied where written
  * (SOURCE-MODEL.md, "Object literals"). A key is written once: a later field
  * over an earlier one is refused, as in a literal without spreads. */
-export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen: Set<string>): ObjectPart[] {
+export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen: Set<string>): Within<{ value: "any"; store: "grow" }, ObjectPart[]> {
   const gate: Gate = this;
   // A computed key whose expression, a name or a member read, TypeScript
   // types as one string or number literal is the key that literal spells:
@@ -803,7 +803,7 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
  * body never runs. */
 export function optionalChain(this: Gate, 
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression | ts.CallExpression | ts.NonNullExpression,
-): Expr {
+): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const question = ts.isNonNullExpression(node) ? undefined : node.questionDotToken;
   if (question) {
@@ -825,7 +825,7 @@ export function chainLink(this: Gate,
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression | ts.CallExpression | ts.NonNullExpression,
   object: Expr,
   pos: Span,
-): Expr {
+): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   if (ts.isNonNullExpression(node)) return { k: "cast", pos, cast: "nonNull", annot: null, e: object };
   if (ts.isPropertyAccessExpression(node)) {
@@ -908,7 +908,7 @@ export function refuseReceiverForm(this: Gate, node: ts.CallExpression, refusal:
 /** `localArrow`, and every local it follows is confined: code that may
  * hold the local's value cannot have replaced the member or added an own
  * `call`, `apply` or `bind`. */
-export function knownLocal(this: Gate, node: Expression): boolean {
+export function knownLocal(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const seen = new Set<number>();
   const followed = new Set<string>();
@@ -919,7 +919,7 @@ export function knownLocal(this: Gate, node: Expression): boolean {
 /** The declaration a name resolves to, lexically: the nearest scope
  * enclosing the reference that binds it (`bindingScope`), a parameter
  * before a named function expression's own name; none for a global. */
-export function resolve(this: Gate, id: Identifier): Node | undefined {
+export function resolve(this: Gate, id: Identifier): Within<{ value: "any"; store: "grow" }, Node | undefined> {
   const gate: Gate = this;
   let table = gate.bindings;
   if (table === null) {
@@ -969,7 +969,7 @@ export function resolve(this: Gate, id: Identifier): Node | undefined {
  * the value to code that replaces its member or adds a `call` of its own.
  * An object literal a local holds has no accessor: a spread of it runs its
  * getters with the object as receiver. */
-export function confined(this: Gate, seen: Set<number>, followed: Set<string>, functions: Set<Node>): boolean {
+export function confined(this: Gate, seen: Set<number>, followed: Set<string>, functions: Set<Node>): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const targets = new Set<Node>(functions);
   const declared = new Map<number, ts.VariableDeclaration>();
@@ -1079,7 +1079,7 @@ export function confined(this: Gate, seen: Set<number>, followed: Set<string>, f
 }
 
 export function localArrow(this: Gate, node: Expression, seen: Set<number> = new Set(), followed: Set<string> = new Set(),
-    functions: Set<Node> = new Set()): boolean {
+    functions: Set<Node> = new Set()): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   if (ts.isParenthesizedExpression(node))
     return gate.localArrow(node.expression, seen, followed, functions);
@@ -1135,7 +1135,7 @@ export function localArrow(this: Gate, node: Expression, seen: Set<number> = new
  * literal; it copies the own enumerable data properties, which a literal's
  * members are. */
 export function memberOf(this: Gate, value: Expression, member: string, seen: Set<number>,
-    followed: Set<string>, functions: Set<Node>): boolean | "absent" {
+    followed: Set<string>, functions: Set<Node>): Within<{ value: "any"; store: "grow" }, boolean | "absent"> {
   const gate: Gate = this;
   while (ts.isParenthesizedExpression(value)) value = value.expression;
   if (!ts.isObjectLiteralExpression(value)) return false;
@@ -1172,7 +1172,7 @@ export function memberOf(this: Gate, value: Expression, member: string, seen: Se
  * file can replace the `call`, `apply` or `bind` its object inherits (an
  * assignment to the declaration's binding is refused where it is
  * written). */
-export function moduleFunction(this: Gate, node: Identifier): boolean {
+export function moduleFunction(this: Gate, node: Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const declaration = gate.resolve(node);
   if (!declaration || !ts.isFunctionDeclaration(declaration) || !declaration.parent ||
@@ -1190,7 +1190,7 @@ export function moduleFunction(this: Gate, node: Identifier): boolean {
 
 /** Whether any assignment in the file may replace a member of this name: a
  * write to it by name, or to a computed key that is not another name. */
-export function memberMayBeWritten(this: Gate, member: string): boolean {
+export function memberMayBeWritten(this: Gate, member: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   let found = false;
   const visit = (n: Node): void => {
@@ -1232,7 +1232,7 @@ export function memberMayBeWritten(this: Gate, member: string): boolean {
 export function localValues(this: Gate, 
   node: Identifier,
   seen: Set<number>,
-): Expression[] | undefined {
+): Within<{ value: "any"; store: "grow" }, Expression[] | undefined> {
   const gate: Gate = this;
   const decl = gate.resolve(node);
   if (!decl || !ts.isVariableDeclaration(decl) || !ts.isIdentifier(decl.name) || !decl.initializer)
@@ -1252,7 +1252,7 @@ export function localValues(this: Gate,
 /** The values the `let` declared at `declared` in `block` is given: its
  * initializer and each plain assignment's right side; none where another
  * form writes it or a declaration in the block shadows it. */
-export function letWrites(this: Gate, block: ts.Block, declared: Identifier): Expression[] | undefined {
+export function letWrites(this: Gate, block: ts.Block, declared: Identifier): Within<{ value: "any"; store: "grow" }, Expression[] | undefined> {
   const name = declared.text;
   const values: Expression[] = [];
   let unknown = false;
@@ -1319,7 +1319,7 @@ export function update(this: Gate,
   token: ts.SyntaxKind,
   rhs: Expression | null,
   post: boolean,
-): Expr {
+): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const ops: Record<number, ArithOp> = {
     [ts.SyntaxKind.PlusEqualsToken]: "add",
@@ -1363,7 +1363,7 @@ export function update(this: Gate,
  * Each partial concatenation spans from the template's start to the end of
  * its last part, so every node has a span of its own and the whole has the
  * template's. */
-export function template(this: Gate, node: ts.TemplateExpression): Expr {
+export function template(this: Gate, node: ts.TemplateExpression): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const start = node.getStart(gate.file);
   let acc: Expr = { k: "lit", pos: gate.span(node.head), lit: { a: "stringlit", v: node.head.text } };
@@ -1383,7 +1383,7 @@ export function template(this: Gate, node: ts.TemplateExpression): Expr {
 /** Whether an `instanceof` right operand names a class of this file that
  * declares or inherits, from a class of this file, a static
  * `[Symbol.hasInstance]`. Syntactic: it only chooses a refusal's reason. */
-export function hasInstanceClass(this: Gate, right: Expression): boolean {
+export function hasInstanceClass(this: Gate, right: Expression): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   return gate.hasInstanceAlong(ts.isIdentifier(right) ? right.text : undefined) !== null;
 }
@@ -1393,7 +1393,7 @@ export function hasInstanceClass(this: Gate, right: Expression): boolean {
  * of `name` calls: the nearest declaring one, which a derived class
  * inherits through its constructor's prototype chain. Syntactic up to the
  * key, which `staticHasInstance` resolves. */
-export function hasInstanceAlong(this: Gate, name: string | undefined): { cls: string; member: ts.MethodDeclaration } | null {
+export function hasInstanceAlong(this: Gate, name: string | undefined): Within<{ value: "any"; store: "grow" }, { cls: string; member: ts.MethodDeclaration } | null> {
   const gate: Gate = this;
   const classes = new Map<string, ClassDeclaration>();
   for (const s of gate.file.statements)
@@ -1416,7 +1416,7 @@ export function hasInstanceAlong(this: Gate, name: string | undefined): { cls: s
 /** Whether a class member's computed key is the built-in well-known
  * `Symbol.hasInstance`: TypeScript binds it to the standard library's
  * `unique symbol` property of that name (`symbolKeys`). */
-export function staticHasInstance(this: Gate, name: ts.PropertyName): boolean {
+export function staticHasInstance(this: Gate, name: ts.PropertyName): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   if (!ts.isComputedPropertyName(name) || !ts.isPropertyAccessExpression(name.expression)) return false;
   const symbol = gate.symbolKeys.get(gate.span(name.expression).join(":"));
@@ -1424,7 +1424,7 @@ export function staticHasInstance(this: Gate, name: ts.PropertyName): boolean {
   return !!identity && identity.module.startsWith("typescript/lib/") && identity.name === "hasInstance";
 }
 
-export function binary(this: Gate, node: BinaryExpression): Expr {
+export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   if (node.operatorToken.kind === ts.SyntaxKind.CommaToken)
     return { k: "comma", pos: gate.span(node), left: gate.expr(node.left), right: gate.expr(node.right) };
@@ -1773,7 +1773,7 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
 
 /** The receiver of an optional chain's `?.`, parentheses around it
  * removed, where `at` is a chain of links ending at one. */
-function chainReceiver(at: Node): Node | null {
+function chainReceiver(at: Node): Within<{ value: "any"; store: "grow" }, Node | null> {
   if (ts.isPropertyAccessExpression(at) || ts.isElementAccessExpression(at) || ts.isCallExpression(at))
     return at.questionDotToken ? skipParentheses(at.expression) : chainReceiver(at.expression);
   if (ts.isNonNullExpression(at)) return chainReceiver(at.expression);
@@ -1783,7 +1783,7 @@ function chainReceiver(at: Node): Node | null {
 /** Whether a read of `receiver` runs no code: `this`, or a name the file
  * binds outside an ambient context (`resolve`). A global, which a `declare`
  * only types, may be an accessor of the global object. */
-function inertRead(gate: Gate, receiver: Node): boolean {
+function inertRead(gate: Gate, receiver: Node): Within<{ value: "any"; store: "grow" }, boolean> {
   if (receiver.kind === ts.SyntaxKind.ThisKeyword) return true;
   if (!ts.isIdentifier(receiver)) return false;
   const declaration = gate.resolve(receiver);
@@ -1800,7 +1800,7 @@ function inertRead(gate: Gate, receiver: Node): boolean {
  * nothing. The nullish test is spelled at the chain, its `null` at the `?`
  * of `?.`, the comparison at its operator; the reads keep their spans, the
  * receiver read again the `?.` token's, where the chain's saved value was. */
-function chainComparison(gate: Gate, node: BinaryExpression, op: "===" | "!==" | "==" | "!=", l: Expr, r: Expr): Expr | null {
+function chainComparison(gate: Gate, node: BinaryExpression, op: "===" | "!==" | "==" | "!=", l: Expr, r: Expr): Within<{ value: "any"; store: "grow" }, Expr | null> {
   const chainLeft = l.k === "optional";
   const chain = chainLeft ? l : r;
   const other = chainLeft ? r : l;
@@ -1837,7 +1837,7 @@ export function lambda(this: Gate,
   node: ArrowFunction | FunctionExpression | MethodDeclaration,
   instance?: TypeTerm,
   member?: PropertyKey,
-): Expr {
+): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   // A method's accessibility is TypeScript's alone (`CLASS_ACCESS`); a static
   // one is bound on its own (`classStmt`).
@@ -1928,7 +1928,7 @@ export function lambda(this: Gate,
     (tp, index) => {
       if (tp.constraint)
         gate.fail(tp, "a bounded type parameter of a generic class method is outside the fragment: its binder row is named by its bound");
-      return `${JSON.stringify(member)}#${index}`;
+      return `${propertyKeyText(member)}#${index}`;
     });
   try {
     gate.asyncBody = isAsync;

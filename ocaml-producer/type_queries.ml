@@ -221,6 +221,21 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
+(* Whether a type excludes `undefined`, each declared atom unfolded to what
+   it names, through unions (a host family's declaration read as the union
+   of its arms); a cycle or an unreadable equation is taken to admit it. A
+   proposal heuristic; Lean decides presence. *)
+let excludes_undefined_declared declarations t =
+  let rec go seen = function
+    | Atoms atoms -> List.for_all (function
+        | Undef | Top -> false
+        | Named (id,args) -> not (List.mem id seen) &&
+          (try go (id::seen) (definition declarations id args) with Json.Error _ -> false)
+        | _ -> true) atoms
+    | Union ts -> List.for_all (go seen) ts
+    | Meet (t,ts) -> List.exists (go seen) (t::ts)
+    | Rigid _ -> false in
+  go [] t
 (* `plausible_subtype` up to the declarations: each side is read as
    written or with its declared atoms unfolded, through unions, to what they
    name (the compiler API's `Statement`, which TypeScript reads as

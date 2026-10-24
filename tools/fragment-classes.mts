@@ -10,7 +10,7 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -24,7 +24,7 @@ import { ordinaryEffect } from "./type-graph.mts";
 /** An enum's members, in order, with the values the declaration graph
  * reported: `null` for a member TypeScript computes no value for, whose
  * value is known only at run time (a number, as TypeScript requires). */
-export function enumMembers(this: Gate, name: string): EnumMember[] {
+export function enumMembers(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, EnumMember[]> {
   const gate: Gate = this;
   const info = gate.enums.get(name);
   if (!info) return gate.fail(null, `enum ${name} missing`);
@@ -44,7 +44,7 @@ export function enumMembers(this: Gate, name: string): EnumMember[] {
 /** Whether an enum's object has keys its declaration does not name: an
  * ambient enum's, the environment's, or one with a member whose value,
  * and so whose reverse mapping's key, is known only at run time. */
-export function enumOpen(this: Gate, name: string): boolean {
+export function enumOpen(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   return !!gate.enums.get(name)?.ambient || gate.enumMembers(name).some((m) => m.value === null);
 }
@@ -57,7 +57,7 @@ export function enumOpen(this: Gate, name: string): boolean {
  * and, built by `%Enum:E%`, the reverse keys of the values TypeScript
  * computes, each at `string`; an ambient enum's, the environment's, its
  * members alone. */
-export function enumObjectTerm(this: Gate, name: string, span: Span): TypeTerm {
+export function enumObjectTerm(this: Gate, name: string, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const gate: Gate = this;
   if (gate.enumOpen(name))
     return enumMembersTerm(gate.enumMembers(name).map((m) => ({ name: m.name, value: m.value ?? undefined })), span,
@@ -75,7 +75,7 @@ export function enumObjectTerm(this: Gate, name: string, span: Span): TypeTerm {
 /** The type `E`: the union of its members' literal types, `number` for a
  * member whose value is known only at run time; `never` for an enum
  * without members. */
-export function enumTerm(this: Gate, name: string, span: Span): TypeTerm {
+export function enumTerm(this: Gate, name: string, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const gate: Gate = this;
   const parts = gate.enumMembers(name).map((m): TypeTerm =>
     m.value === null ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
@@ -90,7 +90,7 @@ export function enumTerm(this: Gate, name: string, span: Span): TypeTerm {
  * Each entry's value has a claim site of its own: a member's at its
  * initializer, or at its name where it has none, and a reverse entry's
  * from the member to the end of the declaration. */
-export function enumEntries(this: Gate, name: string): { key: string; value: string | number; pos: Span }[] {
+export function enumEntries(this: Gate, name: string): Within<{ value: "any"; store: "grow" }, { key: string; value: string | number; pos: Span }[]> {
   const gate: Gate = this;
   const entries = new Map<string, { key: string; value: string | number; pos: Span }>();
   const members = gate.enumMembers(name);
@@ -190,7 +190,7 @@ export function enumStmt(this: Gate, node: ts.EnumDeclaration): Stmt[] {
  * (`enumMemberReads`), the member's constant or value, refused for a
  * member not yet initialized; any other read of the enum is of an object
  * not yet built. */
-export function enumRead(this: Gate, node: Expression): Expr | null {
+export function enumRead(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr | null> {
   const gate: Gate = this;
   const current = gate.enumInit;
   if (!current) return null;
@@ -340,7 +340,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       if (!typeParams.length || member.typeParameters?.length)
         return gate.lambda(member, instance, key);
       const parameters = gate.enterTypeParams(node.typeParameters,
-        (_tp, index) => `${name.text}.${JSON.stringify(key)}#class${index}`);
+        (_tp, index) => `${name.text}.${propertyKeyText(key)}#class${index}`);
       try {
         const receiver: TypeTerm = { ...instance,
           args: parameters.map((p, i) => ({ k: "binder", name: p.name,
@@ -855,7 +855,7 @@ export function registerDeclaredType(this: Gate, name: string, required: number,
 }
 
 /** A declaration's key among the gate's equations. */
-export function identityKey(declaration: DeclarationIdentity): string {
+export function identityKey(declaration: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> {
   return JSON.stringify([declaration.module, declaration.span, declaration.name]);
 }
 
@@ -871,7 +871,7 @@ export function registerEquation(this: Gate, declaration: DeclarationIdentity, t
 /** The key a member name spells: its text, or a private name's symbol,
  * the key of the member TypeScript binds it to, which no code outside
  * the class spells. */
-export function memberKey(this: Gate, name: ts.MemberName): PropertyKey {
+export function memberKey(this: Gate, name: ts.MemberName): Within<{ value: "any"; store: "grow" }, PropertyKey> {
   const gate: Gate = this;
   if (ts.isIdentifier(name)) return name.text;
   const symbol = gate.privateKeys.get(gate.span(name).join(":"));
@@ -882,7 +882,7 @@ export function memberKey(this: Gate, name: ts.MemberName): PropertyKey {
 /** `C.#x` of a static private member of the file's class `C`, with `C`
  * the class TypeScript binds it to: the binding the class statement gives
  * the member. Null for a private name no static member declares. */
-export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): { binding: string; cls: string } | null {
+export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, { binding: string; cls: string } | null> {
   const gate: Gate = this;
   const name = node.name;
   if (!ts.isPrivateIdentifier(name)) return null;
@@ -905,7 +905,7 @@ export function staticPrivate(this: Gate, node: ts.PropertyAccessExpression): { 
  * value exists: the class's construct-only code, bound before the static
  * initializers (`freshName`), where constructing runs no code that
  * could read the class value (`selfConstructs`). Null for any other `new`. */
-export function selfConstruction(this: Gate, node: ts.NewExpression): Expr | null {
+export function selfConstruction(this: Gate, node: ts.NewExpression): Within<{ value: "any"; store: "grow" }, Expr | null> {
   const gate: Gate = this;
   const callee = node.expression;
   if (!ts.isIdentifier(callee)) return null;
@@ -920,7 +920,7 @@ export function selfConstruction(this: Gate, node: ts.NewExpression): Expr | nul
 }
 
 /** Whether `body` reads class `cls`: an identifier TypeScript binds to it. */
-export function readsClass(this: Gate, body: Node, cls: string): boolean {
+export function readsClass(this: Gate, body: Node, cls: string): Within<{ value: "any"; store: "grow" }, boolean> {
   const gate: Gate = this;
   const visit = (n: Node): boolean =>
     (ts.isIdentifier(n) && gate.classReads.get(gate.span(n).join(":")) === cls) ||
@@ -930,7 +930,7 @@ export function readsClass(this: Gate, body: Node, cls: string): boolean {
 
 /** The class whose static field initializer or static block `node` is in,
  * and whether a closure created there holds it. */
-export function staticInitOf(this: Gate, node: Node): { cls: string; closure: boolean } | null {
+export function staticInitOf(this: Gate, node: Node): Within<{ value: "any"; store: "grow" }, { cls: string; closure: boolean } | null> {
   let closure = false;
   for (let at: Node = node; at.parent; at = at.parent) {
     const parent = at.parent;
@@ -947,7 +947,7 @@ export function staticInitOf(this: Gate, node: Node): { cls: string; closure: bo
 
 /** The class binding an identifier of an instance member reads, where
  * TypeScript binds it to the class being lowered. */
-export function ownClass(this: Gate, node: Node): string | null {
+export function ownClass(this: Gate, node: Node): Within<{ value: "any"; store: "grow" }, string | null> {
   const gate: Gate = this;
   const cls = gate.classReads.get(gate.span(node).join(":"));
   if (!cls || cls !== gate.selfClass?.name) return null;

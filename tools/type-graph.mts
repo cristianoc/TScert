@@ -45,7 +45,7 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", store: "any" }, { value: "any", store: "any" },
 ];
 /** A signature with a footprint and no promise. */
-export const footprintEffect = (footprint: ClosedFootprint): CallEffect =>
+export const footprintEffect = (footprint: ClosedFootprint): Within<{ value: "any"; store: "grow" }, CallEffect> =>
   ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
@@ -53,7 +53,7 @@ export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
 /** A promise signature: a guard's or an assertion function's, about `param`,
  * whose code may change every location. */
-export const promiseEffect = (asserts: boolean, param: number): CallEffect =>
+export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "any"; store: "grow" }, CallEffect> =>
   ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
     receiverStore: false, onThrow: false });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>

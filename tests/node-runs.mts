@@ -1,6 +1,7 @@
 // Examples and native-contract counterexamples run under Node: each result is
 // what the case's outcome and the contracts it relies on say. No build needed.
 import assert from "node:assert/strict";
+import { pathToFileURL } from "node:url";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
 {
@@ -442,6 +443,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   for (const [file, call] of [
     ["invalid-json-stringify-tojson", "(() => { const xs = [1, 2, 3]; return wrong(xs, { toJSON() { xs.pop(); return \"\"; } }); })()"],
     ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
+    ["invalid-stated-effect-stringify", "(() => { const xs = [1, 2, 3]; return wrong(xs, { k: \"a\", span: 0, toJSON() { xs.pop(); return \"\"; } }); })()"],
     ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { get cause() { xs.pop(); return 0; } }); })()"],
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
@@ -1683,4 +1685,51 @@ for (const [file, call] of [
 ]) {
   const ran = runNode(file, `process.on("unhandledRejection", () => {}); console.log(1 in ${call} ? "dense" : "hole");`);
   assert.deepEqual([ran.stdout, ran.status], ["hole", 0], `${file}: the async call returned, and the result has a hole`);
+}
+// A retained `fs` callback of the sync API popping an array the program
+// holds: the request after the construction calls it, and the array
+// shrinks, beyond the requests' `{value: any, store: grow}`; a verified
+// program makes no instance (`invalid-compiler-api-retained-fs` is refused
+// at the constructor's declaration).
+{
+  const project = new URL("../pipeline/compiler-api-project/tsconfig.json", import.meta.url).pathname;
+  const sync = new URL("../tools/node_modules/typescript/dist/api/sync/api.js", import.meta.url).pathname;
+  const ran = runNode("invalid-compiler-api-retained-fs",
+    `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
+    { "typescript/unstable/sync": sync });
+  assert.deepEqual([ran.stdout, ran.status], ["shrunk", 0], "invalid-compiler-api-retained-fs: a request runs the popping callback");
+  // The client serializes a callback's result: a `toJSON` it holds runs
+  // during the request, though the callback itself changes nothing.
+  const returned = runNode("invalid-compiler-api-callback-tojson",
+    `const xs = [1, 2, 3]; try { wrong(xs, ${JSON.stringify(project)}); } catch {} console.log(xs.length < 3 ? "shrunk" : "kept");`,
+    { "typescript/unstable/sync": sync });
+  assert.deepEqual([returned.stdout, returned.status], ["shrunk", 0],
+    "invalid-compiler-api-callback-tojson: serializing the callback's result runs its toJSON");
+  // A request serializing an object of the program with `JSON.stringify`
+  // runs its `toJSON`: popping the mapped array leaves a hole.
+  const serialized = runNode("invalid-compiler-api-request-tojson", [
+    `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+    `const api = new API({});`,
+    `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(project)} });`,
+    `const program = snapshot.getProject(${JSON.stringify(project)}).program;`,
+    `const r = wrong(program, [1, 2, 3]);`,
+    `api.close();`,
+    `console.log(r.length === 3 && !(2 in r) ? "hole" : "dense");`,
+  ].join("\n"));
+  assert.deepEqual([serialized.stdout, serialized.status], ["hole", 0],
+    "invalid-compiler-api-request-tojson: the request runs the argument's toJSON");
+  // The installed `forEachChild` runs a visitor popping the mapped array on
+  // each child of a real source file: the result holds a hole.
+  const file = new URL("../pipeline/compiler-api-project/node-names.ts", import.meta.url).pathname;
+  const visited = runNode("invalid-compiler-api-visitor-effect", [
+    `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+    `const api = new API({});`,
+    `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(project)} });`,
+    `const sf = snapshot.getProject(${JSON.stringify(project)}).program.getSourceFile(${JSON.stringify(file)});`,
+    `const r = wrong([sf, sf, sf]);`,
+    `api.close();`,
+    `console.log(r.length === 3 && !(2 in r) ? "hole" : "dense");`,
+  ].join("\n"));
+  assert.deepEqual([visited.stdout, visited.status], ["hole", 0],
+    "invalid-compiler-api-visitor-effect: the installed forEachChild runs the popping visitor");
 }

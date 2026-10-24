@@ -16,7 +16,7 @@ import { promiseOf } from "./type-term.mts";
 
 /** The promise a function's result annotation states, or null where it states
  * none. */
-export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | FunctionExpression | MethodDeclaration): Guard | null {
+export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | FunctionExpression | MethodDeclaration): Within<{ value: "any"; store: "grow" }, Guard | null> {
   const gate: Gate = this;
   const p = node.type;
   if (!p || !ts.isTypePredicateNode(p)) return null;
@@ -31,6 +31,6 @@ export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | 
 
 /** The plain result a guard is called at: a type guard's `boolean`, an
  * assertion function's `void`. */
-export function guardResult(guard: Guard): TypeTerm {
+export function guardResult(guard: Guard): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "atom", name: guard.asserts ? "void" : "boolean", span: guard.span };
 }

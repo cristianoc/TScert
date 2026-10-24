@@ -7,7 +7,7 @@
  * which package is the host, and which of its enums the contract reads as
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
-import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription } from "./host-families.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
@@ -102,20 +102,26 @@ export const compilerApiFamily: FamilyDescription = {
   // no stable member, and their hidden effects (a node list's cursor, the
   // file's materialized nodes) are observed by no transparent operation
   // (T4), so a call changes no location of the model, on normal return or
-  // throw. `forEachChild` runs its visitors and keeps its declared
-  // signature.
+  // throw. `forEachChild`'s own steps change none either and the only client
+  // code it runs is its visitors, synchronously, each passed a child of the
+  // receiver in a fixed order, a throw propagating (T3): with both visitors
+  // within a closed footprint, its call is within it on normal return
+  // (COMPILER-API.md, "Node methods and callbacks").
   footprints: [
-    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;" },
-    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;" },
-    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;" },
-    { owner: "Node", member: "getEnd", text: "getEnd(): number;" },
-    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;" },
-    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;" },
-    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;" },
-    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;" },
-    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" },
+    { owner: "Node", member: "forEachChild",
+      text: "forEachChild<T>(visitor: (node: Node) => T, visitArray?: (nodes: NodeArray<Node>) => T): T | undefined;",
+      kind: "callbacks" },
+    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;", kind: "empty" },
+    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;", kind: "empty" },
+    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;", kind: "empty" },
+    { owner: "Node", member: "getEnd", text: "getEnd(): number;", kind: "empty" },
+    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;", kind: "empty" },
+    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;", kind: "empty" },
+    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;", kind: "empty" },
+    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;", kind: "empty" },
+    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;", kind: "empty" },
     { owner: "SourceFile", member: "getLineAndCharacterOfPosition",
-      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;" },
+      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;", kind: "empty" },
   ],
   // Every property member of a shape, required or optional, is stable
   // (reading rule 1, checked by C3's walk).
@@ -300,6 +306,43 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
   ] },
 ];
+
+/** The listed methods whose arguments may hold an object of the program:
+ * a `DocumentIdentifier` object, a `DocumentPosition` or the snapshot's
+ * parameters, which the client puts into its payload and serializes with
+ * `JSON.stringify`, so a `toJSON` method of the program's runs during the
+ * request (`invalid-compiler-api-request-tojson`, run under Node). Each is
+ * read at its declared signature, which states no effect. */
+export const serializingRequests: readonly string[] = [
+  "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
+  "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics", "Checker.resolveName",
+];
+
+/** A stated request of the sync API (T6, COMPILER-API.md, "The sync
+ * API"): a method a named view lists whose arguments are primitives and
+ * host objects, which the client sends as primitives and the host objects'
+ * ids (audited, `api.js`), so it runs no code of the program but its
+ * instance's retained `fs` callbacks and the `toJSON` of what they return,
+ * which the client serializes; every instance a run meets is opened with
+ * callbacks within `{value: any, store: grow}`, their results' serialization
+ * included (`openCompiler`'s, audited, and an external instance's by T8), and the host's own state is
+ * observed by no transparent operation (T4): so a call is within
+ * `{value: any, store: grow}` on normal return. */
+export const isRequest = (owner: string, entry: { name: string; text: string }): boolean =>
+  !entry.text.startsWith("readonly ") && !serializingRequests.includes(`${owner}.${entry.name}`);
+
+/** A request's reading: each of its signatures at `{value: any, store:
+ * grow}`, on normal return only. */
+export function requestReading(type: TypeTerm): TypeTerm {
+  const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
+    receiverStore: false, onThrow: false };
+  const at = (t: TypeTerm): TypeTerm =>
+    t.k === "function" && t.effect.promise === null ? { ...t, effect }
+    : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
+    : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
+    : t;
+  return at(type);
+}
 
 /** The host package's node list interface, read as a dense readonly array of
  * its elements (COMPILER-API.md, "Node lists in the model"), never through

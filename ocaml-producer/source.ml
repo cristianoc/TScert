@@ -743,6 +743,10 @@ let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
    literal's position: a footprint and whether it holds on a throw too. Lean
    requires a signature its code is checked at to cover it. *)
 let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
+(* The method calls a statement is, by position: Lean reads and invokes the
+   member in one node where its actuals are plain
+   (`Type_queries.dispatches_call`). *)
+let statement_calls : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
 (* A definition's statement as the Fragment writes it, or none. *)
 let stated_of j = match field "stated" j with
   | Null -> None
@@ -1156,7 +1160,10 @@ and stmt binders j =
       let init = expr binders (field "init" b) in
       if Json.boolean (field "early" b) then Hashtbl.replace early_bindings (text "name" b,init.pos) ();
       text "name" b,optional_type binders (field "annot" b),init) (items "bindings" j))
-  | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))
+  | "return" -> Return (expr binders (field "e" j)) | "effect" ->
+    let e = expr binders (field "e" j) in
+    (match e.node with Invoke _ -> Hashtbl.replace statement_calls e.pos () | _ -> ());
+    Effect e
   | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
       List.map (stmt binders) (items "update" j))
   | "block" -> Block ((match field "label" j with Null -> None | l -> Some (Json.str l)),List.map (stmt binders) (items "body" j))

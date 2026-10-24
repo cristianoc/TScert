@@ -72,6 +72,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           Atoms [Shape {shape with calls=List.filter (fun (s:Semantic.signature) ->
             Semantic.plain_effect s.call_effect) calls}]
         | t -> t in
+      (* A statement's method call on a value the flow types at several
+         declarations, whose signatures all state one declared receiver (a
+         host family's method, which each arm holding it inherits from one
+         base), reads the member off that receiver: the object is claimed at
+         it, one label, so Lean reads and invokes the member in one node
+         (`Type_queries.dispatches_call`). A proposal: Lean checks the object at
+         the receiver. *)
+      (match e.node, target.node, callee with
+       | Invoke _, Read (o,_), Atoms [Shape {calls=(first :: _ as calls);_}] ->
+         (match first.receiver, latest_claim o.pos with
+          | (Atoms [Named (_,[])] as receiver), Some claimed
+              when Hashtbl.mem Source.statement_calls e.pos
+                && List.length (List.sort_uniq compare (Type_queries.unfolded_arms declarations [] claimed)) > 1
+                && List.for_all (fun (s:Semantic.signature) -> s.receiver = receiver) calls ->
+            restate_expression o.pos receiver
+          | _ -> ())
+       | _ -> ());
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -662,7 +679,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           List.filter (fun p -> not (states_written p)) matching in
         let receiver_matches ((s:Semantic.signature),substitution,_) =
           plausible_subtype_with
-            (fun t -> excludes_undefined (declared_head declarations [] t))
+            (excludes_undefined_declared declarations)
             receiver_type (Inference.substitute substitution s.receiver) in
         let preferred = match List.find_opt receiver_matches matching with
           | Some p -> Some p

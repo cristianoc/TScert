@@ -190,6 +190,37 @@ reach would show ([deferred precision](FOOTPRINTS.md#deferred-extra-precision)).
   collected by a loop pushing them, rather than by a `map` callback.
 - **Commit:** 9ed9407 (`tools/fragment-statements.mts`).
 
+### A stack popped through a field
+
+`Gate.enterTypeParams` and `leaveTypeParams` (`tools/fragment-parse.mts`)
+left a frame with `this.typeParamScopes.shift()` and
+`this.resolutionScopes.shift()`, and `protocolForOf`
+(`tools/fragment-statements.mts`) handed `closeStatements` a site record
+whose `entry` and `span` were `entries.shift()` and `spans.shift()`. A
+`shift` of a store the call did not allocate changes it beyond `grow`, so a
+statement of `{value: any, store: grow}` on the gate's lowering code, which
+`expr`'s contract closure needs
+([the draft's §5](drafts/method-effects.md#5-what-a-statement-may-say)),
+does not hold of a body calling them, although no reader keeps either stack
+and no other code reaches the site lists. Showing that a shrinking store is
+unreachable from the caller is the
+[deferred precision](FOOTPRINTS.md#deferred-extra-precision). The rewrite
+is an exception to the stance above, approved by the owner for the
+statements that need it (D5, 2026-10-23).
+
+- **Rewrite:** the stack fields lose `readonly`, and leaving a frame writes
+  each field with its remainder, `this.typeParamScopes =
+  this.typeParamScopes.slice(1)`, `leaveTypeParams` keeping its order and
+  its refusal of an empty stack; the site record reads each list at its own
+  counter, `entries[nextEntry++]` and `spans[nextSpan++]`, each keeping its
+  exhaustion check.
+- **Pattern:** a stack or queue whose holders read it only through one
+  field is popped by writing the field with its remainder, and a list
+  consumed in order is read at a counter; a field or cell write is within
+  `{value: any, store: keep}`.
+- **Commit:** 5299b40 (`tools/fragment-parse.mts`,
+  `tools/fragment-statements.mts`).
+
 ## Changes for a tool's defect
 
 ### The compiler API's empty-tuple panic

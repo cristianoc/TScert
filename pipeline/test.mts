@@ -2405,7 +2405,12 @@ control(async (): Promise<void> => {
 // beside a string's `trim` or alone, `Object.entries` of an interface's
 // object) or beyond the footprint (a global regex's
 // `test`) is refused at its own typing, even at the footprint `map`'s dense
-// signature accepts. A refused control marked `consumed` also checks the
+// signature accepts. One calling `forEachChild` is within its visitor's
+// footprint: a visitor growing an array the callback allocated is within
+// `{value: any, store: grow}`, and its callback within neither the empty
+// footprint nor `{value: any, store: keep}`; a popping one within neither
+// the empty footprint nor `grow`. One calling a sync API request is within
+// `{value: any, store: grow}` and not `{value: any, store: keep}`. A refused control marked `consumed` also checks the
 // fixture's honest evidence against the forged claim, which must refuse; its
 // fixture verifies, so that evidence exists: program 7 at a result type
 // admitting holes (`map-unstable-pop-sparse`) is consumed so. A negative
@@ -2441,6 +2446,15 @@ control(async (): Promise<void> => {
     ["map-fresh-controls-sparse", "(w) =>", 3, false, writeValues, true],
     ["object-entries-sparse", "(n) =>", 3, false, keepAll, true],
     ["invalid-object-entries-preserving", "(n) =>", 3, false, keepAll, false],
+    ["invalid-compiler-api-visitor-effect", "(n) => {", 3, false, keepAll, false],
+    ["invalid-compiler-api-visitor-effect", "(n) => {", 3, false, growStores, false],
+    ["compiler-api-visitor-effect", "(n) => {", 3, false, keepAll, true],
+    ["compiler-api-visitor-effect", "(n) => {", 3, false, writeValues, true],
+    ["compiler-api-request-effect", "(n) =>", 3, false, writeValues, true],
+    ["compiler-api-request-effect", "(n) =>", 3, true, growStores, true],
+    ["invalid-compiler-api-request-tojson", "() =>", 3, false, growStores, false],
+    ["compiler-api-visitor-pop-sparse", "(n) => {", 3, false, keepAll, true],
+    ["compiler-api-visitor-pop-sparse", "(n) => {", 3, false, growStores, true],
   ] as const) {
     const artifacts = run(file);
     const claims = readClaims(artifacts);
