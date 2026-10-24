@@ -93,7 +93,7 @@ partial def reference (ctx : Ctx) (term : Json) : M Union := do
   let values ← application ctx i supplied
   -- A packed parameter's argument, its bound checked, is completed with its
   -- argument lists.
-  let packed := (packedParameters (← get).doc[i]!.expression).eraseDups
+  let packed := (← packedOf i).eraseDups
   let values ← values.zipIdx.mapM fun (U, p) => do
     match packed.contains p, argTerms[p]? with
     | true, some t => return normUnion (U ++ (← packOf ctx t))
@@ -120,7 +120,7 @@ partial def packOf (ctx : Ctx) (term : Json) : M Union := do
     let p ← (← field term "index").getNat?
     match ctx.decl with
     | some d =>
-      if (packedParameters (← get).doc[d]!.expression).contains p then return []
+      if (← packedOf d).contains p then return []
       throw refuse
     | none => throw refuse
   | _ => throw refuse

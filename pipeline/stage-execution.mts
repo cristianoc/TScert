@@ -21,9 +21,10 @@ import type { Cpu } from "./stage-store.mts";
 const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
-export type StageName = "parse" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" | "diagnostics";
-export const stageNames: readonly StageName[] = ["parse", "lower", "propose", "assemble", "search", "check", "explain",
-  "diagnostics"];
+export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" |
+  "diagnostics";
+export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "search", "check",
+  "explain", "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build

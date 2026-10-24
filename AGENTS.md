@@ -93,7 +93,7 @@ timeout; the pipeline cases keep the 60 s default.
 
 [`dev/census.mts`](dev/census.mts) writes a census record per run (each
 slice's outcome and its stage invocations with their timings) and prints
-its path. `SHARD=i/n` runs every n-th slice from the i-th, so n processes
+its path. `SHARD=i/n` runs every n-th distinct slice file from the i-th, so n processes
 or agents split a census and share the stage store; a later run replays
 what an earlier one computed. `node dev/census.mts report <before>
 <after>` compares two censuses, each one record or its shards' records

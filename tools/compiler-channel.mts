@@ -15,7 +15,8 @@
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { API } from "typescript/unstable/sync";
-import { compilerFileSystem, findPackage, installed, privateLauncher, takeQueryFailure, treeDigest, unobservable } from "./files.mts";
+import { compilerFileSystem, findPackage, importLedger, installed, newLedger, privateLauncher, sharing, takeQueryFailure, treeDigest, unobservable,
+  withLedger, type Ledger } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
 import { compilerEnding, compilerStarted } from "./compiler-processes.mts";
 
@@ -59,6 +60,70 @@ export function privateClient(api: API): PrivateClient {
   return client as PrivateClient; // asserted: the decoder of the private client, each member it names checked above
 }
 
+/** The queries of a snapshot the front end asks (docs/drafts/front-end-sharing.md,
+ * 3.3): each a read of the snapshot its parameters name, which the compiler
+ * holds unchanged until its release. A request off the list (a snapshot's
+ * update or release, the client's initialization, a configuration's parse,
+ * a profile) goes to the compiler every time. */
+const snapshotQueries: ReadonlySet<string> = new Set([
+  "getAliasedSymbol", "getAliasSymbolOfType", "getConstantValue", "getContextualType", "getDefaultProjectForFile",
+  "getExportsOfModule", "getExportsOfSymbol", "getImmediateAliasedSymbol", "getIndexInfosOfType", "getMembersOfSymbol",
+  "getNonNullableType", "getParameterType", "getParametersOfSignature", "getProgramDiagnostics", "getPropertiesOfType",
+  "getPropertyOfType", "getResolvedSignature", "getReturnTypeOfSignature", "getSemanticDiagnostics",
+  "getShorthandAssignmentValueSymbol", "getSignaturesOfType", "getSourceFileMetadata", "getSourceFileNames",
+  "getSymbolAtLocation", "getSymbolOfType", "getSymbolsAtLocations", "getSyntacticDiagnostics", "getTargetOfType",
+  "getThisParameterOfSignature", "getTypeArguments", "getTypeAtLocation", "getTypeFromTypeNode", "getTypeOfSymbol",
+  "getTypeParametersOfSignature", "getTypePredicateOfSignature", "getTypesOfType", "getWellKnownSymbols", "isArrayType",
+  "isTupleType", "resolveName", "typeToString",
+]);
+/** Each client's answers to the queries of each snapshot it holds, as text
+ * by method and parameters: a query asked again of the same snapshot is
+ * answered as it was first (query omission, a conjecture), and a snapshot's
+ * answers go with its release. */
+const answers = new WeakMap<object, Map<unknown, Map<string, string>>>();
+/** How many queries of a snapshot were made in this process, and how many of
+ * them its earlier answer served, for the controls. */
+const queries: { asked: number; served: number } = { asked: 0, served: 0 };
+export const queryTelemetry = (): { asked: number; served: number } => ({ ...queries });
+/** How many snapshots of a compiler hold kept answers, for the controls. */
+export const heldSnapshots = (api: API): number => answers.get(privateClient(api))?.size ?? 0;
+function query(client: object, method: unknown, params: unknown, request: () => unknown): unknown {
+  const snapshot = fieldOf(params, "snapshot");
+  if (typeof method !== "string" || snapshot === undefined) return request();
+  let held = answers.get(client);
+  if (!held) answers.set(client, held = new Map());
+  if (method === "release") {
+    held.delete(snapshot);
+    return request();
+  }
+  if (!snapshotQueries.has(method) || !sharing()) return request();
+  queries.asked++;
+  const key = `${method}\0${JSON.stringify(params)}`;
+  const known = held.get(snapshot)?.get(key);
+  if (known !== undefined) {
+    queries.served++;
+    return known === "" ? undefined : JSON.parse(known);
+  }
+  const value = request();
+  let byKey = held.get(snapshot);
+  if (!byKey) held.set(snapshot, byKey = new Map());
+  byKey.set(key, JSON.stringify(value) ?? "");
+  return value;
+}
+
+/** Each client's ledger (docs/drafts/front-end-sharing.md, 3.5): every
+ * answer its compiler was given over its lifetime. Before each request the
+ * ledger is noted in every record being made that does not hold it, and the
+ * request runs with the ledger kept, so a record using the compiler holds
+ * every answer its state was computed from. */
+const ledgers = new WeakMap<object, Ledger>();
+/** The ledger of a compiler. */
+export function compilerLedger(api: API): Ledger {
+  const ledger = ledgers.get(privateClient(api));
+  if (!ledger) throw Error("a compiler without a ledger");
+  return ledger;
+}
+
 /** Each request of a client prototype guarded once: what it throws becomes a
  * `CompilerFailure` naming the request. */
 const guarded = new WeakSet<object>();
@@ -73,7 +138,13 @@ function guard(client: PrivateClient): void {
     return function (this: unknown, ...args: unknown[]): unknown {
       takeQueryFailure();
       try {
-        return original.call(this, ...args);
+        const ledger = this && typeof this === "object" ? ledgers.get(this) : undefined;
+        const send = (): unknown => original.call(this, ...args);
+        const answer = member === "apiRequest" && this && typeof this === "object"
+          ? (): unknown => query(this, args[0], args[1], send) : send;
+        if (!ledger) return answer();
+        importLedger(ledger);
+        return withLedger(ledger, answer);
       } catch (error) {
         // A file-system query the front end answered failed: that failure.
         const query = takeQueryFailure();
@@ -240,12 +311,14 @@ export const launcherForTests = (): string | null => launcher();
 /** The front end's compiler, its working directory `cwd`: the texts of
  * `overlay` at their paths, every other file-system query an observation,
  * and, where it can be, the process confined to them. */
-export function openFrontEndCompiler(cwd: string, overlay: ReadonlyMap<string, string>): API {
+export function openFrontEndCompiler(cwd: string, overlay: ReadonlyMap<string, string>, ledger: Ledger = newLedger()): API {
   const confined = launcher();
   const { installation, implementation } = using;
   if (confined === null && "unobserved" in implementation) unobservable(implementation.unobserved);
-  return openCompiler({ cwd, fs: compilerFileSystem(overlay, "missing" in installation ? null : installation.executablePackage),
+  const api = openCompiler({ cwd, fs: compilerFileSystem(overlay, "missing" in installation ? null : installation.executablePackage),
     ...(confined ? { tsserverPath: confined } : {}) });
+  ledgers.set(privateClient(api), ledger);
+  return api;
 }
 
 /** The compiler process of an API, for a test that waits for its end. */

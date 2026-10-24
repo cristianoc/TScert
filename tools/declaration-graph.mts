@@ -660,11 +660,12 @@ export function collectDeclarations(file: string, options: {
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
   seen?: (diagnostic: SeenDiagnostic) => void;
-  /** The run's tag selection of each host family, by its marker
+  /** The run's tag selection of a host family, by its marker
    * (HOST-FAMILIES.md, "Residuals"), when an imported module of the run is
-   * lowered; otherwise it is computed over the modules the checked file
-   * reaches and reported to `familySelected`. */
-  familySelection?: ReadonlyMap<string, readonly TagValue[]>;
+   * lowered: the one read of the selection, made by family; otherwise it is
+   * computed over the modules the checked file reaches and reported to
+   * `familySelected`. */
+  familySelection?: (marker: string) => readonly TagValue[] | undefined;
   familySelected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
@@ -1167,14 +1168,17 @@ export function collectDeclarations(file: string, options: {
       files.forEach(visit);
       return new Map([...foundBy].map(([marker, values]) => [marker, [...values].sort(compareTags)]));
     };
-    let selection: ReadonlyMap<string, readonly TagValue[]> | null = options.familySelection ?? null;
-    const selected = (): ReadonlyMap<string, readonly TagValue[]> => selection ??= scanSelection(closure());
+    let scanned: ReadonlyMap<string, readonly TagValue[]> | null = null;
+    const scan = (): ReadonlyMap<string, readonly TagValue[]> => scanned ??= scanSelection(closure());
+    const given = options.familySelection;
+    // The selection is read here alone, by family.
+    const selected = (marker: string): readonly TagValue[] | undefined => given ? given(marker) : scan().get(marker);
     const selectionSets = new Map<string, ReadonlySet<TagValue>>();
     const familyOf = (node: InterfaceDeclaration): { table: FamilyTable; selection: ReadonlySet<TagValue> } | null => {
       const found = familyFrom(node);
       if (!found) return null;
       const marker = found.table.description.marker;
-      const set = selectionSets.get(marker) ?? new Set(selected().get(marker) ?? []);
+      const set = selectionSets.get(marker) ?? new Set(selected(marker) ?? []);
       selectionSets.set(marker, set);
       return { table: found.table, selection: set };
     };
@@ -3647,7 +3651,7 @@ export function collectDeclarations(file: string, options: {
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
       { ...d, expression: d.expression && promisedMethods(d.expression) });
-    options.familySelected?.(selected());
+    if (options.familySelected) options.familySelected(scan());
     return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
   });
 }

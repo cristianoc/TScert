@@ -58,7 +58,7 @@ partial def binderPacked (n : String) (node : Json) : M Bool := do
         if let .ok args := j.getObjValAs? (Array Json) "args" then
           let i ← tryCatch (some <$> referenceIndex j) fun _ => pure none
           if let some i := i then
-            let packed := packedParameters (← get).doc[i]!.expression
+            let packed ← packedOf i
             for (a, p) in args.toList.zipIdx do
               if packed.contains p && a.getObjValD "k" == .str "binder" &&
                   a.getObjValD "name" == .str n then return true

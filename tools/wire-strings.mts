@@ -46,10 +46,15 @@ export function illFormedString(value: unknown, pos: unknown = null): { text: st
 
 /** Refuse a document holding a string that is not well-formed Unicode. */
 export function requireWellFormed(value: unknown, what: string): void {
+  const refusal = wellFormedRefusal(value, what);
+  if (refusal !== null) throw Error(refusal);
+}
+/** The refusal of a document holding a string that is not well-formed
+ * Unicode, the first in document order, or null. */
+export function wellFormedRefusal(value: unknown, what: string): string | null {
   const found = illFormedString(value);
-  if (found)
-    throw Error(`${what}: a string that is not well-formed Unicode, a lone surrogate, is refused` +
-      (Array.isArray(found.pos) ? ` (at [${found.pos.join(",")}))` : ""));
+  return found ? `${what}: a string that is not well-formed Unicode, a lone surrogate, is refused` +
+    (Array.isArray(found.pos) ? ` (at [${found.pos.join(",")}))` : "") : null;
 }
 
 /** A wire document's bytes as text, refused where they are not valid UTF-8:

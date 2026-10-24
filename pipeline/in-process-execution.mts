@@ -27,8 +27,10 @@ export type InProcessCall<T> = {
   /** The value as stored, and back: for a stage that replays. */
   codec?: { encode: (value: T) => Buffer; decode: (bytes: Buffer) => T };
   /** An observed stage (STAGE-STORE.md, "Observed stages"): the compiler it
-   * opens, and the file system's answers to its reads, are part of its key. */
-  observed?: { compiler: () => CompilerIdentity };
+   * opens, and the file system's answers to its reads, are part of its key;
+   * and its reads of its named inputs (`noteInput`), each evaluated again by
+   * `inputs` before a replay. */
+  observed?: { compiler: () => CompilerIdentity; inputs?: (name: string) => string | null };
 };
 
 /** An in-process invocation as bound: its description, before any
@@ -71,7 +73,13 @@ export function runInProcess<T>(call: InProcessCall<T>): InProcessRun<T> {
   const made = observed(call.run);
   if (made.inconsistent !== null)
     throw Error(`the process's caches may disagree with the file system (${made.inconsistent}); a fresh process is needed`);
-  return { value: made.value, observations: made.observations, incomplete: made.incomplete };
+  // A named input's read the invocation does not answer as recorded is no
+  // replayable observation: the entry is not published.
+  const inputs = call.observed.inputs;
+  const unanswered = made.observations.find(([o, name, answer]) =>
+    o === "input" && (inputs === undefined || inputs(name) !== answer));
+  return { value: made.value, observations: made.observations,
+    incomplete: made.incomplete ?? (unanswered ? `the named input ${unanswered[1]} is not this invocation's` : null) };
 }
 
 /** An observed stage's description with its observations: the canonical

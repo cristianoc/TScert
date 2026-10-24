@@ -212,8 +212,10 @@ export function inDeclarationSession<T>(file: string, tsconfigPath: string,
   }
   if (!session) {
     const overlay = new Map<string, string>();
-    session = { api: openFrontEndCompiler(cwd, overlay), overlay, cwd, config, descriptor, generation: ++generations,
-      uses: 1, ledger: newLedger(), idle: null };
+    // The session's ledger is its compiler's (`compilerLedger`).
+    const ledger = newLedger();
+    session = { api: openFrontEndCompiler(cwd, overlay, ledger), overlay, cwd, config, descriptor, generation: ++generations,
+      uses: 1, ledger, idle: null };
     telemetry.opens++;
   }
   for (const used of attempts) if (!used.includes(session.ledger)) used.push(session.ledger);
