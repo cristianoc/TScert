@@ -255,19 +255,29 @@ the length view aside. -/
   | .refs a _ vs _ _ _ _ => a ++ vs.filter (·.1 != lengthKey)
   | _ => []
 
+/-- No clause of `A` meets a clause of `B` consistently: `meetLists A B` is
+empty, decided pair by pair and ending at the first consistent meet. -/
+@[nospecialize] def meetsNone (A B : List (Clause α)) : Bool :=
+  A.all fun a => B.all fun b => !(meet a b).any Clause.consistent
+
+theorem meetsNone_iff {A B : List (Clause α)} : meetsNone A B = true ↔ meetLists A B = [] := by
+  simp [meetsNone, meetLists, List.flatMap_eq_nil_iff, List.filter_eq_nil_iff]
+
 /-- Two types of clause rows whose clauses meet in none. -/
 @[nospecialize] def typesDisjoint (G : NormalGraph ι) (K L : Ty ι) : Bool :=
-  G.plainTy K && G.plainTy L && (meetLists (expand G K) (expand G L)).isEmpty
+  G.plainTy K && G.plainTy L && meetsNone (expand G K) (expand G L)
 
 /-- Two clauses no value meets. -/
 @[nospecialize] def clausesDisjoint (G : NormalGraph ι) (c d : Clause (Ty ι)) : Bool :=
-  (meetLists [c] [d]).isEmpty ||
+  meetsNone [c] [d] ||
     (fixedFields c).any fun p => (fixedFields d).any fun q => decide (p.1 = q.1) && typesDisjoint G p.2 q.2
 
 /-- A label no value of `A` is in: each of its clauses is disjoint from each
 clause of `A`. -/
 @[nospecialize] def labelExcluded (G : NormalGraph ι) (A : Ty ι) (b : ι) : Bool :=
-  G.plainTy A && G.plain b && (expand G A).all fun c => (expand G [b]).all fun d => clausesDisjoint G c d
+  G.plainTy A && G.plain b &&
+    let ds := expand G [b]
+    (expand G A).all fun c => ds.all fun d => clausesDisjoint G c d
 
 /-- A fact's type `B` filtered by a slot's type `A`: the labels of `B`
 that `A` does not exclude, none where `A` excludes them all. -/
@@ -297,7 +307,7 @@ theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K
 
 theorem typesDisjoint_sound {G : NormalGraph ι} {K L : Ty ι} {n W u}
     (hd : typesDisjoint G K L = true) (hK : meaning G K n W u) (hL : meaning G L n W u) : False := by
-  simp only [typesDisjoint, Bool.and_eq_true, List.isEmpty_iff] at hd
+  simp only [typesDisjoint, Bool.and_eq_true, meetsNone_iff] at hd
   have hm := (meetLists_row G _ _ _ (expand G K) (expand G L) n W u).mpr
     ⟨(expand_sem G K hd.1.1 n W u).mp hK, (expand_sem G L hd.1.2 n W u).mp hL⟩
   rw [hd.2] at hm
@@ -307,7 +317,7 @@ theorem typesDisjoint_sound {G : NormalGraph ι} {K L : Ty ι} {n W u}
 theorem clausesDisjoint_sound {G : NormalGraph ι} {c d : Clause (Ty ι)} {n W h v}
     (hd : clausesDisjoint G c d = true) (hc : clauseSem G c (n+1) W v) (hd' : clauseSem G d (n+1) W v)
     (hh : HeapOk (n+1) W h) : False := by
-  simp only [clausesDisjoint, Bool.or_eq_true, List.isEmpty_iff, List.any_eq_true, Bool.and_eq_true,
+  simp only [clausesDisjoint, Bool.or_eq_true, meetsNone_iff, List.any_eq_true, Bool.and_eq_true,
     decide_eq_true_eq] at hd
   rcases hd with hm | ⟨p, hp, q, hq, hpq, hdis⟩
   · have hs := (meetLists_row G _ _ _ [c] [d] (n+1) W v).mpr
