@@ -731,13 +731,16 @@ let singleton_atom = function
    later: an object's arm is fixed where it is allocated. Lean checks the
    slice. *)
 (* The arms an atom stands for: a declaration whose definition is a union of
-   atoms, the arms of each of those atoms; any other atom, itself. A test
-   keeps or drops each arm, wherever its declaration occurs in a union: a
-   join can leave a declaration beside arms of it a test already split. *)
+   atoms, the arms of each of those atoms; an alias of one declaration
+   (`Expression`, whose definition is `ExpressionBase`), the arms of that
+   declaration; any other atom, itself. A test keeps or drops each arm,
+   wherever its declaration occurs in a union: a join can leave a
+   declaration beside arms of it a test already split. *)
 let rec atom_arms declarations seen = function
   | Named (id,args) as a when not (List.mem id seen) ->
     (match (try Some (definition declarations id args) with Json.Error _ -> None) with
      | Some (Atoms (_::_::_ as atoms)) -> List.concat_map (atom_arms declarations (id::seen)) atoms
+     | Some (Atoms [Named _ as inner]) -> atom_arms declarations (id::seen) inner
      | _ -> [a])
   | a -> [a]
 let union_arms declarations atoms =
