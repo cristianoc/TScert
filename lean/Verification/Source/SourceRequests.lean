@@ -42,6 +42,9 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- Whether the declaration claims its footprint on a throw too, which its
   graph must establish as well. -/
   onThrow : Bool := false
+  /-- Whether the declaration is async, as the source states (`Fragment.Fn`):
+  its footprint is then `top` (`RequestJson.asyncEffects`). -/
+  async : Bool
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
@@ -132,11 +135,13 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
 /-- A unit's claimed footprint, established by its own graph and certificate.
-The footprint letting everything change holds of every run; any other bound
+An async unit's is `top`, required before anything else. The footprint
+letting everything change holds of every run; any other bound
 node by node (`GraphCode.compositionalChecked`), or by a graph of pure nodes,
 which preserves the heap, for a unit returning a plain result under the
 ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint)).bind fun _ =>
   if r.footprint = .top ∧ r.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.footprint != .top)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
@@ -154,10 +159,20 @@ theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     rcases he with he | he
     · exact he h1
     · rw [h2] at he; cases he
-  simp only [effectResult, hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  replace h := h.2
+  simp only [hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
     Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
   exact ⟨h.1.1, h.1.2, h.2⟩
+
+/-- **An async unit's footprint is `top`** where its effect is checked. -/
+theorem effectResult_async {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true) (ha : r.async = true) : r.footprint = .top := by
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  simpa [RequestJson.asyncEffects, ha] using h.1
 
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
@@ -232,6 +247,18 @@ theorem checkRequests_pair {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     List.getElem?_zip_eq_some.mpr ⟨hi, by simp [es, hib]⟩
   have hm' := List.mem_of_getElem? hz
   exact ⟨es, hm', checkRequests_one h hm'⟩
+
+/-- **Async definitions are certified at `top`** (L6 of the method effects
+design): in an accepted bundle, an async unit claims the footprint letting
+every location change, and so does every async code its graph creates. The
+completion kind is the source's (`Fragment.Fn.async`, `Expr.lambda`). -/
+theorem checkRequests_async {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) :
+    (r.async = true → r.footprint = .top) ∧
+      ∀ q ∈ r.codes, q.async = true → q.entry.row.effect.footprint = .top := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  obtain ⟨-, -, heff, table, ht, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  exact ⟨effectResult_async heff, fun q hq ha => RequestJson.codeTable_async ht hq ha⟩
 
 /-- A generic body is safe at every assignment admitted by its source signature. -/
 theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
@@ -412,7 +439,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow }
+           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, async := r.async }
 
 end
 

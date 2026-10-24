@@ -40,6 +40,16 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
       !GraphCode.nodeChecked G images c.readSummaries Φ facts ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
+  -- An async definition's footprint is `top` whatever its body does
+  -- (`RequestJson.asyncEffects`): refused at the definition.
+  let refuseAsync (what : String) (pos : Span) :=
+    s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not `top`, and an async definition's is"
+  if !RequestJson.asyncEffects r.async r.footprint then some (refuseAsync s!"'{name}'" namePos) else
+  let asyncCode := (r.toRequest.codes.zipIdx.find? fun (q, _) =>
+    !RequestJson.asyncEffects q.async q.entry.row.effect.footprint).map fun (_, i) =>
+      refuseAsync s!"a closure in '{name}'"
+        ((((r.codeSources[i]?).bind fun code => sourceMapRegion code.sourceMap).map (·.pos)).getD namePos)
+  if asyncCode.isSome then asyncCode else
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else

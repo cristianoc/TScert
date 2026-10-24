@@ -121,7 +121,7 @@ scheme row's variadic signatures. -/
 @[nospecialize] def lambdaSetup (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
-  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard body := lam
+  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard _ body := lam
     | throw "internal extraction error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst

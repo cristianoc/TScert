@@ -611,7 +611,9 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
            rest_pack: rigid option; result: ty;
            (* A guard's promise, beside its plain result: the promise
               signature's effect and type. *)
-           guard: (call_effect * ty) option; body: stmt list }
+           guard: (call_effect * ty) option;
+           (* Whether it is async: its effects are certified at `top`. *)
+           async: bool; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -723,6 +725,15 @@ let rec assigns name s = match s.statement with
    initialization"), by name and initializer: each is a cell its declaration
    writes. *)
 let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
+(* The async closures of the file, by the literal's position: an async call
+   returns normally where its body throws, so Lean certifies an async
+   definition's effects at `top` (`asyncEffects`) and no footprint below it is
+   proposed. *)
+let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
+let async_completion j = match text "completion" j with
+  | "async" -> true
+  | "sync" -> false
+  | k -> unsupported ("a definition completes `sync` or `async`, not " ^ k)
 (* The footprint a recursive constant's closure is assumed to change at most,
    and whether on a throw too, where its body reads its self entry
    (SOURCE-ELABORATION.md, "Recursive constants"), by the literal's position. A
@@ -767,11 +778,17 @@ let fresh_expr ~callable ~fresh (e:expr) = match e.node with
      | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.fresh) effects
      | _ -> false)
   | _ -> false
-let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~fresh ~callable ~iteration ~readable in
+let rec footprint_expr ?(fresh=[]) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
     Option.map (effects_footprint ~receiver_fresh) (callable callee) in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
+  (* A call the producer's own typing types at `never`, at its instance,
+     never returns normally: its normal footprint is empty (Lean's
+     `no-return`, which decides the type's emptiness). Its throw is
+     [throws_expr]'s, from the callee's signatures. *)
+  let returning (e:expr) callee_footprint =
+    if no_return e then Some empty_footprint else callee_footprint () in
   match e.node with
   | Id name -> if List.mem name readable then Some empty_footprint else None
   | Literal _ -> Some empty_footprint
@@ -808,32 +825,32 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
   (* A spread argument reads its operand's store, as an array literal's
      spread part does. *)
   | Call (callee,receiver,args,_,_) ->
-    join_bound (all (callee :: Option.to_list receiver @ args)) (calls callee)
+    join_bound (all (callee :: Option.to_list receiver @ args)) (returning e (fun () -> calls callee))
   (* A method call reads the member off its receiver (through a primitive's
      prototype, for a primitive) and invokes it: a member excepting its
      receiver's store is within its footprint where the receiver is a
      constant holding a store the run allocated. *)
   | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
     let receiver_fresh = match o.node with Id name -> List.mem name fresh | _ -> false in
-    join_bound (all (o :: args)) (calls ~receiver_fresh callee)
+    join_bound (all (o :: args)) (returning e (fun () -> calls ~receiver_fresh callee))
   (* A construction changes at most what every construct signature its
      callee may take states. *)
   | New (callee,_,args,spreads) ->
     if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
-  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
-  | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
+  | BlockBody body -> footprint_stmts ~fresh ~callable ~no_return ~iteration ~readable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
+and footprint_stmts ?(fresh=[]) ~callable ~no_return ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~fresh ~callable ~iteration ~readable in
-    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~callable ~iteration ~readable body in
+    let go = footprint_expr ~fresh ~callable ~no_return ~iteration ~readable in
+    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~callable ~no_return ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
     | Declare (mutable_,bindings) ->
@@ -844,7 +861,7 @@ and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
             else List.filter ((<>) name) fresh in
           let written = if Hashtbl.mem early_bindings (name,init.pos) then cell_write else Some empty_footprint in
           add fresh (name::readable) (join_bound written
-            (join_bound acc (footprint_expr ~fresh ~callable ~iteration ~readable init))) more in
+            (join_bound acc (footprint_expr ~fresh ~callable ~no_return ~iteration ~readable init))) more in
       add fresh readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
@@ -858,7 +875,7 @@ and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
          [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
-            ~callable ~iteration ~readable:(pattern_names target @ readable) rest])
+            ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
@@ -1028,6 +1045,7 @@ let rec expr binders j =
              `this`; Lean admits that only at a receiver type of objects,
              which the conversion leaves unchanged. *)
           Some (source_type inner (field "type" r)) in
+      if async_completion j then Hashtbl.replace async_closures (field "pos" j) ();
       Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
@@ -1321,4 +1339,5 @@ and decode_program ast =
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
+      async=async_completion f;
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

@@ -11,7 +11,7 @@ choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
-  | .lambda _ _ _ _ defaults _ _ _ e =>
+  | .lambda _ _ _ _ defaults _ _ _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ e =>
     assignsExpr name e
@@ -266,7 +266,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
 /-- The closures' statement bodies an expression creates, where their own
 owned objects are found. -/
 partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
-  | .lambda _ _ _ _ ds _ _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
+  | .lambda _ _ _ _ ds _ _ _ _ b => ds.flatMap (fun d => closureBodies d.2) ++
     (match b with | .block _ ss => [ss] | b => closureBodies b)
   | .ctor _ lam _ => closureBodies lam
   | .var .. | .lit .. => []

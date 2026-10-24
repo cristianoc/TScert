@@ -3032,7 +3032,11 @@ reviewed host contracts ([trust surface](DESIGN.md#trust-surface)) over the
 relations `ResolutionCapabilities.Observes` and `ResolutionCapabilities.Resolves`.
 
 `Promise<void>` is `Promise<unknown>` (both payload types denote $`J`$); async completion
-fulfills it with `undefined`. A throw in an async body leaves it as a throw.
+fulfills it with `undefined`. A throw in an async body leaves it as a throw
+in the model, where JavaScript rejects the promise the call returns. A
+footprint the body meets on normal return therefore bounds no run of the
+call, and an async definition's footprint is `top`
+([async definitions](FOOTPRINTS.md#the-checked-callback-contract)).
 A non-promise operand is awaited at its own type when its lifetime contract
 establishes membership in $`N`$. This includes ordinary arrays and records
 with a stable primitive-valued or absent `then`.

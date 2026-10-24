@@ -295,10 +295,12 @@ inductive Expr where
   ordinary function binds the receiver of each call as `this`, at the
   annotation given here, by its code's kind: `sloppy` for sloppy code that
   reads `this`, whose call converts a receiver that is not an object, and
-  `call` for any other (`Invoke`). -/
+  `call` for any other (`Invoke`). `async` is the definition's completion
+  kind, its own `async` modifier: an async call returns a promise its body's
+  throw rejects, so its effects are certified at `top` (`asyncEffects`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (guard : Option Guard) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (async : Bool) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -432,7 +434,7 @@ executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
   | .lit .. => []
-  | .lambda _ receiver _ ps ds _ _ _ b =>
+  | .lambda _ receiver _ ps ds _ _ _ _ b =>
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
@@ -466,7 +468,7 @@ span, the name, as `freeNames` binds names, and the explicit type arguments
 written on the call. -/
 partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .var .. | .lit .. => []
-  | .lambda _ _ _ ps ds _ _ _ b =>
+  | .lambda _ _ _ ps ds _ _ _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
   -- A read off a name instantiates it, as a call does, where it is a
@@ -599,7 +601,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -646,6 +648,8 @@ structure Fn where
   convertsReceiver : Bool
   /-- The promise its result annotation states, beside its plain result `ret`. -/
   guard : Option Guard := none
+  /-- Its completion kind, its own `async` modifier (`asyncEffects`). -/
+  async : Bool
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -748,6 +752,13 @@ def decodeLabel (j : Json) : Except String (Option String) := do
   match ← jField j "label" with
   | .null => pure none
   | l => some <$> jStr l
+
+/-- A callable definition's completion kind: whether it is async. -/
+def decodeCompletion (j : Json) : Except String Bool := do
+  match ← jStr j with
+  | "sync" => pure false
+  | "async" => pure true
+  | k => throw s!"a definition completes `sync` or `async`, not {k}"
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)
@@ -1005,7 +1016,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- whose constructor this one's code is (`decodeBindings`).
     let lam ← decodeExpr (← jField j "lambda")
     match lam with
-    | .lambda _ none [] _ [] false _ _ _ | .var .. => pure ()
+    | .lambda _ none [] _ [] false _ _ false _ | .var .. => pure ()
     | _ => throw "a class value is a constructor lambda with plain parameters"
     -- Its static fields, each read from the binding its initializer bound,
     -- under a name a source property spells; the list is left out when
@@ -1029,23 +1040,16 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let spreads ← decodeSpreads j args.length (typeArgsField typeArgs)
     return .construct p (← decodeExpr (← jField j "callee")) args spreads typeArgs
   | "lambda" => do
-    -- Two proof fixtures embed parser snapshots from before quantified lambdas.
-    -- Live producers always write `typeParams`; absence in those snapshots is
-    -- the unique encoding of the former, necessarily empty list.
-    let (typeParams, receiver) ← match (j.getObjVal? "typeParams").toOption with
-      | some raw => do
-        fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","body"]
-        -- An ordinary function records its receiver annotation and whether
-        -- its code is strict, which decides its code's kind below.
-        let receiver ← match ← jField j "receiver" with
-          | .null => pure none
-          | r => do
-            fieldsExactly r ["type","strict"]
-            pure (some (← jField r "type", ← (← jField r "strict").getBool?))
-        pure ((← decodeTypeParams (← raw.getArr?).toList), receiver)
-      | none => do
-        fieldsExactly j ["k","pos","params","result","body"]
-        pure ([], none)
+    fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","completion","body"]
+    -- An ordinary function records its receiver annotation and whether its
+    -- code is strict, which decides its code's kind below.
+    let receiver ← match ← jField j "receiver" with
+      | .null => pure none
+      | r => do
+        fieldsExactly r ["type","strict"]
+        pure (some (← jField r "type", ← (← jField r "strict").getBool?))
+    let typeParams ← decodeTypeParams (← jArr j "typeParams")
+    let async ← decodeCompletion (← jField j "completion")
     let raw ← jArr j "params"
     let restAt := raw.zipIdx.filterMap fun (param,i) =>
       if (param.getObjVal? "rest").toOption.isSome then some i else none
@@ -1081,7 +1085,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | some g => decodeGuard g
       | none => pure none
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
-      (if result == .null then none else some result) guard body
+      (if result == .null then none else some result) guard async body
   | "conditional" =>
     return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
@@ -1214,7 +1218,7 @@ end
 
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
-  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "body", "strict"]
+  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "completion", "body", "strict"]
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
   let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
@@ -1225,7 +1229,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
           pure true
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
-    ← decodeGuard (← jField j "guard")⟩
+    ← decodeGuard (← jField j "guard"), ← decodeCompletion (← jField j "completion")⟩
   return (fn, typeParams)
 
 /-- A program module a certified import may read: its artifact, the

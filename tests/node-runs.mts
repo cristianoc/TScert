@@ -1635,3 +1635,31 @@ for (const [file, argument] of [
   assert.equal(runExample(file, `"kind" in wrong(${argument})`), false,
     `${file}: the returned object lacks its required kind field`);
 }
+// A call that never returns normally (`no-return`): the positive's three
+// callees throw where the callback reaches them, and return nothing to it.
+for (const call of [`members(new Gate(), ["a", ""])`, "instances([1, -1])", `rests(["a", ""])`])
+  assert.throws(() => runExample("no-return-callee-map", call), /empty|negative/, `no-return-callee-map: ${call}`);
+// A promise, a Boolean and a caught throw are returns: the callee popped the
+// mapped array, and `map` skipped the index it removed.
+for (const [file, call] of [
+  ["invalid-method-effect-throw-caught", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-no-return-guard", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+]) assert.equal(runExample(file, call), undefined, `${file}: a hole in the result`);
+// An async call returns its promise where its body throws: each rejection is
+// handled by the process, and the pop before it leaves a hole.
+for (const [file, call] of [
+  ["invalid-no-return-promise", "wrong([1, 2])"],
+  ["invalid-async-rejection-effect", "wrong([1, 2])"],
+  ["invalid-async-rejection-default", "wrong([1, 2])"],
+  ["invalid-async-rejection-module", "wrong([1, 2])"],
+  ["invalid-async-throw-only", "wrong([1, 2])"],
+  ["invalid-async-throw-only-arrow", "wrong([1, 2])"],
+  ["invalid-async-throw-only-method", "wrong(new Runner(), [1, 2])"],
+  ["invalid-async-throw-only-expression", "wrong([1, 2])"],
+  ["invalid-async-throw-only-object-method", "wrong([1, 2])"],
+  ["invalid-async-throw-only-static", "wrong([1, 2])"],
+  ["invalid-async-throw-only-default", "wrong([1, 2])"],
+]) {
+  const ran = runNode(file, `process.on("unhandledRejection", () => {}); console.log(1 in ${call} ? "dense" : "hole");`);
+  assert.deepEqual([ran.stdout, ran.status], ["hole", 0], `${file}: the async call returned, and the result has a hole`);
+}

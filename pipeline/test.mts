@@ -2787,6 +2787,112 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A node never returns normally only where its checked typing is empty
+  // (`no-return`). `stop(xs)` returns a `Promise<never>`, a value: claimed at
+  // `never`, with the callback calling it claimed within the empty
+  // footprint, search refuses the call's typing.
+  const artifacts = run("invalid-no-return-promise");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const at = source.indexOf("stop(xs);");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  must(expressions.find(e => e.pos[0] === at && e.pos[1] === at + "stop(xs)".length), "the call's claim").type = [];
+  const closure = must(expressions.find(e => e.pos[0] === source.indexOf("(x) => {")), "the callback's claim");
+  assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
+  const arrow = must(must(claims.types[closure.type[0]], "the callback's type row").flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []).find(s => s.arguments.length === 3),
+    "the callback contract");
+  arrow.effect = footprintEffect(keepAll);
+  const input = writeClaims(artifacts, "forged-no-return-promise", claims);
+  const produce = produceWith(artifacts, input, "forged-no-return-promise");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const failure = readDiagnostic(produce.stdout + produce.stderr);
+  assert.ok(failure && failure.kind === "node-typing", produce.stdout + produce.stderr);
+  assert.deepEqual(failure.source?.sourceMap?.pos, [at, at + "stop(xs)".length], "refused at the call's typing");
+  process.stdout.write("forged no-return node: a call returning Promise<never> claimed at never refused in search at its typing\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // A no-return node at a type a value meets: `gate.fail("empty")` returns
+  // `never`, so its claim at `string` is a valid typing, under which the
+  // call may return. The callback's claim within `{keep, keep}` is refused
+  // in search; with the emptiness decision removed (the `empty` mutation)
+  // search certifies it, and checking that evidence refuses it, so the
+  // emptiness decision alone refuses it.
+  const artifacts = run("no-return-callee-map");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const at = source.indexOf('gate.fail("empty")');
+  const call = must(must(claims.functions.find(f => f.name === "members"), "members' claims").expressions
+    .find(e => e.pos[0] === at && e.pos[1] === at + 'gate.fail("empty")'.length), "the call's claim");
+  assert.deepEqual(call.type, [], "the call is claimed at never");
+  call.type = [rowOf(claims, "str")];
+  const name = "forged-no-return-nonempty";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  invoke(input, forgedEvidence(artifacts, input, name, "empty"), artifacts);
+  process.stdout.write("forged no-return node at a non-empty type: gate.fail typed string in a callback claimed at {keep, keep} refused in search and in checking, certified only without the emptiness decision\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // An async definition's effect is certified at `top` (`asyncEffects`): an
+  // async call returns its promise where its body throws. `rejected`, and
+  // the async arrow `rejecting` returns, reach no completion: each calls a
+  // never-returning `stop`, then throws, so on normal return each body is
+  // within the empty footprint (`no-return`). Claimed at `{keep, keep}`,
+  // search refuses at the definition; with that check removed (the `async`
+  // mutation) search certifies the forged claims, and checking that
+  // evidence refuses them at the definition, so the check alone refuses
+  // them.
+  const artifacts = run("no-return-callee-map");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const forgeries: [string, (c: SourceClaims) => void][] = [
+    ["forged-async-declaration", (c) => {
+      must(c.functions.find(f => f.name === "rejected"), "rejected's claims").footprint = keepAll;
+    }],
+    ["forged-async-closure", (c) => {
+      const closure = must(c.functions.flatMap(f => f.expressions).find(e => e.pos[0] === source.search(/async \(\s*ys/)),
+        "the async arrow's claim");
+      assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
+      // A row of its own: the function's result claim shares the honest one.
+      const row = structuredClone(must(c.types[closure.type[0]], "the arrow's type row"));
+      must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
+        .find(s => s.arguments.length === 2), "the arrow's contract").effect = footprintEffect(keepAll);
+      closure.type = [c.types.push(row) - 1];
+    }],
+    // The async recursive constant `countdown`, whose closure reads its self
+    // entry at the footprint its claim states.
+    ["forged-async-recursive", (c) => {
+      const closure = must((c.init?.expressions ?? []).find(e => e.pos[0] === source.search(/async \(\s*n:/)),
+        "countdown's closure claim");
+      assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
+      // Its row in place: the binding, the self entry and the recursive
+      // call read the same row, which no annotation fixes.
+      for (const s of must(c.types[closure.type[0]], "countdown's type row").flatMap(clause =>
+        typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) s.effect = footprintEffect(keepAll);
+    }],
+  ];
+  for (const [name, forge] of forgeries) {
+    const claims = readClaims(artifacts);
+    forge(claims);
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+    // Checked against the evidence search produces for the forged claims
+    // without the check (a new effect type renumbers the store the honest
+    // evidence refers to).
+    const generated = forgedEvidence(artifacts, input, name, "async");
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+      assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for .* is not `top`, and an async definition's is/, name);
+  }
+  process.stdout.write("forged async footprints: an async function, an async arrow and an async recursive constant reaching no completion, claimed at {keep, keep}, refused in search and in checking, certified only without the async check\n");
+});
+
+control(async (): Promise<void> => {
   // A field's observed contents exclude an arm only once every test it
   // failed rules the arm's field type out: after `kind` failed "a", the arm
   // `{ kind: "a" | "b" }` may still hold "b". Claimed excluded there, the
@@ -2962,6 +3068,17 @@ control(async (): Promise<void> => {
   refuse(imported, "forged-certified-module", readClaims(imported),
     /certified import \.\/certified\.ts#twice: the importer's and the module's readings of an imported signature differ/,
     tampered);
+  // A module document stating `twice` async: its claimed footprint below
+  // `top` is refused, read from the module's own document.
+  const asyncModule: Ast = readFragmentFile(join(imported, "fragment.json"));
+  const asyncTwice = must(asyncModule.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the module's twice");
+  assert.equal(asyncTwice.completion, "sync", "twice is synchronous");
+  asyncTwice.completion = "async";
+  const asynced = join(imported, "forged-certified-async.fragment.json");
+  writeFileSync(asynced, JSON.stringify(asyncModule));
+  refuse(imported, "forged-certified-async", readClaims(imported),
+    /(a qualified read names an async unit claimed below `top`: \.\/certified\.ts#twice|the footprint claimed for 'twice' is not `top`, and an async definition's is)/,
+    asynced);
   // A module document in which `label` writes the binding of `twice`: the
   // binding is not stable, and the read of `twice` is refused.
   const rebinding: Ast = readFragmentFile(join(imported, "fragment.json"));
@@ -3045,7 +3162,7 @@ control(async (): Promise<void> => {
     refuse(imported, `forged-certified-resolution-${name}`, readClaims(imported),
       new RegExp(`certified import \\./certified\\.ts#twice: ${refusal.source}`), path);
   }
-  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, under a nested resolution-qualified binder a `%Stable%` one reading lacks, a differing `%Stable%` and a differing native `Promise`, a differing written application and a rebound unit refused in search and in checking\n");
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, under a nested resolution-qualified binder a `%Stable%` one reading lacks, a differing `%Stable%` and a differing native `Promise`, a differing written application, a rebound unit and an async unit claimed below `top` refused in search and in checking\n");
 });
 
 control(async (): Promise<void> => {

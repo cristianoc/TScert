@@ -113,6 +113,7 @@ fragment.
 | A source declaration merged with the standard `Promise` interface | Native factories produce standard promises, which the merged members do not describe | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
 | An async return annotated with a nested promise where fresh resolution yields a non-promise payload | `Promise<A>` states the fulfillment value's type, which the payload does not meet | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
 | `catch` or `finally` promising to preserve an open record payload without restricting its `then`; a `finally` callback returning such a record | Resolving it again may call a hidden `then` and change the fulfillment value | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
+| A footprint other than `top` claimed for an async function, arrow, function expression or method | The model reads the body's throw as a throw, where JavaScript rejects the promise the call returns normally | [the checked callback contract](FOOTPRINTS.md#the-checked-callback-contract) | `invalid-async-throw-only`, `invalid-async-rejection-effect` |
 
 **Guards**
 

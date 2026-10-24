@@ -240,10 +240,13 @@ deriving instance ToJson, FromJson for PointClaim
 deriving instance ToJson, FromJson for CodeEntry
 
 /-- Graph code a request creates, at one signature it offers, with the point
-claims of its graph. Nested code comes before the code creating it. -/
+claims of its graph, and whether its definition is async, as the source
+states (`Fragment.Expr.lambda`). Nested code comes before the code creating
+it. -/
 structure CodeRequest (ι : Type) where
   entry : CodeEntry ι
   claims : List (PointClaim ι)
+  async : Bool
   deriving ToJson, FromJson
 
 /-- A request over a store `σ` of labels `ι`: its program, point claims,
@@ -398,10 +401,20 @@ def decodeStrict [FromJson α] [ToJson α] (j : Json) : Except String α := do
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
-/-- The request's read summaries, each checked once, then its graph code,
-checked in order against its claims, as a table of what was checked. -/
+/-- Async code is certified at the footprint letting every location change:
+an async call returns normally where its body throws, so a footprint its
+body meets on normal return is no footprint of the call (L6 of the method
+effects design; SOURCE-CONTRACTS.md, "Async functions and await"). -/
+def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
+  !async || footprint == .top
+
+/-- The request's async code at `top`, then its read summaries, each checked
+once, then its graph code, checked in order against its claims, as a table
+of what was checked. -/
 @[nospecialize] def codeTableResult (r : Request σ ι) (c : Response ι) :
     ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
+  (ProgramCertificates.CheckResult.ofBool
+    (r.codes.all fun q => asyncEffects q.async q.entry.row.effect.footprint)).bind fun _ =>
   (ProgramCertificates.CheckResult.ofBool (r.codes.length == c.codes.length &&
     (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims))).bind fun _ =>
   (ProgramCertificates.checkReadSummariesResult (graph r) (StoreView.images r.types) c.readSummaries).bind fun _ =>
@@ -413,14 +426,17 @@ checked in order against its claims, as a table of what was checked. -/
 
 theorem codeTable_eq (r : Request σ ι) (c : Response ι) :
     codeTable r c =
-    if r.codes.length == c.codes.length &&
-        (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) &&
+    if (r.codes.all fun q => asyncEffects q.async q.entry.row.effect.footprint) &&
+        (r.codes.length == c.codes.length &&
+          (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims)) &&
         (ProgramCertificates.checkReadSummariesResult (graph r) (StoreView.images r.types) c.readSummaries).accepted then
       GraphCode.checkCodesUsing (graph r) (StoreView.images r.types) c.readSummaries
         ((r.codes.map (·.entry)).zip c.codes)
     else none := by
   rw [codeTable, codeTableResult, ProgramCertificates.CheckResult.value_bind_const,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.value_bind_const,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.value_bind_const]
+  cases (r.codes.all fun q => asyncEffects q.async q.entry.row.effect.footprint) <;>
   cases r.codes.length == c.codes.length && (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims) <;>
     simp only [Bool.false_and, Bool.true_and] <;> rfl
 
@@ -434,6 +450,18 @@ theorem codeTable_summaries {r : Request σ ι} {c : Response ι} {table : List 
     simp only [Bool.and_eq_true] at hc
     exact ProgramCertificates.checkReadSummaries_sound hc.2
   · contradiction
+
+/-- **Async code has no footprint but `top`** where the table is checked. -/
+theorem codeTable_async {r : Request σ ι} {c : Response ι} {table : List (CodeEntry ι)}
+    (h : codeTable r c = some table) {q : CodeRequest ι} (hq : q ∈ r.codes) (ha : q.async = true) :
+    q.entry.row.effect.footprint = .top := by
+  rw [codeTable_eq] at h
+  split at h
+  · rename_i hc
+    simp only [Bool.and_eq_true, List.all_eq_true] at hc
+    have := hc.1.1 q hq
+    simpa [asyncEffects, ha] using this
+  · cases h
 
 end
 

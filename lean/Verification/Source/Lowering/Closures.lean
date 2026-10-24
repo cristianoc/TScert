@@ -150,6 +150,7 @@ signature's frame, whose certificate the unit's code table records. -/
     (self : Option String := none) :
     Compiler (LambdaCode Tree) := do
   let s ← lambdaSetup fc scope Γ lam A mode
+  let .lambda _ _ _ _ _ _ _ _ async _ := lam | throw "closure claim must name a source arrow"
   -- A recursive closure is checked with its self entry, at its own type,
   -- after its captures.
   let selfEntry : Option (ScopeBinding Tree × Ty Tree) :=
@@ -186,7 +187,7 @@ signature's frame, whose certificate the unit's code table records. -/
     | none => code := some (P, start)
     let entry : CodeEntry Tree := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
       start, Cs ++ (selfEntry.map Prod.snd).toList, sig, store⟩
-    recordCode ⟨entry, claims⟩ source
+    recordCode ⟨entry, claims, async⟩ source
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
   let conts := P.map fun n => (n.continuation, n.handler)

@@ -60,7 +60,7 @@ let applicable (s:signature) = s.quantified = [] && s.rest_pack = None
 (* The declarations whose signatures may state the empty footprint: those
    without a rest or binders of their own. A guard's or an assertion
    function's promise signature states its footprint too. *)
-let effect_candidate (g:Source.fn) = not g.rest && g.quantified = []
+let effect_candidate (g:Source.fn) = not g.rest && g.quantified = [] && not g.async
 
 (* The footprint a declaration's body proposes for its signature, read off its
    claims as a closure's is (`Expression_closures`), else the one letting
@@ -78,9 +78,15 @@ let declaration_footprint declarations values names (claim:function_claim) =
         when calls <> [] && List.for_all applicable calls ->
         Some (effects @ List.map (fun (s:signature) -> s.call_effect) calls)
       | _ -> None) (Some []) types in
+  (* A call the claim types at `never`, wherever it claims it, never returns
+     normally. *)
+  let no_return (e:expr) =
+    match List.filter_map (fun (x:expression) -> if x.pos = e.pos then Some x.type_ else None) claim.expressions with
+    | [] -> false
+    | types -> List.for_all (fun t -> t = Atoms []) types in
   let readable = List.map fst g.params @ names in
   let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
-  Option.value (footprint_stmts ~callable ~iteration ~readable g.body) ~default:top_footprint,
+  Option.value (footprint_stmts ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
   throws_stmts ~callable g.body
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
@@ -199,7 +205,7 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
     | body -> Some (infer_function ~offers:discarding state flows program.Source.declarations arities
         (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
-         result=Atoms [Undef];guard=None;body}) in
+         result=Atoms [Undef];guard=None;async=false;body}) in
   (* The initialization unit checks both initializer and annotation. Use the
      annotation's offered signatures, retaining effects established by a matching
      initializer signature. Lean makes both checked contracts available. *)

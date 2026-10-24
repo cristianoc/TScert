@@ -2050,6 +2050,7 @@ export function lambda(this: Gate,
         params,
         result: declaredResult,
         guard,
+        completion: isAsync ? "async" : "sync",
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
     }
@@ -2081,6 +2082,7 @@ export function lambda(this: Gate,
       })),
       result: declaredResult,
       guard,
+      completion: isAsync ? "async" : "sync",
       body: inner,
     };
   } finally {

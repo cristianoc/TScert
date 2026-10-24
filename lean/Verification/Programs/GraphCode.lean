@@ -342,17 +342,13 @@ def BoundState (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Boo
 /-- A node no environment reaches: a slot of its entry has a type no value
 meets. -/
 def unreachableEntry (G : NormalGraph ι) (c : NodeEvidence ι) : Bool :=
-  (entry c).any fun A => G.plainTy A && (expand G A).isEmpty
+  (entry c).any fun A => ExpressionEffects.emptyType G A
 
 theorem unreachableEntry_sound {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W}
     (hu : unreachableEntry G c = true) (he : EnvOk G (entry c) ρ n W) : False := by
   obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hu
-  simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
   obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
-  have hm := (expand_sem G A hnil.1 n W _).mp (he.2 i A hi)
-  rw [hnil.2] at hm
-  obtain ⟨_, hmem, _⟩ := hm
-  cases hmem
+  exact ExpressionEffects.emptyType_sound hnil (he.2 i A hi)
 
 /-- What the bounded run reads of each node: none for a node no environment
 reaches; else a handler's facts following from the node's, and the node
@@ -514,7 +510,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
         ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
-        selectedWithinAt Φ F c.expression)) = true)
+        selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
       EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
@@ -542,7 +538,9 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   have hwithin : HeapObservations.SafePost (excOf G) (meaning G (result c))
       (fun h'' _ => Φ.HoldsOn (· < b) h' h'') j V h' (instantiate 0 ρ t) := by
     simp only [Bool.or_eq_true] at hcases
-    rcases hcases with (hexpr | hwrite) | hcall
+    rcases hcases with ((hexpr | hwrite) | hcall) | hempty
+    rotate_right
+    · exact ExpressionEffects.noReturn_sound hempty hsafe
     · exact HeapObservations.weaken (fun h'' _ hq =>
         (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq).on _)
         (ExpressionEffects.sound hexpr hscope henv hworld hheap hsafe)
@@ -597,7 +595,7 @@ def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCh
       | some eff => eff.onThrow
       | none => false)) ||
   -- A node no environment reaches: a slot of its entry has no value.
-  (entry c).any (fun A => G.plainTy A && (expand G A).isEmpty)
+  (entry c).any (fun A => ExpressionEffects.emptyType G A)
 
 theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
     {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {F : List Nat}
@@ -616,12 +614,8 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   rcases hthrows with ((hexpr | hwrite) | hcall) | hempty
   rotate_right
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hempty
-    simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
     obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
-    have hm := (expand_sem G A hnil.1 j V _).mp (henv.2 i A hi)
-    rw [hnil.2] at hm
-    obtain ⟨_, hmem, _⟩ := hm
-    cases hmem
+    exact (ExpressionEffects.emptyType_sound hnil (henv.2 i A hi)).elim
   · exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
       (fun h'' hq => (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq).on _)
       (ExpressionEffects.sound_exc hexpr hscope henv hworld hheap hsafe)
@@ -658,7 +652,7 @@ theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : In
     (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
         ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
-        selectedWithinAt Φ F c.expression)) = true)
+        selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hthrows : thr = true → throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     NodeWithin G Φ c t F (varFresh F t || callFresh G images sums c t) thr := by
@@ -740,7 +734,9 @@ the independent operational rule, which also covers their handlers. -/
       ExpressionEffects.writeWithin G (entry c) Φ node.expression) ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
         ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
-        selectedWithinAt Φ F c.expression))) || unreachableEntry G c
+        selectedWithinAt Φ F c.expression) ||
+      -- A node typed at a type no value has never returns normally.
+      ExpressionEffects.emptyType G (result c))) || unreachableEntry G c
 
 @[nospecialize] def nodeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
@@ -751,11 +747,12 @@ the independent operational rule, which also covers their handlers. -/
       (!(node.handler.isSome || exc) || throwsWithin G images sums Φ F c node.expression) &&
       ProgramCertificates.checkScope (entry c).length node.expression &&
       edgesFresh facts F (varFresh F node.expression || callFresh G images sums c node.expression) ret node.continuation)).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
+    ((ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
       ExpressionEffects.writeWithin G (entry c) Φ node.expression)).orElse fun _ =>
     (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
     (ProgramCertificates.checkTreeResult G images c.expression (sums := sums)).bind fun _ =>
     ProgramCertificates.CheckResult.ofBool (selectedWithinAt Φ F c.expression)).orElse fun _ =>
+    ProgramCertificates.CheckResult.ofBool (ExpressionEffects.emptyType G (result c))).orElse fun _ =>
   ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)
 
 theorem nodeCheckedResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)

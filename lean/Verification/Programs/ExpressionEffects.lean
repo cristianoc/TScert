@@ -904,6 +904,33 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     · rw [hr]; exact CallEffects.Effect.within_top hq.1
   · cases hp
 
+/-! ### No normal return
+
+A term typed at a type no value has never returns normally: its normal
+return is within every footprint (`no-return`, FOOTPRINTS.md). The type is
+the one the term's ordinary safety gives it; its emptiness is decided as an
+unreachable entry's is, a type of clause rows with no clause. -/
+
+/-- A type no value meets: a type of clause rows expanding to no clause. -/
+@[nospecialize] def emptyType (G : NormalGraph ι) (A : List ι) : Bool :=
+  G.plainTy A && (expand G A).isEmpty
+
+theorem emptyType_sound {G : NormalGraph ι} {A : List ι} (hA : emptyType G A = true) {n W v} :
+    ¬ meaning G A n W v := by
+  intro hm
+  simp only [emptyType, Bool.and_eq_true, List.isEmpty_iff] at hA
+  have hm := (expand_sem G A hA.1 n W v).mp hm
+  rw [hA.2] at hm
+  obtain ⟨_, hmem, _⟩ := hm
+  cases hmem
+
+/-- **A term safe at a type no value has meets every normal postcondition**
+(`no-return`): its normal return never happens, so the postcondition holds
+vacuously; a throw and every step are as its safety gives them. -/
+theorem noReturn_sound {Ξ : Fam} {G : NormalGraph ι} {A : List ι} (hA : emptyType G A = true)
+    {R : Post} {n W h t} (hs : Safe Ξ (meaning G A) n W h t) : SafePost Ξ (meaning G A) R n W h t :=
+  of_value_property (fun _ _ _ _ hv => (emptyType_sound hA hv).elim) hs
+
 /-! ### Throws
 
 A node a handler catches, or one in a body stating its footprint on a throw,
