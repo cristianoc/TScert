@@ -295,10 +295,14 @@ async function census(args: string[]): Promise<void> {
   for (const s of all) if (!named.has(s.text)) named.set(s.text, s.slice);
   const shared = all.map((s): Slice => ({ ...s, slice: named.get(s.text) ?? s.slice }));
   const chosen = functions ? shared.filter((s) => functions.includes(s.fn)) : shared;
-  const sliceNames = new Set(chosen.map((s) => s.slice));
-  for (const name of readdirSync(root))
-    if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
-      rmSync(join(root, name), { force: true });
+  // A slice file no function of the directory has any longer is removed; one a narrower census does not choose
+  // stays, so a census of some files or functions leaves a concurrent census's slices in place.
+  if (files === null) {
+    const sliceNames = new Set(shared.map((s) => s.slice));
+    for (const name of readdirSync(root))
+      if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
+        rmSync(join(root, name), { force: true });
+  }
   for (const s of chosen) writeStable(join(root, s.slice), s.text);
   // A shard takes every n-th slice file, with every function sharing it: one text is checked in one shard.
   const sliceFiles = [...new Set(chosen.map((s) => s.slice))];
