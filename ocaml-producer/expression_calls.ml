@@ -77,13 +77,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          host family's method, which each arm holding it inherits from one
          base), reads the member off that receiver: the object is claimed at
          it, one label, so Lean reads and invokes the member in one node
-         (`Source.several_labels`). A proposal: Lean checks the object at
+         (`Type_queries.dispatches_call`). A proposal: Lean checks the object at
          the receiver. *)
       (match e.node, target.node, callee with
        | Invoke _, Read (o,_), Atoms [Shape {calls=(first :: _ as calls);_}] ->
          (match first.receiver, latest_claim o.pos with
           | (Atoms [Named (_,[])] as receiver), Some claimed
-              when Hashtbl.mem Source.statement_calls e.pos && Source.several_labels claimed
+              when Hashtbl.mem Source.statement_calls e.pos
+                && List.length (List.sort_uniq compare (Type_queries.unfolded_arms declarations [] claimed)) > 1
                 && List.for_all (fun (s:Semantic.signature) -> s.receiver = receiver) calls ->
             restate_expression o.pos receiver
           | _ -> ())

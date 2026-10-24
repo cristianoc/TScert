@@ -744,7 +744,8 @@ let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
    requires a signature its code is checked at to cover it. *)
 let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
 (* The method calls a statement is, by position: Lean reads and invokes the
-   member in one node where its actuals are plain (`several_labels`). *)
+   member in one node where its actuals are plain
+   (`Type_queries.dispatches_call`). *)
 let statement_calls : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
 (* A definition's statement as the Fragment writes it, or none. *)
 let stated_of j = match field "stated" j with
@@ -806,15 +807,10 @@ let fresh_expr ~callable ~fresh (e:expr) = match e.node with
      | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.fresh) effects
      | _ -> false)
   | _ -> false
-(* Whether a statement's method call is dispatched on its object in one
-   step (Lean's `dispatchCallTerm`): the object's claim has several labels and
-   every actual is a name or a literal, so the member is read and invoked in
-   one node, which no bounded node rule admits. *)
+(* Actuals no evaluation of which runs code: names and literals
+   (`Type_queries.dispatches_call`). *)
 let plain_actuals (args:expr list) =
   List.for_all (fun (a:expr) -> match a.node with Id _ | Literal _ -> true | _ -> false) args
-let several_labels = function
-  | Atoms (_ :: _ :: _) | Union _ -> true
-  | _ -> false
 let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
   let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =

@@ -450,15 +450,9 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       if truth then t else
       match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
       | Some (Atoms atoms) ->
+        (* An alias of one application is that application's arms. *)
         let arms = union_arms declarations atoms in
-        (* An alias of one application is that application. *)
-        let rec unalias seen atom = match atom with
-          | Named (id,args) when not (List.mem id seen) ->
-            (match (try Some (definition declarations id args) with Json.Error _ -> None) with
-             | Some (Atoms [Named _ as inner]) -> unalias (id :: seen) inner
-             | _ -> atom)
-          | _ -> atom in
-        let narrowed = List.map (fun arm -> match unalias [] arm with
+        let narrowed = List.map (fun arm -> match arm with
           | Named (id,[_]) as applied when stable_member declarations (Atoms [applied]) f ->
             (match field_of applied f with
              | Some field ->

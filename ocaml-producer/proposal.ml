@@ -86,10 +86,11 @@ let declaration_footprint declarations values names (claim:function_claim) =
     | types -> List.for_all (fun t -> t = Atoms []) types in
   let readable = List.map fst g.params @ names in
   let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
-  (* A statement's method call dispatched on an object of several labels
-     reads and invokes the member in one node (`Source.several_labels`). *)
-  let dispatched (o:expr) args = plain_actuals args &&
-    List.exists (fun (x:expression) -> x.pos = o.pos && several_labels x.type_) claim.expressions in
+  (* A method call dispatched on its object reads and invokes the member in
+     one node (`Type_queries.dispatches_call`). *)
+  let dispatched (o:expr) args =
+    List.exists (fun (x:expression) -> x.pos = o.pos && Type_queries.dispatches_call declarations x.type_ args)
+      claim.expressions in
   Option.value (footprint_stmts ~dispatched ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
   throws_stmts ~callable g.body
 
