@@ -6,8 +6,8 @@ import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
-import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
-import { ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
+import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import { footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
 /** The projections a qualified parameter owns: an awaitable one its
@@ -198,6 +198,10 @@ export type TermScope = {
   fail(node: Node | null, message: string): never;
   /** A type reference: a binder in scope or a declaration. */
   named(node: TypeReferenceNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
+  /** Whether a reference names the verifier's `Within` (`resolvable.d.ts`),
+   * by the declaration TypeScript binds it to: a signature's statement of
+   * its effect (`statedResult`). A scope without it reads no statement. */
+  stated?(node: TypeReferenceNode): boolean;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
   awaited?(node: TypeReferenceNode): boolean;
@@ -449,6 +453,8 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   }
   // A qualified name is the scope's to read (a namespace member), or to refuse.
   if (ts.isTypeReferenceNode(node)) {
+    if (scope.stated?.(node))
+      return scope.fail(node, WITHIN_PLACE);
     if (scope.awaited?.(node)) {
       const [argument, ...others] = node.typeArguments ?? [];
       if (!argument || others.length) return scope.fail(node, "Awaited requires one type argument");
@@ -697,7 +703,7 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
   const forms = signatures(scope, parameters, result, at, span, declared);
   // A guard's promise is a second form beside the plain one; any other second
   // form is a rest over several tuples.
-  const plain = forms.filter((f) => sameEffect(f.effect, ordinaryEffect));
+  const plain = forms.filter((f) => f.effect.promise === null);
   if (plain.length !== 1) return scope.fail(at, "a rest parameter over several tuples is several signatures");
   return forms;
 }
@@ -805,17 +811,87 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
+  // A result `Within<F, T>` states the signature's effect, `F`, of its
+  // result `T` (`statedResult`).
+  const statement = given ? { stated: null, result } : statedResult(scope, result, at);
   // A guard's result, `x is T` (`asserts x is T`), is its plain result,
   // `boolean` (`void`), and a promise about the parameter it names: a second
   // signature at the same parameters, its result the promise's type.
-  const predicate = !given && result && ts.isTypePredicateNode(result)
-    ? promiseOf(scope, result, ordinary) : null;
-  const resultTerm = given ?? (predicate ? predicate.plain : typeTerm(scope, result, at));
+  const written = statement.result;
+  const predicate = !given && written && ts.isTypePredicateNode(written)
+    ? promiseOf(scope, written, ordinary) : null;
+  const resultTerm = given ?? (predicate ? predicate.plain : typeTerm(scope, written, at));
+  const effect = statement.stated ? statedEffect(statement.stated) : ordinaryEffect;
   const forms = (alternatives ?? [[]]).map((positions): FunctionTerm =>
-    ({ k: "function", effect: ordinaryEffect, receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+    ({ k: "function", effect, receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
   return predicate
     ? [...forms, ...forms.map((f): FunctionTerm => ({ ...f, effect: predicate.effect, result: predicate.type }))]
     : forms;
+}
+
+/** Where `Within` may stand: the refusal of any other place. */
+export const WITHIN_PLACE = "`Within` states a written signature's effect, at its result annotation only";
+
+/** The call effect a statement gives its signature: its footprint and
+ * on-throw flag, no promise, no fresh result, no receiver-store exception. */
+export const statedEffect = (stated: StatedEffect): CallEffect =>
+  ({ ...footprintEffect(stated.footprint), onThrow: stated.onThrow });
+
+/** A result annotation's statement of its signature's effect,
+ * `Within<F, T>` with `Within` the verifier's (SOURCE-ELABORATION.md,
+ * "Stated effects"), and the result `T` it is stated of; no statement, and
+ * the annotation itself, where the result is no such reference. `F` is a
+ * type literal written in place, `{ value: "keep" | "any"; store: "keep" |
+ * "grow" | "any" }`, with `onThrow: true` (or `onThrow?: true`) where the
+ * footprint holds on a throw too. Refused: a statement of nothing, the
+ * footprint letting everything change; one on an
+ * async definition, whose throw is its promise's rejection; one on a
+ * constructor or a construct signature, whose effect is its class's
+ * construction. */
+export function statedResult(scope: TermScope, result: TypeNode | undefined, at: Node | null):
+    { stated: StatedEffect | null; result: TypeNode | undefined } {
+  const node = result && unwrap(result);
+  if (!node || !ts.isTypeReferenceNode(node) || !scope.stated?.(node)) return { stated: null, result };
+  const [footprint, type, ...others] = node.typeArguments ?? [];
+  if (!footprint || !type || others.length)
+    return scope.fail(node, "`Within` takes a footprint and a result: `Within<F, T>`");
+  if (at && (ts.isConstructorDeclaration(at) || ts.isConstructSignatureDeclaration(at) || ts.isConstructorTypeNode(at)))
+    return scope.fail(node, "`Within` on a constructor is outside the fragment: its effect is its class's construction");
+  if (at && (ts.isFunctionDeclaration(at) || ts.isMethodDeclaration(at) || ts.isArrowFunction(at) ||
+      ts.isFunctionExpression(at)) && at.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))
+    return scope.fail(node, "`Within` on an async definition is outside the fragment: its call returns a promise where its body throws, so no footprint of its body's normal return is the call's");
+  const stated = statementOf(scope, footprint);
+  if (stated.footprint.value === "any" && stated.footprint.store === "any")
+    return scope.fail(footprint, "`Within` letting every location change states nothing: a throw's heap is as unconstrained by it as a normal return's");
+  return { stated, result: type };
+}
+
+/** A statement's footprint, written in place as a type literal. */
+function statementOf(scope: TermScope, written: TypeNode): StatedEffect {
+  const node = unwrap(written);
+  const shape = "a footprint is written in place as `{ value: \"keep\" | \"any\"; store: \"keep\" | \"grow\" | \"any\" }`, with `onThrow: true` where it holds on a throw too";
+  if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);
+  let value: ClosedFootprint["value"] | null = null;
+  let store: ClosedFootprint["store"] | null = null;
+  let onThrow = false;
+  const seen = new Set<string>();
+  for (const member of node.members) {
+    if (!ts.isPropertySignatureDeclaration(member) || !ts.isIdentifier(member.name) || member.modifiers?.length ||
+        !member.type || seen.has(member.name.text))
+      return scope.fail(member, shape);
+    seen.add(member.name.text);
+    const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
+    const type = unwrap(member.type);
+    const literal = ts.isLiteralTypeNode(type) ? type.literal : null;
+    const text = literal && ts.isStringLiteral(literal) ? literal.text : null;
+    if (member.name.text === "value" && !optional && (text === "keep" || text === "any")) value = text;
+    else if (member.name.text === "store" && !optional && (text === "keep" || text === "grow" || text === "any"))
+      store = text;
+    else if (member.name.text === "onThrow" && literal?.kind === ts.SyntaxKind.TrueKeyword) onThrow = true;
+    else return scope.fail(member, shape);
+  }
+  if (value === null || store === null) return scope.fail(written, shape);
+  return { footprint: { value, store }, onThrow };
 }
 
 /** A type predicate's plain result, its effect and its promise's type: `x

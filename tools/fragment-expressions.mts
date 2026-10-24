@@ -1976,8 +1976,10 @@ export function lambda(this: Gate,
     // A guard closure's annotation is its plain result and its promise.
     const guard = gate.guardOf(node);
     gate.guardBody = guard !== null;
+    // A result `Within<F, T>` states the closure's effect, `F`, of `T`.
+    const written = gate.statedResult(node.type, node);
     const declaredResult: TypeTerm | null = guard ? guardResult(guard)
-      : node.type || instance ? gate.typeOf(node.type, node) : null;
+      : written.result || instance ? gate.typeOf(written.result, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
     const keyword = modifiers[0];
     const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};
@@ -2050,6 +2052,7 @@ export function lambda(this: Gate,
         params,
         result: declaredResult,
         guard,
+        stated: written.stated,
         completion: isAsync ? "async" : "sync",
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
@@ -2082,6 +2085,7 @@ export function lambda(this: Gate,
       })),
       result: declaredResult,
       guard,
+      stated: written.stated,
       completion: isAsync ? "async" : "sync",
       body: inner,
     };

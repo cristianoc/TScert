@@ -462,7 +462,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           ? [...stmts, { k: "return", pos: brace, e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]
           : stmts;
         const block: Expr = { k: "lambda", pos: gate.span(member.body), typeParams: [], receiver: null,
-          params: [], result: { k: "atom", name: "undefined", span: keyword }, guard: null, completion: "sync",
+          params: [], result: { k: "atom", name: "undefined", span: keyword }, guard: null, stated: null, completion: "sync",
           body: { k: "blockBody", pos: gate.span(member.body), body } };
         statics.push({ early: false, name: staticName(name.text, `[[block@${start}]]`), namePos: keyword, annot: null,
           init: { k: "apply", pos: gate.span(member), callee: block, args: [] } });
@@ -795,7 +795,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     });
     const constructorLambda: Expr = { k: "lambda", pos: gate.span(node),
       typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
-      result: instance, guard: null, completion: "sync", body: { k: "blockBody", pos: gate.span(constructor?.body ?? node),
+      result: instance, guard: null, stated: null, completion: "sync", body: { k: "blockBody", pos: gate.span(constructor?.body ?? node),
         body: [...params.flatMap((p) => p.binding ? [p.binding] : []),
           ...construct(body, fields, new Set(), prelude)] } };
     const lambda: Expr = { k: "ctor", pos: gate.span(node), ...(typeParams.length ? { typeParams } : {}),

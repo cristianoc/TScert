@@ -805,7 +805,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- passes, then the parameters, allocated with its code field and its
     -- static fields, each at the contract its claim states, in member order
     -- (`Rule.ctorGraph`).
-    let .lambda _ none [] _ [] false (some _) _ false _ := lam
+    let .lambda _ none [] _ [] false (some _) _ none false _ := lam
       | throw "a class value is a constructor lambda with plain parameters"
     let P ← match PositiveRules.expand G A with
       | [.ctors _ _ P []] => pure P

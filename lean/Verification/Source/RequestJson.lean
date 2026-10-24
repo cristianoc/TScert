@@ -408,6 +408,15 @@ effects design; SOURCE-CONTRACTS.md, "Async functions and await"). -/
 def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
   !async || footprint == .top
 
+/-- A declaration's claim within the effect its result annotation states
+(`Within<F, T>`; SOURCE-ELABORATION.md, "Stated effects"): its footprint
+within the statement's, and on a throw too where the statement says so; an
+async declaration states none. Unstated, any claim. -/
+def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow : Bool) :
+    Option CallEffects.Effect → Bool
+  | none => true
+  | some s => !async && s.footprint != .top && footprint.le s.footprint && (!s.onThrow || onThrow)
+
 /-- The request's async code at `top`, then its read summaries, each checked
 once, then its graph code, checked in order against its claims, as a table
 of what was checked. -/

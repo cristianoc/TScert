@@ -278,6 +278,14 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let call_effect = match bound with
         | Some footprint -> {Semantic.ordinary_effect with footprint; fresh=fresh_result ~callable body; on_throw}
         | None -> Semantic.ordinary_effect in
+      (* A closure whose result annotation states its effect proposes what its
+         body shows where that is within the statement, else the statement. *)
+      let call_effect = match Hashtbl.find_opt Source.stated_closures e.pos with
+        | None -> call_effect
+        | Some stated ->
+          let footprint,on_throw = Source.within_statement (call_effect.footprint,call_effect.on_throw) (Some stated) in
+          if footprint = call_effect.footprint && on_throw = call_effect.on_throw then call_effect
+          else {Semantic.ordinary_effect with footprint; on_throw} in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
         | None -> quantified_arrow ~call_effect ~receiver quantified params result in

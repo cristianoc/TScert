@@ -1535,11 +1535,15 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
   const typeParams = gate.enterTypeParams(node.typeParameters, undefined, true);
   try {
     gate.asyncBody = isAsync;
-    const { retType, guard, parameterTypes } = gate.headerTypes(() => {
+    if (typeParams.some(p => p.resolution) && gate.statedResult(node.type, node).stated)
+      gate.fail(node.type ?? node, "`Within` on a resolution-qualified declaration is outside the fragment: such a unit claims no footprint");
+    const { retType, guard, stated, parameterTypes } = gate.headerTypes(() => {
       const guard = gate.guardOf(node);
+      const written = gate.statedResult(node.type, node);
       return {
-      retType: guard ? guardResult(guard) : gate.typeOf(node.type),
+      retType: guard ? guardResult(guard) : gate.typeOf(written.result, node),
       guard,
+      stated: written.stated,
       parameterTypes: node.parameters.map(p => p.dotDotDotToken ? gate.moduleRestType(p, node)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
         : gate.typeOf(p.type, p)),
@@ -1608,6 +1612,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       params,
       retType,
       guard,
+      stated,
       completion: isAsync ? "async" : "sync",
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,

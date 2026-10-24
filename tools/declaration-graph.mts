@@ -16,8 +16,8 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, substitute,
-  typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
@@ -433,6 +433,9 @@ export function collectDeclarations(file: string, options: {
   /** The verifier's observation-qualification bound (`resolvable.d.ts`),
    * resolved at a source name. */
   awaitable?: (span: Span) => void;
+  /** The verifier's statement of a signature's effect, `Within`
+   * (`resolvable.d.ts`), resolved at a source name. */
+  within?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
@@ -673,6 +676,41 @@ export function collectDeclarations(file: string, options: {
     // the host packages and any installed package.
     const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
       !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
+    // Statements (`Within<F, T>`, SOURCE-ELABORATION.md, "Stated effects"):
+    // a reference to the verifier's `Within`, by the declaration TypeScript
+    // binds it to. A statement is the program's own: one written outside the
+    // program's sources, or in an ambient declaration, states an effect of
+    // code no run checks, and so does one reached while an external value's
+    // type is read (`externalReads`). The definitions whose equations read
+    // one are recorded, so that an external value's type reaching one is
+    // refused (`externalStatements`).
+    const verifierAlias = (identifier: Identifier): string | null => {
+      const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
+      return declaration && ts.isTypeAliasDeclaration(declaration) &&
+        declaration.getSourceFile().fileName === resolvableDeclaration ? declaration.name.text : null;
+    };
+    const ambient = (node: Node): boolean => {
+      for (let at: Node | undefined = node; at; at = at.parent)
+        if (at.flags & ts.NodeFlags.Ambient) return true;
+      return false;
+    };
+    let externalReads = 0;
+    const statedDefinitions = new Set<string>();
+    const programClasses = new Set<string>();
+    // The definition whose equation is being read (`collect`): a statement
+    // read meanwhile, through a computed type its equation names included,
+    // is its.
+    let collecting: string | null = null;
+    const statement = (reference: ts.TypeReferenceNode, owner: string | null): boolean => {
+      if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== "Within") return false;
+      if (!programFile(reference.getSourceFile()) || ambient(reference))
+        throw Error("`Within` outside the program's sources, or in an ambient declaration, states an effect of code no run checks");
+      if (externalReads > 0)
+        throw Error("a value declared outside the program's sources is typed by a statement (`Within`), an effect of code no run checks");
+      const at = owner ?? collecting;
+      if (at !== null) statedDefinitions.add(at);
+      return true;
+    };
     // A read of a host class's member its named view does not list is
     // refused where it is written, naming the view (COMPILER-API.md, reading
     // rule 4, L6).
@@ -744,6 +782,11 @@ export function collectDeclarations(file: string, options: {
         if (!node) throw Error(`unresolved type reference ${what}`);
         return node;
       });
+      // The verifier's `Within` and `Footprint` are no types: a statement
+      // is read at a signature's result (`statedResult`), and nowhere else.
+      if (nodes.some(n => ts.isTypeAliasDeclaration(n) && n.getSourceFile().fileName === resolvableDeclaration &&
+          (n.name.text === "Within" || n.name.text === "Footprint")))
+        throw Error(`${WITHIN_PLACE}: ${what}`);
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
@@ -1443,6 +1486,9 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    // The types of the values declared outside the program's sources, which
+    // may reach no statement but a program class's (`externalStatements`).
+    const externalTypes: { what: string; type: TypeTerm }[] = [];
     // The declarations of the values read, whose declared types are swept for
     // their written applications.
     const valueDeclarations: Node[] = [];
@@ -1455,6 +1501,7 @@ export function collectDeclarations(file: string, options: {
         source,
         annotation: false,
         awaited,
+        stated: part => statement(part, null),
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
           return target && ts.isTypeAliasDeclaration(target) && associatedAlias(target) ? target : null;
@@ -1538,7 +1585,15 @@ export function collectDeclarations(file: string, options: {
     const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     // `guard` is the listed guard a client's import binds to (`bindingGuard`).
     const valueOf = (declared: readonly Node[], what: string, guard: GuardEntry | null = null, bound: boolean = false): Omit<ValueRoot, "binding"> => {
-      const read = valueRead(declared, what, bound);
+      const external = declared.some(n => !programFile(n.getSourceFile()) || ambient(n));
+      if (external) externalReads++;
+      let read: Omit<ValueRoot, "binding">;
+      try {
+        read = valueRead(declared, what, bound);
+      } finally {
+        if (external) externalReads--;
+      }
+      if (external) externalTypes.push({ what, type: read.type });
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
         ? { ...read, type: guardReading(declared, hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }), guard) }
         : read;
@@ -1625,6 +1680,10 @@ export function collectDeclarations(file: string, options: {
         if (overloads.length > 1) {
           if (overloads.some(o => o.typeParameters?.length))
             throw Error(`an overloaded generic function is outside the fragment: ${what}`);
+          // A declaration's unit is certified at one signature: a statement
+          // on an overload, or on the implementation, has no check.
+          if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(n, what), n.type, n).stated))
+            throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
           const forms = overloads.flatMap(o => {
             const at: Span = [o.getStart(source), o.end];
             for (const part of [...o.parameters, ...(o.type ? [o.type] : [])])
@@ -2205,6 +2264,11 @@ export function collectDeclarations(file: string, options: {
             libraryFile(declaration.getSourceFile())) {
           resolutionContextAt ??= span;
           options.awaited?.(span);
+          continue;
+        }
+        if (ts.isTypeAliasDeclaration(declaration) && declaration.getSourceFile().fileName === resolvableDeclaration &&
+            declaration.name.text === "Within") {
+          options.within?.(span);
           continue;
         }
         if (ts.isTypeAliasDeclaration(declaration) && declaration.getSourceFile().fileName === resolvableDeclaration &&
@@ -3430,6 +3494,10 @@ export function collectDeclarations(file: string, options: {
         declaration: name => {
           const nodes = typeDeclarationsOf(name);
           if (!nodes.some(isTypeDeclaration)) return null;
+          // A statement, `Within<F, T>`, is no application: the reader of
+          // signatures reads its footprint, whose shape it checks
+          // (`statedResult`), and its result.
+          if (verifierAlias(name) === "Within") return null;
           // A target matters only where it has a bounded parameter.
           if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
           const node = lookup(name, name.text);
@@ -3514,9 +3582,16 @@ export function collectDeclarations(file: string, options: {
             enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
             guardPromises,
-            keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited });
+            keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: statement,
+            collecting: (node, key) => {
+              collecting = key;
+              if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
+                programClasses.add(key);
+            } });
         } catch (error) {
           throw new DeclarationError(span, messageOf(error), error);
+        } finally {
+          collecting = null;
         }
       }
     };
@@ -3554,6 +3629,7 @@ export function collectDeclarations(file: string, options: {
     // (SOURCE-CONTRACTS.md, "Async functions and await"). An existing
     // fulfilled promise may retain an object that later acquires then.
     // The client's own bodies are checked at their source annotations.
+    externalStatements(externalTypes, definitions, statedDefinitions, programClasses);
     const clientModule = idOf(client);
     const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
@@ -3562,6 +3638,34 @@ export function collectDeclarations(file: string, options: {
     options.familySelected?.(selected());
     return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
   });
+}
+
+/** A value declared outside the program's sources (a package, a declaration
+ * file, an ambient declaration) is the environment's: a statement its type
+ * reaches, through a reference to a definition whose equation reads one,
+ * would state an effect of code no run checks. A program class's members are
+ * the exception: its instances are the program's values, whose conformance
+ * external code preserves (DESIGN.md, "Trust surface"). */
+function externalStatements(externals: readonly { what: string; type: TypeTerm }[],
+    definitions: readonly TypeDefinition[], stated: ReadonlySet<string>, classes: ReadonlySet<string>): void {
+  const keyOf = (id: DeclarationIdentity) => `${id.module}#${id.span[0]}:${id.span[1]}`;
+  const byKey = new Map(definitions.map(d => [keyOf(d.declaration), d] as const));
+  for (const { what, type } of externals) {
+    const seen = new Set<string>();
+    const work: TypeTerm[] = [type];
+    for (let term = work.pop(); term !== undefined; term = work.pop())
+      visitType(term, part => {
+        if (part.k !== "reference") return;
+        const key = keyOf(part.reference.target);
+        if (seen.has(key) || classes.has(key)) return;
+        seen.add(key);
+        if (stated.has(key))
+          throw Error(`the value ${what}, declared outside the program's sources, is typed through ${part.reference.name}, whose statement (\`Within\`) states an effect of code no run checks`);
+        const definition = byKey.get(key);
+        if (definition?.expression) work.push(definition.expression);
+        work.push(...definition?.bases ?? []);
+      });
+  }
 }
 
 /** TypeScript's "implicitly has an 'any' type" (TS7008) on a field an
@@ -4373,6 +4477,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** The type alias a reference names, if any. */
   alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
   awaited: NonNullable<TermScope["awaited"]>;
+  /** Whether a reference is a statement (`Within`), recording that the
+   * definition `owner` reads one. */
+  stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
+  /** Told each declaration collected, under its key, before its equation
+   * is read, and null once collection ends: the program's classes and the
+   * definitions reading a statement are recorded (`externalStatements`). */
+  collecting: (node: TypeDeclaration | null, key: string | null) => void;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
   /** A mapped type over `keyof` as TypeScript resolves it. */
@@ -4406,6 +4517,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    context.collecting(node, key);
     const stated = equation(node);
     if (stated) {
       definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
@@ -4493,6 +4605,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       source,
       annotation: false,
       awaited: context.awaited,
+      stated: part => context.stated(part, key),
       ...(body ? { body } : {}),
       symbol,
       literalKey: context.literalKey,

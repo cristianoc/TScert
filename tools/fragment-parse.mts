@@ -22,8 +22,8 @@ import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
 import { readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
-import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
+import type { DeclarationIdentity, StatedEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormed } from "./wire-strings.mts";
@@ -162,6 +162,9 @@ export class Gate {
   standardResolvable: boolean = false;
   /** The file names the verifier's `Awaitable` (`resolvable.d.ts`). */
   standardAwaitable: boolean = false;
+  /** The file names the verifier's `Within` (`resolvable.d.ts`), a
+   * signature's statement of its effect. */
+  standardWithin: boolean = false;
   qualificationHeader: boolean = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
@@ -629,6 +632,10 @@ export class Gate {
       annotation: true,
       awaited: node => this.standardAwaited && ts.isIdentifier(node.typeName) &&
         node.typeName.text === "Awaited" && !this.hasTypeParam("Awaited") && !this.blockTypeAt(node),
+      // `Within`, where the file names the verifier's and no type parameter,
+      // block type or declaration of the file's shadows it.
+      stated: node => this.standardWithin && ts.isIdentifier(node.typeName) && node.typeName.text === "Within" &&
+        !this.hasTypeParam("Within") && !this.blockTypeAt(node) && !this.declaredTypes.has("Within"),
       associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text) &&
           !this.blockTypeAt(node)
         ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
@@ -784,6 +791,13 @@ export class Gate {
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): TypeTerm {
     return typeTerm(this.scope, node, at);
+  }
+
+  /** A definition's written result: its statement of the definition's
+   * effect, `Within<F, T>`, and the result annotation it states it of
+   * (`statedResult`); no statement where it writes none. */
+  statedResult(node: TypeNode | undefined, at: Node): { stated: StatedEffect | null; result: TypeNode | undefined } {
+    return statedResult(this.scope, node, at);
   }
 
   /** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
@@ -1886,6 +1900,7 @@ function lowerFile(file: string, carriesContext: boolean,
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
+        within: () => { gate.standardWithin = true; },
         associatedAlias: (name, identity) => {
           const alias = aliasNodes.find(node => node.name.text === name &&
             node.getStart(source) === identity.span[0] && node.end === identity.span[1]);

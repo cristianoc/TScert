@@ -613,7 +613,11 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               signature's effect and type. *)
            guard: (call_effect * ty) option;
            (* Whether it is async: its effects are certified at `top`. *)
-           async: bool; body: stmt list }
+           async: bool;
+           (* The effect its result annotation states (`Within<F, T>`): a
+              footprint and whether it holds on a throw too. Its claim must
+              lie within it. *)
+           stated: (footprint * bool) option; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -730,6 +734,22 @@ let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
    definition's effects at `top` (`asyncEffects`) and no footprint below it is
    proposed. *)
 let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
+(* The effects closures' result annotations state (`Within<F, T>`), by the
+   literal's position: a footprint and whether it holds on a throw too. Lean
+   requires a signature its code is checked at to cover it. *)
+let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
+(* A definition's statement as the Fragment writes it, or none. *)
+let stated_of j = match field "stated" j with
+  | Null -> None
+  | s -> Some (footprint_of (field "footprint" s),Json.boolean (field "onThrow" s))
+(* The claim a stated definition proposes: what its body shows where that is
+   within the statement, else the statement, which Lean then checks node by
+   node. *)
+let within_statement (footprint,on_throw) = function
+  | None -> footprint,on_throw
+  | Some (stated,stated_throw) ->
+    if footprint_le footprint stated && (on_throw || not stated_throw) then footprint,on_throw
+    else stated,stated_throw
 let async_completion j = match text "completion" j with
   | "async" -> true
   | "sync" -> false
@@ -1046,6 +1066,7 @@ let rec expr binders j =
              which the conversion leaves unchanged. *)
           Some (source_type inner (field "type" r)) in
       if async_completion j then Hashtbl.replace async_closures (field "pos" j) ();
+      Option.iter (Hashtbl.replace stated_closures (field "pos" j)) (stated_of j);
       Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
@@ -1339,5 +1360,5 @@ and decode_program ast =
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
-      async=async_completion f;
+      async=async_completion f;stated=stated_of f;
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

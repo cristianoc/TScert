@@ -190,7 +190,8 @@ A function's guarantee comes only from its checked body: a declaration's
 claimed footprint is checked against its graph (proved:
 `SourceExtraction.checkRequests_footprint_at`), a closure's against its code
 entry (`codeChecked_sound`), a class's construct signatures against its
-constructor's code (`ctorGraph`). A callable value carries its footprint
+constructor's code (`ctorGraph`); a [statement](SOURCE-ELABORATION.md#stated-effects)
+in a definition's annotation is certified from its code at the definition. A callable value carries its footprint
 through ordinary signature checking, substitution and application; an unknown
 function states `{value: any, store: any}`.
 

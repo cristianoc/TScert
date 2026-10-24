@@ -106,6 +106,10 @@ structure LambdaSetup (ι : Type) where
   rest : Bool
   offered : Ty ι
 
+/-- The statement a closure's code must cover over its annotation's whole
+domain (`lambdaSetup`): the one its source states. -/
+@[noinline] def statedObligation (stated : Option CallEffects.Effect) : Option CallEffects.Effect := stated
+
 /-- **A lambda's graph code.** Its code is the graph its body compiles to
 (`CallCode.graph`), checked at each signature the code offers from that
 signature's frame, the captures at their types here: one code request per
@@ -121,7 +125,7 @@ scheme row's variadic signatures. -/
 @[nospecialize] def lambdaSetup (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
-  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard _ body := lam
+  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard stated async body := lam
     | throw "internal extraction error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst
@@ -190,9 +194,12 @@ scheme row's variadic signatures. -/
               "a closure collecting a rest array needs its result annotation")
         let R ← lower (Fragment.callableType ret)
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))
-        let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, .ordinary⟩]))
+        -- Its own signature's effect is its annotation's: the statement, or
+        -- none beyond the contract.
+        let effect := stated.getD .ordinary
+        let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, effect⟩]))
         recordHints [own]
-        pure ([(⟨Rsource, sourceDs, R, .ordinary⟩, some [restPack])], [own])
+        pure ([(⟨Rsource, sourceDs, R, effect⟩, some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
         | .ctor U, _ => match PositiveRules.expand G A with
@@ -277,6 +284,27 @@ scheme row's variadic signatures. -/
     for (D, B) in row.arguments.zip sourceDs do
       requireWithin T pos .bindingAnnotation B D reason
     requireWithin T pos .bindingAnnotation row.result promised reason
+  -- A written statement (`Within<F, T>`) is proved as a written promise is,
+  -- whatever the claim offers: some signature the code is checked at states
+  -- an effect covering it over the annotation's whole domain, every receiver
+  -- and every argument the annotation admits, at a result within the written
+  -- one (SOURCE-ELABORATION.md, "Stated effects"). An async definition
+  -- states none: its call returns where its body throws.
+  if let some s := statedObligation stated then
+    let T ← table
+    if async then
+      throw (locatedRefusal T pos .bindingAnnotation
+        "an async definition states no effect: its call returns a promise where its body throws")
+    let reason := "a stated closure's claim must offer its stated effect over its annotated parameters"
+    let some written := ret | throw (locatedRefusal T pos .bindingAnnotation reason)
+    let R ← lower (Fragment.callableType written)
+    let T ← table
+    let some row := rows.find? (fun r => r.effect.covers s && r.arguments.length == arity)
+      | throw (locatedRefusal T pos .bindingAnnotation reason)
+    requireWithin T pos .bindingAnnotation Rsource row.receiver reason
+    for (D, B) in row.arguments.zip sourceDs do
+      requireWithin T pos .bindingAnnotation B D reason
+    requireWithin T pos .bindingAnnotation row.result R reason
   if !overlays.isEmpty && overlays.length != rows.length then
     throw "per-arrow interior claims do not match the claimed arrows"
   -- The captures: the named bindings in scope the lambda reads (a class's

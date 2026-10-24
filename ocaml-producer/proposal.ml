@@ -135,9 +135,11 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
     let proposal : Proposal_types.t = infer_assuming ~thrown ~state flows program assumed in
     let selves_raised = raise_selves proposal in
     let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations program.Source.values names c) proposal.functions in
+    (* A stated declaration is assumed at most at its statement. *)
     let raised = List.filter_map (fun ((c:function_claim),(f,_)) ->
       match List.assoc_opt c.source.name assumed with
-      | Some a -> Some (c.source.name,join_footprint a f)
+      | Some a -> Some (c.source.name,fst (within_statement (join_footprint a f,false)
+          (Option.map (fun (s,_) -> s,false) c.source.stated)))
       | None -> None) footprints in
     let kept = List.filter (fun name -> List.exists (fun ((c:function_claim),(f,t)) ->
       c.source.name = name && t && f <> top_footprint) footprints) thrown in
@@ -145,8 +147,9 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
       {proposal with functions=List.map (fun ((c:function_claim),(f,_)) ->
         let footprint = match List.assoc_opt c.source.name assumed with
           | Some a -> join_footprint a f | None -> top_footprint in
-        {c with declared_footprint=footprint;
-          declared_on_throw=footprint <> top_footprint && List.mem c.source.name thrown}) footprints}
+        let footprint,on_throw = within_statement
+          (footprint,footprint <> top_footprint && List.mem c.source.name thrown) c.source.stated in
+        {c with declared_footprint=footprint; declared_on_throw=on_throw}) footprints}
     else rounds raised kept in
   rounds start (List.map fst start)
 
@@ -205,7 +208,7 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
     | body -> Some (infer_function ~offers:discarding state flows program.Source.declarations arities
         (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
-         result=Atoms [Undef];guard=None;async=false;body}) in
+         result=Atoms [Undef];guard=None;async=false;stated=None;body}) in
   (* The initialization unit checks both initializer and annotation. Use the
      annotation's offered signatures, retaining effects established by a matching
      initializer signature. Lean makes both checked contracts available. *)
