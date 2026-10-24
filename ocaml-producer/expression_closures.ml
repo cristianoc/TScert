@@ -269,11 +269,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let iteration name = Option.bind (module_type name) iteration_footprint in
       (* A call this typing claims at `never` never returns normally. *)
       let no_return (e:expr) = latest_claim e.pos = Some (Atoms []) in
-      (* A block body's statements dispatch a method call on an object of
-         several labels in one node (`Source.several_labels`); an expression
-         body is a closed expression, which saves the member first. *)
-      let dispatched (o:expr) args = (match body.node with BlockBody _ -> true | _ -> false) &&
-        Source.plain_actuals args && (match latest_claim o.pos with Some t -> Source.several_labels t | None -> false) in
+      (* A body, a block or an expression, the graph of its `return`,
+         dispatches a method call on its object in one node
+         (`Type_queries.dispatches_call`). *)
+      let dispatched (o:expr) args =
+        match latest_claim o.pos with Some t -> dispatches_call declarations t args | None -> false in
       let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
         List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~no_return ~iteration ~readable d))
           (footprint_expr ~dispatched ~callable ~no_return ~iteration ~readable body) defaults in
