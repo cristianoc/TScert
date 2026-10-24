@@ -2,7 +2,7 @@
 
 A design for the census's parse cost and the verifier's input preparation.
 Its stages and their status are in [WORK](../../WORK.md#status). Base: TScert
-main at 297120f.
+main at ea6caee.
 
 **Evidence labels.** **Measured** names the run that produced a number.
 **Cited** names inspected code. **Conjectured** marks a proposed design, an
@@ -15,7 +15,7 @@ workers): about 1,520 s of executed stage CPU, 61% parse (932 s), 22% search,
 8% propose, 4% explain, 3% check. Raw data in the 2026-10-24 measurement's
 scratch directory, outside the repository.
 
-**Measured — the parse's phases** (every census parse replayed at 6bbc6f1
+**Measured — the parse's phases** (every census parse replayed at a2180b8
 in 6 processes):
 
 | Phase | Share |
@@ -496,7 +496,7 @@ Estimates (conjectured) from the 6a3a864 census's 932 s of parse and the
 
 | Step | Census parse |
 | --- | ---: |
-| §3.1–3.3 attempt answers, resolutions, query answers | measured: 1,069.5 → 573.5 s (297120f → this step, the 466 slices both censuses share, cold stores, 2026-10-24) |
+| §3.1–3.3 attempt answers, resolutions, query answers | measured: 1,069.5 → 573.5 s (ea6caee → this step, the 466 slices both censuses share, cold stores, 2026-10-24) |
 | §3.4 module entries and §3.6 duplicate slices | measured together: 577.1 → 430.3 s (parse and module stages, the 473 slices both censuses share, cold stores, 2026-10-24), against about 240 s expected |
 | §3.5 parser session | not built: about 30 s at most (measured bound) |
 | §3.7 declaration entries | not built: at most 7% of the parse (measured bound) |

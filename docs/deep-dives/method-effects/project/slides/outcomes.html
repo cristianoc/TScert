@@ -4,11 +4,11 @@
 <div style="display:flex;gap:22px">
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
 <p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">45</p>
-<p style="font-size:24px;color:#1d2422;line-height:1.34;">test cases of method effects (merge 105f95c): 14 <span style="color:#2e7d4f">verified</span>, 30 <span style="color:#9a3a2a">refused</span>, 1 <span style="color:#5e6870">gap</span> (the generic declaration on “Forms that cannot carry a statement”); in the suite run of 2026-10-24 after commit 07eb9b2, each of the 2,126 test cases gets its expected outcome</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.34;">test cases of method effects (merge 72917dd): 14 <span style="color:#2e7d4f">verified</span>, 30 <span style="color:#9a3a2a">refused</span>, 1 <span style="color:#5e6870">gap</span> (the generic declaration on “Forms that cannot carry a statement”); in the suite run of 2026-10-24 after commit 05e3f01, each of the 2,126 test cases gets its expected outcome</p>
 </div>
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
 <p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">9 of 16</p>
-<p style="font-size:24px;color:#1d2422;line-height:1.34;">measured parser functions <span style="color:#2e7d4f">verify</span>, with and without the statements (census slices at 300 s: before, commit 6a3a864; after, commit ea02ba0). 6 of the other 7 are among the 21 slices that stop at pattern’s map; classBody (the parser of a class body) is <span style="color:#9a3a2a">refused</span> earlier, for another reason (census of 6a3a864)</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.34;">measured parser functions <span style="color:#2e7d4f">verify</span>, with and without the statements (census slices at 300 s: before, commit 6a3a864; after, commit 40ab4d7). 6 of the other 7 are among the 21 slices that stop at pattern’s map; classBody (the parser of a class body) is <span style="color:#9a3a2a">refused</span> earlier, for another reason (census of 6a3a864)</p>
 </div>
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
 <p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">1 of 2</p>
@@ -17,6 +17,6 @@
 </div>
 <ul style="font-size:24px;color:#1d2422;line-height:1.38">
 <li>Under Node, 13 of the 30 refused test cases run (tests/node-runs.mts) and show the refused behaviour: in 11, map’s result has a hole; in 2, a parameter default such as x: number = xs.pop() ?? 0, on a function stating that nothing changes, pops the array it reads.</li>
-<li>Observed in a scratch probe (a temporary, uncommitted edit) of pattern’s slice at commit ea02ba0: with only the object-pattern map written as a loop, the slice verifies; before the statements it needed both maps rewritten (the commit message of ea02ba0). The source keeps the map, by the rule that it is not rewritten to fit the verifier (docs/SOURCE-REWRITES.md).</li>
+<li>Observed in a scratch probe (a temporary, uncommitted edit) of pattern’s slice at commit 40ab4d7: with only the object-pattern map written as a loop, the slice verifies; before the statements it needed both maps rewritten (the commit message of 40ab4d7). The source keeps the map, by the rule that it is not rewritten to fit the verifier (docs/SOURCE-REWRITES.md).</li>
 </ul>
 </section>
