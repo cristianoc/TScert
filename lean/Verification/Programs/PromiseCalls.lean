@@ -86,9 +86,13 @@ theorem yieldFacts_holds {G : NormalGraph ι} {ys : List (Yield ι)} {ρ n W u} 
       · exact hfl h
   · cases he
 
-/-- A context with the slots of `facts`, past `shift` slots, at their types. -/
-def refineBy (Γ : List (Ty ι)) (facts : List (Nat × Ty ι)) (shift : Nat) : List (Ty ι) :=
-  facts.foldl (fun Δ f => Δ.set (f.1 + shift) f.2) Γ
+/-- A context with the slots of `facts`, past `shift` slots, refined: each
+at the fact's type filtered by its own (`BranchRefinement.factFilter`). -/
+@[nospecialize] def refineBy (G : NormalGraph ι) (Γ : List (Ty ι)) (facts : List (Nat × Ty ι)) (shift : Nat) :
+    List (Ty ι) :=
+  facts.foldl (fun Δ f => match Δ[f.1 + shift]? with
+    | some A => Δ.set (f.1 + shift) (BranchRefinement.factFilter G A f.2)
+    | none => Δ) Γ
 
 theorem envOk_set {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W i T}
     (h : EnvOk G Γ ρ n W) (hT : meaning G T n W (ρ i)) : EnvOk G (Γ.set i T) ρ n W := by
@@ -102,13 +106,22 @@ theorem envOk_set {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W i T}
     · cases hk
   · exact h.2 k A hk
 
-theorem envOk_refineBy {G : NormalGraph ι} {ρ n W shift} :
-    ∀ {Γ : List (Ty ι)} {facts : List (Nat × Ty ι)}, EnvOk G Γ ρ n W →
-      (∀ f ∈ facts, meaning G f.2 n W (ρ (f.1 + shift))) → EnvOk G (refineBy Γ facts shift) ρ n W
-  | _, [], h, _ => h
-  | _, f :: fs, h, hf => by
+/-- A context refined by facts its values meet, given a heap meeting the
+world: the meet's exclusions read the heap's field contents. -/
+theorem envOk_refineBy {G : NormalGraph ι} {ρ n W shift} {h : Heap} (hh : HeapOk (n+1) W h) :
+    ∀ {Γ : List (Ty ι)} {facts : List (Nat × Ty ι)}, EnvOk G Γ ρ (n+1) W →
+      (∀ f ∈ facts, meaning G f.2 (n+1) W (ρ (f.1 + shift))) → EnvOk G (refineBy G Γ facts shift) ρ (n+1) W
+  | _, [], he, _ => he
+  | Γ, f :: fs, he, hf => by
     simp only [PromiseCalls.refineBy, List.foldl_cons]
-    exact envOk_refineBy (envOk_set h (hf f (by simp))) (fun g hg => hf g (by simp [hg]))
+    have step : EnvOk G (match Γ[f.1 + shift]? with
+        | some A => Γ.set (f.1 + shift) (BranchRefinement.factFilter G A f.2)
+        | none => Γ) ρ (n+1) W := by
+      split
+      · rename_i A hA
+        exact envOk_set he (BranchRefinement.factFilter_sound (he.2 _ A hA) (hf f (by simp)) hh)
+      · exact he
+    exact envOk_refineBy hh step (fun g hg => hf g (by simp [hg]))
 
 /-- The implications a state establishes on an edge, in its own slots: the
 entry's, and, where the result is pushed into slot 0, the result's

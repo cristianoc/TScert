@@ -73,8 +73,10 @@ promise signature (a type guard's, `asserts` false; an assertion function's,
 `asserts` true), the callee a name, or a method or field of a name's object, of an
 actual that is an immutable name. Of several promise signatures (overloads),
 the first whose parameters hold the types of the actuals that are names. The
-actual's slot and the promise's type; the graph checker proves it from the
-callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
+actual's slot and the promise's type filtered by the slot's
+(`BranchRefinement.factFilter`), as the edge's refinement reads it; the graph
+checker proves it from the callee's signature at the call
+(`PromiseCalls.promiseCall_sound`). -/
 @[nospecialize] def promiseNarrowing (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) (asserts : Bool) (e : Fragment.Expr) (original : String → String := id) :
     Option (Nat × Ty ι) := do
@@ -112,8 +114,8 @@ callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
     | _ => promises.filter fun (Ds, _, _) => holds Ds
   let (_, T, p) ← chosen.head?
   let .var _ name ← args[p]? | none
-  let (j, _) ← slotType name
-  return (j, T)
+  let (j, A) ← slotType name
+  return (j, BranchRefinement.factFilter G A T)
 
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.

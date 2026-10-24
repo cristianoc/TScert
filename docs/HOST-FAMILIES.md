@@ -818,8 +818,10 @@ binds to another family's function of the same name and domain is an
 ordinary call (`pipeline/test.mts`). A call with
 a spread or more than one argument is refused.
 
-**A call on an immutable name** $`x`$, a binding the file assigns
-nowhere, read where it is initialized (`readCannotThrow`, which stops at
+**A call on an immutable name** $`x`$, a binding no write in its scope
+names ([written](SOURCE-ELABORATION.md#a-let-nothing-assigns), `unassigned`:
+a nested closure's write counts, another binding's of the same name does
+not), read where it is initialized (`readScope`, which stops at
 the read's nearest binding of the name: a parameter after its own
 declaration, a block's or a `switch` clause's `const` or `let` initialized
 at every read, a loop's binding in the loop's body and, for a `for` loop,

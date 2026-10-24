@@ -237,12 +237,10 @@ export function hoistTarget(this: Gate, s: Statement): Within<{ value: "any"; st
     const kind = gate.iterations.get(gate.span(x).join(":"));
     return !!kind?.startsWith("client");
   };
-  const assigned = gate.assignedNames();
   // A name read before the spread runs after the collection: it must hold
   // the same value then, and its read must not throw where the source's
-  // would (`readCannotThrow`).
-  const initialized = (id: ts.Identifier): boolean => gate.readCannotThrow(id);
-  const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text) && initialized(x)
+  // would (`unassigned`).
+  const stable = (x: Node) => ts.isIdentifier(x) ? gate.unassigned(x)
     : ts.isNumericLiteral(x) || ts.isStringLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword ||
       x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
   // The spread, if it is the first evaluation of `x` that may run code;
@@ -284,27 +282,28 @@ export function hoistTarget(this: Gate, s: Statement): Within<{ value: "any"; st
   return found === "stable" ? null : found;
 }
 
-/** Whether reading the name `id` cannot throw nor run code, and gives the
- * value it gives at any other read where the file assigns it nowhere. The
- * walk out from `id` stops at the first binding of its name: a parameter
+/** The scope of the binding a read of the name `id` reads, where the read
+ * cannot throw nor run code, and gives the value it gives at any other read
+ * where nothing writes the binding (`unassigned`); null where it may throw.
+ * The walk out from `id` stops at the first binding of its name: a parameter
  * read after its own declaration, a function declaration with a body, a
  * block's or a `switch` clause's `let` or `const` (of a pattern too) the
  * early-binding analysis finds initialized at every read (`markEarly`), a
  * loop's `let` or `const` binding read in the loop's body (or a `for`
  * loop's test or update), a `catch` clause's binding read in its block; past
  * every binding, a name TypeScript binds to the standard library's `var`s or
- * functions alone (`libraryValues`). A module binding, an import, a class,
+ * functions alone (`libraryValues`), whose scope here is the file. A module binding, an import, a class,
  * an enum, a namespace, a named function or class expression's own name, a
  * binding of another `switch` clause, an ambient or unresolved name is not
  * one. */
-export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
+export function readScope(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, Node | null> {
   const gate: Gate = this;
   for (let at: Node | undefined = id.parent; at; at = at.parent) {
     // A parameter is bound before the body runs and before the later
     // parameters' defaults; read in its own, or in an earlier one's, it is
     // uninitialized.
     const parameter = functionLikeNode(at) ? at.parameters.find(p => bindsName(p.name, id.text)) : undefined;
-    if (parameter) return id.pos >= parameter.end;
+    if (parameter) return id.pos >= parameter.end ? at : null;
     // A loop's `let` or `const` binding is bound before its body runs, and
     // before a `for` loop's test and update; a `catch` clause's before its
     // block. Read in the head declaring it, it is uninitialized; a `var`
@@ -315,13 +314,13 @@ export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: 
         loopHead.declarations.some(d => bindsName(d.name, id.text)))
       return !!(loopHead.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) &&
         [loop.statement, ...(ts.isForStatement(loop) ? [loop.condition, loop.incrementor] : [])]
-          .some(region => !!region && within(id, region));
+          .some(region => !!region && within(id, region)) ? loop : null;
     if (ts.isCatchClause(at) && at.variableDeclaration && bindsName(at.variableDeclaration.name, id.text))
-      return within(id, at.block);
+      return within(id, at.block) ? at : null;
     // A named function or class expression binds its name within itself:
     // the walk stops there, at a binding read through no slot of the
     // Fragment's.
-    if ((ts.isFunctionExpression(at) || ts.isClassExpression(at)) && at.name?.text === id.text) return false;
+    if ((ts.isFunctionExpression(at) || ts.isClassExpression(at)) && at.name?.text === id.text) return null;
     // A `switch`'s clauses share one scope: a binding of one clause read
     // in another may be uninitialized.
     const clauses = ts.isCaseBlock(at) ? at.clauses : null;
@@ -336,24 +335,39 @@ export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: 
         const named = statements.filter((d): d is ts.FunctionDeclaration =>
           ts.isFunctionDeclaration(d) && d.name?.text === id.text);
         return named.some(d => !!d.body) &&
-          !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
+          !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)) ? at : null;
       }
       if ((ts.isClassDeclaration(st) || ts.isEnumDeclaration(st) || ts.isModuleDeclaration(st)) &&
-          st.name && ts.isIdentifier(st.name) && st.name.text === id.text) return false;
-      if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
+          st.name && ts.isIdentifier(st.name) && st.name.text === id.text) return null;
+      if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return null;
       if (ts.isVariableStatement(st))
         for (const d of st.declarationList.declarations)
           if (bindsName(d.name, id.text)) {
             if (ts.isSourceFile(at) || !(st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) ||
                 (clauses && !clauses.some(c => within(st, c) && within(id, c))))
-              return false;
+              return null;
             // A pattern's binding read where it may be uninitialized is
             // refused by the early-binding analysis (`markEarly`).
-            return ts.isIdentifier(d.name) ? !gate.earlyDecls.has(d) : true;
+            return !ts.isIdentifier(d.name) || !gate.earlyDecls.has(d) ? at : null;
           }
     }
   }
-  return gate.libraryValues.has(gate.span(id).join(":"));
+  return gate.libraryValues.has(gate.span(id).join(":")) ? gate.file : null;
+}
+
+/** Whether reading the name `id` cannot throw nor run code (`readScope`). */
+export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
+  return this.readScope(id) !== null;
+}
+
+/** Whether every read of the name `id` gives one value: its read cannot
+ * throw nor run code (`readScope`), and no write in its binding's scope names
+ * the binding (`writesName`), a nested closure's included. Code outside that
+ * scope cannot name the binding. */
+export function unassigned(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
+  const gate: Gate = this;
+  const scope = gate.readScope(id);
+  return scope !== null && !writesName(gate, scope, new Set([gate.local(id)]));
 }
 
 /** Whether a binding name, an identifier or a pattern, binds `name`. */
@@ -378,38 +392,6 @@ const functionLikeNode = (n: Node): n is ts.FunctionDeclaration | ts.FunctionExp
     ts.MethodDeclaration | ts.ConstructorDeclaration =>
   ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) ||
   ts.isConstructorDeclaration(n);
-
-/** The names the file assigns anywhere: an assignment, a compound or
- * logical one, an update, a destructuring assignment. */
-export function assignedNames(this: Gate): Within<{ value: "any"; store: "grow" }, Set<string>> {
-  const gate: Gate = this;
-  if (gate.assigned) return gate.assigned;
-  const names = new Set<string>();
-  const targets = (e: Node): void => {
-    while (ts.isParenthesizedExpression(e)) e = e.expression;
-    if (ts.isIdentifier(e)) names.add(e.text);
-    else if (ts.isArrayLiteralExpression(e)) e.elements.forEach(targets);
-    else if (ts.isObjectLiteralExpression(e)) e.properties.forEach((p) =>
-      ts.isShorthandPropertyAssignment(p) ? (ts.isIdentifier(p.name) ? names.add(p.name.text) : undefined)
-        : ts.isPropertyAssignment(p) ? targets(p.initializer)
-        : ts.isSpreadAssignment(p) ? targets(p.expression) : undefined);
-    else if (ts.isSpreadElement(e)) targets(e.expression);
-    else if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken) targets(e.left);
-  };
-  const visit = (n: Node): void => {
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) targets(n.left);
-    if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) &&
-        (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
-      targets(n.operand);
-    if ((ts.isForOfStatement(n) || ts.isForInStatement(n)) && !ts.isVariableDeclarationList(n.initializer))
-      targets(n.initializer);
-    n.forEachChild(visit);
-  };
-  visit(gate.file);
-  gate.assigned = names;
-  return names;
-}
 
 export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Expr | null][]): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
@@ -1360,6 +1342,15 @@ export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loop
     else for (const e of n.elements) if (!ts.isOmittedExpression(e) && e.name) bind(e.name);
   };
   for (const d of list.declarations) bind(d.name);
+  return !writesName(gate, bindingScope(first), names);
+}
+
+/** Whether a write within `scope` names one of `names`, the names the
+ * fragment gives bindings (`local`): an assignment, a compound or logical
+ * assignment, an update, a destructuring assignment or a `for` head's
+ * target. A same-named binding declared within the scope shadows and has a
+ * name of its own (`renames`). */
+function writesName(gate: Gate, scope: Node, names: Set<string>): Within<{ value: "any"; store: "grow" }, boolean> {
   const targets = (e: Node): boolean => {
     while (ts.isParenthesizedExpression(e)) e = e.expression;
     if (ts.isIdentifier(e)) return names.has(gate.local(e));
@@ -1382,7 +1373,7 @@ export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loop
         targets(n.initializer)) return true;
     return !!n.forEachChild((c) => writes(c) || undefined);
   };
-  return !writes(bindingScope(first));
+  return writes(scope);
 }
 
 /** Loops, branches, blocks, `switch`, `try` and `throw`. */

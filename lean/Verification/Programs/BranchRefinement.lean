@@ -238,6 +238,110 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
         cases hl'
     | _ => simp [fieldAnswers] at hans
 
+/-! ### Disjoint labels, and a fact filtered by a slot's type
+
+A value of two types is in a label of each. Two clauses no value meets are
+disjoint: their meet is empty (`meetLists`: two shapes, two literals, an owned
+key a bound excludes), or both fix one field, as an invariant field or a
+readonly view, at types whose clauses meet in none, since the field's one
+location holds one value, of both types (`field_value`). A fact about a slot
+keeps the fact's labels the slot's type does not exclude
+(PROGRAM-TYPING.md, "Refinement by a fact"). -/
+
+/-- The fields a record clause fixes: its invariant fields and its views,
+the length view aside. -/
+@[nospecialize] def fixedFields (c : Clause (Ty ι)) : List (PropKey × Ty ι) :=
+  match c with
+  | .refs a _ vs _ _ _ _ => a ++ vs.filter (·.1 != lengthKey)
+  | _ => []
+
+/-- Two types of clause rows whose clauses meet in none. -/
+@[nospecialize] def typesDisjoint (G : NormalGraph ι) (K L : Ty ι) : Bool :=
+  G.plainTy K && G.plainTy L && (meetLists (expand G K) (expand G L)).isEmpty
+
+/-- Two clauses no value meets. -/
+@[nospecialize] def clausesDisjoint (G : NormalGraph ι) (c d : Clause (Ty ι)) : Bool :=
+  (meetLists [c] [d]).isEmpty ||
+    (fixedFields c).any fun p => (fixedFields d).any fun q => decide (p.1 = q.1) && typesDisjoint G p.2 q.2
+
+/-- A label no value of `A` is in: each of its clauses is disjoint from each
+clause of `A`. -/
+@[nospecialize] def labelExcluded (G : NormalGraph ι) (A : Ty ι) (b : ι) : Bool :=
+  G.plainTy A && G.plain b && (expand G A).all fun c => (expand G [b]).all fun d => clausesDisjoint G c d
+
+/-- A fact's type `B` filtered by a slot's type `A`: the labels of `B`
+that `A` does not exclude, none where `A` excludes them all. -/
+@[nospecialize] def factFilter (G : NormalGraph ι) (A B : Ty ι) : Ty ι :=
+  B.filter fun b => !labelExcluded G A b
+
+/-- A record clause's member, with a heap meeting the world, owns each field
+the clause fixes at a location the heap holds. -/
+theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K : Ty ι} {n W h v}
+    (hK : (f, K) ∈ fixedFields c)
+    (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h) :
+    ∃ flds code oid l u, v = .objAt flds code oid ∧ flds.lookup f = some l ∧ h[l]? = some u := by
+  cases c with
+  | refs a bs vs os ms ks =>
+    simp only [fixedFields] at hK
+    rcases List.mem_append.mp hK with hK | hK
+    · obtain ⟨flds', oid', hv', hall⟩ := hv.1.1
+      obtain ⟨l', c', hl', hc', -⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+      obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
+      exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
+    · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
+      obtain ⟨flds', l', c', oid', hv', hl', hc', -⟩ :=
+        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
+      obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
+      exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
+  | _ => simp [fixedFields] at hK
+
+theorem typesDisjoint_sound {G : NormalGraph ι} {K L : Ty ι} {n W u}
+    (hd : typesDisjoint G K L = true) (hK : meaning G K n W u) (hL : meaning G L n W u) : False := by
+  simp only [typesDisjoint, Bool.and_eq_true, List.isEmpty_iff] at hd
+  have hm := (meetLists_row G _ _ _ (expand G K) (expand G L) n W u).mpr
+    ⟨(expand_sem G K hd.1.1 n W u).mp hK, (expand_sem G L hd.1.2 n W u).mp hL⟩
+  rw [hd.2] at hm
+  obtain ⟨_, hm, _⟩ := hm
+  cases hm
+
+theorem clausesDisjoint_sound {G : NormalGraph ι} {c d : Clause (Ty ι)} {n W h v}
+    (hd : clausesDisjoint G c d = true) (hc : clauseSem G c (n+1) W v) (hd' : clauseSem G d (n+1) W v)
+    (hh : HeapOk (n+1) W h) : False := by
+  simp only [clausesDisjoint, Bool.or_eq_true, List.isEmpty_iff, List.any_eq_true, Bool.and_eq_true,
+    decide_eq_true_eq] at hd
+  rcases hd with hm | ⟨p, hp, q, hq, hpq, hdis⟩
+  · have hs := (meetLists_row G _ _ _ [c] [d] (n+1) W v).mpr
+      ⟨⟨c, List.mem_singleton_self c, hc⟩, ⟨d, List.mem_singleton_self d, hd'⟩⟩
+    rw [hm] at hs
+    obtain ⟨_, hs, _⟩ := hs
+    cases hs
+  · obtain ⟨f, K⟩ := p
+    obtain ⟨g, L⟩ := q
+    simp only at hpq hdis
+    subst hpq
+    obtain ⟨flds, code, oid, l, u, hl, hf, hu⟩ := field_located hp hc.1 hh
+    have hK := field_value (c := c) (f := f) (K := K) (by cases c <;> first | exact hp | simp [fixedFields] at hp) hc.1 hh hl hf hu
+    have hL := field_value (c := d) (f := f) (K := L) (by cases d <;> first | exact hq | simp [fixedFields] at hq) hd'.1 hh hl hf hu
+    exact typesDisjoint_sound hdis hK hL
+
+theorem labelExcluded_sound {G : NormalGraph ι} {A : Ty ι} {b : ι} {n W h v}
+    (hx : labelExcluded G A b = true) (hA : meaning G A (n+1) W v) (hb : meaning G [b] (n+1) W v)
+    (hh : HeapOk (n+1) W h) : False := by
+  simp only [labelExcluded, Bool.and_eq_true, List.all_eq_true] at hx
+  obtain ⟨c, hc, hcv⟩ := (expand_sem G A hx.1.1 _ W v).mp hA
+  obtain ⟨d, hd, hdv⟩ := (expand_sem G [b] (by simp [NormalGraph.plainTy, hx.1.2]) _ W v).mp hb
+  exact clausesDisjoint_sound (hx.2 c hc d hd) hcv hdv hh
+
+/-- A value of both types is of the fact's type filtered by the slot's. -/
+theorem factFilter_sound {G : NormalGraph ι} {A B : Ty ι} {n W h v}
+    (hA : meaning G A (n+1) W v) (hB : meaning G B (n+1) W v) (hh : HeapOk (n+1) W h) :
+    meaning G (factFilter G A B) (n+1) W v := by
+  obtain ⟨b, hb, hv⟩ := hB
+  refine ⟨b, List.mem_filter.mpr ⟨hb, ?_⟩, hv⟩
+  cases hx : labelExcluded G A b
+  · rfl
+  · exact (labelExcluded_sound hx hA ⟨b, by simp, hv⟩ hh).elim
+
 /-! ### What a membership test's `false` answer removes
 
 Where a membership test of the tags `ts` answered `false`, each tag's test

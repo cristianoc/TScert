@@ -2869,8 +2869,9 @@ conditional yield alone. `memberYield_sound` proves the rule from
 already holds: a broad `number` stays `number`, since no tag test
 contradicts it nor covers it, and a slot is never replaced by a family's
 other tags.
-An edge refines every slot an alias link relates to a yield's target to the
-yield's type (`aliasFacts`), the yields in order. The search proposes the
+An edge refines every slot an alias link relates to a yield's target by the
+yield's type (`aliasFacts`), the yields in order, each to the yield's type
+filtered by the slot's ([refinement by a fact](#refinement-by-a-fact)). The search proposes the
 yields it finds and, where an edge leaves a target's claim unmet, also
 one per slot the test speaks of (the tested slot and each object a current
 read link names) at that slot's own slice, unchanged ones included
@@ -2887,6 +2888,54 @@ Numbers are compared by `numberEqual`, JavaScript's equality, under which
 where the tag's test answers so for every value of it (`tagClause_sound`),
 so it agrees with the run whichever zero a set or a value holds, and the
 Fragment refuses `NaN` as a tag.
+
+#### Refinement by a fact
+
+An edge establishes facts $`x_k : T`$ of its source's slots: the yields of
+the node's value, those a promise call's implications state where the edge
+observes its test (`yieldFacts`, `aliasFacts`). The target's environment
+holds slot $`k`$ at the fact's type filtered by the slot's type $`A`$: the
+labels of $`T`$ that $`A`$ does not exclude, $`T \setminus_A`$. It
+approximates $`A \cap T`$ within $`T`$: the labels of $`A`$ are not kept, so a
+fact broader than the slot's type, `number` of a slot at `1`, leaves the slot
+at `number`.
+
+```math
+T \setminus_A = \{\, b \in T \mid \neg\,\mathrm{excl}(A, b) \,\}
+\qquad
+\frac{\Gamma(k) = A \quad \rho(k) \in_{n+1,W} A \quad \rho(k) \in_{n+1,W} T \quad \mathrm{HeapOk}_{n+1}(W, h)}
+     {\rho(k) \in_{n+1,W} T \setminus_A}\ \textsf{fact-filter}
+```
+
+$`\mathrm{excl}(A, b)`$ holds where $`A`$ and $`b`$ are of clause rows and
+every clause $`c`$ of $`A`$ is disjoint from every clause $`d`$ of $`b`$:
+either their meet is empty ($`\mathrm{meet}(c, d) = \emptyset`$: two shapes,
+two literals, an owned key a bound excludes), or both fix one key $`f`$, as
+an invariant field or a readonly view other than `length`'s, at types $`K`$ and $`L`$ of clause
+rows whose clauses meet in none. The exclusion reads that one level of
+fields: two fields whose types are disjoint only by their own fields are not
+compared.
+
+`fact-filter` is proved (`BranchRefinement.factFilter_sound`). A value of $`A`$
+and $`T`$ is in a label $`b`$ of $`T`$; were $`b`$ excluded, the value would
+be in disjoint clauses $`c`$ and $`d`$. An empty meet admits no value
+(`meetLists_row`). Two fixed fields are one key of one object, at one
+location; a heap meeting the world holds a value there, which the location's
+contract admits, and each clause's field states that contract admits only
+values of its type (`field_value`), so the value is of $`K`$ and $`L`$,
+which meet in none. The argument reads the heap at a positive level: each
+step refines its source's environment where it holds, at level $`n+1`$ with
+$`\mathrm{HeapOk}_{n+1}(W, h)`$, and carries the refined environment to
+level $`n`$ (`PromiseCalls.envOk_refineBy`, `ControlFlow.refined_env_aliased`,
+`refined_push_aliased`).
+
+Where $`A`$ excludes every label of $`T`$, $`T \setminus_A`$ is empty, and the
+target is reached by no environment (`vacuous-edge`): a guard that cannot
+hold of its actual's type, `ts.isOmittedExpression(e)` of
+`e : ts.BindingElement` called as an ordinary call, leaves its `true`
+branch with the actual at the empty type (`compiler-api-guard-disjoint`).
+The lowering proposes the same filtered type as the claim after a promise call
+(`Lowering.Control.promiseNarrowing`).
 
 #### Statement forms as graphs
 

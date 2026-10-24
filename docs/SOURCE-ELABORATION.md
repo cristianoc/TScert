@@ -434,10 +434,11 @@ o.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{chain}=o.m\ \mathsf{in}\ \maths
 ```
 
 The chain saves the tested value, and the receiver is read again: `o` is
-`this` or a name whose read cannot throw nor run code (`readCannotThrow`) and
-that the file assigns nowhere, so the second read gives the value the first
+`this` or a name whose read cannot throw nor run code and whose binding no
+write in its scope names ([written](#a-let-nothing-assigns), `unassigned`),
+so the second read gives the value the first
 did (`optional-method-call`, run under Node). A member at a computed key
-(`o[k]?.()`), any other object (`f().m?.()`, a name the file assigns) and
+(`o[k]?.()`), any other object (`f().m?.()`, a name a write names) and
 spread arguments are refused (`optional-method-call-object-refused`). On a `null` or `undefined` literal receiver the
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
@@ -1799,8 +1800,9 @@ Node). It is the same lowering as a pattern over an array's loop
 A spread of a program's iterable (`collect`) that is the first evaluation
 able to run code of the statement's value (an expression statement's, a
 `return`'s or a declaration's one initializer), every evaluation before it
-a literal or a name the file never assigns whose read cannot throw nor run
-code: a parameter, a function declaration with a body (an ambient
+a literal or a name whose binding no write in its scope names
+([written](#a-let-nothing-assigns), `unassigned`) and whose read cannot throw
+nor run code: a parameter, a function declaration with a body (an ambient
 `declare function` is none, `spread-program-iterable-ambient-function-refused`),
 a function body's `let` or
 `const` the early-binding analysis finds initialized at every read, or a

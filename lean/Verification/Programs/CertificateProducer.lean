@@ -1638,11 +1638,11 @@ promise's evidence. -/
     (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM G (NodeEvidence ι) := do
   let unconditional := PromiseCalls.yieldFacts ys false
   let conditional := PromiseCalls.yieldFacts ys true
-  let refine := fun Γ facts shift => PromiseCalls.refineBy Γ facts shift
+  let refine := fun Γ facts shift => PromiseCalls.refineBy G Γ facts shift
   -- An edge's refinement reaches the slots its knowledge's aliases relate.
-  let pushedRefine := fun facts => PromiseCalls.refineBy (c.type :: c.context)
+  let pushedRefine := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
     (PromiseCalls.aliasFacts out.links facts 1) 0
-  let keptRefine := fun facts => PromiseCalls.refineBy c.context
+  let keptRefine := fun facts => PromiseCalls.refineBy G c.context
     (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
   let target := fun (Γ : List (Ty ι)) (t : Target) (index : Nat) => (do
     let searched ← searchIn (edgeUsing G images claims Γ t)
@@ -1795,8 +1795,8 @@ def edgeContextOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence
   let Γ := (claim previous.expression).context
   let A := (claim previous.expression).type
   let facts := fun answered => PromiseCalls.yieldFacts previous.yields answered
-  let pushed := fun fs => PromiseCalls.refineBy (A :: Γ) (PromiseCalls.aliasFacts previous.output.links fs 1) 0
-  let kept := fun fs => PromiseCalls.refineBy Γ
+  let pushed := fun fs => PromiseCalls.refineBy G (A :: Γ) (PromiseCalls.aliasFacts previous.output.links fs 1) 0
+  let kept := fun fs => PromiseCalls.refineBy G Γ
     (PromiseCalls.aliasFacts (HeapKnowledge.dropResult previous.output).links fs 0) 0
   match cont with
   | .bind _ => pushed (facts false)
@@ -2000,7 +2000,7 @@ where
       | .plain _ => none
     guard answer
     let p ← c.arguments.head?
-    let A ← (PromiseCalls.refineBy (ControlFlow.entry c) (PromiseCalls.yieldFacts c.yields answered) 0)[p]?
+    let A ← (PromiseCalls.refineBy G (ControlFlow.entry c) (PromiseCalls.yieldFacts c.yields answered) 0)[p]?
     pure (.promise l A T)
 
 end Verification.CertificateProducer

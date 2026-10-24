@@ -271,8 +271,6 @@ export class Gate {
     site: { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> } } | null = null;
   /** The statements a lowering runs before the statement being lowered. */
   hoisted: Stmt[] = [];
-  /** The names the file assigns anywhere (`assignedNames`). */
-  assigned: Set<string> | null = null;
   /** The array pattern rest targets TypeScript types as a slice, by span. */
   readonly slices: Set<string> = new Set();
   /** Identifiers in a class's own body TypeScript binds to that class, by
@@ -937,8 +935,9 @@ export class Gate {
 
   hoistTarget: typeof statements.hoistTarget = statements.hoistTarget;
   readCannotThrow: typeof statements.readCannotThrow = statements.readCannotThrow;
+  readScope: typeof statements.readScope = statements.readScope;
 
-  assignedNames: typeof statements.assignedNames = statements.assignedNames;
+  unassigned: typeof statements.unassigned = statements.unassigned;
 
   /* Each default of a declaration's patterns, in binding order, reads none
      of the declaration's own names not yet initialized: JavaScript throws
