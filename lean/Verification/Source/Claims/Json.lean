@@ -195,7 +195,7 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   -- The answered requests of the document's graph and image check, threaded
   -- through every search in them; a qualified body's search, in its own
   -- image check, starts its own.
-  let mut answers : CertificateProducer.Answered (EquationStore.CheckedLabel F.equations F.primitive) := {}
+  let mut answers : CertificateProducer.Answered G := {}
   let mut proofLists := #[]
   -- Each request's read summaries, a table of its own scope: its
   -- obligations', then its nodes' and codes'.
@@ -220,7 +220,7 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     if r.qualification.isNone then
       let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
         fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
-        (searched := true)
+        (searched := true) (recheck := some (HeapExpressionRules.Checker.ordinary G))
       answers := next
       responses := responses.push c
     else

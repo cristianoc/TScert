@@ -2708,7 +2708,8 @@ target claim, whatever its slots, links and implications:
 ```
 
 `checkTargetResult` and `checkBranchTargetResult` accept it
-(`ControlFlow.unsatisfiable`) once the target exists, and
+(`ControlFlow.unsatisfiable`, which reads a slot's labels until one is not a
+clause row without clauses) once the target exists, and
 `unsatisfiable_sound` proves no environment meets $`\Gamma`$, so
 `target_state`, `branch_target_state` and `witness_edge_sound` have no case
 to establish. A call
@@ -2837,12 +2838,14 @@ arm partly covered is kept. `BranchRefinement.uncovered_sound`,
 `uncoveredField_sound` and `restricts_sound` prove the removal and the
 split, and `memberYield_sound` composes them with the tag slices
 (`memberSlotSlice`, `memberFieldSlice`); the search reads the split arm's
-label from the claims. The candidates are unfolded once per slice, not once
-per arm (`candidateRows`, `restrictionIn_eq`), and an arm reads only the
-candidates whose record clause has its own first operand and views but at
-the tested key, by a hash of these under the graph's label hash
-(`restrictKey`, `restricts_key`, `restrictionAt_eq`); search answers a slice
-asked again from its first answer (`fieldSliceS`). The rule:
+label from the claims. The candidates are unfolded once per slice
+(`candidateRows`, `restrictionIn_eq`), and an arm reads only the candidates
+whose record clause has its own first operand and views but at the tested
+key, by a hash of these under the graph's label hash (`restrictKey`,
+`restricts_key`, `restrictionAt_eq`); search answers a slice asked again from
+its first answer (`fieldSliceS`), and a graph's check computes each slice its
+nodes' yields read once (`ControlFlow.FieldSlices.ofCertificate`, whose
+slices are `memberFieldSlice`'s, `FieldSlices.eq_direct`). The rule:
 
 ```math
 \frac{

@@ -703,11 +703,12 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker G I := HeapExpressionRules.Checker.ordinary G I)
     (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none)
-    (answers : CertificateProducer.Answered ι := {}) :
-    Except String (ControlFlow.Certificate ι × CertificateProducer.Answered ι) :=
+    (answers : CertificateProducer.Answered G := {})
+    (recheck : Option ((i : PositiveCertificates.InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none) :
+    Except String (ControlFlow.Certificate ι × CertificateProducer.Answered G) :=
   match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) checker aliases answers with
+      requirements cuts (GraphCode.admits table) checker aliases answers recheck with
   | (.ok c, answers) => pure (c, answers)
   | (.error e, _) =>
     let location := match e with
@@ -767,9 +768,10 @@ checker `searchChecker`; the response is checked under the request's own
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
-    (aliases : List (ι × ι) := []) (answers : CertificateProducer.Answered ι := {})
-    (searched : Bool := false) :
-    Except String (Response ι × CertificateProducer.Answered ι) := do
+    (aliases : List (ι × ι) := []) (answers : CertificateProducer.Answered G := {})
+    (searched : Bool := false)
+    (recheck : Option ((i : PositiveCertificates.InstanceImageCheck G) → HeapExpressionRules.Checker G i) := none) :
+    Except String (Response ι × CertificateProducer.Answered G) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
   let mut answers := answers
@@ -779,6 +781,7 @@ checker `searchChecker`; the response is checked under the request's own
     let hints := (codeHints[i]?).getD {}
     let (C, next) ← produceGraphUsing G I (q.asRequest r) fuel labels suggestions known hints.sourceMap
       hints.requirements hints.cuts table (goal := some q.entry.goal) (answers := answers)
+      (recheck := recheck.map fun _ => HeapExpressionRules.Checker.ordinary G)
     answers := next
     certificates := certificates ++ [C]
     -- Search may use only definitions whose complete certificate checks,
@@ -786,15 +789,19 @@ checker `searchChecker`; the response is checked under the request's own
     -- its ordinary source obligation, rather than borrowing an unchecked code
     -- entry and failing only at the final generic certificate check.
     -- Retain every certificate: `verifyResult` still checks the entire code list.
-    let checked := GraphCode.codeCheckedResult (graph r) (StoreView.images r.types) answers.summaries.toList
-      table q.entry C
+    -- Under the search's own checks (`recheck`), the inclusions search
+    -- established are answered from their proofs.
+    let checked := match recheck with
+      | some _ => GraphCode.codeCheckedResult G (answers.images I) answers.summaries.toList table q.entry C
+      | none => GraphCode.codeCheckedResult (graph r) (StoreView.images r.types) answers.summaries.toList
+          table q.entry C
     if checked.accepted then table := table ++ [q.entry]
     else if let some stop := checked.exhaustion then
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
   let (C, final) ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
-    searchChecker aliases (answers := answers)
+    searchChecker aliases (answers := answers) (recheck := recheck)
   let response := Response.mk C certificates final.summaries.toList
   -- Where the search checked under the request's own checker (`searched`)
   -- and admitted every code, `verifyResult` repeats those checks: its code

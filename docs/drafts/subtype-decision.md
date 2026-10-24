@@ -373,7 +373,7 @@ established result carries its proof (`CheckedComparison`).
    `SameKind`, the opaque-row conditions and `meetSources` are read as
    today.
 
-**Coverage by assumption, the target form of step 6.** Discovery collects
+**Coverage by assumption, the target form of discovery.** Discovery collects
 every candidate's demand pairs before deletion, and deletion rechecks every
 row each round. The depth-first form builds the family certificate from the
 root, assuming a pair while it is open, keeping a covering's first candidate
@@ -386,9 +386,9 @@ missing. The depth-first form replaces discovery and deletion only with that
 representation (each covering naming the rows, arrow evidence and instances
 it reads, a failure invalidated when they change) and `discovery_complete`
 (§5), and only where structural comparison remains a measured cost
-after the other steps (§8, step 8).
+after the other steps (§8).
 
-**Resources** keep today's meaning while step 6 keeps today's discovery:
+**Resources** keep today's meaning while discovery stays today's:
 frontier rounds, `grows` over the rows inserted, exhaustion distinct from
 an unestablished question.
 
@@ -572,12 +572,14 @@ trusted code and no wire.
 
 ### 3.8 One memo for search and its check
 
-Search's own check of its evidence (`checkTreeS`, the final check of
-`--produce-source-claims`) runs in the process that established its
-comparisons, over the same graph and image check. The memo of §3.5 is
-passed to it: a comparison search established is answered with its
-`CheckedComparison`. The check stage, in its own process, starts with an
-empty memo.
+Search's own check of each graph and code it produces runs in the process
+that established its comparisons, over the same graph. Search records each
+inclusion it establishes with its proof (`Answered.proved`), and its checks
+read them as the image check's proved inclusions (`Answered.images`,
+`InstanceImageCheck.known`), which `compareUsing` establishes without
+comparing. The final check of `--produce-source-claims` reads each request's
+own image check, which holds none, and the check stage, in its own process,
+holds none.
 
 ### 3.9 What is preserved
 
@@ -603,9 +605,12 @@ empty memo.
   measured for the rest: step 1 deletes image equivalence, and a case or
   census slice it loses is a coverage result that revises the design (§8).
 - **Structure:** discovery and deletion stay today's; selected discovery
-  reads candidates as today, now through the index, and the rerun without
-  selection stays (§8, step 7). The depth-first form, where it is taken,
-  carries `discovery_complete`.
+  reads candidates as today, now through the index. A row no valid closed
+  family covers is not expanded, so a row reachable only through it, which
+  another row's `TabRen` premise could read, is not discovered: a narrowing
+  of discovery, measured. The check keeps the rerun without selection;
+  search compares without it (§8, the rerun). The depth-first form, where it
+  is taken, carries `discovery_complete`.
 
 What is not proved is measured: every pipeline case keeps its expected
 outcome, and the eight census slices keep theirs; any other change is a
@@ -682,7 +687,7 @@ reachable from its root through those coverings' premises (table rows,
 `Var`, `TabRen`, member instances) and their arrow evidence, stays valid;
 it needs the dependency closure WORK's
 [selected discovery](../../WORK.md#union-shapes-discovery) states. It is a
-part of the operational theorem that deleting the rerun needs (§8, step 7). `discovery_complete` — with the
+part of the operational theorem that deleting the rerun needs (§8). `discovery_complete` — with the
 dependency representation of §3.2, a valid closed family in the reach of
 today's discovery, its coverings by candidates, is found by the depth-first
 form — is the condition for replacing discovery and deletion by it.
@@ -697,7 +702,7 @@ and overload order, every proposal, and search's typing order (§3.7).
 
 **Removed:** `imagesUpTo`, `structuralImages`, `compareEquivalent`,
 `equivalent`, `compareImagesUpTo`, the respelling patches,
-`extendInstancePatches`, `instancePatchLimit`; with step 7's operational
+`extendInstancePatches`, `instancePatchLimit`; with the rerun's operational
 theorem, the reruns and `InstanceImageCheck.general`; with `discovery_complete`,
 `growTable`, `gfp` and `coveredIn`.
 
@@ -789,35 +794,28 @@ what the steps measure.
 `collect` and `closeStatements` spend 0.8 of 1.0 s and 0.4 of 0.6 s of their
 search's sampled work reading and writing documents and at most 0.2 s
 comparing types: their cost is
-[certificate sharing](certificate-sharing.md)'s, not this design's. The
-width series is expected flat: the time at width 136 within twice the time
-measured at width 5.
+[certificate sharing](certificate-sharing.md)'s, not this design's.
 
 Outcomes are unchanged: six verified, `forOfPattern` and `pattern` refused
 at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 9.0 s, `inertRead` 21.1 → 6.6,
-`resolve` 20.4 → 6.0, `forOfPattern` 115.0 → 9.0, `pattern` 15.1 → 3.3,
-`patternDefaults` 0.8 → 0.6, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
-check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
-3.4 → 2.3. Each lies within its expected interval. The width series, 0.88 /
-7.55 / 18.6 / 54.6 / 137.6 → 0.56 / 1.08 / 1.65 / 3.24 / 6.31 s, misses its
-criterion. At width 136, of 4.7 sampled seconds, reading and writing the
-documents takes 1.24, which the input's own growth sets, search re-checking
-its comparisons 0.87, and the comparisons 2.35, whose remaining cost is the
-kernel's list scans: `TabRen` reading every table row for each premise
-(`premTable`), label containment across lists of different orders
-(`subsetIn`'s fallback), a meet row read against every label of a target
-(`meetBelow`), and clause equality in the validator's `Same` test. Each is
-linear per premise and quadratic per row. The criterion is revised to the
-part the design acts on: the sampled time outside reading and writing the
-documents, measured at each width of the series, at width 136 within 12
-times its time at width 5 (the widths' ratio, 136/5, is 27), and within 1.5
-times its time at width 87 scaled by 136/87. That the hashed lookups of §8's
-first step reach it is conjectured; bucket scans, structural equality and
-the number of premises remain, and the step's measurement decides.
+measured: `moduleFunction` 29.1 → 4.8 s, `inertRead` 21.1 → 3.9,
+`resolve` 20.4 → 3.5, `forOfPattern` 115.0 → 4.1, `pattern` 15.1 → 2.3,
+`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.5, `closeStatements` 1.2 → 1.1;
+check CPU `moduleFunction` 5.0 → 2.6, `inertRead` 3.6 → 2.2, `resolve`
+3.4 → 2.0. `pattern`, `patternDefaults` and the check CPU lie within their
+expected intervals; the other search CPU results lie below them. The width
+series is
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.50 / 0.85 / 1.08 / 1.58 / 2.46 s. The
+width criterion is on the part the design acts on: the sampled time outside
+the front end (reading the fragment and the claims, lowering and freezing
+them) and the evidence write, at width 136 within 12 times its time at
+width 5 (the widths' ratio, 136/5, is 27), and within 1.5 times its time at
+width 87 scaled by 136/87. Measured at widths 5 / 30 / 87 / 136 it is
+0.08 / 0.11 / 0.21 / 0.28 s, within both bounds (0.96 and 0.49); the front
+end takes 0.22 / 0.47 / 0.97 / 1.63 s, which the input's own growth sets.
 
 ## 8. Migration
 
@@ -836,28 +834,60 @@ Landed, in order: instantiation by inclusion; narrowing's candidates
 unfolded once and search's slice memo; typing by synthesis; `Same` with
 linear containment and renamed-member pairs once; hashed deduplication of
 search's candidates; parts before the claim with bucketed `Same` lookups in
-search; the keyed narrowing index. Each step's measurement is WORK's row.
+search; the keyed narrowing index; no table grown from a pair no valid
+family covers; clause membership by an index under the label hash, in
+search and in the validator, which reads a pair's target clauses once, as
+its opaque rows do; the row-matched instance computed when the engine reaches
+it, and reading no row where a target signature has no scheme signature of
+its effect and arity; search's checks of its graphs and codes answering the
+inclusions it established from their proofs; a node's known derivation found
+by a key of its claim; discovery computing a row's demand once, when it inserts
+the row, a row's target clauses with their index read once for its demand
+and its hopelessness, once for all its deletion rounds, and once per pair in
+validation; search's comparisons not redone
+without selection; an edge's unsatisfiable context decided reading each
+slot's labels until one has a clause; a graph check's member-test field
+slices computed once per key. Each step's measurement is WORK's row.
 
-Remaining:
+Remaining, by measured cost:
 
-1. **Hashed kernel lookups.** Under the graph's label hash, `TabRen`'s rows
-   bucketed by their source labels, label containment through a hash set
-   where the orders differ, a meet row's parts read once per premise, and
-   the validator's `Same` test by bucket; each with its equality lemma to
-   the list form it replaces.
-2. **One memo for search and its check** (§3.8).
-3. **Validator and discovery read the candidate index** (§3.3), with
+1. **Interning** (§3.2): trees, label lists and clauses given request-wide
+   identities, so a label's equality, its hash and its row cost `O(1)` after
+   its first visit. Measured, 2026-10-24: of `moduleFunction`'s 2.17
+   sampled seconds outside the front end, 0.50 are row lookups, 0.35 label
+   and clause equality and 0.26 label hashing; at width 136, 0.15 of 0.28.
+   It changes the label type of the equation store.
+2. **Checker memo.** `Subtyping.check` state-passing, and the field slices
+   shared between a request's graph checks. Measured, 2026-10-24: in
+   `moduleFunction`, a graph check computes each of its slices once, 390
+   in search's 15 graph checks and 198 in the final check's 9, for 196
+   distinct keys; the yield checks take 0.31 of 4.0 sampled seconds.
+3. **The final check reads the memo**: `--produce-source-claims`'s check
+   of the document answering the inclusions search established (§3.8).
+   Measured, 2026-10-24: the final check takes 0.33 of `moduleFunction`'s
+   4.6 sampled seconds, 0.16 of them in comparisons. It reads each request's
+   own image check, fixed by the request's store, so this needs the store,
+   or the request check, to carry the proved inclusions.
+4. **Validator and discovery read the candidate index** (§3.3), with
    `indexCandidates_eq`, `indexCandidates_mem` and `checkEntries_eq`.
-4. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
-5. **The row-matched instance on demand**: `matchedInstance` computed only
-   once the unified instances are refuted, through a lazy candidate list of
-   the instance rule.
-6. **Checker memo.** `Subtyping.check` state-passing.
-7. **Rerun.** Deleted only with an operational theorem: selected discovery,
-   at today's fuel and growth, finds a valid table wherever unrestricted
-   discovery does; `selected_complete` is a part of it.
-8. **Coverage by assumption**, where structural comparison remains a
-   measured cost after steps 1–7: the dependency representation,
+   Measured, 2026-10-24: `ClauseSelection` 1 % of `moduleFunction`'s and
+   5 % of width 136's sampled work.
+5. **Hashed kernel lookups**: under the graph's label hash, `TabRen`'s rows
+   bucketed by their source labels, label containment through a hash set
+   where the orders differ, and a meet row's parts read once per premise;
+   each with its equality lemma to the list form it replaces. Measured,
+   2026-10-24: `premTable`, `subsetIn` and `meetBelow` each at most 1 % of
+   `moduleFunction`'s and 2 % of width 136's sampled work.
+6. **A request-wide demand memo** (§3.2): a row's demand kept across a
+   request's comparisons. Measured, 2026-10-24: computing demand takes 0.08
+   of `moduleFunction`'s and of width 136's sampled seconds.
+7. **`Clauses`** in the premise judgment, with `clauses_subset_sound`.
+8. **Rerun deleted from the check** only with an operational theorem:
+   selected discovery, at today's fuel and growth, finds a valid table
+   wherever unrestricted discovery does; `selected_complete` is a part of
+   it.
+9. **Coverage by assumption**, where structural comparison remains a
+   measured cost after the steps above: the dependency representation,
    `discovery_complete`, and discovery and deletion replaced.
 
 This draft is deleted when the last step taken lands.

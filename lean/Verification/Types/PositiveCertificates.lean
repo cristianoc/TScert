@@ -1,5 +1,6 @@
 import Verification.Types.PairFamilies
 import Verification.Types.ClauseSelection
+import Std.Data.HashMap.Lemmas
 
 /-! Executable certificates for PositiveRules. Completeness concerns existence
 of accepted evidence for a declarative derivation, not semantic completeness or
@@ -499,9 +500,94 @@ set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
     {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (a b : ι) :
+    Decidable (SchemeCoversAlpha G sub R known arrows a b) := by
+  unfold SchemeCoversAlpha; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (a b : ι) :
+    Decidable (PartCovers G sub R known arrows hyps a b) := by
+  unfold PartCovers; infer_instance
+
+set_option synthInstance.maxSize 1024 in
+/-- `OpaqueFamily`, decided with the target's clauses `cl` (`clausesOf G T`)
+read at most once, by the first row that reads them. -/
+@[nospecialize] def opaqueFamilyWith [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
+    (R : List ι → List ι → Prop) [DecidableRel R] (known : Known ι)
+    (arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop)
+    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι)
+    (cl : Thunk (List (Clause (List ι)))) : Bool :=
+  S.all fun i => G.plain i || decide (i ∈ T) ||
+    decide (.top ∈ cl.get ∨ (.source ∈ cl.get ∧ G.params i = false ∧ (G.schemes i).isSome = true)) ||
+    decide (MeetOpaque G (PartCovers G sub R known arrows hyps)
+      (fun a => ∃ b ∈ cl.get, CoversWith G sub R known arrows S a b) T i) ||
+    decide (∃ y ∈ T, (i, y) ∈ hyps) || decide (∃ j ∈ T, SchemeCoversAlpha G sub R known arrows i j)
+
+theorem opaqueFamilyWith_iff [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] {hyps : List (ι × ι)} {S T : List ι}
+    {cl : Thunk (List (Clause (List ι)))} (hcl : cl.get = clausesOf G T) :
+    opaqueFamilyWith G sub R known arrows hyps S T cl = true ↔
+      OpaqueFamily G sub R known arrows hyps S T := by
+  simp only [opaqueFamilyWith, OpaqueFamily, OpaqueUniverse, hcl, List.all_eq_true, Bool.or_eq_true,
+    decide_eq_true_eq, or_assoc]
+
+set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
+    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
+    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
     [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι) :
-    Decidable (OpaqueFamily G sub R known arrows hyps S T) := by
-  unfold OpaqueFamily PartCovers SchemeCoversAlpha; infer_instance
+    Decidable (OpaqueFamily G sub R known arrows hyps S T) :=
+  decidable_of_iff _ (opaqueFamilyWith_iff (cl := Thunk.mk fun _ => clausesOf G T) rfl)
+
+/-- A bucket of a clause for membership tests: its constructor, the literal it
+names, and a record's keys with their operands under the graph's label hash.
+Any function of the clause serves; lookups compare by equality within the
+bucket (`ClauseIndex.has_of`). -/
+@[nospecialize] def clauseBucket (G : NormalGraph ι) (c : Clause (List ι)) : UInt64 :=
+  let fields (a : List (PropKey × List ι)) : UInt64 :=
+    a.foldl (fun h (k, ls) => ls.foldl (fun h l => mixHash h (G.labelHash l)) (mixHash h (hash k))) 11
+  let operands (a : List (PropKey × List ι)) (r : List (List (PropKey × List ι))) (v : List (PropKey × List ι)) :=
+    r.foldl (fun h x => mixHash h (fields x)) (mixHash (fields a) (fields v))
+  mixHash (hash c.ctorIdx) (match c with
+    | .refs a r v _ _ _ _ | .dict a r v _ _ _ _ _ _ => operands a r v
+    | .callable a r _ _ => operands a r []
+    | .numLit b => hash b
+    | .strLit v => hash v
+    | .boolLit b => hash b
+    | .symbolLit i => hash i
+    | _ => 0)
+
+/-- A type's clauses by bucket, for membership tests. -/
+abbrev ClauseIndex (ι : Type) := Std.HashMap UInt64 (List (Clause (List ι)))
+
+@[nospecialize] def ClauseIndex.of (G : NormalGraph ι) (cs : List (Clause (List ι))) : ClauseIndex ι :=
+  cs.foldr (fun c m => let k := clauseBucket G c; m.insert k (c :: m.getD k [])) {}
+
+@[nospecialize] def ClauseIndex.has [DecidableEq ι] (G : NormalGraph ι) (m : ClauseIndex ι) (c : Clause (List ι)) : Bool :=
+  (m.getD (clauseBucket G c) []).contains c
+
+theorem ClauseIndex.of_getD (G : NormalGraph ι) (cs : List (Clause (List ι))) (k : UInt64) :
+    (ClauseIndex.of G cs).getD k [] = cs.filter (fun c => clauseBucket G c == k) := by
+  induction cs with
+  | nil => simp [ClauseIndex.of, Std.HashMap.getD_empty]
+  | cons c cs ih =>
+    simp only [ClauseIndex.of, List.foldr_cons] at ih ⊢
+    rw [Std.HashMap.getD_insert]
+    by_cases hk : clauseBucket G c = k
+    · subst hk; simp [ih]
+    · simp [hk, ih]
+
+/-- Membership read through the index is membership. -/
+theorem ClauseIndex.has_of [DecidableEq ι] (G : NormalGraph ι) (cs : List (Clause (List ι)))
+    (c : Clause (List ι)) : (ClauseIndex.of G cs).has G c = cs.contains c := by
+  rw [ClauseIndex.has, ClauseIndex.of_getD, Bool.eq_iff_iff]
+  simp
+
 
 set_option synthInstance.maxSize 1024 in
 /-- The entries' core conditions, premises read in each entry, arrows by
@@ -509,32 +595,39 @@ checked evidence. -/
 @[nospecialize] def checkEntries [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (known : Known ι)
     (gen : ι → List ι → List (Nat × List (List ι))) (look : Lookup ι) (F : List (Entry ι))
     (arrows : Evidence ι) : Bool :=
-  decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
-    OpaqueFamily G sub (Prem G sub look gen f) known
-      (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
-      a ∈ clausesOf G p.2 ∨
-      (∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
-        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true) ∨
-      ∀ e ∈ a.elements, ∃ b ∈ clausesOf G p.2,
-        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b = true)
+  F.all fun f => f.pairs.all fun p =>
+    -- The target's clauses, read once for the pair; a source clause among
+    -- them is found through their index.
+    let cl := clausesOf G p.2
+    let own := ClauseIndex.of G cl
+    SameKind G p.1 p.2 &&
+    opaqueFamilyWith G sub (Prem G sub look gen f) known
+      (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 (Thunk.pure cl) &&
+    (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses).all fun a =>
+      own.has G a ||
+      (cl.filter (fun b => !ClauseSelection.excludes G a b) ++ cl).any
+        (fun b => checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b) ||
+      a.elements.all fun e => cl.any fun b =>
+        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
     {F : List (Entry ι)}
     {arrows : Evidence ι} (h : checkEntries G sub known gen look F arrows = true) :
     FamilyValid G sub known gen look F := by
-  simp only [checkEntries, decide_eq_true_eq] at h
+  simp only [checkEntries, ClauseIndex.has_of, List.all_eq_true, Bool.and_eq_true, Bool.or_eq_true,
+    List.any_eq_true, List.contains_iff_mem] at h
   intro f hf p hp
-  obtain ⟨hk, ho, hc⟩ := h f hf p hp
+  obtain ⟨⟨hk, ho⟩, hc⟩ := h f hf p hp
+  have ho := (opaqueFamilyWith_iff rfl).mp ho
   refine ⟨hk, OpaqueFamily.mono (fun L S M hs q hq => ?_) ho, fun a ha => ?_⟩
   · obtain ⟨e, _, _, _, he⟩ := hs q hq
     exact checkArrowWith_sound he
-  · rcases hc a ha with hsame | ⟨b, hb, hcb⟩ | he
+  · rcases hc a ha with (hsame | ⟨b, hb, hcb⟩) | he
     · exact .inl hsame
     · have hb : b ∈ clausesOf G p.2 := by
         rcases List.mem_append.mp hb with hb | hb
-        · exact ClauseSelection.mem_candidates G hb
+        · exact (List.mem_filter.mp hb).1
         · exact hb
       exact .inr (.inl ⟨b, hb, checkClauseWith_sound hcb⟩)
     · exact .inr (.inr fun e he' => by
@@ -649,8 +742,12 @@ structure SearchBudget where
   rounds : Nat := 4096
   /-- Whether table growth and coverage read only the target clauses that can
   cover a source clause (`ClauseSelection.candidates`, R1–R5 of
-  docs/UNION-SHAPES.md); a comparison this refuses is redone without. -/
+  docs/UNION-SHAPES.md); a comparison this refuses is redone without where
+  `rerun` holds. -/
   select : Bool := true
+  /-- Whether a comparison selection does not establish is redone without it:
+  off for search's own comparisons, on for every check. -/
+  rerun : Bool := true
   deriving Repr
 
 /-- An outcome of checked comparison search. Successful search returns its
@@ -882,6 +979,13 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
     intro h r hr
     simp only [Thunk.get, hr] at h
     exact h
+  /-- Inclusions already proved in this graph, each answered without
+  comparing (`compareUsing`): the producer's own checks read the ones its
+  search established. -/
+  known : List ι → List ι → Bool := fun _ _ => false
+  known_sound : ∀ S T, known S T = true → ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+    intro _ _ h
+    cases h
 
 /-- Finite closed-table images use the domain's proved ordinary admission law. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
@@ -936,6 +1040,14 @@ serves every reassignment (`Parametricity`). -/
   builtinsOk_sound h r hr := by
     rw [builtinsFree_reassign]
     exact images.builtinsOk_sound h r hr
+  known := images.known
+  known_sound := images.known_sound
+
+/-- The same check, a comparison selection does not establish not redone
+without it: search's own comparisons. -/
+@[nospecialize] def InstanceImageCheck.searching [DecidableEq ι] {G : NormalGraph ι}
+    (images : InstanceImageCheck G) : InstanceImageCheck G :=
+  { images with budget := { images.budget with rerun := false } }
 
 /-- The same check with candidate selection off: every target clause is read. -/
 @[nospecialize] def InstanceImageCheck.general [DecidableEq ι] {G : NormalGraph ι}
@@ -1106,40 +1218,37 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 @[nospecialize] def schemeComponents [DecidableEq ι] (G : NormalGraph ι) (X : List ι) : List ι :=
   (X ++ (X.filter G.meetRow).flatMap (meetParts G)).filter (fun i => (G.schemes i).isSome) |>.eraseDups
 
-/-- A bucket of a clause for search's lookups: its constructor and the keys
-or the literal it names. Any function of the clause serves; lookups compare
-by equality within the bucket. Search only. -/
-@[nospecialize] def clauseBucket (c : Clause α) : UInt64 :=
-  mixHash (hash c.ctorIdx) (match c with
-    | .refs a _ _ _ _ _ _ | .dict a _ _ _ _ _ _ _ _ | .callable a _ _ _ => hash (a.map (·.1))
-    | .numLit b => hash b
-    | .strLit v => hash v
-    | .boolLit b => hash b
-    | .symbolLit i => hash i
-    | _ => 0)
+/-- A target's clauses and their index, read once for a row. Search only. -/
+structure TargetClauses (ι : Type) where
+  clauses : List (Clause (List ι))
+  own : ClauseIndex ι
 
-/-- A type's clauses by bucket, for search's membership tests. -/
-abbrev ClauseIndex (ι : Type) := Std.HashMap UInt64 (List (Clause (List ι)))
+@[nospecialize] def TargetClauses.of (G : NormalGraph ι) (Y : List ι) : TargetClauses ι :=
+  let cl := clausesOf G Y
+  ⟨cl, ClauseIndex.of G cl⟩
 
-@[nospecialize] def ClauseIndex.of (cs : List (Clause (List ι))) : ClauseIndex ι :=
-  cs.foldl (fun m c => m.insert (clauseBucket c) (c :: m.getD (clauseBucket c) [])) {}
+/-- `ClauseSelection.candidates` of a source clause among a target's clauses. -/
+@[nospecialize] def TargetClauses.candidates [DecidableEq ι] (G : NormalGraph ι) (t : TargetClauses ι)
+    (a : Clause (List ι)) : List (Clause (List ι)) :=
+  t.clauses.filter fun b => !ClauseSelection.excludes G a b
 
-@[nospecialize] def ClauseIndex.has [DecidableEq ι] (m : ClauseIndex ι) (c : Clause (List ι)) : Bool :=
-  (m.getD (clauseBucket c) []).contains c
+/-- `demandPairs` with the target's clauses read once. -/
+@[nospecialize] def demandPairsIn [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
+    (select : Bool) (t : TargetClauses ι) : List (List ι × List ι) :=
+  -- A clause the target holds itself is covered as it is (`Same`): it
+  -- demands no pair.
+  (clausesOf G X).flatMap (fun a => if t.own.has G a then [] else
+    (if select then t.candidates G a else t.clauses).flatMap (clausePairs G known X a)) ++
+  (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
+    | some s, some s' => if s.binders = s'.binders then
+        signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
+    | _, _ => []
 
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
 @[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
     (select : Bool := false) : List (List ι × List ι) :=
-  -- A clause the target holds itself is covered as it is (`Same`): it
-  -- demands no pair.
-  let own := ClauseIndex.of (clausesOf G Y)
-  (clausesOf G X).flatMap (fun a => if own.has a then [] else
-    (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
-  (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
-    | some s, some s' => if s.binders = s'.binders then
-        signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
-    | _, _ => []
+  demandPairsIn G known X Y select (TargetClauses.of G Y)
 
 /-- How deep a pair's rows follow `Var`: search only. -/
 def varDepthDefault : Nat := 8
@@ -1276,75 +1385,106 @@ once. Untrusted: `ArrowsCheckedWith` checks every arrow. -/
 `(A, B)` with the table (RECURSIVE-EQUATIONS §4.2), arrows by the evidence
 searched for its rows. The check decides (`compareUsing`). -/
 @[nospecialize] def coveredIn [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
-    (known : PositiveRules.Known ι) (table : Table ι) : Evidence ι × (List ι × List ι → Bool) :=
+    (known : PositiveRules.Known ι) (table : Table ι) :
+    Evidence ι × ((List ι × List ι) × TargetClauses ι → Bool) :=
   let f : Entry ι := { source := A, target := B, table }
   let look := images.base.lookup [f]
   let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
   let R : List ι → List ι → Prop := fun X Y => rel X Y = true
   let es := rowArrows G images.sub rel (f.pairs)
-  (es, fun p =>
+  (es, fun (p, t) =>
     PositiveRules.SameKind G p.1 p.2 &&
-    decide (OpaqueFamily G images.sub R known
-      (ArrowsCheckedWith G R es) [] p.1 p.2) &&
-    let own := ClauseIndex.of (clausesOf G p.2)
+    opaqueFamilyWith G images.sub R known (ArrowsCheckedWith G R es) [] p.1 p.2 (Thunk.pure t.clauses) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      own.has a ||
-      (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
+      t.own.has G a ||
+      (if images.budget.select then t.candidates G a else t.clauses).any
         (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
       -- A tag set is covered between several target clauses, element by
       -- element, where no one clause covers it.
-      (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any
+      (a.elements != [a] && a.elements.all fun e => t.clauses.any
         fun b => checkClauseWith G images.sub R known es p.1 e b))
 
-/-- Grow the table from its frontier: each row adds the pairs its coverage
-compares (`demandPairs`, and quantified members after renaming), each read
-through `Var` where it applies, that no inclusion, row or renamed row already
-answers. A pair that reaches no further pair and is not covered by itself
-alone is left out: the deletion would remove it. Refuse at growth or past
-the execution budget. -/
-@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
-    : Nat → Fallback ι → Table ι → Fallback ι
+/-- A source clause neither among the target's clauses nor with a candidate,
+one of whose elements has no candidate either: no valid closed family covers
+the pair, since every covering it chooses is by a candidate
+(`SelectionPreservation.valid_selected`). Search does not grow a table for
+such a pair, nor expand such a row's demand, with or without selection. -/
+@[nospecialize] def structurallyHopelessIn [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (t : TargetClauses ι) : Bool :=
+  (sourceClauses G S).any fun a => !t.own.has G a && !(t.clauses.any fun b => !ClauseSelection.excludes G a b) &&
+    a.elements.any fun e => !(t.clauses.any fun b => !ClauseSelection.excludes G e b)
+
+@[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
+  structurallyHopelessIn G S (TargetClauses.of G T)
+
+/-- The pairs a row's coverage compares (`demandPairs`), and quantified
+members after renaming. -/
+@[nospecialize] def reachedPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) : List (List ι × List ι) :=
+  demandPairsIn G known p.1 p.2 images.budget.select t ++ (match images.sub with
+    | some r => renamedPairs G r p.1 p.2
+    | none => [])
+
+/-- `growTable` over a frontier whose rows carry the pairs they reach, each
+computed once, when the row is inserted. -/
+@[nospecialize] def growTableFrom [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
+    : Nat → Fallback ι → List ((List ι × List ι) × List (List ι × List ι)) → Fallback ι
   | 0, fb, _ => { fb with refused := some .exhausted }
   | fuel + 1, fb, frontier =>
-    let reached (p : List ι × List ι) := demandPairs G known p.1 p.2 images.budget.select ++ (match images.sub with
-        | some r => renamedPairs G r p.1 p.2
-        | none => [])
-    let cand := (frontier.flatMap fun p =>
-      (reached p).flatMap fun p => match images.sub with
+    let cand := (frontier.flatMap fun (_, reached) =>
+      reached.flatMap fun p => match images.sub with
           | some _ => rowsFor images varDepthDefault p.1 p.2
           | none => if subsetIn p.2 p.1 p.2 then [] else [p])
-    let step (st : Except SearchStop (Table ι × Table ι)) (p : List ι × List ι) :
-        Except SearchStop (Table ι × Table ι) := do
+    let step (st : Except SearchStop (Table ι × List ((List ι × List ι) × List (List ι × List ι))))
+        (p : List ι × List ι) : Except SearchStop (Table ι × List ((List ι × List ι) × List (List ι × List ι))) := do
       let (tbl, fresh) ← st
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
-      if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          (sourceClauses G p.1).all fun a => decide (a ∈ clausesOf G p.2) || (clausesOf G p.2).any (fun b =>
+      let t := TargetClauses.of G p.2
+      let reached := reachedPairs G images known p t
+      if reached.isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
+          (sourceClauses G p.1).all fun a => t.own.has G a || t.clauses.any (fun b =>
             checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
-            (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any fun b =>
+            (a.elements != [a] && a.elements.all fun e => t.clauses.any fun b =>
               checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw .growth
-      return (tbl ++ [p], fresh ++ [p])
+      -- A row no valid closed family covers (`structurallyHopelessIn`) is not
+      -- expanded; a row reachable only through it is not discovered.
+      return (tbl ++ [p], if structurallyHopelessIn G p.1 t then fresh else fresh ++ [(p, reached)])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
     match cand.foldl step (.ok (fb.table, [])) with
     | .error why => { fb with refused := some why }
-    | .ok (tbl, fresh) =>
-      if fresh.isEmpty then { fb with table := tbl }
-      else growTable G images known fuel { fb with table := tbl } fresh
+    | .ok (tbl, next) =>
+      if next.isEmpty then { fb with table := tbl }
+      else growTableFrom G images known fuel { fb with table := tbl } next
+
+/-- Grow the table from its frontier: each row adds the pairs its coverage
+compares (`reachedPairs`), each read through `Var` where it applies, that no
+inclusion, row or renamed row already answers. A pair that reaches no further
+pair and is not covered by itself alone is left out: the deletion would
+remove it. Refuse at growth or past the execution budget. -/
+@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
+    (fuel : Nat) (fb : Fallback ι) (frontier : Table ι) : Fallback ι :=
+  growTableFrom G images known fuel fb (frontier.map fun p => (p, reachedPairs G images known p (TargetClauses.of G p.2)))
+
+/-- `gfp` over rows carrying their target clauses. -/
+@[nospecialize] def gfpFrom [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
+    (known : PositiveRules.Known ι) : Nat → List ((List ι × List ι) × TargetClauses ι) → Table ι × Evidence ι
+  | 0, rows => (rows.map (·.1), [])
+  | fuel + 1, rows =>
+    let (es, covered) := coveredIn G images A B known (rows.map (·.1))
+    let next := rows.filter covered
+    if next.length = rows.length then (rows.map (·.1), es) else gfpFrom G images A B known fuel next
 
 /-- Delete the rows a table does not cover, premises read in the table
 itself, until every row is covered: the greatest fixed point below the
 reachable pairs. With a renaming a premise is the judgment of §4.2 in the
 entry of `(A, B)` (`Var`, `Inst`, `TabRen`); without one, a row or an
-inclusion. The check decides (`compareUsing`). -/
+inclusion. Each row's target clauses are read once for every round. The
+check decides (`compareUsing`). -/
 @[nospecialize] def gfp [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
-    (known : PositiveRules.Known ι) : Nat → Table ι → Table ι × Evidence ι
-  | 0, table => (table, [])
-  | fuel + 1, table =>
-    let (es, covered) := coveredIn G images A B known table
-    let next := table.filter covered
-    if next.length = table.length then (table, es) else gfp G images A B known fuel next
+    (known : PositiveRules.Known ι) (fuel : Nat) (table : Table ι) : Table ι × Evidence ι :=
+  gfpFrom G images A B known fuel (table.map fun p => (p, TargetClauses.of G p.2))
 
 /-- A closed structural comparison checked with the equation representation's
 renaming and validated base entries. Bound checking uses this same kernel. -/
@@ -1471,6 +1611,7 @@ share the guarded dependency kernel used by quantified instantiation. -/
   let G' := PositiveRules.reassign G e
   let images' := images.reassign e
   if subsetUsing G' images' S T then .established () else
+  if structurallyHopeless G' S T then .notEstablished else
   comparePrepared G images S T known
     (growTable G' images' [] images.budget.rounds { table := [(S, T)] } [(S, T)])
 
@@ -1485,15 +1626,19 @@ theorem compareStructuralCore_sound [DecidableEq ι] {G : NormalGraph ι}
   split at h
   · exact subsetUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
       (by assumption)
-  · exact comparePrepared_sound h hk
+  · split at h
+    · simp [ComparisonResult.accepted] at h
+    · exact comparePrepared_sound h hk
 
 /-- Structural comparison reading candidates (`SearchBudget.select`), redone
-reading every target clause where that is not established: selection never
-loses a comparison the general search establishes. -/
+reading every target clause where that is not established and the budget
+reruns (`SearchBudget.rerun`): with the rerun, selection loses no comparison
+the general search establishes. -/
 @[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
   let r := compareStructuralCore G images S T known
-  if r.accepted || !images.budget.select then r else compareStructuralCore G images.general S T known
+  if r.accepted || !images.budget.select || !images.budget.rerun then r
+  else compareStructuralCore G images.general S T known
 
 theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T known}
@@ -1819,14 +1964,23 @@ theorem compareInstState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
         simp [mixedMeaning, mixedParameters, graphArguments, hk, hcs, NormalGraph.listParam] at hx
   · cases h
 
+/-- Instance proposals, tried in order: each is computed when the engine
+reaches it, and proposes at most one instance. -/
+abbrev Proposals (ι : Type) := List (Thunk (Option (Instance ι)))
+
+/-- Proposals already computed. -/
+@[nospecialize] def Proposals.of (cs : List (Instance ι)) : Proposals ι := cs.map fun c => Thunk.pure (some c)
+
 /-- Candidate construction supplies choices; this operation selects an instance
 only after checking its images, bounds and every target component. -/
 @[nospecialize] def compareInstancesState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult α × σ) (empty : α)
-    (S T : List ι) (candidates : List (Instance ι)) (state : σ) : ComparisonResult (Instance ι × List α) × σ :=
-  ComparisonResult.firstState (fun c prior =>
-    let (result, next) := compareInstState G images compare empty S T c prior
-    (result.map (c, ·), next)) candidates state
+    (S T : List ι) (candidates : Proposals ι) (state : σ) : ComparisonResult (Instance ι × List α) × σ :=
+  ComparisonResult.firstState (fun c prior => match c.get with
+    | some c =>
+      let (result, next) := compareInstState G images compare empty S T c prior
+      (result.map (c, ·), next)
+    | none => (.notEstablished, prior)) candidates state
 
 theorem compareInstancesState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S T candidates state}
@@ -1836,8 +1990,10 @@ theorem compareInstancesState_sound [DecidableEq ι] {G : NormalGraph ι} {image
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
   unfold compareInstancesState at h
   obtain ⟨c, _, prior, checked⟩ := ComparisonResult.firstState_sound _ _ _ h
-  simp only [ComparisonResult.accepted_map] at checked
-  exact compareInstState_sound hc checked
+  split at checked
+  · simp only [ComparisonResult.accepted_map] at checked
+    exact compareInstState_sound hc checked
+  · simp [ComparisonResult.accepted] at checked
 
 /-- The rows a family certificate's instances prove. -/
 @[nospecialize] def knownOf (ks : List (KnownInstance ι)) :
@@ -1866,7 +2022,7 @@ instance when its target is an arrow contract. The checker validates every use. 
 structural dependencies. Its bound premises use the supplied comparison operation. -/
 @[nospecialize] def compareStepStateCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
   if subsetUsing G images S T then (.established {}, state) else
   let (selected, next) := compareInstancesState G images compare [] S T (instantiation S T) state
@@ -1874,6 +2030,7 @@ structural dependencies. Its bound premises use the supplied comparison operatio
     { instantiation := some c, members := dependencies.flatten }
   ComparisonResult.orElseState (root, next) fun prior =>
     let e := ParameterAssignment.empty .mixed
+    if structurallyHopeless (PositiveRules.reassign G e) S T then (.notEstablished, prior) else
     let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
       { table := [(S, T)] } [(S, T)]
     let (tested, last) := mapResultsState (fun k current =>
@@ -1904,14 +2061,17 @@ theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images
     · apply compareInstancesState_sound hc
       rw [selection]
       exact root
-    · let e : MixedAssignment ι := ParameterAssignment.empty .mixed
+    · split at fallback
+      · simp [ComparisonResult.accepted] at fallback
+      let e : MixedAssignment ι := ParameterAssignment.empty .mixed
       let fb := growTable (PositiveRules.reassign G e) (images.reassign e) [] images.budget.rounds
         { table := [(S, T)] } [(S, T)]
       let checkMember (k : KnownInstance ι) (current : σ) :=
         let (checked, next) := compareInstArrsState G images compare [] k.1 k.2.1 k.2.2.1 k.2.2.2 current
         ((k, checked), next)
       rcases traversal : mapResultsState checkMember (members fb.table) next with ⟨tested, last⟩
-      simp only [ComparisonResult.accepted_exhaustion, Bool.or_false] at fallback
+      simp only [ComparisonResult.orElseState_accepted, ComparisonResult.accepted_map,
+        ComparisonResult.accepted_exhaustion, Bool.or_false] at fallback
       change (comparePrepared G images S T
         (knownOf (((mapResultsState checkMember (members fb.table) next).1.filter fun k => k.2.accepted).map Prod.fst)) fb).accepted = true at fallback
       rw [traversal] at fallback
@@ -1930,13 +2090,14 @@ theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images
       exact compareInstArrsState_sound hc checked' η
 
 /-- One comparison step reading candidates (`SearchBudget.select`), redone
-reading every target clause where that is not established. -/
+reading every target clause where that is not established and the budget
+reruns (`SearchBudget.rerun`). -/
 @[nospecialize] def compareStepState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
   let r := compareStepStateCore G images compare S T instantiation members state
-  if r.1.accepted || !images.budget.select then r
+  if r.1.accepted || !images.budget.select || !images.budget.rerun then r
   else compareStepStateCore G images.general compare S T instantiation members r.2
 
 theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -2007,7 +2168,7 @@ established structural check publishes a completed result. -/
 /-- Instance premises share completed results across siblings and alternatives.
 A repeated unfinished query requires the guarded structural checker. -/
 @[nospecialize] def compareCheckedStep [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (recur : ∀ A B : List ι, List (CompletedComparison G) →
       ComparisonResult (CheckedComparison G A B) × List (CompletedComparison G))
@@ -2043,7 +2204,7 @@ A repeated unfinished query requires the guarded structural checker. -/
     | .exhausted rounds visited => (.exhausted rounds visited, step.2)
 
 @[nospecialize] def compareUsingCoreState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (depth : Nat) (path : Table ι) (S T : List ι) (cache : List (CompletedComparison G)) :
     ComparisonResult (CheckedComparison G S T) × List (CompletedComparison G) :=
@@ -2059,7 +2220,7 @@ termination_by depth
 /-- The engine's cache belongs to one fixed equation environment. Parameter
 reassignment changes meanings, while every cached proof holds for all of them. -/
 @[nospecialize] def compareUsingCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι))
     (depth : Nat) (path : Table ι) (S T : List ι) : ComparisonResult (SubtypeChoices ι) :=
   let e := ParameterAssignment.empty .mixed
@@ -2078,7 +2239,7 @@ theorem compareUsingCore_sound [DecidableEq ι] {G : NormalGraph ι}
 comparison state used by ordinary instantiation and its bound premises. -/
 @[nospecialize] def selectInstancesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (S T : List ι) (candidates : List (Instance ι))
-    (instantiation : List ι → List ι → List (Instance ι))
+    (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (Instance ι × List (List (KnownInstance ι))) :=
   let e := ParameterAssignment.empty .mixed
   let G' := PositiveRules.reassign G e
@@ -2086,28 +2247,32 @@ comparison state used by ordinary instantiation and its bound premises. -/
   let compare := fun A B prior =>
     let (result, next) := compareUsingCoreState G' images' instantiation members images.budget.rounds [(S, T)] A B prior
     (result.map fun checked => checked.choices.dependencies G' A B, next)
-  (compareInstancesState G' images' compare [] S T candidates []).1
+  (compareInstancesState G' images' compare [] S T (Proposals.of candidates) []).1
 
 /-- One subtype operation for evidence production and checking. Proposal functions
 choose instances for the comparisons requested by the engine. -/
 @[nospecialize] def compareUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) : ComparisonResult (SubtypeChoices ι) :=
+  if images.known S T then .established {} else
   compareUsingCore G images instantiation members images.budget.rounds [] S T
 
 theorem compareUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T instantiation members}
     (h : (compareUsing G images S T instantiation members).accepted = true) :
-    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) :=
-  compareUsingCore_sound h
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareUsing at h
+  split at h
+  · exact images.known_sound S T (by assumption)
+  · exact compareUsingCore_sound h
 
 /-- Find a supplied instance for the comparison the engine requests. Root choices
 and supporting choices carry the same instance data and receive the same validation. -/
 @[nospecialize] def SubtypeChoices.proposal [DecidableEq ι] (G : NormalGraph ι)
-    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : List (Instance ι) :=
-  (if A == S && B == T then p.instantiation.toList else []) ++
+    (S T : List ι) (p : SubtypeChoices ι) (A B : List ι) : Proposals ι :=
+  Proposals.of ((if A == S && B == T then p.instantiation.toList else []) ++
     (p.members.filter fun k => k.1 == A &&
-      ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2)
+      ((instanceTarget G B).map fun target => (target.1, target.2.1)) == some (k.2.1, k.2.2.1)).map (·.2.2.2))
 
 /-- Public evidence carries instantiation choices. The common operation
 selects and validates the subtype rule. -/

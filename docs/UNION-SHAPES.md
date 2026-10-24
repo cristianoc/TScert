@@ -457,20 +457,38 @@ default:
   candidates (`coveredIn`);
 - the table check first accepts a source clause that is a target clause
   (`Same`), then reads the candidates and then every target clause
-  (`checkEntries`, its existential over `candidates ++ clausesOf`);
+  (`checkEntries`, its existential over `candidates ++ clausesOf`); it reads
+  a pair's target clauses once, finds a source clause among them through
+  their index under the graph's label hash (`ClauseIndex.has_of`), and
+  decides its opaque rows reading the target's clauses at most once
+  (`opaqueFamilyWith_iff`);
 - a source clause that is a target clause demands no pair (`demandPairs`);
-- a structural comparison or a comparison step not established with
-  selection is redone with selection off (`InstanceImageCheck.general`, in
-  `compareStructural` and `compareStepState`), so the restricted search
-  establishes nothing less than the general one.
+  growth computes a row's demand once, when it inserts the row
+  (`growTableFrom`), reading the row's target clauses with their index once
+  for its demand and its hopelessness (`TargetClauses`), and deletion reads
+  them once for all its rounds (`gfp`);
+- a pair one of whose source clauses is no target clause and has no
+  candidate, nor has one of its elements, is in no valid closed family
+  (`valid_selected`): no table is grown from it, and as a row its demand is
+  not expanded, with or without selection (`structurallyHopeless`); a row
+  reachable only through such a row is not discovered, though another row's
+  `TabRen` premise could read it, so this narrows discovery, which the cases
+  and the census slices measure;
+- in a check, a structural comparison or a comparison step not established
+  with selection is redone with selection off (`InstanceImageCheck.general`,
+  in `compareStructural` and `compareStepState`), so the restricted search
+  establishes nothing less than the general one; search's own comparisons
+  are not redone (`SearchBudget.rerun`, off in `InstanceImageCheck.searching`,
+  which `subtypeSearch` reads): a comparison only the rerun establishes is
+  one search does not find.
 
 **Soundness (proved).** A candidate is a target clause
 (`ClauseSelection.mem_candidates`), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
 `compareStepState_sound` hold with their statements unchanged, as does
 `checkJson_safe`. Completeness of the restricted table search alone is the
-open bridge of [§2.2](#22-what-every-rule-inherits); the rerun stands in for
-it.
+open bridge of [§2.2](#22-what-every-rule-inherits); in a check the rerun
+stands in for it.
 
 **Answered requests.** The producer's candidate search asks the same subtype
 requests many times: for an expression it tries the claimed type and then
@@ -487,8 +505,15 @@ document. The table is keyed by source and target alone because every
 request of a document reads one graph and one image check, built once from
 the frozen store: a checked store's graph is its equations' and its image
 check reads only the equations, the variances and the budget (proved,
-`Checked.graph_eq`, `Checked.images_eq`). The checker recomputes every
-comparison, so the table concerns search only.
+`Checked.graph_eq`, `Checked.images_eq`). The table records each inclusion
+a request established, with its proof (`Answered.proved`, from
+`subtypeSearch_sound`). Search's own check of each graph and code it
+produces reads them as the image check's proved inclusions
+(`Answered.images`), so a comparison search established is not decided
+again there; the final check of the document and the check stage decide
+every comparison. A node's derivation is first sought among the derivations
+known for the request (its obligations' and its plans'), found by a key of
+their claims, the context's length and the claimed type (`KnownIndex`).
 
 **Where the search time sits.** In `statementsOnPath`'s search (macOS
 `sample`, one run, 2026-10-18), about a third of the working thread's

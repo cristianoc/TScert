@@ -385,13 +385,26 @@ def memberFieldSlice (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (ts : List T
   if q then memberSlice (fun B t q => fieldSlice G B f t q) A ts true
   else BranchRefinement.uncoveredField G (memberSlice (fun B t q => fieldSlice G B f t q) A ts false) f ts candidates
 
+/-- `memberFieldSlice` as a check reads it: the function, or the function's
+values at the keys a check meets, read from a table (`FieldSlices.eq_direct`). -/
+structure FieldSlices (G : NormalGraph ι) where
+  slice : Ty ι → PropKey → List Tag → Bool → Ty ι → Ty ι
+  slice_eq : slice = memberFieldSlice G
+
+@[nospecialize] def FieldSlices.direct (G : NormalGraph ι) : FieldSlices G := ⟨memberFieldSlice G, rfl⟩
+
+theorem FieldSlices.eq_direct {G : NormalGraph ι} (s : FieldSlices G) : s = FieldSlices.direct G := by
+  cases s with
+  | mk f h => subst h; rfl
+
 /-- A membership test's yield (`memberOn`) about the tested slot, or about
 the object a current read link says its value was read from: where the test
 answered `q`, the labels `memberSlice` keeps of the slot's or the object's
 type are within the yield's type, by the yield's evidence. A yield of `true`
 is conditional; one of `false` is stated of that answer (`onFalse`). -/
 @[nospecialize] def memberYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
-    (links : HeapLinks.Links) (y : Yield ι) (ts : List Tag) (i : Nat) : Bool :=
+    (links : HeapLinks.Links) (y : Yield ι) (ts : List Tag) (i : Nat)
+    (slices : FieldSlices G := FieldSlices.direct G) : Bool :=
   y.conditional == !y.onFalse && (Γ[i]?).isSome &&
   match y.evidence with
   | none => false
@@ -402,14 +415,14 @@ is conditional; one of `false` is stated of that answer (`onFalse`). -/
     links.any fun g => !g.alias && !g.optional && g.value == i && g.cell == y.target &&
       match Γ[g.cell]? with
       | some A => PositiveCertificates.checkUsing G images
-          (memberFieldSlice G A g.field ts (!y.onFalse) y.type) y.type p
+          (slices.slice A g.field ts (!y.onFalse) y.type) y.type p
       | none => false
 
 /-- Whether a yield follows from a node's membership test (`memberYield`). -/
 @[nospecialize] def memberFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
-    (links : HeapLinks.Links) (t : Tm) (y : Yield ι) : Bool :=
+    (links : HeapLinks.Links) (t : Tm) (y : Yield ι) (slices : FieldSlices G := FieldSlices.direct G) : Bool :=
   match memberParts t with
-  | some (ts, i) => isMemberOn ts i t && memberYield G images Γ links y ts i
+  | some (ts, i) => isMemberOn ts i t && memberYield G images Γ links y ts i slices
   | none => false
 
 /-- One yield of a node's expression, without a call: a slot read, whose value
@@ -418,8 +431,9 @@ slot, read as a Boolean, yields where it answers `true` what its observation
 leaves of the slot, or of the object the slot's value was read from
 (`fieldYield`). -/
 @[nospecialize] def yieldFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
-    (xs : List (Implication ι)) (links : HeapLinks.Links) (t : Tm) (y : Yield ι) : Bool :=
-  memberFollows G images Γ links t y || match t with
+    (xs : List (Implication ι)) (links : HeapLinks.Links) (t : Tm)
+    (slices : FieldSlices G := FieldSlices.direct G) (y : Yield ι) : Bool :=
+  memberFollows G images Γ links t y slices || match t with
   | .var i => y.conditional && (Γ[i]?).isSome &&
       xs.any fun x => x.test == i && x.target == y.target && within x.type y.type
   | .ite (.test tag (.var i)) .tru .fls => y.conditional &&

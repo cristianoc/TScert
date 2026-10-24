@@ -193,18 +193,24 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
-/-- A context no environment meets: one of its slots has a type no value
-meets. -/
+/-- A context no environment meets: one of its slots has a type of clause
+rows none of which holds a clause, which no value meets. Each slot's labels
+are read until one has a clause. -/
 @[nospecialize] def unsatisfiable (G : NormalGraph ι) (Γ : List (Ty ι)) : Bool :=
-  Γ.any fun A => G.plainTy A && (expand G A).isEmpty
+  Γ.any fun A => A.all fun a => G.plain a && (G.rows a).isEmpty
 
 theorem unsatisfiable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}
     (hu : unsatisfiable G Γ = true) (he : EnvOk G Γ ρ n W) : False := by
   obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hu
-  simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
+  simp only [Bool.and_eq_true, List.all_eq_true, List.isEmpty_iff] at hnil
+  have hplain : G.plainTy A = true := List.all_eq_true.mpr fun a ha => (hnil a ha).1
+  have hexp : expand G A = [] := by
+    rw [expand_of_plain hplain, clausesOf, List.flatMap_eq_nil_iff]
+    intro a ha
+    simp [NormalGraph.clauses, (hnil a ha).1, (hnil a ha).2]
   obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
-  have hm := (expand_sem G A hnil.1 n W _).mp (he.2 i A hi)
-  rw [hnil.2] at hm
+  have hm := (expand_sem G A hplain n W _).mp (he.2 i A hi)
+  rw [hexp] at hm
   obtain ⟨_, hmem, _⟩ := hm
   cases hmem
 
@@ -348,7 +354,8 @@ def aliasedRead (arg : List Nat) (e : Tm) : Bool :=
 signature (`PromiseCalls.promiseCall_sound`), whose check stands for the
 expression's; without one, by those of a slot read and of a tag test. -/
 @[nospecialize] def checkYields [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
+    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι))
+    (slices : PromiseCalls.FieldSlices G := PromiseCalls.FieldSlices.direct G) : Bool :=
   match PromiseCalls.promiseOf G c.expression with
   | some (effect, a, T) => checkTreeUsing G images c.expression codes sums &&
       PromiseCalls.promiseYields G (result c) effect a T c.yields &&
@@ -356,7 +363,92 @@ expression's; without one, by those of a slot read and of a tag test. -/
         decide (c.output = HeapExpressionRules.withStable G (entry c) c.knowledge
           (HeapExpressionRules.ordinaryOutput c.knowledge)))
   | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies c.knowledge.links
-      (claim c.expression).term)
+      (claim c.expression).term slices)
+
+/-- The member-test field slices a certificate's yields read
+(`PromiseCalls.memberYield`): for every node whose term is a membership
+test, every yield with evidence and every read link its check reads. -/
+abbrev SliceKey (ι : Type) := Ty ι × PropKey × List Tag × Bool × Ty ι
+
+@[nospecialize] def sliceKeys (C : Certificate ι) : List (SliceKey ι) :=
+  C.flatMap fun c => match PromiseCalls.memberParts (claim c.expression).term with
+    | some (ts, i) => c.yields.flatMap fun y => if y.evidence.isNone then [] else
+        c.knowledge.links.filterMap fun g =>
+          if !g.alias && !g.optional && g.value == i && g.cell == y.target then
+            ((entry c)[g.cell]?).map fun A => (A, g.field, ts, !y.onFalse, y.type)
+          else none
+    | none => []
+
+@[nospecialize] def sliceKeyHash (G : NormalGraph ι) (k : SliceKey ι) : UInt64 :=
+  mixHash (BranchRefinement.tyHash G k.1) (mixHash (hash k.2.1) (mixHash (hash k.2.2.1.length)
+    (mixHash (hash k.2.2.2.1) (BranchRefinement.tyHash G k.2.2.2.2))))
+
+/-- The slice of each key, computed once, by the key's hash. -/
+@[nospecialize] def sliceTable [DecidableEq ι] (G : NormalGraph ι) (keys : List (SliceKey ι)) :
+    Std.HashMap UInt64 (List (SliceKey ι × Ty ι)) :=
+  keys.foldl (fun m k =>
+    let h := sliceKeyHash G k
+    let b := m.getD h []
+    if b.any (·.1 == k) then m
+    else m.insert h ((k, PromiseCalls.memberFieldSlice G k.1 k.2.1 k.2.2.1 k.2.2.2.1 k.2.2.2.2) :: b)) {}
+
+theorem sliceTable_mem [DecidableEq ι] (G : NormalGraph ι) :
+    ∀ (keys : List (SliceKey ι)) (m : Std.HashMap UInt64 (List (SliceKey ι × Ty ι))),
+      (∀ h k v, (k, v) ∈ m.getD h [] → v = PromiseCalls.memberFieldSlice G k.1 k.2.1 k.2.2.1 k.2.2.2.1 k.2.2.2.2) →
+      ∀ h k v, (k, v) ∈ (keys.foldl (fun m k =>
+        let h := sliceKeyHash G k
+        let b := m.getD h []
+        if b.any (·.1 == k) then m
+        else m.insert h ((k, PromiseCalls.memberFieldSlice G k.1 k.2.1 k.2.2.1 k.2.2.2.1 k.2.2.2.2) :: b)) m).getD h [] →
+        v = PromiseCalls.memberFieldSlice G k.1 k.2.1 k.2.2.1 k.2.2.2.1 k.2.2.2.2
+  | [], _, hm => hm
+  | k :: ks, m, hm => by
+    simp only [List.foldl_cons]
+    apply sliceTable_mem G ks
+    intro h k' v hv
+    split at hv
+    · exact hm h k' v hv
+    · rw [Std.HashMap.getD_insert] at hv
+      by_cases hk : (sliceKeyHash G k == h) = true
+      · rw [if_pos hk] at hv
+        rcases List.mem_cons.mp hv with he | hv
+        · obtain ⟨rfl, rfl⟩ := Prod.mk.inj he
+          rfl
+        · exact hm _ k' v hv
+      · rw [if_neg hk] at hv
+        exact hm h k' v hv
+
+/-- A key's slice in a bucket. -/
+@[nospecialize] def bucketSlice [DecidableEq ι] (k : SliceKey ι) : List (SliceKey ι × Ty ι) → Option (Ty ι)
+  | [] => none
+  | (k', v) :: b => if k' = k then some v else bucketSlice k b
+
+theorem bucketSlice_mem [DecidableEq ι] {k : SliceKey ι} :
+    ∀ {b : List (SliceKey ι × Ty ι)} {v}, bucketSlice k b = some v → (k, v) ∈ b
+  | [], _, h => by cases h
+  | (k', v') :: b, v, h => by
+    unfold bucketSlice at h
+    split at h
+    · rename_i hk
+      cases h
+      subst hk
+      exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (bucketSlice_mem h)
+
+/-- The field slices of a certificate's yields, read from their table. -/
+@[nospecialize] def FieldSlices.ofCertificate [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) :
+    PromiseCalls.FieldSlices G :=
+  let tbl := sliceTable G (sliceKeys C)
+  { slice := fun A f ts q Y =>
+      match bucketSlice (A, f, ts, q, Y) (tbl.getD (sliceKeyHash G (A, f, ts, q, Y)) []) with
+      | some v => v
+      | none => PromiseCalls.memberFieldSlice G A f ts q Y
+    slice_eq := by
+      funext A f ts q Y
+      split
+      · rename_i v hv
+        exact sliceTable_mem G (sliceKeys C) {} (fun h k v hv => by simp at hv) _ _ v (bucketSlice_mem hv)
+      · rfl }
 
 /-- A return under the graph's goal: at the result's type; a type guard's
 Boolean, never `true` or with the argument, as the yields leave it where the
@@ -442,13 +534,14 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
+    (sums : List (ReadSummary ι) := [])
+    (slices : PromiseCalls.FieldSlices G := PromiseCalls.FieldSlices.direct G) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide ((claim c.expression).term = node.expression))).bind fun _ =>
   (checkHandlerResult G images P C node c).bind fun _ =>
   (CheckResult.ofBool (checkScope (entry c).length node.expression)).bind fun _ =>
   ((checker.run (claim c.expression) c.knowledge
     (c.effect.getD (.ordinary c.expression)) codes sums).expect c.output).bind fun _ =>
-  (CheckResult.ofBool (checkYields G images c codes sums)).bind fun _ =>
+  (CheckResult.ofBool (checkYields G images c codes sums slices)).bind fun _ =>
   match node.continuation, c.edges with
   | .ret, [] => checkReturnResult G images Rty c
   | .bind l, [p] => checkTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
@@ -542,10 +635,13 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
+  -- The member-test field slices the nodes' yields read, each computed once.
+  let slices := FieldSlices.ofCertificate G C
   (CheckResult.ofBool (decide (P.length = C.length))).bind fun _ =>
   (CheckResult.all (List.range P.length) fun l =>
     match P[l]?, C[l]? with
-    | some node, some c => (checkNodeResult (checker := checker) (sums := sums) G images Rty P C node c codes).at (.node l)
+    | some node, some c => (checkNodeResult (checker := checker) (sums := sums) (slices := slices)
+        G images Rty P C node c codes).at (.node l)
     | _, _ => failure).bind fun _ =>
   CheckResult.ofBool (P.all (fun node => ObjectCoherence.sourceTerm node.expression))
 
@@ -554,6 +650,10 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (sums : List (ReadSummary ι) := []) : Bool :=
   (checkGraphResult (checker := checker) (sums := sums) G images Rty P C codes).accepted
+
+theorem FieldSlices.ofCertificate_eq [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) :
+    FieldSlices.ofCertificate G C = PromiseCalls.FieldSlices.direct G :=
+  PromiseCalls.FieldSlices.eq_direct _
 
 theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (Rty : Goal ι)
     (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool)
@@ -565,7 +665,7 @@ theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Insta
     | some node, some c => checkNodeUsing (checker := checker) (sums := sums) G images Rty P C node c codes
     | _, _ => false) && P.all (fun node => ObjectCoherence.sourceTerm node.expression)
   ) := by
-  simp only [checkGraphUsing, checkGraphResult, CheckResult.accepted_bind,
+  simp only [checkGraphUsing, checkGraphResult, FieldSlices.ofCertificate_eq, CheckResult.accepted_bind,
     CheckResult.accepted_ofBool, CheckResult.accepted_all, Bool.and_assoc]
   congr 2
   apply congrArg
@@ -632,7 +732,7 @@ theorem checkGraphResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images 
     intro l
     simp only [List.getElem?_map]
     cases P[l]? <;> cases C[l]? <;> simp only [Option.map, checkNodeResult_explicit]
-  simp only [checkGraphResult, List.length_map, h]
+  simp only [checkGraphResult, FieldSlices.ofCertificate_eq, List.length_map, h]
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target)
     (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) : Prop :=
