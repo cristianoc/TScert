@@ -1,0 +1,18 @@
+<section id="terms2" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:28px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Words used in this deck, continued</p>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Three more cards</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">Certified, relative</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">A statement is certified when the checker has checked the function’s own body against it, in a run that verifies (a run: TScert checking one source file, or a slice, “More terms, for TScert’s own source”; it verifies when every function in it does). A function that relies on a statement not certified is verified relative to it: proved assuming the statement holds.</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">Contract</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">TScert’s description of a built-in or library function, such as Array’s map or a method of TypeScript’s compiler API: reviewed by hand, and in parts proved in Lean (which parts: “Built-ins state footprints in their contracts”) against the steps the ECMAScript specification gives the function (lean/Verification/Semantics/FootprintNatives.lean).</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+<h3 style="font-size:28px;font-weight:600">Test case</h3>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">A source file of TScert’s test suite with its expected outcome, verified or refused, such as method-effect-map.ts. A refused test case passes when TScert refuses it with the expected diagnostic.</p>
+</div>
+</div>
+</section>

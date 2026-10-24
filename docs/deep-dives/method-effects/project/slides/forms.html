@@ -1,0 +1,16 @@
+<section id="forms" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:26px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Where you can write it</p><p style="font-size:24px;color:#5b6662">abridged; exclusions on “Forms that cannot carry a statement”</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">At the result of a signature: methods, interfaces, function types</h2>
+<div style="display:grid;grid-template-columns:1fr;gap:22px">
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:28px;font-weight:600">An interface member · method-effect-interface.ts</h3>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;line-height:1.4;background:#eef1ef;padding:12px 16px;border-radius:12px">interface Limit { over(n: number): Within&lt;{ value: "keep"; store: "keep" }, boolean&gt;; }<br>function firstOver(limit: Limit, xs: number[]): number { return xs.findIndex((x) =&gt; limit.over(x)); }</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">Each object passed where a Limit is expected is checked against the statement there. findIndex visits every index, reading a hole as undefined; with a callback that changes nothing, as here, the hole-free xs stays hole-free and each x is a number; without the statement x could be undefined, which over does not accept.</p>
+</div>
+<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:8px">
+<h3 style="font-size:28px;font-weight:600">A function type, here a parameter’s · method-effect-callback-parameter.ts</h3>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;line-height:1.4;background:#eef1ef;padding:12px 16px;border-radius:12px">function mapped(xs: number[], f: (x: number) =&gt; Within&lt;{ value: "keep"; store: "keep" }, number&gt;): number[] {<br>&#160;&#160;const r: number[] = xs.map((x) =&gt; f(x)); return r; }</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.36;">map’s result is hole-free; an arrow passed as f is checked against f’s statement where it is passed: one that pops xs is refused (invalid-method-effect-callback-argument.ts).</p>
+</div>
+</div>
+</section>

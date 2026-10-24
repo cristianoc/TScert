@@ -1,0 +1,11 @@
+<section id="write" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:28px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">What you write</p><p style="font-size:24px;color:#5b6662">from test case method-effect-map.ts</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:60px;font-weight:500;line-height:1.15">The effect goes in the result type, as Within&lt;F, T&gt;</h2>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;background:#eef1ef;padding:24px;border-radius:12px;line-height:1.5;">note(n: number): Within&lt;{ value: "any"; store: "grow" }, number&gt; {<br>&#160;&#160;this.entries.push(n);<br>&#160;&#160;return n + 1;<br>}</p>
+<ul style="font-size:24px;color:#1d2422;line-height:1.38">
+<li>Within needs no import, only its declaration file listed in the project’s tsconfig.json: it is a global type alias in tools/resolvable.d.ts (tools/, the directory of TScert’s TypeScript front end). To TypeScript, Within&lt;F, T&gt; is just T, so the code compiles and runs unchanged. TScert recognises Within by that declaration, or an identical copy of its file: another type called Within is an ordinary type.</li>
+<li>To TScert it is a statement about the call: on a normal return, the call changes memory that existed before it at most as F, the footprint, allows. With onThrow: true in F, this holds also when the call throws; without it, the statement says nothing about a throw.</li>
+<li>F has the fields value and store, whose settings the next slide lists, and optionally onThrow: true; in prose this deck writes the settings without quotes. note states store: grow (it keeps arrays’ hole-free prefixes hole-free, next slide, as its push onto entries, a number[] field of its class Log, three slides on, does) and value: any, because push’s contract states value: any (two slides on).</li>
+<li>TScert checks the function’s own body against the statement in a run that includes its definition, whether or not any code calls it; the statement is certified when that run verifies. Callers rely on the statement.</li>
+</ul>
+</section>
