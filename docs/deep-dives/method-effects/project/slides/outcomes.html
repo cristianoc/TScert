@@ -1,22 +1,22 @@
 <section id="outcomes" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:16px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Outcomes measured, 2026-10-24</p>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Statements are certified on test cases; 9 of the 16 parser functions verify, with and without them</h2>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">11 of the 16 measured parser functions verify, 2 relative to statements not certified</h2>
 <div style="display:flex;gap:22px">
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
 <p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">45</p>
-<p style="font-size:24px;color:#1d2422;line-height:1.34;">test cases of method effects (merge 72917dd): 14 <span style="color:#2e7d4f">verified</span>, 30 <span style="color:#9a3a2a">refused</span>, 1 <span style="color:#5e6870">gap</span> (the generic declaration on “Forms that cannot carry a statement”); in the suite run of 2026-10-24 after commit 05e3f01, each of the 2,126 test cases gets its expected outcome</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.34;">test cases of method effects (merge 72917dd): 14 <span style="color:#2e7d4f">verified</span>, 30 <span style="color:#9a3a2a">refused</span>, 1 <span style="color:#5e6870">gap</span> (the generic declaration on “Forms that cannot carry a statement”); in the suite run on the working tree of commit 7714666 (2026-10-24), each of the 2,138 test cases gets its expected outcome</p>
 </div>
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
-<p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">9 of 16</p>
-<p style="font-size:24px;color:#1d2422;line-height:1.34;">measured parser functions <span style="color:#2e7d4f">verify</span>, with and without the statements (census slices at 300 s: before, commit 6a3a864; after, commit 40ab4d7). 6 of the other 7 are among the 21 slices that stop at pattern’s map; classBody (the parser of a class body) is <span style="color:#9a3a2a">refused</span> earlier, for another reason (census of 6a3a864)</p>
+<p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">11 of 16</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.34;">measured parser functions <span style="color:#2e7d4f">verify</span> (census of 38ed032, 300 s): 9 also before the statements (census of 6a3a864), and pattern and forOfPattern, relative to the statements of expr and Gate’s own methods. 4 of the other 5 stop after pattern’s map (“What to expect”); classBody is <span style="color:#9a3a2a">refused</span> earlier, for another reason</p>
 </div>
 <div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;flex:1;display:flex;flex-direction:column;gap:6px">
-<p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">1 of 2</p>
-<p style="font-size:24px;color:#1d2422;line-height:1.34;">pattern’s two maps: the one over array patterns keeps its result hole-free (WORK.md’s row “Class methods’ effects”; observed in a scratch probe, below), by the statement of patternDefaults, its callback’s only call through Gate; the other is the one on “pattern’s map needs the expression parser to state its effect”</p>
+<p style="font-size:56px;font-family:'IBM Plex Serif', Georgia, serif;font-weight:500;color:#1f6f66">61 of 183</p>
+<p style="font-size:24px;color:#1d2422;line-height:1.34;">functions that expr and the parser’s TermScope reach are <span style="color:#2e7d4f">certified</span>, each in its own census slice; the others’ statements rest on an audit of their bodies (docs/drafts/method-effects-inventory.md, 300 s, 2026-10-24)</p>
 </div>
 </div>
 <ul style="font-size:24px;color:#1d2422;line-height:1.38">
 <li>Under Node, 13 of the 30 refused test cases run (tests/node-runs.mts) and show the refused behaviour: in 11, map’s result has a hole; in 2, a parameter default such as x: number = xs.pop() ?? 0, on a function stating that nothing changes, pops the array it reads.</li>
-<li>Observed in a scratch probe (a temporary, uncommitted edit) of pattern’s slice at commit 40ab4d7: with only the object-pattern map written as a loop, the slice verifies; before the statements it needed both maps rewritten (the commit message of 40ab4d7). The source keeps the map, by the rule that it is not rewritten to fit the verifier (docs/SOURCE-REWRITES.md).</li>
+<li>Lost with the statements: enumMembersTerm and enumIntrinsic. Of 84 census slices around the stated code, 76 verify at 6a3a864, 78 at 762eaea and 76 at fea595c, a later commit of the same work. enumMembersTerm, called by a TermScope member, states value: any, store: grow and sorts an array a filter call has just returned; its slice does not establish the statement at that sort (WORK.md).</li>
 </ul>
 </section>

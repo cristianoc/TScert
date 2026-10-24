@@ -27,7 +27,7 @@ array of two strings and a span, a JSON value. Of the functions stating
 nothing, `fail` and `refuseReceiverForm` return `never` and
 `functionLikeNode` and `isNode` are type predicates.
 
-Measured on 2026-10-24 at commit 129e9dd, with each census stage limited to
+Measured on 2026-10-24 at commit fea595c, with each census stage limited to
 300 s: of 183 functions, 61 are certified, 75 have a slice that does not
 verify, 22 top-level functions have no slice of their own (the census
 slices function declarations), and 25 are `Gate` members, which the census

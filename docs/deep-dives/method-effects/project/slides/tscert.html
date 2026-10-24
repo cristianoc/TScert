@@ -5,12 +5,12 @@
 <tr><th style="width:50%;text-align:left;font-weight:600">Definition</th><th style="width:22%;text-align:left;font-weight:600">Statement</th><th style="width:28%;text-align:left;font-weight:600">Status</th></tr>
 <tr><td>Module functions in Gate’s fields: patternDefaults (collects the default expressions of a destructuring pattern), inert (whether an expression runs only its own code and writes only locals)</td><td>value keep, store keep</td><td style="color:#2e7d4f">certified, in their own slices</td></tr>
 <tr><td>Same kind: steppedPattern (makes the parser reject an array pattern whose parts may run code between iterator steps; it writes a captured variable)</td><td>value any, store keep</td><td style="color:#2e7d4f">certified, in its slice</td></tr>
+<tr><td>What expr (the expression parser) reaches through Gate’s fields and methods and by direct call: 157 of the 167 functions an untrusted scan finds, expr and pattern among them; the other 10 state less</td><td>value any, store grow</td><td style="color:#2e7d4f">certified where their slice verifies, pattern among them; not expr, whose slice is refused (“What expr’s statement rests on”)</td></tr>
 <tr><td>Gate’s own methods: span (a node’s position), local (the parser’s name for a binding), hasTypeParam (whether a type parameter is in scope)</td><td>value keep, store keep</td><td style="color:#5e6870">stated, not certified</td></tr>
 <tr><td>Gate’s own method: typeParamName (the name a type parameter has in the parser’s output; its body uses for-of over an array, whose step’s contract states value: any)</td><td>value any, store keep</td><td style="color:#5e6870">stated, not certified</td></tr>
 </table>
 <ul style="font-size:24px;color:#1d2422;line-height:1.38">
-<li>A function that verifies by calling span is verified relative to span’s statement.</li>
-<li>Gate’s own methods are not certified: a statement is certified where a verifying run checks the body, and no slice that includes Gate’s class verifies (40ab4d7’s commit message), and span’s body calls node.getStart, which needs the checker rule on “Five requirements for expr’s statement”. A slice of another file reads Gate at its declared type, so it relies on these statements without checking them.</li>
+<li>Gate’s own methods are not certified: no slice that includes Gate’s class verifies (40ab4d7’s commit message), and span’s body calls node.getStart, which needs the checker rule on “What expr’s statement rests on”. A slice of another file reads Gate at its declared type, so it relies on these statements without checking them.</li>
 <li>getText, getStart and eight other methods of Node and SourceFile, listed in TScert’s contract for the compiler API, have a contract stating value: keep, store: keep, also on a throw (onThrow: true).</li>
 </ul>
 </section>
