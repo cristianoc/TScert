@@ -186,6 +186,12 @@ first. Before a push, every record of the range has passed this check, and
 any deep dive the range calls for ([STYLE.md](../../../docs/STYLE.md)) is
 approved by the owner.
 
+A record pushed before it passed this check is corrected without rewriting
+history: the corrected record is attached to its commit as a note in
+`refs/notes/records` (`git notes --ref=records add -F <file> <commit>`),
+pushed with `git push origin refs/notes/records`, and the record pages read
+the note in place of the message.
+
 ## When to produce a review
 
 - After a batch of agent work, before any merge: render each range and give

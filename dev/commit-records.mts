@@ -46,9 +46,12 @@ function examplesOf(rev: string, text: string): Map<string, Example> {
   return found;
 }
 
-/** The record of one commit: its message. */
+/** The record of one commit: its note in `refs/notes/records` where one corrects the message after a push, else
+ * its message. */
 function readRecord(rev: string): CommitRecord {
-  const message = git(["show", "-s", "--format=%B", rev]);
+  const message = git(["show", "-s", "--format=%N", "--notes=records", rev]).trim()
+    ? git(["show", "-s", "--format=%N", "--notes=records", rev])
+    : git(["show", "-s", "--format=%B", rev]);
   return parseRecord(message, {
     sha: git(["rev-parse", "--short=9", rev]).trim(),
     author: git(["show", "-s", "--format=%an · %ad", "--date=format:%b %d, %H:%M", rev]).trim(),

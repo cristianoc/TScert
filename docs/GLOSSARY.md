@@ -21,6 +21,8 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **object** (of a change): the stage and the concept a change block names in parentheses, such as `type reader: the members of a union` ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Outcome**: the trailer giving the change's result, `verified`, `refused`, `gap` or `no-behaviour-change` ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Parts**: the trailer listing the layers a change touches, such as `lean-rules`, `producer`, `parser`, `wire`, `trust` ([the record](../.claude/skills/review/SKILL.md#the-record)).
+- **record check**: before a commit, an independent reader with only this glossary and the candidate message reports the terms, sentences and status wording that block a reader; the message passes when nothing blocks. A record pushed without passing it is corrected by a **record note** in `refs/notes/records`, which the record pages read in place of the message ([checking a record](../.claude/skills/review/SKILL.md#checking-a-record-before-the-commit)).
+- **record page**: a commit record rendered as a page (`make semantic-diff`, `node dev/commit-records.mts`) ([rendering](../.claude/skills/review/SKILL.md#rendering)).
 - **semantic diff**: the delta on the high-level objects code implements (a rule, a lowering, a trust assumption), rendered as a page by `make semantic-diff` ([principles](../.claude/skills/review/SKILL.md#principles)).
 - **Soundness**: the section saying why a change is sound, or where it is proved ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Trust** (trailer): the new trust sentence a change adds, or `none` ([the record](../.claude/skills/review/SKILL.md#the-record)).
