@@ -46,6 +46,11 @@ export type StableExclusion = { owner: string; member: string; text: string };
  * package assigns it on a node it built earlier (`assigned`). No shape states
  * it, so every read of it is of a member the shape does not state. */
 export type OmittedMember = { owner: string; member: string; text: string; why: "allocates" | "assigned" };
+/** A method whose calls change no location of the model, on normal return
+ * or throw (HOST-FAMILIES.md, "The family contract"): its owner, its name
+ * and its text as reviewed. It is read at the empty footprint with
+ * `onThrow`. */
+export type FootprintMember = { owner: string; member: string; text: string };
 
 /** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
  * export's name, a node guard or a tag guard, its declared domain, its exact
@@ -110,6 +115,9 @@ export type FamilyDescription = {
   /** The members whose reads give no one value for a node's life, each
    * omitted from every shape. */
   omitted: readonly OmittedMember[];
+  /** The methods stated at the empty footprint, on a throw too: callback-free
+   * methods whose calls change no location of the model. */
+  footprints: readonly FootprintMember[];
   /** The stable-member rule: every property member of a shape, required or
    * optional, the tag and the corrected members included, is stable but
    * these. */
@@ -364,6 +372,15 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     const [only] = members;
     if (!only || members.length !== 1 || graph.text(only) !== x.text)
       graph.fail(`the omitted member ${x.owner}.${x.member} is not declared as reviewed: ${x.text}`);
+  }
+  // The methods stated at the empty footprint, each checked against the
+  // declaration it was reviewed at.
+  for (const x of description.footprints) {
+    const owner = named(x.owner);
+    const members = owner.members.filter(m => graph.name(m) === x.member);
+    const [only] = members;
+    if (!only || members.length !== 1 || graph.text(only) !== x.text)
+      graph.fail(`the method ${x.owner}.${x.member} stated at the empty footprint is not declared as reviewed: ${x.text}`);
   }
   // The stable-member rule's exclusions, each checked against the
   // declaration it was reviewed at: a property member that declaration

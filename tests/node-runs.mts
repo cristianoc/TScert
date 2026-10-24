@@ -1641,6 +1641,27 @@ for (const call of [`members(new Gate(), ["a", ""])`, "instances([1, -1])", `res
   assert.throws(() => runExample("no-return-callee-map", call), /empty|negative/, `no-return-callee-map: ${call}`);
 // A promise, a Boolean and a caught throw are returns: the callee popped the
 // mapped array, and `map` skipped the index it removed.
+// A statement (`Within<F, T>`) a body does not meet: each popping method,
+// declaration, override, look-alike, written field, static method or
+// substituted dependency leaves a hole in the mapped array; a popping default
+// shortens the array it reads.
+for (const [file, call] of [
+  ["invalid-method-effect-method", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-declaration", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-override", "1 in wrong(new Drain(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-lookalike", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-field-effect-write", "1 in wrong(new Holder(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-static", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-onthrow", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-stated-throw-caught", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
+  ["invalid-method-effect-unstated-dependency",
+    "(() => { const r = new Runner(); r.helper = (ys, x) => { ys.pop(); return x; }; return 1 in wrong(r, [1, 2]) ? \"dense\" : undefined; })()"],
+  ["invalid-method-effect-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
+  ["invalid-method-effect-rest-default", "(() => { const xs = [1]; bad(xs); return xs.length ? \"kept\" : undefined; })()"],
+  ["invalid-method-effect-callback-argument", "1 in wrong([1, 2]) ? \"dense\" : undefined"],
+  ["invalid-compiler-api-visitor-effect",
+    "1 in wrong([{ forEachChild: (v) => v() }, { forEachChild: (v) => v() }]) ? \"dense\" : undefined"],
+]) assert.equal(runExample(file, call), undefined, `${file}: the statement is not met`);
 for (const [file, call] of [
   ["invalid-method-effect-throw-caught", "1 in wrong(new Bump(), [1, 2]) ? \"dense\" : undefined"],
   ["invalid-no-return-guard", "1 in wrong([1, 2]) ? \"dense\" : undefined"],

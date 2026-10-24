@@ -18,5 +18,11 @@
     "lib": ["es2022"],
     "types": ["node"]
   },
-  "include": ["*.mts", "../tests/*.mts", "../pipeline/*.mts", "../dev/*.mts"]
+  "include": [
+    "*.mts",
+    "resolvable.d.ts",
+    "../tests/*.mts",
+    "../pipeline/*.mts",
+    "../dev/*.mts"
+  ]
 }

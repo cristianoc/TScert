@@ -150,7 +150,7 @@ signature's frame, whose certificate the unit's code table records. -/
     (self : Option String := none) :
     Compiler (LambdaCode Tree) := do
   let s ← lambdaSetup fc scope Γ lam A mode
-  let .lambda _ _ _ _ _ _ _ _ async _ := lam | throw "closure claim must name a source arrow"
+  let .lambda _ _ _ _ _ _ _ _ _ async _ := lam | throw "closure claim must name a source arrow"
   -- A recursive closure is checked with its self entry, at its own type,
   -- after its captures.
   let selfEntry : Option (ScopeBinding Tree × Ty Tree) :=

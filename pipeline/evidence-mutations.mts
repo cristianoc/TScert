@@ -67,7 +67,7 @@ export function mutationVerifier(): string {
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks", "Semantics/HeapSeparation",
     "Semantics/HeapKnowledge", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer",
-    "Programs/ExpressionEffects", "Source/RequestJson"];
+    "Programs/ExpressionEffects", "Source/RequestJson", "Source/Lowering/ClosureSetup"];
   for (const module of modules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
     let text = readFileSync(original, "utf8");
@@ -130,6 +130,13 @@ export function mutationVerifier(): string {
     // An async definition's footprint below `top` admitted (L6 removed).
     if (module === "Source/RequestJson")
       text = inject(text, "RequestJson_asyncEffects", () => 'if (mutation("async")) return 1;');
+    // A stated declaration's claim admitted outside its statement, and a
+    // stated closure's code not required to cover its statement (L2
+    // removed).
+    if (module === "Source/RequestJson")
+      text = inject(text, "RequestJson_statedWithin", () => 'if (mutation("stated")) return 1;');
+    if (module === "Source/Lowering/ClosureSetup")
+      text = inject(text, "SourceExtraction_statedObligation", () => 'if (mutation("stated")) return lean_box(0);');
     const c = join(dir, module.replaceAll("/", "-") + ".c");
     const o = c + ".o";
     writeFileSync(c, text.replace("#include <lean/lean.h>", "#include <lean/lean.h>\n" + header));

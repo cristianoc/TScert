@@ -45,6 +45,10 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
   let refuseAsync (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not `top`, and an async definition's is"
   if !RequestJson.asyncEffects r.async r.footprint then some (refuseAsync s!"'{name}'" namePos) else
+  -- A stated declaration's claim lies within its statement
+  -- (`RequestJson.statedWithin`): refused at the definition.
+  if !RequestJson.statedWithin r.async r.footprint r.onThrow r.stated then
+    some s!"source effect refusal at [{namePos.1},{namePos.2}): the footprint claimed for '{name}' is not within the effect its result annotation states" else
   let asyncCode := (r.toRequest.codes.zipIdx.find? fun (q, _) =>
     !RequestJson.asyncEffects q.async q.entry.row.effect.footprint).map fun (_, i) =>
       refuseAsync s!"a closure in '{name}'"

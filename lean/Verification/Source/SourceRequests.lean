@@ -45,6 +45,10 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- Whether the declaration is async, as the source states (`Fragment.Fn`):
   its footprint is then `top` (`RequestJson.asyncEffects`). -/
   async : Bool
+  /-- The effect the declaration's result annotation states, as the source
+  states it (`Fragment.Fn`): the claim must lie within it
+  (`RequestJson.statedWithin`). -/
+  stated : Option CallEffects.Effect
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
@@ -141,7 +145,8 @@ node by node (`GraphCode.compositionalChecked`), or by a graph of pure nodes,
 which preserves the heap, for a unit returning a plain result under the
 ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint)).bind fun _ =>
+  (ProgramCertificates.CheckResult.ofBool (RequestJson.asyncEffects r.async r.footprint &&
+    RequestJson.statedWithin r.async r.footprint r.onThrow r.stated)).bind fun _ =>
   if r.footprint = .top ∧ r.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.footprint != .top)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
@@ -172,7 +177,26 @@ theorem effectResult_async {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (ha : r.async = true) : r.footprint = .top := by
   simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
-  simpa [RequestJson.asyncEffects, ha] using h.1
+  simpa [RequestJson.asyncEffects, ha] using h.1.1
+
+/-- **A stated unit's claim is within its statement** where its effect is
+checked: its footprint within the statement's, below `top`, on a throw too
+where the statement says so, and the unit is not async. -/
+theorem effectResult_stated {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true) {s : CallEffects.Effect} (hs : r.stated = some s) :
+    r.async = false ∧ s.footprint ≠ .top ∧ r.footprint.le s.footprint = true ∧
+      (s.onThrow = true → r.onThrow = true) := by
+  simp only [effectResult, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at h
+  have hw := h.1.2
+  rw [hs] at hw
+  simp only [RequestJson.statedWithin, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq,
+    Bool.or_eq_true] at hw
+  obtain ⟨⟨⟨ha, htop⟩, hle⟩, ho⟩ := hw
+  refine ⟨ha, htop, hle, fun hso => ?_⟩
+  rcases ho with ho | ho
+  · rw [hso] at ho; cases ho
+  · exact ho
 
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
@@ -354,6 +378,37 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
       exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
   · contradiction
 
+/-- **A unit stating an effect meets it** (`Within<F, T>`; SOURCE-ELABORATION.md,
+"Stated effects"): run as the code its graph describes from any environment
+of values its inputs, its annotated parameters, admit, it is safe; on normal
+return the heap it leaves is within its statement's footprint of its entry
+heap, and so is the heap a throw leaves where the statement says so. -/
+theorem checkRequests_stated_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
+    {s : CallEffects.Effect} (hs : r.stated = some s)
+    (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
+    (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
+    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
+    HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
+      (fun h' _ => s.footprint.Holds heap h') (fun h' => s.onThrow = true → s.footprint.Holds heap h') n W heap
+      (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        r.start L d) := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  obtain ⟨-, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  obtain ⟨-, htop, hle, hthrow⟩ := effectResult_stated heff hs
+  have heffect : r.footprint ≠ .top ∨ r.onThrow = true := by
+    refine .inl fun hr => htop ?_
+    rw [hr] at hle
+    cases hsf : s.footprint with
+    | mk v st =>
+      rw [hsf] at hle
+      cases v <;> cases st <;> simp_all [Footprints.Closed.top, Footprints.Closed.le, Footprints.Change.le, Footprints.Change.onValue]
+  exact HeapObservations.SafePostExc.weaken
+    (fun h' _ hq => Footprints.Closed.Holds.mono hle hq)
+    (fun h' hq ho => Footprints.Closed.Holds.mono hle (hq (hthrow ho)))
+    (checkRequests_footprint_at h hm heffect η n W heap L d he hw hh hvalues hd)
+
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
 def sourceMapRegion (sourceMap : SourceMap) : Option SourceMapEntry :=
   sourceMap.foldl (fun found next => match found, next with
@@ -439,7 +494,8 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, async := r.async }
+           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow, async := r.async,
+           stated := r.stated }
 
 end
 

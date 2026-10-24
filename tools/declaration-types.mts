@@ -24,6 +24,10 @@ export type CallPromise = { guards: { param: number } } | { asserts: { param: nu
 export type CallEffect = {
   footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean; onThrow: boolean;
 };
+/** The effect a written signature states at its result (`Within<F, T>`,
+ * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether
+ * it also bounds the heap a throw leaves. */
+export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean };
 /** One type alias or interface: its module, its name and its span there. The
  * module identities are disjoint by construction: the client's absolute
  * path; `typescript/lib/<file>` for a file the compiler's library resolution

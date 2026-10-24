@@ -190,7 +190,8 @@ A function's guarantee comes only from its checked body: a declaration's
 claimed footprint is checked against its graph (proved:
 `SourceExtraction.checkRequests_footprint_at`), a closure's against its code
 entry (`codeChecked_sound`), a class's construct signatures against its
-constructor's code (`ctorGraph`). A callable value carries its footprint
+constructor's code (`ctorGraph`); a [statement](SOURCE-ELABORATION.md#stated-effects)
+in a definition's annotation is certified from its code at the definition. A callable value carries its footprint
 through ordinary signature checking, substitution and application; an unknown
 function states `{value: any, store: any}`.
 
@@ -214,7 +215,10 @@ The producer proposes each footprint, untrusted: a body's is the join of its
 nodes' (`footprint_expr`, `footprint_stmts` in `ocaml-producer/source.ml`),
 a variable write `{value: any, store: keep}`, a call or construction the join
 of every signature its callee may take, a call its own typing claims at
-`never` the empty footprint, an async definition none; declarations are proposed at the least
+`never` the empty footprint, an async definition none, and a statement's
+method call on an object claimed at several labels with actuals that are
+names or literals none: the lowering reads and invokes its member in one
+node dispatched on the object, which no bounded node rule above admits; declarations are proposed at the least
 fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
 every node.
 

@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { DeclarationDocument, PropertyKey, SourceTypeParameter, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationDocument, PropertyKey, SourceTypeParameter, StatedEffect, TypeTerm } from "./declaration-types.mts";
 // span.mts declares the source span every Fragment node carries, the one declaration the claims, the diagnostics and the reports share.
 import type { Span } from "./span.mts";
 import type { GuardUndefined } from "./host-families.mts";
@@ -223,6 +223,9 @@ export type Expr =
       /* A guard's promise, where the result annotation is `x is T` or
          `asserts x is T`; `result` is then its plain result. */
       guard: Guard | null;
+      /* The effect its result annotation states, `Within<F, T>`, of which
+         `result` is `T`; null where it states none. */
+      stated: StatedEffect | null;
       /* How a call of it completes: its own `async` modifier. */
       completion: Completion;
       body: Expr;
@@ -372,6 +375,9 @@ export interface FunctionAst {
   /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
   guard: Guard | null;
+  /** The effect the result annotation states, `Within<F, T>`, of which
+   * `retType` is `T`; null where it states none. */
+  stated: StatedEffect | null;
   completion: Completion;
   body: Stmt[];
   /** Whether the function's code is strict: a sloppy call converts a

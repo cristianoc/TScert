@@ -618,7 +618,11 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               signature's effect and type. *)
            guard: (call_effect * ty) option;
            (* Whether it is async: its effects are certified at `top`. *)
-           async: bool; body: stmt list }
+           async: bool;
+           (* The effect its result annotation states (`Within<F, T>`): a
+              footprint and whether it holds on a throw too. Its claim must
+              lie within it. *)
+           stated: (footprint * bool) option; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -735,6 +739,22 @@ let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
    definition's effects at `top` (`asyncEffects`) and no footprint below it is
    proposed. *)
 let async_closures : (Json.t, unit) Hashtbl.t = Hashtbl.create 16
+(* The effects closures' result annotations state (`Within<F, T>`), by the
+   literal's position: a footprint and whether it holds on a throw too. Lean
+   requires a signature its code is checked at to cover it. *)
+let stated_closures : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
+(* A definition's statement as the Fragment writes it, or none. *)
+let stated_of j = match field "stated" j with
+  | Null -> None
+  | s -> Some (footprint_of (field "footprint" s),Json.boolean (field "onThrow" s))
+(* The claim a stated definition proposes: what its body shows where that is
+   within the statement, else the statement, which Lean then checks node by
+   node. *)
+let within_statement (footprint,on_throw) = function
+  | None -> footprint,on_throw
+  | Some (stated,stated_throw) ->
+    if footprint_le footprint stated && (on_throw || not stated_throw) then footprint,on_throw
+    else stated,stated_throw
 let async_completion j = match text "completion" j with
   | "async" -> true
   | "sync" -> false
@@ -783,8 +803,17 @@ let fresh_expr ~callable ~fresh (e:expr) = match e.node with
      | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.fresh) effects
      | _ -> false)
   | _ -> false
-let rec footprint_expr ?(fresh=[]) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~fresh ~callable ~no_return ~iteration ~readable in
+(* Whether a statement's method call is dispatched on its object in one
+   step (Lean's `dispatchCallTerm`): the object's claim has several labels and
+   every actual is a name or a literal, so the member is read and invoked in
+   one node, which no bounded node rule admits. *)
+let plain_actuals (args:expr list) =
+  List.for_all (fun (a:expr) -> match a.node with Id _ | Literal _ -> true | _ -> false) args
+let several_labels = function
+  | Atoms (_ :: _ :: _) | Union _ -> true
+  | _ -> false
+let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
     Option.map (effects_footprint ~receiver_fresh) (callable callee) in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
@@ -837,6 +866,7 @@ let rec footprint_expr ?(fresh=[]) ~callable ~no_return ~iteration ~readable (e:
      constant holding a store the run allocated. *)
   | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
     let receiver_fresh = match o.node with Id name -> List.mem name fresh | _ -> false in
+    if dispatched o args then None else
     join_bound (all (o :: args)) (returning e (fun () -> calls ~receiver_fresh callee))
   (* A construction changes at most what every construct signature its
      callee may take states. *)
@@ -844,18 +874,18 @@ let rec footprint_expr ?(fresh=[]) ~callable ~no_return ~iteration ~readable (e:
     if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
-  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
-  | BlockBody body -> footprint_stmts ~fresh ~callable ~no_return ~iteration ~readable body
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
+  | BlockBody body -> footprint_stmts ~fresh ~dispatched ~callable ~no_return ~iteration ~readable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ?(fresh=[]) ~callable ~no_return ~iteration ~readable = function
+and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~fresh ~callable ~no_return ~iteration ~readable in
-    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~callable ~no_return ~iteration ~readable body in
+    let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
+    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~dispatched ~callable ~no_return ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
     | Declare (mutable_,bindings) ->
@@ -866,7 +896,7 @@ and footprint_stmts ?(fresh=[]) ~callable ~no_return ~iteration ~readable = func
             else List.filter ((<>) name) fresh in
           let written = if Hashtbl.mem early_bindings (name,init.pos) then cell_write else Some empty_footprint in
           add fresh (name::readable) (join_bound written
-            (join_bound acc (footprint_expr ~fresh ~callable ~no_return ~iteration ~readable init))) more in
+            (join_bound acc (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable init))) more in
       add fresh readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
@@ -880,7 +910,7 @@ and footprint_stmts ?(fresh=[]) ~callable ~no_return ~iteration ~readable = func
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
          [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
-            ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
+            ~dispatched ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
@@ -1054,6 +1084,7 @@ let rec expr binders j =
              which the conversion leaves unchanged. *)
           Some (source_type inner (field "type" r)) in
       if async_completion j then Hashtbl.replace async_closures (field "pos" j) ();
+      Option.iter (Hashtbl.replace stated_closures (field "pos" j)) (stated_of j);
       Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
@@ -1347,5 +1378,5 @@ and decode_program ast =
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
       result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
-      async=async_completion f;
+      async=async_completion f;stated=stated_of f;
       body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

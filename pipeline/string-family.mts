@@ -17,6 +17,7 @@ export const stringFamily: FamilyDescription = {
   table: [{ rule: "literal" }],
   corrections: [],
   omitted: [],
+  footprints: [],
   stable: { excluded: [] },
   // Both kinds' audited behaviour on `undefined`: a node guard throws, a tag
   // guard of equalities answers `false`.
