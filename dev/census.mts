@@ -289,8 +289,8 @@ async function census(args: string[]): Promise<void> {
     fileHashes.push({ file, sourceSha256: sha256(text) });
   }
   closeParser();
-  // Functions whose slices have one text (a mutually recursive group) share one slice file, the first's: the
-  // same inputs, so the check of each after the first replays the first's stages (STAGE-STORE.md, "Shared work").
+  // Functions whose slices have one text (a mutually recursive group) share one slice file, the first's, and its
+  // one check (STAGE-STORE.md, "Shared work").
   const named = new Map<string, string>();
   for (const s of all) if (!named.has(s.text)) named.set(s.text, s.slice);
   const shared = all.map((s): Slice => ({ ...s, slice: named.get(s.text) ?? s.slice }));
