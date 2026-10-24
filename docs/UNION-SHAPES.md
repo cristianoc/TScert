@@ -501,7 +501,9 @@ a request established, with its proof (`Answered.proved`, from
 produces reads them as the image check's proved inclusions
 (`Answered.images`), so a comparison search established is not decided
 again there; the final check of the document and the check stage decide
-every comparison.
+every comparison. A node's derivation is first sought among the derivations
+known for the request (its obligations' and its plans'), found by a key of
+their claims, the context's length and the claimed type (`KnownIndex`).
 
 **Where the search time sits.** In `statementsOnPath`'s search (macOS
 `sample`, one run, 2026-10-18), about a third of the working thread's

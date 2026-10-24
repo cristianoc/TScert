@@ -1337,11 +1337,26 @@ observation comes from graph dispatch, never from supplied point annotations. -/
     | none => subtypeUsing G images A B
 
 
+/-- Known derivations by a key of their claims (the context's length and the
+claimed type), each bucket in list order. Search only. -/
+abbrev KnownIndex (ι : Type) := Std.HashMap UInt64 (List (Evidence ι))
+
+@[nospecialize] def knownKey [Hashable ι] (j : Sequent ι) : UInt64 :=
+  mixHash (hash j.context.length) (hash j.type)
+
+@[nospecialize] def KnownIndex.of [Hashable ι] (known : List (Evidence ι)) : KnownIndex ι :=
+  known.foldr (fun e m => let k := knownKey (claim e); m.insert k (e :: m.getD k [])) {}
+
+/-- The first known derivation of `j`, read in its bucket. -/
+@[nospecialize] def KnownIndex.find? [DecidableEq ι] [Hashable ι] (m : KnownIndex ι) (j : Sequent ι) :
+    Option (Evidence ι) :=
+  (m.getD (knownKey j) []).find? fun e => claim e == j
+
 /-- Select effect evidence without changing the requested sequent. A precise
 read/value rule may succeed when ordinary derivation search cannot. -/
 @[nospecialize] def expressionEffectUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
-    (suggestions : List (Sequent ι)) (known : List (Evidence ι))
+    (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
     SearchM G (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
@@ -1349,7 +1364,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   -- its context's, which are its operands' claims. The pool is consulted
   -- only where those leave a choice open.
   let own := (j.type :: j.context).eraseDups
-  let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? fun e => claim e == j))) fun _ =>
+  let ordinary ← (SearchM.orElse (SearchM.lift (CheckResult.fromOption (known.find? j))) fun _ =>
     (expressionWithUsing G images own suggestions aliases fuel j.context j.term j.type).orElse fun _ =>
       expressionWithUsing G images pool suggestions aliases fuel j.context j.term j.type).result
   let mut incomplete := ordinary.exhaustion
@@ -1708,7 +1723,7 @@ promise's evidence. -/
 
 @[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
+    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (implies : List (PromiseCalls.Implication ι) := []) (arguments : List Nat := [])
@@ -1850,6 +1865,8 @@ Every edge is still checked by the independent consumer. -/
     (goal : ControlFlow.Goal ι := .plain []) :
     ProduceM G (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
+  -- The known derivations by key, read by every node's search.
+  let index := KnownIndex.of known
   -- Arrays: every pass visits nodes and their predecessors by label.
   let arguments := (argumentSlots P claims start goal.slot).toArray
   let nodes := P.toArray
@@ -1919,7 +1936,7 @@ Every edge is still checked by the independent consumer. -/
       if handlerTargets.contains l then
         implies := []
         held := held.filter (arguments.getD l []).contains
-      let evidence ← produceNode G images pool fuel l node claims k suggestions known codes aliases checker
+      let evidence ← produceNode G images pool fuel l node claims k suggestions index codes aliases checker
         implies held goal
       table := table.set! l (some evidence)
       progress := true
