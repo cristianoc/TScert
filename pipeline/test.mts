@@ -2935,7 +2935,7 @@ mutationControl(async (): Promise<void> => {
     return { artifacts, input: writeClaims(artifacts, name, claims) };
   };
   const refusal = /a stated closure's claim must offer its stated effect over its annotated parameters/;
-  const weaker = forge("invalid-method-effect-unused", /\(xs: number\[\]\)/, "forged-stated-weaker", s => { s.effect = ordinaryEffect; });
+  const weaker = forge("invalid-method-effect-unused", /\(\s*xs: number\[\],?\s*\)/, "forged-stated-weaker", s => { s.effect = ordinaryEffect; });
   const produce = produceWith(weaker.artifacts, weaker.input, "forged-stated-weaker");
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const generated = forgedEvidence(weaker.artifacts, weaker.input, "forged-stated-weaker", "stated");
@@ -4298,7 +4298,7 @@ control(async (): Promise<void> => {
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/family-fixture-project",
     digest: "aaaa66cf18b7f7d980c0e7734ae6421159ac2eccbbaa8d28b76f03e4280701ff" },
-  table: [{ rule: "literal" }], corrections: [], omitted: [] }]);
+  table: [{ rule: "literal" }], corrections: [], omitted: [], footprints: [] }]);
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));

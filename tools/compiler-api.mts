@@ -97,6 +97,26 @@ export const compilerApiFamily: FamilyDescription = {
     { owner: "Node", member: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;", why: "allocates" },
     { owner: "SourceFile", member: "tokenCache", text: "tokenCache?: Map<string, Node>;", why: "assigned" },
   ],
+  // The callback-free node methods (T3, COMPILER-API.md, "Node methods and
+  // callbacks"): they make no server request, run no client code and change
+  // no stable member, and their hidden effects (a node list's cursor, the
+  // file's materialized nodes) are observed by no transparent operation
+  // (T4), so a call changes no location of the model, on normal return or
+  // throw. `forEachChild` runs its visitors and keeps its declared
+  // signature.
+  footprints: [
+    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;" },
+    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;" },
+    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;" },
+    { owner: "Node", member: "getEnd", text: "getEnd(): number;" },
+    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;" },
+    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;" },
+    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;" },
+    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;" },
+    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" },
+    { owner: "SourceFile", member: "getLineAndCharacterOfPosition",
+      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;" },
+  ],
   // Every property member of a shape, required or optional, is stable
   // (reading rule 1, checked by C3's walk).
   stable: { excluded: [] },

@@ -549,7 +549,14 @@ meets its contract, `T | undefined`.
 declarations as
 [host-relative methods](SOURCE-MODEL.md#method-members-are-host-relative),
 under T3. None makes a server request, so none runs the API's retained
-callbacks.
+callbacks. Each but `forEachChild` runs no client code and changes no
+stable member, and its hidden effects are observed by no transparent
+operation (T4), so its call changes no location of the model, on normal
+return or throw: the family description states each at the empty footprint
+with `onThrow` (`footprints`, each with its reviewed text), and a callback
+calling only them is within the empty footprint
+(`compiler-api-node-method-effect`). `forEachChild` keeps its declared
+signature, whose effect is unrestricted (`invalid-compiler-api-visitor-effect`).
 
 `forEachChild<T>(visitNode, visitList?)` takes two visitors, both the
 client's functions: `visitNode` runs on each child node and `visitList`,
@@ -762,7 +769,9 @@ the corpus runs are regression evidence, not proofs.
   client code but `forEachChild`'s visitors, which they call synchronously,
   only with children of the receiver, in a fixed order, and propagate a
   visitor's exception; they change no stable member; they return values of
-  their declared types or throw.
+  their declared types or throw. With T4, a call of one but `forEachChild`
+  changes no location of the model, on normal return or throw, which the
+  family description states (`footprints`).
 - **T4 (restricted values).** A host object behaves as the record of its
   stated members and a node list as the dense readonly array of its
   elements under every transparent operation of

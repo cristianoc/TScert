@@ -17,6 +17,7 @@ export const stringFamily: FamilyDescription = {
   table: [{ rule: "literal" }],
   corrections: [],
   omitted: [],
+  footprints: [],
   stable: { excluded: [] },
   guards: {
     entryPoint: "./ast",
