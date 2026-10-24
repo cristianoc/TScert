@@ -11,6 +11,8 @@
 import type { GuardClosure } from "./guard-closure.mts";
 import { createHash } from "node:crypto";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
+import type { TypeTerm } from "./declaration-types.mts";
+import { closedFootprints, emptyEffect, footprintEffect, type CallEffect } from "./type-graph.mts";
 
 /** A tag value: a number, or a string for a family whose tag is a string. */
 export type TagValue = number | string;
@@ -46,11 +48,46 @@ export type StableExclusion = { owner: string; member: string; text: string };
  * package assigns it on a node it built earlier (`assigned`). No shape states
  * it, so every read of it is of a member the shape does not state. */
 export type OmittedMember = { owner: string; member: string; text: string; why: "allocates" | "assigned" };
-/** A method whose calls change no location of the model, on normal return
- * or throw (HOST-FAMILIES.md, "The family contract"): its owner, its name
- * and its text as reviewed. It is read at the empty footprint with
- * `onThrow`. */
-export type FootprintMember = { owner: string; member: string; text: string };
+/** A method whose footprint the family's audit states (HOST-FAMILIES.md,
+ * "The family contract"): its owner, its name, its text as reviewed and its
+ * kind. An `empty` method's calls change no location of the model, on normal
+ * return or throw, and it is read at the empty footprint with `onThrow`. A
+ * `callbacks` method's own steps change no location of the model and the
+ * only client code it runs is its function-typed arguments', so it is read
+ * at each closed footprint, its callbacks' types and its call at that
+ * footprint, on normal return. */
+export type FootprintMember = { owner: string; member: string; text: string; kind: "empty" | "callbacks" };
+
+/** The reading of a method the family states a footprint for, from its
+ * declared type: at the empty footprint with `onThrow` (`empty`); or one
+ * signature per closed footprint `ε`, its function-typed parameters and its
+ * call at `ε` (`callbacks`), as the array overlay's callback members are
+ * (`atEachFootprint`, array-prototype.mts). */
+export function footprintReading(kind: FootprintMember["kind"], type: TypeTerm): TypeTerm {
+  if (kind === "empty") {
+    const effect: CallEffect = { ...emptyEffect, onThrow: true };
+    const at = (t: TypeTerm): TypeTerm =>
+      t.k === "function" && t.effect.promise === null ? { ...t, effect }
+      : t.k === "intersection" ? { ...t, parts: t.parts.map(at) } : t;
+    return at(type);
+  }
+  // A parameter's function type, or each function part of its union with
+  // `undefined` (an optional callback), at `effect`.
+  const callback = (t: TypeTerm, effect: CallEffect): TypeTerm =>
+    t.k === "function" && t.effect.promise === null ? { ...t, effect }
+    : t.k === "union" ? { ...t, parts: t.parts.map(p => callback(p, effect)) } : t;
+  const each = (s: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }>[] =>
+    s.effect.promise !== null ? [s] : closedFootprints.map(footprint => {
+      const effect = footprintEffect(footprint);
+      return { ...s, effect, params: s.params.map(p => callback(p, effect)),
+        rest: s.rest && callback(s.rest, effect) };
+    });
+  if (type.k === "scheme")
+    return { ...type, signatures: type.signatures.flatMap((s): Extract<TypeTerm, { k: "function" | "constructor" }>[] =>
+      s.k === "function" ? each(s) : [s]) };
+  if (type.k === "function") return { k: "intersection", parts: each(type), span: type.span };
+  throw Error("a method read at each callback footprint is a function or a generic method");
+}
 
 /** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
  * export's name, a node guard or a tag guard, its declared domain, its exact
@@ -115,8 +152,7 @@ export type FamilyDescription = {
   /** The members whose reads give no one value for a node's life, each
    * omitted from every shape. */
   omitted: readonly OmittedMember[];
-  /** The methods stated at the empty footprint, on a throw too: callback-free
-   * methods whose calls change no location of the model. */
+  /** The methods whose footprint the family's audit states. */
   footprints: readonly FootprintMember[];
   /** The stable-member rule: every property member of a shape, required or
    * optional, the tag and the corrected members included, is stable but
@@ -373,14 +409,14 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     if (!only || members.length !== 1 || graph.text(only) !== x.text)
       graph.fail(`the omitted member ${x.owner}.${x.member} is not declared as reviewed: ${x.text}`);
   }
-  // The methods stated at the empty footprint, each checked against the
+  // The methods whose footprint the family states, each checked against the
   // declaration it was reviewed at.
   for (const x of description.footprints) {
     const owner = named(x.owner);
     const members = owner.members.filter(m => graph.name(m) === x.member);
     const [only] = members;
     if (!only || members.length !== 1 || graph.text(only) !== x.text)
-      graph.fail(`the method ${x.owner}.${x.member} stated at the empty footprint is not declared as reviewed: ${x.text}`);
+      graph.fail(`the method ${x.owner}.${x.member} whose footprint the family states is not declared as reviewed: ${x.text}`);
   }
   // The stable-member rule's exclusions, each checked against the
   // declaration it was reviewed at: a property member that declaration

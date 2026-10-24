@@ -1,7 +1,7 @@
-// `forEachChild` runs its visitor, whose effect is the caller's: its
-// declared signature states none, so a `map` callback calling it with a
-// visitor popping the mapped array is unrestricted, and the result may hold
-// holes (run under Node: a hole).
+// `forEachChild` runs its visitor, and its call is within the visitor's
+// footprint: a visitor popping the mapped array is within no footprint that
+// keeps array stores, so a `map` callback calling it is unrestricted, and the
+// result may hold holes (run under Node: a hole).
 import type { Node } from "typescript/unstable/ast";
 
 export function wrong(nodes: Node[]): number[] {

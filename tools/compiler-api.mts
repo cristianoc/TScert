@@ -102,20 +102,26 @@ export const compilerApiFamily: FamilyDescription = {
   // no stable member, and their hidden effects (a node list's cursor, the
   // file's materialized nodes) are observed by no transparent operation
   // (T4), so a call changes no location of the model, on normal return or
-  // throw. `forEachChild` runs its visitors and keeps its declared
-  // signature.
+  // throw. `forEachChild`'s own steps change none either and the only client
+  // code it runs is its visitors, synchronously, each passed a child of the
+  // receiver in a fixed order, a throw propagating (T3): with both visitors
+  // within a closed footprint, its call is within it on normal return
+  // (COMPILER-API.md, "Node methods and callbacks").
   footprints: [
-    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;" },
-    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;" },
-    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;" },
-    { owner: "Node", member: "getEnd", text: "getEnd(): number;" },
-    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;" },
-    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;" },
-    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;" },
-    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;" },
-    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" },
+    { owner: "Node", member: "forEachChild",
+      text: "forEachChild<T>(visitor: (node: Node) => T, visitArray?: (nodes: NodeArray<Node>) => T): T | undefined;",
+      kind: "callbacks" },
+    { owner: "Node", member: "getSourceFile", text: "getSourceFile(): SourceFile;", kind: "empty" },
+    { owner: "Node", member: "getStart", text: "getStart(sourceFile?: SourceFile, includeJsDocComment?: boolean): number;", kind: "empty" },
+    { owner: "Node", member: "getFullStart", text: "getFullStart(): number;", kind: "empty" },
+    { owner: "Node", member: "getEnd", text: "getEnd(): number;", kind: "empty" },
+    { owner: "Node", member: "getWidth", text: "getWidth(sourceFile?: SourceFile): number;", kind: "empty" },
+    { owner: "Node", member: "getFullWidth", text: "getFullWidth(): number;", kind: "empty" },
+    { owner: "Node", member: "getLeadingTriviaWidth", text: "getLeadingTriviaWidth(sourceFile?: SourceFile): number;", kind: "empty" },
+    { owner: "Node", member: "getFullText", text: "getFullText(sourceFile?: SourceFile): string;", kind: "empty" },
+    { owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;", kind: "empty" },
     { owner: "SourceFile", member: "getLineAndCharacterOfPosition",
-      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;" },
+      text: "getLineAndCharacterOfPosition(position: number): LineAndCharacter;", kind: "empty" },
   ],
   // Every property member of a shape, required or optional, is stable
   // (reading rule 1, checked by C3's walk).

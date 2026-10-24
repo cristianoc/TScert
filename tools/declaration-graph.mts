@@ -23,7 +23,7 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
-import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
+import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
@@ -4726,10 +4726,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // the tags `tags` the reading covers; a generic owner's tag parameter
       // is read at `value` where a synthetic shape reads it.
       type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const footprintEffect: CallEffect = { ...emptyEffect, onThrow: true };
-      const atFootprint = (type: TypeTerm): TypeTerm =>
-        type.k === "function" && type.effect.promise === null ? { ...type, effect: footprintEffect }
-        : type.k === "intersection" ? { ...type, parts: type.parts.map(atFootprint) } : type;
       const readMember = (f: FlatMember, tags: readonly TagValue[], value: TagValue | null): Field => {
         const file = f.owner.getSourceFile();
         const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
@@ -4738,10 +4734,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
           throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
         const substituted = names.length && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
-        // A method the family states at the empty footprint, its text
-        // reviewed (`familyTable`), is read there, on a throw too (T3).
-        const type = table.description.footprints.some(m => m.owner === f.owner.name.text && m.member === f.name)
-          ? atFootprint(substituted) : substituted;
+        // A method the family states a footprint for, its text reviewed
+        // (`familyTable`), is read at it (T3).
+        const stated = table.description.footprints.find(m => m.owner === f.owner.name.text && m.member === f.name);
+        const type = stated ? footprintReading(stated.kind, substituted) : substituted;
         return { ...field, readonly: true,
           optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
           type: hostBrands(type, true, context.isBrand,

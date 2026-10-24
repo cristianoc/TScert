@@ -135,11 +135,11 @@ assert.ok(!omitting.flatten(lit).some(f => f.name === "note"), "an omitted membe
 assert.throws(() => familyTable({ ...description,
   omitted: [{ owner: "Base", member: "note", text: "readonly note: string;", why: "allocates" }] }, graph(interfaces)),
   /the omitted member Base\.note is not declared as reviewed/);
-// A method stated at the empty footprint is checked against its reviewed
+// A method whose footprint the family states is checked against its reviewed
 // declaration like an omitted member.
 assert.throws(() => familyTable({ ...description,
-  footprints: [{ owner: "Base", member: "note", text: "readonly note: string;" }] }, graph(interfaces)),
-  /the method Base\.note stated at the empty footprint is not declared as reviewed/);
+  footprints: [{ owner: "Base", member: "note", text: "readonly note: string;", kind: "empty" }] }, graph(interfaces)),
+  /the method Base\.note whose footprint the family states is not declared as reviewed/);
 closeParser();
 
 // A generic shape with a parameter beside its tag parameter, which the

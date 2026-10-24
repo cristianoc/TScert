@@ -37,6 +37,7 @@ each item's design and evidence, not its progress.
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
+| [Investigation of `forEachChild`'s list visitor](#for-each-child-list-visitor) | open: an investigation, cause unknown | `compiler-api-visitor-list-gap` verifies |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
@@ -44,7 +45,7 @@ each item's design and evidence, not its progress.
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
-| [Class methods' effects](#class-methods-effects) | open: the draft's design accepted by the owner (2026-10-23): D1 (a), stated effects, and D2–D6 as the draft recommends; D5's rewrite of `Gate`'s four `shift`s into field writes is approved within step 3 as an exception to the no-rewrite rule (2026-10-23); step 1 (`no-return` with the async refusal L6) verifies `enumMembers` and `enumOpen` (slices of `fragment-classes.mts`, 300 s, 2026-10-24); step 3's [statements](docs/SOURCE-ELABORATION.md#stated-effects) are read and certified from each definition's code, and the compiler API's callback-free node methods state the empty footprint (D4); `Gate` states its members `span`, `local`, `hasTypeParam` and `typeParamName` (uncertified: no verified slice lowers `Gate`) and the method fields' functions `patternDefaults`, `inert` and `steppedPattern`, certified in their slices; census slices at 300 s, 16 functions of `fragment-{statements,expressions,classes}.mts`: verified 9 → 9, none gained or lost (2026-10-24); `pattern`'s array-pattern `map` passes, and `pattern`, `forOfPattern`, `protocolPattern`, `patternStmt` and `abrupt` stop at its object-pattern `map`, whose callback calls `gate.expr`: `expr`'s contract closure, with D7 and D8 (a) approved (2026-10-24) and D5's rewrite, is designed in the draft's §12 | callbacks calling a class instance's methods use effects stated with `Within<…>` and certified in each definition's own module |
+| [Class methods' effects](#class-methods-effects) | open: the draft's design accepted by the owner (2026-10-23): D1 (a), stated effects, and D2–D6 as the draft recommends; D5's rewrite of `Gate`'s four `shift`s into field writes is approved within step 3 as an exception to the no-rewrite rule (2026-10-23); step 1 (`no-return` with the async refusal L6) verifies `enumMembers` and `enumOpen` (slices of `fragment-classes.mts`, 300 s, 2026-10-24); step 3's [statements](docs/SOURCE-ELABORATION.md#stated-effects) are read and certified from each definition's code, and the compiler API's callback-free node methods state the empty footprint (D4); `Gate` states its members `span`, `local`, `hasTypeParam` and `typeParamName` (uncertified: no verified slice lowers `Gate`) and the method fields' functions `patternDefaults`, `inert` and `steppedPattern`, certified in their slices; census slices at 300 s, 16 functions of `fragment-{statements,expressions,classes}.mts`: verified 9 → 9, none gained or lost (2026-10-24); `pattern`'s array-pattern `map` passes, and `pattern`, `forOfPattern`, `protocolPattern`, `patternStmt` and `abrupt` stop at its object-pattern `map`, whose callback calls `gate.expr`: `expr`'s contract closure, with D7 and D8 (a) approved (2026-10-24) and D5's rewrite, is designed in the draft's §12; `forEachChild` is read at each callback footprint (D7), and a `map` callback calling it with a visitor within a stable footprint gives a dense result | callbacks calling a class instance's methods use effects stated with `Within<…>` and certified in each definition's own module |
 | [Async and generator code](#async-and-generator-code) | open | an async function's entry and resumption are checked by an asynchronous entry judgment, and `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` leave the trust surface |
 | [Function declarations in bodies](docs/SOURCE-ELABORATION.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -431,6 +432,16 @@ finds no derivation, reporting the claim available for the literal as
 `{ name: "x" }`. The same literal with the field after the spread verifies
 (`object-spread-exact-literals`'s `later`). Observed on 784c8b8 and on the
 branch alike (2026-10-22).
+
+<a id="for-each-child-list-visitor"></a>
+**`forEachChild`'s list visitor.** A call of `forEachChild` passing a
+second visitor, `n.forEachChild(() => { k++; }, () => { k++; })`, has no
+derivation of its node typing in search, inside a callback or not, at the
+declared signature as at the per-footprint ones
+(`compiler-api-visitor-list-gap`); the same call with one visitor verifies.
+The declaration reader reads the second parameter as an optional function of
+a readonly dense array of nodes. Which step refuses the second argument is
+not established.
 
 <a id="callable-alias-meet"></a>
 **An alias of function types met with a record.**

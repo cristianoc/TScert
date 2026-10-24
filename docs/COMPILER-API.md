@@ -565,8 +565,16 @@ operation (T4), so its call changes no location of the model, on normal
 return or throw: the family description states each at the empty footprint
 with `onThrow` (`footprints`, each with its reviewed text), and a callback
 calling only them is within the empty footprint
-(`compiler-api-node-method-effect`). `forEachChild` keeps its declared
-signature, whose effect is unrestricted (`invalid-compiler-api-visitor-effect`).
+(`compiler-api-node-method-effect`). `forEachChild`'s own steps change no
+location of the model either, and the only client code it runs is its
+visitors, so it is read at each closed footprint $`\varepsilon`$: both
+visitors' types and its call at $`\varepsilon`$, on normal return
+(`footprints`, kind `callbacks`; the mechanism of the array members'
+callbacks, [native footprints](SOURCE-CONTRACTS.md#native-footprints)). A
+callback calling it with a visitor within $`\varepsilon`$ is within
+$`\varepsilon`$ (`compiler-api-visitor-effect`), and one whose visitor pops
+an array it reads is within no footprint keeping array stores
+(`invalid-compiler-api-visitor-effect`).
 
 `forEachChild<T>(visitNode, visitList?)` takes two visitors, both the
 client's functions: `visitNode` runs on each child node and `visitList`,
@@ -574,9 +582,9 @@ when given, on each child list (a $`\mathsf{NodeList}`$), in the package's
 child order, stopping at the first truthy result, which it returns, else
 `undefined`. A visitor may write the client's own storage and never a host
 object; the traversal reads only the buffer, so the visited children are
-fixed whatever the visitor does. The call's effect on the caller's heap is
-the visitor's, by the ordinary rule for a function value passed to a
-callee. The visitor runs synchronously, during the call; an exception it
+fixed whatever the visitor does, and a node list's store never changes
+(T4), so no visitor changes what a later visit is passed. The call's effect
+on the caller's heap is its visitors'. The visitor runs synchronously, during the call; an exception it
 throws propagates out of `forEachChild`, which then has no normal
 completion, and nothing is carried onto that exceptional edge.
 
@@ -782,8 +790,9 @@ the corpus runs are regression evidence, not proofs.
   only with children of the receiver, in a fixed order, and propagate a
   visitor's exception; they change no stable member; they return values of
   their declared types or throw. With T4, a call of one but `forEachChild`
-  changes no location of the model, on normal return or throw, which the
-  family description states (`footprints`).
+  changes no location of the model, on normal return or throw, and a call
+  of `forEachChild` changes none but through its visitors, which the family
+  description states (`footprints`).
 - **T4 (restricted values).** A host object behaves as the record of its
   stated members and a node list as the dense readonly array of its
   elements under every transparent operation of
