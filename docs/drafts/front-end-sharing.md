@@ -387,24 +387,33 @@ collection computes for the declaration.* Tested as §5 tests sessions.
 
 ### 3.8 The verifier's preparation
 
-**Indexed tables.** Equation lowering keeps its pending jobs in a list it
-scans by head (`tryEnsure`, `jobs.find?`), appends each new job at its end
-(`alloc`) and builds rows by list appends (`groundRows`): a superlinear
-cost, inferred, to be confirmed by a profile before the change. The jobs
-become a queue in allocation order with an index by head: `drain` takes the
-oldest job still pending, `tryEnsure` takes a head's job out of the queue,
-and the `processing` check is unchanged, so jobs run in exactly the order
-they run now and every head is allocated at the same index. Rows become
-arrays where they are appended. The claims document is decoded once and the
-decoded form reused while freezing plans. The obligation is equality of the
-lowered equations, head by head, before and after. It is tested directly:
-the preparation of every pipeline case (its equation table, head by head,
-with its annotations, values, generics and units, or its refusal), printed
-by the verifier's preparation mode, is the same text before and after; and
-by the suite's outcomes and evidence documents, byte for byte (§5). A case
-whose base class is declared after its subclass makes `tryEnsure` take a
-later head's job before `drain` reaches it. Being `partial`, these
-definitions carry no proof that would show it.
+**Indexed tables, as the profile found them.** The profile of
+`moduleFunction`'s check (2026-10-24, sampled) placed the superlinear cost
+elsewhere than inferred: of the lowering's 1,096 samples, 332 were
+`packedParameters`, which walks the whole expression of the declaration a
+reference names, at every reference; the job list (`tryEnsure`,
+`jobs.find?`) took none worth measuring. The declarations' packed
+parameters are computed once per document, by index (`State.packings`,
+`packedOf`), from the same function of the same expressions: every lowering
+step reads the same values in the same order, the job queue and the head
+allocation unchanged. The rest of the lowering is spread: occurrence keys
+spelled as JSON text (`occurrence`), the validator's list lookups
+(`Equations.ofRaw`, `arityOk`, whose definitions the proofs read), the
+claims' relabelling through their JSON form (`relabel`, a strict decode the
+labels' check rests on). None is changed: the validator's are proved
+definitions, and the relabelling's strictness is part of what the check
+establishes.
+
+*Measured* (2026-10-24, median of 3 runs, CPU): search and check of
+`moduleFunction` 4.94 → 4.56 s and 2.66 → 2.33 s, `inertRead` 4.04 → 3.71 s
+and 2.29 → 1.97 s, `resolve` 3.54 → 3.21 s and 2.08 → 1.72 s, `collect`
+1.48 → 1.35 s and 0.95 → 0.88 s; the lowering's samples in the check of
+`moduleFunction` 1,096 → 659. Every search's and every check's result over
+the 2,081 pipeline cases (1,767 searches, 791 checks, evidence documents,
+refusals and judgments) is byte for byte the same with both verifiers, run
+at the same store path. Being `partial`, these definitions carry no proof of
+the equality; the memo of a pure function of the fixed document is
+equivalent by construction, and the comparison tests it.
 
 **Shared declarations lowered once, carried from search to check: not
 taken.** A lowered equation table is the meaning of the source's
@@ -477,9 +486,9 @@ No key loses an input. The module stage is a new stage name in
   request, asked or served; a record that holds the ledger, after the
   ledger grows, receives the growth and is not noted it twice; an
   incompleteness of the compiler reaches every holder.
-- *Verifier.* Every pipeline case's preparation printed and equal before and
-  after the indexing, refusals included; its outcome and the evidence
-  documents of the suite equal too.
+- *Verifier.* Every pipeline case's search and check result (evidence
+  documents, refusals, judgments) equal byte for byte before and after the
+  change to the lowering, at the same store path.
 
 ## 6. Expected costs
 
@@ -504,10 +513,11 @@ duplicates' parse, search and check replay (`tryStmt`'s and `expandMapped`'s
 slices run none: 2.92 s and 1.73 s of parse before).
 
 Per phase: collection loses its repeated file-system answers and queries
-(§3.1–3.3); imported modules' collection and program cost about once per
-module per census (§3.4); the parser's opening once per worker (§3.5);
-ledger validation stays per use. The verifier's preparation: lowering's
-0.75–0.81 s per tools slice, expected to fall with the table (measured).
+(§3.1–3.3); imported modules' collection and program cost once per module
+and consulted selection (§3.4); the parser opens once per parse (§3.5, not
+built); ledger validation stays per use. The verifier's preparation: the
+lowering's samples in `moduleFunction`'s check 1,096 → 659, its check
+2.66 → 2.33 s (§3.8, measured).
 
 A step whose measurement misses its expectation is investigated, and the
 design revised, before the next step.
