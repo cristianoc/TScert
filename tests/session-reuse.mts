@@ -61,7 +61,8 @@ function fixture(name: string): { examples: string; config: string } {
     "export const a: number = \"one\";\nexport function f(x: string): number {\n  return x;\n}\n");
   writeFileSync(join(project, "lazy.json"), JSON.stringify({ compilerOptions: { strict: true } }));
   const config = join(project, "tsconfig.json");
-  writeFileSync(config, readFileSync(config, "utf8").replace('"../examples/*value-import*.ts"', '"./*value-import*.ts", "./extra-*.ts"'));
+  writeFileSync(config, readFileSync(config, "utf8").replace('"../examples/*value-import*.ts"', '"./*value-import*.ts", "./extra-*.ts"')
+    .replace('"../../tools/resolvable.d.ts"', JSON.stringify(join(repository, "tools", "resolvable.d.ts"))));
   return { examples: project, config };
 }
 

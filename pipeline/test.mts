@@ -2892,6 +2892,131 @@ mutationControl(async (): Promise<void> => {
   process.stdout.write("forged async footprints: an async function, an async arrow and an async recursive constant reaching no completion, claimed at {keep, keep}, refused in search and in checking, certified only without the async check\n");
 });
 
+mutationControl(async (): Promise<void> => {
+  // A stated declaration's claim lies within its statement (L2,
+  // `statedWithin`): `third`, stating the empty footprint, which no code
+  // calls, claimed at `{value: any, store: grow}`, which its pure body
+  // meets, is refused in search and in checking at the definition; with
+  // that check removed (the `stated` mutation) search certifies the forged
+  // claim.
+  const artifacts = run("method-effect-declaration");
+  const claims = readClaims(artifacts);
+  must(claims.functions.find(f => f.name === "third"), "third's claims").footprint = { value: "any", store: "grow" };
+  const name = "forged-stated-declaration";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const generated = forgedEvidence(artifacts, input, name, "stated");
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+    assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'third' is not within the effect its result annotation states/);
+  process.stdout.write("forged stated declaration: a claim above its statement refused in search and in checking, certified only without the stated check\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // A stated closure's code covers its statement over its annotation's
+  // whole domain (L2, `lambdaSetup`). `bad`, a stated arrow popping the
+  // array it is handed, which no code calls, claimed at the footprint
+  // letting everything change, which its code meets: refused in search and
+  // in checking; with the requirement removed (the `stated` mutation)
+  // search certifies it. `flagged`, popping where its flag is `true`,
+  // claimed at a flag of `false` alone and the empty footprint, which its
+  // code meets there: refused for offering no row over the whole domain.
+  type ClaimArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  const forge = (file: string, at: RegExp, name: string, change: (s: ClaimArrow) => void): {
+    artifacts: string; input: string } => {
+    const artifacts = run(file);
+    const claims = readClaims(artifacts);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const closure = must((claims.init?.expressions ?? []).find(e => e.pos[0] === source.search(at)), `${file}'s closure claim`);
+    assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
+    const row = structuredClone(must(claims.types[closure.type[0]], `${file}'s type row`));
+    for (const s of row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) change(s);
+    closure.type = [claims.types.push(row) - 1];
+    return { artifacts, input: writeClaims(artifacts, name, claims) };
+  };
+  const refusal = /a stated closure's claim must offer its stated effect over its annotated parameters/;
+  const weaker = forge("invalid-method-effect-unused", /\(\s*xs: number\[\],?\s*\)/, "forged-stated-weaker", s => { s.effect = ordinaryEffect; });
+  const produce = produceWith(weaker.artifacts, weaker.input, "forged-stated-weaker");
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const generated = forgedEvidence(weaker.artifacts, weaker.input, "forged-stated-weaker", "stated");
+  for (const detail of [produce.stdout + produce.stderr, invoke(weaker.input, generated, weaker.artifacts)])
+    assert.match(detail, refusal);
+  const tru = 1, fls = 2;
+  const narrowed = forge("invalid-method-effect-narrowed", /\(\s*xs: number\[\],\s*flag/, "forged-stated-narrowed", s => {
+    assert.deepEqual(s.arguments[1], [tru, fls], "the flag's claim is boolean");
+    s.arguments[1] = [fls];
+  });
+  const searched = produceWith(narrowed.artifacts, narrowed.input, "forged-stated-narrowed");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, refusal);
+  process.stdout.write("forged stated closures: a weaker effect refused in search and in checking, certified only without the full-domain requirement; a narrowed domain at a covering effect refused in search\n");
+});
+
+control(async (): Promise<void> => {
+  // A generic closure states no effect: its rows bind its binders at the
+  // bounds its claim states, which need not cover its own. The parser
+  // refuses the statement; with one written into the Fragment of a verified
+  // generic closure, Lean refuses it too, in search.
+  const artifacts = run("generic-function-type-annotation");
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const lambda = fragment.search(/"k":"lambda","pos":\[\d+,\d+\],"typeParams":\[\{/);
+  assert.ok(lambda >= 0, "a generic closure");
+  const unstated = fragment.indexOf('"stated":null', lambda);
+  assert.ok(unstated > lambda, "its statement");
+  const fragmentPath = join(artifacts, "forged-generic-stated-fragment.json");
+  writeFileSync(fragmentPath, fragment.slice(0, unstated) +
+    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false}' + fragment.slice(unstated + '"stated":null'.length));
+  const produce = produceWith(artifacts, join(artifacts, "claims.json"), "forged-generic-stated", fragmentPath);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(produce.stdout + produce.stderr, /a generic closure states no effect/);
+  process.stdout.write("stated generic closure: a statement written into the Fragment refused in search\n");
+});
+
+control(async (): Promise<void> => {
+  // A class method's statement is part of the instance type's member, so
+  // the class's construction is checked against it whatever the method's
+  // own obligation (L3): with the Fragment's `stated` of `bump` dropped and
+  // its closure claimed at the footprint letting everything change, which
+  // its popping body meets, the class is still refused, at its
+  // construction.
+  const artifacts = run("invalid-method-effect-construction");
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false}';
+  assert.equal(fragment.split(statement).length, 2, "bump's statement");
+  const fragmentPath = join(artifacts, "forged-unstated-fragment.json");
+  writeFileSync(fragmentPath, fragment.replace(statement, '"stated":null'));
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const closure = must((claims.init?.expressions ?? []).find(e => e.pos[0] === source.indexOf("bump(")),
+    "bump's closure claim");
+  assert.ok(Array.isArray(closure.type) && closure.type.length === 1 && typeof closure.type[0] === "number");
+  // Its row in place: the method's binding and the prototype's field read
+  // the same row, which no annotation fixes.
+  for (const s of must(claims.types[closure.type[0]], "bump's type row").flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])) s.effect = ordinaryEffect;
+  const name = "forged-unstated-method";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name, fragmentPath);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const at = source.indexOf("Bump {");
+  assert.match(produce.stdout + produce.stderr,
+    new RegExp(`source expression obligation at \\[${at},${at + "Bump".length}\\): evidence search failed: no derivation of its return-contract claim`));
+  process.stdout.write("unstated method of a stated member: the class's construction refused in search, the Fragment's statement dropped\n");
+});
+
+control(async (): Promise<void> => {
+  // A statement read across modules is the import assumption (SOURCE-ELABORATION.md,
+  // "Stated effects"): the importer of `drain`, which pops while stating
+  // the empty footprint, verifies relative to it, and `drain`'s own module's
+  // run refuses the statement.
+  run("stated-assumed-value-import");
+  const project = resolve(here, "imports-project");
+  const outcome = check(join(project, "stated.ts"), tsconfigOf(project));
+  if (outcome.status === "verified") assert.fail("drain's module verified");
+  assert.match(outcome.detail, /the footprint claimed for 'drain' is not established by its body/);
+  process.stdout.write("stated import: the importer verified relative to the import assumption, the exporting module's run refused\n");
+});
+
 control(async (): Promise<void> => {
   // A field's observed contents exclude an arm only once every test it
   // failed rules the arm's field type out: after `kind` failed "a", the arm
@@ -4193,7 +4318,7 @@ control(async (): Promise<void> => {
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/family-fixture-project",
     digest: "aaaa66cf18b7f7d980c0e7734ae6421159ac2eccbbaa8d28b76f03e4280701ff" },
-  table: [{ rule: "literal" }], corrections: [], omitted: [] }]);
+  table: [{ rule: "literal" }], corrections: [], omitted: [], footprints: [] }]);
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));

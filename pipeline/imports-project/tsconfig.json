@@ -25,7 +25,9 @@
       "@fixture/defaulted-key": ["./defaulted-key.ts"],
       "@fixture/default-function": ["./default-function.ts"],
       "@fixture/grades": ["./grades.ts"],
-      "@fixture/grades-relay": ["./grades-relay.ts"]
+      "@fixture/grades-relay": ["./grades-relay.ts"],
+      "@fixture/stated": ["./stated.ts"],
+      "@fixture/stated-overload": ["./stated-overload.ts"]
     }
   },
   "include": [
@@ -48,6 +50,10 @@
     "./generated-names.d.ts",
     "./grades.ts",
     "./grades-relay.ts",
-    "./grades-ambient.d.ts"
+    "./grades-ambient.d.ts",
+    "./stated.ts",
+    "./stated-overload.ts",
+    "./stated-ambient.d.ts",
+    "../../tools/resolvable.d.ts"
   ]
 }

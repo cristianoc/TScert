@@ -297,9 +297,10 @@ nothing itself.
 ## Certified imports
 
 An imported function of the program is read at its declaration's ordinary
-signature, which states no effect. A **certified import** is read at an
+signature, which states the effect its [statement](SOURCE-ELABORATION.md#stated-effects)
+states and none without one. A **certified import** is read at an
 effect-qualified signature that the same run certifies from the imported
-declaration's code. This is the checked evidence
+declaration's code, its claim within its statement. This is the checked evidence
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 require; the import's TypeScript declaration supplies none.
 

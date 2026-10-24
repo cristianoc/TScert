@@ -103,7 +103,7 @@ set_option maxHeartbeats 1000000
           let written ← lower (Fragment.translate annotation)
           requireSameMeaning (← table) b.init.span .bindingAnnotation C written
             s!"claimed storage contract differs from the source annotation for '{b.name}'"
-        | none, .lambda _ none [] params defaults false (some result) _ _ _ =>
+        | none, .lambda _ none [] params defaults false (some result) _ _ _ _ =>
           let Ds ← params.zipIdx.mapM fun ((_, j), i) => do
             let D ← lower (Fragment.translate j)
             pure (if defaults.any (·.1 == i) then (D ++ [Labels.undef]).eraseDups else D)

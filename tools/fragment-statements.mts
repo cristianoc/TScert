@@ -434,7 +434,7 @@ export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Ex
   for (const [t, d] of targets) visit(t, d);
 }
 
-export function inert(this: Gate, e: Node): boolean {
+export function inert(this: Gate, e: Node): Within<{ value: "keep"; store: "keep" }, boolean> {
   const gate: Gate = this;
   if (ts.isNumericLiteral(e) || ts.isBigIntLiteral(e) || ts.isStringLiteral(e) ||
       ts.isNoSubstitutionTemplateLiteral(e) || ts.isIdentifier(e) || ts.isArrowFunction(e) ||
@@ -473,7 +473,7 @@ export function inert(this: Gate, e: Node): boolean {
   return false;
 }
 
-export function patternDefaults(this: Gate, node: ts.BindingName): Node[] {
+export function patternDefaults(this: Gate, node: ts.BindingName): Within<{ value: "keep"; store: "keep" }, Node[]> {
   const gate: Gate = this;
   if (ts.isIdentifier(node)) return [];
   return node.elements.flatMap((el): Node[] => ts.isOmittedExpression(el) ? []
@@ -481,7 +481,7 @@ export function patternDefaults(this: Gate, node: ts.BindingName): Node[] {
 }
 
 export function steppedPattern(this: Gate, fresh: boolean,
-    elements: { node: Node; hole: boolean; before: Node[]; after: Node[] }[]): void {
+    elements: { node: Node; hole: boolean; before: Node[]; after: Node[] }[]): Within<{ value: "any"; store: "keep" }, void> {
   const gate: Gate = this;
   if (fresh) return;
   let last = -1;
@@ -1535,11 +1535,15 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
   const typeParams = gate.enterTypeParams(node.typeParameters, undefined, true);
   try {
     gate.asyncBody = isAsync;
-    const { retType, guard, parameterTypes } = gate.headerTypes(() => {
+    if (typeParams.some(p => p.resolution) && gate.statedResult(node.type, node).stated)
+      gate.fail(node.type ?? node, "`Within` on a resolution-qualified declaration is outside the fragment: such a unit claims no footprint");
+    const { retType, guard, stated, parameterTypes } = gate.headerTypes(() => {
       const guard = gate.guardOf(node);
+      const written = gate.statedResult(node.type, node);
       return {
-      retType: guard ? guardResult(guard) : gate.typeOf(node.type),
+      retType: guard ? guardResult(guard) : gate.typeOf(written.result, node),
       guard,
+      stated: written.stated,
       parameterTypes: node.parameters.map(p => p.dotDotDotToken ? gate.moduleRestType(p, node)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
         : gate.typeOf(p.type, p)),
@@ -1608,6 +1612,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       params,
       retType,
       guard,
+      stated,
       completion: isAsync ? "async" : "sync",
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,

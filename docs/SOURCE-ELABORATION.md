@@ -2872,9 +2872,10 @@ elsewhere. The callee is read at the location's contract, checked at every
 write: the lowering of its declaration, with the effect that declaration
 states, or, for a fresh literal's field no contextual type fixes, the
 storage contract inferred from its initialiser, which keeps a certified
-signature's effect and widens a literal's type. An
-ordinary arrow annotation states no effect, `typeof f` of a function
-declaration included, which names `f`'s declared signature. With
+signature's effect and widens a literal's type. An annotation states the
+effect its [statement](#stated-effects) states, `Within<F, T>`, and none
+without one, `typeof f` of a function declaration included, which names
+`f`'s declared signature. With
 $`\epsilon`$ the contract's effect,
 
 ```math
@@ -3100,7 +3101,8 @@ declaration's ordinary signature: that each declaration meets the signature
 the others read it at is the [module composition](../WORK.md#module-composition)
 argument. A parameter default executes in the declaration's graph, so the
 check covers it. An imported function is read at its declaration's type,
-which states no effect (`invalid-preserving-callback-value-import`). OCaml
+which states the effect its [statement](#stated-effects) states and none
+without one (`invalid-preserving-callback-value-import`). OCaml
 proposes the effect at the greatest fixpoint over the module: every
 declaration whose body could preserve the heap, were its callees to, is
 assumed preserving, recursion included, and rounds of inference withdraw the
@@ -3109,6 +3111,114 @@ quantified callee at an instance is not proposed. A forged effect fails at
 the first node that does not preserve the heap, in evidence production and
 in checking (`declaration-preserving-callback`,
 `invalid-declaration-write-callback`).
+
+### Stated effects
+
+A written signature's result annotation may state the signature's effect:
+`Within<F, T>`, with `Within` the verifier's declaration in
+[`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which TypeScript reads
+as `T`. A reference is a statement where TypeScript binds its name to that
+declaration, never by its spelling: an alias of the repository's file, or of
+a file of exactly its bytes, which declares the same aliases (the census's
+copy of `tools/` holds one). $`F`$ is a type literal written in place,
+`{ value: "keep" | "any"; store: "keep" | "grow" | "any" }`, with
+`onThrow: true` where the footprint holds on a throw too. With
+$`\epsilon(F)`$ the effect of that closed footprint and flag, no promise, no
+fresh result and no receiver-store exception,
+
+```math
+\frac{⟦\vec A⟧=\vec P\qquad ⟦T⟧=B\qquad F=\{\mathsf{value}{:}\,v,\ \mathsf{store}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}}
+     {⟦(\vec x:\vec A)\Rightarrow\mathtt{Within}\langle F,T\rangle⟧=\mathcal F_{\epsilon(F)}(R,\vec P,B)}\ \textsf{stated-effect}
+```
+
+The written signatures are a function declaration's, a class's instance or
+static method's, an object literal's method's, an arrow's, a function
+expression's, a function type's, and an interface's or a type literal's
+method or call signature. Every reader of a signature, the declaration
+reader for a declaration a type reaches and the gate for a definition it
+lowers, reads it through one function (`statedResult` in
+`tools/type-term.mts`), so `typeof f` reads `f`'s statement too. Refused,
+each where it is read ([fragment boundary](SOURCE-FRAGMENT.md)): `Within`
+anywhere else, a reference the declaration reader resolves to `Within` or
+`Footprint` outside a signature's result included; a footprint written
+other than in place; the footprint letting everything change, with or
+without `onThrow`, which states nothing; a statement on an async
+definition, whose call returns where its body throws
+([async](#definition-and-application-rules)); on a constructor or a
+construct signature; on any signature of an overloaded declaration, whose
+unit is certified at one; on a declaration with a resolution-qualified
+type parameter, whose unit claims no footprint; on a generic closure or
+method, whose code is checked at the binder bounds its claim states, which
+need not cover its own; and a statement written
+outside the program's sources (a declaration file, a package, an ambient
+declaration) or reached from the type of a value declared there, through
+`typeof`, an alias, an interface or an indexed access, other than a member
+of a class the program declares: such a value's code is the environment's.
+
+**Certification.** A definition stating $`\epsilon`$ is certified at it
+from its own code, whether or not any code calls it, and before any other
+check of its effect. A declaration's claim lies within its statement, its
+unit is certified at its claim, and the unit's inputs are its annotated
+parameters, so the certification covers the written signature's whole
+domain:
+
+```math
+\frac{\vdash P:\Gamma\to B\;!\;\Phi\qquad \Phi\le\epsilon.\mathsf{footprint}\qquad \epsilon.\mathsf{onThrow}\Rightarrow\mathsf{onThrow}(\Phi)\qquad \mathrm{completion}(d)=\mathsf{sync}}
+     {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-declaration}
+```
+
+(`RequestJson.statedWithin`; proved: `SourceRequests.effectResult_stated`,
+`SourceRequests.checkRequests_stated_at`, from `checkRequests_footprint_at`
+by `Closed.Holds.mono`). A claim may offer a closure at signatures narrower
+than its annotation, so a closure's statement is proved as a written
+promise is, whatever the claim offers: some row $`\rho`$ its code is
+checked at admits the annotation's whole domain, receiver $`R`$, arguments
+$`\vec A`$ (a defaulted one with `undefined`) at its arity, returns within
+the annotated result, and has an effect covering $`\epsilon`$:
+
+```math
+\frac{\rho\in\mathrm{rows}(c)\qquad R\subseteq\rho.\mathsf{receiver}\qquad \vec A\subseteq\rho.\vec{\mathsf{args}}\qquad \rho.\mathsf{result}\subseteq B\qquad \rho.\mathsf{effect}\ \mathrm{covers}\ \epsilon\qquad \vdash\mathrm{code}(c):\rho}
+     {\vdash c:\mathcal F_\epsilon(R,\vec A,B)}\ \textsf{stated-closure}
+```
+
+(`lambdaSetup`'s statement obligation; the code at $`\rho`$ by
+`GraphCode.codeChecked_sound`, the statement by `Effect.covers_sound`). A
+closure with no such row, one claimed at no call signature included, is a
+located refusal (`invalid-method-effect-unused`). A closure collecting a
+rest array is checked at its annotation's own signature, whose effect is the
+statement. A class's instance type holds each method's statement, so its
+construction, checked at the instance type, finds each method on the
+prototype at a contract whose coverage compares effects, and an override is
+checked against its base's statement (`invalid-method-effect-override`); a
+static method's binding is checked at its annotation. Every other value at
+a stated type meets it by the existing introductions: a field write is
+checked at the field's contract (`invalid-method-field-effect-write`), a
+value passed where a stated member is expected by subtyping
+(`invalid-method-effect-lookalike`), an input by `EnvOk`.
+
+**Over the whole domain.** A statement on `m(this: C, …)` holds for every
+receiver of type `C`, so every call in `m`'s body is at a contract stating
+an effect within it; a call of an unstated member of `C`, which a value of
+`C` may hold any function in, defeats it
+(`invalid-method-effect-unstated-dependency`, run under Node). Lean checks
+each call at its selected signature wherever it certifies the definition.
+
+**Across modules.** A statement read from an imported declaration is part
+of its type, so the importer relies on it under the import assumption
+([trust surface](DESIGN.md#trust-surface)), as on any declared type: the
+importer verifies relative to it whether or not the exporting module's run
+certifies it (`stated-assumed-value-import`, whose control runs the
+exporting module's refusal). A certified import's unit claims within its
+statement. A census slice's own definitions are a copy of its module's, so
+a verified slice certifies their statements relative to the statements of
+what it imports.
+
+**Producer.** OCaml proposes, for a stated definition, the footprint its
+body shows where that is within the statement, and the statement otherwise,
+which Lean then checks node by node; a stated declaration is assumed at most
+at its statement while the module's footprints are inferred
+(`within_statement` in `ocaml-producer/source.ml`). Callees' statements
+reach it through their types, as natives' footprints do.
 
 ### Exceptional footprints
 
