@@ -431,6 +431,13 @@ increasing trust silently.
   `commit-msg` hook (`make setup-git-hooks`) refuses a message without them.
   A review of agent work is rendered from records
   (`node dev/commit-records.mts`), never written by hand.
+- Presentations: record pages and deep-dive decks share one style, and a
+  deck reaches the owner only after two independent reviews, against the
+  sources and with zero context ([STYLE.md](docs/STYLE.md)).
+- Before a commit, a fresh agent checks its record against the
+  [glossary](docs/GLOSSARY.md) alone; before a push, every record of the
+  range has passed, and any deep dive it calls for is approved by the owner
+  ([checking a record](.claude/skills/review/SKILL.md#checking-a-record-before-the-commit)).
 - Status: progress is written once, in the
   [status table](WORK.md#status) of WORK.md. A commit that moves an item
   updates its row. A row states the nature of its work: an investigation whose cause is

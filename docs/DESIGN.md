@@ -629,6 +629,8 @@ owner; other documents link to them and give only the context their readers need
 | [OCaml producer](../ocaml-producer/README.md) | The producer: its inputs and output, how it infers, its implementation map and how to extend it. |
 | [Test index](../tests/README.md) and the [callable examples](../pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
+| [GLOSSARY](GLOSSARY.md) | The established terms a commit record may use without defining, each linked to its owner. |
+| [STYLE](STYLE.md) | The visual style of record pages and deep-dive decks, where deep dives live, and how a deck is validated. |
 | [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
 
 Each kind of change has its checklist: a typing rule
