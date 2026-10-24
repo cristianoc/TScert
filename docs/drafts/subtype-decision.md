@@ -800,19 +800,19 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 6.1 s, `inertRead` 21.1 → 5.0,
-`resolve` 20.4 → 4.5, `forOfPattern` 115.0 → 5.0, `pattern` 15.1 → 2.5,
-`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.5, `closeStatements` 1.2 → 1.1;
+measured: `moduleFunction` 29.1 → 6.0 s, `inertRead` 21.1 → 4.9,
+`resolve` 20.4 → 4.4, `forOfPattern` 115.0 → 4.8, `pattern` 15.1 → 2.5,
+`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
 check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
 3.4 → 2.3. Each lies within its expected interval. The width series is
-0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.51 / 0.90 / 1.18 / 2.00 / 3.22 s. The
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.52 / 0.92 / 1.17 / 1.85 / 2.88 s. The
 width criterion is on the part the design acts on: the sampled time outside
 the front end (reading the fragment and the claims, lowering and freezing
 them) and the evidence write, at width 136 within 12 times its time at
 width 5 (the widths' ratio, 136/5, is 27), and within 1.5 times its time at
 width 87 scaled by 136/87. Measured at widths 5 / 30 / 87 / 136 it is
-0.10 / 0.18 / 0.53 / 0.87 s, within both bounds (1.20 and 1.24); the front
-end takes 0.21 / 0.47 / 0.97 / 1.65 s, which the input's own growth sets.
+0.10 / 0.16 / 0.41 / 0.61 s, within both bounds (1.20 and 0.96); the front
+end takes 0.21 / 0.46 / 0.98 / 1.62 s, which the input's own growth sets.
 
 ## 8. Migration
 
@@ -838,7 +838,10 @@ its opaque rows do; the row-matched instance computed when the engine reaches
 it, and reading no row where a target signature has no scheme signature of
 its effect and arity; search's checks of its graphs and codes answering the
 inclusions it established from their proofs; a node's known derivation found
-by a key of its claim. Each step's measurement is WORK's row.
+by a key of its claim; discovery computing a row's demand once, when it inserts
+the row, and each row's target clauses with their index once for its demand,
+its deletion rounds and its validation. Each step's measurement is WORK's
+row.
 
 Remaining:
 

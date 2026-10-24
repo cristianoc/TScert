@@ -605,7 +605,7 @@ checked evidence. -/
       (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 (Thunk.pure cl) &&
     (sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses).all fun a =>
       own.has G a ||
-      (ClauseSelection.candidates G a p.2 ++ cl).any
+      (cl.filter (fun b => !ClauseSelection.excludes G a b) ++ cl).any
         (fun b => checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b) ||
       a.elements.all fun e => cl.any fun b =>
         checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b
@@ -627,7 +627,7 @@ theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
     · exact .inl hsame
     · have hb : b ∈ clausesOf G p.2 := by
         rcases List.mem_append.mp hb with hb | hb
-        · exact ClauseSelection.mem_candidates G hb
+        · exact (List.mem_filter.mp hb).1
         · exact hb
       exact .inr (.inl ⟨b, hb, checkClauseWith_sound hcb⟩)
     · exact .inr (.inr fun e he' => by
@@ -1208,19 +1208,37 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 @[nospecialize] def schemeComponents [DecidableEq ι] (G : NormalGraph ι) (X : List ι) : List ι :=
   (X ++ (X.filter G.meetRow).flatMap (meetParts G)).filter (fun i => (G.schemes i).isSome) |>.eraseDups
 
-/-- The pairs a row's coverage compares: its clauses' against the target's,
-and a scheme's signatures against a target scheme's binding the same rows. -/
-@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
-    (select : Bool := false) : List (List ι × List ι) :=
+/-- A target's clauses and their index, read once for a row. Search only. -/
+structure TargetClauses (ι : Type) where
+  clauses : List (Clause (List ι))
+  own : ClauseIndex ι
+
+@[nospecialize] def TargetClauses.of (G : NormalGraph ι) (Y : List ι) : TargetClauses ι :=
+  let cl := clausesOf G Y
+  ⟨cl, ClauseIndex.of G cl⟩
+
+/-- `ClauseSelection.candidates` of a source clause among a target's clauses. -/
+@[nospecialize] def TargetClauses.candidates [DecidableEq ι] (G : NormalGraph ι) (t : TargetClauses ι)
+    (a : Clause (List ι)) : List (Clause (List ι)) :=
+  t.clauses.filter fun b => !ClauseSelection.excludes G a b
+
+/-- `demandPairs` with the target's clauses read once. -/
+@[nospecialize] def demandPairsIn [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
+    (select : Bool) (t : TargetClauses ι) : List (List ι × List ι) :=
   -- A clause the target holds itself is covered as it is (`Same`): it
   -- demands no pair.
-  let own := ClauseIndex.of G (clausesOf G Y)
-  (clausesOf G X).flatMap (fun a => if own.has G a then [] else
-    (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
+  (clausesOf G X).flatMap (fun a => if t.own.has G a then [] else
+    (if select then t.candidates G a else t.clauses).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
     | _, _ => []
+
+/-- The pairs a row's coverage compares: its clauses' against the target's,
+and a scheme's signatures against a target scheme's binding the same rows. -/
+@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
+    (select : Bool := false) : List (List ι × List ι) :=
+  demandPairsIn G known X Y select (TargetClauses.of G Y)
 
 /-- How deep a pair's rows follow `Var`: search only. -/
 def varDepthDefault : Nat := 8
@@ -1357,24 +1375,23 @@ once. Untrusted: `ArrowsCheckedWith` checks every arrow. -/
 `(A, B)` with the table (RECURSIVE-EQUATIONS §4.2), arrows by the evidence
 searched for its rows. The check decides (`compareUsing`). -/
 @[nospecialize] def coveredIn [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
-    (known : PositiveRules.Known ι) (table : Table ι) : Evidence ι × (List ι × List ι → Bool) :=
+    (known : PositiveRules.Known ι) (table : Table ι) :
+    Evidence ι × ((List ι × List ι) × TargetClauses ι → Bool) :=
   let f : Entry ι := { source := A, target := B, table }
   let look := images.base.lookup [f]
   let rel : List ι → List ι → Bool := fun X Y => decide (Prem G images.sub look images.gen f X Y)
   let R : List ι → List ι → Prop := fun X Y => rel X Y = true
   let es := rowArrows G images.sub rel (f.pairs)
-  (es, fun p =>
+  (es, fun (p, t) =>
     PositiveRules.SameKind G p.1 p.2 &&
-    decide (OpaqueFamily G images.sub R known
-      (ArrowsCheckedWith G R es) [] p.1 p.2) &&
-    let own := ClauseIndex.of G (clausesOf G p.2)
+    opaqueFamilyWith G images.sub R known (ArrowsCheckedWith G R es) [] p.1 p.2 (Thunk.pure t.clauses) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      own.has G a ||
-      (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
+      t.own.has G a ||
+      (if images.budget.select then t.candidates G a else t.clauses).any
         (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
       -- A tag set is covered between several target clauses, element by
       -- element, where no one clause covers it.
-      (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any
+      (a.elements != [a] && a.elements.all fun e => t.clauses.any
         fun b => checkClauseWith G images.sub R known es p.1 e b))
 
 /-- A source clause neither among the target's clauses nor with a candidate,
@@ -1382,63 +1399,82 @@ one of whose elements has no candidate either: no valid closed family covers
 the pair, since every covering it chooses is by a candidate
 (`SelectionPreservation.valid_selected`). Search does not grow a table for
 such a pair, nor expand such a row's demand, with or without selection. -/
-@[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
-  let own := ClauseIndex.of G (clausesOf G T)
-  (sourceClauses G S).any fun a => !own.has G a && (ClauseSelection.candidates G a T).isEmpty &&
-    a.elements.any fun e => (ClauseSelection.candidates G e T).isEmpty
+@[nospecialize] def structurallyHopelessIn [DecidableEq ι] (G : NormalGraph ι) (S : List ι) (t : TargetClauses ι) : Bool :=
+  (sourceClauses G S).any fun a => !t.own.has G a && !(t.clauses.any fun b => !ClauseSelection.excludes G a b) &&
+    a.elements.any fun e => !(t.clauses.any fun b => !ClauseSelection.excludes G e b)
 
-/-- Grow the table from its frontier: each row adds the pairs its coverage
-compares (`demandPairs`, and quantified members after renaming), each read
-through `Var` where it applies, that no inclusion, row or renamed row already
-answers. A pair that reaches no further pair and is not covered by itself
-alone is left out: the deletion would remove it. Refuse at growth or past
-the execution budget. -/
-@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
-    : Nat → Fallback ι → Table ι → Fallback ι
+@[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
+  structurallyHopelessIn G S (TargetClauses.of G T)
+
+/-- The pairs a row's coverage compares (`demandPairs`), and quantified
+members after renaming. -/
+@[nospecialize] def reachedPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) : List (List ι × List ι) :=
+  demandPairsIn G known p.1 p.2 images.budget.select t ++ (match images.sub with
+    | some r => renamedPairs G r p.1 p.2
+    | none => [])
+
+/-- `growTable` over a frontier whose rows carry the pairs they reach, each
+computed once, when the row is inserted. -/
+@[nospecialize] def growTableFrom [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
+    : Nat → Fallback ι → List ((List ι × List ι) × List (List ι × List ι)) → Fallback ι
   | 0, fb, _ => { fb with refused := some .exhausted }
   | fuel + 1, fb, frontier =>
-    let reached (p : List ι × List ι) := demandPairs G known p.1 p.2 images.budget.select ++ (match images.sub with
-        | some r => renamedPairs G r p.1 p.2
-        | none => [])
-    let cand := (frontier.flatMap fun p =>
-      (reached p).flatMap fun p => match images.sub with
+    let cand := (frontier.flatMap fun (_, reached) =>
+      reached.flatMap fun p => match images.sub with
           | some _ => rowsFor images varDepthDefault p.1 p.2
           | none => if subsetIn p.2 p.1 p.2 then [] else [p])
-    let step (st : Except SearchStop (Table ι × Table ι)) (p : List ι × List ι) :
-        Except SearchStop (Table ι × Table ι) := do
+    let step (st : Except SearchStop (Table ι × List ((List ι × List ι) × List (List ι × List ι))))
+        (p : List ι × List ι) : Except SearchStop (Table ι × List ((List ι × List ι) × List (List ι × List ι))) := do
       let (tbl, fresh) ← st
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
-      if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          (sourceClauses G p.1).all fun a => decide (a ∈ clausesOf G p.2) || (clausesOf G p.2).any (fun b =>
+      let t := TargetClauses.of G p.2
+      let reached := reachedPairs G images known p t
+      if reached.isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
+          (sourceClauses G p.1).all fun a => t.own.has G a || t.clauses.any (fun b =>
             checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
-            (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any fun b =>
+            (a.elements != [a] && a.elements.all fun e => t.clauses.any fun b =>
               checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw .growth
-      return (tbl ++ [p], fresh ++ [p])
+      -- A row no valid closed family covers is not expanded: its demand serves
+      -- only its own coverings.
+      return (tbl ++ [p], if structurallyHopelessIn G p.1 t then fresh else fresh ++ [(p, reached)])
     let fb := { fb with rounds := fb.rounds + 1, visited := fb.visited + cand.length }
     match cand.foldl step (.ok (fb.table, [])) with
     | .error why => { fb with refused := some why }
-    | .ok (tbl, fresh) =>
-      -- A row no valid closed family covers is not expanded: its demand serves
-      -- only its own coverings.
-      let next := fresh.filter fun p => !structurallyHopeless G p.1 p.2
+    | .ok (tbl, next) =>
       if next.isEmpty then { fb with table := tbl }
-      else growTable G images known fuel { fb with table := tbl } next
+      else growTableFrom G images known fuel { fb with table := tbl } next
+
+/-- Grow the table from its frontier: each row adds the pairs its coverage
+compares (`reachedPairs`), each read through `Var` where it applies, that no
+inclusion, row or renamed row already answers. A pair that reaches no further
+pair and is not covered by itself alone is left out: the deletion would
+remove it. Refuse at growth or past the execution budget. -/
+@[nospecialize] def growTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (known : Known ι)
+    (fuel : Nat) (fb : Fallback ι) (frontier : Table ι) : Fallback ι :=
+  growTableFrom G images known fuel fb (frontier.map fun p => (p, reachedPairs G images known p (TargetClauses.of G p.2)))
+
+/-- `gfp` over rows carrying their target clauses. -/
+@[nospecialize] def gfpFrom [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
+    (known : PositiveRules.Known ι) : Nat → List ((List ι × List ι) × TargetClauses ι) → Table ι × Evidence ι
+  | 0, rows => (rows.map (·.1), [])
+  | fuel + 1, rows =>
+    let (es, covered) := coveredIn G images A B known (rows.map (·.1))
+    let next := rows.filter covered
+    if next.length = rows.length then (rows.map (·.1), es) else gfpFrom G images A B known fuel next
 
 /-- Delete the rows a table does not cover, premises read in the table
 itself, until every row is covered: the greatest fixed point below the
 reachable pairs. With a renaming a premise is the judgment of §4.2 in the
 entry of `(A, B)` (`Var`, `Inst`, `TabRen`); without one, a row or an
-inclusion. The check decides (`compareUsing`). -/
+inclusion. Each row's target clauses are read once for every round. The
+check decides (`compareUsing`). -/
 @[nospecialize] def gfp [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : List ι)
-    (known : PositiveRules.Known ι) : Nat → Table ι → Table ι × Evidence ι
-  | 0, table => (table, [])
-  | fuel + 1, table =>
-    let (es, covered) := coveredIn G images A B known table
-    let next := table.filter covered
-    if next.length = table.length then (table, es) else gfp G images A B known fuel next
+    (known : PositiveRules.Known ι) (fuel : Nat) (table : Table ι) : Table ι × Evidence ι :=
+  gfpFrom G images A B known fuel (table.map fun p => (p, TargetClauses.of G p.2))
 
 /-- A closed structural comparison checked with the equation representation's
 renaming and validated base entries. Bound checking uses this same kernel. -/
