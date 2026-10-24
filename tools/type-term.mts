@@ -1094,9 +1094,23 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 
 /** Whether two index signatures state the same contract. */
 function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): Within<{ value: "any"; store: "grow" }, boolean> {
-  // An object at the top, which the replacer keeps: always a text.
-  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
-  return a.readonly === b.readonly && spanless(a.value) === spanless(b.value);
+  return a.readonly === b.readonly && sameData(a.value, b.value);
+}
+
+/** Whether two values hold the same data, field by field in order, leaving
+ * out each object's `span` field and each field holding `undefined`: the comparison
+ * of their `JSON.stringify` texts with `span` dropped, made without
+ * serializing, so no `toJSON` of either is called. */
+function sameData(a: unknown, b: unknown): Within<{ value: "keep"; store: "keep" }, boolean> {
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return a === b;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const kept = (o: object): [string, unknown][] =>
+    Array.isArray(o) ? Object.entries(o) : Object.entries(o).filter(([k, v]) => k !== "span" && v !== undefined);
+  const x = kept(a), y = kept(b);
+  return x.length === y.length && x.every(([k, v], i) => {
+    const other = y[i];
+    return other !== undefined && other[0] === k && sameData(v, other[1]);
+  });
 }
 
 /** The key kinds an index signature's parameter type names: `string`,

@@ -269,7 +269,7 @@ export type EnumReverse = "stated" | "none";
  * in JavaScript's order where they are known: array index keys ascending,
  * then the others as the emit creates them. A reverse key of a value known
  * only at run time is no field. */
-export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number], reverse: EnumReverse): TypeTerm {
+export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number], reverse: EnumReverse): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const fields = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
   const names = new Set(members.map(m => m.name));
   for (const m of members) {

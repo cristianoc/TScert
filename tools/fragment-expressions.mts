@@ -13,7 +13,7 @@ import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -1928,7 +1928,7 @@ export function lambda(this: Gate,
     (tp, index) => {
       if (tp.constraint)
         gate.fail(tp, "a bounded type parameter of a generic class method is outside the fragment: its binder row is named by its bound");
-      return `${JSON.stringify(member)}#${index}`;
+      return `${propertyKeyText(member)}#${index}`;
     });
   try {
     gate.asyncBody = isAsync;

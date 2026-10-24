@@ -386,14 +386,16 @@ type and the CLI path are unchanged.
 ## 8. Trust
 
 One row of the [trust surface](../DESIGN.md#trust-surface) changes, one is
-added, and two extend existing rows.
+added, and four extend existing rows.
 
 | Assumption | Where it is stated |
 | --- | --- |
 | *(changed, assumed values)* An imported value meets its declaration, a guard's declared promise **and a stated effect (`Within`) included**; … (rest unchanged). A statement occurs only in program modules' declarations; whether the exporting module's run certifies it is not a premise of the importer's acceptance (§6), and that the linked program meets every statement rests on module composition, an open theorem. | `IMPORT` in SOURCE-CONTRACTS; `Within` in `tools/resolvable.d.ts` |
 | *(added, assumed of the host)* External code preserves every effect-bearing contract of the program's values it holds or returns: it writes no function field of a program value with a function outside the field's statement, creates no own member on a program class's instance that shadows a prototype member, deletes no such member, writes no member of a program class's prototype or static method binding, replaces no instance's prototype, and passes to verified code no instance of a subclass whose override exceeds the base's statement. Conforming to a program type means TScert's contract, statements included, not TypeScript's assignability, which erases `Within`. | `EnvOk` over the input types; the caller contract row; the class lowering in `tools/fragment-classes.mts` |
 | *(extended, the parser row)* The parser reads `Within` (§3) and refuses it where §3 does. | `tools/type-term.mts` (`signatures`), `tools/declaration-graph.mts`, `tools/fragment-expressions.mts` (`lambda`), `fragment-statements.mts` (`functionDecl`) |
-| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` keeps its declared signature. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T3 of the compiler API, D7)* `forEachChild` runs no code of the program but its visitors, so a call of it whose visitors are within a closed footprint $`\varepsilon`$ is within $`\varepsilon`$; it is read with one signature per closed footprint (§12). | `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
+| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` and `serializingRequests` in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
 
 Inference gains no trust: a forged statement claim fails at the first
 node outside it.
@@ -604,8 +606,15 @@ state is observed by no transparent operation. So a request changes no
 location the program holds but through its instance's callbacks, and the
 contract bounds those:
 
-- *The statement.* Each request is read at `{value: any, store: grow}`,
-  without `onThrow` (a caller catching a request's failure has no bound on
+- *The statement.* Each request whose arguments are primitives and host
+  objects is read at `{value: any, store: grow}`; the six that may receive
+  an object of the program (`API.updateSnapshot`,
+  `Snapshot.getDefaultProjectForFile`, `Program.getSourceFile`,
+  `Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics` and
+  `Checker.resolveName`, `serializingRequests`) are read at their declared
+  signatures, since serializing their payload runs the object's `toJSON`
+  and getters ([COMPILER-API](../COMPILER-API.md#the-sync-api)). The
+  statement is read without `onThrow` (a caller catching a request's failure has no bound on
   the heap the failure leaves), stated in the view lists beside each
   member's reviewed text and read where the views are read.
 - *The instances it holds of, enforced where they are made.* A verified
@@ -671,7 +680,13 @@ By a search of these modules, every store-shrinking operation (`pop`,
 acts on an array the code allocated (`[...list].sort`, `pending.pop()` of a
 local worklist, `work.pop()` of `externalStatements`' local), and the
 collections' mutators (`Map.set`, `clear`) are within `{value: any, store:
-keep}`; so every value of `TermScope` meets the statement.
+keep}`. Serializing runs a value's `toJSON` and getters, so every
+`JSON.stringify` of these modules serializes a JSON value the code built:
+a string, a span, an identity key's array of strings and a span
+(`identityKey`), a property key's text (`propertyKeyText`), or
+`type-probe.mts`' arrays of positions; `sameIndex` compares two type terms
+field by field, without serializing (`sameData`). So every value of
+`TermScope` meets the statement.
 
 **Catches.** A `never`-typed call contributes no normal-return obligation
 only where its exception escapes. The closure's catches (`parseModules`,

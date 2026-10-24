@@ -10,7 +10,7 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -340,7 +340,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       if (!typeParams.length || member.typeParameters?.length)
         return gate.lambda(member, instance, key);
       const parameters = gate.enterTypeParams(node.typeParameters,
-        (_tp, index) => `${name.text}.${JSON.stringify(key)}#class${index}`);
+        (_tp, index) => `${name.text}.${propertyKeyText(key)}#class${index}`);
       try {
         const receiver: TypeTerm = { ...instance,
           args: parameters.map((p, i) => ({ k: "binder", name: p.name,
@@ -855,7 +855,7 @@ export function registerDeclaredType(this: Gate, name: string, required: number,
 }
 
 /** A declaration's key among the gate's equations. */
-export function identityKey(declaration: DeclarationIdentity): string {
+export function identityKey(declaration: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> {
   return JSON.stringify([declaration.module, declaration.span, declaration.name]);
 }
 

@@ -107,7 +107,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never): TypeTerm {
+    fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
@@ -123,8 +123,8 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 /** The arguments of a reference to `library`: at a mapped type's key
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
-export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => TypeTerm,
-    keys?: (node: TypeNode) => TypeTerm | null): TypeTerm[] {
+export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
+    keys?: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>): Within<{ value: "any"; store: "grow" }, TypeTerm[]> {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
