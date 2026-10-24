@@ -466,7 +466,7 @@ assumption while the module's own run is refused.
 
 ## 10. Measurement
 
-The census of ffd7b87, slices at 300 s: `fragment-statements.mts#pattern`,
+In the census of ffd7b87 (the draft's base, whose functions state no effect), slices at 300 s: `fragment-statements.mts#pattern`,
 `#forOfPattern`, `#protocolPattern`, `#patternStmt`, `#abrupt` unverified
 (each "no derivation of its binding-annotation claim" at a `map`'s result);
 `#patternDefaults`, `#steppedPattern`,
@@ -494,10 +494,10 @@ relative to every imported declaration (§6): conditional evidence, which
 the measurement reports with every statement a slice relies on and whether
 that statement's definition is certified by a verified slice.
 
-**What this step states.** The statements whose contract closure is closed
-today (which are certified is [WORK](../../WORK.md#class-methods-effects)'s):
+**The statements.** Three groups:
 
-- the class methods of `Gate` that the draft's group A callbacks call:
+- the class methods of `Gate` that array callbacks reaching no `expr` call
+  (in `classBody`, `neverAssigned` and `moduleFunction`):
   `span`, `local` and `hasTypeParam`, each reading the node's position
   (`getStart`, D4), a `Map` (`get`, `has`) or an array (`some`), at
   `{value: keep, store: keep}`, and `typeParamName`, iterating an array, at
@@ -505,56 +505,37 @@ today (which are certified is [WORK](../../WORK.md#class-methods-effects)'s):
 - the method fields' module functions `patternDefaults` and `inert`
   (`{value: keep, store: keep}`: reads, guards, `flatMap`/`every` callbacks
   calling themselves) and `steppedPattern` (`{value: any, store: keep}`:
-  its `forEach` callback writes a captured cell).
+  its `forEach` callback writes a captured cell);
+- `expr`'s contract closure (§12): every function `expr` and the gate's
+  `TermScope` object reach, at `{value: any, store: grow}` unless a smaller
+  footprint holds, with D5's rewrite of the `shift`s in that closure
+  (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`). The closure
+  crosses two host boundaries, `forEachChild` (D7) and the checker's
+  requests the declaration reader's scopes make (D8 (a)), each closed by
+  an extension of a trust row (§8). [The inventory](method-effects-inventory.md)
+  gives each function of the closure its statement and its basis.
 
-**What stays blocked: `expr`'s contract closure.** `pattern`'s object-pattern
-callback calls `gate.expr`, and so do the callbacks of `forOfPattern`,
-`protocolPattern`, `patternStmt` and `abrupt`'s slices. `expr`'s closure,
-by a syntactic scan of the calls reachable through `Gate`'s method fields
-and members, is 166 functions of the `fragment-*` modules, `type-term.mts`
-and their helpers, and it crosses two boundaries no annotation can close
-honestly:
-
-- `forEachChild` (20 of the 166 call it), whose declared signature states
-  no effect: D4 leaves it out, so a call of it is unrestricted whatever its
-  visitor does. A callback-dependent signature, at each footprint
-  $`\varepsilon`$ the call within $`\varepsilon`$ where its visitors are,
-  as `forEach`'s overlay states, would rest on T3 as stated (it calls only
-  its visitors, synchronously, and changes no stable member) and T4: an
-  extension of D4 for the owner to decide;
-- the type reader's scope: `Gate.typeOf` calls `typeTerm(this.scope, …)`,
-  `scope: TermScope`, whose function fields (`named`, `fail`, `computed`, …)
-  state no effect. The declaration reader's own scopes are values of that
-  type and call the checker, a host request read at an ordinary signature
-  (T6). A statement on `TermScope`'s members would be false of them unless
-  T6's requests are bounded through the retained `fs` callbacks' effects (a
-  trust extension), or the gate's scope gets a type of its own (a change of
-  TScert's source, under the no-rewrite rule). Either is the owner's
-  decision.
-
-With those decided, `expr`'s closure is a set of statements of the same
-kind as this step's, together with D5's rewrite, whose `shift`s lie in that
-closure (`enterTypeParams`, `leaveTypeParams`, `protocolForOf`): the rewrite
-lands with the statements that need it, since no statement of this step
-calls them.
-
-**Certifying the closure's bodies** needs one more node rule. A statement's
-method call on an object of several labels with plain actuals, as
-`node.getStart(this.file)` on `node: Node` in `span`, is lowered as one node
-that reads the member and invokes it (`dispatchCallTerm`): its callee is no
-value, which the bounded check's selected-call rule requires, so the
-producer proposes no footprint for it and a body holding one is certified
-only at `top`. The rule extends to such a node by composing the head's
-inspection, which keeps the heap a prefix, with the call at its selected
-signature; until then the statements on `Gate`'s members stay uncertified
+**A dispatched call.** A method call on an object of several labels with
+plain actuals, as `node.getStart(this.file)` on `node: Node` in `span`, is
+lowered as one node that reads the member and invokes it
+(`dispatchCallTerm`): its callee is no value, which the bounded check's
+selected-call rule requires, so the producer proposes the unbounded
+footprint for it (`Type_queries.dispatches_call`) and a body holding one is
+certified only at `top`. A node rule composing the head's inspection, which
+keeps the heap a prefix, with the call at its selected signature would
+certify such bodies; the statements on `Gate`'s members are uncertified
 whichever run lowers `Gate`.
 
-**Slices measured** before and after (`make census FILES=… FUNCTIONS=…`):
-the targeted five, which stay blocked at `gate.expr`; `patternDefaults`,
-`steppedPattern` and `inert`, whose slices must keep verifying at their
-statements; and the group A enclosing functions the census admits:
-`fragment-classes.mts#classBody`, `fragment-statements.mts#neverAssigned`,
-`fragment-expressions.mts#moduleFunction` as a dependent.
+**Slices measured** before and after a change of the statements (`make
+census FILES=… FUNCTIONS=…`): the five functions whose callbacks call
+`gate.expr` (`pattern`, `forOfPattern`, `protocolPattern`, `patternStmt`,
+`abrupt`); `patternDefaults`, `steppedPattern` and `inert`, whose slices
+verify at their statements; the functions enclosing the array callbacks
+of the first group (`fragment-classes.mts#classBody`,
+`fragment-statements.mts#neverAssigned`,
+`fragment-expressions.mts#moduleFunction`); and the functions of the
+inventory. Their outcomes, each with its commit, are
+[WORK](../../WORK.md#class-methods-effects)'s.
 
 ## 11. Decisions
 
