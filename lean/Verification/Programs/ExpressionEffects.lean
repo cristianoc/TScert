@@ -912,7 +912,7 @@ the one the term's ordinary safety gives it; its emptiness is decided as an
 unreachable entry's is, a type of clause rows with no clause. -/
 
 /-- A type no value meets: a type of clause rows expanding to no clause. -/
-def emptyType (G : NormalGraph ι) (A : List ι) : Bool :=
+@[nospecialize] def emptyType (G : NormalGraph ι) (A : List ι) : Bool :=
   G.plainTy A && (expand G A).isEmpty
 
 theorem emptyType_sound {G : NormalGraph ι} {A : List ι} (hA : emptyType G A = true) {n W v} :

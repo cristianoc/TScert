@@ -67,7 +67,7 @@ export function mutationVerifier(): string {
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks", "Semantics/HeapSeparation",
     "Semantics/HeapKnowledge", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer",
-    "Source/RequestJson"];
+    "Programs/ExpressionEffects", "Source/RequestJson"];
   for (const module of modules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
     let text = readFileSync(original, "utf8");
@@ -123,6 +123,10 @@ export function mutationVerifier(): string {
         }
         return pair(pair(some(proofs), lean_box(0)), ${a[12]});
       }`);
+    // Every type decided empty: a node at any type taken never to return
+    // normally (`no-return`'s premise removed).
+    if (module === "Programs/ExpressionEffects")
+      text = inject(text, "ExpressionEffects_emptyType___redArg", () => 'if (mutation("empty")) return 1;');
     // An async definition's footprint below `top` admitted (L6 removed).
     if (module === "Source/RequestJson")
       text = inject(text, "RequestJson_asyncEffects", () => 'if (mutation("async")) return 1;');

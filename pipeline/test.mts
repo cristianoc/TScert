@@ -2814,6 +2814,30 @@ control(async (): Promise<void> => {
 });
 
 mutationControl(async (): Promise<void> => {
+  // A no-return node at a type a value meets: `gate.fail("empty")` returns
+  // `never`, so its claim at `string` is a valid typing, under which the
+  // call may return. The callback's claim within `{keep, keep}` is refused
+  // in search; with the emptiness decision removed (the `empty` mutation)
+  // search certifies it, and checking that evidence refuses it, so the
+  // emptiness decision alone refuses it.
+  const artifacts = run("no-return-callee-map");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const at = source.indexOf('gate.fail("empty")');
+  const call = must(must(claims.functions.find(f => f.name === "members"), "members' claims").expressions
+    .find(e => e.pos[0] === at && e.pos[1] === at + 'gate.fail("empty")'.length), "the call's claim");
+  assert.deepEqual(call.type, [], "the call is claimed at never");
+  call.type = [rowOf(claims, "str")];
+  const name = "forged-no-return-nonempty";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  invoke(input, forgedEvidence(artifacts, input, name, "empty"), artifacts);
+  process.stdout.write("forged no-return node at a non-empty type: gate.fail typed string in a callback claimed at {keep, keep} refused in search and in checking, certified only without the emptiness decision\n");
+});
+
+mutationControl(async (): Promise<void> => {
   // An async definition's effect is certified at `top` (`asyncEffects`): an
   // async call returns its promise where its body throws. `rejected`, and
   // the async arrow `rejecting` returns, reach no completion: each calls a
