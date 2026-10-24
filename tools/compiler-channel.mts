@@ -85,6 +85,8 @@ const answers = new WeakMap<object, Map<unknown, Map<string, string>>>();
  * them its earlier answer served, for the controls. */
 const queries: { asked: number; served: number } = { asked: 0, served: 0 };
 export const queryTelemetry = (): { asked: number; served: number } => ({ ...queries });
+/** How many snapshots of a compiler hold kept answers, for the controls. */
+export const heldSnapshots = (api: API): number => answers.get(privateClient(api))?.size ?? 0;
 function query(client: object, method: unknown, params: unknown, request: () => unknown): unknown {
   const snapshot = fieldOf(params, "snapshot");
   if (typeof method !== "string" || snapshot === undefined) return request();

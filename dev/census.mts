@@ -335,8 +335,8 @@ async function census(args: string[]): Promise<void> {
         ` · ${tally(outcomes)} · stages ${tally(executions)}\n`);
     return row;
   };
-  // Slices of one text (the functions of one mutually recursive group) run one after another, so each after
-  // the first replays the stages of their shared slice file; groups run in parallel.
+  // Slices of one text (the functions of one mutually recursive group) share one check, the first's: each other
+  // function's row holds its outcome and no invocation of its own; groups run in parallel.
   const groups = new Map<string, Slice[]>();
   for (const s of selected) {
     const text = createHash("sha256").update(s.text).digest("hex");
@@ -345,8 +345,14 @@ async function census(args: string[]): Promise<void> {
     else groups.set(text, [s]);
   }
   const done = new Map<Slice, SliceRecord>();
-  await Promise.all([...groups.values()].map(async (group): Promise<void> => {
-    for (const s of group) done.set(s, await finish(s));
+  await Promise.all([...groups.values()].map(async ([first, ...rest]): Promise<void> => {
+    if (!first) return;
+    const row = await finish(first);
+    done.set(first, row);
+    for (const s of rest) {
+      done.set(s, { ...row, file: s.file, fn: s.fn, invocations: [] });
+      finished++;
+    }
   }));
   const rows = selected.map((s): SliceRecord => {
     const row = done.get(s);

@@ -521,8 +521,9 @@ shares one entry across runs whose selections differ elsewhere.
 attempt answering its first answer and noting it in a record begun after
 it; the next attempt, a ledger's validation and a Node-origin read reading
 afresh; a change within an attempt seen with sharing off; a repeated query
-of a snapshot served and another snapshot's asked; and a compiler's ledger,
-with its incompleteness, held by every record that uses the compiler. The
+of a snapshot served, another snapshot's asked and a released snapshot's
+answers gone; and a compiler's ledger held by every record that uses the
+compiler, a record holding it seeing its later growth and incompleteness. The
 fidelity controls of `tests/session-reuse.mts` compare each parse, its work
 shared in a reused session, with the parse in fresh compilers with no work
 shared (`sharingForTests`), byte for byte. `tests/observed-stages.mts` shows a

@@ -337,9 +337,9 @@ file's import distinguishes them). It is no weakening worth its gain.
 **Entry.** The census (`dev/census.mts`, outside every key) writes one slice
 file per distinct slice text, named by the first function of its module
 holding that text, and checks it once; each function holding the text
-reports that check's outcome. Its records keep one row per function, its
-invocations the shared check's. The parse, search and check of a group run
-once.
+reports that check's outcome. Its records keep one row per function: the
+first's holds the check's invocations, every other's the same outcome and
+no invocation. The parse, search and check of a group run once.
 
 ### 3.7 A declaration's collection, once per session
 
@@ -456,12 +456,14 @@ No key loses an input. The module stage is a new stage name in
 
 ## 5. Tests
 
-- *Byte identity, fresh against shared.* For the session controls' fixture
-  and the census's sample slices: Fragments and ordered diagnostics with
-  sharing (attempt answers, query answers, module entries replayed and
-  executed, a reused parser session) equal to those of fresh compilers with
-  the store off, in forward, reverse and A–B–A orders, refusals included
-  (`tests/session-reuse.mts`).
+- *Byte identity, fresh against shared.* For the session controls' fixture:
+  Fragments and ordered diagnostics with sharing (attempt answers, query
+  answers, module entries replayed and executed, a reused declaration
+  session) equal to those of fresh compilers with no work shared, in
+  forward, reverse and A–B–A orders, refusals included
+  (`tests/session-reuse.mts`); for every pipeline case, its Fragment with
+  module stages executed and replayed equal to the one lowered in the
+  importer's parser compiler (a measurement, 2026-10-24).
 - *Module entries.* A parse executing again replays its modules' entries; a
   changed project file misses them; the parse's entry holds the modules'
   file-system observations, executed and replayed; a module's entry replays
@@ -476,11 +478,8 @@ No key loses an input. The module stage is a new stage name in
 - *Attempt answers.* Within an attempt a repeated operation notes its answer
   in a nested record begun after the first; a ledger's validation reads
   afresh; a change between attempts is seen by the next.
-- *Parser session.* As the declaration session's controls: reuse, replacement
-  on another installation or families, a changed ledger answer, an unclean
-  restoration, a tool failure, and CPU accounting.
 - *Census.* Outcomes per function equal before and after each step; any
-  change reported with its cause.
+  change reported with its cause (measurements, recorded in WORK).
 - *Compiler ledgers.* With a compiler opened for one stage: a nested record
   begun after a request is noted the compiler's ledger before its first
   request, asked or served; a record that holds the ledger, after the

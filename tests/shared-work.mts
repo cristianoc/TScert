@@ -5,14 +5,16 @@
 //   validation and a read standing for Node's read afresh; without sharing
 //   a changed answer makes the attempt incomplete;
 // - a query asked again of a snapshot is served its first answer, a query
-//   of another snapshot is asked, and without sharing every query is asked;
+//   of another snapshot is asked, a released snapshot's answers are gone,
+//   and without sharing every query is asked;
 // - every compiler's ledger is noted in a record before its first request,
-//   asked or served, with the ledger's incompleteness.
+//   asked or served; a record holding it sees its later growth and
+//   incompleteness, and so does every later record using the compiler.
 import assert from "node:assert/strict";
 import { mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { compilerLedger, openFrontEndCompiler, queryTelemetry, releaseCompiler } from "../tools/compiler-channel.mts";
+import { compilerLedger, heldSnapshots, openFrontEndCompiler, queryTelemetry, releaseCompiler } from "../tools/compiler-channel.mts";
 import { newLedger, nodeResolve, observed, present, realPath, sharingForTests, unobservable, validateLedger, withLedger }
   from "../tools/files.mts";
 import { syntax as ts } from "../tools/syntax.mts";
@@ -74,8 +76,8 @@ const real = (path: string): string => realPath(path);
   writeFileSync(file, "export const x: number = 1;\nexport function f(): number {\n  return x;\n}\n");
   const api = openFrontEndCompiler(project, new Map());
   try {
-    const open = () => {
-      const snapshot = api.updateSnapshot({ openFiles: [file] });
+    const open = (opened: string = file) => {
+      const snapshot = api.updateSnapshot({ openFiles: [opened] });
       const p = snapshot.getDefaultProjectForFile(file);
       assert.ok(p);
       const source = p.program.getSourceFile(file);
@@ -84,7 +86,7 @@ const real = (path: string): string => realPath(path);
         ts.isIdentifier(node) && node.text === "x" && ts.isReturnStatement(node.parent) ? node : node.forEachChild(find);
       const name = find(source);
       assert.ok(name);
-      return { name, checker: p.checker };
+      return { name, checker: p.checker, snapshot };
     };
     const first = observed(() => open());
     assert.ok(first.observations.some(([o, p]) => o === "read" && p === file), "the compiler read the file");
@@ -107,8 +109,21 @@ const real = (path: string): string => realPath(path);
     // Without sharing every query is asked.
     sharingForTests(false, () => second.checker.getSymbolAtLocation(second.name));
     assert.equal(queryTelemetry().served, after.served);
-    // The compiler's incompleteness reaches every record that uses it.
-    withLedger(compilerLedger(api), () => unobservable("an injected incomplete read"));
+    // A released snapshot's answers go with it.
+    const held = heldSnapshots(api);
+    first.value.snapshot.dispose();
+    assert.equal(heldSnapshots(api), held - 1, "a released snapshot's answers are gone");
+    // A record holding the ledger sees its later growth and incompleteness.
+    const other = join(project, "b.ts");
+    writeFileSync(other, "export const y: number = 2;\n");
+    const holder = observed(() => {
+      second.checker.getSymbolAtLocation(second.name);
+      api.updateSnapshot({ openFiles: [other] });
+      withLedger(compilerLedger(api), () => unobservable("an injected incomplete read"));
+    });
+    assert.ok(holder.observations.some(([o, p]) => o === "read" && p === other), "the ledger's growth reaches its holder");
+    assert.equal(holder.incomplete, "an injected incomplete read", "and its incompleteness");
+    // So does it every later record that uses the compiler.
     const later = observed(() => second.checker.getSymbolAtLocation(second.name));
     assert.equal(later.incomplete, "an injected incomplete read");
   } finally {
