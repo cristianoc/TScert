@@ -800,12 +800,12 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 5.3 s, `inertRead` 21.1 → 4.4,
-`resolve` 20.4 → 3.9, `forOfPattern` 115.0 → 4.3, `pattern` 15.1 → 2.3,
+measured: `moduleFunction` 29.1 → 4.8 s, `inertRead` 21.1 → 3.9,
+`resolve` 20.4 → 3.5, `forOfPattern` 115.0 → 4.1, `pattern` 15.1 → 2.3,
 `patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.5, `closeStatements` 1.2 → 1.1;
-check CPU `moduleFunction` 5.0 → 2.7, `inertRead` 3.6 → 2.4, `resolve`
-3.4 → 2.2. Each lies within its expected interval. The width series is
-0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.52 / 0.85 / 1.04 / 1.62 / 2.46 s. The
+check CPU `moduleFunction` 5.0 → 2.6, `inertRead` 3.6 → 2.2, `resolve`
+3.4 → 2.0. Each lies within its expected interval. The width series is
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.50 / 0.85 / 1.08 / 1.58 / 2.46 s. The
 width criterion is on the part the design acts on: the sampled time outside
 the front end (reading the fragment and the claims, lowering and freezing
 them) and the evidence write, at width 136 within 12 times its time at
@@ -842,17 +842,16 @@ by a key of its claim; discovery computing a row's demand once, when it inserts
 the row, and each row's target clauses with their index once for its demand,
 its deletion rounds and its validation; search's comparisons not redone
 without selection; an edge's unsatisfiable context decided reading each
-slot's labels until one has a clause. Each step's measurement is WORK's
-row.
+slot's labels until one has a clause; a graph check's member-test field
+slices computed once per key. Each step's measurement is WORK's row.
 
 Remaining, by measured cost:
 
-1. **Checker memo.** `Subtyping.check` state-passing, and the checker's
-   field slices (`memberFieldSlice`) answered once per key: the largest
-   remaining cost of `moduleFunction`, not width-sensitive. Measured,
-   2026-10-24: in `moduleFunction`'s search, the checks evaluate 1,244
-   member-test field slices for 196 distinct keys, and the final check 634
-   for the same 196; the yield checks take 0.83 of 4.6 sampled seconds.
+1. **Checker memo.** `Subtyping.check` state-passing, and the field slices
+   shared between a request's graph checks. Measured, 2026-10-24: in
+   `moduleFunction`, a graph check computes each of its slices once, 390
+   in search's 15 graph checks and 198 in the final check's 9, for 196
+   distinct keys; the yield checks take 0.31 of 4.0 sampled seconds.
 2. **The final check reads the memo**: `--produce-source-claims`'s check
    of the document answering the inclusions search established (§3.8).
    Measured, 2026-10-24: the final check takes 0.33 of `moduleFunction`'s
