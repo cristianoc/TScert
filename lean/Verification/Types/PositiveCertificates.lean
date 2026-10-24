@@ -744,6 +744,9 @@ structure SearchBudget where
   cover a source clause (`ClauseSelection.candidates`, R1–R5 of
   docs/UNION-SHAPES.md); a comparison this refuses is redone without. -/
   select : Bool := true
+  /-- Whether a comparison selection does not establish is redone without it:
+  off for search's own comparisons, on for every check. -/
+  rerun : Bool := true
   deriving Repr
 
 /-- An outcome of checked comparison search. Successful search returns its
@@ -1038,6 +1041,12 @@ serves every reassignment (`Parametricity`). -/
     exact images.builtinsOk_sound h r hr
   known := images.known
   known_sound := images.known_sound
+
+/-- The same check, a comparison selection does not establish not redone
+without it: search's own comparisons. -/
+@[nospecialize] def InstanceImageCheck.searching [DecidableEq ι] {G : NormalGraph ι}
+    (images : InstanceImageCheck G) : InstanceImageCheck G :=
+  { images with budget := { images.budget with rerun := false } }
 
 /-- The same check with candidate selection off: every target clause is read. -/
 @[nospecialize] def InstanceImageCheck.general [DecidableEq ι] {G : NormalGraph ι}
@@ -1626,7 +1635,8 @@ loses a comparison the general search establishes. -/
 @[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
   let r := compareStructuralCore G images S T known
-  if r.accepted || !images.budget.select then r else compareStructuralCore G images.general S T known
+  if r.accepted || !images.budget.select || !images.budget.rerun then r
+  else compareStructuralCore G images.general S T known
 
 theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T known}
@@ -2084,7 +2094,7 @@ reading every target clause where that is not established. -/
     (S T : List ι) (instantiation : List ι → List ι → Proposals ι)
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
   let r := compareStepStateCore G images compare S T instantiation members state
-  if r.1.accepted || !images.budget.select then r
+  if r.1.accepted || !images.budget.select || !images.budget.rerun then r
   else compareStepStateCore G images.general compare S T instantiation members r.2
 
 theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}

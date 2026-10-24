@@ -422,7 +422,8 @@ theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
 /-- Instantiation choices, or the typed reason subtype search is unfinished. -/
 @[nospecialize] def subtypeSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
-  CheckResult.fromComparison images.budget.rounds A B (comparisonUsing G images A B)
+  -- Search's comparisons skip the rerun without selection; checks keep it.
+  CheckResult.fromComparison images.budget.rounds A B (comparisonUsing G images.searching A B)
 
 theorem subtypeSearch_sound [DecidableEq ι] [Hashable ι] [Instantiates ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {A B : Ty ι} (h : (subtypeSearch G images A B).accepted = true) :

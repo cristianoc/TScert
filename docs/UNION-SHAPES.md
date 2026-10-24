@@ -470,18 +470,21 @@ default:
   candidate, nor has one of its elements, is in no valid closed family
   (`valid_selected`): no table is grown from it, and as a row its demand is
   not expanded, with or without selection (`structurallyHopeless`);
-- a structural comparison or a comparison step not established with
-  selection is redone with selection off (`InstanceImageCheck.general`, in
-  `compareStructural` and `compareStepState`), so the restricted search
-  establishes nothing less than the general one.
+- in a check, a structural comparison or a comparison step not established
+  with selection is redone with selection off (`InstanceImageCheck.general`,
+  in `compareStructural` and `compareStepState`), so the restricted search
+  establishes nothing less than the general one; search's own comparisons
+  are not redone (`SearchBudget.rerun`, off in `InstanceImageCheck.searching`,
+  which `subtypeSearch` reads): a comparison only the rerun establishes is
+  one search does not find.
 
 **Soundness (proved).** A candidate is a target clause
 (`ClauseSelection.mem_candidates`), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
 `compareStepState_sound` hold with their statements unchanged, as does
 `checkJson_safe`. Completeness of the restricted table search alone is the
-open bridge of [§2.2](#22-what-every-rule-inherits); the rerun stands in for
-it.
+open bridge of [§2.2](#22-what-every-rule-inherits); in a check the rerun
+stands in for it.
 
 **Answered requests.** The producer's candidate search asks the same subtype
 requests many times: for an expression it tries the claimed type and then
