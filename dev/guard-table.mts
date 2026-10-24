@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { guardClosure } from "../tools/guard-closure.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { installationRoot, nodeResolve, runtimeConditions } from "../tools/family-activation.mts";
-import { compareTags, type FamilyDescription, type GuardEntry, type GuardTable, type TagValue } from "../tools/host-families.mts";
+import { compareTags, type FamilyDescription, type GuardEntry, type GuardTable, type GuardUndefined, type TagValue } from "../tools/host-families.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -105,17 +105,24 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
       }
   }
 
-  // The recognition contract. A value is a function of the tag value `t`.
-  type Value = (t: TagValue) => boolean | TagValue;
+  // The recognition contract. A value is a function of the argument: the
+  // tag value `t` (a node guard's argument the node of tag `t`), or
+  // `undefined`, where it is evaluated as JavaScript evaluates the body
+  // (HOST-FAMILIES.md, "Undefined arguments"): the read of a member of
+  // `undefined` throws `ReadOfUndefined`, JavaScript's `TypeError`.
+  type Value = (t: TagValue | undefined) => boolean | TagValue | undefined;
   type Helper = { key: string; text: string };
   class Refused extends Error {}
+  class ReadOfUndefined extends Error {}
   const refuse = (reason: string): never => { throw new Refused(reason); };
   type Edge = [string, string, string, string];
-  const tagOf = (v: boolean | TagValue): TagValue => typeof v === "boolean" ? refuse("a test's answer read as a tag") : v;
+  const tagOf = (v: boolean | TagValue | undefined): TagValue | undefined =>
+    typeof v === "boolean" ? refuse("a test's answer read as a tag") : v;
   const constant = (e: ts.Expression, edges: Map<string, Edge>): TagValue | null => {
+    while (ts.isParenthesizedExpression(e)) e = e.expression;
     if (description.tag.primitive === "number" && ts.isNumericLiteral(e)) return Number(e.text);
     if (description.tag.primitive === "string" && ts.isStringLiteral(e)) return e.text;
-    if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === enumName &&
+    if (ts.isPropertyAccessExpression(e) && !e.questionDotToken && ts.isIdentifier(e.expression) && e.expression.text === enumName &&
         [...edges.values()].some(([, local]) => local === enumName)) {
       const v = constants.get(e.name.text);
       return v === undefined ? refuse(`${enumName} has no member ${e.name.text}`) : v;
@@ -172,8 +179,9 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
     // An operand: the tag, the parameter (a tag), the local holding the tag, or a constant.
     const operand = (e: ts.Expression): Value => {
       while (ts.isParenthesizedExpression(e)) e = e.expression;
+      if (ts.isPropertyAccessExpression(e) && e.questionDotToken) refuse(`${name} reads an optional chain`);
       if (role === "node" && ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === x &&
-          e.name.text === field) return (t) => t;
+          e.name.text === field) return (t) => { if (t === undefined) throw new ReadOfUndefined(); return t; };
       if (role !== "node" && ts.isIdentifier(e) && e.text === x) return (t) => t;
       if (local !== null && ts.isIdentifier(e) && e.text === local) return (t) => t;
       if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === enumName) {
@@ -192,18 +200,26 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
           const l = condition(e.left), r = condition(e.right);
           return op === ts.SyntaxKind.BarBarToken ? (t) => l(t) === true || r(t) === true : (t) => l(t) === true && r(t) === true;
         }
-        if (op === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+        // A comparison is of the argument's tag (or the argument) with a
+        // constant, one on each side.
+        const compared = (): [Value, Value] => {
           const l = operand(e.left), r = operand(e.right);
+          if ((constant(e.left, edges) === null) === (constant(e.right, edges) === null))
+            refuse(`${name} compares ${e.getText(tree)}, not its argument with a constant`);
+          return [l, r];
+        };
+        if (op === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+          const [l, r] = compared();
           return (t) => l(t) === r(t);
         }
         if (op === ts.SyntaxKind.GreaterThanEqualsToken || op === ts.SyntaxKind.LessThanEqualsToken) {
           if (role === "public") refuse(`${name}, a tag guard a program may call, tests a range`);
           if (description.tag.primitive !== "number") refuse(`${name} tests a range of a tag that is no number`);
-          const l = operand(e.left), r = operand(e.right);
+          const [l, r] = compared();
           return op === ts.SyntaxKind.GreaterThanEqualsToken ? (t) => Number(l(t)) >= Number(r(t)) : (t) => Number(l(t)) <= Number(r(t));
         }
       }
-      if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.arguments.length === 1) {
+      if (ts.isCallExpression(e) && !e.questionDotToken && ts.isIdentifier(e.expression) && e.arguments.length === 1) {
         const [arg] = e.arguments;
         const callee = e.expression.text;
         const declaredHere = functions.get(callee);
@@ -222,6 +238,7 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
         // The helper's domain: the node itself, or its tag.
         const onNode = role === "node" && ts.isIdentifier(arg) && arg.text === x;
         const argument = onNode ? null : operand(arg);
+        if (!onNode && constant(arg, edges) !== null) refuse(`${name} calls ${callee} on a constant`);
         const helperRole = onNode ? "node" : role === "public" ? "public" : "family";
         const v = analyze(helperPath, helper, helperRole, helpers, edges, depth + 1);
         helpers.set(`${helperPath}#${helperName}`, { key: `${helperPath}#${helperName}`, text: textOf(helperPath, helper) });
@@ -238,12 +255,14 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
       if (!d || first.declarationList.declarations.length !== 1 || !ts.isIdentifier(d.name) || !d.initializer)
         return refuse(`${name} declares more than its tag`);
       const tag = operand(d.initializer);
+      if (constant(d.initializer, edges) !== null) refuse(`${name} declares a constant`);
       local = d.name.text;
       const c = condition(second.expression);
       return (t) => c(tagOf(tag(t)));
     }
     if (statements.length === 1 && first && ts.isSwitchStatement(first)) {
       const subject = operand(first.expression);
+      if (constant(first.expression, edges) !== null) refuse(`${name} switches on a constant`);
       const cases: TagValue[] = [];
       let sawDefault = false;
       for (const clause of first.caseBlock.clauses) {
@@ -264,9 +283,28 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
         }
       }
       if (!sawDefault) refuse(`${name}'s switch has no default`);
-      return (t) => cases.includes(tagOf(subject(t)));
+      return (t) => {
+        const v = tagOf(subject(t));
+        return v !== undefined && cases.includes(v);
+      };
     }
     return refuse(`${name}'s body is outside the contract`);
+  };
+
+  // The audit of `undefined` (HOST-FAMILIES.md, "Undefined arguments"): the
+  // accepted body evaluated on `undefined` through the grammar, as on each
+  // tag value. Where the evaluation reads a member of `undefined` it throws
+  // a `TypeError` (`throws`); where it answers `false` it ran nothing else
+  // (`false`); otherwise, and for a kind the description does not admit,
+  // the domain obligation refuses `undefined` (`unadmitted`).
+  const onUndefined = (value: Value, kind: GuardEntry["kind"]): GuardUndefined => {
+    if (!description.undefinedInputs.includes(kind)) return "unadmitted";
+    try {
+      return value(undefined) === false ? "false" : "unadmitted";
+    } catch (error) {
+      if (error instanceof ReadOfUndefined) return "throws";
+      throw error;
+    }
   };
 
   const entries: GuardEntry[] = [];
@@ -283,7 +321,8 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
       const value = analyze(located.module, f, tagged ? "public" : "node", helpers, edges, 0);
       const tags = values.filter((t) => value(t) === true).map(nameOf);
       for (const h of helpers.values()) helperTexts.set(h.key, h.text);
-      entries.push({ name, kind: tagged ? "tag" : "node", domain, tags, module: located.module,
+      entries.push({ name, kind: tagged ? "tag" : "node", domain, tags,
+        onUndefined: onUndefined(value, tagged ? "tag" : "node"), module: located.module,
         helpers: [...helpers.keys()].sort(),
         edges: [...edges].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, e]) => e),
         text: textOf(located.module, f) });
@@ -312,8 +351,9 @@ if (import.meta.filename === resolve(process.argv[1] ?? "")) {
   const json = (v: unknown): string => JSON.stringify(v) ?? "";
   const text = `// Generated by dev/guard-table.mts from the audited installation; reviewed.
 // The compiler API's guard table (HOST-FAMILIES.md, "The guard table"):
-// each guard's export, kind, domain and exact tag set, its function's text
-// and resolution, and the helpers and bindings it reads.
+// each guard's export, kind, domain, exact tag set and behaviour on
+// \`undefined\`, its function's text and resolution, and the helpers and
+// bindings it reads.
 import type { GuardTable } from "./host-families.mts";
 
 export const compilerApiGuards: GuardTable = {
@@ -325,7 +365,7 @@ export const compilerApiGuards: GuardTable = {
 ${Object.entries(table.helpers).map(([k, t]) => `    ${json(k)}: ${json(t)},`).join("\n")}
   },
   guards: [
-${table.guards.map((e) => `    { name: ${json(e.name)}, kind: ${json(e.kind)}, domain: ${json(e.domain)}, tags: ${json(e.tags)},
+${table.guards.map((e) => `    { name: ${json(e.name)}, kind: ${json(e.kind)}, domain: ${json(e.domain)}, tags: ${json(e.tags)}, onUndefined: ${json(e.onUndefined)},
       module: ${json(e.module)}, helpers: ${json(e.helpers)}, edges: ${json(e.edges)},
       text: ${json(e.text)} },`).join("\n")}
   ],

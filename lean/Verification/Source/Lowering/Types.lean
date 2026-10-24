@@ -582,7 +582,7 @@ negation. -/
   | .nullishAssign p n np r => return .nullishAssign p n np (← comparisonsExpr fc r)
   | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
-  | .tagMember p d f ts e => return .tagMember p d f ts (← comparisonsExpr fc e)
+  | .tagMember p d f ts u e => return .tagMember p d f ts u (← comparisonsExpr fc e)
   | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .not p e => return .not p (← comparisonsExpr fc e)
   | .unary p op e => return .unary p op (← comparisonsExpr fc e)

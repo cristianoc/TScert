@@ -1128,15 +1128,17 @@ export function collectDeclarations(file: string, options: {
     };
     // The type an enum's name denotes where `at` writes it
     // (SOURCE-CONTRACTS.md, "Enums"; COMPILER-API.md, reading rule 3): at a
-    // position of a host declaration `number`, since TypeScript admits any
-    // number there and the flag enums hold combinations; elsewhere the union
-    // of its members' types.
+    // position of a host declaration, of an enum with a numeric member,
+    // `number`, since TypeScript admits any number there and the flag enums
+    // hold combinations; elsewhere, and for an enum of strings alone, which
+    // TypeScript admits nothing else at, the union of its members' types.
     const enumTypeAt = (identifier: Identifier, at: SourceFile, span: Span): TypeTerm | null => {
       const enums = enumsOf(identifier);
       if (!enums) return null;
       const what = `${idOf(at)}#${identifier.text}`;
       const members = enumMembersOf(enums, what);
-      if (isHostFile(at.fileName)) return { k: "atom", name: "number", span };
+      if (isHostFile(at.fileName) && !members.every(m => typeof m.value === "string"))
+        return { k: "atom", name: "number", span };
       const parts = members.map((m): TypeTerm =>
         m.value === undefined ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
       return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };

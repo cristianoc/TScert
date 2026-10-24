@@ -177,7 +177,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        | t,_ -> t)
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
-    | TypeofTest (_,_,e) | TagMember (_,_,e) -> ignore (expr env e); bool
+    | TypeofTest (_,_,e) | TagMember (_,_,_,e) -> ignore (expr env e); bool
     (* A string literal key is part of the test, not a claim site. *)
     | HasKey ({node=Literal (LString _);_},e) -> ignore (expr env e); bool
     | HasKey (k,e) -> ignore (expr env k); ignore (expr env e); bool

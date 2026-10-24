@@ -452,10 +452,12 @@ export function expr(this: Gate, node: Expression): Expr {
         !gate.libraryValues.has(gate.span(argument).join(":")))
       return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
+        onUndefined: guard.onUndefined,
         e: { k: "id", pos: gate.span(argument), name: gate.local(argument) } };
     if (guard && argument && !ts.isIdentifier(argument) && !node.questionDotToken)
       return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
+        onUndefined: guard.onUndefined,
         e: gate.expr(argument) };
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.

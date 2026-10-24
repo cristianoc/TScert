@@ -101,6 +101,9 @@ export const compilerApiFamily: FamilyDescription = {
   // (reading rule 1, checked by C3's walk).
   stable: { excluded: [] },
   guards: compilerApiGuards,
+  // The node guards' behaviour on `undefined`, audited per entry: each reads
+  // the tag first and throws a `TypeError` (COMPILER-API.md, "Guards").
+  undefinedInputs: ["node"],
 };
 
 /** The package's node builders (COMPILER-API.md, R2): the declaration

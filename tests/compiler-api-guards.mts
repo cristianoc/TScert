@@ -5,7 +5,8 @@
 // (`dev/guard-table.mts`, `--check` for the compiler API's module), and every
 // entry, run under Node on an object of each tag value (a tag guard on every
 // value around the tag values), answers exactly its tag set, and the same
-// with further arguments and another receiver, as a callback receives them.
+// with further arguments and another receiver, as a callback receives them;
+// and on `undefined`, each entry stating a behaviour there behaves so.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { spawnSync } from "node:child_process";
@@ -66,13 +67,45 @@ const runEntries = async (description: FamilyDescription): Promise<number> => {
       assert.equal(call(other, [input, 1, [input]]), expected, `${guard.name} with further arguments and a receiver`);
       calls += 2;
     }
+    // Its audited behaviour on `undefined` (HOST-FAMILIES.md, "Undefined
+    // arguments"), with and without further arguments and a receiver: a
+    // `TypeError`, or `false`. An unadmitted entry states none.
+    if (guard.onUndefined !== "unadmitted") {
+      const runs: (() => unknown)[] = [() => call(undefined, [undefined]), () => call(other, [undefined, 1, []])];
+      for (const run of runs) {
+        if (guard.onUndefined === "throws") assert.throws(run, TypeError, `${guard.name}(undefined) throws a TypeError`);
+        else assert.equal(run(), false, `${guard.name}(undefined) answers false`);
+        calls += 1;
+      }
+    }
   }
   return calls;
 };
 for (const description of [compilerApiFamily, stringFamily]) {
   const calls = await runEntries(description);
-  console.log(`C2, ${description.marker}: ${description.guards.guards.length} guards as generated, ${calls} calls under Node, each answering exactly its tag set; ` +
+  console.log(`C2, ${description.marker}: ${description.guards.guards.length} guards as generated, ${calls} calls under Node, each answering exactly its tag set and behaving on undefined as recorded; ` +
     `${description.guards.excluded.length} declared guards outside the contract: ${description.guards.excluded.map(([n]) => n).join(", ")}`);
+}
+// Descriptions forged to state another behaviour on `undefined`: a node
+// guard that throws stated `false`, a tag guard answering `false` stated
+// `throws`, and an entry for `isNameOrAbsent`, which answers `true` there,
+// stated `false`; each fails the run under Node.
+{
+  const named = (name: string): GuardEntry => {
+    const found = stringFamily.guards.guards.find(g => g.name === name);
+    assert.ok(found, name);
+    return found;
+  };
+  const forged: [string, GuardEntry][] = [
+    ["isName stated false", { ...named("isName"), onUndefined: "false" }],
+    ["isNameType stated throws", { ...named("isNameType"), onUndefined: "throws" }],
+    ["isNameOrAbsent stated false", { ...named("isName"), name: "isNameOrAbsent", onUndefined: "false",
+      text: "export function isNameOrAbsent(node) {\n    return node === undefined || node.type === UnitType.Name;\n}" }],
+  ];
+  for (const [what, entry] of forged)
+    await assert.rejects(runEntries({ ...stringFamily, guards: { ...stringFamily.guards, guards: [entry] } }),
+      `${what}: the run under Node refuses it`);
+  console.log(`C2, forged behaviour on undefined: ${forged.map(([w]) => w).join(", ")}, each refused under Node`);
 }
 
 // The table's activation (HOST-FAMILIES.md, "The guard table"): the reviewed

@@ -135,15 +135,18 @@ alone, which `tagMember` checks on the edge. -/
     else
       joinContexts Γ (conditionContext G scope Γ left answer arrays single original)
         (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original) right answer arrays single original)
-  | .tagMember _ _ field tags (.var _ saved) =>
+  | .tagMember _ _ field tags onUndefined (.var _ saved) =>
     -- A family guard's test leaves the name's type, or its object's arms, as
     -- its answer's yields state them (`PromiseCalls.memberYield`); a saved
     -- operand, the name it was read from (`LoweringAtoms.memberNodes`).
+    -- `undefined` answers no `true`, and where it throws, no `false` either
+    -- (`guard-undefined`).
     let name := if (memberSlot scope (original saved)).isSome then original saved else saved
     match memberSlot scope name with
     | none => Γ
     | some i =>
       let A := Γ[i]?.getD []
+      let A := if answer || onUndefined == .throws then BranchRefinement.tagSlice G A .isUndef false else A
       Γ.set i (match field with
         | none => PromiseCalls.memberSlotSlice G A tags answer
         | some f => PromiseCalls.memberFieldSlice G A f tags answer [])

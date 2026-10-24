@@ -118,8 +118,8 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
     | .cast pos annot a => operand root a "value" fun a => do pure (atom (.cast pos annot (readSaved a)))
     | .shapeTest pos tag equal a => operand root a "value" fun a => do
         pure (atom (.shapeTest pos tag equal (readSaved a)))
-    | .tagMember pos domain field tags a => operand root a "value" fun a => do
-        pure (atom (.tagMember pos domain field tags (readSaved a)))
+    | .tagMember pos domain field tags u a => operand root a "value" fun a => do
+        pure (atom (.tagMember pos domain field tags u (readSaved a)))
     | .read pos field a => operand root a "receiver" fun a => do pure (atom (.read pos field (readSaved a)))
     | .equality pos equal left right => operand root left "value" fun left => do
         operand root right "value" fun right => do pure (atom (.equality pos equal (readSaved left) (readSaved right)))
