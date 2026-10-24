@@ -676,6 +676,15 @@ export function collectDeclarations(file: string, options: {
     // the host packages and any installed package.
     const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
       !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
+    // The verifier's declaration file (`resolvable.d.ts`): the repository's,
+    // or a file of exactly its bytes, which declares the same aliases (the
+    // census's copy of tools/ holds one).
+    let verifierText: string | null = null;
+    const verifierFile = (file: SourceFile): boolean => {
+      if (file.fileName === resolvableDeclaration) return true;
+      verifierText ??= readText(resolvableDeclaration);
+      return file.text === verifierText;
+    };
     // Statements (`Within<F, T>`, SOURCE-ELABORATION.md, "Stated effects"):
     // a reference to the verifier's `Within`, by the declaration TypeScript
     // binds it to. A statement is the program's own: one written outside the
@@ -687,7 +696,7 @@ export function collectDeclarations(file: string, options: {
     const verifierAlias = (identifier: Identifier): string | null => {
       const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
       return declaration && ts.isTypeAliasDeclaration(declaration) &&
-        declaration.getSourceFile().fileName === resolvableDeclaration ? declaration.name.text : null;
+        verifierFile(declaration.getSourceFile()) ? declaration.name.text : null;
     };
     const ambient = (node: Node): boolean => {
       for (let at: Node | undefined = node; at; at = at.parent)
@@ -784,7 +793,7 @@ export function collectDeclarations(file: string, options: {
       });
       // The verifier's `Within` and `Footprint` are no types: a statement
       // is read at a signature's result (`statedResult`), and nowhere else.
-      if (nodes.some(n => ts.isTypeAliasDeclaration(n) && n.getSourceFile().fileName === resolvableDeclaration &&
+      if (nodes.some(n => ts.isTypeAliasDeclaration(n) && verifierFile(n.getSourceFile()) &&
           (n.name.text === "Within" || n.name.text === "Footprint")))
         throw Error(`${WITHIN_PLACE}: ${what}`);
       for (const statement of statementsOnPath(checker, identifier))
@@ -2266,12 +2275,12 @@ export function collectDeclarations(file: string, options: {
           options.awaited?.(span);
           continue;
         }
-        if (ts.isTypeAliasDeclaration(declaration) && declaration.getSourceFile().fileName === resolvableDeclaration &&
+        if (ts.isTypeAliasDeclaration(declaration) && verifierFile(declaration.getSourceFile()) &&
             declaration.name.text === "Within") {
           options.within?.(span);
           continue;
         }
-        if (ts.isTypeAliasDeclaration(declaration) && declaration.getSourceFile().fileName === resolvableDeclaration &&
+        if (ts.isTypeAliasDeclaration(declaration) && verifierFile(declaration.getSourceFile()) &&
             (declaration.name.text === "Resolvable" || declaration.name.text === "Awaitable")) {
           resolutionContextAt ??= span;
           if (declaration.name.text === "Resolvable") options.resolvable?.(span);

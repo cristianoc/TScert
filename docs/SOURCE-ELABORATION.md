@@ -3118,7 +3118,9 @@ A written signature's result annotation may state the signature's effect:
 `Within<F, T>`, with `Within` the verifier's declaration in
 [`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which TypeScript reads
 as `T`. A reference is a statement where TypeScript binds its name to that
-declaration, never by its spelling. $`F`$ is a type literal written in place,
+declaration, never by its spelling: an alias of the repository's file, or of
+a file of exactly its bytes, which declares the same aliases (the census's
+copy of `tools/` holds one). $`F`$ is a type literal written in place,
 `{ value: "keep" | "any"; store: "keep" | "grow" | "any" }`, with
 `onThrow: true` where the footprint holds on a throw too. With
 $`\epsilon(F)`$ the effect of that closed footprint and flag, no promise, no

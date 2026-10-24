@@ -434,7 +434,7 @@ export function initializedBefore(this: Gate, at: Node, targets: [PatternAst, Ex
   for (const [t, d] of targets) visit(t, d);
 }
 
-export function inert(this: Gate, e: Node): boolean {
+export function inert(this: Gate, e: Node): Within<{ value: "keep"; store: "keep" }, boolean> {
   const gate: Gate = this;
   if (ts.isNumericLiteral(e) || ts.isBigIntLiteral(e) || ts.isStringLiteral(e) ||
       ts.isNoSubstitutionTemplateLiteral(e) || ts.isIdentifier(e) || ts.isArrowFunction(e) ||
@@ -473,7 +473,7 @@ export function inert(this: Gate, e: Node): boolean {
   return false;
 }
 
-export function patternDefaults(this: Gate, node: ts.BindingName): Node[] {
+export function patternDefaults(this: Gate, node: ts.BindingName): Within<{ value: "keep"; store: "keep" }, Node[]> {
   const gate: Gate = this;
   if (ts.isIdentifier(node)) return [];
   return node.elements.flatMap((el): Node[] => ts.isOmittedExpression(el) ? []
@@ -481,7 +481,7 @@ export function patternDefaults(this: Gate, node: ts.BindingName): Node[] {
 }
 
 export function steppedPattern(this: Gate, fresh: boolean,
-    elements: { node: Node; hole: boolean; before: Node[]; after: Node[] }[]): void {
+    elements: { node: Node; hole: boolean; before: Node[]; after: Node[] }[]): Within<{ value: "any"; store: "keep" }, void> {
   const gate: Gate = this;
   if (fresh) return;
   let last = -1;

@@ -293,7 +293,7 @@ export class Gate {
   readonly renames: Map<string, string> = new Map();
   /** The fragment's name of a value binding or reference spelled by `id`:
    * its own text, unless it is or names a shadowing local (`renames`). */
-  local(id: Identifier): string {
+  local(id: Identifier): Within<{ value: "keep"; store: "keep" }, string> {
     return this.renames.get(`${id.getStart(this.file)}:${id.end}`) ?? id.text;
   }
   /** The class whose instance members are being lowered: its own name reads
@@ -401,13 +401,13 @@ export class Gate {
     return { strict: skip.size > 0, skip };
   }
 
-  hasTypeParam(name: string): boolean {
+  hasTypeParam(name: string): Within<{ value: "keep"; store: "keep" }, boolean> {
     return this.typeParamScopes.some((scope) => scope.has(name));
   }
 
   /** The name a type parameter in scope is emitted under: its spelling, or,
    * for a class's generic method, its member's binder name (`lambda`). */
-  typeParamName(name: string): string {
+  typeParamName(name: string): Within<{ value: "any"; store: "keep" }, string> {
     for (const scope of this.typeParamScopes) {
       const emitted = scope.get(name);
       if (emitted !== undefined) return emitted;
@@ -525,7 +525,7 @@ export class Gate {
     );
   }
 
-  span(node: Node): Span {
+  span(node: Node): Within<{ value: "keep"; store: "keep" }, Span> {
     return [node.getStart(this.file), node.end];
   }
 
