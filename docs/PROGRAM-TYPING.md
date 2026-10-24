@@ -2708,7 +2708,8 @@ target claim, whatever its slots, links and implications:
 ```
 
 `checkTargetResult` and `checkBranchTargetResult` accept it
-(`ControlFlow.unsatisfiable`) once the target exists, and
+(`ControlFlow.unsatisfiable`, which reads a slot's labels until one is not a
+clause row without clauses) once the target exists, and
 `unsatisfiable_sound` proves no environment meets $`\Gamma`$, so
 `target_state`, `branch_target_state` and `witness_edge_sound` have no case
 to establish. A call

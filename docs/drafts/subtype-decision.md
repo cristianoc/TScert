@@ -800,12 +800,12 @@ at their source expression obligation.
 
 **Measured against the expectation**, 2026-10-24, after the steps
 [WORK](../../WORK.md#status) lists, census medians, search CPU today →
-measured: `moduleFunction` 29.1 → 5.8 s, `inertRead` 21.1 → 4.8,
-`resolve` 20.4 → 4.3, `forOfPattern` 115.0 → 4.5, `pattern` 15.1 → 2.4,
-`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.6, `closeStatements` 1.2 → 1.2;
-check CPU `moduleFunction` 5.0 → 2.9, `inertRead` 3.6 → 2.5, `resolve`
-3.4 → 2.3. Each lies within its expected interval. The width series is
-0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.52 / 0.86 / 1.06 / 1.63 / 2.49 s. The
+measured: `moduleFunction` 29.1 → 5.3 s, `inertRead` 21.1 → 4.4,
+`resolve` 20.4 → 3.9, `forOfPattern` 115.0 → 4.3, `pattern` 15.1 → 2.3,
+`patternDefaults` 0.8 → 0.5, `collect` 1.7 → 1.5, `closeStatements` 1.2 → 1.1;
+check CPU `moduleFunction` 5.0 → 2.7, `inertRead` 3.6 → 2.4, `resolve`
+3.4 → 2.2. Each lies within its expected interval. The width series is
+0.88 / 7.55 / 18.6 / 54.6 / 137.6 → 0.52 / 0.85 / 1.04 / 1.62 / 2.46 s. The
 width criterion is on the part the design acts on: the sampled time outside
 the front end (reading the fragment and the claims, lowering and freezing
 them) and the evidence write, at width 136 within 12 times its time at
@@ -841,7 +841,9 @@ inclusions it established from their proofs; a node's known derivation found
 by a key of its claim; discovery computing a row's demand once, when it inserts
 the row, and each row's target clauses with their index once for its demand,
 its deletion rounds and its validation; search's comparisons not redone
-without selection. Each step's measurement is WORK's row.
+without selection; an edge's unsatisfiable context decided reading each
+slot's labels until one has a clause. Each step's measurement is WORK's
+row.
 
 Remaining, by measured cost:
 

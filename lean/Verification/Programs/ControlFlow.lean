@@ -193,18 +193,24 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
-/-- A context no environment meets: one of its slots has a type no value
-meets. -/
+/-- A context no environment meets: one of its slots has a type of clause
+rows none of which holds a clause, which no value meets. Each slot's labels
+are read until one has a clause. -/
 @[nospecialize] def unsatisfiable (G : NormalGraph ι) (Γ : List (Ty ι)) : Bool :=
-  Γ.any fun A => G.plainTy A && (expand G A).isEmpty
+  Γ.any fun A => A.all fun a => G.plain a && (G.rows a).isEmpty
 
 theorem unsatisfiable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}
     (hu : unsatisfiable G Γ = true) (he : EnvOk G Γ ρ n W) : False := by
   obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hu
-  simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
+  simp only [Bool.and_eq_true, List.all_eq_true, List.isEmpty_iff] at hnil
+  have hplain : G.plainTy A = true := List.all_eq_true.mpr fun a ha => (hnil a ha).1
+  have hexp : expand G A = [] := by
+    rw [expand_of_plain hplain, clausesOf, List.flatMap_eq_nil_iff]
+    intro a ha
+    simp [NormalGraph.clauses, (hnil a ha).1, (hnil a ha).2]
   obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
-  have hm := (expand_sem G A hnil.1 n W _).mp (he.2 i A hi)
-  rw [hnil.2] at hm
+  have hm := (expand_sem G A hplain n W _).mp (he.2 i A hi)
+  rw [hexp] at hm
   obtain ⟨_, hmem, _⟩ := hm
   cases hmem
 
