@@ -38,28 +38,54 @@ Appending slots preserves every original variable index. Each transfer carries
 those inputs past the original destination mapping. The result is used only
 inside diagnostic checking and cannot become a source acceptance result. -/
 @[nospecialize] private def assumeNodes {σ ι : Type} [Labels ι] [StoreView σ ι]
-    (r : SourceRequest σ ι) (holes : List Nat) (obligations : List Span) : SourceRequest σ ι := Id.run do
+    (r : SourceRequest σ ι) (holes : List Nat) (obligations : List Span)
+    (edges : List (Nat × Nat × Nat)) : SourceRequest σ ι := Id.run do
   let holes := holes.eraseDups.filter fun label =>
     (r.claims[label]?).any fun c => !ControlFlow.unsatisfiable (StoreView.graph r.types) [c.type]
   let regions :=  holes.filterMap fun l => ((r.sourceMap[l]?).bind id).map (·.pos)
   let supplied := holes.map fun label => ((r.claims[label]?).map (·.type)).getD []
-  let target (size : Nat) (t : Target) : Target :=
-    let count := ((r.claims[t.label]?).map (·.context.length)).getD 0
-    { t with mapping := some ((List.range count).map (PointClaims.slot t.mapping) ++
-      (List.range supplied.length).map (size + ·)) }
+  let edgeSlots := edges.map fun (source, index, destination) => Id.run do
+    let some node := r.program[source]? | return []
+    let some claim := r.claims[source]? | return []
+    let normal := CertificateProducer.successors node.continuation
+    let some edge := (normal[index]?) <|> node.handler | return []
+    let available := if index == normal.length then
+        none :: claim.context.map some
+      else match node.continuation with
+        | .bind _ | .branchBind .. | .tagBind .. => (claim.type :: claim.context).map some
+        | .ret | .effect _ | .branch .. => claim.context.map some
+    let context := ((r.claims[destination]?).map (·.context)).getD []
+    return context.zipIdx.filter fun (A, slot) =>
+      ((available[PointClaims.slot edge.mapping slot]?).bind id) != some A
+  let edgeInputs := edgeSlots.map fun slots => slots.map (·.1)
+  let expressionInputs := supplied.length
+  let supplied := supplied ++ edgeInputs.flatten
+  let target (label index size : Nat) (t : Target) : Target :=
+    match edges.findIdx? (fun (source, edge, _) => source == label && edge == index) with
+    | some i =>
+      let offset := expressionInputs + (edgeInputs.take i).flatten.length
+      let slots := (edgeSlots[i]?).getD []
+      { t with mapping := some ((List.range (((r.claims[t.label]?).map (·.context.length)).getD 0)).map
+          (fun slot => match slots.findIdx? (fun (_, j) => j == slot) with
+            | some j => size + offset + j
+            | none => PointClaims.slot t.mapping slot) ++ (List.range supplied.length).map (size + ·)) }
+    | none =>
+      let count := ((r.claims[t.label]?).map (·.context.length)).getD 0
+      { t with mapping := some ((List.range count).map (PointClaims.slot t.mapping) ++
+        (List.range supplied.length).map (size + ·)) }
   let program := r.program.zipIdx.map fun (node, label) =>
     let size := ((r.claims[label]?).map (·.context.length)).getD 0
     let continuation := match node.continuation with
       | .ret => .ret
-      | .bind t => .bind (target (size + 1) t)
-      | .effect t => .effect (target size t)
-      | .branch a b => .branch (target size a) (target size b)
-      | .branchBind a b => .branchBind (target (size + 1) a) (target (size + 1) b)
-      | .tagBind tag a b => .tagBind tag (target (size + 1) a) (target (size + 1) b)
+      | .bind t => .bind (target label 0 (size + 1) t)
+      | .effect t => .effect (target label 0 size t)
+      | .branch a b => .branch (target label 0 size a) (target label 1 size b)
+      | .branchBind a b => .branchBind (target label 0 (size + 1) a) (target label 1 (size + 1) b)
+      | .tagBind tag a b => .tagBind tag (target label 0 (size + 1) a) (target label 1 (size + 1) b)
     let expression := match holes.idxOf? label with
       | some i => Tm.var (size + i)
       | none => node.expression
-    { node with expression, continuation, handler := node.handler.map (target (size + 1)) }
+    { node with expression, continuation, handler := node.handler.map (target label (CertificateProducer.successors node.continuation).length (size + 1)) }
   let shapes := program.flatMap fun node => graphShapes node.expression
   let retained := r.codes.zipIdx.filter fun (q, _) =>
     shapes.contains (q.entry.arity, q.entry.exprs, q.entry.conts, q.entry.start)
@@ -70,12 +96,13 @@ inside diagnostic checking and cannot become a source acceptance result. -/
     inputs := r.inputs ++ supplied
     claims := r.claims.map (fun c => { c with context := c.context ++ supplied }),
     nodePlans := [],
+    assertions := r.assertions.filter fun (label, _) => !edges.any (fun (_, _, destination) => destination == label),
     obligations := (r.obligations.filter fun o => !obligations.contains o.pos &&
       !regions.any (fun p => p.1 ≤ o.pos.1 && o.pos.2 ≤ p.2)).map fun o =>
       { o with sequent := { o.sequent with context := o.sequent.context ++ supplied } } }
 
 /-- Only structured expression failures select another opaque expression.
-Edges, promises, effects and certificate rejection keep their obligations. -/
+Promises, effects and certificate rejection keep their obligations. -/
 private def failedExpression (reason : String) : Option Span := do
   let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
   let record ← (Json.parse raw).toOption
@@ -86,6 +113,36 @@ private def failedExpression (reason : String) : Option Span := do
     else if kind == "expression-claim" then (record.getObjVal? "sourceMap").toOption
     else none
   (jSpan origin "pos").toOption
+
+/-- Prefer the failing node itself when the diagnostic names this exact graph.
+A closure's node can share a label or span with a surrounding expression. -/
+private def failedLabel (reason : String) (program : Program) : Option Nat := do
+  let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
+  let record ← (Json.parse raw).toOption
+  if (record.getObjValAs? String "kind").toOption != some "node-typing" then none else do
+    let source ← (record.getObjVal? "source").toOption
+    let label ← (source.getObjValAs? Nat "label").toOption
+    let node ← (source.getObjVal? "node").toOption
+    if (program[label]?).any (fun n => toJson n == node) then some label else none
+
+/-- An edge retry uses the structured source and destination, including their
+positions, so a nested closure's labels cannot select the enclosing graph. -/
+private def failedEdge (reason : String) (program : Program) : Option (Nat × Nat × Nat × Span × Span) := do
+  let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
+  let record ← (Json.parse raw).toOption
+  if (record.getObjValAs? String "kind").toOption != some "edge-coverage" then none else do
+    let source ← (record.getObjVal? "source").toOption
+    let destination ← (record.getObjVal? "destination").toOption
+    let label ← (source.getObjValAs? Nat "label").toOption
+    let target ← (destination.getObjValAs? Nat "label").toOption
+    let index ← (record.getObjValAs? Nat "edgeIndex").toOption
+    let sourceNode ← (source.getObjVal? "node").toOption
+    let destinationNode ← (destination.getObjVal? "node").toOption
+    if !(program[label]?).any (fun n => toJson n == sourceNode) ||
+        !(program[target]?).any (fun n => toJson n == destinationNode) then none else do
+      let origin ← (source.getObjVal? "sourceMap").toOption
+      let to ← (destination.getObjVal? "sourceMap").toOption
+      pure (label, index, target, ← (jSpan origin "pos").toOption, ← (jSpan to "pos").toOption)
 
 /-- Inspect every extracted expression obligation and graph node. Failure of
 shared equation preparation leaves the entire document unexamined. Failure
@@ -131,6 +188,7 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
         let beforeLocal := unexamined
         let mut assumed : List Nat := []
         let mut assumedObligations : List Span := []
+        let mut assumedEdges : List (Nat × Nat × Nat) := []
         let mut assumedRegions : List Json := []
 
         let G := StoreView.graph r.types
@@ -201,21 +259,35 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
           allChecked := false
         else
           let mut checked := false
-          -- Every retry must remove a previously retained expression, so the
-          -- number of attempts is bounded by the original graph's size.
-          for _ in List.range (r.program.length + 1) do
-            let approximation := assumeNodes r assumed assumedObligations
+          -- Each retry replaces one expression or one of at most three
+          -- outgoing edges per node (two normal destinations and a handler).
+          for _ in List.range (r.program.length * 4 + 1) do
+            let approximation := assumeNodes r assumed assumedObligations assumedEdges
             match produceFrozenPlans F [.graph name namePos approximation] fuel with
             | .ok _ =>
               checked := true
               break
             | .error reason =>
               failures := failures ++ [occurrence "aggregate" namePos reason true]
+              if let some (source, index, destination, origin, to) := failedEdge reason approximation.program then
+                let edge := (source, index, destination)
+                let originsAgree := ((r.sourceMap[source]?).bind id).any (·.pos == origin) &&
+                  ((r.sourceMap[destination]?).bind id).any (·.pos == to)
+                let inhabited := (r.claims[destination]?).any fun c =>
+                  c.context.all fun A => !ControlFlow.unsatisfiable G [A]
+                if originsAgree && inhabited && !assumedEdges.contains edge then
+                  assumedEdges := assumedEdges ++ [edge]
+                  assumedRegions := assumedRegions ++ [
+                    occurrence "search" origin "opaque edge supplies destination values from fresh inputs",
+                    occurrence "search" to "opaque incoming interface supplied by fresh inputs"]
+                  continue
               let some pos := failedExpression reason | break
               let candidates := r.sourceMap.zipIdx.filter fun (entry, label) =>
                 !assumed.contains label && entry.any (fun e => e.pos.1 ≤ pos.1 && pos.2 ≤ e.pos.2) &&
                 (r.claims[label]?).any (fun c => !ControlFlow.unsatisfiable G [c.type])
-              let candidate := candidates.foldl (fun best next => match best, next.1 with
+              let exact := (failedLabel reason approximation.program).bind fun label =>
+                candidates.find? (fun (_, i) => i == label)
+              let candidate := exact <|> candidates.foldl (fun best next => match best, next.1 with
                 | none, some _ => some next
                 | some (some previous, _), some current =>
                   if current.pos.2 - current.pos.1 < previous.pos.2 - previous.pos.1 then some next else best

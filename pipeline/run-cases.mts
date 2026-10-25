@@ -31,6 +31,11 @@ export function runCase(test: Case): Promise<Outcome> {
           if (report.completed) assert.ok(report.unexamined.length > 0, "recovered expressions remain holes");
         }
         const text = readFileSync(file, "utf8");
+        for (const site of test.diagnosticHoles ?? []) {
+          const at = text.indexOf(site);
+          assert.ok(at >= 0 && report.unexamined.some(o => o.pos[0] <= at && at + site.length <= o.pos[1]),
+            `${test.file}: diagnostic coverage retained opaque region ${site}`);
+        }
         for (const site of test.diagnosticSites) {
           const at = text.indexOf(site);
           assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] === at && o.pos[1] <= at + site.length + 1),

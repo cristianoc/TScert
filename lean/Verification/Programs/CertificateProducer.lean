@@ -1603,10 +1603,12 @@ where
 
 /-- An edge's implications in the target's slots: each the source states, at
 every pair of target slots the mapping reads it from. -/
-def projectImplications (xs : List (PromiseCalls.Implication ι)) (m : PointClaims.Mapping) (width : Nat) :
-    List (PromiseCalls.Implication ι) :=
-  (List.range width).flatMap fun t => (List.range width).filterMap fun a =>
-    (xs.find? fun x => x.test == PointClaims.slot m t && x.target == PointClaims.slot m a).map
+@[nospecialize] def projectImplications (xs : List (PromiseCalls.Implication ι))
+    (m : PointClaims.Mapping) (width : Nat) : List (PromiseCalls.Implication ι) :=
+  if xs.isEmpty then [] else
+  let slots := (List.range width).map fun i => (i, PointClaims.slot m i)
+  slots.flatMap fun (t, sourceTest) => slots.filterMap fun (a, sourceTarget) =>
+    (xs.find? fun x => x.test == sourceTest && x.target == sourceTarget).map
       fun x => ⟨t, a, x.type⟩
 
 /-- What every predecessor of a merge establishes, in the merge's slots: an

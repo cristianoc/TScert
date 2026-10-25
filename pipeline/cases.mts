@@ -23,6 +23,8 @@ export interface Case {
   /** Source fragments at which a diagnostic run must retain a refusal. */
   diagnosticSites?: string[];
   diagnosticCompleted?: boolean;
+  /** Source regions excluded from diagnostic coverage. */
+  diagnosticHoles?: string[];
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -51,6 +53,11 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...negative("diagnostic-uninhabitable", "An empty destination contract cannot become a fresh diagnostic input."),
+    diagnosticSites: ["value;"], diagnosticCompleted: false },
+  { ...negative("diagnostic-edge", "Incoming interfaces recover at explicit assumed values; ordinary storage contracts remain required."),
+    diagnosticSites: ["result = value", "return result;"],
+    diagnosticHoles: ["result = value", "return result;"], diagnosticCompleted: true },
   { ...negative("diagnostic-closure", "Aggregate expression recovery records the enclosing closure as opaque."),
     diagnosticSites: ["value as string", "value as number"], diagnosticCompleted: true },
   { ...gap("diagnostic-planning", "Diagnostic planning retains later expression obligations.", "unsupported", "source", /`in` with the key 'name'/),

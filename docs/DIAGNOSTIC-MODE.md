@@ -38,8 +38,8 @@ expected type, or `unknown`. A failed declaration preserves its name and
 storage mode at its annotation, or `unknown`; existing storage contracts stay
 fixed. Failed binding reads supply `unknown` and continue through the remaining
 bindings. Statement and binding recovery forget field observations and widen
-local slots to their contracts. Control-flow edges remain those of the supplied
-graph. A function analysis that refuses outside these boundaries yields empty
+local slots to their contracts. Control-flow destinations remain those of the supplied
+graph; aggregate recovery can replace a failed edge's value mapping as described below. A function analysis that refuses outside these boundaries yields empty
 claims, allowing sibling functions to be analyzed. These approximations can
 create or hide downstream failures. They carry no effect guarantee.
 
@@ -117,17 +117,27 @@ as uninhabitable are excluded. Failed standalone expression obligations and
 obligations inside a replaced expression are opaque. Code absent from the
 resulting expressions, including their nested closures, needs no certificate.
 The resulting graph receives ordinary search and certificate checking again.
-A structured expression failure from aggregate search selects the smallest
-retained source expression containing its span, including an enclosing closure
+A structured expression failure from aggregate search selects its exact node
+when the diagnostic names that node in the retained graph; otherwise it selects
+the smallest retained source expression containing its span, including an enclosing closure
 expression when the failure is inside its body. That expression becomes a
-fresh assumed input and its whole region is opaque. Each retry removes a
-previously retained expression, bounding retries by the original node count.
-Candidates with uninhabitable supplied types are excluded. An absent candidate,
-or an edge, promise, footprint or certificate failure, ends these retries.
+fresh assumed input and its whole region is opaque. A structured incoming-edge failure in the unit's own graph can replace that
+edge's mismatching destination slots with fresh assumed inputs at their stated
+types. Slots whose mapped source type equals their destination type retain their
+original mapping. The source and destination regions are opaque. The destination's stated
+heap requirements are discarded; later expressions must establish their claims
+under the resulting approximation. Normal destinations and exception handlers
+retain their labels. Every fresh input is carried through all transfers.
+A destination with a slot type the graph recognizes as uninhabitable is excluded.
+Each retry replaces a previously retained expression or edge, bounding retries
+by four times the original node count: one expression, at most two normal
+edges and one handler per node. Candidates with uninhabitable supplied result
+types are excluded. An absent candidate, a repeated edge failure, or a promise,
+footprint or certificate failure ends these retries.
 A successful retry completes that unit; its replaced regions remain holes.
-These inputs assume fixed values throughout a unit invocation and supply no
+Expression and edge inputs assume fixed values throughout a unit invocation and supply no
 heap effects or output facts. They can hide failures that depend on repeated
-execution or mutation inside the opaque expression. The initial whole-program
+execution or mutation inside an opaque region. The initial whole-program
 attempt and the retries use the ordinary search and checking operations;
 their evidence is discarded. Imported program values are read at their declared
 contracts; the diagnostic parser does not certify imported module bodies.

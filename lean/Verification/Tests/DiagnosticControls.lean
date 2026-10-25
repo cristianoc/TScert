@@ -39,4 +39,13 @@ private def promised : List (Failure Nat) :=
 #guard promised.any fun | .expression 0 => true | _ => false
 #guard promised.any fun | .promise 0 [0] [2] => true | _ => false
 
+-- Projection order and the first duplicate matter to deterministic search.
+-- Repeated destination slots retain each alias while cached lookups avoid
+-- rescanning the mapping inside the quadratic implication projection.
+#guard
+  let xs : List (PromiseCalls.Implication Nat) :=
+    [⟨1, 0, [5]⟩, ⟨1, 0, [99]⟩, ⟨0, 1, [7]⟩]
+  (projectImplications xs (some [1, 0, 1]) 3).map (fun x => (x.test, x.target, x.type)) ==
+    [(0, 1, [5]), (1, 0, [7]), (1, 2, [7]), (2, 1, [5])]
+
 end Verification.DiagnosticControls
