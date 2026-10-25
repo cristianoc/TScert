@@ -441,6 +441,60 @@ control(async (): Promise<void> => {
   assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
 });
 control(async (): Promise<void> => {
+  // A module document whose kept function reads a function the document
+  // leaves out, which no source makes: the parser leaves the reader out with
+  // it (`invalid-absent-callee-value-import`). The producer's run of the
+  // module refuses the unbound name where the reader reads it.
+  const certified = run("certified-value-import");
+  const fragments = [0, 1, 2, 3].map((i) => join(certified, `module-${i}.fragment.json`)).filter(present);
+  const fragment = must(fragments.find((f) => readFragmentFile(f).file === "./certified.ts"), "certified.ts's module run");
+  const module = readFragmentFile(fragment);
+  assert.ok(module.functions.some((f) => f.name === "describe"), "`label` reads `describe`");
+  module.functions = module.functions.filter((f) => f.name !== "describe");
+  const forged = join(certified, "forged-absent-callee.json");
+  writeFileSync(forged, JSON.stringify(module));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", forged]));
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(certified, "forged-absent-callee-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposal = tested(producerCall(producerExecutable, [forged, flow]));
+  assert.equal(proposal.status, 2, proposal.stdout + proposal.stderr);
+  const source = readFileSync(join(here, "imports-project", "certified.ts"), "utf8");
+  const read = source.indexOf("describe(n)");
+  assert.equal(proposal.stderr,
+    `unsupported: unbound name describe at [${read},${read + "describe".length})\nend of refusal\n`);
+  // A spread argument's operand is read as a name, apart from the
+  // expression typing every other read: renamed to a name nothing binds,
+  // it is refused at the operand.
+  const readable = run("array-readable");
+  const spreadSource = readFileSync(join(here, "examples", "array-readable.ts"), "utf8");
+  const operand = spreadSource.indexOf("...source") + "...".length;
+  let renamed = 0;
+  const rename = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(rename);
+    if (!v || typeof v !== "object") return v;
+    const entries = Object.entries(v).map(([k, x]): [string, unknown] => [k, rename(x)]);
+    const node = Object.fromEntries(entries);
+    if (node.k === "id" && node.name === "source" && Array.isArray(node.pos) && node.pos[0] === operand) {
+      renamed++;
+      return { ...node, name: "missing" };
+    }
+    return node;
+  };
+  const spreadForged = join(readable, "forged-unbound-spread.json");
+  writeFileSync(spreadForged, must(JSON.stringify(rename(readFragmentFile(join(readable, "fragment.json")))), "the forged document"));
+  assert.equal(renamed, 1, "the spread operand `source` is one node");
+  const spreadLowered = tested(verifierCall(verifier, ["--lower-control-flow", spreadForged]));
+  assert.equal(spreadLowered.status, 0, spreadLowered.stderr);
+  const spreadFlow = join(readable, "forged-unbound-spread-flow.json");
+  writeFileSync(spreadFlow, spreadLowered.stdout);
+  const spread = tested(producerCall(producerExecutable, [spreadForged, spreadFlow]));
+  assert.equal(spread.status, 2, spread.stdout + spread.stderr);
+  assert.equal(spread.stderr,
+    `unsupported: unbound name missing at [${operand},${operand + "source".length})\nend of refusal\n`);
+  process.stdout.write("a read of a name its document does not bind, a call's and a spread operand's: the producer refuses it at the read\n");
+});
+control(async (): Promise<void> => {
   // A generic method's argument pack `P` beside a nested generic method
   // binding its own `P` is a pack: the inner `P` is that method's value binder.
   // The outer `P` used also as a value inside a nested method binding only `Q`

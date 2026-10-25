@@ -5,10 +5,6 @@ open Type_queries
    retries and closure bodies share this state; separate runs receive fresh
    state. These observations explain proposals without changing acceptance. *)
 let unsupported s = Json.fail ("unsupported: " ^ s)
-(* A source span as diagnostics write it, `[start,end)`. *)
-let span_text = function
-  | Json.Array [Json.Number a; Json.Number b] -> "[" ^ a ^ "," ^ b ^ ")"
-  | _ -> "an unknown span"
 
 type state = {
   explaining : bool ref;

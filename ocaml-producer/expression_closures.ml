@@ -59,8 +59,8 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
     (* A class value whose code is that of the class value named, bound
        before its static initializers, which construct the class through it:
        that one's construct signatures, with the class's static fields. *)
-    | Ctor ({node=Id h;_},statics) ->
-      (match declared_head declarations [] (binding_type (lookup env h)) with
+    | Ctor ({node=Id h;pos},statics) ->
+      (match declared_head declarations [] (binding_type (lookup ~at:pos env h)) with
        | Atoms [Ctors (signatures,[])] ->
          (* The signatures it is offered, as a constructor's own are. *)
          let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in

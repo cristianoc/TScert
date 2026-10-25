@@ -47,8 +47,9 @@ open S
           | _ -> env in
         let t=
           (try expr ?expected typing_env expression with
-           | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
-             Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
+           | Json.Error message when inputs <> [] && is_unbound message ->
+             Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^
+               String.sub message 13 (String.length message - 13)))
           in
         let origin = match expression.node with
           | Id name when (match List.assoc_opt name env with Some (Value _) -> true | _ -> false) -> Some name
@@ -69,8 +70,9 @@ open S
             | _ -> env in
           let default=
             (try expr ?expected typing_env expression with
-             | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
-               Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
+             | Json.Error message when inputs <> [] && is_unbound message ->
+               Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^
+               String.sub message 13 (String.length message - 13)))
             in
           (* A closure default is built at the function type the parameter
              states: the binding holds that type, whichever value it took,

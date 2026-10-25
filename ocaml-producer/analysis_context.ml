@@ -35,10 +35,10 @@ module Claim_inputs : Claim_collection.Inputs = struct
   let speculate = S.speculate
 end
 include Claim_collection.Make(Claim_inputs)
-  let resolve env n = match List.assoc_opt n env with
+  let resolve ?at env n = match List.assoc_opt n env with
     | Some b -> binding_type b
     | None -> (match module_type n with
-      | Some t -> t | None -> Json.fail ("unbound name " ^ n))
+      | Some t -> t | None -> unbound ?at n)
 
   let rec mark_exact (e:expr) = match e.node with
     | Alloc _ -> mark_exact_allocations [e.pos]

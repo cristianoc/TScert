@@ -57,6 +57,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
   match e.node with
     | Id n when discarded n <> None -> Option.get (discarded n)
     | Id n ->
+      ignore (resolve ~at:e.pos env n);
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
         (List.assoc_opt n (path_facts ()).Proposal_flow.classes)) expected;
       (* A named closure expected at a signature binding more parameters
@@ -226,9 +227,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       union (match op with
         | Nullish -> without_nullish contract | OrElse -> Atoms [True] | AndAlso -> Atoms [False]) right
     | NullishAssign (n,name_pos,rhs) ->
-      let current = resolve env n in
+      let current = resolve ~at:name_pos env n in
       publish_expression name_pos current None;
-      let contract = match lookup env n with
+      let contract = match lookup ~at:name_pos env n with
         | Storage (contract,_) | Local (contract,_) -> contract
         | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding" in
       let right = expr ~expected:contract env rhs in
@@ -245,7 +246,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        at its storage contract. The value is the right side's. *)
     | ArrayAssign (targets,rest,rhs) ->
       let local (t:expr) = match t.node with
-        | Id n -> (match lookup env n with
+        | Id n -> (match lookup ~at:t.pos env n with
           | Storage (contract,_) | Local (contract,_) -> Some contract
           | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding")
         | _ -> None in

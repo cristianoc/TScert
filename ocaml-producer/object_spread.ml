@@ -192,7 +192,7 @@ let source_alternatives ?(target=false) ?(bound=fun _ -> None) ~site declaration
       meet_refused "with no value is refused: its operands have no value in common";
     alternatives
   with Refused reason ->
-    Proposal_diagnostics.unsupported (reason ^ " at " ^ Proposal_diagnostics.span_text site)
+    Proposal_diagnostics.unsupported (reason ^ " at " ^ Environment.span_text site)
 
 (* A source's properties defined over an alternative's: a key the source
    surely has takes its type; one the alternative has keeps its own where the

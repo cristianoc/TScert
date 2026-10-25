@@ -26,7 +26,7 @@ open S
      TypeScript's const context does. *)
   let rec const_type (expr:Analysis_state.expression_infer) ?(nested = false) env (e:expr) = match e.node with
     | Literal l -> Some (literal_type l)
-    | Id n -> Some (resolve env n)
+    | Id n -> Some (resolve ~at:e.pos env n)
     | Cast ("const",None,e) -> const_type expr ~nested env e
     | ArrayLiteral (es,[]) ->
       let elements = List.map (const_type expr ~nested:true env) es in

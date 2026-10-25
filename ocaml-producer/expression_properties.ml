@@ -134,7 +134,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem n module_names then
         Proposal_diagnostics.unsupported ("assignment to module function " ^ n);
-      (match lookup env n with
+      (match lookup ~at:e.pos env n with
       | Storage (contract,_) | Local (contract,_) ->
         let t = expr ~expected:contract env rhs in
         (* A value that reads the binding is what it may be for anything the

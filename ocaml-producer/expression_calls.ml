@@ -464,7 +464,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          name is read from the environment and anything else is typed once,
          here, and not again below. *)
       let spread_types = List.map (fun i -> i,lazy (match List.nth args i with
-        | { node = Id name; _ } -> resolve env name
+        | { node = Id name; pos } -> resolve ~at:pos env name
         | operand -> expr env operand)) spreads in
       let spread_positions i =
         match Semantic.tuple_positions (Lazy.force (List.assoc i spread_types)) with

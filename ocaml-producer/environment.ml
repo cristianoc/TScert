@@ -15,8 +15,18 @@ let cell contract = Storage (contract,contract)
    the initialization unit claims: a module function reads and writes one as
    the cell it captures. *)
 let module_cells : (string * ty) list ref = ref []
-let lookup env name = match List.assoc_opt name env with
-  | Some b -> b | None -> Json.fail ("unbound name " ^ name)
+(* A source span as diagnostics write it, `[start,end)`. *)
+let span_text = function
+  | Json.Array [Json.Number a; Json.Number b] -> "[" ^ a ^ "," ^ b ^ ")"
+  | _ -> "an unknown span"
+(* A name no binding of the run binds: a refusal, at `at`, the span of the
+   source identifier read, where the name is one. *)
+let unbound_prefix = "unsupported: unbound name "
+let unbound ?at name =
+  Json.fail (unbound_prefix ^ name ^ match at with Some span -> " at " ^ span_text span | None -> "")
+let is_unbound message = String.starts_with ~prefix:unbound_prefix message
+let lookup ?at env name = match List.assoc_opt name env with
+  | Some b -> b | None -> unbound ?at name
 let is_field n = String.contains n '\000'
 let owner n = String.sub n 0 (String.index n '\000')
 let extend env name binding =

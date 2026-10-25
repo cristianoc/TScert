@@ -63,7 +63,7 @@ module type Path_queries = sig
 end
 
 module type Environment_queries = sig
-  val resolve : env -> string -> ty
+  val resolve : ?at:Json.t -> env -> string -> ty
   val effects : env -> Source.expr -> env
   val condition : env -> Source.expr -> env * env
   val branch : env -> Source.expr -> bool -> env
