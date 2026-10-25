@@ -105,20 +105,28 @@ inside diagnostic checking and cannot become a source acceptance result. -/
 A promise or incoming edge can make the enclosing closure opaque, while the
 same obligation in the unit's own graph remains required. -/
 private def failedRegion (reason : String) : Option (Span × Bool) := do
-  let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
-  let record ← (Json.parse raw).toOption
-  let kind ← (record.getObjValAs? String "kind").toOption
-  let expression := kind == "expression-claim"
-  let origin ← if kind == "node-typing" then do
-      let source ← (record.getObjVal? "source").toOption
-      (source.getObjVal? "sourceMap").toOption
-    else if kind == "edge-coverage" then do
-      let destination ← (record.getObjVal? "destination").toOption
-      (destination.getObjVal? "sourceMap").toOption
-    else if kind == "expression-claim" || kind == "direct-obligation" then
-      (record.getObjVal? "sourceMap").toOption
-    else none
-  pure (← (jSpan origin "pos").toOption, expression)
+  if reason.startsWith "source effect refusal at [" &&
+      reason.endsWith "is not established by its body" then
+    let location ← (reason.splitOn "[")[1]?
+    let bounds := ((location.splitOn ")").headD "").splitOn ","
+    let start ← (← bounds[0]?).toNat?
+    let stop ← (← bounds[1]?).toNat?
+    if start < stop then return ((start, stop), true) else none
+  else do
+    let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
+    let record ← (Json.parse raw).toOption
+    let kind ← (record.getObjValAs? String "kind").toOption
+    let expression := kind == "expression-claim"
+    let origin ← if kind == "node-typing" then do
+        let source ← (record.getObjVal? "source").toOption
+        (source.getObjVal? "sourceMap").toOption
+      else if kind == "edge-coverage" then do
+        let destination ← (record.getObjVal? "destination").toOption
+        (destination.getObjVal? "sourceMap").toOption
+      else if kind == "expression-claim" || kind == "direct-obligation" then
+        (record.getObjVal? "sourceMap").toOption
+      else none
+    pure (← (jSpan origin "pos").toOption, expression)
 
 /-- A closure is selected by its own source map and retained code shape.
 Source containment alone can also name scaffolding around the closure. -/

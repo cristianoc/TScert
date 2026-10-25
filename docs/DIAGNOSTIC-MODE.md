@@ -125,7 +125,11 @@ A structured expression failure from aggregate search selects its exact node
 when the diagnostic names that node in the retained graph; otherwise it selects
 the smallest retained enclosing closure whose code and source map contain the
 failure. Standalone expression failures select the smallest containing source
-expression. Incoming-edge, return-promise and subtype failures inside a closure
+expression. Located body-footprint failures select an enclosing expression in the same way;
+the opaque expression supplies no heap effects. The retained graph must still
+establish the unit's footprint. Async-effect and declared-effect compatibility
+refusals retain their requirements.
+Incoming-edge, return-promise and subtype failures inside a closure
 can also select that enclosing closure. The selected expression becomes a fresh
 assumed input and its whole region is opaque. For a closure this includes its
 entire body, and its supplied callable type is an assumption. The unit retains
@@ -142,7 +146,7 @@ Each retry replaces a previously retained expression or edge, bounding retries
 by four times the original node count: one expression, at most two normal
 edges and one handler per node. Candidates with uninhabitable supplied result
 types are excluded. An absent candidate, a repeated edge failure, or a unit-level promise,
-footprint or certificate failure ends these retries.
+unlocated footprint or certificate failure ends these retries.
 A successful retry completes that unit; its replaced regions remain holes.
 Expression and edge inputs assume fixed values throughout a unit invocation and supply no
 heap effects or output facts. They can hide failures that depend on repeated

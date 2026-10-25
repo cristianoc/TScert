@@ -53,6 +53,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...negative("diagnostic-closure-effects", "A closure footprint failure makes its enclosing expression opaque."),
+    diagnosticSites: ["cell.value = 1"], diagnosticHoles: ["(): Within<{ value: \"keep\"; store: \"keep\" }, number> =>"], diagnosticCompleted: true },
   { ...gap("diagnostic-syntax-identity", "Synthetic expression operands have distinct nonempty claim identities.", "unsupported", "source", /global Uint8Array/),
     diagnosticSites: ["value instanceof Uint8Array"], diagnosticCompleted: true },
   { ...negative("diagnostic-closure-edge", "An incoming-edge failure inside a closure makes the closure opaque."),
@@ -73,7 +75,7 @@ export const cases: Case[] = [
   { ...gap("diagnostic-planning", "Diagnostic planning retains later expression obligations.", "unsupported", "source", /`in` with the key 'name'/),
     diagnosticSites: ['"name" in value', "flag as number", "value as string"] },
   { ...negative("diagnostic-effects", "Diagnostic footprint checking follows a failed expression."),
-    diagnosticSites: ["flag as number", "cell.value = 1"], diagnosticCompleted: false },
+    diagnosticSites: ["flag as number", "cell.value = 1"], diagnosticHoles: ["cell.value = 1"], diagnosticCompleted: true },
   { ...gap("diagnostic-declarations", "Diagnostic declaration recovery retains imported bindings and sibling bodies.", "unsupported", "source", /unresolved type reference sep/),
     diagnosticSites: ["import { sep } from \"node:path\";", "value as string", "flag as number"] },
   { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
