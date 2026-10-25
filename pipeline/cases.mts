@@ -59,6 +59,10 @@ export const cases: Case[] = [
     /^unsupported: field read on non-object(?:\n|$)/),
   gap("model-switch-typeof", "A switch on typeof needs to propagate its primitive-family test to the original receiver before a number method read.", "unsupported", "proposal",
     /^unsupported: a member read on a t\/boolean where the type TypeScript gives the receiver holds no t\/boolean: the producer and TypeScript disagree on the receiver(?:\n|$)/),
+  { ...positive("compiler-api-reviewed-members", "The named views admit the contextual query, project enumeration, snapshot disposal and stable symbol check flags."),
+    project: "pipeline/compiler-api-project" },
+  { ...gap("blocker-compiler-api-parse-config", "The reviewed parseConfigFile member reaches API's conditional member type, which needs class-argument instantiation.", "unsupported", "source",
+    /^gate: a conditional type over a type parameter, FromLSP extends true \? LSPUpdateSnapshotParams : UpdateSnapshotParams, is computed only at an instance \(line 4, col 1\)(?:\n|$)/), project: "pipeline/blocker-project" },
   // Census blocker causes; each source header names the functions it represents.
   // The case project uses the front end's installed Node and compiler declarations.
   // Source contracts and syntax.

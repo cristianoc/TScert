@@ -233,10 +233,13 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * view of its own as a class does. */
 export const hostViews: readonly { owner: string; members: readonly { name: string; text: string }[] }[] = [
   { owner: "API", members: [
+    { name: "parseConfigFile", text: "parseConfigFile(file: DocumentIdentifier): ConfigResponse;" },
     { name: "close", text: "close(): void;" },
     { name: "updateSnapshot", text: "updateSnapshot(params?: FromLSP extends true ? LSPUpdateSnapshotParams : UpdateSnapshotParams): Snapshot;" },
   ] },
   { owner: "Snapshot", members: [
+    { name: "getProjects", text: "getProjects(): readonly Project[];" },
+    { name: "dispose", text: "dispose(): void;" },
     { name: "getDefaultProjectForFile", text: "getDefaultProjectForFile(file: DocumentIdentifier): Project | undefined;" },
     { name: "getProject", text: "getProject(configFileName: string): Project | undefined;" },
   ] },
@@ -255,6 +258,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "isSourceFileDefaultLibrary", text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
   ] },
   { owner: "Checker", members: [
+    { name: "getContextualType", text: "getContextualType(node: Expression): Type | undefined;" },
     { name: "getAliasedSymbol", text: "getAliasedSymbol(symbol: Symbol): Symbol;" },
     { name: "getConstantValue", text: "getConstantValue(node: Node): string | number | undefined;" },
     { name: "getExportsOfModule", text: "getExportsOfModule(symbol: Symbol): readonly Symbol[];" },
@@ -285,6 +289,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "resolve", text: "resolve(project?: Project): Node | undefined;" },
   ] },
   { owner: "Symbol", members: [
+    { name: "checkFlags", text: "readonly checkFlags: number;" },
     { name: "declarations", text: "readonly declarations: readonly NodeHandle[];" },
     { name: "flags", text: "readonly flags: SymbolFlags;" },
     { name: "id", text: "readonly id: number;" },
@@ -314,7 +319,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
  * request (`invalid-compiler-api-request-tojson`, run under Node). Each is
  * read at its declared signature, which states no effect. */
 export const serializingRequests: readonly string[] = [
-  "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
+  "API.parseConfigFile", "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
   "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics", "Checker.resolveName",
 ];
 

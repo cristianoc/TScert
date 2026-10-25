@@ -630,7 +630,7 @@ program receives from outside is an input, whose callbacks within the
 footprint are an assumption of T8. A `map` callback calling a request gives
 a dense result (`compiler-api-request-effect`). No bound holds on a throw.
 The methods whose arguments may hold an object of the program
-(`API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
+(`API.parseConfigFile`, `API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
 `Program.getSourceFile`, `Program.getSemanticDiagnostics`,
 `Program.getSyntacticDiagnostics`, `Checker.resolveName`:
 `serializingRequests`) put it into the payload, whose serialization runs
@@ -649,6 +649,22 @@ and spans (`declaration-graph.mts`).
 **Views.** `API`, `Snapshot`, `Project`, `Program`, `Checker`, `Symbol`,
 `Type`, `Signature` and `NodeHandle` are host types read through their named
 views, under T6.
+
+### Audits of five sync members
+
+Cited: TypeScript 7.0.2, `dist/api/sync/api.d.ts` and
+`dist/api/sync/api.js` of the installation bound by C0, audited 2026-10-25.
+Each declaration below is the exact text stored in `hostViews`; `tests/compiler-api.mts` checks
+it against the installed declaration. The implementation audit supports T6,
+an assumption about runtime behaviour, rather than a Lean proof.
+
+| View member and declaration | Implementation and contract |
+| --- | --- |
+| `Checker.getContextualType(node: Expression): Type \| undefined;` | `getContextualType` sends snapshot and project ids and `getNodeId(node)`; the response becomes a cached host `Type` or `undefined`. Serialization contains no client object. The request reading gives the store-growth footprint on normal return under the retained-callback assumptions of T6 and T8. |
+| `API.parseConfigFile(file: DocumentIdentifier): ConfigResponse;` | `parseConfigFile` initializes the channel and sends `{ file }` directly to `apiRequest`. An object identifier can run getters or `toJSON` during payload serialization, so `serializingRequests` keeps the ordinary declared signature with no preservation guarantee. The response is the channel's JSON-decoded object; its fields are ordinary writable data. |
+| `Snapshot.getProjects(): readonly Project[];` | `getProjects` checks disposal and returns `[...this.projectMap.values()]`, a fresh dense array of the snapshot's projects. It invokes no client callback and changes no existing model location. A disposed snapshot throws. |
+| `Snapshot.dispose(): void;` | `dispose` marks the snapshot disposed, disposes its projects, clears its maps and registry, calls the internal `onDispose` closure created by `API.updateSnapshot`, then requests `release` with the snapshot id. The closure removes the snapshot and releases cache references; it is not supplied by the client. Retained filesystem callbacks, if requested by the channel, remain subject to T6 and T8. Repeated disposal returns immediately; subsequent operations may throw. The normal-return footprint permits growth and preserves existing stable members. |
+| `Symbol.checkFlags: number` (declaration `readonly checkFlags: number;`) | The `Symbol` constructor assigns `data.checkFlags` once. No other assignment to `checkFlags` occurs in `api.js`. The member is a stable readonly number, with its value supplied by the server under T6. |
 
 **Stated type guards (proposed, unbuilt).** The `this is X` methods of `Type`
 and the sync functions `isTupleType`, `isTypeReference` and `isUnionType`
