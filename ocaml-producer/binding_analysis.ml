@@ -35,7 +35,7 @@ open S
     let rec run ?expected env values = function
       | Execution.Finish -> env
       | Execution.Input (name,_,value,next) ->
-        run env (put values value (binding_type (lookup initial name))) next
+        run env (put values value (binding_type (lookup ~at:value.Execution.source initial name))) next
       | Execution.Evaluate (value,plan,next) ->
         let source=Execution.source plan in
         let expression=match expression_hint source with
@@ -43,13 +43,13 @@ open S
         let typing_env=match expression.node with
           | Lambda _ -> List.fold_left (fun scope name ->
               if List.mem_assoc name scope then scope else
-                extend scope name (lookup initial name)) env inputs
+                extend scope name (lookup ~at:expression.pos initial name)) env inputs
           | _ -> env in
         let t=
           (try expr ?expected typing_env expression with
-           | Json.Error message when inputs <> [] && is_unbound message ->
+           | Json.Error (Json.Unbound { name; at }) when inputs <> [] ->
              Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^
-               String.sub message 13 (String.length message - 13)))
+               Json.unbound_text name at))
           in
         let origin = match expression.node with
           | Id name when (match List.assoc_opt name env with Some (Value _) -> true | _ -> false) -> Some name
@@ -66,13 +66,13 @@ open S
           let expected=if present=Atoms [] then None else Some present in
           let typing_env=match expression.node with
             | Lambda _ -> List.fold_left (fun scope name -> if List.mem_assoc name scope then scope
-                else extend scope name (lookup initial name)) env inputs
+                else extend scope name (lookup ~at:expression.pos initial name)) env inputs
             | _ -> env in
           let default=
             (try expr ?expected typing_env expression with
-             | Json.Error message when inputs <> [] && is_unbound message ->
+             | Json.Error (Json.Unbound { name; at }) when inputs <> [] ->
                Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^
-               String.sub message 13 (String.length message - 13)))
+               Json.unbound_text name at))
             in
           (* A closure default is built at the function type the parameter
              states: the binding holds that type, whichever value it took,

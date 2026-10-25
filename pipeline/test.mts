@@ -463,36 +463,41 @@ control(async (): Promise<void> => {
   const read = source.indexOf("describe(n)");
   assert.equal(proposal.stderr,
     `unsupported: unbound name describe at [${read},${read + "describe".length})\nend of refusal\n`);
-  // A spread argument's operand is read as a name, apart from the
-  // expression typing every other read: renamed to a name nothing binds,
-  // it is refused at the operand.
-  const readable = run("array-readable");
-  const spreadSource = readFileSync(join(here, "examples", "array-readable.ts"), "utf8");
-  const operand = spreadSource.indexOf("...source") + "...".length;
-  let renamed = 0;
-  const rename = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(rename);
-    if (!v || typeof v !== "object") return v;
-    const entries = Object.entries(v).map(([k, x]): [string, unknown] => [k, rename(x)]);
-    const node = Object.fromEntries(entries);
-    if (node.k === "id" && node.name === "source" && Array.isArray(node.pos) && node.pos[0] === operand) {
-      renamed++;
-      return { ...node, name: "missing" };
-    }
-    return node;
+  // A case's one node of kind `k` naming `name` whose span starts at the
+  // first `marker` of its source, offset by `skip`, renamed to a name
+  // nothing binds: the producer refuses it at the identifier's span.
+  const unboundAt = (file: string, marker: string, skip: number, k: string, name: string, span: string): void => {
+    const artifacts = run(file);
+    const text = readFileSync(join(here, "examples", `${file}.ts`), "utf8");
+    const at = text.indexOf(marker) + skip;
+    let renamed = 0;
+    const rename = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(rename);
+      if (!v || typeof v !== "object") return v;
+      const node = Object.fromEntries(Object.entries(v).map(([key, x]): [string, unknown] => [key, rename(x)]));
+      const pos = k === "assign" ? node.namePos : node.pos;
+      if (node.k === k && node.name === name && Array.isArray(pos) && pos[0] === at) {
+        renamed++;
+        return { ...node, name: "missing" };
+      }
+      return node;
+    };
+    const forgedRead = join(artifacts, `forged-unbound-${k}.json`);
+    writeFileSync(forgedRead, must(JSON.stringify(rename(readFragmentFile(join(artifacts, "fragment.json")))), "the forged document"));
+    assert.equal(renamed, 1, `${file}: one ${k} node naming ${name} at ${at}`);
+    const readLowered = tested(verifierCall(verifier, ["--lower-control-flow", forgedRead]));
+    assert.equal(readLowered.status, 0, readLowered.stderr);
+    const readFlow = join(artifacts, `forged-unbound-${k}-flow.json`);
+    writeFileSync(readFlow, readLowered.stdout);
+    const refused = tested(producerCall(producerExecutable, [forgedRead, readFlow]));
+    assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+    assert.equal(refused.stderr, `unsupported: unbound name missing at [${at},${at + span.length})\nend of refusal\n`);
   };
-  const spreadForged = join(readable, "forged-unbound-spread.json");
-  writeFileSync(spreadForged, must(JSON.stringify(rename(readFragmentFile(join(readable, "fragment.json")))), "the forged document"));
-  assert.equal(renamed, 1, "the spread operand `source` is one node");
-  const spreadLowered = tested(verifierCall(verifier, ["--lower-control-flow", spreadForged]));
-  assert.equal(spreadLowered.status, 0, spreadLowered.stderr);
-  const spreadFlow = join(readable, "forged-unbound-spread-flow.json");
-  writeFileSync(spreadFlow, spreadLowered.stdout);
-  const spread = tested(producerCall(producerExecutable, [spreadForged, spreadFlow]));
-  assert.equal(spread.status, 2, spread.stdout + spread.stderr);
-  assert.equal(spread.stderr,
-    `unsupported: unbound name missing at [${operand},${operand + "source".length})\nend of refusal\n`);
-  process.stdout.write("a read of a name its document does not bind, a call's and a spread operand's: the producer refuses it at the read\n");
+  // A spread argument's operand, read as a name apart from the expression
+  // typing every other read, and an assignment's target.
+  unboundAt("array-readable", "...source", "...".length, "id", "source", "source");
+  unboundAt("assignment-effects", "(state = 1)", "(".length, "assign", "state", "state");
+  process.stdout.write("a read of a name its document does not bind, a call's, a spread operand's and an assignment target's: the producer refuses it at the identifier\n");
 });
 control(async (): Promise<void> => {
   // Which functions of an imported module the parser keeps: `partial.ts`'s

@@ -38,8 +38,9 @@ let meet_refused s = unsupported ("a spread of an intersection " ^ s)
    at this boundary; all spread refusals then share structured control flow. *)
 let spread_definition declarations id args =
   try definition declarations id args with
-  | Json.Error message when String.starts_with ~prefix:"unsupported: " message ->
+  | Json.Error (Json.Message message) when String.starts_with ~prefix:"unsupported: " message ->
     unsupported (String.sub message 13 (String.length message - 13))
+  | Json.Error (Json.Unbound { name; at }) -> unsupported (Json.unbound_text name at)
 let primitive_atom = function
   | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _
   | Symbol | SymbolLit _ -> true
@@ -192,7 +193,7 @@ let source_alternatives ?(target=false) ?(bound=fun _ -> None) ~site declaration
       meet_refused "with no value is refused: its operands have no value in common";
     alternatives
   with Refused reason ->
-    Proposal_diagnostics.unsupported (reason ^ " at " ^ Environment.span_text site)
+    Proposal_diagnostics.unsupported (reason ^ " at " ^ Json.span_text site)
 
 (* A source's properties defined over an alternative's: a key the source
    surely has takes its type; one the alternative has keeps its own where the

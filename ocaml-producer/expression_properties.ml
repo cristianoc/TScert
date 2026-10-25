@@ -45,11 +45,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
     | Read (({node=Id name;_} as e),n)
       when (match List.assoc_opt name env with Some (Storage _) -> true | _ -> false) ->
       let t = present (expr env e) in
-      (try S.field_type declarations [] t n with Json.Error m
+      (try S.field_type declarations [] t n with Json.Error (Json.Message m)
         when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
         Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
           a test does not narrow a cell holding an object, whose known contents are primitive values")
-        | Json.Error m when m = "unsupported: field read on non-object" ->
+        | Json.Error (Json.Message m) when m = "unsupported: field read on non-object" ->
           Proposal_diagnostics.unsupported ("a cell read at its contract: a read of " ^ key_text n ^ " on a `let` or an assigned \
             parameter holding a primitive beside an object, which a test does not narrow: what a cell is known \
             to hold is primitive values or merely no `undefined`"))
@@ -82,7 +82,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          S.explain site ("the `length` of a mutable tuple read at its arity: " ^ mutable_tuple_length_reason)
        | _ -> ());
       (
-         (try S.field_type declarations [] receiver n with Json.Error m
+         (try S.field_type declarations [] receiver n with Json.Error (Json.Message m)
            when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
                 && (match receiver with
                     | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
@@ -95,14 +95,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               guard found an object: what a field is known to hold is a union
               of primitives, and an object's contents may change through an
               alias, so the guard leaves it at its type. *)
-           | Json.Error m when m = "unsupported: field read on non-object"
+           | Json.Error (Json.Message m) when m = "unsupported: field read on non-object"
                && (match e.node with Read ({node=Id _;_},_) -> true | _ -> false) ->
              Proposal_diagnostics.unsupported ("a field read at its contract: a read of " ^ key_text n ^ " through a field holding \
                an object beside null or undefined, which a test does not narrow: what a field is known to hold \
                is a union of primitive values (DESIGN.md, \"Current-content assertions\")")
            (* A member some arm of the receiver lacks: refused at the read. *)
-           | Json.Error m when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
-             Json.fail (m ^ " at " ^ span_text site)))
+           | Json.Error (Json.Message m) when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
+             Json.fail (m ^ " at " ^ Json.span_text site)))
     | Index (e,key) -> let receiver=present (expr env e) in let key=expr env key in
       S.index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
@@ -131,10 +131,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       if adds env receiver t field then
         (match expected with Some c -> c | None -> added_contract declarations t field rhs value)
       else value
-    | Assign (n,rhs) ->
+    | Assign (n,name_pos,rhs) ->
       if not (List.mem_assoc n env) && List.mem n module_names then
         Proposal_diagnostics.unsupported ("assignment to module function " ^ n);
-      (match lookup ~at:e.pos env n with
+      (match lookup ~at:name_pos env n with
       | Storage (contract,_) | Local (contract,_) ->
         let t = expr ~expected:contract env rhs in
         (* A value that reads the binding is what it may be for anything the

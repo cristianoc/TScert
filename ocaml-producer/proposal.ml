@@ -26,7 +26,7 @@ let infer_function ?(offers=[]) state flows declarations arities module_function
     let grown = List.filter (fun (key,t) -> union (evolved key) t <> evolved key) seen in
     match result,grown with
     | Ok result,[] -> result,assumed
-    | Error m,[] -> raise (Json.Error m)
+    | Error m,[] -> Json.fail m
     | _,_ when rounds = 0 ->
       (* A contract that does not settle is proposed from the binding's uses:
          the one type every read of its whole value is expected at. The

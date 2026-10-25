@@ -14,7 +14,7 @@ open S
   let target_contract (expr:Analysis_state.expression_infer) env (target:expr) = match target.node with
     | Id n ->
       ignore (expr env target);
-      (match lookup env n with
+      (match lookup ~at:target.pos env n with
        | Storage (contract,_) | Local (contract,_) -> contract
        | Value _ -> Proposal_diagnostics.unsupported "assignment to immutable binding")
     | _ -> expr env target

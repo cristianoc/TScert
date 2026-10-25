@@ -155,7 +155,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
                 List.filter (fun (binding,_,_) -> binding=name) bindings)}
             | _ -> Json.fail "flow declaration names another statement" in
           let after=callbacks.statement (List.remove_assoc name env) selected in
-          [next id (List.map (fun (n,b) -> if n = name then n,lookup env name else n,b) after)]
+          [next id (List.map (fun (n,b) -> if n = name then n,lookup ~at:span env name else n,b) after)]
         | Flow.Declaration (span,name,initial_source,mutable_,id) ->
           let s=source span in
           let selected=match s.statement with
@@ -198,7 +198,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let after=match (source span).statement with Return e -> callbacks.expression_effects e env | _ -> env in
           [next id (extend after b.name (Value t))]
         | Flow.ReturnHeld b ->
-          callbacks.returned (binding_type (lookup env b.name)); []
+          callbacks.returned (binding_type (lookup ~at:b.source env b.name)); []
         | Flow.Rethrow _ -> []
         | Flow.DiscardThrow (_,id) -> [next id env]
         | Flow.IteratorStart (span,b,id) ->
@@ -212,7 +212,7 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let rec quiet (e:Source.expr) = match e.node with
         | Id n -> (match List.assoc_opt n env with Some (Storage _) -> false | _ -> true)
         | Literal _ -> true
-        | Assign (n,rhs) -> (match List.assoc_opt n env with Some (Local _) -> quiet rhs | _ -> false)
+        | Assign (n,_,rhs) -> (match List.assoc_opt n env with Some (Local _) -> quiet rhs | _ -> false)
         | _ -> false in
       let silent = match node.action with
         | Flow.Jump _ | Flow.End -> true

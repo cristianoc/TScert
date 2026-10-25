@@ -1,8 +1,22 @@
 (* Small dependency-free JSON codec. All input is data; duplicate keys fail. *)
 type t = Null | Bool of bool | Number of string | String of string
        | Array of t list | Object of (string * t) list
-exception Error of string
-let fail s = raise (Error s)
+(* Why a run stops on a document: a message, or a name nothing binds, with
+   the span of the source identifier read where there is one. *)
+type failure = Message of string | Unbound of { name : string; at : t option }
+exception Error of failure
+let fail s = raise (Error (Message s))
+(* A source span as diagnostics write it, `[start,end)`. *)
+let span_text = function
+  | Array [Number a; Number b] -> "[" ^ a ^ "," ^ b ^ ")"
+  | _ -> "an unknown span"
+(* An unbound name's reason, located where it has a span. *)
+let unbound_text name at =
+  "unbound name " ^ name ^ match at with Some span -> " at " ^ span_text span | None -> ""
+(* A failure's text: an unbound name's is a refusal's. *)
+let message = function
+  | Message s -> s
+  | Unbound { name; at } -> "unsupported: " ^ unbound_text name at
 let obj = function Object xs -> xs | _ -> fail "expected object"
 let field k j = match List.assoc_opt k (obj j) with
   | Some x -> x | None -> fail ("missing field: " ^ k)

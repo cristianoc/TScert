@@ -36,5 +36,5 @@ let infer diagnostics flows offered declarations module_functions arities bounds
     not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev output.Analysis_capabilities.entries) in
   {contracts=List.rev output.Analysis_capabilities.contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev output.Analysis_capabilities.arrows);declared_footprint=Semantic.top_footprint;declared_on_throw=false},List.sort_uniq compare output.Analysis_capabilities.requests
   in
-  let result = try Ok (run ()) with Json.Error m -> Error m in
+  let result = try Ok (run ()) with Json.Error f -> Error (Json.message f) in
   result,Owner.writes (),Owner.uses ()

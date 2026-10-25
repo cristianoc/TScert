@@ -499,7 +499,7 @@ and expr_node =
   (* A named read: a string key, or the symbol key of `e[k]` with `k` a
      `unique symbol` constant. *)
   | Read of expr * key | Write of expr * key * expr
-  | Assign of string * expr
+  | Assign of string * Json.t * expr
   (* `target op= rhs`, or an increment where the right side is absent: the
      target (a local, a field or a named index) is read and written back. The
      flag makes the old value the expression's. *)
@@ -667,7 +667,7 @@ let rec children e = match e.node with
   | BlockBody ss -> List.concat_map statement_children ss
   | Not e | TypeofTest (_,_,e) | TagMember (_,_,_,e) | Read (e,_) | Cast (_,_,e) | Unary (_,e) -> [e]
   | Ctor (e,statics) -> e :: List.map snd statics
-  | Assign (_,e) | NullishAssign (_,_,e) -> [e]
+  | Assign (_,_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) | InstanceTest (_,a,b) -> [a;b]
   | ArrayAssign (targets,rest,rhs) ->
@@ -701,7 +701,7 @@ and statement_children s = match s.statement with
    such a binding is a cell. Lean decides storage the same way, from the
    source (`assignsStmt`); this only proposes consistently with it. *)
 let rec assigns_expr name e = match e.node with
-  | Assign (n,_) | NullishAssign (n,_,_) when n = name -> true
+  | Assign (n,_,_) | NullishAssign (n,_,_) when n = name -> true
   | Update (_,{node=Id n;_},_,_) | LogicalAssign (_,{node=Id n;_},_) when n = name -> true
   | ArrayAssign (targets,rest,_) when List.exists (fun (_,t,_) -> t.node = Id name) targets
       || (match rest with Some (_,_,t,_) -> t.node = Id name | None -> false) -> true
@@ -848,7 +848,7 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_
   | Lambda _ -> Some empty_footprint
   (* A variable's new value goes to its slot, or to its cell, a location
      holding a value (Lean's typed write rule). *)
-  | Assign (_,v) -> join_bound cell_write (go v)
+  | Assign (_,_,v) -> join_bound cell_write (go v)
   | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
   | NullishAssign (_,_,v) -> join_bound cell_write (go v)
   | LogicalAssign (_,({node=Id _;_} as t),v) -> join_bound cell_write (all [t;v])
@@ -940,7 +940,7 @@ and throws_expr ~callable (e:expr) : bool =
   | Alloc fields -> List.for_all (fun (_,v) -> go v) fields
   | Build parts -> List.for_all (fun (_,v) -> go v) parts
   | ArrayLiteral (es,_) -> List.for_all go es
-  | Assign (_,v) -> go v
+  | Assign (_,_,v) -> go v
   | Update (_,{node=Id _;_},r,_) -> List.for_all go (Option.to_list r)
   | Call (callee,receiver,args,_,_) ->
     List.for_all go (callee :: Option.to_list receiver @ args) && calls callee
@@ -1068,7 +1068,7 @@ let rec expr binders j =
       | Some e -> None,expr binders e) (items "parts" j))
   | "read" -> Read (sub "e",property_key (field "field" j))
   | "write" -> Write (sub "receiver",property_key (field "field" j),sub "rhs")
-  | "assign" -> Assign (text "name" j,sub "rhs")
+  | "assign" -> Assign (text "name" j,field "namePos" j,sub "rhs")
   | "lambda" ->
       let inner,quantified = quantify binders (-1 - span_start (field "pos" j))
         (items "typeParams" j) in

@@ -15,16 +15,9 @@ let cell contract = Storage (contract,contract)
    the initialization unit claims: a module function reads and writes one as
    the cell it captures. *)
 let module_cells : (string * ty) list ref = ref []
-(* A source span as diagnostics write it, `[start,end)`. *)
-let span_text = function
-  | Json.Array [Json.Number a; Json.Number b] -> "[" ^ a ^ "," ^ b ^ ")"
-  | _ -> "an unknown span"
 (* A name no binding of the run binds: a refusal, at `at`, the span of the
-   source identifier read, where the name is one. *)
-let unbound_prefix = "unsupported: unbound name "
-let unbound ?at name =
-  Json.fail (unbound_prefix ^ name ^ match at with Some span -> " at " ^ span_text span | None -> "")
-let is_unbound message = String.starts_with ~prefix:unbound_prefix message
+   source identifier read, where there is one. *)
+let unbound ?at name = raise (Json.Error (Json.Unbound { name; at }))
 let lookup ?at env name = match List.assoc_opt name env with
   | Some b -> b | None -> unbound ?at name
 let is_field n = String.contains n '\000'

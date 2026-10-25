@@ -421,7 +421,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           if iterate="%Iterate%" then Option.iter (fun arm ->
             S.explain s.span ("a for...of loop over " ^ arm ^ ": " ^ iteration_reason))
             (non_array_arm declarations [] actual);
-          let signature=match declared_head declarations [] (resolve env iterate) with
+          let signature=match declared_head declarations [] (resolve ~at:iterable.pos env iterate) with
             | Atoms [Shape {calls=[s];_}] -> s
             | _ -> Proposal_diagnostics.unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
           let result,substitution=if signature.quantified=[] then signature.result,[] else
@@ -433,7 +433,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     iterator_step=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
           let name,name_pos=match s.statement with ForOf (n,p,_,_,_) -> n,p
             | _ -> Json.fail "an iterator step names another statement" in
-          let t=match declared_head declarations [] (binding_type (lookup env b.Flow.name)) with
+          let t=match declared_head declarations [] (binding_type (lookup ~at:b.Flow.source env b.Flow.name)) with
             | Atoms [Shape {calls=[{params=[];result;_}];_}] ->
               let yielded=match result with Union ts -> ts | t -> [t] in
               let values=List.concat_map (fun t -> match declared_head declarations [] t with

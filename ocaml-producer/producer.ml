@@ -29,5 +29,5 @@ let main () =
    exception is an operational failure: exit 3, a first line `error: `. *)
 let () =
   try main () with
-  | Json.Error e -> prerr_endline e; prerr_endline "end of refusal"; exit 2
+  | Json.Error e -> prerr_endline (Json.message e); prerr_endline "end of refusal"; exit 2
   | e -> prerr_endline ("error: " ^ Printexc.to_string e); exit 3
