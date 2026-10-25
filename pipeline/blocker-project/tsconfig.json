@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "typeRoots": ["../../tools/node_modules/@types"],
+    "lib": ["es2022"]
+  },
+  "include": ["../examples/blocker-*.ts"],
+  "files": ["../../tools/resolvable.d.ts"]
+}
