@@ -48,6 +48,17 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  // Distinct model-study causes; each source header gives the supplied sample count.
+  gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
+    /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),
+  gap("model-last-element-length-test", "A nonempty filtered array needs its last-element read proved in bounds after the length test.", "unverified", "search",
+    /^reject: source expression obligation at \[304,351\): evidence search failed: no derivation of its return-contract claim\nobligation: The available claim for words\.length > 0 \? words\[words\.length - 1\] : "" is undefined \| string \| ""\. This return requires string\.(?:\n|$)/),
+  gap("model-nonempty-code-point", "Filtering empty strings needs to establish that codePointAt(0) returns a number in the following callback.", "unverified", "search",
+    /^reject: closure expression claim at \[285,314\): evidence search failed\nobligation: The available claim for part\.codePointAt\(0\) is undefined \| number\. This obligation requires number\.(?:\n|$)/),
+  gap("model-array-from-string", "Array.from of a string needs a string-element result contract; a member of an absent element may throw under the admitted safety property.", "unsupported", "proposal",
+    /^unsupported: field read on non-object(?:\n|$)/),
+  gap("model-switch-typeof", "A switch on typeof needs to propagate its primitive-family test to the original receiver before a number method read.", "unsupported", "proposal",
+    /^unsupported: a member read on a t\/boolean where the type TypeScript gives the receiver holds no t\/boolean: the producer and TypeScript disagree on the receiver(?:\n|$)/),
   // Census blocker causes; each source header names the functions it represents.
   // The case project uses the front end's installed Node and compiler declarations.
   // Source contracts and syntax.
