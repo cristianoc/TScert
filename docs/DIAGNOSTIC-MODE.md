@@ -19,7 +19,11 @@ overlap. A group describes diagnostic wording, not a proved common cause.
 
 The syntax gate recovers at expression, statement and annotation boundaries.
 A typed refusal restores a copy of the gate's entry state, then substitutes
-`undefined`, an empty block or `unknown`, respectively. The entire replaced
+`undefined as unknown`, an empty block or `unknown`, respectively.
+The cast and its synthetic operand have distinct, nonempty spans within the
+opaque region. A one-character region uses `undefined` alone. The cast supplies
+`unknown` to its enclosing operation, allowing that operation its own recovery
+at its expected type. The entire replaced
 region is recorded as opaque. Class initialization and statement hoisting have
 the same transactions. A statement-list preparation refusal retains its live
 prefix for independent statement attempts and marks the whole list opaque. Compiler and file-system failures propagate as
@@ -119,9 +123,14 @@ resulting expressions, including their nested closures, needs no certificate.
 The resulting graph receives ordinary search and certificate checking again.
 A structured expression failure from aggregate search selects its exact node
 when the diagnostic names that node in the retained graph; otherwise it selects
-the smallest retained source expression containing its span, including an enclosing closure
-expression when the failure is inside its body. That expression becomes a
-fresh assumed input and its whole region is opaque. A structured incoming-edge failure in the unit's own graph can replace that
+the smallest retained enclosing closure whose code and source map contain the
+failure. Standalone expression failures select the smallest containing source
+expression. Incoming-edge, return-promise and subtype failures inside a closure
+can also select that enclosing closure. The selected expression becomes a fresh
+assumed input and its whole region is opaque. For a closure this includes its
+entire body, and its supplied callable type is an assumption. The unit retains
+its own return promise and result contract. A structured incoming-edge failure
+in the unit's own graph can replace that
 edge's mismatching destination slots with fresh assumed inputs at their stated
 types. Slots whose mapped source type equals their destination type retain their
 original mapping. The source and destination regions are opaque. The destination's stated
@@ -132,7 +141,7 @@ A destination with a slot type the graph recognizes as uninhabitable is excluded
 Each retry replaces a previously retained expression or edge, bounding retries
 by four times the original node count: one expression, at most two normal
 edges and one handler per node. Candidates with uninhabitable supplied result
-types are excluded. An absent candidate, a repeated edge failure, or a promise,
+types are excluded. An absent candidate, a repeated edge failure, or a unit-level promise,
 footprint or certificate failure ends these retries.
 A successful retry completes that unit; its replaced regions remain holes.
 Expression and edge inputs assume fixed values throughout a unit invocation and supply no

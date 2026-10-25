@@ -53,6 +53,16 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...gap("diagnostic-syntax-identity", "Synthetic expression operands have distinct nonempty claim identities.", "unsupported", "source", /global Uint8Array/),
+    diagnosticSites: ["value instanceof Uint8Array"], diagnosticCompleted: true },
+  { ...negative("diagnostic-closure-edge", "An incoming-edge failure inside a closure makes the closure opaque."),
+    diagnosticSites: ["return result;"], diagnosticHoles: ["(): string => {"], diagnosticCompleted: true },
+  { ...gap("diagnostic-syntax-value", "An opaque syntax expression supplies unknown to its enclosing expression.", "unsupported", "source", /MetaProperty/),
+    diagnosticSites: ["import.meta"], diagnosticHoles: ["import.meta.dirname"], diagnosticCompleted: true },
+  { ...negative("diagnostic-closure-promise", "A closure promise failure makes its enclosing expression opaque."),
+    diagnosticSites: ["true"], diagnosticHoles: ["(value: unknown): value is string => true"], diagnosticCompleted: true },
+  { ...negative("diagnostic-promise", "A top-level return promise remains required under diagnostic assumptions."),
+    diagnosticSites: ["true"], diagnosticCompleted: false },
   { ...negative("diagnostic-uninhabitable", "An empty destination contract cannot become a fresh diagnostic input."),
     diagnosticSites: ["value;"], diagnosticCompleted: false },
   { ...negative("diagnostic-edge", "Incoming interfaces recover at explicit assumed values; ordinary storage contracts remain required."),

@@ -73,8 +73,16 @@ export function recoverGate(gate: Gate, occurrences: GateOccurrence[]): void {
     }
   };
   const expr = gate.expr.bind(gate);
-  gate.expr = (node) => attempt(node, "opaque expression replaced by undefined", () => expr(node),
-    () => ({ k: "lit", pos: gate.span(node), lit: { a: "undefined" } }));
+  gate.expr = (node) => attempt(node, "opaque expression replaced by undefined at unknown", () => expr(node),
+    () => {
+      const pos = gate.span(node);
+      // Claims identify expressions by span. The synthetic operand needs a
+      // distinct nonempty subspan; a one-character region keeps its literal.
+      if (pos[1] - pos[0] < 2) return { k: "lit", pos, lit: { a: "undefined" } };
+      return { k: "cast", pos, cast: "as",
+        annot: { k: "atom", name: "unknown", span: pos },
+        e: { k: "lit", pos: [pos[0], pos[0] + 1], lit: { a: "undefined" } } };
+    });
   const stmt = gate.stmt.bind(gate);
   gate.stmt = (node) => attempt(node, "opaque statement omitted", () => stmt(node),
     () => ({ k: "block", pos: gate.span(node), label: null, body: [] }));

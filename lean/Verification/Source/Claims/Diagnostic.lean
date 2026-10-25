@@ -101,18 +101,34 @@ inside diagnostic checking and cannot become a source acceptance result. -/
       !regions.any (fun p => p.1 ≤ o.pos.1 && o.pos.2 ≤ p.2)).map fun o =>
       { o with sequent := { o.sequent with context := o.sequent.context ++ supplied } } }
 
-/-- Only structured expression failures select another opaque expression.
-Promises, effects and certificate rejection keep their obligations. -/
-private def failedExpression (reason : String) : Option Span := do
+/-- Structured failures locate either an expression or a nested closure body.
+A promise or incoming edge can make the enclosing closure opaque, while the
+same obligation in the unit's own graph remains required. -/
+private def failedRegion (reason : String) : Option (Span × Bool) := do
   let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
   let record ← (Json.parse raw).toOption
   let kind ← (record.getObjValAs? String "kind").toOption
+  let expression := kind == "expression-claim"
   let origin ← if kind == "node-typing" then do
       let source ← (record.getObjVal? "source").toOption
       (source.getObjVal? "sourceMap").toOption
-    else if kind == "expression-claim" then (record.getObjVal? "sourceMap").toOption
+    else if kind == "edge-coverage" then do
+      let destination ← (record.getObjVal? "destination").toOption
+      (destination.getObjVal? "sourceMap").toOption
+    else if kind == "expression-claim" || kind == "direct-obligation" then
+      (record.getObjVal? "sourceMap").toOption
     else none
-  (jSpan origin "pos").toOption
+  pure (← (jSpan origin "pos").toOption, expression)
+
+/-- A closure is selected by its own source map and retained code shape.
+Source containment alone can also name scaffolding around the closure. -/
+@[nospecialize] private def containsClosureAt {σ ι : Type} [Labels ι] [StoreView σ ι]
+    (r : SourceRequest σ ι) (node : Node) (pos : Span) : Bool :=
+  let shapes := graphShapes node.expression
+  r.codes.zipIdx.any fun (q, i) =>
+    shapes.contains (q.entry.arity, q.entry.exprs, q.entry.conts, q.entry.start) &&
+    ((r.codeSources[i]?).getD {}).sourceMap.any fun entry =>
+      entry.any fun e => e.pos.1 ≤ pos.1 && pos.2 ≤ e.pos.2
 
 /-- Prefer the failing node itself when the diagnostic names this exact graph.
 A closure's node can share a label or span with a surrounding expression. -/
@@ -281,11 +297,14 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
                     occurrence "search" origin "opaque edge supplies destination values from fresh inputs",
                     occurrence "search" to "opaque incoming interface supplied by fresh inputs"]
                   continue
-              let some pos := failedExpression reason | break
+              let some (pos, expressionFailure) := failedRegion reason | break
+              let exactLabel := failedLabel reason approximation.program
               let candidates := r.sourceMap.zipIdx.filter fun (entry, label) =>
                 !assumed.contains label && entry.any (fun e => e.pos.1 ≤ pos.1 && pos.2 ≤ e.pos.2) &&
+                (expressionFailure || exactLabel == some label ||
+                  (r.program[label]?).any (fun node => containsClosureAt r node pos)) &&
                 (r.claims[label]?).any (fun c => !ControlFlow.unsatisfiable G [c.type])
-              let exact := (failedLabel reason approximation.program).bind fun label =>
+              let exact := exactLabel.bind fun label =>
                 candidates.find? (fun (_, i) => i == label)
               let candidate := exact <|> candidates.foldl (fun best next => match best, next.1 with
                 | none, some _ => some next
