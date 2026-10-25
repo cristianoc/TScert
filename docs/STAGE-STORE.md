@@ -559,9 +559,15 @@ is excluded from the key. Any other program executes without replay.
 Logs belong to the stage invocation whose paths they describe. Each
 caller receives fresh writable copies of the artifacts under its own run
 root, and its Outcome names that directory. Shared entries are immutable.
-The run root controls artifact lifetime; it is excluded from semantic keys
-only where stage execution is independent of it. Store data outlives run
-directory cleanup.
+Ordinary programmatic checks and diagnostic runs remove their directories
+once their result is assembled. A consumer that reads artifact files requests
+`retainArtifacts` and binds the result with `using`; leaving that scope removes
+the directory, including when the consumer throws. The census reads its logs
+within that scope. Command-line inspection explicitly keeps its run root.
+New runs stop the driver with a resource error when the artifact volume has
+less than 10 GiB available. The run root is excluded from semantic keys only
+where stage execution is independent of it. Store data outlives run directory
+cleanup.
 
 ## Entries and timeouts
 

@@ -1937,30 +1937,108 @@ Every edge is still checked by the independent consumer. -/
     | some e => pure e
     | none => throw .rejected
 
-/-- Diagnostic search at every supplied node interface. Each attempt starts
-with its stated heap requirements and no predecessor-derived facts. The
-result contains failures only; it cannot be used as a certificate. Successful
-local searches do not certify the interfaces they assume. -/
+/-- Diagnostic search enumerates expression, normal-edge, handler and return
+obligations independently. After expression failure it assumes the supplied
+result type and forgets all output heap facts. No evidence is returned. -/
 @[nospecialize] def diagnoseUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
     (known : List (Evidence ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (aliases : List (ι × ι) := []) (goal : ControlFlow.Goal ι := .plain []) :
-    List (Failure ι) := Id.run do
-  let pool := vocabulary G labels claims []
+    (aliases : List (ι × ι) := []) (goal : ControlFlow.Goal ι := .plain [])
+    (start : Nat := 0) : List (Failure ι) := Id.run do
+  let pool := vocabulary G labels claims (match goal with
+    | .guards T _ | .asserts T _ => [T] | .plain _ => [])
   let index := KnownIndex.of known
+  let held := if goal.slot.isSome then argumentSlots P claims start goal.slot else []
   let mut failures := []
   let mut answers : Answered G := {}
   if P.length != claims.length then return [.claimCount]
   for (node, label) in P.zipIdx do
-    match (produceNode G images pool fuel label node claims
-        ((requirements.lookup label).getD {}) [] index codes aliases checker [] [] goal).run answers with
+    let some c := claims[label]? | return failures ++ [.claimCount]
+    let k := (requirements.lookup label).getD {}
+    let action : ProduceM G (List (Failure ι)) := do
+      let mut errors := []
+      let searched ← searchIn (expressionEffectUsing G images pool fuel
+        ⟨c.context, node.expression, c.type⟩ k [] index codes aliases checker)
+      let mut out : HeapKnowledge.Knowledge := {}
+      let mut yields := []
+      match searched.value with
+      | none => errors := [match searched.exhaustion with
+          | some stop => .exhaustedExpression label stop
+          | none => .expression label]
+      | some (derivation, _, knowledge) =>
+        out := knowledge
+        if let some proof := derivation then
+          yields ← stateIn (nodeYields G images pool c.context [] proof out k)
+      let pushed := fun facts => PromiseCalls.refineBy G (c.type :: c.context)
+        (PromiseCalls.aliasFacts out.links facts 1) 0
+      let kept := fun facts => PromiseCalls.refineBy G c.context
+        (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
+      let assumed : NodeEvidence ι := { sequent := some ⟨c.context, node.expression, c.type⟩, edges := [], knowledge := k, output := out, yields := yields }
+      for (target, edge) in (successors node.continuation).zipIdx do
+        let (context, observation) := match node.continuation with
+          | .ret => (c.context, none)
+          | .bind _ => (pushed (PromiseCalls.yieldFacts yields false), none)
+          | .effect _ => (kept (PromiseCalls.yieldFacts yields false), none)
+          | .branch .. => (kept (PromiseCalls.yieldFacts yields (edge == 0)), none)
+          | .branchBind .. => (pushed (PromiseCalls.yieldFacts yields (edge == 0) (edge != 0)),
+              some (BranchRefinement.Observation.boolean (edge == 0)))
+          | .tagBind tag .. => (pushed (PromiseCalls.yieldFacts yields
+              (edge == 0 && ControlFlow.truthyBoolean G tag c.type)), some (.tag tag (edge == 0)))
+        let searched ← searchIn (match observation with
+          | none => edgeUsing G images claims context target
+          | some o => edgeUsing G images claims context target (some (0, o))
+              (readFields out 0) (optionalFields out 0)
+              (HeapKnowledge.observeTyped G context out 0 o).cells)
+        let facts := edgeKnowledge G (c.type :: c.context) out node.continuation edge
+        let heapOK := ControlFlow.unsatisfiable G (edgeContextOf G assumed node.continuation edge) ||
+          HeapKnowledge.check facts ((requirements.lookup target.label).getD {}) target.mapping
+        if searched.value.isNone || !heapOK then
+          errors := errors ++ [match searched.exhaustion with
+            | some stop => .exhaustedEdge label target.label edge stop
+            | none => .edge label target.label edge]
+      if let some target := node.handler then
+        let landing := ((claims[target.label]?).toList.flatMap fun tc =>
+          (List.range tc.context.length).filterMap fun i =>
+            if PointClaims.slot target.mapping i == 0 then tc.context[i]? else none)
+        let searched ← searchIn ((landing ++ pool).findSearch? fun T =>
+          if ControlFlow.admitsAll G T then edgeUsing G images claims (T :: c.context) target else none)
+        if searched.value.isNone ||
+            !HeapKnowledge.check (ControlFlow.handlerFacts k)
+              ((requirements.lookup target.label).getD {}) target.mapping then
+          errors := errors ++ [match searched.exhaustion with
+            | some stop => .exhaustedEdge label target.label (successors node.continuation).length stop
+            | none => .edge label target.label (successors node.continuation).length]
+      if let .ret := node.continuation then
+        let answerOK := match goal with
+          | .plain R => c.type == R || c.type.isEmpty
+          | .guards .. => BranchRefinement.onlyBoolean G c.type
+          | .asserts .. => PromiseCalls.onlyUndef G c.type
+        if !answerOK then errors := errors ++ [.expression label]
+        let promise := match goal with
+          | .guards T _ => if BranchRefinement.impossible G c.type (.boolean true) then none else some (T, true)
+          | .asserts T _ => if c.type.isEmpty then none else some (T, false)
+          | .plain _ => none
+        if let some (T, conditional) := promise then
+          let context := PromiseCalls.refineBy G c.context (PromiseCalls.yieldFacts yields conditional) 0
+          let arguments := (held[label]?).getD []
+          let mut satisfied := false
+          for argument in arguments do
+            if let some A := context[argument]? then
+              let searched ← searchIn (subtypeUsing G images A T)
+              if searched.value.isSome then satisfied := true
+          if !satisfied then
+            errors := errors ++ [.promise label ((arguments.head?.bind (context[·]?)).getD []) T]
+      return errors
+    match action.run answers with
     | .error failure next =>
       answers := next
       failures := failures ++ [failure]
-    | .ok _ next => answers := next
+    | .ok errors next =>
+      answers := next
+      failures := failures ++ errors
   return failures
 
 /-- Recover a located failed edge from the completed candidate. This includes

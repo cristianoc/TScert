@@ -72,7 +72,7 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
         for (request, origins, requirements) in requests do
           attempted := attempted + request.program.length
           let errors := CertificateProducer.diagnoseUsing G I labels fuel
-            request.program request.claims requirements known (fun _ => true) r.checker r.aliases request.goal
+            request.program request.claims requirements known (fun _ => true) r.checker r.aliases request.goal request.start
           for error in errors do
             let reason := match error with
               | .expression l => s!"node {l}: expression evidence search failed at supplied interface"
@@ -90,7 +90,7 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
               | _ => namePos
             failures := failures ++ [occurrence "search" pos reason true]
             unexamined := unexamined ++ [occurrence "check" pos
-              "remaining obligations of a failed node; aggregate certificate and footprint checks" true]
+              "aggregate certificate and footprint checks" true]
     return Json.mkObj [("status", toJson "diagnostic"), ("attempted", toJson attempted), ("completed", toJson false),
       ("occurrences", toJson failures), ("unexamined", toJson unexamined)]
 

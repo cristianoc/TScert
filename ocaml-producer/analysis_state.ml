@@ -167,6 +167,13 @@ type candidate_snapshot = {
 module Access (S : sig val state : t end) = struct
   let state = S.state
   let local = state.local
+  let diagnostic_recover pos fallback action =
+    if not state.diagnostics.Proposal_diagnostics.diagnosing then action () else
+    match recover state action with
+    | Ok result -> result
+    | Error reason ->
+      Proposal_diagnostics.refusal state.diagnostics pos reason;
+      fallback ()
   let declarations = state.declarations
   let offered = state.offered
   let initial_environment = state.env0

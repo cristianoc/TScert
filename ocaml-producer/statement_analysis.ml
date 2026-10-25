@@ -17,6 +17,7 @@ module type Inputs = sig
   include Analysis_capabilities.Exact_allocations
   include Analysis_capabilities.Node_scope
   include Analysis_capabilities.Expression_publication
+  val diagnostic_recover : Json.t -> (unit -> 'a) -> (unit -> 'a) -> 'a
   val register_following : Json.t -> Source.stmt list -> unit
 end
 (* An early binding's type: its annotation, or a function literal's
@@ -379,7 +380,26 @@ let transfer (expr:Analysis_state.expression_infer) =
   transfer_statement
 
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
-  let transfer_statement = transfer expr in
+  let ordinary_transfer = transfer expr in
+  (* A failed transfer preserves binding identities and storage contracts.
+     Its heap observations and local refinements are forgotten. *)
+  let havoc env = widen_locals (forget env) in
+  let transfer_statement env (s:Source.stmt) =
+    diagnostic_recover s.span (fun () ->
+      let env = havoc env in
+      match s.statement with
+      | Declare (mutable_,bindings) -> List.fold_left (fun env (name,written,(init:Source.expr)) ->
+          let contract = Option.value written ~default:top in
+          publish_expression init.pos contract None;
+          let binding = if not mutable_ then Value contract
+            else begin
+              publish_contract {pos=init.pos;name;type_=contract};
+              if held_in_cell name s.span then cell contract else Local (contract,contract)
+            end in
+          extend (List.remove_assoc name env) name binding) env bindings
+      | Return _ -> record_return top; env
+      | _ -> env)
+      (fun () -> ordinary_transfer env s) in
   let after e env = effects env e in
   let early env (s:Source.stmt) name = match s.statement with
     | Declare (_,bindings) ->
@@ -391,7 +411,16 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
        | None -> Json.fail "an early binding names no binding of its statement")
     | _ -> Json.fail "an early binding names another statement" in
   let flow_callbacks = {
-    early;
+    early=(fun env (s:Source.stmt) name -> diagnostic_recover s.span
+      (fun () ->
+        let pos,contract = match s.statement with
+          | Declare (_,bs) -> (match List.find_opt (fun (n,_,_) -> n=name) bs with
+              | Some (_,written,(init:Source.expr)) -> init.pos,Option.value written ~default:top
+              | None -> s.span,top)
+          | _ -> s.span,top in
+        publish_contract {pos;name;type_=contract};
+        extend (List.remove_assoc name (havoc env)) name (cell contract))
+      (fun () -> early env s name));
     widen_slot=arms declarations;
     Proposal_flow.snapshot_metadata=path_facts;
     with_path_metadata;
@@ -404,12 +433,17 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
       | _ -> false);
     execute_bindings;
     expression=(fun env e -> expr env e);
-    expression_effects=after;
-    condition;
+    expression_effects=(fun e env -> diagnostic_recover e.pos
+      (fun () -> havoc env) (fun () -> after e env));
+    condition=(fun env e -> diagnostic_recover e.pos
+      (fun () -> havoc env,havoc env) (fun () -> condition env e));
     return_expression=(fun env e -> expr ?expected:(expected_result ()) env e);
     returned=record_return;
     entry;
     iterator_start=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) ->
+      diagnostic_recover s.span (fun () ->
+        publish_expression s.span top None;
+        extend (List.remove_assoc b.Flow.name (havoc env)) b.Flow.name (Value top)) (fun () ->
       let span=s.span in
           let iterate,iterable=match s.statement with ForOf (_,_,i,e,_) -> i,e
             | _ -> Json.fail "an iterator flow operation names another statement" in
@@ -429,8 +463,13 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             inferred.result,inferred.substitution in
           publish_expression span result (if substitution=[] then None else
               Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution));
-          extend (forget env) b.Flow.name (Value result));
+          extend (forget env) b.Flow.name (Value result)));
     iterator_step=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
+          diagnostic_recover s.span (fun () ->
+            let pos = match s.statement with ForOf (_,p,_,_,_) -> p | _ -> s.span in
+            publish_expression pos top None;
+            extend (List.remove_assoc element.Flow.name (havoc env)) element.Flow.name (Value top),havoc env)
+            (fun () ->
           let name,name_pos=match s.statement with ForOf (n,p,_,_,_) -> n,p
             | _ -> Json.fail "an iterator step names another statement" in
           let t=match declared_head declarations [] (binding_type (lookup ~at:b.Flow.source env b.Flow.name)) with
@@ -446,7 +485,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             | _ -> Proposal_diagnostics.unsupported "an iterator gives no step" in
           ignore name;
           publish_expression name_pos t None;
-          extend (forget env) element.Flow.name (Value t),forget env);
+          extend (forget env) element.Flow.name (Value t),forget env));
   } in
   let statements = Proposal_flow.statements flow_callbacks flow_graph register_following in
   statements owner_span env ss

@@ -13,7 +13,7 @@ import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts"
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
-import { keepRunDirectories, runDirectory, runRoot } from "./run-directory.mts";
+import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
@@ -433,9 +433,16 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   return { parsed, bytes, snapshot, resolution };
 }
 
+/** A completed run releases its artifacts. A file consumer requests retention
+ * and uses `using result = check(...)` to release them after consumption. */
+export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
+    subtypeRounds?: number, retainArtifacts: boolean = false): Outcome & Disposable {
+  return ownedRun(checkUnowned(source, tsconfigPath, typescriptErrors, subtypeRounds), retainArtifacts);
+}
+
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
+function checkUnowned(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Outcome {
   const artifacts = runDirectory("pipeline-");
   // Every stage invocation's attempt, in order (`stages.mts`).
@@ -592,18 +599,20 @@ export function readOutcome(value: unknown): Outcome {
   throw Error("not an outcome");
 }
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
-type Request = { source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number };
+type Request = { source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number; retainArtifacts: boolean };
 function readRequest(value: unknown): Request {
   if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
-      !("typescriptErrors" in value) || typeof value.typescriptErrors !== "boolean")
+      !("typescriptErrors" in value) || typeof value.typescriptErrors !== "boolean" ||
+      !("retainArtifacts" in value) || typeof value.retainArtifacts !== "boolean")
     throw Error("not a request");
   const project = "project" in value && typeof value.project === "string" ? value.project : undefined;
   const subtypeRounds = "subtypeRounds" in value && typeof value.subtypeRounds === "number"
     ? value.subtypeRounds : undefined;
-  return { source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds };
+  return { source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
+    retainArtifacts: value.retainArtifacts };
 }
 const checkRequest = (r: Request): Outcome =>
-  check(r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds);
+  check(r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds, r.retainArtifacts);
 
 /** A whole check is killed after this long: the parser runs inside the worker,
  * so its step has no limit of its own. */
@@ -647,6 +656,7 @@ function startWorker(): ChildProcess {
   return worker;
 }
 function give(worker: ChildProcess, job: Job): void {
+  requireDiskSpace();
   logs.set(worker, "");
   worker.ref();
   worker.channel?.ref();
@@ -691,11 +701,12 @@ function give(worker: ChildProcess, job: Job): void {
  * `typescriptErrors`, whether a failed search is named by TypeScript's errors
  * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number): Promise<Outcome> {
-  return new Promise((done, fail) => {
-    queue.push({ request: { source, project, typescriptErrors, subtypeRounds }, done, fail });
+    subtypeRounds?: number, retainArtifacts: boolean = false): Promise<Outcome & Disposable> {
+  requireDiskSpace();
+  return new Promise<Outcome>((done, fail) => {
+    queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts }, done, fail });
     dispatch();
-  });
+  }).then(result => ownedRun(result, retainArtifacts));
 }
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && process.argv[2] === "--serve") {

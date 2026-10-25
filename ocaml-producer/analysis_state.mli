@@ -32,6 +32,7 @@ module Access (_ : sig val state : t end) : sig
   include Analysis_capabilities.Closure_scope
   include Analysis_capabilities.Statement_operations
   include Analysis_capabilities.Node_scope
+  val diagnostic_recover : Json.t -> (unit -> 'a) -> (unit -> 'a) -> 'a
   val initial_environment : env
   val observe_method_call : Json.t -> unit
   val branch_for_execution : env -> Source.expr -> bool -> env

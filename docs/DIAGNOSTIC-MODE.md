@@ -23,11 +23,17 @@ A typed refusal restores a copy of the gate's entry state, then substitutes
 region is recorded as opaque. Compiler and file-system failures propagate as
 tool failures. The original file remains the source of all offsets.
 
-The producer recovers at expression boundaries, restores its candidate state
-and assumes the expected type, or `unknown` where there is none. It records the
-expression's region as opaque. A function analysis that refuses yields empty
-claims, allowing sibling functions to be analyzed. This approximation can
-create or hide downstream failures. It carries no effect guarantee.
+The producer recovers at expressions, statement transfers, binding-schedule
+operations, conditions and iterator steps. Each refusal restores candidate
+state and records the failed region as opaque. An expression assumes its
+expected type, or `unknown`. A failed declaration preserves its name and
+storage mode at its annotation, or `unknown`; existing storage contracts stay
+fixed. Failed binding reads supply `unknown` and continue through the remaining
+bindings. Statement and binding recovery forget field observations and widen
+local slots to their contracts. Control-flow edges remain those of the supplied
+graph. A function analysis that refuses outside these boundaries yields empty
+claims, allowing sibling functions to be analyzed. These approximations can
+create or hide downstream failures. They carry no effect guarantee.
 
 Typed extraction retains sibling units after a unit's refusal, with its
 immutable equation store restored to the value at the unit's entry. Shared
@@ -39,9 +45,13 @@ check leaves no search blockers. After a refusal, diagnostic search attempts
 every extracted standalone expression obligation and every
 graph node, including closure bodies. A node assumes its supplied interface
 and stated heap requirements; predecessor-derived facts are forgotten. Closure
-code is provisionally admitted during those local attempts. A node reports its
-first failed local obligation; remaining obligations of that node are
-unexamined. Each extracted sibling unit also receives its own graph and footprint checks.
+code is provisionally admitted during those local attempts. Expression search, every normal edge, the exception handler and the return
+obligation receive independent attempts. After expression failure, outgoing
+attempts assume its supplied result type and forget output heap facts. Edge
+attempts check both target types and supplied heap requirements. Return promises
+use argument positions propagated through the graph. These local attempts do
+not propagate predecessor implications or retry combinations of promise yields;
+they can therefore report failures that aggregate search discharges. Each extracted sibling unit also receives its own graph and footprint checks.
 Aggregate checking uses the ordinary search and checking operations. Its
 evidence is discarded. Imported program values are read at their declared
 contracts; the diagnostic parser does not certify imported module bodies.

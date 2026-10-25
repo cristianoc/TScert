@@ -21,18 +21,19 @@ export function runCase(test: Case): Promise<Outcome> {
   return checkApart(join(here, "examples", `${test.file}.ts`),
     test.project ? resolve(here, "..", test.project) : undefined, test.typescriptErrors)
     .then((result) => {
+      using consumed = result;
       if (test.diagnosticSites) {
         const file = join(here, "examples", `${test.file}.ts`);
-        const report = diagnose(file, test.project ? resolve(here, "..", test.project) : undefined);
+        using report = diagnose(file, test.project ? resolve(here, "..", test.project) : undefined);
         assert.equal(report.status, "diagnostic", report.error ?? "diagnostic run failed");
         const text = readFileSync(file, "utf8");
         for (const site of test.diagnosticSites) {
           const at = text.indexOf(site);
-          assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] <= at && at < o.pos[1]),
+          assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] === at && o.pos[1] <= at + site.length + 1),
             `${test.file}: diagnostic omitted ${site}`);
         }
       }
-      return result;
+      return consumed;
     })
     .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
 }

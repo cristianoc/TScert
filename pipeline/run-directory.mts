@@ -7,7 +7,7 @@
 // creating process died without removing it (a kill it could not handle) is
 // removed by the next process that creates a root.
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, statfsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -89,6 +89,7 @@ export function runRoot(): string {
 
 /** A fresh directory under this invocation's root, named from `prefix`. */
 export function runDirectory(name: string): string {
+  requireDiskSpace();
   return mkdtempSync(join(runRoot(), name));
 }
 
@@ -97,4 +98,28 @@ export function runDirectory(name: string): string {
  * decision to the process that created it. */
 export function keepRunDirectories(): void {
   kept = true;
+}
+
+/** Stop a driver before another run when the artifact volume has less than
+ * 10 GiB available. This is a resource failure, not a source verdict. */
+export function requireDiskSpace(): void {
+  const volume = process.env[variable] ?? tmpdir();
+  const space = statfsSync(volume);
+  const available = space.bavail * space.bsize;
+  if (available < 10 * 1024 ** 3) {
+    process.stderr.write(`TScert stopped: ${(available / 1024 ** 3).toFixed(2)} GiB free at ${volume}; at least 10 GiB required.\n`);
+    process.exit(1);
+  }
+}
+
+/** Own a result's artifacts until its caller finishes reading them. Callers
+ * bind the returned value with `using`; disposal also runs on exceptions.
+ * Explicitly kept command-line runs retain their artifacts for inspection. */
+export function ownedRun<T extends { artifacts: string }>(result: T, retain: boolean = false): T & Disposable {
+  const owned = Object.assign(result, { [Symbol.dispose](): void {
+    if (!kept) rmSync(result.artifacts, { recursive: true, force: true });
+  } });
+  Object.defineProperty(owned, Symbol.dispose, { enumerable: false });
+  if (!retain) owned[Symbol.dispose]();
+  return owned;
 }

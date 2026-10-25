@@ -9,7 +9,7 @@ import { diagnosticParseCall } from "./parse-stage.mts";
 import { invokeInProcess, Recorder } from "./stages.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
 import { runStep, producerExecutable, verifier, invocationLog, refusalEnd } from "./verify-source.mts";
-import { runDirectory, keepRunDirectories } from "./run-directory.mts";
+import { runDirectory, keepRunDirectories, ownedRun } from "./run-directory.mts";
 
 export type Occurrence = {
   id: string;
@@ -53,7 +53,7 @@ function span(value: unknown): Span {
 }
 
 /** One source run, with one invocation of each applicable stage. */
-export function diagnose(source: string, project?: string): DiagnosticReport {
+export function diagnose(source: string, project?: string, retainArtifacts: boolean = false): DiagnosticReport & Disposable {
   const file = resolve(source);
   const bytes = readFileSync(file);
   const artifacts = runDirectory("diagnostic-");
@@ -137,7 +137,7 @@ export function diagnose(source: string, project?: string): DiagnosticReport {
     report.unexamined.push({ pos: whole, reason: report.error });
   }
   writeFileSync(join(artifacts, "diagnostic.json"), JSON.stringify(report, null, 2) + "\n");
-  return report;
+  return ownedRun(report, retainArtifacts);
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {

@@ -50,6 +50,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
+    diagnosticSites: ["first", "second", "value as string"] },
   { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),
     diagnosticSites: ["x as string", "x as number"] },
   { ...gap("diagnostic-syntax", "Diagnostic syntax recovery retains later refusals.", "unsupported", "source", /statement outside the fragment/),

@@ -334,7 +334,7 @@ async function census(args: string[]): Promise<void> {
     for (const group of groups.values()) {
       const first = group[0];
       if (!first) continue;
-      const fullReport = diagnose(join(root, first.slice), project);
+      using fullReport = diagnose(join(root, first.slice), project, true);
       const detail = join(detailDirectory, `${results.length}.json`);
       writeFileSync(detail, JSON.stringify(fullReport) + "\n");
       const invocations = readInvocationLog(join(fullReport.artifacts, invocationLog)).map(reference);
@@ -385,7 +385,7 @@ async function census(args: string[]): Promise<void> {
     const base = { slice: s.slice, file: s.file, fn: s.fn, lines: s.text.split("\n").length,
       sourceSha256: createHash("sha256").update(s.text).digest("hex") };
     try {
-      const o = await checkApart(path, project);
+      using o = await checkApart(path, project, false, undefined, true);
       return { ...base, status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0],
         functions: o.status === "verified" ? o.functions.length : 0,
         invocations: readInvocationLog(join(o.artifacts, invocationLog)).map(reference),

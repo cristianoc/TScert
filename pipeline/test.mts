@@ -4,7 +4,7 @@
 // Every operation a control runs replays from the stage store like any stage
 // (DESIGN.md, "The stage store"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
@@ -16,7 +16,7 @@ import { fork, spawn, spawnSync } from "node:child_process";
 import { controlOperations, tested, ran as ranStage, readInvocationLog, type AttemptRecord, type Invoked }
   from "./stages.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
-import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
+import { check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
@@ -43,6 +43,12 @@ import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefa
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
 import { checkMutation, forgedEvidence, mutationVerifier, useMutationVerifier } from "./evidence-mutations.mts";
+/** Controls inspect and forge retained artifacts; their process root owns them. */
+function check(source: string, project?: string, typescriptErrors: boolean = false,
+    subtypeRounds?: number): Outcome {
+  return checkSource(source, project, typescriptErrors, subtypeRounds, true);
+}
+
 const here = import.meta.dirname;
 
 /** The controls, each a block of this file, registered in order. The
@@ -6239,6 +6245,36 @@ mutationControl(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A long-lived caller retains only explicitly requested runs, including
+  // replayed results and results whose consumer throws.
+  const source = join(here, "examples", "values.ts");
+  for (let i = 0; i < 3; i++) {
+    const result = checkSource(source);
+    assert.equal(result.status, "verified");
+    assert.equal(existsSync(result.artifacts), false);
+  }
+  let path = "";
+  assert.throws(() => {
+    using result = checkSource(source, undefined, false, undefined, true);
+    path = result.artifacts;
+    assert.ok(existsSync(join(path, "evidence.json")));
+    throw Error("consumer failed");
+  }, /consumer failed/);
+  assert.equal(existsSync(path), false);
+  const module = pathToFileURL(join(here, "run-directory.mts")).href;
+  const low = spawnSync(process.execPath, ["--input-type=module", "-e", `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+fs.statfsSync = () => ({ bavail: 0, bsize: 4096 });
+syncBuiltinESMExports();
+const { runDirectory } = await import(${JSON.stringify(module)});
+runDirectory("must-not-start-");
+`], { encoding: "utf8" });
+  assert.equal(low.status, 1);
+  assert.match(low.stderr, /TScert stopped: 0.00 GiB free.*at least 10 GiB required/);
+});
+
+control(async (): Promise<void> => {
   // Replay: a cold run in a fresh store and a warm run in another run root
   // agree on their outcome, documents and logs; the warm run replays every
   // stage (module runs and explanations included), the parse by its
@@ -6250,7 +6286,7 @@ control(async (): Promise<void> => {
     // Sequential awaits use the same idle worker; each driver starts a fresh pool.
     const driver = `import { checkApart } from ${JSON.stringify(pathToFileURL(join(here, "verify-source.mts")).href)};
 for (const source of ${JSON.stringify(preceding)}) await checkApart(source);
-process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, ${JSON.stringify(project ?? undefined)})));`;
+process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, ${JSON.stringify(project ?? undefined)}, false, undefined, true)));`;
     const driverPath = join(root, "worker-history.mts");
     writeFileSync(driverPath, driver);
     const ran = spawnSync(process.execPath, [driverPath],
