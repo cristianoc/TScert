@@ -1,0 +1,10 @@
+<section id="buffer" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 27 + 13 functions</p><p style="font-size:24px;color:#5b6662">investigated by hand</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Node's Buffer, and crypto's hash</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> most of tools/files.mts: Buffer.compare in one sorting helper, the fs functions statSync, mkdirSync and chmodSync, whose path parameter admits a Buffer, written Buffer and Dirent types, and createHash.</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the gate, rightly: an unlisted Node function is read as its declaration states, and Buffer's declaration is outside what TScert reads (its parent type Uint8Array is refused by itself; Buffer has about 100 members, some running caller code) (observed and cited).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> new reviewed entries: the fs functions at string paths, createHash with update and digest, and a Buffer type with a closed list of the members the code uses. They add host assumptions, statements about Node that TScert does not check: Buffers keep their standard methods, hashing runs no caller code, each to audit against Node's source. Reading files as text instead would change what the hashing computes.</li>
+<li><b style="font-weight:600">Behind it:</b> Dirent, the TextDecoder global, a read of splice on a value that may be an array or a record, and Readonly (observed).</li>
+</ul>
+</section>

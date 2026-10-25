@@ -1,0 +1,10 @@
+<section id="hoisting" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 20 functions of fragment-statements.mts</p><p style="font-size:24px;color:#5b6662">investigated by hand</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">An empty array written into a field</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Where:</b> the write gate.hoisted = [] in the function hoisting, which every one of these slices includes (gate here names the parser's state object, not the stage).</li>
+<li><b style="font-weight:600">Who refuses, and why:</b> the search refuses, rightly; the cause is a defect of the producer. The producer proposes the new array [] by itself, as an array of nothing, instead of at the field's type Stmt[] (a write to a local variable already gets the expected type, a write to a field does not), and the search finds no proof: an array's elements are a cell other references may share, so an array of nothing is no Stmt[] (cited: the write rule in Lean).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> pass the field's type to the written value, for field and index writes: about 5–10 lines of the producer, no Lean change, no new trust, since every write is still checked (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> the same cause at gate.hoist = {…} one line up; then, in forInStmt, a call gate.local(d.name) after a narrowing, cause not established (observed).</li>
+</ul>
+</section>

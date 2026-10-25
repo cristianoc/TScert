@@ -1,0 +1,52 @@
+{
+  "v": 4,
+  "createdOnFiles": { "v": 1, "at": "2026-10-25T00:00:00Z" },
+  "lists": "css",
+  "title": "What stops TScert's own code",
+  "order": [
+    "cover",
+    "terms",
+    "terms2",
+    "census",
+    "loop",
+    "holes",
+    "ranking",
+    "sep",
+    "buffer",
+    "entries",
+    "syncapi",
+    "hoisting",
+    "views",
+    "readonly",
+    "kinds",
+    "repros",
+    "next"
+  ],
+  "sections": {
+    "s0": {
+      "description": "Terms, and where the census stands.",
+      "start": "cover"
+    },
+    "s1": {
+      "description": "The rewrite loop, coverage with holes and the ranking.",
+      "start": "loop"
+    },
+    "s2": { "description": "Seven blockers investigated.", "start": "sep" },
+    "s3": { "description": "Repros and the next round.", "start": "repros" }
+  },
+  "faces": {
+    "ibm-plex-sans": {
+      "family": "IBM Plex Sans",
+      "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap"
+    },
+    "ibm-plex-serif": {
+      "family": "IBM Plex Serif",
+      "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500&display=swap"
+    },
+    "ibm-plex-mono": {
+      "family": "IBM Plex Mono",
+      "href": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap"
+    }
+  },
+  "designSystems": []
+}

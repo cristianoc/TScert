@@ -1,0 +1,16 @@
+<section id="loop" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Looking past the first refusal</p><p style="font-size:24px;color:#5b6662">crude, may change behaviour, never counted as verified</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Rewrite the slice's source until it reaches the end</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.38">
+<li><b style="font-weight:600">The loop:</b> run the slice; at a refusal, apply a crude local rewrite of the slice's copy that gets past it; record the refusal as a blocker; run again; stop when the slice reaches the end, when no rule rewrites the refusal, after 12 rewrites, or after 1,200 s.</li>
+<li><b style="font-weight:600">A diagnostic only:</b> it is a separate tool (dev/blocker-rewrites.mts, branch blocker-rewrites, commit 90feee4) that edits copies and changes nothing TScert trusts. A rewritten slice that gets through is reported as “reaches the end after rewrites R1…Rn”, never as verified.</li>
+<li><b style="font-weight:600">What it may change:</b> a rewrite can alter what the code does, so a blocker found after it is one the original code may or may not meet. The order says what was exposed, not what caused it.</li>
+</ul><table style="font-size:24px;color:#1d2422">
+<tr><th style="width:10%;text-align:left;font-weight:600">Rule</th><th style="width:42%;text-align:left;font-weight:600">Refusal</th><th style="width:48%;text-align:left;font-weight:600">Rewrite (in the slice's copy)</th></tr>
+<tr><td>R1</td><td>Readonly over a record (slide “Readonly”)</td><td>the same record with readonly fields written out</td></tr>
+<tr><td>R2</td><td>node:path's constant sep</td><td>a local declared constant of type string</td></tr>
+<tr><td>R3</td><td>Object.entries at two kinds of overload</td><td>a local declared function (o: object) => [string, unknown][]</td></tr>
+<tr><td>R4</td><td>an expression the search cannot type</td><td>a hole: a call of a declared function returning the expected written type</td></tr>
+<tr><td>R5</td><td>an unsupported statement with no result</td><td>an empty statement</td></tr>
+</table>
+</section>
