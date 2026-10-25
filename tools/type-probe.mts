@@ -27,16 +27,17 @@
  * copied text (a parameter, a mapped type's key) maps to the original copy.
  * Any difference, a `this` type, or an application in a file that cannot be
  * read again refuses the evaluation. The answer is read from the checker's
- * type objects: a union of literals and primitives, unique symbols mapped
- * back to their original declarations; anything else is refused.
+ * type objects: literals, primitives and unique symbols, and references to
+ * classes and interfaces mapped back to their original declarations with
+ * every argument represented. Other results are refused.
  */
 // files.mts makes every file-system failure a tool failure.
 import { present } from "./files.mts";
 
-import { TypeFlags, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
+import { TypeFlags, isTypeReference, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable/ast";
-import { literalUnion } from "./computed-types.mts";
+import { isInstanceReference, literalUnion } from "./computed-types.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
@@ -113,7 +114,8 @@ function nodeAt<N extends Node>(file: SourceFile, start: number, end: number, te
 }
 
 export function makeProbe(original: { program: Program; checker: Checker }, probeProgram: ProbeProgram,
-    unique: (name: Identifier) => number): (request: ProbeRequest) => TypeTerm {
+    unique: (name: Identifier) => number,
+    readReference?: (name: Identifier, args: TypeTerm[], span: Span) => TypeTerm): (request: ProbeRequest) => TypeTerm {
   let count = 0;
   return ({ declaration, parameters, form, use, span, what }) => {
     const refuse = (why: string): never => {
@@ -291,27 +293,46 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
       }
       const type: Type | undefined = checker.getTypeAtLocation(alias.name);
       if (!type || type.isErrorType()) return refuse("TypeScript computes no type for it");
-      const term = literalUnion(type, span, part => {
-        const nodes = (part.getSymbol()?.declarations ?? []).map(d => d.resolve());
-        const [node, ...more] = nodes;
-        const name = node && (ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node)) &&
-          node.name && ts.isIdentifier(node.name) ? node.name : null;
-        if (!name || more.length)
-          return refuse(`the unique symbol ${checker.typeToString(part)} is declared by no one constant`);
-        const file = name.getSourceFile();
-        const from = back(file.fileName, name.getStart(file)), to = back(file.fileName, name.end);
-        const source = from && to ? original.program.getSourceFile(from.file) : undefined;
-        const mapped = from && to && source ? nodeAt(source, from.offset, to.offset, ts.isIdentifier) : undefined;
-        if (!mapped) return refuse(`the unique symbol ${checker.typeToString(part)} is declared in the probe`);
-        return unique(mapped);
-      });
-      if (!term) {
-        const parts = type.isUnionType() ? type.getTypes() : [type];
-        return refuse(`TypeScript computes ${checker.typeToString(type)}, ` +
-          (parts.some(t => t.flags & TypeFlags.EnumLiteral) ? "whose part is an enum member, outside the fragment"
-            : "which is not a union of literals and primitives"));
-      }
-      return term;
+      const read = (type: Type): TypeTerm => {
+        const term = literalUnion(type, span, part => {
+          const nodes = (part.getSymbol()?.declarations ?? []).map(d => d.resolve());
+          const [node, ...more] = nodes;
+          const name = node && (ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node)) &&
+            node.name && ts.isIdentifier(node.name) ? node.name : null;
+          if (!name || more.length)
+            return refuse(`the unique symbol ${checker.typeToString(part)} is declared by no one constant`);
+          const file = name.getSourceFile();
+          const from = back(file.fileName, name.getStart(file)), to = back(file.fileName, name.end);
+          const source = from && to ? original.program.getSourceFile(from.file) : undefined;
+          const mapped = from && to && source ? nodeAt(source, from.offset, to.offset, ts.isIdentifier) : undefined;
+          if (!mapped) return refuse(`the unique symbol ${checker.typeToString(part)} is declared in the probe`);
+          return unique(mapped);
+        });
+        if (!term && readReference) {
+          if (type.isUnionType()) return { k: "union", parts: type.getTypes().map(read), span };
+          const nodes = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
+          const [node] = nodes;
+          if (node && nodes.length === 1 && (ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.name) {
+            const file = node.getSourceFile();
+            const from = back(file.fileName, node.name.getStart(file)), to = back(file.fileName, node.name.end);
+            const source = from && to ? original.program.getSourceFile(from.file) : undefined;
+            const name = from && to && source ? nodeAt(source, from.offset, to.offset, ts.isIdentifier) : undefined;
+            if (!name) return refuse("the computed declaration exists only in the probe");
+            if (!isInstanceReference(type))
+              return refuse(`TypeScript computes ${checker.typeToString(type)}, which is not an object type reference`);
+            const args = isTypeReference(type) ? checker.getTypeArguments(type).map(read) : [];
+            return readReference(name, args, span);
+          }
+        }
+        if (!term) {
+          const parts = type.isUnionType() ? type.getTypes() : [type];
+          return refuse(`TypeScript computes ${checker.typeToString(type)}, ` +
+            (parts.some(t => t.flags & TypeFlags.EnumLiteral) ? "whose part is an enum member, outside the fragment"
+              : "which is not a union of literals and primitives"));
+        }
+        return term;
+      };
+      return read(type);
     });
     if (answer) return answer;
     }

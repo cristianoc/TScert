@@ -9,7 +9,7 @@
  * syntax: a union of literals and primitives, and the record an object
  * literal's inferred type is. */
 import { childOf, childrenOf, isStatic } from "./syntax.mts";
-import { SignatureKind, SymbolFlags, TypeFlags, type Checker, type Type } from "typescript/unstable/sync";
+import { SignatureKind, SymbolFlags, TypeFlags, isTypeReference, type Checker, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
@@ -48,6 +48,13 @@ export type ComputedContext = {
    * reason where the symbol it holds is not known. */
   unique(type: Type): number;
 };
+
+/** Whether a checker type denotes class instances or an interface, including
+ * an instantiated generic reference. A class constructor shares the instance
+ * symbol but has neither of these object kinds. */
+export function isInstanceReference(type: Type): boolean {
+  return isTypeReference(type) ? type.getTarget().isClassOrInterface() : type.isClassOrInterface();
+}
 
 /** The number's decimal spelling, as a literal type's text is written. */
 function numberText(value: number): string | null {

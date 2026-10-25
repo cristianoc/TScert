@@ -32,7 +32,7 @@ import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
-import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
+import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
@@ -1499,6 +1499,39 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    // Computed members have an equation only at closed arguments. Each
+    // instance retains the declaration's whole admitted shape and heritage.
+    const computedMembers = (node: TypeDeclaration): boolean => {
+      if (ts.isTypeAliasDeclaration(node) || !node.typeParameters?.length) return false;
+      const names = new Set(node.typeParameters.map(p => p.name.text));
+      const mentions = (part: Node): boolean =>
+        (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
+        (part.forEachChild(c => mentions(c) || undefined) ?? false);
+      const computed = (part: Node): boolean => {
+        const alias = ts.isTypeReferenceNode(part) ? aliasOf(part) : null;
+        if (ts.isTypeNode(part) && (computedForm(part) !== null ||
+            (alias !== null && computedAlias(alias, aliasOf))) && mentions(part)) return true;
+        return part.forEachChild(c => computed(c) || undefined) ?? false;
+      };
+      return (partners.get(node) ?? [node]).some(part =>
+        (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) && part.members.some(computed));
+    };
+    const instances = new Map<string, { node: TypeDeclaration; identity: DeclarationIdentity; args: readonly TypeTerm[]; use: Node }>();
+    const instanceOf = (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span): TypeTerm => {
+      let open = false;
+      args.forEach(arg => visitType(arg, term => { if (term.k === "binder" || term.k === "parameter") open = true; }));
+      if (open) throw Error(`${node.name?.text}: computed members are read only at closed type arguments`);
+      const original = identityOf(node);
+      const key = JSON.stringify([original, args]);
+      let instance = instances.get(key);
+      if (!instance) {
+        if (instances.size >= 256) throw Error("computed declaration instances exceed the graph budget of 256");
+        const identity = { ...original, module: `tscert/instance/${instances.size}/${original.module}` };
+        instance = { node, identity, args, use };
+        instances.set(key, instance);
+      }
+      return { k: "reference", reference: { name: original.name, target: instance.identity, arguments: [], span }, args: [], span };
+    };
     // The types of the values declared outside the program's sources, which
     // may reach no statement but a program class's (`externalStatements`).
     const externalTypes: { what: string; type: TypeTerm }[] = [];
@@ -1567,6 +1600,7 @@ export function collectDeclarations(file: string, options: {
               throw Error(`${target} closes over the type parameter ${parameter.name.text}, which ${what} does not bind`);
             return capturedAt(part, target)(parameter);
           }));
+          if (computedMembers(targetNode)) return instanceOf(targetNode, completed, part, pos);
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(targetNode) },
@@ -1859,7 +1893,14 @@ export function collectDeclarations(file: string, options: {
       (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
     // TypeScript's evaluation of a form in a declaration's parameter list at
     // an application (`type-probe.mts`).
-    const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name));
+    const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name), (name, args, span) => {
+      const node = lookup(name, name.text);
+      if (args.length !== parametersOf(node).length)
+        throw Error(`the computed type ${name.text} does not state every declaration argument`);
+      if (computedMembers(node)) throw Error(`the computed result ${name.text} needs a written application to read its computed members`);
+      valueStarts.push(node);
+      return { k: "reference", reference: { name: name.text, target: identityOf(node), arguments: args.map(() => span), span }, args, span };
+    });
     // A declaration's type parameters by position, its merged declarations
     // together, as TypeScript merges them: each position's name from the
     // declaration binding the longest list, its bound and default from a
@@ -2205,7 +2246,7 @@ export function collectDeclarations(file: string, options: {
         const declaration = lookup(binding.at, binding.name);
         // An imported alias TypeScript computes from its parameters has no
         // equation, as a local one has none: each application is a computed type.
-        if (computedAlias(declaration, aliasOf)) continue;
+        if (computedAlias(declaration, aliasOf) || computedMembers(declaration)) continue;
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.name,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
@@ -2259,7 +2300,7 @@ export function collectDeclarations(file: string, options: {
         // A merged interface's later declarations are the same root. An
         // alias TypeScript computes from its parameters has no equation: each
         // reference to it is a computed type.
-        if (roots.some(r => r.node === node) || computedAlias(node, aliasOf)) continue;
+        if (roots.some(r => r.node === node) || computedAlias(node, aliasOf) || computedMembers(node)) continue;
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -2300,7 +2341,7 @@ export function collectDeclarations(file: string, options: {
         const node = lookup(identifier, identifier.text);
         // A global alias TypeScript computes from its parameters, as
         // `Extract` is, has no equation: each application is a computed type.
-        if (computedAlias(node, aliasOf)) continue;
+        if (computedAlias(node, aliasOf) || computedMembers(node)) continue;
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -3126,6 +3167,8 @@ export function collectDeclarations(file: string, options: {
         const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
         const [node] = nodes;
         if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
+          if (ts.isClassDeclaration(node) && !isInstanceReference(type))
+            throw Error(`the contextual type ${text()} is a class constructor, not an instance type`);
           // An alias's own arguments, none for an alias without parameters
           // (`type AbstractKeyword = Token<SyntaxKind.AbstractKeyword>`); a
           // reference's otherwise.
@@ -3136,6 +3179,7 @@ export function collectDeclarations(file: string, options: {
           // arguments TypeScript's type does not state.
           if (args.length !== parametersOf(node).length)
             throw Error(`the contextual type ${text()} does not state every declaration argument`);
+          if (computedMembers(node)) throw Error(`the contextual type ${text()} needs a written application to read its computed members`);
           const declared = declarationOf([node], text());
           contextualStarts.push({ node: declared, span });
           return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
@@ -3377,11 +3421,15 @@ export function collectDeclarations(file: string, options: {
       if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
       // A global or an imported type's application is computed when the alias it names is.
       const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
-      if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf))) continue;
+      const aggregate = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+        && typeDeclarationsOf(node.typeName).some(d => ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d))
+        ? lookup(node.typeName, node.typeName.text) : null;
+      if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf)) && !(aggregate && computedMembers(aggregate))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
       const scope = valueScope(node, what, enclosingBinders(node));
       try {
-        options.computedType?.(span, { ok: true, value: computedType(computedContext, node, span, part => typeTerm(scope, part)) });
+        options.computedType?.(span, { ok: true, value: aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
+          : computedType(computedContext, node, span, part => typeTerm(scope, part)) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.computedType?.(span, { ok: false, refused: refusalAt(span, error) });
@@ -3589,10 +3637,11 @@ export function collectDeclarations(file: string, options: {
       ...contextualStarts,
       ...blockStarts,
     ];
-    const collectFrom = (list: readonly { node: TypeDeclaration; span: Span }[]): void => {
-      for (const { node: start, span } of list) {
+    const collectFrom = (list: readonly { node: TypeDeclaration; span: Span; instance?: DeclarationInstance }[]): void => {
+      for (const { node: start, span, instance } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
+            computedMembers, instanceOf, instantiate: instantiateAt,
             enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
             guardPromises,
@@ -3601,7 +3650,7 @@ export function collectDeclarations(file: string, options: {
               collecting = key;
               if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
                 programClasses.add(key);
-            } });
+            } }, instance);
         } catch (error) {
           throw new DeclarationError(span, messageOf(error), error);
         } finally {
@@ -3611,12 +3660,23 @@ export function collectDeclarations(file: string, options: {
     };
     const queuedValues = valueStarts.length;
     collectFrom(starts);
+    let collectedInstances = 0;
+    const collectInstances = (): void => {
+      while (collectedInstances < instances.size) {
+        const pending = [...instances.values()].slice(collectedInstances);
+        collectedInstances = instances.size;
+        collectFrom(pending.map(instance => ({ node: instance.node,
+          span: [instance.use.getStart(instance.use.getSourceFile()), instance.use.end], instance })));
+      }
+    };
+    collectInstances();
     // A value a definition names through `typeof` is read while the graph
     // is collected; the declarations its type names join the graph.
     for (let from = queuedValues; from < valueStarts.length;) {
       const to = valueStarts.length;
       const at = starts[0]?.span ?? [0, 0];
       collectFrom(valueStarts.slice(from, to).map(node => ({ node, span: at })));
+      collectInstances();
       from = to;
     }
     // An array type reaching the unit only through a declaration (an
@@ -3647,7 +3707,8 @@ export function collectDeclarations(file: string, options: {
     const clientModule = idOf(client);
     const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
-    const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
+    const localInstances = new Set([...instances.values()].filter(i => idOf(i.node.getSourceFile()) === clientModule).map(i => i.identity.module));
+    const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule || localInstances.has(d.declaration.module) ? d :
       { ...d, expression: d.expression && promisedMethods(d.expression) });
     if (options.familySelected) options.familySelected(scan());
     return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
@@ -4466,8 +4527,13 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
  * done value `BuiltinIteratorReturn` names. */
 const ecmaIterators = ["ArrayIterator", "MapIterator", "SetIterator", "StringIterator", "RegExpStringIterator"];
 
+type DeclarationInstance = { identity: DeclarationIdentity; args: readonly TypeTerm[]; use: Node };
+
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
+  computedMembers: (node: TypeDeclaration) => boolean;
+  instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
+  instantiate: (node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether an identity is a branded string of the host (reading rule 5). */
   isBrand: (id: DeclarationIdentity) => boolean;
@@ -4521,13 +4587,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
    * families' markers and their definitions' names: each the tag values of
    * its entry. */
   guardPromises: ReadonlyMap<string, ReadonlyMap<string, readonly TagValue[]>>;
-}): void {
+}, instance?: DeclarationInstance): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
     if (!node) throw Error("missing queued declaration");
-    const identity = identityOf(node);
+    const applied = cursor === 0 ? instance : undefined;
+    const identity = applied?.identity ?? identityOf(node);
     const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -4594,6 +4661,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const target = identityOf(targetNode);
       const completed = context.complete(targetNode, arguments_.map(read), written ?? null,
         `${target.module}#${target.name}`, capturedHere);
+      if (context.computedMembers(targetNode)) {
+        if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
+        return context.instanceOf(targetNode, completed, written, pos);
+      }
       const edge: Reference = { name: identifier.text, span: pos,
         arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
       queue.push(targetNode);
@@ -4608,7 +4679,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A declaration's own parameters are positional: a computed type that
     // reaches a function's binder has no reading in its equation.
     const computed: NonNullable<TermScope["computed"]> = (part, pos, read) => {
-      const term = context.computed(part, pos, read);
+      const term = applied ? context.instantiate(node, applied.args, applied.use)(part) : context.computed(part, pos, read);
       if (JSON.stringify(term).includes('"k":"binder"'))
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
       return term;
@@ -4642,7 +4713,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
-        return { k: "parameter", index, span: pos };
+        return applied?.args[index] ?? { k: "parameter", index, span: pos };
       },
     });
     const scope = scopeOf(source);
@@ -4653,7 +4724,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
       at.type ? typeTerm(partScope(at.part), at.type) : null;
     let sawDefault = false;
-    const parameters = parameterNodes.map((parameter, index) => {
+    const parameters = applied ? [] : parameterNodes.map((parameter, index) => {
       if (sawDefault && !parameter.default)
         throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
       sawDefault ||= !!parameter.default;
@@ -4666,7 +4737,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // definition states its parameters and defaults.
     // (A predicate's false branch would narrow `node` to no alias.)
     const computedEquation: boolean = computedAlias(node, context.alias);
-    if (computedEquation) {
+    if (computedEquation || (!applied && context.computedMembers(node))) {
       definitions.push({ declaration: identity, parameters, bases: [], expression: null });
       continue;
     }

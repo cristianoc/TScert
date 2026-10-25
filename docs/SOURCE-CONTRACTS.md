@@ -1369,6 +1369,19 @@ is refused rather than verified vacuously:
 
 ## Computed types
 
+A generic class or interface with a computed member over its own parameters
+is read at a written application with closed arguments. Omitted arguments
+are completed from the declaration's defaults. Each instance has the whole
+admitted member shape and heritage, with the parameters substituted;
+recursive references at those arguments name that instance. A host instance
+uses its [reviewed view](COMPILER-API.md), including every listed member.
+Written applications retain their [bound obligations](#written-applications).
+An open argument, an unavailable written application, an unrepresentable
+computed result or more than 256 instance equations in one graph is refused.
+The declaration's parameter list supplies arity and defaults; its instance
+equations supply the member contracts.
+
+
 `typeof x`, `keyof T`, `T[K]`, template literal types, conditional types and
 intersections of primitives and literals mean the type TypeScript's checker computes
 (`computed-types.mts`). With $`\mathit{ts}(\tau)`$ the checker's type of the
@@ -1643,9 +1656,19 @@ application's scope that is a type parameter (the form is then computed only
 at an instance). The answer is read from the checker's type objects: a union
 of literals and primitives (`keyof Record<string, number>` is `string`, of
 `{ 0: number }` the number `0`, of a class its public members' keys), each
-unique symbol mapped to the constant declaring it in the original program;
-an enum member, whose identity the fragment has no literal for, and any
-other type are refused. A computed alias applied in an annotation reads its
+unique symbol mapped to the constant declaring it in the original program.
+A result that is a class instance type (the type of an object created by the
+class) or an interface type, naming one declaration, is a reference to that
+declaration in the original program, with all its type arguments read by the same rule; unions preserve
+every part. Class constructor types, such as `typeof Box`, are refused at the
+application: their fields differ from those of objects created by the class.
+The same instance check governs references read from contextual types for
+closure parameters, inferred static fields, and inferred `Object.assign`
+call signatures, including their parameter and result types.
+The referenced declaration supplies the whole contract. A result
+whose own computed members require another written application is refused,
+as are anonymous object results and enum members whose identities have no
+literal representation. A computed alias applied in an annotation reads its
 defaults and equation the same way, at that application. A
 declaration's definition states no bound: bounds are read only here. The
 verifier binds

@@ -1817,12 +1817,10 @@ function lowerFile(file: string, carriesContext: boolean,
       computedNodes.push(node);
       return;
     }
-    // An application of a global or an imported type is one where the alias
-    // it names is computed (`Extract<T, U>`), which the declaration graph decides.
-    // A reference a block's type may bind is listed too: the graph decides
-    // whether TypeScript binds it to one it computes.
-    if ((ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments?.length &&
-        (!rooted.has(node.typeName.text) || imported.has(node.typeName.text)) &&
+    // The declaration graph decides which named types have computed
+    // equations or members, including defaulted applications with no
+    // arguments written. Block references also retain their captured scope.
+    if ((ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
         !enclosingBinders(node).includes(node.typeName.text)) || blockReference(node))
       computedNodes.push(node);
     // So does the computed key of a class method or an object literal's

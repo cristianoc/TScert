@@ -158,8 +158,9 @@ export type TypeDefinition = {
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
   /** The equation; null where none is read: an alias TypeScript computes
-   * from its parameters, or a library type read at its meaning, stated for
-   * its parameters. */
+   * from its parameters, a declaration whose computed members are read at
+   * closed instances, or a library type read at its meaning, stated for its
+   * parameters. */
   expression: TypeTerm | null;
 };
 /** A type application written in source syntax, `D<σ⃗>`, which obliges
