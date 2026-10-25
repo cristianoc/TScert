@@ -52,10 +52,22 @@ private def sourceCore (diagnostic : Bool) (ast claims : Json)
     ((lowerSource ast claims).run
         { diagnostic, doc := ds, identities := identityIndex ds, packings, subtypeBudget := budget, tags := tagSymbols document }).mapError
       Failure.refusal
-  let b ← (compact s).mapError Failure.refusal
+  let mut b ← (compact s).mapError Failure.refusal
   let mut refusals := s.refusals
   if diagnostic then
     -- Each source-side check runs independently over the same completed store.
+    let raw := rawHeads b.drafts b.bodies
+    let sig : Signature := raw.map (·.header)
+    for i in List.finRange sig.length do
+      match templateOf? sig i (b.bodies[i.val]!) with
+      | .ok _ => pure ()
+      | .error reason =>
+        refusals := refusals ++ [((0, 0), s!"equation {i.val}: {reason}")]
+        -- Retain head identities, parameter kinds and local binder counts.
+        -- A scheme with no signatures imposes no callable contract.
+        let body : GraphRow Tree (List Tree) := if sig[i].binders.isEmpty then .clauses [.source]
+          else .scheme ((List.range sig[i].binders.length).map Tree.local) [] [] [] [] false
+        b := { b with bodies := b.bodies.set! i.val body }
     let _ ← b.equations.mapError Failure.refusal
     for check in s.meetChecks do
       match { b with state := { s with meetChecks := [check], obligations := [] } }.finish with

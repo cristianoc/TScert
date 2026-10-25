@@ -114,7 +114,7 @@ control(async (): Promise<void> => {
 });
 
 // A forged source annotation forces shared equation recovery independently of
-// the parser and producer. The retained body must reach graph obligations.
+// the parser and producer. The recovered plans must pass aggregate checking.
 control(async (): Promise<void> => {
   const good = await run("stateful-source/arithmetic");
   const source = readFragmentFile(join(good, "fragment.json"));
@@ -128,8 +128,7 @@ control(async (): Promise<void> => {
   assert.equal(inventory.status, 0, inventory.stderr);
   const report: unknown = JSON.parse(inventory.stdout);
   assert.ok(report && typeof report === "object" && "status" in report && report.status === "diagnostic");
-  assert.ok("attempted" in report && typeof report.attempted === "number" && report.attempted > 0);
-  assert.ok("completed" in report && report.completed === false);
+  assert.ok("completed" in report && report.completed === true);
   assert.ok(inventory.stdout.includes("unsupported-diagnostic-contract"));
   assert.ok(!inventory.stdout.includes("shared extraction failed"));
 });
@@ -5488,6 +5487,21 @@ control(async (): Promise<void> => {
     chmodSync(path, 0o755);
     return path;
   };
+  // A failed completion stage preserves the preceding diagnostic traversal.
+  const diagnosticVerifier = fake(dir, "diagnostic-verifier.sh", verifier, 1,
+    { FAIL_MODE: "--diagnose-source-claims", FAIL_TEXT: "injected diagnostic completion failure" });
+  const diagnosed = spawnSync(process.execPath, [join(here, "diagnose-source.mts"),
+    join(here, "examples/diagnostic-blockers.ts"), join(here, "examples")],
+    { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: diagnosticVerifier } });
+  assert.equal(diagnosed.status, 0, diagnosed.stderr);
+  const inventory: unknown = JSON.parse(diagnosed.stdout);
+  assert.ok(inventory && typeof inventory === "object" && "status" in inventory && inventory.status === "diagnostic");
+  assert.ok("completed" in inventory && inventory.completed === false);
+  assert.ok("attempted" in inventory && typeof inventory.attempted === "number" && inventory.attempted > 0);
+  assert.ok("error" in inventory && typeof inventory.error === "string" && inventory.error.includes("aggregate retry failed"));
+  assert.ok("artifacts" in inventory && typeof inventory.artifacts === "string");
+  assert.ok(readInvocationLog(join(inventory.artifacts, invocationLog))
+    .some(r => r.stage === "diagnostic-complete" && ranStage(r) && r.key === null));
   let runs = 0;
   const outcomeOf = (source: string, failure: Failure): Outcome => {
     const at = join(dir, `run-${runs++}`);

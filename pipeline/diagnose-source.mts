@@ -52,6 +52,55 @@ function span(value: unknown): Span {
   return [xs[0], xs[1]];
 }
 
+type DiagnosticScope = { name: string; pos: Span; references: Set<string> };
+
+/** All strings are conservative possible references, including closure captures.
+ * Unlocated and module-level regions retain document scope. */
+function diagnosticScopes(ast: Record<string, unknown>): DiagnosticScope[] {
+  return list(ast.functions).map(raw => {
+    const fn = object(raw);
+    const namePos = span(fn.namePos);
+    const scope: DiagnosticScope = { name: string(fn.name), pos: [...namePos], references: new Set() };
+    const visit = (value: unknown): void => {
+      if (typeof value === "string") scope.references.add(value);
+      else if (Array.isArray(value)) for (const item of value) visit(item);
+      else if (value && typeof value === "object") {
+        for (const [key, item] of Object.entries(value)) {
+          if (key === "pos" || key === "namePos") {
+            const at = span(item);
+            scope.pos[1] = Math.max(scope.pos[1], at[1]);
+          } else visit(item);
+        }
+      }
+    };
+    visit(fn);
+    return scope;
+  });
+}
+
+function attribute(report: DiagnosticReport, scopes: DiagnosticScope[]): void {
+  const owner = (pos: Span): DiagnosticScope | undefined => scopes.find(s =>
+    s.pos[0] <= pos[0] && pos[1] <= s.pos[1]);
+  const reach = new Map<DiagnosticScope, Set<DiagnosticScope>>();
+  for (const scope of scopes) {
+    const seen = new Set([scope]);
+    for (const next of seen) for (const candidate of scopes)
+      if (next.references.has(candidate.name)) seen.add(candidate);
+    reach.set(scope, seen);
+  }
+  const previous = new Map<DiagnosticScope | undefined, string>();
+  for (const occurrence of report.occurrences) {
+    const scope = owner(occurrence.pos);
+    const dependencies = [...previous].filter(([prior]) =>
+      !scope || !prior || reach.get(scope)?.has(prior)).map(([, id]) => id);
+    if (occurrence.conditional && (occurrence.layer === "search" || occurrence.layer === "check"))
+      dependencies.push("supplied-interfaces");
+    occurrence.dependencies = dependencies;
+    occurrence.conditional ||= dependencies.length > 0;
+    if (["source", "proposal", "extraction"].includes(occurrence.layer)) previous.set(scope, occurrence.id);
+  }
+}
+
 /** One source run, with one invocation of each applicable stage. */
 export function diagnose(source: string, project?: string, retainArtifacts: boolean = false): DiagnosticReport & Disposable {
   const file = resolve(source);
@@ -62,19 +111,15 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
     sourceSha256: createHash("sha256").update(bytes).digest("hex"), artifacts,
     attempted: 0, completed: false, occurrences: [], unexamined: [], error: null };
   const whole: Span = [0, bytes.toString("utf8").length];
-  let lastRecovery: string | null = null;
+  let scopes: DiagnosticScope[] = [];
   const add = (layer: string, pos: Span, reason: string, conditional: boolean): void => {
     const located = /at \[(\d+),(\d+)\)/.exec(reason);
     if (located) pos = [Number(located[1]), Number(located[2])];
     else if (pos[0] === 0 && pos[1] === 0) pos = whole;
-    // Recovery dependencies are transitive. One link to the preceding recovery
-    // retains document-scope assumptions without a quadratic copy of their IDs.
-    const dependencies = lastRecovery === null ? [] : [lastRecovery];
-    if (conditional && (layer === "search" || layer === "check")) dependencies.push("supplied-interfaces");
+    const dependencies: string[] = [];
     const id = `refusal:${report.occurrences.length}`;
     report.occurrences.push({ id, layer, pos, reason,
       conditional: conditional || dependencies.length > 0, dependencies });
-    if (layer === "source" || layer === "proposal" || layer === "extraction") lastRecovery = id;
   };
   const step = (call: ReturnType<typeof verifierCall>, layer: string): string | null => {
     const ran = runStep(call, recorder);
@@ -96,6 +141,7 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
     }
     if (envelope.diagnostic !== null) {
       const ast = object(envelope.diagnostic);
+      scopes = diagnosticScopes(ast);
       if (ast.sourceSha256 !== report.sourceSha256) throw Error("diagnostic source fingerprint differs");
       const fragment = join(artifacts, "diagnostic-fragment.json");
       writeFileSync(fragment, parsed.out);
@@ -115,11 +161,29 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
           const claims = join(artifacts, "diagnostic-proposal.json");
           writeFileSync(claims, proposal);
           const searched = step(verifierCall(verifier,
-            ["--diagnose-source-claims", fragment, claims, file, "12"]), "extraction");
+            ["--diagnose-source-claims-local", fragment, claims, file, "12"]), "extraction");
           if (searched !== null) {
-            const result = object(JSON.parse(searched));
+            let result = object(JSON.parse(searched));
             if (result.status !== "diagnostic" || typeof result.attempted !== "number") throw Error("invalid diagnostic result");
-            report.attempted = result.attempted;
+            const traversed = result.attempted;
+            if (result.completed !== true && traversed > 0) {
+              try {
+                const retried = step(verifierCall(verifier,
+                  ["--diagnose-source-claims", fragment, claims, file, "12"]), "aggregate");
+                if (retried !== null) {
+                  const checked = object(JSON.parse(retried));
+                  if (checked.status !== "diagnostic" || typeof checked.attempted !== "number")
+                    throw Error("invalid diagnostic completion result");
+                  result = checked;
+                }
+              } catch (error) {
+                report.error = `diagnostic aggregate retry failed: ${String(error)}`;
+                add("aggregate", whole, report.error, true);
+                report.unexamined.push({ pos: whole, reason: report.error });
+              }
+            }
+            if (typeof result.attempted !== "number") throw Error("invalid diagnostic attempt count");
+            report.attempted = traversed;
             report.completed = result.completed === true;
             for (const raw of list(result.occurrences)) {
               const occurrence = object(raw);
@@ -140,6 +204,7 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
     report.error = String(error);
     report.unexamined.push({ pos: whole, reason: report.error });
   }
+  attribute(report, scopes);
   writeFileSync(join(artifacts, "diagnostic.json"), JSON.stringify(report, null, 2) + "\n");
   return ownedRun(report, retainArtifacts);
 }

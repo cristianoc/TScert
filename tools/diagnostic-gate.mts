@@ -1,6 +1,7 @@
 import type { Node } from "typescript/unstable/ast";
 import type { Gate } from "./fragment-parse.mts";
 import type { Span } from "./span.mts";
+import { abrupt } from "./fragment-statements.mts";
 import { passToolFailure } from "./thrown.mts";
 
 /** A refusal carries its source identity independently of its wording. */
@@ -56,7 +57,7 @@ function copy<T>(value: T, seen: Map<object, unknown>): T {
  * A failed operation restores its entry state before substituting an opaque
  * region. The region's internal obligations remain explicitly unexamined. */
 export function recoverGate(gate: Gate, occurrences: GateOccurrence[]): void {
-  const attempt = <T,>(node: Node | undefined | null, recovery: string, run: () => T, fallback: () => T): T => {
+  const attempt = <T,>(node: Node | undefined | null, recovery: string, run: () => T, fallback: () => T, region?: Span): T => {
     const snapshot = Object.getOwnPropertyDescriptors(gate);
     const seen = new Map<object, unknown>();
     for (const descriptor of Object.values(snapshot)) descriptor.value = copy(descriptor.value, seen);
@@ -66,7 +67,7 @@ export function recoverGate(gate: Gate, occurrences: GateOccurrence[]): void {
       passToolFailure(error);
       if (!(error instanceof GateRefusal)) throw error;
       Object.defineProperties(gate, snapshot);
-      occurrences.push({ pos: error.pos, region: node ? gate.span(node) : [0, gate.file.end],
+      occurrences.push({ pos: error.pos, region: region ?? (node ? gate.span(node) : [0, gate.file.end]),
         reason: error.message, recovery });
       return fallback();
     }
@@ -80,4 +81,17 @@ export function recoverGate(gate: Gate, occurrences: GateOccurrence[]): void {
   const type = gate.typeOf.bind(gate);
   gate.typeOf = (node, at = null) => attempt(node ?? at, "opaque annotation replaced by unknown", () => type(node, at),
     () => ({ k: "atom", name: "unknown", span: node ? gate.span(node) : at ? gate.span(at) : [0, 0] }));
+  const classStmt = gate.classStmt.bind(gate);
+  gate.classStmt = (node) => attempt(node, "opaque class initialization omitted", () => classStmt(node),
+    () => ({ k: "block", pos: gate.span(node), label: null, body: [] }));
+  const hoisting = gate.hoisting.bind(gate);
+  gate.hoisting = (node) => attempt(node, "opaque hoisting operation omitted", () => hoisting(node), () => []);
+  const statements = gate.statements.bind(gate);
+  gate.statements = (nodes) => attempt(nodes[0], "statement-list preparation bypassed; statements attempted independently",
+    () => statements(nodes), () => {
+      const end = nodes.findIndex(abrupt);
+      return (end < 0 ? nodes : nodes.slice(0, end + 1)).flatMap(node => gate.hoisting(node));
+    },
+    [nodes[0] ? gate.span(nodes[0])[0] : 0, nodes.at(-1)?.end ?? 0]);
+
 }

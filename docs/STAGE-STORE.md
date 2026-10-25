@@ -161,6 +161,7 @@ execution of a replay-eligible invocation retains its complete stage key.
 | check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
 | explain | the Fragment and flow passed to the producer's `--explain` mode |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
+| diagnostic search and completion | separate stage identities; exact diagnostic Fragment and proposal envelopes, file identity, search depth and subtype rounds |
 
 ## Observed stages
 

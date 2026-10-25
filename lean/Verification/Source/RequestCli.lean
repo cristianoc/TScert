@@ -231,13 +231,13 @@ def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
 
 /-- Inventory output is never a source acceptance or an evidence file. -/
 def diagnosticFile (astPath claimsPath fileKey : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+    (budget : PositiveCertificates.SearchBudget := {}) (complete : Bool := true) : IO UInt32 := do
   let ast ← readJson astPath
   let claims ← readJson claimsPath
   match ast, claims with
   | .ok a, .ok c =>
     match a.getObjVal? "diagnostic", c.getObjVal? "claims" with
-    | .ok ast, .ok claims => IO.println (SourceClaimJson.diagnoseJson ast claims fileKey fuel budget).compress
+    | .ok ast, .ok claims => IO.println (SourceClaimJson.diagnoseJson ast claims fileKey fuel budget complete).compress
     | .error reason, _ | _, .error reason => return ← refuse reason
     return 0
   | .error reason, _ | _, .error reason => refuse reason

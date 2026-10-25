@@ -26,6 +26,10 @@ export function runCase(test: Case): Promise<Outcome> {
         const file = join(here, "examples", `${test.file}.ts`);
         using report = diagnose(file, test.project ? resolve(here, "..", test.project) : undefined);
         assert.equal(report.status, "diagnostic", report.error ?? "diagnostic run failed");
+        if (test.diagnosticCompleted !== undefined) {
+          assert.equal(report.completed, test.diagnosticCompleted, `${test.file}: diagnostic aggregate completion`);
+          if (report.completed) assert.ok(report.unexamined.length > 0, "recovered expressions remain holes");
+        }
         const text = readFileSync(file, "utf8");
         for (const site of test.diagnosticSites) {
           const at = text.indexOf(site);

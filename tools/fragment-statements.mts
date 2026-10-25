@@ -1158,7 +1158,7 @@ export function tryStmt(this: Gate, node: ts.TryStatement): Within<{ value: "any
 
 /** Whether a statement never completes normally: a jump, or a list or both
  * arms of an `if` that reach one. A loop may complete. */
-function abrupt(s: Statement): Within<{ value: "any"; store: "grow" }, boolean> {
+export function abrupt(s: Statement): Within<{ value: "any"; store: "grow" }, boolean> {
   return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
     ts.isThrowStatement(s) ||
     (ts.isBlock(s) && s.statements.some((t) => abrupt(t))) ||

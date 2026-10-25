@@ -22,6 +22,7 @@ export interface Case {
   typescriptErrors?: boolean;
   /** Source fragments at which a diagnostic run must retain a refusal. */
   diagnosticSites?: string[];
+  diagnosticCompleted?: boolean;
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -51,15 +52,15 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   { ...negative("diagnostic-effects", "Diagnostic footprint checking follows a failed expression."),
-    diagnosticSites: ["flag as number", "cell.value = 1"] },
+    diagnosticSites: ["flag as number", "cell.value = 1"], diagnosticCompleted: false },
   { ...gap("diagnostic-declarations", "Diagnostic declaration recovery retains imported bindings and sibling bodies.", "unsupported", "source", /unresolved type reference sep/),
     diagnosticSites: ["import { sep } from \"node:path\";", "value as string", "flag as number"] },
   { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
     diagnosticSites: ["first", "second", "value as string"] },
   { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),
-    diagnosticSites: ["x as string", "x as number"] },
+    diagnosticSites: ["x as string", "x as number"], diagnosticCompleted: true },
   { ...gap("diagnostic-syntax", "Diagnostic syntax recovery retains later refusals.", "unsupported", "source", /statement outside the fragment/),
-    diagnosticSites: ["debugger", "x as string"] },
+    diagnosticSites: ["debugger", "x as string", "this.value = this.value + 1", "function dead(): number {\n    return 0;\n  }", "x as number"] },
   // Distinct model-study causes; each source header gives the supplied sample count.
   gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
     /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),

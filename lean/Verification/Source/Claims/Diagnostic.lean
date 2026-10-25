@@ -11,12 +11,75 @@ private def occurrence (layer : String) (pos : Span) (reason : String)
   Json.mkObj [("layer", toJson layer), ("pos", toJson pos),
     ("reason", toJson ((reason.splitOn "\n").headD "")), ("conditional", toJson conditional)]
 
+private abbrev GraphShape := Nat × List Tm × List (Continuation × Option Target) × Nat
+
+mutual
+private partial def graphShapes : Tm → List GraphShape
+  | .objAt _ code _ => codeShapes code
+  | .makeAt code _ args => codeShapes code ++ args.flatMap graphShapes
+  | .invoke f r args => graphShapes f ++ graphShapes r ++ args.flatMap graphShapes
+  | .construct f args => graphShapes f ++ args.flatMap graphShapes
+  | .letE a b | .indexAt a b | .writeAt _ a b | .arith _ a b | .elemAt a b |
+      .merge _ a b | .makeKey a b => graphShapes a ++ graphShapes b
+  | .readAt _ a | .test _ a | .lenOf a | .spread a | .throw a => graphShapes a
+  | .ite a b c | .setElem a b c => graphShapes a ++ graphShapes b ++ graphShapes c
+  | .arrLit args => args.flatMap graphShapes
+  | .goto es _ _ env d => (es ++ env ++ [d]).flatMap graphShapes
+  | .frame es _ t env d _ _ => (es ++ env ++ [t, d]).flatMap graphShapes
+  | .var _ | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .arr _ => []
+private partial def codeShapes : CallCode → List GraphShape
+  | .absent => []
+  | .bound f r args => (f :: r :: args).flatMap graphShapes
+  | .graph a es ks start caps _ _ => (a, es, ks, start) :: (es ++ caps).flatMap graphShapes
+end
+
+/-- Opaque expressions read fresh assumed inputs at their stated result types.
+Appending slots preserves every original variable index. Each transfer carries
+those inputs past the original destination mapping. The result is used only
+inside diagnostic checking and cannot become a source acceptance result. -/
+@[nospecialize] private def assumeNodes {σ ι : Type} [Labels ι] [StoreView σ ι]
+    (r : SourceRequest σ ι) (holes : List Nat) (obligations : List Span) : SourceRequest σ ι := Id.run do
+  let holes := holes.eraseDups.filter fun label =>
+    (r.claims[label]?).any fun c => !ControlFlow.unsatisfiable (StoreView.graph r.types) [c.type]
+  let regions :=  holes.filterMap fun l => ((r.sourceMap[l]?).bind id).map (·.pos)
+  let supplied := holes.map fun label => ((r.claims[label]?).map (·.type)).getD []
+  let target (size : Nat) (t : Target) : Target :=
+    let count := ((r.claims[t.label]?).map (·.context.length)).getD 0
+    { t with mapping := some ((List.range count).map (PointClaims.slot t.mapping) ++
+      (List.range supplied.length).map (size + ·)) }
+  let program := r.program.zipIdx.map fun (node, label) =>
+    let size := ((r.claims[label]?).map (·.context.length)).getD 0
+    let continuation := match node.continuation with
+      | .ret => .ret
+      | .bind t => .bind (target (size + 1) t)
+      | .effect t => .effect (target size t)
+      | .branch a b => .branch (target size a) (target size b)
+      | .branchBind a b => .branchBind (target (size + 1) a) (target (size + 1) b)
+      | .tagBind tag a b => .tagBind tag (target (size + 1) a) (target (size + 1) b)
+    let expression := match holes.idxOf? label with
+      | some i => Tm.var (size + i)
+      | none => node.expression
+    { node with expression, continuation, handler := node.handler.map (target (size + 1)) }
+  let shapes := program.flatMap fun node => graphShapes node.expression
+  let retained := r.codes.zipIdx.filter fun (q, _) =>
+    shapes.contains (q.entry.arity, q.entry.exprs, q.entry.conts, q.entry.start)
+  return { r with
+    program := program
+    codes := retained.map (·.1)
+    codeSources := retained.map fun (_, i) => (r.codeSources[i]?).getD {}
+    inputs := r.inputs ++ supplied
+    claims := r.claims.map (fun c => { c with context := c.context ++ supplied }),
+    nodePlans := [],
+    obligations := (r.obligations.filter fun o => !obligations.contains o.pos &&
+      !regions.any (fun p => p.1 ≤ o.pos.1 && o.pos.2 ≤ p.2)).map fun o =>
+      { o with sequent := { o.sequent with context := o.sequent.context ++ supplied } } }
+
 /-- Inspect every extracted expression obligation and graph node. Failure of
 shared equation preparation leaves the entire document unexamined. Failure
 of one unit's extraction leaves that unit unexamined and retains its siblings.
 No successful local attempt establishes a source safety judgment. -/
 def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : Json :=
+    (budget : PositiveCertificates.SearchBudget := {}) (complete : Bool := true) : Json :=
   -- A complete derivation of the retained program discharges every local
   -- obligation. Only a refusal needs the less precise local traversal.
   match produceDocument ast claims fileKey fuel budget with
@@ -25,7 +88,8 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
       ("unexamined", toJson ([] : List Json))]
   | .error aggregate => Id.run do
     let mut failures : List Json := [occurrence "aggregate" (0, 0) aggregate]
-    let mut unexamined : List Json := [occurrence "check" (0, 0) "aggregate checking stops at a refusal"]
+    let mut unexamined : List Json := []
+    let mut completed := false
     let mut attempted := 0
     let result : Except String ((F : EquationStore.Frozen) ×
         List (FunctionPlan (EquationStore.Checked F.equations F.primitive)
@@ -37,13 +101,25 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     | .error reason =>
       failures := [occurrence "extraction" (0, 0) reason]
       unexamined := [occurrence "extraction" (0, 0) "shared extraction failed"]
-    | .ok ⟨_, plans, refusals⟩ =>
+    | .ok ⟨F, plans, refusals⟩ =>
+      let mut allChecked := !plans.isEmpty && refusals.all (·.2.2)
       for (pos, reason, recovered) in refusals do
         failures := failures ++ [occurrence "extraction" pos reason]
         unexamined := unexamined ++ [occurrence "extraction" pos
           (if recovered then "opaque typed operation or contract" else "unit extraction failed")]
       for plan in plans do
-        let .graph _ namePos r := plan
+        let .graph name namePos r := plan
+        -- Check every recovered unit, retaining siblings after a refusal.
+        if complete then
+          match produceFrozenPlans F [plan] fuel with
+          | .ok _ => continue
+          | .error reason =>
+            failures := failures ++ [occurrence "aggregate" namePos reason]
+        let beforeLocal := unexamined
+        let mut assumed : List Nat := []
+        let mut assumedObligations : List Span := []
+        let mut assumedRegions : List Json := []
+
         let G := StoreView.graph r.types
         let I := StoreView.images r.types
         let labels := r.searchLabels
@@ -53,7 +129,10 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
           attempted := attempted + 1
           match ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
               (StoreView.projection r.types) fuel [obligation] answers with
-          | .error reason => failures := failures ++ [occurrence "search" obligation.pos reason]
+          | .error reason =>
+            failures := failures ++ [occurrence "search" obligation.pos reason]
+            assumedObligations := assumedObligations ++ [obligation.pos]
+            assumedRegions := assumedRegions ++ [occurrence "search" obligation.pos "opaque expression obligation"]
           | .ok (proofs, next) =>
             known := known ++ proofs
             answers := next
@@ -65,12 +144,19 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
             (q.asRequest r.toRequest, ((r.codeHints[i]?).getD {}).sourceMap,
               ((r.codeHints[i]?).getD {}).requirements,
               q.entry.row.effect.footprint, q.entry.row.effect.fresh, q.entry.row.effect.onThrow))
-        for (request, origins, requirements, footprint, fresh, onThrow) in requests do
+        for ((request, origins, requirements, footprint, fresh, onThrow), requestIndex) in requests.zipIdx do
           attempted := attempted + request.program.length
           let holeLabels := origins.zipIdx.filterMap fun (entry, label) =>
             if entry.any (fun e => e.role.startsWith "diagnostic-") then some label else none
           let inspected := CertificateProducer.inspectUsing G I labels fuel
             request.program request.claims requirements known (fun _ => true) r.checker r.aliases request.goal request.start holeLabels
+          if requestIndex == 0 then
+            assumed := holeLabels ++ inspected.failures.filterMap fun
+              | .expression l | .exhaustedExpression l _ => some l
+              | _ => none
+            for label in assumed.eraseDups do
+              let pos := (((origins[label]?).bind id).map (·.pos)).getD namePos
+              assumedRegions := assumedRegions ++ [occurrence "search" pos "opaque expression supplied as a fresh input"]
           -- Effects are inspected independently of safety and of earlier nodes.
           if footprint != .top || fresh || onThrow then
             if fresh || !request.program.all (fun node => Purity.pureTerm node.expression) then
@@ -98,7 +184,18 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
             failures := failures ++ [occurrence "search" pos reason true]
             unexamined := unexamined ++ [occurrence "check" pos
               "aggregate certificate checks" true]
-    return Json.mkObj [("status", toJson "diagnostic"), ("attempted", toJson attempted), ("completed", toJson false),
+        if !complete || (assumed.isEmpty && assumedObligations.isEmpty) then
+          allChecked := false
+        else
+          let approximation := assumeNodes r assumed assumedObligations
+          match produceFrozenPlans F [.graph name namePos approximation] fuel with
+          | .ok _ => unexamined := beforeLocal ++ assumedRegions
+          | .error reason =>
+            allChecked := false
+            failures := failures ++ [occurrence "aggregate" namePos reason true]
+            unexamined := unexamined ++ assumedRegions
+      completed := allChecked
+    return Json.mkObj [("status", toJson "diagnostic"), ("attempted", toJson attempted), ("completed", toJson completed),
       ("occurrences", toJson failures), ("unexamined", toJson unexamined)]
 
 end Verification.SourceClaimJson

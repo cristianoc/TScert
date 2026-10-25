@@ -119,7 +119,13 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
       pure [(⟨"", span, [], undefinedType, init, false, none, false, none⟩, binders,
         ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
-  if !initUnit.isEmpty then checkInitializationOrder d.types all init
+  let mut preparationRefusals := preparationRefusals
+  if !initUnit.isEmpty then
+    match checkInitializationOrder d.types all init with
+    | .ok _ => pure ()
+    | .error reason =>
+      if recover then preparationRefusals := preparationRefusals ++ [((0, 0), reason)]
+      else throw reason
   if all.length != d.functions.length then throw "function claim count mismatch"
   let units := all.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
@@ -240,43 +246,61 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
         let mut d := d
         let mut module := module
         let mut c := c
+        let mut setupHoles : List (Span × String) := []
         -- A generic module function this unit calls: its slot holds the instances
         -- the calls name, and those reads and calls are claimed at them. The
         -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
         for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
-          if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
-            match Scheme.moduleInstances d.types g f.body c sourceScheme
-              (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
-            | .ok (T, slot, reads, calls) =>
-              d := { d with types := T }
-              -- The callee reads are claimed at the slot's type, which the
-              -- source fixes; the producer's reading of them is not needed.
-              let (A, T) ← match (Fragment.translate slot).run d.types with
-                | .ok r => pure r
-                | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
-              d := { d with types := T }
-              module := module ++ [(g.name, g.pos, .ok (.written slot))]
-              c := { c with expressions := c.expressions.map fun e =>
-                if reads.contains e.pos then { e with type := .labels A }
-                else if calls.contains e.pos then { e with instantiate := none } else e }
-            | .error (.obligation failure, T) => throw (directFailure T failure)
-            | .error (.exhausted failure limit rounds visited, T) =>
-              throw (directFailure T failure (.exhausted limit rounds visited))
-            | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
-          -- A generic function or class the unit reads only as a value: its slot
-          -- is its scheme.
-          else if (Fragment.stmtsFreeNames f.body).contains g.name then
-            match Scheme.moduleScheme d.types g with
-            | .ok (T, slot) =>
-              d := { d with types := T }
-              module := module ++ [(g.name, g.pos, .ok (.written slot))]
-            | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
+          let prepared : Except String (Document EquationStore.State Tree × List (SourceExtraction.ModuleValue Tree) × Function Tree) := do
+            let mut d := d
+            let mut module := module
+            let mut c := c
+            if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
+              match Scheme.moduleInstances d.types g f.body c sourceScheme
+                (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
+              | .ok (T, slot, reads, calls) =>
+                d := { d with types := T }
+                -- The callee reads are claimed at the slot's type, which the
+                -- source fixes; the producer's reading of them is not needed.
+                let (A, T) ← match (Fragment.translate slot).run d.types with
+                  | .ok r => pure r
+                  | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
+                d := { d with types := T }
+                module := module ++ [(g.name, g.pos, .ok (.written slot))]
+                c := { c with expressions := c.expressions.map fun e =>
+                  if reads.contains e.pos then { e with type := .labels A }
+                  else if calls.contains e.pos then { e with instantiate := none } else e }
+              | .error (.obligation failure, T) => throw (directFailure T failure)
+              | .error (.exhausted failure limit rounds visited, T) =>
+                throw (directFailure T failure (.exhausted limit rounds visited))
+              | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+            -- A generic function or class the unit reads only as a value: its slot
+            -- is its scheme.
+            else if (Fragment.stmtsFreeNames f.body).contains g.name then
+              match Scheme.moduleScheme d.types g with
+              | .ok (T, slot) =>
+                d := { d with types := T }
+                module := module ++ [(g.name, g.pos, .ok (.written slot))]
+              | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
+            return (d, module, c)
+          match prepared with
+          | .ok (next, bindings, claims) =>
+            d := next
+            module := bindings
+            c := claims
+          | .error reason =>
+            if !recover then throw reason
+            let calls := (f.body.flatMap Fragment.Stmt.callees).filter (·.2.2.1 == g.name)
+            setupHoles := setupHoles ++ [(f.namePos, reason)] ++ calls.map (fun call => (call.1, reason))
+            module := module ++ [(g.name, g.pos, .ok (.written (Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))])))]
+            c := { c with expressions := c.expressions.map fun e =>
+              if calls.any (·.1 == e.pos) then { e with instantiate := none } else e }
         let (request, holes) ← if recover then
             diagnoseNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
           else do
             let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
             pure (request, [])
-        return (.graph f.name f.namePos { request with sourceScheme }, holes)
+        return (.graph f.name f.namePos { request with sourceScheme }, setupHoles ++ holes)
       -- A generic unit's graph extraction reports where it stops as a
       -- located refusal at the function, as the direct checker's do.
       let (plan, holes) ← if tps.isEmpty then finish d module c f
@@ -288,8 +312,23 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
     match attempt with
     | .ok (next, plan, holes) => return (next, plans ++ [plan], failures ++ holes.map fun (p, r) => (p, r, true))
     | .error reason =>
-      if recover then return (T, plans, failures ++ [(f.namePos, reason, false)])
-      else throw reason
+      if !recover then throw reason
+      -- Unit setup can fail before typed operation transactions exist. Retry
+      -- the original body with its supplied ground interfaces; the whole unit
+      -- is opaque because its quantified preparation has been bypassed.
+      let region := (f.namePos.1, (f.body.getLast?.map (·.pos.2)).getD f.namePos.2)
+      let fallback : Except String (SourceRequest EquationStore.State Tree × List (Span × String)) := do
+        let c ← match initClaims with
+          | some c => pure c
+          | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
+            | some c => pure c
+            | none => throw "missing unit claims during diagnostic setup"
+        let module := moduleFunctions ++ (if initClaims.isSome then classSelves else moduleConstants)
+        diagnoseNormalizedFn T f c.normalized module (SourceExtraction.sourceClasses init)
+      match fallback with
+      | .ok (r, holes) => return (r.types, plans ++ [FunctionPlan.graph f.name f.namePos r],
+          failures ++ [(region, reason, true)] ++ holes.map fun (p, r) => (p, r, true))
+      | .error later => return (T, plans, failures ++ [(region, reason, false), (region, later, false)])
   return (T, plans, failures)
 
 /-- Acceptance requires every unit's extraction to succeed. -/

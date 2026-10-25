@@ -22,9 +22,9 @@ const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
 export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" |
-  "diagnostics" | "diagnostic-parse" | "diagnostic-lower" | "diagnostic-propose" | "diagnostic-search";
+  "diagnostics" | "diagnostic-parse" | "diagnostic-lower" | "diagnostic-propose" | "diagnostic-search" | "diagnostic-complete";
 export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "search", "check",
-  "explain", "diagnostics", "diagnostic-parse", "diagnostic-lower", "diagnostic-propose", "diagnostic-search"];
+  "explain", "diagnostics", "diagnostic-parse", "diagnostic-lower", "diagnostic-propose", "diagnostic-search", "diagnostic-complete"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build
@@ -473,8 +473,8 @@ export function verifierCall(program: string, args: readonly string[],
   const [mode, ...rest] = args.slice(budget.length);
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
     ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
-  if (mode === "--diagnose-source-claims" && rest.length === 4)
-    return call("diagnostic-search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+  if (["--diagnose-source-claims", "--diagnose-source-claims-local"].includes(mode) && rest.length === 4)
+    return call(mode === "--diagnose-source-claims-local" ? "diagnostic-search" : "diagnostic-complete", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
       { text: rest[2] }, { text: rest[3] }]);
   if (mode === "--diagnostic-control-flow" && rest.length === 1)
     return call("diagnostic-lower", [{ input: "diagnostic-fragment.json", path: rest[0] }]);

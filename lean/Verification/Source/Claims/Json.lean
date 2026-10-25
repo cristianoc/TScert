@@ -194,11 +194,11 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
       | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|> typingRefusal r c)).getD fallback)
 
-def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Json := do
-  let (T, plans) ← extractPlans ast claims fileKey budget qualified
-  let ⟨F, frozen⟩ ← freezePlans T plans
+/-- Search and check supplied frozen plans. This returns evidence only; the
+ordinary acceptance path independently extracts and certifies its source. -/
+def produceFrozenPlans (F : EquationStore.Frozen)
+    (frozen : List (FunctionPlan (EquationStore.Checked F.equations F.primitive)
+      (EquationStore.CheckedLabel F.equations F.primitive))) (fuel : Nat) : Except String Json := do
   let rs := FunctionPlan.requests frozen
   -- One graph and one image check for the document's search: every request
   -- holds the frozen store (`SourceRequest.over`), whose graph is the
@@ -254,6 +254,13 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   if !checked.accepted then
     throw (validationFailure rs checked "source evidence does not justify the extracted graph requests")
   return evidence
+
+def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Json := do
+  let (T, plans) ← extractPlans ast claims fileKey budget qualified
+  let ⟨F, frozen⟩ ← freezePlans T plans
+  produceFrozenPlans F frozen fuel
 
 private def codeJson {ι : Type} [ToJson ι] (c : CodeEntry ι) : Json :=
   Json.mkObj [("arity", toJson c.arity), ("start", toJson c.start),
