@@ -346,8 +346,14 @@ is not a certification of the module it was cut from.
 
 **Failure boundary.** A module function the parser cannot lower is absent
 from its module, with the parser's reason, and its module's other functions
-stay. A module whose declarations or top-level code cannot be lowered is
-absent: its imports are read at their ordinary signatures. An import read
+stay, but for those reading an absent function, which are absent with it,
+the read as their reason, until no function left reads one. A module whose
+declarations or top-level code cannot be lowered, or whose top-level code
+reads an absent function, is absent: its imports are read at their ordinary
+signatures. An absent function's code is checked by no run: an import of
+it is safe under the assumption that an imported value meets its
+declaration ([imported values](#imported-ambient-and-global-values), the
+[trust surface](DESIGN.md#trust-surface)). An import read
 at its ordinary signature is refused where that signature is not
 representable in full.
 

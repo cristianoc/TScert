@@ -377,6 +377,28 @@ export function inKey(node: ts.BinaryExpression): Within<{ value: "any"; store: 
   return key;
 }
 
+/** The first identifier of `within` reading a value binding whose fragment
+ * name (`local`) is in `names`. A type, and the name of a property, a
+ * member, a destructured key, a label or a meta-property, reads no binding. */
+export function readOf(within: Node, names: ReadonlySet<string>,
+  local: (id: Identifier) => string): Within<{ value: "any"; store: "grow" }, Identifier | null> {
+  const nameSlot = (id: Identifier): boolean => {
+    const p = id.parent;
+    if (!p) return false;
+    if (ts.isPropertyAccessExpression(p) || ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) ||
+        ts.isPropertyDeclaration(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p) ||
+        ts.isEnumMember(p)) return p.name === id;
+    if (ts.isBindingElement(p)) return p.propertyName === id;
+    return ts.isLabeledStatement(p) || ts.isBreakStatement(p) || ts.isContinueStatement(p) || ts.isMetaProperty(p);
+  };
+  const visit = (n: Node): Identifier | null => {
+    if (ts.isTypeNode(n)) return null;
+    if (ts.isIdentifier(n)) return !nameSlot(n) && names.has(local(n)) ? n : null;
+    return n.forEachChild((c) => visit(c) ?? undefined) ?? null;
+  };
+  return visit(within);
+}
+
 /** Whether `within` writes a binding spelled `name`: an assignment, a
  * compound or logical one, an update, a destructuring assignment or a
  * `for...of`/`for...in` head naming it. By spelling, so a binding of

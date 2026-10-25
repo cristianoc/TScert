@@ -495,6 +495,30 @@ control(async (): Promise<void> => {
   process.stdout.write("a read of a name its document does not bind, a call's and a spread operand's: the producer refuses it at the read\n");
 });
 control(async (): Promise<void> => {
+  // Which functions of an imported module the parser keeps: `partial.ts`'s
+  // `jumped` is refused, and each function reading it, directly, through
+  // another, as a value, in a closure or in a parameter default, is left out
+  // with it; a parameter of the same name is no read of it. A module whose
+  // top-level code reads a function left out is not listed.
+  const partial = readFragmentFile(join(run("invalid-absent-callee-value-import"), "fragment.json"));
+  const [module] = partial.modules;
+  assert.ok(module && partial.modules.length === 1 && module.location === "./partial.ts");
+  assert.deepEqual(module.functions.map((f) => f.name), ["shadowed", "kept"]);
+  const leftOut = (name: string, line: number, col: number): string =>
+    `gate: a read of ${name}, a function of its module left out (line ${line}, col ${col})`;
+  assert.deepEqual(module.absent.map((a) => [a.name, a.reason]), [
+    ["jumped", "gate: a hoisted declaration after a statement that always jumps is outside the fragment (line 8, col 3)"],
+    ["relayed", leftOut("jumped", 13, 10)],
+    ["passed", leftOut("jumped", 19, 17)],
+    ["inClosure", leftOut("jumped", 22, 24)],
+    ["defaulted", leftOut("jumped", 24, 50)],
+    ["chained", leftOut("relayed", 16, 10)],
+  ]);
+  const init = readFragmentFile(join(run("invalid-absent-init-value-import"), "fragment.json"));
+  assert.deepEqual(init.modules, []);
+  process.stdout.write("an imported module's functions reading a function left out: left out with it, transitively; a module whose top-level code reads one: not listed\n");
+});
+control(async (): Promise<void> => {
   // A generic method's argument pack `P` beside a nested generic method
   // binding its own `P` is a pack: the inner `P` is that method's value binder.
   // The outer `P` used also as a value inside a nested method binding only `Q`

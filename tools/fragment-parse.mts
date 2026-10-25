@@ -42,7 +42,7 @@ import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInNa
   throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
-import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
+import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
@@ -521,11 +521,14 @@ export class Gate {
   }
 
   fail(node: Node | null, message: string): never {
+    throw new Error(this.refusal(node, message));
+  }
+
+  /** The gate's refusal `message`, located at `node`. */
+  refusal(node: Node | null, message: string): Within<{ value: "any"; store: "grow" }, string> {
     const start = node ? node.getStart(this.file) : 0;
     const at = this.file.getLineAndCharacterOfPosition(start);
-    throw new Error(
-      `gate: ${message} (line ${at.line + 1}, col ${at.character + 1})`,
-    );
+    return `gate: ${message} (line ${at.line + 1}, col ${at.character + 1})`;
   }
 
   span(node: Node): Within<{ value: "keep"; store: "keep" }, Span> {
@@ -2060,21 +2063,45 @@ function lowerFile(file: string, carriesContext: boolean,
       if (s.name && writesName(source, s.name.text))
         gate.fail(s.name, `a module whose code writes the binding of its function ${s.name.text}`);
   const absent: ModuleAst["absent"] = [];
-  const parsed = location === null ? declared.map((s) => gate.functionDecl(s))
+  const leftOut = (s: FunctionDeclaration, reason: string): void => {
+    absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s), reason });
+  };
+  let lowered = location === null ? declared.map((s) => ({ s, fn: gate.functionDecl(s) }))
     : declared.flatMap((s) => {
       try {
-        return [gate.functionDecl(s)];
+        return [{ s, fn: gate.functionDecl(s) }];
       } catch (error) {
         passToolFailure(error);
-        absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s),
-          reason: messageOf(error) });
+        leftOut(s, messageOf(error));
         return [];
       }
     });
+  // A function left out is no binding of the module's run: a kept function
+  // reading one is left out with it, until no kept function reads one.
+  const absentNames = (): Set<string> => new Set(absent.flatMap((a) => a.name ? [a.name] : []));
+  const local = (id: Identifier): string => gate.local(id);
+  for (let changed = true; changed;) {
+    const names = absentNames();
+    const kept = lowered.filter(({ s }) => {
+      const read = readOf(s, names, local);
+      if (read) leftOut(s, gate.refusal(read, `a read of ${read.text}, a function of its module left out`));
+      return !read;
+    });
+    changed = kept.length < lowered.length;
+    lowered = kept;
+  }
+  const parsed = lowered.map(({ fn }) => fn);
   // Every enum's members must have values, whether or not it runs.
   for (const e of enumNodes) gate.enumMembers(e.name.text);
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]
     : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : [gate.stmt(s)]);
+  // The module's top-level code runs as written: its read of a function left
+  // out refuses the module.
+  const leftNames = absentNames();
+  for (const s of initNodes) {
+    const read = readOf(s, leftNames, local);
+    if (read) gate.fail(read, `the module's top-level code reads ${read.text}, a function of its module left out`);
+  }
   if (location === null && parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
   // `%ThrowUninitialized%` was listed where a binding may be early, by
   // spelling (`earlyCandidate`); the file keeps it only where the lowering
