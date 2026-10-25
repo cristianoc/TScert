@@ -97,7 +97,7 @@ function attribute(report: DiagnosticReport, scopes: DiagnosticScope[]): void {
       dependencies.push("supplied-interfaces");
     occurrence.dependencies = dependencies;
     occurrence.conditional ||= dependencies.length > 0;
-    if (["source", "proposal", "extraction"].includes(occurrence.layer)) previous.set(scope, occurrence.id);
+    if (["source", "planning", "proposal", "extraction"].includes(occurrence.layer)) previous.set(scope, occurrence.id);
   }
 }
 
@@ -148,7 +148,15 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
       const flow = step(verifierCall(verifier, ["--diagnostic-control-flow", fragment]), "planning");
       if (flow !== null) {
         const flowPath = join(artifacts, "diagnostic-flow.json");
-        writeFileSync(flowPath, flow);
+        const planned = object(JSON.parse(flow));
+        for (const raw of list(planned.occurrences)) {
+          const occurrence = object(raw);
+          const pos = span(occurrence.pos);
+          add("planning", pos, string(occurrence.reason), true);
+          report.unexamined.push({ pos, reason: "opaque planning expression replaced by undefined" });
+        }
+        writeFileSync(fragment, JSON.stringify({ ...envelope, diagnostic: planned.diagnostic }));
+        writeFileSync(flowPath, JSON.stringify(list(planned.graph)));
         const proposal = step(producerCall(producerExecutable, ["--diagnose", fragment, flowPath]), "proposal");
         if (proposal !== null) {
           const proposed = object(JSON.parse(proposal));

@@ -25,6 +25,12 @@ the same transactions. A statement-list preparation refusal retains its live
 prefix for independent statement attempts and marks the whole list opaque. Compiler and file-system failures propagate as
 tool failures. The original file remains the source of all offsets.
 
+Diagnostic execution planning replaces a literal-key `in` test excluded by the
+source decoder with `undefined`, recording the whole test as opaque. Its output
+contains both the approximated syntax and its execution graph; proposal and
+typed extraction consume that same syntax. Ordinary decoding retains its
+key restriction.
+
 The producer recovers at expressions, statement transfers, binding-schedule
 operations, conditions and iterator steps. Each refusal restores candidate
 state and records the failed region as opaque. An expression assumes its
@@ -68,7 +74,11 @@ restored before each replacement. A diagnostic hole discards output heap facts
 during local search, even if its placeholder expression has a derivation.
 Quantified module-value preparation has one transaction per binding. A refusal
 retains the binding at `unknown`, removes the failed call instantiation and
-records the affected sites. A unit setup refusal retries its original body at
+records the affected sites. Parameter, result and immutable module-binding
+contract preparation have individual transactions. A refused contract becomes `unknown`; a failed claim
+resolution uses the interpreted source contract. These setup recoveries mark
+the whole unit opaque. Module cells retain their storage preparation requirements.
+A unit setup refusal retries its original body at
 supplied ground interfaces and marks the whole unit opaque. A failed retry
 leaves the unit unexamined and retains its siblings. Initialization-order
 refusals have document scope.
@@ -107,6 +117,13 @@ as uninhabitable are excluded. Failed standalone expression obligations and
 obligations inside a replaced expression are opaque. Code absent from the
 resulting expressions, including their nested closures, needs no certificate.
 The resulting graph receives ordinary search and certificate checking again.
+A structured expression failure from aggregate search selects the smallest
+retained source expression containing its span, including an enclosing closure
+expression when the failure is inside its body. That expression becomes a
+fresh assumed input and its whole region is opaque. Each retry removes a
+previously retained expression, bounding retries by the original node count.
+Candidates with uninhabitable supplied types are excluded. An absent candidate,
+or an edge, promise, footprint or certificate failure, ends these retries.
 A successful retry completes that unit; its replaced regions remain holes.
 These inputs assume fixed values throughout a unit invocation and supply no
 heap effects or output facts. They can hide failures that depend on repeated

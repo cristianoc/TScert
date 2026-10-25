@@ -74,6 +74,19 @@ inside diagnostic checking and cannot become a source acceptance result. -/
       !regions.any (fun p => p.1 ≤ o.pos.1 && o.pos.2 ≤ p.2)).map fun o =>
       { o with sequent := { o.sequent with context := o.sequent.context ++ supplied } } }
 
+/-- Only structured expression failures select another opaque expression.
+Edges, promises, effects and certificate rejection keep their obligations. -/
+private def failedExpression (reason : String) : Option Span := do
+  let raw ← (reason.splitOn "\nobligation-diagnostic: ")[1]?
+  let record ← (Json.parse raw).toOption
+  let kind ← (record.getObjValAs? String "kind").toOption
+  let origin ← if kind == "node-typing" then do
+      let source ← (record.getObjVal? "source").toOption
+      (source.getObjVal? "sourceMap").toOption
+    else if kind == "expression-claim" then (record.getObjVal? "sourceMap").toOption
+    else none
+  (jSpan origin "pos").toOption
+
 /-- Inspect every extracted expression obligation and graph node. Failure of
 shared equation preparation leaves the entire document unexamined. Failure
 of one unit's extraction leaves that unit unexamined and retains its siblings.
@@ -184,15 +197,36 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
             failures := failures ++ [occurrence "search" pos reason true]
             unexamined := unexamined ++ [occurrence "check" pos
               "aggregate certificate checks" true]
-        if !complete || (assumed.isEmpty && assumedObligations.isEmpty) then
+        if !complete then
           allChecked := false
         else
-          let approximation := assumeNodes r assumed assumedObligations
-          match produceFrozenPlans F [.graph name namePos approximation] fuel with
-          | .ok _ => unexamined := beforeLocal ++ assumedRegions
-          | .error reason =>
+          let mut checked := false
+          -- Every retry must remove a previously retained expression, so the
+          -- number of attempts is bounded by the original graph's size.
+          for _ in List.range (r.program.length + 1) do
+            let approximation := assumeNodes r assumed assumedObligations
+            match produceFrozenPlans F [.graph name namePos approximation] fuel with
+            | .ok _ =>
+              checked := true
+              break
+            | .error reason =>
+              failures := failures ++ [occurrence "aggregate" namePos reason true]
+              let some pos := failedExpression reason | break
+              let candidates := r.sourceMap.zipIdx.filter fun (entry, label) =>
+                !assumed.contains label && entry.any (fun e => e.pos.1 ≤ pos.1 && pos.2 ≤ e.pos.2) &&
+                (r.claims[label]?).any (fun c => !ControlFlow.unsatisfiable G [c.type])
+              let candidate := candidates.foldl (fun best next => match best, next.1 with
+                | none, some _ => some next
+                | some (some previous, _), some current =>
+                  if current.pos.2 - current.pos.1 < previous.pos.2 - previous.pos.1 then some next else best
+                | _, _ => best) none
+              let some (some origin, label) := candidate | break
+              assumed := assumed ++ [label]
+              assumedRegions := assumedRegions ++ [occurrence "search" origin.pos
+                "opaque aggregate expression supplied as a fresh input"]
+          if checked then unexamined := beforeLocal ++ assumedRegions
+          else
             allChecked := false
-            failures := failures ++ [occurrence "aggregate" namePos reason true]
             unexamined := unexamined ++ assumedRegions
       completed := allChecked
     return Json.mkObj [("status", toJson "diagnostic"), ("attempted", toJson attempted), ("completed", toJson completed),

@@ -122,11 +122,13 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
+  let setupRegion := (f.namePos.1, (f.body.getLast?.map (·.pos.2)).getD f.namePos.2)
   let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (diagnostic := diagnostic) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
-    let bindings ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
+    let bindings ← f.params.mapM (fun (p : Fragment.Param) =>
+      recoverDiagnostic setupRegion (lower (Fragment.translate p.ty)) (pure []))
     -- A sloppy function reading `this` binds its receiver as a sloppy call
     -- does: an object unchanged, any other converted (the global object, a
     -- wrapper), which the model does not have. Its receiver annotation, the
@@ -148,7 +150,8 @@ did not mention grow it, and the request carries the result. -/
     let siblingTypes ← (siblings.zip siblingStorage).mapM fun (value, storage) => do
       let (_, pos, ty) := value
       if let some (_, reference) := storage then return reference
-      match ty with
+      recoverDiagnostic setupRegion (do
+        match ty with
         | Except.ok (.cell _) => throw "internal extraction error: a module cell's storage"
         | Except.ok (.written ty) => lower (Fragment.translate ty)
         | Except.ok (.claimed A annotation) => do
@@ -160,7 +163,7 @@ did not mention grow it, and the request carries the result. -/
             let written ← lower (Fragment.translate ty)
             try lower (EquationStore.meet [written, inferred])
             catch reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-        | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+        | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)) (pure [])
     let siblingScope : List (ScopeBinding Tree) :=
       ((siblings.zip siblingTypes).zip siblingStorage).map fun ((value, A), storage) =>
         match storage with
@@ -198,13 +201,13 @@ did not mention grow it, and the request carries the result. -/
     -- caller contract, as it is for arrows (DESIGN.md, "Trust surface").
     for ((p, A), (name, claimed)) in (f.params.zip bindings).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
-      let B ← SourceClaims.resolve (← table) claimed
+      let B ← recoverDiagnostic setupRegion (SourceClaims.resolve (← table) claimed) (pure A)
       let T ← table
       recoverDiagnostic f.namePos
         (requireSameMeaning T f.namePos .entryClaim A B
           s!"claimed parameter type differs from the source annotation for '{name}'") (pure ())
-    let R ← lower (Fragment.translate f.ret)
-    let claimedR ← SourceClaims.resolve (← table) fc.ret
+    let R ← recoverDiagnostic setupRegion (lower (Fragment.translate f.ret)) (pure [])
+    let claimedR ← recoverDiagnostic setupRegion (SourceClaims.resolve (← table) fc.ret) (pure R)
     recoverDiagnostic f.namePos
       (requireSameMeaning (← table) f.namePos .returnContract R claimedR
         "claimed return type differs from the source annotation") (pure ())

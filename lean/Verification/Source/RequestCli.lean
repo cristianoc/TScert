@@ -1,6 +1,6 @@
 import Verification.Source.Claims.Diagnostic
 -- FlowJson.lean supplies the claim-independent graphs the producer analyzes.
-import Verification.Source.FlowJson
+import Verification.Source.DiagnosticFlow
 import Verification.Source.Claims.Json
 
 /-! File interface to the source adapter. Source parsing remains external;
@@ -217,7 +217,7 @@ def flowFile (astPath : String) : IO UInt32 := do
 /-- Diagnostic input is wrapped so an ordinary source command refuses it. -/
 def diagnosticFlowFile (astPath : String) : IO UInt32 := do
   let ast ← readJson astPath
-  match ast >>= (·.getObjVal? "diagnostic") >>= SourceFlow.document with
+  match ast >>= (·.getObjVal? "diagnostic") >>= SourceFlow.diagnosticDocument with
   | .ok graph => IO.println graph.compress; return 0
   | .error reason => refuse reason
 

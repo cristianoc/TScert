@@ -51,6 +51,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...negative("diagnostic-closure", "Aggregate expression recovery records the enclosing closure as opaque."),
+    diagnosticSites: ["value as string", "value as number"], diagnosticCompleted: true },
+  { ...gap("diagnostic-planning", "Diagnostic planning retains later expression obligations.", "unsupported", "source", /`in` with the key 'name'/),
+    diagnosticSites: ['"name" in value', "flag as number", "value as string"] },
   { ...negative("diagnostic-effects", "Diagnostic footprint checking follows a failed expression."),
     diagnosticSites: ["flag as number", "cell.value = 1"], diagnosticCompleted: false },
   { ...gap("diagnostic-declarations", "Diagnostic declaration recovery retains imported bindings and sibling bodies.", "unsupported", "source", /unresolved type reference sep/),
