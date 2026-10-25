@@ -5,6 +5,7 @@ type expression_infer = ?expected:Semantic.ty -> env -> Source.expr -> Semantic.
 type body_infer = Json.t -> Semantic.ty option -> env -> Source.stmt list -> env * Semantic.ty list
 
 type t
+val recover : t -> (unit -> 'a) -> ('a, string) result
 val create : Proposal_diagnostics.state -> Flow.graph list ->
   (Json.t * Semantic.signature list) list -> Source.declaration list ->
   (string * Semantic.ty Lazy.t) list -> (string * Module_contract.arity) list -> (Semantic.rigid * Semantic.ty) list ->

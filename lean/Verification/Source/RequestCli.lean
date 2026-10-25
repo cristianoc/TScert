@@ -1,3 +1,4 @@
+import Verification.Source.Claims.Diagnostic
 -- FlowJson.lean supplies the claim-independent graphs the producer analyzes.
 import Verification.Source.FlowJson
 import Verification.Source.Claims.Json
@@ -213,6 +214,13 @@ def flowFile (astPath : String) : IO UInt32 := do
   | .ok graph => IO.println graph.compress; return 0
   | .error reason => refuse reason
 
+/-- Diagnostic input is wrapped so an ordinary source command refuses it. -/
+def diagnosticFlowFile (astPath : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  match ast >>= (·.getObjVal? "diagnostic") >>= SourceFlow.document with
+  | .ok graph => IO.println graph.compress; return 0
+  | .error reason => refuse reason
+
 /-- Print the program graph each unit lowers to (`SourceClaimJson.lowerJson`). -/
 def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
   let ast ← readJson astPath
@@ -220,6 +228,19 @@ def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
   match do SourceClaimJson.lowerJson (← ast) (← claims) fileKey with
   | .ok j => IO.println j.compress; return 0
   | .error e => refuse e
+
+/-- Inventory output is never a source acceptance or an evidence file. -/
+def diagnosticFile (astPath claimsPath fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match ast, claims with
+  | .ok a, .ok c =>
+    match a.getObjVal? "diagnostic", c.getObjVal? "claims" with
+    | .ok ast, .ok claims => IO.println (SourceClaimJson.diagnoseJson ast claims fileKey fuel budget).compress
+    | .error reason, _ | _, .error reason => return ← refuse reason
+    return 0
+  | .error reason, _ | _, .error reason => refuse reason
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat)

@@ -86,6 +86,27 @@ const sessionReuse = serving ? null : beside("tests/session-reuse.mts", []);
 // controls, and given to every control process.
 const mutationBuild = serving ? null : beside("pipeline/evidence-mutations.mts", ["--build"]);
 
+// Diagnostic envelopes have no path through ordinary source acceptance,
+// including an inventory with no refusals over an otherwise verified source.
+control(async (): Promise<void> => {
+  const good = await run("stateful-source/arithmetic");
+  const ast = join(good, "diagnostic-fragment.json");
+  const claims = join(good, "diagnostic-proposal.json");
+  writeFileSync(ast, JSON.stringify({ diagnostic: readFragmentFile(join(good, "fragment.json")),
+    occurrences: [], incomplete: null }));
+  writeFileSync(claims, JSON.stringify({ claims: readClaimsFile(join(good, "claims.json")), occurrences: [] }));
+  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
+  assert.equal(inventory.status, 0, inventory.stderr);
+  const report: unknown = JSON.parse(inventory.stdout);
+  assert.ok(report && typeof report === "object" && "status" in report && report.status === "diagnostic");
+  for (const [fragment, proposal] of [[ast, join(good, "claims.json")], [join(good, "fragment.json"), claims]]) {
+    const checked = tested(verifierCall(verifier, ["--check-source-claims", fragment, proposal,
+      sourceKey(good), join(good, "evidence.json")]));
+    assert.equal(checked.status, 1, "a diagnostic envelope must be refused by source acceptance");
+    assert.ok(!checked.stdout.includes("accept:"));
+  }
+});
+
 // Every allowed compiler enum uses the same Node binding identity check as
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.

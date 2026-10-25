@@ -21,12 +21,14 @@
 // running a slice.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
+import { setImmediate as yieldToLoop } from "node:timers/promises";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
+import { diagnose, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
 import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
@@ -38,7 +40,8 @@ const repository = resolve(import.meta.dirname, "..");
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** One slice: its file, the function it holds, and its text. */
-type Slice = { slice: string; file: string; fn: string; text: string };
+type Slice = { slice: string; file: string; fn: string; text: string;
+  segments: { start: number; end: number; original: number; originalEnd: number; exact: boolean }[] };
 
 /** A slice's stage invocation, as the census keeps it after its artifacts
  * and the store's entries are gone. */
@@ -130,28 +133,35 @@ function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
         }
       }
     const parts: string[] = [];
+    const segments: Slice["segments"] = [];
+    const part = (source: string, node: ts.Node, exact: boolean, prefix: number = 0): void => {
+      const start = parts.reduce((n, p) => n + p.length + 2, 0);
+      parts.push(source);
+      segments.push({ start: start + prefix, end: start + source.length,
+        original: node.getStart(tree), originalEnd: node.end, exact });
+    };
     for (const im of imports) {
       const clause = im.importClause;
       if (!clause) continue;
       const specifier = text.slice(im.moduleSpecifier.pos, im.moduleSpecifier.end).trim();
-      if (clause.name && used.has(clause.name.text)) parts.push(text.slice(im.pos, im.end).trim());
+      if (clause.name && used.has(clause.name.text)) part(text.slice(im.pos, im.end).trim(), im, false);
       const bindings = clause.namedBindings;
       if (bindings && ts.isNamespaceImport(bindings) && used.has(bindings.name.text))
-        parts.push(text.slice(im.pos, im.end).trim());
+        part(text.slice(im.pos, im.end).trim(), im, false);
       if (bindings && ts.isNamedImports(bindings)) {
         const elements = bindings.elements.filter((e) => used.has(e.name.text)).map((e) => text.slice(e.pos, e.end).trim());
         const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
-        if (elements.length) parts.push(`import ${typeOnly ? "type " : ""}{ ${elements.join(", ")} } from ${specifier};`);
+        if (elements.length) part(`import ${typeOnly ? "type " : ""}{ ${elements.join(", ")} } from ${specifier};`, im, false);
       }
     }
     for (const st of tree.statements)
       if (needed.has(st)) {
         let source = text.slice(st.getStart(tree), st.end).trim();
-        if (st === s && !/^export\b/.test(source)) source = "export " + source;
-        parts.push(source);
+        const prefix = st === s && !/^export\b/.test(source) ? "export " : "";
+        part(prefix + source, st, true, prefix.length);
       }
     slices.push({ slice: `slice-${file.replace(/\.mts$/, "")}-${s.name.text}.mts`, file, fn: s.name.text,
-      text: parts.join("\n\n") + "\n" });
+      text: parts.join("\n\n") + "\n", segments });
   }
   return slices;
 }
@@ -256,6 +266,8 @@ function invocationsOfRequest(source: string): InvocationReference[] {
 }
 
 async function census(args: string[]): Promise<void> {
+  const diagnosticMode = args.includes("--diagnostic");
+  if (diagnosticMode) args.splice(args.indexOf("--diagnostic"), 1);
   const directory = option(args, "--dir") ?? "tools";
   const files = option(args, "--files")?.split(",") ?? null;
   const functions = option(args, "--functions")?.split(",") ?? null;
@@ -311,6 +323,57 @@ async function census(args: string[]): Promise<void> {
   process.stderr.write(`${selected.length} of ${all.length} slices\n`);
 
   const project = join(out, "tools");
+  if (diagnosticMode) {
+    const groups = new Map<string, Slice[]>();
+    for (const slice of selected) groups.set(slice.text, [...(groups.get(slice.text) ?? []), slice]);
+    const detailDirectory = `${recordPath}.slices`;
+    mkdirSync(detailDirectory, { recursive: true });
+    const results: { targets: string[]; report: DiagnosticReport; detail: string; invocations: InvocationReference[];
+      occurrences: { file: string; start: number; end: number; reason: string; layer: string; conditional: boolean }[];
+      holes: { file: string; start: number; end: number; reason: string }[] }[] = [];
+    for (const group of groups.values()) {
+      const first = group[0];
+      if (!first) continue;
+      const fullReport = diagnose(join(root, first.slice), project);
+      const detail = join(detailDirectory, `${results.length}.json`);
+      writeFileSync(detail, JSON.stringify(fullReport) + "\n");
+      const invocations = readInvocationLog(join(fullReport.artifacts, invocationLog)).map(reference);
+      const report: DiagnosticReport = { ...fullReport,
+        occurrences: fullReport.occurrences.map(o => ({ ...o, reason: o.reason.split("\n")[0] })) };
+      const original = (pos: [number, number]): { file: string; start: number; end: number }[] =>
+        first.segments.filter(s => pos[0] < s.end && s.start < pos[1]).map(s => ({ file: first.file,
+          start: s.exact ? s.original + Math.max(0, pos[0] - s.start) : s.original,
+          end: s.exact ? s.original + Math.min(s.end - s.start, pos[1] - s.start) : s.originalEnd }));
+      results.push({ targets: group.map(s => `${s.file}#${s.fn}`), report, detail, invocations,
+        occurrences: report.occurrences.flatMap(o => original(o.pos).map(p => ({ ...p,
+          reason: o.reason, layer: o.layer, conditional: o.conditional }))),
+        holes: report.unexamined.flatMap(o => original(o.pos).map(p => ({ ...p, reason: o.reason }))) });
+      process.stderr.write(`${results.length}/${groups.size} diagnostic slice groups: ${report.occurrences.length} refusals\n`);
+      await yieldToLoop();
+    }
+    const ranked = new Map<string, Set<string>>();
+    for (const result of results) for (const o of result.occurrences) {
+      const key = `${o.layer}: ${blocker(o.reason.split("\n")[0]).replace(/node \d+/g, "node").replace(/edge \d+/g, "edge")}`;
+      const targets = ranked.get(key) ?? new Set<string>();
+      for (const target of result.targets) targets.add(target);
+      ranked.set(key, targets);
+    }
+    const counted = units.filter(u => u.scope === "census" && selected.some(s => s.file === u.file && s.fn === u.fn));
+    const ranking = [...ranked].map(([reason, targets]) => ({ reason, functions: targets.size,
+      affectedStatements: counted.filter(u => targets.has(`${u.file}#${u.fn}`)).length,
+      targets: [...targets] })).sort((a, b) => b.functions - a.functions || b.affectedStatements - a.affectedStatements);
+    const holes = counted.filter(u => results.some(r => r.targets.includes(`${u.file}#${u.fn}`) &&
+      (!r.report.completed || r.holes.some(h => h.file === u.file && h.start < u.end && u.start < h.end))));
+    const record = { status: "diagnostic", source: { commit, dirty, directory, files, functions },
+      elapsedMs: performance.now() - started, inventory: { files: fileHashes, units },
+      results, ranking, coverage: { counted: counted.length, holes: holes.length,
+        retained: counted.length - holes.length,
+        meaning: "Statements outside reported opaque regions in slices whose retained program passes aggregate checks under diagnostic assumptions. This is not verified coverage." } };
+    writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
+    process.stdout.write(JSON.stringify({ coverage: record.coverage, ranking }, null, 2) + "\n");
+    process.stdout.write(`record: ${recordPath}\n`);
+    return;
+  }
   // Progress: the slices' outcomes and their stages' executions so far.
   let finished = 0;
   const outcomes = new Map<string, number>();

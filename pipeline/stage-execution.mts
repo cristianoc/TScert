@@ -22,9 +22,9 @@ const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
 export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" |
-  "diagnostics";
+  "diagnostics" | "diagnostic-parse" | "diagnostic-lower" | "diagnostic-propose" | "diagnostic-search";
 export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "search", "check",
-  "explain", "diagnostics"];
+  "explain", "diagnostics", "diagnostic-parse", "diagnostic-lower", "diagnostic-propose", "diagnostic-search"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build
@@ -73,7 +73,7 @@ const repository = resolve(here, "..");
  * invocation's own, publishes or records attempts, orchestrates stages over
  * inputs their manifests bind, or presents outcomes. */
 export const unkeyed: readonly string[] = [
-  "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
+  "pipeline/diagnose-source.mts", "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
   "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",
   "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
   "pipeline/run-example.mts", "pipeline/fixture-links.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
@@ -473,6 +473,11 @@ export function verifierCall(program: string, args: readonly string[],
   const [mode, ...rest] = args.slice(budget.length);
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
     ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
+  if (mode === "--diagnose-source-claims" && rest.length === 4)
+    return call("diagnostic-search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+      { text: rest[2] }, { text: rest[3] }]);
+  if (mode === "--diagnostic-control-flow" && rest.length === 1)
+    return call("diagnostic-lower", [{ input: "diagnostic-fragment.json", path: rest[0] }]);
   if (mode === "--lower-control-flow" && rest.length === 1)
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
   if (mode === "--produce-source-claims" && rest.length === 5)
@@ -489,6 +494,9 @@ export function verifierCall(program: string, args: readonly string[],
 export function producerCall(program: string, args: readonly string[]): ProcessCall {
   const documents = (list: readonly string[]): Argument[] =>
     list.map((path, i) => ({ input: ["fragment.json", "flow.json", "qualified.json"][i], path }));
+  if (args[0] === "--diagnose" && args.length === 3)
+    return { stage: "diagnostic-propose", program, arguments: [{ text: "--diagnose" }, ...documents(args.slice(1))],
+      environment: {}, protocol: producerProtocol };
   if (args[0] === "--explain" && args.length === 3)
     return { stage: "explain", program, arguments: [{ text: "--explain" }, ...documents(args.slice(1))],
       environment: {}, protocol: { refusal: null } };

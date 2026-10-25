@@ -7,6 +7,8 @@ open Type_queries
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
 type state = {
+  diagnosing : bool;
+  refusals : (Json.t * string) list ref;
   explaining : bool ref;
   explanations : (Json.t * string) list ref;
   (* Names introduced by for...in steps. *)
@@ -19,7 +21,8 @@ type state = {
   unknown_instance_tests : string list ref;
 }
 
-let create ?(explaining=false) () = {
+let create ?(explaining=false) ?(diagnosing=false) () = {
+  diagnosing; refusals = ref [];
   explaining = ref explaining;
   explanations = ref [];
   for_in_keys = ref [];
@@ -129,3 +132,7 @@ let unknown_instance_reason =
    running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new \
    target), so C's prototype on its chain is no evidence of C's fields, and the model assumes it of no value \
    a unit receives"
+
+let refusal state pos reason =
+  if not (List.mem (pos,reason) !(state.refusals)) then
+    state.refusals := (pos,reason) :: !(state.refusals)

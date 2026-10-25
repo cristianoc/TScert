@@ -4,6 +4,8 @@
 //   node pipeline/run-cases.mts module- generic-rest
 // The controls no case can make are `test.mts`'s (`make test`).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { diagnose } from "./diagnose-source.mts";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { checkApart, type Outcome } from "./verify-source.mts";
@@ -18,6 +20,20 @@ const here = import.meta.dirname;
 export function runCase(test: Case): Promise<Outcome> {
   return checkApart(join(here, "examples", `${test.file}.ts`),
     test.project ? resolve(here, "..", test.project) : undefined, test.typescriptErrors)
+    .then((result) => {
+      if (test.diagnosticSites) {
+        const file = join(here, "examples", `${test.file}.ts`);
+        const report = diagnose(file, test.project ? resolve(here, "..", test.project) : undefined);
+        assert.equal(report.status, "diagnostic", report.error ?? "diagnostic run failed");
+        const text = readFileSync(file, "utf8");
+        for (const site of test.diagnosticSites) {
+          const at = text.indexOf(site);
+          assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] <= at && at < o.pos[1]),
+            `${test.file}: diagnostic omitted ${site}`);
+        }
+      }
+      return result;
+    })
     .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
 }
 

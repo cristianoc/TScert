@@ -20,6 +20,8 @@ export interface Case {
   /** Whether a failed search is named by TypeScript's errors
    * (`verify-source.mts --typescript-errors`). */
   typescriptErrors?: boolean;
+  /** Source fragments at which a diagnostic run must retain a refusal. */
+  diagnosticSites?: string[];
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -48,6 +50,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),
+    diagnosticSites: ["x as string", "x as number"] },
+  { ...gap("diagnostic-syntax", "Diagnostic syntax recovery retains later refusals.", "unsupported", "source", /statement outside the fragment/),
+    diagnosticSites: ["debugger", "x as string"] },
   // Distinct model-study causes; each source header gives the supplied sample count.
   gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
     /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),

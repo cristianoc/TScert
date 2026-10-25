@@ -12,7 +12,15 @@ let infer diagnostics flows offered declarations module_functions arities bounds
   let module E = Expression_typing.Make(S) in
   let module B = Binding_analysis.Make(S) in
   let module T = Statement_analysis.Make(S) in
-  let rec expr ?expected env e = E.infer expr bindings body ?expected env e
+  let rec expr ?expected env e =
+    let run () = E.infer expr bindings body ?expected env e in
+    if not diagnostics.Proposal_diagnostics.diagnosing then run () else
+    match Analysis_state.recover state run with
+    | Ok t -> t
+    | Error reason ->
+      Proposal_diagnostics.refusal diagnostics e.pos reason;
+      let t = Option.value expected ~default:Semantic.top in
+      Owner.publish_expression e.pos t None; t
   and bindings env plan = B.infer expr env plan
   and body owner_span result env ss =
     Owner.with_block_context result

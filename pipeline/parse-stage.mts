@@ -4,7 +4,7 @@
 // "Retained declaration sessions"), their values stored as text and decoded
 // field by field.
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
-import { close as closeParser, lowerModuleText, parseFragment, selectionMarker, type ImportedModule, type LoweredModule,
+import { close as closeParser, diagnosticFragment, lowerModuleText, parseFragment, selectionMarker, type ImportedModule, type LoweredModule,
   type ModuleRequest, type ModuleText } from "../tools/fragment-parse.mts";
 import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { inDeclarationAttempt } from "../tools/declaration-session.mts";
@@ -26,6 +26,23 @@ export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | un
     inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
       { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
     run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution)),
+    codec: parsedCodec,
+    observed: { compiler: compilerImplementation },
+  };
+}
+
+/** Recovery belongs to a distinct observed stage and a diagnostic envelope. */
+export function diagnosticParseCall(bytes: Buffer, file: string, tsconfigPath: string | undefined): InProcessCall<Parsed> {
+  return {
+    stage: "diagnostic-parse",
+    inputs: [{ role: "source", bytes }, { role: "file", bytes: file },
+      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
+    run: () => inDeclarationAttempt(() => {
+      closeParser();
+      try {
+        return { code: 0, out: JSON.stringify(diagnosticFragment(file, tsconfigPath)), detail: "", seen: [] };
+      } finally { closeParser(); }
+    }),
     codec: parsedCodec,
     observed: { compiler: compilerImplementation },
   };

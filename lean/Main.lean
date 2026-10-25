@@ -14,6 +14,12 @@ def command (args : List String) : IO UInt32 := do
       | none => IO.eprintln "usage: subtype rounds must be a natural number"; return 2
     | _ => pure ({}, args)
   match args with
+  | ["--diagnose-source-claims", astPath, claimsPath, fileKey, depth] =>
+      match depth.toNat? with
+      | some fuel => Verification.RequestCli.diagnosticFile astPath claimsPath fileKey fuel budget
+      | none => IO.eprintln "usage: search depth must be a natural number"; return 2
+  | ["--diagnostic-control-flow", astPath] =>
+      Verification.RequestCli.diagnosticFlowFile astPath
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
   | ["--lower-program", astPath, claimsPath, fileKey] =>

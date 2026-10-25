@@ -46,6 +46,7 @@ Excluded from every key (`unkeyed`), by role:
   lookup, retrying timeouts, publication calls) and the attempt records;
 - `pipeline/stage-store.mts`: the store's lookup, validation, publication and
   cleanup;
+- `pipeline/diagnose-source.mts`: diagnostic-stage orchestration and inventory presentation;
 - `pipeline/verify-source.mts`: the orchestration of one check, passing
   values to the stages' calls, and its outcome;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the

@@ -29,7 +29,7 @@ at the first node the node-by-node bound check refuses, else at the
 closure's region, else at the declaration. Search and checking report it
 alike. A check that ran out of search rounds is no refusal: it is left to the
 exhaustion diagnostic. -/
-private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
+def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types

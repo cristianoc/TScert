@@ -27,10 +27,10 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
 /-- The plans of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
 other at its declared type. -/
-def extractPlans (ast claims : Json) (fileKey : String)
+private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
     (qualified : List (String × Footprints.Closed × Bool) := []) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String)) := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
@@ -125,162 +125,186 @@ def extractPlans (ast claims : Json) (fileKey : String)
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   -- The units grow one store, in turn: a label one unit adds keeps its row
   -- for the next, so every request is over the store the last one leaves.
-  let (T, plans) ← units.foldlM (init := (d.types, [])) fun (T, plans) (f,tps,initClaims) => do
-    let d := { d with types := T }
-    let module := if initClaims.isSome then moduleFunctions ++ classSelves
-      else moduleFunctions ++ moduleConstants
-    let mut c ← match initClaims with
-      | some c => pure c
-      | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
+  let (T, plans, failures) ← units.foldlM (init := (d.types, [], [])) fun (T, plans, failures) (f,tps,initClaims) => do
+    let attempt : Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
+      let d := { d with types := T }
+      let module := if initClaims.isSome then moduleFunctions ++ classSelves
+        else moduleFunctions ++ moduleConstants
+      let mut c ← match initClaims with
         | some c => pure c
-        | none => throw s!"missing claims for '{f.name}'"
-    let mut module := module
-    let mut d := d
-    let mut f := f
-    let unitSource := if initClaims.isSome then
-        some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
-      else functionJsons.find? fun j =>
-        (j.getObjValAs? String "name").toOption == some f.name &&
-          (j.getObjValAs? Span "namePos").toOption == some f.namePos
-    let owner := if initClaims.isSome then (0,0) else f.namePos
-    let graph ← SourceFlow.build owner [] f.body
-    let nested ← match unitSource with
-      | some raw => SourceFlow.nestedGraphs raw
-      | none => pure []
-    let flowGraphs := graph :: nested
-    let prologues ← prologueSites (unitSource.getD .null)
-    checkPointSites flowGraphs prologues c.entries c.expressions c.contracts
-    let sites := functionSites f
-    let closures := (allFunctionSites f).2.2
-    for a in c.arrows.getD [] do
-      if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
-      for row in a.rows do
-        checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
-        -- An expression body's entry is its prologue's, at the body's start.
-        if !row.entries.all (fun e => (sites.1.contains e.start || prologues.any (·.1.1 == e.start)) &&
-              a.pos.1 ≤ e.start && e.start < a.pos.2) ||
-            !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
-              a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
-            !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
-          throw "per-arrow claim site is outside its source closure"
-    if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
-      throw "per-arrow source claims are for ground closures, not quantified schemes"
-    -- The unit's source tree, and the generic closures it creates, each
-    -- graph code at its scheme row.
-    let closures := match unitSource with
-      | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
-      | none => []
-    let graphClosures := !closures.isEmpty
-    -- The calls a scheme-typed local makes: a generic module value's calls
-    -- name instances its slot holds (`Scheme.moduleInstances`) instead.
-    let localCalls := (f.body.flatMap Fragment.Stmt.callees).filter fun call =>
-      !generics.any (·.name == call.2.2.1)
-    let mut sourceScheme : Option (SchemeRow Tree) := none
-    if !tps.isEmpty then
-      -- A generic unit is an ordinary graph request: each binder is read as
-      -- its parameter row, a bounded one as its meet with its bound (an
-      -- earlier binder's row, for a dependent bound), and the unit is
-      -- certified at every assignment of those rows
-      -- (`Parametricity.accepted_at`).
-      let some source := unitSource
-        | throw "a generic unit's source function is missing"
-      if nestedBinders ((source.getObjVal? "body").toOption.getD .null) && !graphClosures then
-        throw (sourceRefusal d.types f.namePos .genericValidation
-          "a generic closure inside a generic body has binders of its own")
-      let binders := if initClaims.isSome then initBinders else
-        ((unitBinders.lookup (f.name, f.namePos)).getD [])
-      if (binders.map (·.1)).filter (!·.endsWith "#pack") != tps.flatMap (fun p => ResolutionWire.ownedNames p.name p.resolution) then
-        throw (sourceRefusal d.types f.namePos .genericValidation
-          "a generic unit's binders are not the ones its declaration lowers")
-      let resolution := ResolutionWire.groups (tps.map fun p => (p.name, p.resolution))
-      if !resolution.isEmpty then
-        sourceScheme := some {
-          binders := binders.map (·.2.1)
-          signatures := []
-          bounds := binders.filterMap fun (n, p, B) =>
-            if tps.any (·.name == n) then B.map (p, ·) else none
-          resolution }
-      let (T, rows) ← match binderRows d.types binders with
-        | .ok r => pure r
-        | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
-      let (T, atRows, scopes) ← if graphClosures || c.hasScheme then
-          match Scheme.closureRows T rows closures localCalls c with
-          | .ok r => pure r
-          | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
-        else
-          let (T, atRows) := c.atRows T rows
-          pure (T, atRows, [])
-      d := { d with types := T }
-      c := atRows
-      let source := Scheme.annotationAtScopes T scopes rows source
-      if initClaims.isSome then
-        let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
-        f := { f with body }
-      else
-        f := (← Fragment.decodeFn source).1
-    else if c.hasScheme then
-      -- A scheme claim in a unit without binders of its own is a scheme row;
-      -- a generic closure's code is graph code checked at its row's
-      -- signatures.
-      let some source := unitSource | throw "a unit's source function is missing"
-      let (T, claims, scopes) ← match Scheme.closureRows d.types [] closures localCalls c with
-        | .ok r => pure r
-        | .error reason => throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
-      d := { d with types := T }
-      c := claims
-      let source := Scheme.annotationAtScopes T scopes [] source
-      if initClaims.isSome then
-        let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
-        f := { f with body }
-      else
-        f := (← Fragment.decodeFn source).1
-    let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
-        (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
-      let mut d := d
+        | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
+          | some c => pure c
+          | none => throw s!"missing claims for '{f.name}'"
       let mut module := module
-      let mut c := c
-      -- A generic module function this unit calls: its slot holds the instances
-      -- the calls name, and those reads and calls are claimed at them. The
-      -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
-      for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
-        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
-          match Scheme.moduleInstances d.types g f.body c sourceScheme
-            (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
-          | .ok (T, slot, reads, calls) =>
-            d := { d with types := T }
-            -- The callee reads are claimed at the slot's type, which the
-            -- source fixes; the producer's reading of them is not needed.
-            let (A, T) ← match (Fragment.translate slot).run d.types with
-              | .ok r => pure r
-              | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
-            d := { d with types := T }
-            module := module ++ [(g.name, g.pos, .ok (.written slot))]
-            c := { c with expressions := c.expressions.map fun e =>
-              if reads.contains e.pos then { e with type := .labels A }
-              else if calls.contains e.pos then { e with instantiate := none } else e }
-          | .error (.obligation failure, T) => throw (directFailure T failure)
-          | .error (.exhausted failure limit rounds visited, T) =>
-            throw (directFailure T failure (.exhausted limit rounds visited))
-          | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
-        -- A generic function or class the unit reads only as a value: its slot
-        -- is its scheme.
-        else if (Fragment.stmtsFreeNames f.body).contains g.name then
-          match Scheme.moduleScheme d.types g with
-          | .ok (T, slot) =>
-            d := { d with types := T }
-            module := module ++ [(g.name, g.pos, .ok (.written slot))]
-          | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
-      let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
-      return .graph f.name f.namePos { request with sourceScheme }
-    -- A generic unit's graph extraction reports where it stops as a
-    -- located refusal at the function, as the direct checker's do.
-    let plan ← if tps.isEmpty then finish d module c f
-      else tryCatch (finish d module c f) fun e =>
-        throw (if RequestJson.hasDiagnostic e then e
-          else sourceRefusal d.types f.namePos .genericValidation e)
-    let .graph _ _ r := plan
-    return (r.types, plans ++ [plan])
+      let mut d := d
+      let mut f := f
+      let unitSource := if initClaims.isSome then
+          some (Json.mkObj [("body", (ast.getObjVal? "init").toOption.getD (.arr #[]))])
+        else functionJsons.find? fun j =>
+          (j.getObjValAs? String "name").toOption == some f.name &&
+            (j.getObjValAs? Span "namePos").toOption == some f.namePos
+      let owner := if initClaims.isSome then (0,0) else f.namePos
+      let graph ← SourceFlow.build owner [] f.body
+      let nested ← match unitSource with
+        | some raw => SourceFlow.nestedGraphs raw
+        | none => pure []
+      let flowGraphs := graph :: nested
+      let prologues ← prologueSites (unitSource.getD .null)
+      checkPointSites flowGraphs prologues c.entries c.expressions c.contracts
+      let sites := functionSites f
+      let closures := (allFunctionSites f).2.2
+      for a in c.arrows.getD [] do
+        if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
+        for row in a.rows do
+          checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
+          -- An expression body's entry is its prologue's, at the body's start.
+          if !row.entries.all (fun e => (sites.1.contains e.start || prologues.any (·.1.1 == e.start)) &&
+                a.pos.1 ≤ e.start && e.start < a.pos.2) ||
+              !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
+                a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
+              !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
+            throw "per-arrow claim site is outside its source closure"
+      if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
+        throw "per-arrow source claims are for ground closures, not quantified schemes"
+      -- The unit's source tree, and the generic closures it creates, each
+      -- graph code at its scheme row.
+      let closures := match unitSource with
+        | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
+        | none => []
+      let graphClosures := !closures.isEmpty
+      -- The calls a scheme-typed local makes: a generic module value's calls
+      -- name instances its slot holds (`Scheme.moduleInstances`) instead.
+      let localCalls := (f.body.flatMap Fragment.Stmt.callees).filter fun call =>
+        !generics.any (·.name == call.2.2.1)
+      let mut sourceScheme : Option (SchemeRow Tree) := none
+      if !tps.isEmpty then
+        -- A generic unit is an ordinary graph request: each binder is read as
+        -- its parameter row, a bounded one as its meet with its bound (an
+        -- earlier binder's row, for a dependent bound), and the unit is
+        -- certified at every assignment of those rows
+        -- (`Parametricity.accepted_at`).
+        let some source := unitSource
+          | throw "a generic unit's source function is missing"
+        if nestedBinders ((source.getObjVal? "body").toOption.getD .null) && !graphClosures then
+          throw (sourceRefusal d.types f.namePos .genericValidation
+            "a generic closure inside a generic body has binders of its own")
+        let binders := if initClaims.isSome then initBinders else
+          ((unitBinders.lookup (f.name, f.namePos)).getD [])
+        if (binders.map (·.1)).filter (!·.endsWith "#pack") != tps.flatMap (fun p => ResolutionWire.ownedNames p.name p.resolution) then
+          throw (sourceRefusal d.types f.namePos .genericValidation
+            "a generic unit's binders are not the ones its declaration lowers")
+        let resolution := ResolutionWire.groups (tps.map fun p => (p.name, p.resolution))
+        if !resolution.isEmpty then
+          sourceScheme := some {
+            binders := binders.map (·.2.1)
+            signatures := []
+            bounds := binders.filterMap fun (n, p, B) =>
+              if tps.any (·.name == n) then B.map (p, ·) else none
+            resolution }
+        let (T, rows) ← match binderRows d.types binders with
+          | .ok r => pure r
+          | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
+        let (T, atRows, scopes) ← if graphClosures || c.hasScheme then
+            match Scheme.closureRows T rows closures localCalls c with
+            | .ok r => pure r
+            | .error reason => throw (sourceRefusal T f.namePos .schemeIntroduction reason)
+          else
+            let (T, atRows) := c.atRows T rows
+            pure (T, atRows, [])
+        d := { d with types := T }
+        c := atRows
+        let source := Scheme.annotationAtScopes T scopes rows source
+        if initClaims.isSome then
+          let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
+          f := { f with body }
+        else
+          f := (← Fragment.decodeFn source).1
+      else if c.hasScheme then
+        -- A scheme claim in a unit without binders of its own is a scheme row;
+        -- a generic closure's code is graph code checked at its row's
+        -- signatures.
+        let some source := unitSource | throw "a unit's source function is missing"
+        let (T, claims, scopes) ← match Scheme.closureRows d.types [] closures localCalls c with
+          | .ok r => pure r
+          | .error reason => throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
+        d := { d with types := T }
+        c := claims
+        let source := Scheme.annotationAtScopes T scopes [] source
+        if initClaims.isSome then
+          let body ← Fragment.decodeInit (Json.mkObj [("init", source.getObjValD "body")])
+          f := { f with body }
+        else
+          f := (← Fragment.decodeFn source).1
+      let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
+          (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
+        let mut d := d
+        let mut module := module
+        let mut c := c
+        -- A generic module function this unit calls: its slot holds the instances
+        -- the calls name, and those reads and calls are claimed at them. The
+        -- unit's scheme claims are scheme rows by now (`Scheme.closureRows`).
+        for g in generics.filter (fun g => !(initClaims.isSome && classNames.contains g.name)) do
+          if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
+            match Scheme.moduleInstances d.types g f.body c sourceScheme
+              (tps.flatMap fun p => ResolutionWire.ownedNames p.name p.resolution) with
+            | .ok (T, slot, reads, calls) =>
+              d := { d with types := T }
+              -- The callee reads are claimed at the slot's type, which the
+              -- source fixes; the producer's reading of them is not needed.
+              let (A, T) ← match (Fragment.translate slot).run d.types with
+                | .ok r => pure r
+                | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
+              d := { d with types := T }
+              module := module ++ [(g.name, g.pos, .ok (.written slot))]
+              c := { c with expressions := c.expressions.map fun e =>
+                if reads.contains e.pos then { e with type := .labels A }
+                else if calls.contains e.pos then { e with instantiate := none } else e }
+            | .error (.obligation failure, T) => throw (directFailure T failure)
+            | .error (.exhausted failure limit rounds visited, T) =>
+              throw (directFailure T failure (.exhausted limit rounds visited))
+            | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+          -- A generic function or class the unit reads only as a value: its slot
+          -- is its scheme.
+          else if (Fragment.stmtsFreeNames f.body).contains g.name then
+            match Scheme.moduleScheme d.types g with
+            | .ok (T, slot) =>
+              d := { d with types := T }
+              module := module ++ [(g.name, g.pos, .ok (.written slot))]
+            | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
+        let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
+        return .graph f.name f.namePos { request with sourceScheme }
+      -- A generic unit's graph extraction reports where it stops as a
+      -- located refusal at the function, as the direct checker's do.
+      let plan ← if tps.isEmpty then finish d module c f
+        else tryCatch (finish d module c f) fun e =>
+          throw (if RequestJson.hasDiagnostic e then e
+            else sourceRefusal d.types f.namePos .genericValidation e)
+      let .graph _ _ r := plan
+      return (r.types, plan)
+    match attempt with
+    | .ok (next, plan) => return (next, plans ++ [plan], failures)
+    | .error reason =>
+      if recover then return (T, plans, failures ++ [(f.namePos, reason)])
+      else throw reason
+  return (T, plans, failures)
+
+/-- Acceptance requires every unit's extraction to succeed. -/
+def extractPlans (ast claims : Json) (fileKey : String)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) :
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
+  let (T, plans, failures) ← extractPlansCollect false ast claims fileKey budget qualified
+  if let some (_, reason) := failures.head? then throw reason
   return (T, plans)
+
+/-- Diagnostic extraction retains sibling units after a refusal. Its failures
+are part of the result; this result has no certification conversion. A failed
+unit leaves the immutable equation store at its entry value. -/
+def diagnosticPlans (ast claims : Json) (fileKey : String)
+    (budget : PositiveCertificates.SearchBudget := {}) :
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String)) :=
+  extractPlansCollect true ast claims fileKey budget
+
 
 end
 

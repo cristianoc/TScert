@@ -221,6 +221,12 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **transparent** / **obligated** (operation): an operation that treats a restricted value as any value of its type, or one that carries an obligation on it ([operations and their obligations](HOST-FAMILIES.md#operations-and-their-obligations)).
 - **unadmitted**: a guard entry's behaviour on `undefined` where the description admits none, so an argument that may be `undefined` fails the domain obligation ([the guard table](HOST-FAMILIES.md#the-guard-table)).
 
+## Diagnostic inventories
+
+- **diagnostic traversal**: a run collecting refusals under explicit recovery assumptions, with a result separate from verification ([diagnostic traversal](DIAGNOSTIC-MODE.md)).
+- **opaque region**: source whose internal obligations a diagnostic approximation leaves unexamined ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
+- **coverage with holes**: original statements outside opaque regions in a slice whose retained program passes aggregate checks under diagnostic assumptions ([attribution and coverage](DIAGNOSTIC-MODE.md#attribution-and-coverage)).
+
 ## Trust
 
 - **assumed values** / **assumed of the host**: the trust surface's rows for inputs taken at their declared types, and for properties of every value a unit receives ([trust surface](DESIGN.md#trust-surface)).

@@ -1937,6 +1937,32 @@ Every edge is still checked by the independent consumer. -/
     | some e => pure e
     | none => throw .rejected
 
+/-- Diagnostic search at every supplied node interface. Each attempt starts
+with its stated heap requirements and no predecessor-derived facts. The
+result contains failures only; it cannot be used as a certificate. Successful
+local searches do not certify the interfaces they assume. -/
+@[nospecialize] def diagnoseUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+    (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
+    (known : List (Evidence ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (aliases : List (ι × ι) := []) (goal : ControlFlow.Goal ι := .plain []) :
+    List (Failure ι) := Id.run do
+  let pool := vocabulary G labels claims []
+  let index := KnownIndex.of known
+  let mut failures := []
+  let mut answers : Answered G := {}
+  if P.length != claims.length then return [.claimCount]
+  for (node, label) in P.zipIdx do
+    match (produceNode G images pool fuel label node claims
+        ((requirements.lookup label).getD {}) [] index codes aliases checker [] [] goal).run answers with
+    | .error failure next =>
+      answers := next
+      failures := failures ++ [failure]
+    | .ok _ next => answers := next
+  return failures
+
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/
 @[nospecialize] private def failedEdge [DecidableEq ι] (G : NormalGraph ι) (P : Program)

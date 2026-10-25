@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { GateRefusal, recoverGate, type GateOccurrence } from "./diagnostic-gate.mts";
 /*
  * Trusted front end for the verification experiment (see DESIGN.md).
  *
@@ -521,7 +522,7 @@ export class Gate {
   }
 
   fail(node: Node | null, message: string): never {
-    throw new Error(this.refusal(node, message));
+    throw new GateRefusal(this.refusal(node, message), node ? this.span(node) : [0, this.file.end]);
   }
 
   /** The gate's refusal `message`, located at `node`. */
@@ -1076,6 +1077,25 @@ export function parseFile(file: string, carriesContext: boolean = false,
   });
 }
 
+/** Diagnostic syntax has an envelope disjoint from the Fragment wire.
+ * Only this entry point installs recovery; ordinary parsing owns a plain gate. */
+export function diagnosticFragment(file: string, tsconfigPath: string | undefined):
+    { diagnostic: Ast | null; occurrences: GateOccurrence[]; incomplete: string | null } {
+  const occurrences: GateOccurrence[] = [];
+  return failingAsTool(file, () => {
+    try {
+      const { ast } = lowerFile(file, false, tsconfigPath, file, undefined, null, {}, occurrences);
+      return { diagnostic: ast, occurrences, incomplete: null };
+    } catch (error) {
+      passToolFailure(error);
+      if (!(error instanceof GateRefusal)) throw error;
+      occurrences.push({ pos: error.pos, region: [0, readText(file).length], reason: error.message,
+        recovery: "shared source preparation unavailable" });
+      return { diagnostic: null, occurrences, incomplete: error.message };
+    }
+  });
+}
+
 /** The fragment of `file` as `parseFile` gives it, as its JSON text, each
  * imported module lowered by `lower` (the parse stage's: `module`, an
  * observed stage of its own) and spliced into the document as its text, in
@@ -1213,11 +1233,13 @@ function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
   family: { given?: (marker: string) => readonly TagValue[] | undefined;
-    selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void }): Lowered {
+    selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void },
+  diagnostic?: GateOccurrence[]): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
+  if (diagnostic) recoverGate(gate, diagnostic);
   // The members read through namespace imports, each a binding of its own.
   const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
   gate.namespaceUses = memberUses(members, source);

@@ -3,6 +3,14 @@
    its source span (`Proposal_diagnostics.explain`), for naming a failed search. *)
 let main () =
   match Array.to_list Sys.argv with
+  | [_;"--diagnose";file;flow_file] ->
+    let state = Proposal_diagnostics.create ~explaining:true ~diagnosing:true () in
+    let program = file |> Json.read |> Json.field "diagnostic" |> Source.decode in
+    let proposal = Proposal.infer ~state (List.map Flow.decode (Json.list (Json.read flow_file))) program in
+    let occurrences = List.rev_map (fun (pos,reason) ->
+      Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.refusals) in
+    print_endline (Json.encode (Json.Object ["claims",Claims.encode proposal;
+      "occurrences",Json.Array occurrences]))
   | [_;"--explain";file;flow_file] ->
     let state = Proposal_diagnostics.create ~explaining:true () in
     (try ignore (file |> Json.read |> Source.decode |> Proposal.infer ~state (List.map Flow.decode (Json.list (Json.read flow_file)))) with Json.Error _ -> ());
