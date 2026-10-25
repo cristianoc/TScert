@@ -62,15 +62,19 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
     sourceSha256: createHash("sha256").update(bytes).digest("hex"), artifacts,
     attempted: 0, completed: false, occurrences: [], unexamined: [], error: null };
   const whole: Span = [0, bytes.toString("utf8").length];
+  let lastRecovery: string | null = null;
   const add = (layer: string, pos: Span, reason: string, conditional: boolean): void => {
-    if (pos[0] === 0 && pos[1] === 0) {
-      const located = /at \[(\d+),(\d+)\)/.exec(reason);
-      pos = located ? [Number(located[1]), Number(located[2])] : whole;
-    }
-    const dependencies = report.occurrences.filter(o => o.layer === "source" || o.layer === "proposal").map(o => o.id);
-    if (conditional && layer === "search") dependencies.push("supplied-interfaces");
-    report.occurrences.push({ id: `refusal:${report.occurrences.length}`, layer, pos, reason,
+    const located = /at \[(\d+),(\d+)\)/.exec(reason);
+    if (located) pos = [Number(located[1]), Number(located[2])];
+    else if (pos[0] === 0 && pos[1] === 0) pos = whole;
+    // Recovery dependencies are transitive. One link to the preceding recovery
+    // retains document-scope assumptions without a quadratic copy of their IDs.
+    const dependencies = lastRecovery === null ? [] : [lastRecovery];
+    if (conditional && (layer === "search" || layer === "check")) dependencies.push("supplied-interfaces");
+    const id = `refusal:${report.occurrences.length}`;
+    report.occurrences.push({ id, layer, pos, reason,
       conditional: conditional || dependencies.length > 0, dependencies });
+    if (layer === "source" || layer === "proposal" || layer === "extraction") lastRecovery = id;
   };
   const step = (call: ReturnType<typeof verifierCall>, layer: string): string | null => {
     const ran = runStep(call, recorder);

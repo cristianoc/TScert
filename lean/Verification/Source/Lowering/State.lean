@@ -177,6 +177,8 @@ retaining the execution outcome. -/
 
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
 private structure Built extends GraphFrame where
+  diagnostic : Bool := false
+  refusals : List (Span × String) := []
   /-- The graph under construction: the claims' table, grown by annotations. -/
   types : EquationStore.State
   /-- How many steps have changed `types`: `lower` is the one that does. -/
@@ -239,6 +241,16 @@ instance : MonadLift (Except String) Compiler where
 private def readBuilt (f : Built → α) : Compiler α := ⟨fun s => .ok (f s,s)⟩
 
 private def updateBuilt (f : Built → Built) : Compiler Unit := ⟨fun s => .ok ((),f s)⟩
+
+/-- A diagnostic operation resumes from its immutable entry frame. Ordinary
+compilation propagates the refusal. -/
+@[nospecialize] def recoverDiagnostic (pos : Span) (action fallback : Compiler α) : Compiler α := ⟨fun before =>
+  match action.run before with
+  | .ok result => .ok result
+  | .error reason =>
+    if before.diagnostic then
+      fallback.run { before with refusals := before.refusals ++ [(pos, reason)] }
+    else .error reason⟩
 
 /-- The scope owner restores precisely its temporary fields. Shared successful
 updates survive; a failure carries no state, and a catch resumes at its entry. -/
@@ -442,6 +454,7 @@ def graphResult : Compiler LoweredGraph := readBuilt graphOutput
 
 /-- Extraction receives the graph and shared outputs through this projection. -/
 structure LoweringResult extends LoweredGraph where
+  refusals : List (Span × String)
   types : EquationStore.State
   obligations : List (ExpressionClaims.Required Tree)
   hints : List Tree
@@ -450,11 +463,13 @@ structure LoweringResult extends LoweredGraph where
   nodePlans : List (DirectProof.Plan Tree)
 
 /-- Run one source unit with its equation table and admitted ownership sites. -/
-def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α) :
+def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α)
+    (diagnostic : Bool := false) :
     Except String (α × LoweringResult) := do
-  let (value,s) ← action.run { types := types, grows := grows }
+  let (value,s) ← action.run { types := types, grows := grows, diagnostic }
   return (value,{
     toLoweredGraph := graphOutput s
+    refusals := s.refusals
     types := s.types
     obligations := s.obligations
     hints := s.hints

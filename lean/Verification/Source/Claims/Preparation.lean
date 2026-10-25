@@ -14,6 +14,7 @@ give its units: the source tree with its annotations in claim form, the
 claims over the store's labels, the imported values at their declared types
 and the generic module values. -/
 structure Prepared where
+  refusals : List (Span × String)
   ast : Json
   document : Document EquationStore.State Tree
   /-- Each imported value: its name, its import's span and its declared type's labels. -/
@@ -228,7 +229,7 @@ the lowering refuses is refused at the unit requiring it, and a claim it
 cannot read is an invalid document. A variance declaration that does not
 check (§7.5) refuses the source at its heads. -/
 def equationFront (ast claims : Json) (fileKey : String)
-    (budget : PositiveCertificates.SearchBudget := {}) :
+    (budget : PositiveCertificates.SearchBudget := {}) (diagnostic : Bool := false) :
     Except String Prepared := do
   sourceGate (ast.getObjValD "functions")
   sourceGate (ast.getObjValD "init")
@@ -252,7 +253,7 @@ def equationFront (ast claims : Json) (fileKey : String)
     fun f => (f.getObjValAs? Span "namePos").toOption
   let contractSite := firstClaimed.getD (0, 0)
   let empty : EquationStore.State := { doc := #[] }
-  let L ← (EquationLowering.source ast claims budget).mapError fun failure => match failure with
+  let L ← (if diagnostic then EquationLowering.diagnosticSource ast claims budget else EquationLowering.source ast claims budget).mapError fun failure => match failure with
     | .refusal reason =>
       if reason.startsWith "source claims" || reason.startsWith "invalid source claims" ||
           reason.startsWith "a label" || reason.startsWith "a producer's row" then
@@ -291,7 +292,7 @@ def equationFront (ast claims : Json) (fileKey : String)
     let name ← (f.getObjValAs? String "name").toOption
     let pos ← (f.getObjValAs? Span "namePos").toOption
     return ((name, pos), bs)
-  return ⟨ast, d, imported, generics, units, L.initBinders⟩
+  return ⟨L.refusals, ast, d, imported, generics, units, L.initBinders⟩
 
 end
 

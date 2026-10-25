@@ -43,6 +43,7 @@ structure GenericValue where
 
 /-- A source lowered for the source path. -/
 structure SourceLowering where
+  refusals : List (Span × String) := []
   /-- The store the units grow: the heads, hash-consed and compacted. -/
   store : State
   /-- Each annotation, by its path in the function tree. -/

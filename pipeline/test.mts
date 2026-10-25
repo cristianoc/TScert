@@ -113,6 +113,27 @@ control(async (): Promise<void> => {
   }
 });
 
+// A forged source annotation forces shared equation recovery independently of
+// the parser and producer. The retained body must reach graph obligations.
+control(async (): Promise<void> => {
+  const good = await run("stateful-source/arithmetic");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const ast = join(good, "diagnostic-bad-annotation.json");
+  const claims = join(good, "diagnostic-bad-annotation-claims.json");
+  const forged = { ...source, functions: source.functions.map(f => ({ ...f,
+    retType: { k: "unsupported-diagnostic-contract", span: f.namePos } })) };
+  writeFileSync(ast, JSON.stringify({ diagnostic: forged, occurrences: [], incomplete: null }));
+  writeFileSync(claims, JSON.stringify({ claims: readClaimsFile(join(good, "claims.json")), occurrences: [] }));
+  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
+  assert.equal(inventory.status, 0, inventory.stderr);
+  const report: unknown = JSON.parse(inventory.stdout);
+  assert.ok(report && typeof report === "object" && "status" in report && report.status === "diagnostic");
+  assert.ok("attempted" in report && typeof report.attempted === "number" && report.attempted > 0);
+  assert.ok("completed" in report && report.completed === false);
+  assert.ok(inventory.stdout.includes("unsupported-diagnostic-contract"));
+  assert.ok(!inventory.stdout.includes("shared extraction failed"));
+});
+
 // Every allowed compiler enum uses the same Node binding identity check as
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.

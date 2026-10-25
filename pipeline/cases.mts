@@ -50,6 +50,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...negative("diagnostic-effects", "Diagnostic footprint checking follows a failed expression."),
+    diagnosticSites: ["flag as number", "cell.value = 1"] },
+  { ...gap("diagnostic-declarations", "Diagnostic declaration recovery retains imported bindings and sibling bodies.", "unsupported", "source", /unresolved type reference sep/),
+    diagnosticSites: ["import { sep } from \"node:path\";", "value as string", "flag as number"] },
   { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
     diagnosticSites: ["first", "second", "value as string"] },
   { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),

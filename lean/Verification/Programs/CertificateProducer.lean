@@ -1937,34 +1937,42 @@ Every edge is still checked by the independent consumer. -/
     | some e => pure e
     | none => throw .rejected
 
+/-- Local diagnostic attempts retain partial nodes only for independent
+inspection of effects. Their missing edge proofs are not a certificate. -/
+structure DiagnosticAttempt (ι : Type) where
+  failures : List (Failure ι)
+  nodes : List (NodeEvidence ι)
+
 /-- Diagnostic search enumerates expression, normal-edge, handler and return
 obligations independently. After expression failure it assumes the supplied
-result type and forgets all output heap facts. No evidence is returned. -/
-@[nospecialize] def diagnoseUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+result type and forgets all output heap facts. The result is a diagnostic attempt, with no acceptance conversion. -/
+@[nospecialize] def inspectUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
     (known : List (Evidence ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (aliases : List (ι × ι) := []) (goal : ControlFlow.Goal ι := .plain [])
-    (start : Nat := 0) : List (Failure ι) := Id.run do
+    (start : Nat := 0) (holeLabels : List Nat := []) : DiagnosticAttempt ι := Id.run do
   let pool := vocabulary G labels claims (match goal with
     | .guards T _ | .asserts T _ => [T] | .plain _ => [])
   let index := KnownIndex.of known
   let held := if goal.slot.isSome then argumentSlots P claims start goal.slot else []
   let mut failures := []
+  let mut nodes := []
   let mut answers : Answered G := {}
-  if P.length != claims.length then return [.claimCount]
+  if P.length != claims.length then return ⟨[.claimCount], []⟩
   for (node, label) in P.zipIdx do
-    let some c := claims[label]? | return failures ++ [.claimCount]
+    let some c := claims[label]? | return ⟨failures ++ [.claimCount], nodes⟩
     let k := (requirements.lookup label).getD {}
-    let action : ProduceM G (List (Failure ι)) := do
+    let action : ProduceM G (List (Failure ι) × NodeEvidence ι) := do
       let mut errors := []
       let searched ← searchIn (expressionEffectUsing G images pool fuel
         ⟨c.context, node.expression, c.type⟩ k [] index codes aliases checker)
       let mut out : HeapKnowledge.Knowledge := {}
       let mut yields := []
-      match searched.value with
+      let retained := if holeLabels.contains label then none else searched.value
+      match retained with
       | none => errors := [match searched.exhaustion with
           | some stop => .exhaustedExpression label stop
           | none => .expression label]
@@ -1976,7 +1984,11 @@ result type and forgets all output heap facts. No evidence is returned. -/
         (PromiseCalls.aliasFacts out.links facts 1) 0
       let kept := fun facts => PromiseCalls.refineBy G c.context
         (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
-      let assumed : NodeEvidence ι := { sequent := some ⟨c.context, node.expression, c.type⟩, edges := [], knowledge := k, output := out, yields := yields }
+      let assumed : NodeEvidence ι := {
+        ordinary := retained.bind fun (proof, _, _) => proof.map OrdinaryEvidence.proof
+        effect := retained.map fun (_, effect, _) => effect
+        sequent := some ⟨c.context, node.expression, c.type⟩
+        edges := [], knowledge := k, output := out, yields := yields }
       for (target, edge) in (successors node.continuation).zipIdx do
         let (context, observation) := match node.continuation with
           | .ret => (c.context, none)
@@ -2031,15 +2043,28 @@ result type and forgets all output heap facts. No evidence is returned. -/
               if searched.value.isSome then satisfied := true
           if !satisfied then
             errors := errors ++ [.promise label ((arguments.head?.bind (context[·]?)).getD []) T]
-      return errors
+      return (errors, assumed)
     match action.run answers with
     | .error failure next =>
       answers := next
       failures := failures ++ [failure]
-    | .ok errors next =>
+      nodes := nodes ++ [{ sequent := some ⟨c.context, node.expression, c.type⟩, edges := [] }]
+    | .ok (errors, node) next =>
       answers := next
       failures := failures ++ errors
-  return failures
+      nodes := nodes ++ [node]
+  return ⟨failures, nodes⟩
+
+/-- The failure-only projection, used by diagnostic controls. -/
+@[nospecialize] def diagnoseUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
+    (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := [])
+    (known : List (Evidence ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (aliases : List (ι × ι) := []) (goal : ControlFlow.Goal ι := .plain [])
+    (start : Nat := 0) (holeLabels : List Nat := []) : List (Failure ι) :=
+  (inspectUsing G images labels fuel P claims requirements known codes checker aliases goal start holeLabels).failures
 
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/

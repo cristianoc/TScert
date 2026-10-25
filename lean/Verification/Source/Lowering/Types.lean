@@ -165,8 +165,15 @@ declared contracts retain their own entry checks. -/
 
 @[nospecialize] def env (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do
-  try envCore fc pos scope
-  catch msg => throw s!"source environment obligation at {pos}: {msg}"
+  recoverDiagnostic (pos, pos) (do
+    try envCore fc pos scope
+    catch msg => throw s!"source environment obligation at {pos}: {msg}") do
+    scope.mapM fun b => do
+      if let some A := b.fixed then return A
+      match b.storage with
+      | .cell _ reference | .early _ reference => return reference
+      | .slot contract => return contract
+      | .value => return [← lower (SourceTypes.use .source)]
 
 /-- A pattern reads fields, never a method: a method is a member of its object,
 called with it as receiver (`MethodMembers`); read off it, it is no function
@@ -186,11 +193,13 @@ def restOfUnknownLength : String :=
 
 /-- The type claimed at a site: a source expression, or an array pattern's
 rest. -/
-@[nospecialize] def claimAt (fc : SourceClaims.Function Tree) (span : Span) : Compiler (Ty Tree) := do
-  match fc.exprs.lookup span with
-  | some t => (SourceClaims.resolve (← table) t).mapError fun msg =>
-      s!"source expression obligation at [{span.1},{span.2}): {msg}"
-  | none => throw s!"no claimed type for the expression at {spanStr span}"
+@[nospecialize] def claimAt (fc : SourceClaims.Function Tree) (span : Span) : Compiler (Ty Tree) :=
+  recoverDiagnostic span (do
+    match fc.exprs.lookup span with
+    | some t => (SourceClaims.resolve (← table) t).mapError fun msg =>
+        s!"source expression obligation at [{span.1},{span.2}): {msg}"
+    | none => throw s!"no claimed type for the expression at {spanStr span}")
+    (do return [← lower (SourceTypes.use .source)])
 
 @[nospecialize] def exprType (fc : SourceClaims.Function Tree) (e : Fragment.Expr) : Compiler (Ty Tree) := do
   if let .var _ name := e then

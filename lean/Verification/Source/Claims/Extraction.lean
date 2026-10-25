@@ -30,14 +30,14 @@ other at its declared type. -/
 private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
     (qualified : List (String × Footprints.Closed × Bool) := []) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String)) := do
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String × Bool)) := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
     | some (.arr ds) => ds.any fun d =>
         EquationLowering.ImplicitDependency.arrayProto.selects (d.getObjValD "declaration")
     | _ => false
-  let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
+  let ⟨preparationRefusals, ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget recover
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
@@ -125,8 +125,8 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   -- The units grow one store, in turn: a label one unit adds keeps its row
   -- for the next, so every request is over the store the last one leaves.
-  let (T, plans, failures) ← units.foldlM (init := (d.types, [], [])) fun (T, plans, failures) (f,tps,initClaims) => do
-    let attempt : Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
+  let (T, plans, failures) ← units.foldlM (init := (d.types, [], preparationRefusals.map fun (p, r) => (p, r, true))) fun (T, plans, failures) (f,tps,initClaims) => do
+    let attempt : Except String (EquationStore.State × FunctionPlan EquationStore.State Tree × List (Span × String)) := do
       let d := { d with types := T }
       let module := if initClaims.isSome then moduleFunctions ++ classSelves
         else moduleFunctions ++ moduleConstants
@@ -236,7 +236,7 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
         else
           f := (← Fragment.decodeFn source).1
       let finish (d : Document EquationStore.State Tree) (module : List (SourceExtraction.ModuleValue Tree)) (c : Function Tree)
-          (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree) := do
+          (f : Fragment.Fn) : Except String (FunctionPlan EquationStore.State Tree × List (Span × String)) := do
         let mut d := d
         let mut module := module
         let mut c := c
@@ -271,20 +271,24 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
               d := { d with types := T }
               module := module ++ [(g.name, g.pos, .ok (.written slot))]
             | .error reason => throw (sourceRefusal d.types g.pos .schemeIntroduction reason)
-        let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
-        return .graph f.name f.namePos { request with sourceScheme }
+        let (request, holes) ← if recover then
+            diagnoseNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
+          else do
+            let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
+            pure (request, [])
+        return (.graph f.name f.namePos { request with sourceScheme }, holes)
       -- A generic unit's graph extraction reports where it stops as a
       -- located refusal at the function, as the direct checker's do.
-      let plan ← if tps.isEmpty then finish d module c f
+      let (plan, holes) ← if tps.isEmpty then finish d module c f
         else tryCatch (finish d module c f) fun e =>
           throw (if RequestJson.hasDiagnostic e then e
             else sourceRefusal d.types f.namePos .genericValidation e)
       let .graph _ _ r := plan
-      return (r.types, plan)
+      return (r.types, plan, holes)
     match attempt with
-    | .ok (next, plan) => return (next, plans ++ [plan], failures)
+    | .ok (next, plan, holes) => return (next, plans ++ [plan], failures ++ holes.map fun (p, r) => (p, r, true))
     | .error reason =>
-      if recover then return (T, plans, failures ++ [(f.namePos, reason)])
+      if recover then return (T, plans, failures ++ [(f.namePos, reason, false)])
       else throw reason
   return (T, plans, failures)
 
@@ -294,7 +298,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
     (qualified : List (String × Footprints.Closed × Bool) := []) :
     Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
   let (T, plans, failures) ← extractPlansCollect false ast claims fileKey budget qualified
-  if let some (_, reason) := failures.head? then throw reason
+  if let some (_, reason, _) := failures.head? then throw reason
   return (T, plans)
 
 /-- Diagnostic extraction retains sibling units after a refusal. Its failures
@@ -302,7 +306,7 @@ are part of the result; this result has no certification conversion. A failed
 unit leaves the immutable equation store at its entry value. -/
 def diagnosticPlans (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {}) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String)) :=
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List (Span × String × Bool)) :=
   extractPlansCollect true ast claims fileKey budget
 
 

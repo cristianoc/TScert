@@ -41,7 +41,8 @@ open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules Posi
 /-- **The source path's lowering.** `ast` is the parser's function tree with
 its declaration document (`tools/declaration-types.mts`), `claims` the
 source-claims document (§9.1). -/
-def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering := do
+private def sourceCore (diagnostic : Bool) (ast claims : Json)
+    (budget : PositiveCertificates.SearchBudget) : Except Failure SourceLowering := do
   let document ← (field ast "declarations").mapError Failure.refusal
   let ds ← (definitions document).mapError Failure.refusal
   if let some i := (List.range ds.size).find? (fun i => ImplicitDependency.arrayProto.selects ds[i]!.identity) then
@@ -49,15 +50,32 @@ def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}
   let packings := ds.map fun d => packedParameters d.expression
   let ((annotations, values, generics, units, initBinders, claims), s) ←
     ((lowerSource ast claims).run
-        { doc := ds, identities := identityIndex ds, packings, subtypeBudget := budget, tags := tagSymbols document }).mapError
+        { diagnostic, doc := ds, identities := identityIndex ds, packings, subtypeBudget := budget, tags := tagSymbols document }).mapError
       Failure.refusal
   let b ← (compact s).mapError Failure.refusal
-  let _ ← b.finish
+  let mut refusals := s.refusals
+  if diagnostic then
+    -- Each source-side check runs independently over the same completed store.
+    let _ ← b.equations.mapError Failure.refusal
+    for check in s.meetChecks do
+      match { b with state := { s with meetChecks := [check], obligations := [] } }.finish with
+      | .ok _ => pure ()
+      | .error (.refusal reason) => refusals := refusals ++ [((0, 0), reason)]
+      | .error (.bound _ pos site _ _ _) => refusals := refusals ++ [(pos.getD (0, 0), site)]
+    for obligation in s.obligations do
+      match { b with state := { s with meetChecks := [], obligations := [obligation] } }.finish with
+      | .ok _ => pure ()
+      | .error (.refusal reason) => refusals := refusals ++ [(obligation.pos.getD (0, 0), reason)]
+      | .error (.bound _ pos site _ _ _) =>
+        refusals := refusals ++ [(pos.getD (0, 0), s!"{site}: declared bound not established")]
+  else
+    let _ ← b.finish
   let rn := b.rn
   let rename (j : Json) : Except String Json := do
     let ts ← (← j.getArr?).toList.mapM Tree.fromJson
     return unionJson (rn ts)
   return {
+    refusals
     store := b.store
     annotations := annotations.map fun (p, U) => (p, rn U)
     arrays := s.arrayAnnotations.map fun (p, a) => (p, a.map rn)
@@ -68,5 +86,13 @@ def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}
     initBinders := initBinders.map fun (n, t, B) => (n, treeRename b.rename t, B.map rn)
     claims := ← (documentForm rename claims).mapError Failure.refusal }
 
+
+/-- Ordinary preparation has no recovery policy. -/
+def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering :=
+  sourceCore false ast claims budget
+
+/-- Diagnostic preparation retains every recovered equation and source check. -/
+def diagnosticSource (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering :=
+  sourceCore true ast claims budget
 
 end Verification.EquationLowering

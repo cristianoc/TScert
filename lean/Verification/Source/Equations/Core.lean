@@ -7,7 +7,12 @@ open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules Posi
 
 mutual
 /-- A source type as a union of trees in `ctx`. -/
-partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
+partial def lowerType (ctx : Ctx) (term : Json) : M Union :=
+  recover (if ctx.source && ctx.decl.isNone then
+      (term.getObjValAs? Span "span").toOption.getD (0, 0) else (0, 0))
+    (lowerTypeCore ctx term) (do return [← top])
+
+partial def lowerTypeCore (ctx : Ctx) (term : Json) : M Union := do
   match ← str term "k" with
   | "atom" => atomLabels term
   | "literal" => mergeLiterals (← literalLabels term)
@@ -695,7 +700,12 @@ partial def drain : M Unit := do
   | [] => return
   | job :: rest =>
     modify fun s => { s with jobs := rest }
-    runJob job
+    let pos := match job with
+      | .term _ ctx j | .store _ ctx j | .scheme _ ctx j | .unit _ ctx j =>
+          if ctx.source && ctx.decl.isNone then
+            (j.getObjValAs? Span "span").toOption.getD (0, 0) else (0, 0)
+      | _ => (0, 0)
+    recover pos (runJob job) (setBody job.head (.clauses [.source]))
     drain
 
 

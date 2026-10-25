@@ -1890,6 +1890,10 @@ function lowerFile(file: string, carriesContext: boolean,
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+        ...(diagnostic ? { diagnostic: (pos: Span, reason: string): void => {
+          diagnostic.push({ pos, region: pos, reason,
+            recovery: "opaque declaration contract; binding identities retained" });
+        } } : {}),
         ...(family.given ? { familySelection: family.given } : {}),
         ...(family.selected ? { familySelected: family.selected } : {}),
         namespaceMembers: [...members.values()].map(m => ({ local: m.local, imported: m.imported,

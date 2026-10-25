@@ -406,6 +406,8 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
  * have read the same bytes, so the spans of both trees agree.
  */
 export function collectDeclarations(file: string, options: {
+  /** Diagnostic-only recovery; the caller must retain the enclosing diagnostic envelope. */
+  diagnostic?: (pos: Span, reason: string) => void;
   tsconfigPath?: string;
   client?: SourceFile;
   /** The members the client reads through its namespace imports
@@ -666,6 +668,14 @@ export function collectDeclarations(file: string, options: {
   familySelection?: (marker: string) => readonly TagValue[] | undefined;
   familySelected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void;
 } = {}): DeclarationDocument {
+  const recover = (pos: Span, error: unknown): void => {
+    if (!options.diagnostic) {
+      if (error instanceof DeclarationError) throw error;
+      throw new DeclarationError(pos, messageOf(error), error);
+    }
+    passToolFailure(error);
+    options.diagnostic(error instanceof DeclarationError ? error.at : pos, messageOf(error));
+  };
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
@@ -733,8 +743,8 @@ export function collectDeclarations(file: string, options: {
           if (!view && !ts.isClassDeclaration(d)) continue;
           if (!(view?.members ?? []).some(m => m.name === node.name.text))
             // At the read's receiver, which the gate locates (`memberReceivers`).
-            throw new DeclarationError([node.expression.getStart(client), node.expression.end],
-              `${owner}.${node.name.text} is outside the named view ${owner} of the compiler-API contract (compiler-api.mts, reading rule 4)`);
+            recover([node.expression.getStart(client), node.expression.end], Error(
+              `${owner}.${node.name.text} is outside the named view ${owner} of the compiler-API contract (compiler-api.mts, reading rule 4)`));
         }
       }
       node.forEachChild(outsideViews);
@@ -2251,8 +2261,12 @@ export function collectDeclarations(file: string, options: {
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
       } catch (error) {
-        if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(binding.span, messageOf(error), error);
+        recover(binding.span, error);
+        if (!binding.typeOnly && !values.some(v => v.binding.local === binding.name))
+          values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span },
+            declaration: { module: idOf(client), name: binding.name, span: binding.span },
+            construct: false, typeParams: [], type: { k: "atom", name: "unknown", span: binding.span } });
       }
     }
     // A call of a namespace member passes the namespace object as the
@@ -2280,7 +2294,8 @@ export function collectDeclarations(file: string, options: {
         values.push({ binding: { local: identifier.text, imported: identifier.text, specifier: ambientSpecifier,
           span: at }, ...valueOf(resolveDeclarations(identifier, identifier.text), identifier.text) });
       } catch (error) {
-        throw new DeclarationError(at, messageOf(error), error);
+        recover(at, error);
+        continue;
       }
     }
     let resolutionContextAt: Span | undefined;
@@ -2304,7 +2319,8 @@ export function collectDeclarations(file: string, options: {
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     for (const span of options.globals ?? []) {
@@ -2345,7 +2361,8 @@ export function collectDeclarations(file: string, options: {
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     // The prototypes' contracts, `Array.prototype`'s and the primitive
@@ -2511,7 +2528,8 @@ export function collectDeclarations(file: string, options: {
           type: { k: "reference", reference: { name: definition.declaration.name, span: at, arguments: [],
             target: definition.declaration }, args: [], span: at } });
       } catch (error) {
-        throw new DeclarationError(at, messageOf(error), error);
+        recover(at, error);
+        continue;
       }
     }
     // A `for...of` over a host iterable other than an array steps the
@@ -2594,8 +2612,8 @@ export function collectDeclarations(file: string, options: {
       try {
         kinds = kindsOf();
       } catch (error) {
-        if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
       const [kind] = kinds;
       // A union with a program's iterable among its parts runs the protocol
@@ -2615,7 +2633,8 @@ export function collectDeclarations(file: string, options: {
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
             construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
         } catch (error) {
-          throw new DeclarationError(span, messageOf(error), error);
+          recover(span, error);
+          continue;
         }
       }
       options.iterable?.(span, listed, program ? iteratorSymbol : null);
@@ -2682,7 +2701,7 @@ export function collectDeclarations(file: string, options: {
             construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
         for (const name of needed) intrinsicsListed.add(name);
       } catch (error) {
-        throw new DeclarationError(at, messageOf(error), error);
+        recover(at, error);
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
@@ -2733,7 +2752,8 @@ export function collectDeclarations(file: string, options: {
             type: { k: "function", effect: emptyEffect, receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
-          throw new DeclarationError(span, messageOf(error), error);
+          recover(span, error);
+          continue;
         }
         intrinsicsListed.add(name);
       }
@@ -2760,7 +2780,8 @@ export function collectDeclarations(file: string, options: {
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false,
             typeParams: intrinsic.typeParams, type: intrinsic.type });
         } catch (error) {
-          throw new DeclarationError(span, messageOf(error), error);
+          recover(span, error);
+          continue;
         }
         intrinsicsListed.add(name);
       }
@@ -2851,8 +2872,8 @@ export function collectDeclarations(file: string, options: {
           type: { k: "reference", reference: { name: first.text, span: at, arguments: [],
             target: definition.declaration }, args: [], span: at } });
       } catch (error) {
-        if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(at, messageOf(error), error);
+        recover(at, error);
+        continue;
       }
     }
     // A private name reads the key of the member TypeScript binds it to.
@@ -2862,7 +2883,8 @@ export function collectDeclarations(file: string, options: {
       try {
         options.privateName?.(span, privateNameOf(name));
       } catch (error) {
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     // An element key naming a `unique symbol` constant reads that symbol's
@@ -2880,7 +2902,8 @@ export function collectDeclarations(file: string, options: {
         try {
           options.symbolKey?.(span, symbolOf(access));
         } catch (error) {
-          throw new DeclarationError(span, messageOf(error), error);
+          recover(span, error);
+          continue;
         }
         continue;
       }
@@ -2894,7 +2917,8 @@ export function collectDeclarations(file: string, options: {
       try {
         options.symbolKey?.(span, symbolOf(identifier));
       } catch (error) {
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     for (const span of options.staticReads ?? []) {
@@ -3311,7 +3335,8 @@ export function collectDeclarations(file: string, options: {
       try {
         clean(statement, `enum ${statement.name.text}`);
       } catch (error) {
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
       const members = statement.members.map(member => {
         const value = checker.getConstantValue(member);
@@ -3385,8 +3410,8 @@ export function collectDeclarations(file: string, options: {
       try {
         options.keyType?.(span, node ? keyTypeOf(node) : null);
       } catch (error) {
-        if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     for (const span of options.mappedTypes ?? []) {
@@ -3394,8 +3419,8 @@ export function collectDeclarations(file: string, options: {
       try {
         options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
       } catch (error) {
-        if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(span, messageOf(error), error);
+        recover(span, error);
+        continue;
       }
     }
     for (const span of options.symbolNames ?? []) {
@@ -3549,9 +3574,11 @@ export function collectDeclarations(file: string, options: {
       return { declarations,
         members: () => exportsOf(target).map(e => entityOf(e) ?? { declarations: [], members: () => [] }) };
     };
-    let applications: WrittenApplication[];
+    let applications: WrittenApplication[] = [];
     try {
       applications = writtenApplications({
+        ...(options.diagnostic ? { diagnostic: (pos: Span | null, reason: string): void =>
+          recover(pos ?? options.root ?? [0, 0], Error(reason)) } : {}),
         declarationsOf: typeDeclarationsOf,
         declaration: name => {
           const nodes = typeDeclarationsOf(name);
@@ -3624,9 +3651,7 @@ export function collectDeclarations(file: string, options: {
         client,
       }, [client, ...valueDeclarations]);
     } catch (error) {
-      if (error instanceof DeclarationError) throw error;
-      throw new DeclarationError(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0],
-        messageOf(error), error);
+      recover(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0], error);
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
@@ -3640,7 +3665,8 @@ export function collectDeclarations(file: string, options: {
     const collectFrom = (list: readonly { node: TypeDeclaration; span: Span; instance?: DeclarationInstance }[]): void => {
       for (const { node: start, span, instance } of list) {
         try {
-          collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
+          collect(start, seen, definitions, { diagnostic: options.diagnostic ? (identity, reason) =>
+              recover(span, Error(`${identity.module}#${identity.name}: ${reason}`)) : undefined, complete: completeArguments, parameters: parametersOf, lookup,
             computedMembers, instanceOf, instantiate: instantiateAt,
             enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
@@ -4530,6 +4556,7 @@ const ecmaIterators = ["ArrayIterator", "MapIterator", "SetIterator", "StringIte
 type DeclarationInstance = { identity: DeclarationIdentity; args: readonly TypeTerm[]; use: Node };
 
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
+  diagnostic: ((identity: DeclarationIdentity, reason: string) => void) | undefined;
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   computedMembers: (node: TypeDeclaration) => boolean;
   instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
@@ -4599,6 +4626,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     if (seen.has(key)) continue;
     seen.add(key);
     context.collecting(node, key);
+    const before = definitions.length;
+    const availableBefore = context.diagnostic ? new Set(seen) : null;
+    try {
     const stated = equation(node);
     if (stated) {
       definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
@@ -5101,5 +5131,23 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         });
     });
     definitions.push({ declaration: identity, parameters, bases, expression });
+    } catch (error) {
+      passToolFailure(error);
+      if (!context.diagnostic) throw error;
+      context.diagnostic(identity, messageOf(error));
+      // Generated definitions and their availability marks form one transaction.
+      // Queue entries and symbols keep their stable identities; a later user of
+      // a rolled-back synthetic definition regenerates it at that identity.
+      definitions.splice(before);
+      if (availableBefore) {
+        seen.clear();
+        for (const key of availableBefore) seen.add(key);
+      }
+      const parameters = applied ? [] : context.parameters(node).map((p): TypeDefinition["parameters"][number] => ({
+        name: p.name.text, span: [p.name.getStart(p.name.getSourceFile()), p.name.end],
+        defaulted: !!p.default }));
+      definitions.push({ declaration: identity, parameters, bases: [],
+        expression: { k: "atom", name: "unknown", span: identity.span } });
+    }
   }
 }

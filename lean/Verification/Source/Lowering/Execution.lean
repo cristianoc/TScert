@@ -501,7 +501,7 @@ one for an increment), and the slot of the old value. -/
       (B::returned) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
     LoweringAtoms.compileAtom recursive fc scope Γ prepared cast
 
-@[nospecialize] private partial def compileExecutionOperation (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+@[nospecialize] private partial def compileExecutionOperationCore (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (source : Span) (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
   let A ← executionOperationType fc scope Γ operation
@@ -600,6 +600,15 @@ one for an increment), and the slot of the old value. -/
     let (leftIndex, _) ← executionSaved scope Γ left
     let (rightIndex, _) ← executionSaved scope Γ right
     emitAt source (.merge [] (.var leftIndex) (.var rightIndex)) (.bind next) Γ A (scope := scope)
+
+@[nospecialize] private partial def compileExecutionOperation (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (source : Span) (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
+  recoverDiagnostic source (compileExecutionOperationCore recursive fc scope Γ source operation next) do
+    let A ← recoverDiagnostic source (executionOperationType fc scope Γ operation)
+      (do return [← lower (SourceTypes.use .source)])
+    emitAt source .undef (.bind next) Γ A "diagnostic-hole" (scope := scope)
+
 
 /-- The newest origin recorded for `name`, with the origins older than it,
 the bindings its own names were read in when it was recorded, and the names
@@ -759,7 +768,8 @@ prepared predicate without replaying an effectful source operand. -/
           else operation
         | _, _, _ => operation
       | _ => operation
-    let A ← executionOperationType fc scope Γ operation
+    let A ← recoverDiagnostic source (executionOperationType fc scope Γ operation)
+      (do return [← lower (SourceTypes.use .source)])
     let previous ← executionOrigins
     let preservesReads := match operation with
       | .evaluate _ _ .none | .methodRead .. | .referenceRead .. | .positionRead .. => true

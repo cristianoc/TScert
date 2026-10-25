@@ -29,7 +29,7 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     let mut attempted := 0
     let result : Except String ((F : EquationStore.Frozen) ×
         List (FunctionPlan (EquationStore.Checked F.equations F.primitive)
-          (EquationStore.CheckedLabel F.equations F.primitive)) × List (Span × String)) := do
+          (EquationStore.CheckedLabel F.equations F.primitive)) × List (Span × String × Bool)) := do
       let (T, plans, refusals) ← diagnosticPlans ast claims fileKey budget
       let ⟨F, frozen⟩ ← freezePlans T plans
       pure ⟨F, frozen, refusals⟩
@@ -38,9 +38,10 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
       failures := [occurrence "extraction" (0, 0) reason]
       unexamined := [occurrence "extraction" (0, 0) "shared extraction failed"]
     | .ok ⟨_, plans, refusals⟩ =>
-      for (pos, reason) in refusals do
+      for (pos, reason, recovered) in refusals do
         failures := failures ++ [occurrence "extraction" pos reason]
-        unexamined := unexamined ++ [occurrence "extraction" pos "unit extraction failed"]
+        unexamined := unexamined ++ [occurrence "extraction" pos
+          (if recovered then "opaque typed operation or contract" else "unit extraction failed")]
       for plan in plans do
         let .graph _ namePos r := plan
         let G := StoreView.graph r.types
@@ -56,24 +57,30 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
           | .ok (proofs, next) =>
             known := known ++ proofs
             answers := next
-        -- Each sibling's complete graph and effect checks can reveal an
-        -- obligation beyond the first refusing unit of the document.
-        match RequestJson.produceResponseUsing G I r.checker r.toRequest fuel [] known
-            r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
-            (searched := true) with
-        | .error reason => failures := failures ++ [occurrence "search" namePos reason]
-        | .ok (response, _) =>
-          if let some reason := footprintRefusal "diagnostic unit" namePos r response then
-            failures := failures ++ [occurrence "check" namePos reason]
-        let requests := (r.toRequest, r.sourceMap, r.assertions) ::
+        if !RequestJson.asyncEffects r.async r.footprint ||
+            !RequestJson.statedWithin r.async r.footprint r.onThrow r.stated then
+          failures := failures ++ [occurrence "check" namePos "the unit's claimed effect is outside its source contract"]
+        let requests := (r.toRequest, r.sourceMap, r.assertions, r.footprint, false, r.onThrow) ::
           (r.toRequest.codes.zipIdx.map fun (q, i) =>
             (q.asRequest r.toRequest, ((r.codeHints[i]?).getD {}).sourceMap,
-              ((r.codeHints[i]?).getD {}).requirements))
-        for (request, origins, requirements) in requests do
+              ((r.codeHints[i]?).getD {}).requirements,
+              q.entry.row.effect.footprint, q.entry.row.effect.fresh, q.entry.row.effect.onThrow))
+        for (request, origins, requirements, footprint, fresh, onThrow) in requests do
           attempted := attempted + request.program.length
-          let errors := CertificateProducer.diagnoseUsing G I labels fuel
-            request.program request.claims requirements known (fun _ => true) r.checker r.aliases request.goal request.start
-          for error in errors do
+          let holeLabels := origins.zipIdx.filterMap fun (entry, label) =>
+            if entry.any (fun e => e.role.startsWith "diagnostic-") then some label else none
+          let inspected := CertificateProducer.inspectUsing G I labels fuel
+            request.program request.claims requirements known (fun _ => true) r.checker r.aliases request.goal request.start holeLabels
+          -- Effects are inspected independently of safety and of earlier nodes.
+          if footprint != .top || fresh || onThrow then
+            if fresh || !request.program.all (fun node => Purity.pureTerm node.expression) then
+              let facts := GraphCode.inferFresh G I [] request.program inspected.nodes request.start
+              for ((node, evidence), label) in (request.program.zip inspected.nodes).zipIdx do
+                if !GraphCode.nodeChecked G I [] footprint facts fresh onThrow label node evidence then
+                  let pos := (((origins[label]?).bind id).map (·.pos)).getD namePos
+                  failures := failures ++ [occurrence "check" pos
+                    s!"node {label}: footprint not established at supplied interface" true]
+          for error in inspected.failures do
             let reason := match error with
               | .expression l => s!"node {l}: expression evidence search failed at supplied interface"
               | .exhaustedExpression l _ => s!"node {l}: expression subtype search exhausted"
@@ -90,7 +97,7 @@ def diagnoseJson (ast claims : Json) (fileKey : String) (fuel : Nat)
               | _ => namePos
             failures := failures ++ [occurrence "search" pos reason true]
             unexamined := unexamined ++ [occurrence "check" pos
-              "aggregate certificate and footprint checks" true]
+              "aggregate certificate checks" true]
     return Json.mkObj [("status", toJson "diagnostic"), ("attempted", toJson attempted), ("completed", toJson false),
       ("occurrences", toJson failures), ("unexamined", toJson unexamined)]
 

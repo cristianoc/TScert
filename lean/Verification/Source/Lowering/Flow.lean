@@ -23,6 +23,53 @@ set_option maxHeartbeats 1000000
     pure binding
   pure (locals ++ ambient)
 
+/-- A refused flow action retains all destinations and their lexical slots.
+New slots are diagnostic values at their supplied contracts; cells keep their
+reference representation. Every such action is recorded as an opaque region. -/
+@[nospecialize] private def recoverAction (graph : SourceFlow.Graph) (base : SourceClaims.Function Tree)
+    (R : Ty Tree) (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (node : SourceFlow.Node) (successor : Nat → List (ScopeBinding Tree) → Compiler Target) : Compiler Target := do
+  let top ← lower (SourceTypes.use .source)
+  let destination := fun (id : Nat) => do
+    let some target := graph.nodes[id]? | throw "internal diagnostic flow: missing destination"
+    let fc := base.atPoint (SourceFlow.pointId graph.owner id)
+    let missing := target.scope.filter fun d => !(sources scope).contains d
+    let added ← missing.mapM fun d => do
+      let C ← recoverDiagnostic node.source (do
+        let some claim := (fc.envs.lookup target.source.1).bind (·.lookup d.name)
+          | throw s!"no diagnostic contract for '{d.name}'"
+        SourceClaims.resolve (← table) claim) (pure [top])
+      let early := match node.action with
+        | .early bs _ => bs.any fun (p, _, b) => d == ⟨b.name, some p⟩
+        | _ => false
+      if early || graph.cells.contains d then
+        let reference ← lower (do return [← CellClaims.reference [(valueField, C)]])
+        return (({ source := d, storage := if early then .early C reference else .cell C reference } : ScopeBinding Tree), reference)
+      let mutable := match node.action with
+        | .declaration _ m b _ => m && b.name == d.name
+        | _ => false
+      return (({ source := d, storage := if mutable then .slot C else .value } : ScopeBinding Tree), C)
+    let inner := added.map (·.1) ++ scope
+    let mut next ← successor id inner
+    for i in List.range added.length do
+      let some (_, C) := added[i]? | throw "internal diagnostic flow: missing binding"
+      next ← emitAt node.source .undef (.bind next) ((added.drop (i+1)).map (·.2) ++ Γ) C
+        "diagnostic-binding-hole" (scope := (added.drop (i+1)).map (·.1) ++ scope)
+    return next
+  let forward := fun id => do
+    let next ← destination id
+    emitAt node.source .undef (.effect next) Γ [top] "diagnostic-action-hole" (scope := scope)
+  match node.action with
+  | .finish | .returnValue _ | .returnHeld _ | .rethrow _ =>
+    emitAt node.source .undef .ret Γ R "diagnostic-action-hole" (scope := scope)
+  | .jump next | .statement _ next | .declaration _ _ _ next | .early _ next
+  | .saveReturn _ _ next | .discardThrow _ next | .iteratorStart _ _ next => forward next
+  | .branch _ yes no | .iteratorStep _ _ _ yes no =>
+    let yes ← destination yes
+    let no ← destination no
+    emitAt node.source .undef (.branch yes no) Γ [Labels.tru, Labels.fls]
+      "diagnostic-branch-hole" (scope := scope)
+
 /-- Elaborate one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
@@ -51,7 +98,7 @@ set_option maxHeartbeats 1000000
       let entry ← flowNode recursive graph ambient base R handlerScope h.target
       pure (some (entry, captured.length + ambient.length))
   let action := node.action
-  let target ← withHandler handler do
+  let target ← withHandler handler <| recoverDiagnostic node.source (do
     let successor := fun (next : Nat) (bindings : List (ScopeBinding Tree)) =>
       flowNode recursive graph ambient base R bindings next
     match action with
@@ -242,7 +289,9 @@ set_option maxHeartbeats 1000000
       let dispatch ← emitAt pos (.var 0) (.tagBind .isNul toExit toElement) (S::Γ) S
         "for-of-dispatch" (scope := held ⟨"",some pos⟩ :: scope)
       emitAt pos (Tm.call (.var i) []) (.bind dispatch) Γ S "for-of-step" (scope := scope)
-    | _ => throw "internal flow error: malformed action"
+    | _ => throw "internal flow error: malformed action")
+    (recoverAction graph base R scope Γ node (fun next bindings =>
+      flowNode recursive graph ambient base R bindings next))
   completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
   let separation := separationFacts (SourceTypes.graph (← table)) scope Γ

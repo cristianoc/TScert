@@ -35,10 +35,34 @@ graph. A function analysis that refuses outside these boundaries yields empty
 claims, allowing sibling functions to be analyzed. These approximations can
 create or hide downstream failures. They carry no effect guarantee.
 
-Typed extraction retains sibling units after a unit's refusal, with its
-immutable equation store restored to the value at the unit's entry. Shared
-annotation and equation preparation is a document boundary: a refusal there
-leaves the document unexamined.
+Declaration collection records refusals per imported binding, declaration
+queue entry and visited type application. An unavailable imported value keeps
+its name at `unknown`. A failed queued equation keeps its declaration identity
+and parameter arity at `unknown`; its queued dependencies retain their identities
+and receive their own visits. Symbol allocation and dependency queues grow
+monotonically. The failed equation's partially emitted definitions and their availability
+marks roll back together; later references regenerate them at the same identities.
+The application sweep retains successful obligations and visits children and
+queued declarations after a refusal. These are opaque contracts within the
+diagnostic envelope.
+
+Equation preparation recovers individual type terms and pending equation jobs
+from their immutable entry states. A failed type term becomes `unknown`; a
+failed job fills its reserved head with the source-value clause. Every declared
+bound and closed-intersection check receives an independent attempt over the
+completed store. Equation well-formedness and document decoding remain required
+before typed extraction can use that store.
+
+Typed extraction recovers executable operations at their supplied result types,
+or `unknown`, retaining the result slot and continuation. Missing environments
+retain each binding's fixed type or storage contract; an unavailable value
+contract becomes `unknown`. A refused flow action retains its destinations and
+lexical slots, including both branch arms, handlers and reference representations
+for cells. Its whole source region is opaque. The immutable entry state is
+restored before each replacement. A diagnostic hole discards output heap facts
+during local search, even if its placeholder expression has a derivation.
+Refusals outside these transactions retain sibling units and leave the refusing
+unit unexamined.
 
 Search first attempts the complete retained program. A successful aggregate
 check leaves no search blockers. After a refusal, diagnostic search attempts
@@ -51,23 +75,32 @@ attempts assume its supplied result type and forget output heap facts. Edge
 attempts check both target types and supplied heap requirements. Return promises
 use argument positions propagated through the graph. These local attempts do
 not propagate predecessor implications or retry combinations of promise yields;
-they can therefore report failures that aggregate search discharges. Each extracted sibling unit also receives its own graph and footprint checks.
-Aggregate checking uses the ordinary search and checking operations. Its
-evidence is discarded. Imported program values are read at their declared
+they can therefore report failures that aggregate search discharges. Each extracted sibling and closure receives node-by-node footprint checks,
+using the locally derived expression proofs and inferred freshness. A failed
+expression supplies its interface without a proof or output heap facts;
+footprint refusals under those assumptions are conditional. These attempts do
+not require a successful whole-graph certificate. The initial whole-program
+attempt uses the ordinary search and checking operations; its evidence is
+discarded. Imported program values are read at their declared
 contracts; the diagnostic parser does not certify imported module bodies.
 
-Shared declaration collection, execution-plan construction and producer
-initialization can refuse before local recovery is available. Their remaining
-regions are unexamined. The inventory therefore does not claim to enumerate
+Source preparation outside the declaration transactions, execution-plan
+construction, producer initialization, equation well-formedness and unit setup
+can refuse before local recovery is available. Their remaining regions are
+unexamined. The inventory therefore does not claim to enumerate
 all refusals hidden behind those boundaries, or those inside an opaque region.
 
 ## Attribution and coverage
 
 Each occurrence has a source span, layer, refusal summary, identifier and
-dependencies. Repeated type-graph tables are omitted from the inventory.
-Source and producer recovery identifiers conservatively taint subsequent
-observations in the document. Local graph attempts additionally name
-`supplied-interfaces`. These dependencies are conservative scope attribution;
+dependencies. Equation failures inside external declarations have document
+scope when no client use site is available; external byte offsets are not
+interpreted as offsets in the client. Repeated type-graph tables are omitted from the inventory.
+Source, producer and typed-extraction recovery identifiers conservatively taint
+subsequent observations in the document. Each recovery links to the preceding
+recovery; dependencies include the transitive closure of those links. This
+keeps the inventory linear in the number of occurrences. Local graph and
+footprint attempts additionally name `supplied-interfaces`. These dependencies are conservative scope attribution;
 they are not a data-flow or causal analysis. An occurrence independent of
 recovery can still depend on ordinary supplied claims.
 
