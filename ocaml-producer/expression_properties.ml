@@ -120,14 +120,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let names = match key_type with
         | Atoms [StrLit k] -> [Name k]
         | _ -> literal_keys declarations key_type in
-      let value = expr env rhs in
+      let contract = quietly (fun () -> S.index_type declarations [] (present t) key_type) in
+      let value = expr ?expected:contract env rhs in
       (match List.find_opt (adds env receiver t) names with
        | Some name -> added_contract declarations t name rhs value
        | None -> value)
     | Write (receiver,field,rhs) ->
       let t = expr env receiver in
       dictionary_growth site t field;
-      let value = expr env rhs in
+      let contract = quietly (fun () -> S.field_type declarations [] (present t) field) in
+      let value = expr ?expected:contract env rhs in
       if adds env receiver t field then
         (match expected with Some c -> c | None -> added_contract declarations t field rhs value)
       else value

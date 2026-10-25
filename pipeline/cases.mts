@@ -114,8 +114,11 @@ export const cases: Case[] = [
   // Search obligations.
   { ...gap("blocker-module-assignment", "Assignments to module bindings need modeled module storage.", "unverified", "search",
     /^reject: assignment to 'generation', which is not a mutable local(?:\n|$)/), project: "pipeline/blocker-project" },
-  { ...gap("blocker-field-literal-context", "A property assignment needs to build its fresh array at the field storage contract.", "unverified", "search",
-    /^reject: source expression obligation at \[954,966\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-field-literal-context", "A fresh array is built at the field storage contract."), project: "pipeline/blocker-project" },
+  negative("invalid-write-literal-array-field-alias", "An aliased number array cannot acquire a number-or-string element contract through a field write."),
+  negative("invalid-write-literal-array-index-alias", "An aliased number array cannot acquire a number-or-string element contract through an index write."),
+  positive("write-literal-context", "Fresh field and index literals use their storage contracts."),
+  negative("invalid-write-literal-alias", "An aliased mutable object retains its invariant storage contract."),
   { ...gap("blocker-compiler-api-type-node", "A TypeNode found by the host guard needs its recursive host shape admitted at the declared TypeNode contract.", "unverified", "search",
     /^reject: source expression obligation at \[321,354\): evidence search failed: no derivation of its return-contract claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-compiler-api-token-subtype", "A binary operator token needs to meet the Node contract at a call.", "unverified", "search",
