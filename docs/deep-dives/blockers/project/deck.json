@@ -20,6 +20,8 @@
     "readonly",
     "kinds",
     "repros",
+    "cases",
+    "tools",
     "next"
   ],
   "sections": {
@@ -32,7 +34,10 @@
       "start": "loop"
     },
     "s2": { "description": "Seven blockers investigated.", "start": "sep" },
-    "s3": { "description": "Repros and the next round.", "start": "repros" }
+    "s3": {
+      "description": "Repros, the cases they became, the changes to tools/, and the next round.",
+      "start": "repros"
+    }
   },
   "faces": {
     "ibm-plex-sans": {

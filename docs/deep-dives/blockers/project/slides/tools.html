@@ -1,0 +1,14 @@
+<section id="tools" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Changes to tools/</p>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Three patterns refused on principle, removed from TScert's own code</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:30%;text-align:left;font-weight:600">Pattern refused</th><th style="width:33%;text-align:left;font-weight:600">Why refusing it is right</th><th style="width:37%;text-align:left;font-weight:600">The change in tools/ (commit c6d1b65)</th></tr>
+<tr><td>"guards" in promise selects an arm of a union whose other arm may carry extra properties</td><td>the other arm may own the field at another type: blocker-in-field-narrowing returns undefined from a function typed number</td><td>each arm states the other's field absent (guards?: never) and readers test the value: guardOf and 15 other functions</td></tr>
+<tr><td>a check of readonly JSON data promising writable fields</td><td>a check shows what the fields hold now, not what may be written: promised writable fields, a caller could write any value of the field's type into an object another reference expects to hold a narrower one</td><td>the footprint, effect and guard-promise fields are readonly: isClosedFootprint, isCallEffect</td></tr>
+<tr><td>a callback whose parameter TypeScript types as any (Object.entries on an object)</td><td>any gives TScert no type to check the parameter's uses against</td><td>the entry is annotated [string, unknown]: sameData, mergeRefusal</td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.38">
+<li>Also: four readers of an import clause read phaseModifier instead of isTypeOnly, a field the compiler API's declarations leave out (cited: SOURCE-REWRITES.md); for ordinary and type imports the two give the same answer.</li>
+<li>Each change keeps what the code computes, and docs/SOURCE-REWRITES.md states the property the code lacked, the rewrite and the functions; make suite and make test pass (measured).</li>
+<li>Census effect, on the 48 slices of the changed functions and their users (measured, 2026-10-25): 0 verified before and after; some move to a later refusal (guardOf), others stop before the repaired code (the type-term.mts slices, at Object.entries).</li>
+</ul>
+</section>
