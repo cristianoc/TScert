@@ -94,7 +94,7 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     if (!ts.isStringLiteral(declaration.moduleSpecifier))
       fail(declaration, "a namespace import names its module by a string literal");
     const specifier = declaration.moduleSpecifier.text;
-    const typeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
+    const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     const namespace = bindings.name;
     const symbol = checker.getSymbolAtLocation(namespace);
     if (!symbol) fail(namespace, `TypeScript binds no namespace to ${namespace.text}`);

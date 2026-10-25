@@ -221,7 +221,7 @@ export const selfName = (cls: string): Within<{ value: "any"; store: "grow" }, s
 export const baseName = (cls: string): string => `${cls}.[[base]]`;
 
 /** A part of an object literal: a named field, or a spread of a value. */
-export type ObjectPart = { name: PropertyKey; e: Expr; computed?: true } | { spread: Expr };
+export type ObjectPart = { name: PropertyKey; e: Expr; computed?: true; spread?: never } | { spread: Expr; name?: never };
 
 /** The hidden name a parameter written as a pattern or with a default
  * binds: a name no source binding can spell. The body's first statements

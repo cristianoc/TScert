@@ -203,7 +203,7 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
  * `node_modules` holds (or a test's, `useInstallationForTests`), and its
  * executable, the platform package's `lib/tsc` as the package's
  * `getExePath` finds it: real paths, or why there is none. */
-type Installation = { package: string; executablePackage: string; executable: string } | { missing: string };
+type Installation = { package: string; executablePackage: string; executable: string; missing?: never } | { missing: string };
 function locate(from: string): Installation {
   const at = findPackage("typescript", from);
   if (at === null) return { missing: `the package typescript is not installed for ${from}` };
@@ -254,9 +254,9 @@ const swapCase = (text: string): string =>
  * out), and whether it differs from disk now; or why the compiler's reads
  * are not all observed. */
 export type CompilerImplementation =
-  { identity: { [field: string]: string | boolean }; changed: () => boolean } | { unobserved: string };
-function identify(at: Installation): { identity: { [field: string]: string | boolean } } | { unobserved: string } {
-  if ("missing" in at) return { unobserved: at.missing };
+  { identity: { [field: string]: string | boolean }; changed: () => boolean; unobserved?: never } | { unobserved: string; identity?: never };
+function identify(at: Installation): { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string } {
+  if (at.missing !== undefined) return { unobserved: at.missing };
   if (process.platform !== "darwin" || !installed("/usr/bin/sandbox-exec"))
     return { unobserved: "the compiler's own reads are confined on macOS only (sandbox-exec)" };
   const packageDigest = treeDigest(at.package), executableDigest = treeDigest(at.executablePackage);
@@ -270,7 +270,7 @@ type Current = { installation: Installation; implementation: CompilerImplementat
 function current(from: string): Current {
   const installation = locate(from);
   const identified = identify(installation);
-  return { installation, launcher: null, implementation: "unobserved" in identified ? identified
+  return { installation, launcher: null, implementation: identified.unobserved !== undefined ? identified
     : { identity: identified.identity,
       changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
 }
@@ -283,7 +283,7 @@ export const compilerImplementation = (): CompilerImplementation => using.implem
 /** The compiler's identity as a retained session compares it
  * (`declaration-session.mts`): the installation's choice and identity. */
 export const compilerChoice = (): string =>
-  JSON.stringify([choices, "identity" in using.implementation ? using.implementation.identity : using.implementation.unobserved]);
+  JSON.stringify([choices, using.implementation.identity !== undefined ? using.implementation.identity : using.implementation.unobserved]);
 /** Tests only: the compiler installed in the `node_modules` of `directory`
  * from now on, or the front end's own for null. */
 export function useInstallationForTests(directory: string | null): void {
@@ -294,7 +294,7 @@ export function useInstallationForTests(directory: string | null): void {
 /** The launcher of the confined compiler, made once per installation. */
 function launcher(): string | null {
   const { installation, implementation } = using;
-  if ("unobserved" in implementation || "missing" in installation) return null;
+  if (implementation.unobserved !== undefined || installation.missing !== undefined) return null;
   const { executable, executablePackage } = installation;
   using.launcher ??= privateLauncher((directory, script) => [
     "#!/bin/sh",
@@ -314,8 +314,8 @@ export const launcherForTests = (): string | null => launcher();
 export function openFrontEndCompiler(cwd: string, overlay: ReadonlyMap<string, string>, ledger: Ledger = newLedger()): API {
   const confined = launcher();
   const { installation, implementation } = using;
-  if (confined === null && "unobserved" in implementation) unobservable(implementation.unobserved);
-  const api = openCompiler({ cwd, fs: compilerFileSystem(overlay, "missing" in installation ? null : installation.executablePackage),
+  if (confined === null && implementation.unobserved !== undefined) unobservable(implementation.unobserved);
+  const api = openCompiler({ cwd, fs: compilerFileSystem(overlay, installation.missing !== undefined ? null : installation.executablePackage),
     ...(confined ? { tsserverPath: confined } : {}) });
   ledgers.set(privateClient(api), ledger);
   return api;

@@ -1105,7 +1105,7 @@ function sameData(a: unknown, b: unknown): Within<{ value: "keep"; store: "keep"
   if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return a === b;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
   const kept = (o: object): [string, unknown][] =>
-    Array.isArray(o) ? Object.entries(o) : Object.entries(o).filter(([k, v]) => k !== "span" && v !== undefined);
+    Array.isArray(o) ? Object.entries(o) : Object.entries(o).filter(([k, v]: [string, unknown]) => k !== "span" && v !== undefined);
   const x = kept(a), y = kept(b);
   return x.length === y.length && x.every(([k, v], i) => {
     const other = y[i];

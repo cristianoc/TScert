@@ -25,7 +25,7 @@ export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | 
   const { effect, type } = promiseOf(gate.scope, p, ordinary);
   const promise = effect.promise;
   if (promise === null) throw Error("internal: a type predicate without a promise");
-  return "guards" in promise ? { param: promise.guards.param, asserts: false, type, span: gate.span(p) }
+  return promise.guards !== undefined ? { param: promise.guards.param, asserts: false, type, span: gate.span(p) }
     : { param: promise.asserts.param, asserts: true, type, span: gate.span(p) };
 }
 

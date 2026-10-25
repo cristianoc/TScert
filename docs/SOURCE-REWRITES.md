@@ -221,6 +221,81 @@ statements that need it (D5, 2026-10-23).
 - **Commit:** 84cb902 (`tools/fragment-parse.mts`,
   `tools/fragment-statements.mts`).
 
+### Mutually exclusive fields in an open union
+
+`guardOf` (`tools/fragment-guards.mts`) and `samePromise`
+(`tools/type-graph.mts`) selected a promise with `"guards" in promise`.
+The annotation `{ guards: { param: number } } | { asserts: { param:
+number } }` permits the assertion arm to own `guards` at another type.
+Presence alone therefore cannot justify the subsequent parameter read.
+`blocker-in-field-narrowing` demonstrates the same missing guarantee by
+returning `undefined` from a function annotated to return `number`.
+
+- **Rewrite:** state the exclusivity the constructors provide: the other
+  arm declares the selection field optional at `never`, and readers test
+  its value against `undefined`. A promise also carries its JSON object
+  contract, so its optional fields cannot introduce non-JSON values.
+- **Pattern:** a union selected by the presence of a field states that
+  field's absence on its other arm. The field's defined value selects the
+  arm. This preserves the objects each constructor produces.
+- **Functions:** `guardOf`, `samePromise`; compiler setup's `identify`,
+  `current`, `compilerChoice`, `launcher`, `openFrontEndCompiler`;
+  `lowerModuleText`, `parseModules`; `writtenApplications`;
+  `expr`, `objectFields`; `importedGuard`, `importedExport`; and the
+  declaration graph's `reexported` and global selection in `collectDeclarations`.
+  Their contracts are `CallPromise`, `Installation`,
+  `CompilerImplementation`, `LoweredModule`, `Determined`, `ObjectPart`,
+  and the results of `identify`, `importedExport`, and `selectGlobal`.
+- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+
+### A readonly JSON check promising writable fields
+
+`isClosedFootprint` and `isCallEffect` (`tools/type-graph.mts`) inspect a
+readonly JSON value and promise `ClosedFootprint` and `CallEffect`.
+Writable fields in those types claim an invariant storage contract that
+checking the current contents does not establish. The same obligation
+applies to the nested promise and its parameter.
+
+- **Rewrite:** `ClosedFootprint`, `CallEffect`, and the fields and children
+  of `CallPromise` are readonly. Their consumers read the checked views;
+  a control forging an effect constructs its replacement as a fresh object.
+- **Pattern:** a guard that checks contents promises a readonly view.
+  A different writable contract requires fresh storage.
+- **Functions:** `isClosedFootprint`, `isCallEffect`, and the two effect
+  edits in the filter-guard forged-evidence control.
+- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+
+### A callback inheriting `any` from object entries
+
+`sameData` (`tools/type-term.mts`) filters `Object.entries(o)` with an
+unannotated destructuring callback. The standard library's object overload
+supplies `[string, any]`, so the callback's value has no stated contract.
+`mergeRefusal` (`tools/array-prototype.mts`) uses the same overload in its
+local canonical representation, through both `filter` and `map`.
+
+- **Rewrite:** each callback declares its entry `[string, unknown]`.
+  Equality and the recursive reader already accept `unknown`.
+- **Pattern:** a callback receiving untyped external data states the
+  weakest contract its body needs, checking values before using them.
+- **Functions:** `sameData` and `mergeRefusal` (its local `canonical`).
+- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+
+### An import phase read through an undeclared host field
+
+`importedModules` (`tools/fragment-parse.mts`) tested `"isTypeOnly" in
+clause` and then `clause.isTypeOnly === true`. Equality checks the value,
+so the open-union counterexample does not apply to this expression.
+The compiler's `ImportClause` contract declares `phaseModifier`; its shared
+runtime node also exposes an `isTypeOnly` getter reading the low phase bit.
+For the supported ordinary and type imports, the two tests agree.
+
+- **Rewrite:** read `clause.phaseModifier === ts.SyntaxKind.TypeKeyword`.
+- **Pattern:** read a host object's declared member for the operation it
+  represents. A shared runtime getter does not extend a host view's contract.
+- **Functions:** `importedModules`, `namespaceMembers`, `importBindings`,
+  and the declaration graph's local `closure` in `collectDeclarations`.
+- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+
 ## Changes for a tool's defect
 
 ### The compiler API's empty-tuple panic

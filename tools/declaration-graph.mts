@@ -380,9 +380,7 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
     if (!clause || (!clause.name && !clause.namedBindings) || !ts.isStringLiteral(node.moduleSpecifier))
       throw new DeclarationError(span, "only named, default and namespace imports are resolved");
     const specifier = node.moduleSpecifier.text;
-    // The unstable AST exposes this runtime field but omits it from the
-    // ImportClause interface.
-    const clauseTypeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
+    const clauseTypeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     // A default import binds the module's `default` export.
     const defaulted = clause.name ? [{ name: clause.name.text, at: clause.name, imported: "default", specifier, span,
       typeOnly: clauseTypeOnly }] : [];
@@ -1077,7 +1075,7 @@ export function collectDeclarations(file: string, options: {
         for (const statement of file.statements) {
           if (!ts.isImportDeclaration(statement)) continue;
           const clause = statement.importClause;
-          if (!clause || ("isTypeOnly" in clause && clause.isTypeOnly === true)) continue;
+          if (!clause || (clause.phaseModifier === ts.SyntaxKind.TypeKeyword)) continue;
           const bindings = clause.namedBindings;
           const names = [...(clause.name ? [clause.name] : []),
             ...(bindings && ts.isNamedImports(bindings) ? bindings.elements.filter(e => !e.isTypeOnly).map(e => e.name) : [])];
@@ -2114,7 +2112,7 @@ export function collectDeclarations(file: string, options: {
       if (statements.some(s => s.attributes)) return null;
       const bound = importedExport(from.fileName, specifier, imported);
       if (!bound) return null;
-      if ("description" in bound) return bound;
+      if (bound.description !== undefined) return bound;
       const module = programModule(bound.program);
       if (!module || module.isDeclarationFile || isHostFile(module.fileName)) return null;
       for (const s of module.statements) {
@@ -2802,7 +2800,7 @@ export function collectDeclarations(file: string, options: {
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
         // A global only constructed is its construct signatures, as a class
         // value is; any other is its selection.
-        if ("construct" in selection) {
+        if (selection.construct !== undefined) {
           values.push({ binding, construct: true, ...selection.construct });
           continue;
         }
@@ -3966,7 +3964,7 @@ function originOf(path: string): string {
 }
 
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
-    { definition: TypeDefinition } |
+    { definition: TypeDefinition; construct?: never } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
     null {
   const [first] = uses;

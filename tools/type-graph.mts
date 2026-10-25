@@ -60,8 +60,8 @@ export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =
   a.value === b.value && a.store === b.store;
 const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
   a === null || b === null ? a === b
-    : "guards" in a ? "guards" in b && a.guards.param === b.guards.param
-    : "asserts" in b && a.asserts.param === b.asserts.param;
+    : a.guards !== undefined ? b.guards !== undefined && a.guards.param === b.guards.param
+    : b.asserts !== undefined && a.asserts.param === b.asserts.param;
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
   sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
     a.receiverStore === b.receiverStore && a.onThrow === b.onThrow;

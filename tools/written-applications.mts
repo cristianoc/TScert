@@ -114,7 +114,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       const determined = determining(entity);
       // Its type is its written annotations: one inferred from its code is
       // not read.
-      if ("inferred" in determined) {
+      if (determined.inferred !== undefined) {
         const at = determined.inferred;
         if (!at)
           throw refusal(use, "a member the checker synthesises without a declaration and with no origin found: " +
@@ -135,11 +135,11 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   // declarations, each by its kind, with an overload set's and an accessor
   // pair's declarations taken together, and the members its type exposes;
   // the declaration whose type is inferred where there are none.
-  type Determined = { nodes: Node[] } | { inferred: Node | null };
+  type Determined = { nodes: Node[]; inferred?: never } | { inferred: Node | null };
   const all = (parts: readonly Determined[]): Determined => {
     const nodes: Node[] = [];
     for (const part of parts) {
-      if ("inferred" in part) return part;
+      if (part.inferred !== undefined) return part;
       nodes.push(...part.nodes);
     }
     return { nodes };

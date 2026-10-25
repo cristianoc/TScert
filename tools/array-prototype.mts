@@ -720,8 +720,8 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   const canonical = (value: unknown): string => {
     if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
     if (value !== null && typeof value === "object")
-      return `{${Object.entries(value).filter(([key]) => key !== "span")
-        .map(([key, field]) => `${key}:${canonical(field)}`).join(",")}}`;
+      return `{${Object.entries(value).filter(([key]: [string, unknown]) => key !== "span")
+        .map(([key, field]: [string, unknown]) => `${key}:${canonical(field)}`).join(",")}}`;
     return typeof value === "string" ? JSON.stringify(value) : String(value);
   };
   const contract = (member: Member, binders: Binders): string | null => {

@@ -5,16 +5,18 @@ import type { ArrayPresence } from "./type-graph.mts";
  * equations of the declarations reached. They are not evidence that a
  * producer's claim follows from them. This module has no runtime dependencies,
  * so importing its types does not pull the compiler into a reader's project. */
+import type { JsonObject } from "./calculus.mts";
 import type { Span } from "./span.mts";
 /** A closed footprint (`Footprints.Closed`): the change a call may make, on
  * normal return, to the locations of its entry heap holding a value and to
  * those holding an array store. `keep` changes nothing, `grow` keeps every
  * dense prefix of a store, `any` allows every change; on a value `grow` is
  * `keep`. Fresh locations are unconstrained. */
-export type ClosedFootprint = { value: "keep" | "any"; store: "keep" | "grow" | "any" };
+export type ClosedFootprint = { readonly value: "keep" | "any"; readonly store: "keep" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
-export type CallPromise = { guards: { param: number } } | { asserts: { param: number } };
+export type CallPromise = ({ readonly guards: { readonly param: number }; readonly asserts?: never } |
+  { readonly asserts: { readonly param: number }; readonly guards?: never }) & JsonObject;
 /** What a signature guarantees beyond its contract: its footprint, an
  * optional promise, whether a normal return's value has an array store the
  * call allocated (`fresh`), and whether the footprint excepts the receiver's
@@ -22,7 +24,8 @@ export type CallPromise = { guards: { param: number } } | { asserts: { param: nu
  * whether the footprint also bounds the heap a throw leaves (`onThrow`)
  * (`CallEffects.Effect`). */
 export type CallEffect = {
-  footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean; onThrow: boolean;
+  readonly footprint: ClosedFootprint; readonly promise: CallPromise | null; readonly fresh: boolean;
+  readonly receiverStore: boolean; readonly onThrow: boolean;
 };
 /** The effect a written signature states at its result (`Within<F, T>`,
  * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether

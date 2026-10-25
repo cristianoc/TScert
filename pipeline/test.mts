@@ -3562,12 +3562,12 @@ control(async (): Promise<void> => {
     return writeClaims(artifacts, name, forged);
   };
   const forgeries = [
-    [forgeLonger("forged-filter-guard-plain", (longer) => { longer.effect.promise = null; }), "forged-filter-guard-plain", "reject: "],
+    [forgeLonger("forged-filter-guard-plain", (longer) => { longer.effect = { ...longer.effect, promise: null }; }), "forged-filter-guard-plain", "reject: "],
     [forgeLonger("forged-filter-guard-promise", (longer, claims) => { longer.result = [rowOf(claims, "nul")]; }),
       "forged-filter-guard-promise", "reject: "],
     [forgeLonger("forged-filter-guard-parameter", (longer, claims) => { longer.arguments[0] = [rowOf(claims, "nul")]; }),
       "forged-filter-guard-parameter", "closure signature claim is outside the source annotation"],
-    [forgeLonger("forged-filter-guard-footprint", (longer) => { longer.effect.footprint = { value: "keep", store: "keep" }; }),
+    [forgeLonger("forged-filter-guard-footprint", (longer) => { longer.effect = { ...longer.effect, footprint: { value: "keep", store: "keep" } }; }),
       "forged-filter-guard-footprint", "reject: "],
   ] as const;
   for (const [input, name, refusal] of forgeries) {

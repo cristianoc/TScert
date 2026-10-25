@@ -1041,7 +1041,7 @@ export type ModuleRequest = { absolute: string; location: string; tsconfigPath: 
   selection: ReadonlyMap<string, readonly TagValue[]> | undefined };
 /** An imported module lowered, as `M`, with the program modules it imports
  * functions from; or the gate's refusal of it. */
-export type LoweredModule<M> = { module: M; imported: ImportedModule[] } | { refused: string };
+export type LoweredModule<M> = { module: M; imported: ImportedModule[]; refused?: never } | { refused: string };
 /** The name of a module stage's read of the run's selection of the host
  * family `marker`. */
 export const selectionRead = (marker: string): string => `selection/${marker}`;
@@ -1141,7 +1141,7 @@ export function lowerModule(request: ModuleRequest): LoweredModule<ModuleAst> {
 /** `lowerModule`'s lowering with the module's entry as text. */
 export function lowerModuleText(request: ModuleRequest): LoweredModule<ModuleText> {
   const lowered = lowerModule(request);
-  return "refused" in lowered ? lowered
+  return lowered.refused !== undefined ? lowered
     : { module: { text: JSON.stringify(lowered.module), illFormed: wellFormedRefusal(lowered.module, "gate") },
       imported: lowered.imported };
 }
@@ -1168,7 +1168,7 @@ function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: st
     if (done.has(next.location)) continue;
     done.add(next.location);
     const lowered = lower({ absolute: next.absolute, location: next.location, tsconfigPath, selection });
-    if ("refused" in lowered) continue;
+    if (lowered.refused !== undefined) continue;
     modules.push(lowered.module);
     work.push(...lowered.imported);
   }
@@ -2107,7 +2107,7 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
   const elements = importNodes.flatMap((node) => {
     const bindings = node.importClause?.namedBindings;
     const clause = node.importClause;
-    const typeOnly = !!clause && "isTypeOnly" in clause && clause.isTypeOnly === true;
+    const typeOnly = !!clause && clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     if (typeOnly || !clause) return [];
     const named = !bindings || !ts.isNamedImports(bindings) ? []
       : bindings.elements.filter((e) => !e.isTypeOnly).map((e) => e.name);

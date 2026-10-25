@@ -444,7 +444,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
 export function importedGuard(from: string, specifier: string, imported: string):
     { entry: GuardEntry | null } | { program: string } | null {
   const bound = importedExport(from, specifier, imported);
-  return bound && "description" in bound ? { entry: guardOfExport(bound.description, bound.value) } : bound;
+  return bound && bound.description !== undefined ? { entry: guardOfExport(bound.description, bound.value) } : bound;
 }
 
 /** What Node binds for an import, read as `importedGuard` reads it: where
@@ -453,7 +453,7 @@ export function importedGuard(from: string, specifier: string, imported: string)
  * a module outside every installation by its real path (`program`); any
  * other binding none. */
 export function importedExport(from: string, specifier: string, imported: string):
-    { description: FamilyDescription; value: unknown } | { program: string } | null {
+    { description: FamilyDescription; value: unknown } | { program: string; description?: never } | null {
   const resolved = nodeResolve(specifier, from);
   if (resolved === null) return null;
   const path = orAbsent(realPath, fileURLToPath(resolved));
