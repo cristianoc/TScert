@@ -54,19 +54,21 @@ def sourceKey (s : String) : Except String String :=
 /-- The string keys a function owns or inherits from `Function.prototype`
 that no other built-in prototype holds: node's `Object.getOwnPropertyNames`
 of `Function.prototype` and of a function, less `length`, which an array owns
-too, and `constructor` and `toString`, which `Object.prototype` holds
-(`inKeyRefusal`). An object of the fragment that is no function owns one of
-them only as a field the model keeps, or inherits it only from a class's
-prototype object, which the model's chain holds. -/
-def functionKeys : List String := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
+too, `name`, which `Error.prototype` holds, and `constructor` and `toString`,
+which `Object.prototype` holds (`inKeyRefusal`). An object of the fragment
+that is no function owns one of them only as a field the model keeps, or
+inherits it only from a class's prototype object, which the model's chain
+holds. -/
+def functionKeys : List String := ["prototype", "apply", "bind", "call", "arguments", "caller"]
 
 /-- `key in o` looks the key up along `o`'s prototype chain; the model's test
 (`Tag.hasKey`) asks whether the object owns it. The two agree for a key none
 of the built-in prototypes an object of the fragment inherits from holds, and
 that no own key of the built-in making the model leaves out names: an array's
-`length` and indices, a function's `length`, `name` and `prototype`. The
-names are node's (`Object.getOwnPropertyNames` of `Object.prototype`,
-`Array.prototype` and `Function.prototype`), a trusted list: a builtins whose
+`length` and indices, a function's `length`, `name` and `prototype`, an
+error's `name`, which `Error.prototype` holds and the model's error does not. The names are node's (`Object.getOwnPropertyNames` of
+`Object.prototype`, `Array.prototype`, `Error.prototype` and
+`Function.prototype`), a trusted list: a builtins whose
 prototypes hold another string key would answer `true` where the model
 answers `false`. A key the model reserves for itself is refused too. A key a
 function owns or inherits (`functionKeys`) is refused where the operand may
@@ -79,6 +81,9 @@ def inKeyRefusal (key : String) : Option String :=
     "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat",
     "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
     "toSpliced", "with"]
+  -- `Error.prototype` holds `name`; any object, a record's value among
+  -- them, may be an error.
+  let errorKeys := ["name"]
   -- A regular expression owns `lastIndex` and inherits the rest from
   -- `RegExp.prototype`; the model's regex states methods and no property.
   let regexpKeys := ["lastIndex", "source", "flags", "global", "ignoreCase", "multiline", "sticky",
@@ -88,6 +93,7 @@ def inKeyRefusal (key : String) : Option String :=
     some "a regular expression owns it or inherits it from RegExp.prototype"
   else if objectKeys.contains key then some "every object inherits it from Object.prototype"
   else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
+  else if errorKeys.contains key then some "an error inherits it from Error.prototype, which the model does not hold"
   else if !key.isEmpty && key.all Char.isDigit && (key == "0" || key.front != '0') then
     some "an array index names an element, which the model keeps in the array's store"
   else none

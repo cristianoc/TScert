@@ -1508,6 +1508,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // copy lacks it.
   assert.equal(runExample("invalid-regexp-lastindex-in", "hasState(/a/)"), true);
   assert.equal(runExample("invalid-regexp-lastindex-view", "viewed()"), undefined);
+  // A function inherits `apply` and `call`, which `in` finds; an open record
+  // arm may own `call` at another type; an error inherits `name` from
+  // `Error.prototype`.
+  assert.equal(runExample("invalid-in-function-key", "report(() => 0)"), true);
+  assert.equal(runExample("invalid-in-function-key-call", "report(() => 0)"), true);
+  assert.equal(runExample("invalid-in-function-key-member", `wrong({ size: 1, call: () => "s" })`), "s");
+  assert.equal(runExample("invalid-in-error-name", `wrong(Object.assign(new Error("m"), { size: 1 }))`), "Error");
   // `matchAll` converts its argument's `flags` before dispatching: client
   // code runs on a structural regex.
   assert.equal(runExample("invalid-regexp-structural-matchall", `const seen = { ran: false };

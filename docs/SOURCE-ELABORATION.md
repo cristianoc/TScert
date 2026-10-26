@@ -519,10 +519,12 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 ```
 
 where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
-on any object (`inKeyRefusal`, [guards](#guards)), and $`\mathcal F`$ the
-keys a function owns or inherits from `Function.prototype` that no other
-built-in prototype holds (`functionKeys`: `name`, `prototype`, `call`,
-`apply`, `bind`, `arguments`, `caller`), which the model's function lacks.
+on any object (`inKeyRefusal`, [guards](#guards)), `Error.prototype`'s `name`
+among them, since any object, a record's value included, may be
+an error; and $`\mathcal F`$ the keys a function owns or inherits from
+`Function.prototype` that no other built-in prototype holds (`functionKeys`:
+`prototype`, `call`, `apply`, `bind`, `arguments`, `caller`), which the
+model's function lacks.
 The operand's clauses are objects because `in` throws on a primitive, where
 the test would answer `false`, and not a class value, which holds its static
 fields but not the keys JavaScript's class owns besides (`name`, `length`,
@@ -1442,9 +1444,9 @@ of its argument, run again after the call:
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
 ```
 
-with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s
-and `Array.prototype`'s own string keys, array indices, and the keys the
-model reserves), and $`\mathcal F`$ the keys a function owns or inherits,
+with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
+`Array.prototype`'s own string keys, `Error.prototype`'s `name`, array indices,
+and the keys the model reserves), and $`\mathcal F`$ the keys a function owns or inherits,
 admitted where no clause of $`A`$ is an arrow or callable one ([`in`](#in)). `in`'s answers are by keys the
 types state (`inAnswer`): a failed test drops an arm owning the key, a passed
 one drops an arm whose key bounds exclude it and the prototype key, and every
