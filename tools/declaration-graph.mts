@@ -1841,8 +1841,14 @@ export function collectDeclarations(file: string, options: {
     // the declarations TypeScript binds the import to are overloads in Node's
     // declarations, each entry's among them exactly as reviewed. The value is
     // the entries' statements; the declarations' types are not read.
+    // The declarations a read entry's statement names (`ModuleEntry.definitions`)
+    // join the document once each.
+    const moduleDefinitions: TypeDefinition[] = [];
     const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
         Omit<ValueRoot, "binding"> => {
+      for (const definition of entries.flatMap(e => e.definitions ?? []))
+        if (!moduleDefinitions.some(d => d.declaration.module === definition.declaration.module &&
+            d.declaration.name === definition.declaration.name)) moduleDefinitions.push(definition);
       // A function's overloads, or the methods of the object a module
       // exports whole (`export = path`, `path.PlatformPath`'s); a namespace
       // merged into a function (`realpathSync.native`) is its other members.
@@ -3737,7 +3743,7 @@ export function collectDeclarations(file: string, options: {
     // read at `Array.prototype`'s contract as one the client writes is; the
     // declarations that contract names join the graph.
     if (!arrayProto.length &&
-        [values, definitions, applications, selections, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
+        [values, definitions, applications, selections, moduleDefinitions, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
       const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
       const from = valueStarts.length;
       try {
@@ -3747,7 +3753,7 @@ export function collectDeclarations(file: string, options: {
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
-    definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
+    definitions.push(...selections, ...moduleDefinitions, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // The graph is complete: each mapped type read at a named type before

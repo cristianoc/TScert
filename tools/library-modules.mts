@@ -10,7 +10,7 @@
  * collected. A function the overlay lists none of is read as its declaration
  * states (an imported value). */
 import type { Stated } from "./library-globals.mts";
-import type { CallEffect, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 export type ModuleEntry = {
@@ -39,6 +39,10 @@ export type ModuleEntry = {
    * message or a literal one, `assert(v, m)` is `if (!v) throw
    * %AssertionFailure%(m)`, narrowing `v` as an `if` does. */
   lowering?: "test";
+  /** Declarations the stated signature names that no library declares, such
+   * as the `Hash` `createHash` returns: they join the document when the
+   * entry is read. */
+  definitions?: TypeDefinition[];
 };
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -56,6 +60,22 @@ const field = (name: string, type: TypeTerm, optional: boolean): Field =>
 /** A function that computes a string and allocates only it, also when it
  * throws. */
 const pathEffect: CallEffect = { ...emptyEffect, onThrow: true };
+
+/** What `createHash("sha256")` returns, a `Hash` at the members the
+ * overlay states (SOURCE-CONTRACTS.md, "Library modules"),
+ *
+ *     type Hash = { update(data: string): this; digest(encoding: "hex"): string };
+ *
+ * each a method of `Hash.prototype`, its receiver a `Hash`. */
+const hashIdentity: DeclarationIdentity = { module: "tscert/crypto", name: "Hash", span: at };
+const hash: TypeTerm = { k: "reference", args: [], span: at,
+  reference: { name: hashIdentity.name, span: at, arguments: [], target: hashIdentity } };
+const method = (params: TypeTerm[], result: TypeTerm): TypeTerm =>
+  ({ k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at }, params, rest: null, result, span: at });
+const hashDefinition: TypeDefinition = { declaration: hashIdentity, parameters: [], bases: [],
+  expression: { k: "object", stringIndex: null, calls: [], span: at, fields: [
+    field("update", method([atom("string")], { k: "self", span: at }), false),
+    field("digest", method([text("hex")], atom("string")), false)] } };
 
 /** The standard streams of a child: standard output piped, the others piped,
  * ignored or inherited. */
@@ -303,6 +323,26 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "realpathSync",
     signature: "export function realpathSync(path: PathLike, options?: EncodingOption): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
+  // `createHash("sha256")` constructs a `Hash` (Node 25.2.1's
+  // lib/internal/crypto/hash.js): it validates the algorithm, a string,
+  // builds the native handle and the state record, both fresh, and, at a
+  // SHAKE algorithm without an output length alone, emits a deprecation
+  // warning, which reads `process.noDeprecation` during the call, a property
+  // other code may replace by a getter; an unsupported algorithm throws.
+  // Stated at "sha256", the call runs no code of the client's and writes
+  // only what it allocates, on a throw too. The result's `update` and
+  // `digest` are `Hash.prototype`'s, a host assumption as `Dirent`'s tests
+  // are (SOURCE-CONTRACTS.md, "Library modules"). `update(data)` with a
+  // string validates it, hashes it as UTF-8 and returns the receiver;
+  // `digest("hex")` converts the encoding by a template, a string's own
+  // value, marks the hash finalized and returns the digest as hexadecimal
+  // digits, a string. Either throws on a hash already digested. Neither
+  // runs code of the client's; both state no effect, as each writes host
+  // state the program's facts do not name.
+  { module: "crypto", name: "createHash",
+    signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
+    stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition],
+    effect: { ...emptyEffect, onThrow: true } },
   // `node:path`'s string functions compute a path from strings. `dirname`
   // and `basename` with an optional suffix validate their strings and
   // compute from them alone (Node 25.2.1's lib/path.js): they run no code of

@@ -1,5 +1,7 @@
-// Hash and stream declarations need reviewed contracts instead of synthesised
-// members with no written origin.
+// `createHash("sha256").update(s).digest("hex")` from `node:crypto`, read
+// through its reviewed entry in the overlay of library modules: Node's
+// declarations of `Hash`, `HashOptions` and the streams they name are not
+// read.
 // Census functions:
 // family-activation.mts#checkInventory,
 // family-activation.mts#checkedInstallation,
