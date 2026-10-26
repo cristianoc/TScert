@@ -1862,9 +1862,23 @@ export function collectDeclarations(file: string, options: {
           type: { ...entry.stated.result, span } };
       }
       if (entries.some(e => e.constant)) throw Error(`${what} is reviewed both as a constant and as a function`);
-      const overloads = callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
-        (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
-      if (!overloads.length || overloads.length !== callable.length ||
+      // A constant whose declared type is one interface of Node's
+      // declarations (`const statSync: StatSyncFn`): its overloads are the
+      // interface's call signatures, every member it has besides.
+      const [variable] = callable;
+      const typeName = variable && callable.length === 1 && ts.isVariableDeclaration(variable) && variable.type &&
+        ts.isTypeReferenceNode(variable.type) && ts.isIdentifier(variable.type.typeName) && !variable.type.typeArguments?.length
+        ? variable.type.typeName : undefined;
+      const callTyped = typeName ? typeDeclarationsOf(typeName) : [];
+      const viaInterface = callTyped.length === 1 && callTyped.every(ts.isInterfaceDeclaration)
+        ? callTyped.flatMap(d => d.members) : null;
+      const overloads = viaInterface
+        ? viaInterface.filter(ts.isCallSignatureDeclaration)
+        : callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
+          (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
+      if (viaInterface && overloads.length !== viaInterface.length)
+        throw Error(`${what}'s declared type has members besides its call signatures`);
+      if (!overloads.length || (!viaInterface && overloads.length !== callable.length) ||
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {

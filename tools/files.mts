@@ -549,10 +549,11 @@ export function treeDigest(path: string): string | null {
   return io("digest", path, () => walk(path, []));
 }
 /** Whether a file exists, unobserved: for the compiler's installation, which
- * the implementation's identity covers. */
+ * the implementation's identity covers. A test's result is compared with
+ * `true`: `isFile` dispatches through a prototype other code may change. */
 export function installed(path: string): boolean {
   try {
-    return statSync(path).isFile();
+    return statSync(path).isFile() === true;
   } catch {
     return false;
   }

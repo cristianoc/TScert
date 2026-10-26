@@ -260,6 +260,31 @@ export const modulesOverlay: readonly ModuleEntry[] = [
           { ...field("parentPath", atom("string"), false), readonly: false },
           ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"].map(name => field(name, { k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at },
             params: [], rest: null, result: atom("unknown"), span: at }, false))] } } } },
+  // `statSync(path)` with a string path and no options stats what the path
+  // names, its symbolic links followed, and returns a fresh `Stats`; a path
+  // that names nothing, or one it cannot stat, throws (`throwIfNoEntry`
+  // defaults to true). It validates the string and runs no code of the
+  // client's (Node 25.2.1's `lib/fs.js`). The declaration is a constant of
+  // the interface `StatSyncFn`, whose first call signature the entry names.
+  // `StatsBase` and `Stats` assign the fourteen numbers, which become own
+  // writable data properties under the host assumption that a `Stats`
+  // keeps its audited prototype chain, `Stats.prototype` →
+  // `StatsBase.prototype` → `Object.prototype`, whose two Node prototypes
+  // hold the seven `is…` tests, `_checkModeProperty` and the date getters
+  // (`atime`, `mtime`, `ctime`, `birthtime`), none named by the stated
+  // fields, the tests callable throughout execution, also in external code
+  // (SOURCE-CONTRACTS.md, "Library modules"). A test calls
+  // `this._checkModeProperty`, a writable property of `Stats.prototype`
+  // other code may replace: each is stated at `() => unknown`, its effect
+  // unrestricted, as a `Dirent`'s. The date getters are not stated. The
+  // call states no effect.
+  { module: "fs", name: "statSync", signature: "(path: PathLike, options?: undefined): Stats;",
+    stated: { binders: [], params: [atom("string")], result: { k: "object", stringIndex: null, calls: [], span: at,
+      fields: [...["dev", "mode", "nlink", "uid", "gid", "rdev", "blksize", "ino", "size", "blocks", "atimeMs",
+        "mtimeMs", "ctimeMs", "birthtimeMs"].map(name => ({ ...field(name, atom("number"), false), readonly: false })),
+      ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"]
+        .map(name => field(name, { k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at },
+          params: [], rest: null, result: atom("unknown"), span: at }, false))] } } },
   // `writeFileSync(file, data)` with a path and a string writes the string,
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A
   // path it cannot open or write, or one holding a NUL character, throws.
@@ -267,6 +292,43 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "writeFileSync",
     signature: "export function writeFileSync(\n        file: PathOrFileDescriptor,\n        data: string | NodeJS.ArrayBufferView,\n        options?: WriteFileOptions,\n    ): void;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("undefined") } },
+  // `writeFileSync(file, data, options)` with a path, a string and options
+  // naming `mode` reads, of the options, `encoding` and `signal`
+  // (`getOptions`), then `flush`, `flag`, `encoding` and `mode` (Node
+  // 25.2.1's `lib/fs.js`); the six are stated, so under the caller contract
+  // each is a data property whose reads agree. It writes the string,
+  // encoded as UTF-8, to the file opened with `flag` "w" and the mode, and
+  // returns `undefined`; a mode that is no 32-bit unsigned integer, a path
+  // it cannot open or write, or one holding a NUL character, throws. Without
+  // `encoding: "utf8"` the host takes its general path, which calls
+  // `fs.openSync`, `fs.writeSync` and `fs.closeSync` through the module's
+  // object, writable properties other code may replace: the call states no
+  // effect.
+  { module: "fs", name: "writeFileSync",
+    signature: "export function writeFileSync(\n        file: PathOrFileDescriptor,\n        data: string | NodeJS.ArrayBufferView,\n        options?: WriteFileOptions,\n    ): void;",
+    stated: { binders: [], params: [atom("string"), atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
+      fields: [field("mode", atom("number"), false), field("encoding", union(text("utf8"), atom("undefined")), true),
+        field("signal", atom("undefined"), true), field("flush", union(atom("boolean"), atom("undefined")), true),
+        field("flag", union(text("w"), atom("undefined")), true)] }], result: atom("undefined") } },
+  // `mkdirSync(path, options)` with a string path and options naming
+  // `recursive: true` reads `recursive` and `mode` (Node 25.2.1's
+  // `lib/fs.js`), both stated: it creates the directory and those above it
+  // that are missing, and returns the first it created, a string, or
+  // `undefined` where the directory exists; a mode that is no 32-bit
+  // unsigned integer, or a path it cannot create, throws. It runs no code of
+  // the client's at the stated options. The call states no effect.
+  { module: "fs", name: "mkdirSync",
+    signature: "export function mkdirSync(\n        path: PathLike,\n        options: MakeDirectoryOptions & {\n            recursive: true;\n        },\n    ): string | undefined;",
+    stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
+      fields: [field("recursive", yes(), false), field("mode", union(atom("number"), atom("undefined")), true)] }],
+      result: union(atom("string"), atom("undefined")) } },
+  // `chmodSync(path, mode)` with a string path and a number sets the mode
+  // of what the path names, its symbolic links followed, and returns
+  // `undefined`; a mode that is no 32-bit unsigned integer, or a path it
+  // cannot change, throws. It runs no code of the client's (Node 25.2.1's
+  // `lib/fs.js`). The call states no effect.
+  { module: "fs", name: "chmodSync", signature: "export function chmodSync(path: PathLike, mode: Mode): void;",
+    stated: { binders: [], params: [atom("string"), atom("number")], result: atom("undefined") } },
   // `readFileSync(path, "utf8")` with a string path reads the whole file and
   // returns its contents decoded as UTF-8, a string; a path it cannot open
   // or read, or one holding a NUL character, throws. It runs no code of the

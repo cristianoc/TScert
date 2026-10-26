@@ -1,5 +1,5 @@
-// Node filesystem and Buffer declarations need reviewed contracts that cover
-// their conditional buffer types.
+// `statSync(path).size` through `statSync`'s reviewed entry: its declaration,
+// which reaches `Buffer` through `PathLike`, is not read.
 // Census functions:
 // family-activation.mts#declarationInventory, files.mts#attemptAnswer,
 // files.mts#findPackage, files.mts#installed, files.mts#kindOf,

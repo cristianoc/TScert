@@ -2668,7 +2668,10 @@ imported value ([imported values](#imported-ambient-and-global-values)).
 An entry names one overload of the function's declaration in Node's
 declarations, with exactly the text it was reviewed against, and states the signature the host meets at the arguments it
 admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
-imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
+imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to,
+or, where $`f`$ is a constant whose declared type is one interface of Node's
+declarations holding call signatures alone (`statSync: StatSyncFn`), those
+call signatures:
 
 ```math
 \frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=f\}=\{\omega_1\ldots\omega_n\}\neq\emptyset\quad
@@ -2754,6 +2757,54 @@ unrestricted in its effect unless its entry states one. The entries:
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
+  With options $`W`$ stating each property it reads (`getOptions`, then
+  `flush`, `flag`, `encoding` and `mode`),
+  $`(\mathtt{string},\ \mathtt{string},\ W)\Rightarrow\mathtt{undefined}`$ with
+
+  `W = { mode: number; encoding?: "utf8"; signal?: undefined; flush?: boolean; flag?: "w" }`,
+
+  it opens the file with that mode; a mode that is no 32-bit unsigned
+  integer throws. Without `encoding: "utf8"` the host calls `fs.openSync`,
+  `fs.writeSync` and `fs.closeSync` through the module's object, writable
+  properties other code may replace, so the call states no effect
+  (`node-fs-stat`).
+- `mkdirSync(path, o)` with a string path and
+  $`o=\{\mathtt{recursive}\colon\mathtt{true};\ \mathtt{mode}^?\colon\mathtt{number}\mid\mathtt{undefined}\}`$,
+  the two properties it reads, creates the directory and the missing ones
+  above it and returns the first it created, or `undefined` where the
+  directory exists:
+  $`(\mathtt{string},\ o)\Rightarrow\mathtt{string}\mid\mathtt{undefined}`$.
+  `chmodSync(path, mode)` with a string and a number sets the mode and
+  returns `undefined`:
+  $`(\mathtt{string},\ \mathtt{number})\Rightarrow\mathtt{undefined}`$. A
+  mode that is no 32-bit unsigned integer, or a path the host cannot
+  change, throws; neither runs code of the client's (`node-fs-stat`).
+- `statSync(path)` with a string path and no options returns a fresh `Stats`
+  of what the path names, its symbolic links followed, and throws where the
+  path names nothing (`throwIfNoEntry` defaults to true). The declaration is
+  the constant `statSync: StatSyncFn`, whose call signature
+  `(path: PathLike, options?: undefined): Stats` the entry names:
+  $`(\mathtt{string})\Rightarrow S`$ with
+
+  `S = { dev, mode, nlink, uid, gid, rdev, blksize, ino, size, blocks, atimeMs, mtimeMs, ctimeMs, birthtimeMs: number; isFile, isDirectory, isBlockDevice, isCharacterDevice, isSymbolicLink, isFIFO, isSocket(): unknown }`,
+
+  the numbers writable. That the constructors' assignments define own data
+  properties and that reading a test runs no code rest on a host assumption
+  ([trust surface](DESIGN.md#trust-surface)): a `Stats` keeps its audited
+  prototype chain, `Stats.prototype` → `StatsBase.prototype` →
+  `Object.prototype`, whose two Node prototypes hold the seven tests,
+  `_checkModeProperty` and the date getters `atime`, `mtime`, `ctime` and
+  `birthtime`, none named by $`S`$'s numbers, the tests callable throughout
+  execution, also in external code. A test calls
+  `this._checkModeProperty`, a writable property of `Stats.prototype` other
+  code may replace, so each is $`()\Rightarrow\mathtt{unknown}`$, its effect
+  unrestricted (`invalid-node-stat-test-result`, run under Node: 7); a
+  caller wanting a Boolean compares it with `true`. The date getters are not
+  stated (`invalid-node-stat-date-getter`, run under Node: a replaced
+  getter answers a number). Options are outside the stated call: `bigint:
+  true` gives bigint numbers (`invalid-node-stat-bigint`, run under Node),
+  and an options object may hold a getter the host reads inside the call
+  (`invalid-node-stat-options-getter`, run under Node).
 - `readFileSync(path, "utf8")` with a string path returns the file's
   contents decoded as UTF-8; a path it cannot read throws:
   $`(\mathtt{string},\ \texttt{"utf8"})\Rightarrow\mathtt{string}`$. Without
