@@ -10,9 +10,10 @@ and a colour means the same thing in both.
 
 ## Tokens
 
-The tokens are the `CSS` constant of
-[`dev/record-render.mts`](../dev/record-render.mts), which owns them; a
-deck copies their values.
+The tokens are stated once, in
+[`dev/style-tokens.mts`](../dev/style-tokens.mts): the record pages
+([`dev/record-render.mts`](../dev/record-render.mts)) write them as CSS
+variables, and a deck writes them inline.
 
 | Token | Light | Dark | Role |
 | --- | --- | --- | --- |
@@ -45,11 +46,25 @@ comes with a word: colour never carries a meaning alone.
 
 ## Decks
 
-A deep dive is checked in and pushed: its source is a folder
-`docs/deep-dives/<name>/project/`, holding `deck.json` (the title, slide
-order and typefaces) and one `slides/<id>.html` per slide, each one `<section>` of
-the slide format of claude.ai's Slides artifacts, through which the deck is
-published for viewing. A deck that only reports a moment's status (what
+A deep dive is checked in and pushed. Its source is
+`docs/deep-dives/<name>/deck.mts`, written with the deck kit
+([`dev/deck.mts`](../dev/deck.mts)), and `make deck NAME=<name>` builds from
+it the folder `docs/deep-dives/<name>/project/`: `deck.json` (the title,
+slide order and typefaces) and one `slides/<id>.html` per slide, each one
+`<section>` of the slide format of claude.ai's Slides artifacts, through
+which the deck is published for viewing. The same command checks every
+slide against the format's subset and its canvas (content within the
+128 px margins, no font below 24 px, at most 200 elements) and writes a
+standalone page of the deck for a browser; `OPEN=1` opens it.
+
+The kit's blocks draw what the record pages draw, from the record
+renderer's own analyses: status words and pills, change blocks with their
+action and Before and After side by side, formulas and inference rules by
+the roles of their tokens, lowerings, TypeScript highlighted by token with
+added and removed lines, Effect lines, and a whole commit record
+(`recordSlide`). Where the slide format has no means, its header states the
+nearest form it draws instead: no sub- or superscript, no small capitals,
+no typeface or size within a line. A deck that only reports a moment's status (what
 changed since a push, a list of decisions to take) is not a deep dive and
 is not checked in.
 

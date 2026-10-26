@@ -23,6 +23,7 @@
     "resolvable.d.ts",
     "../tests/*.mts",
     "../pipeline/*.mts",
-    "../dev/*.mts"
+    "../dev/*.mts",
+    "../docs/deep-dives/*/deck.mts"
   ]
 }

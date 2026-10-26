@@ -3,12 +3,14 @@
  * skill's: a subject, sections ("Why:", "Rule added (name):", indented
  * blocks) and trailers. */
 
+import { cssVariables, DARK, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
+
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const inline = (s: string): string => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 
-type Section = { name: string; text: string[]; block: string[] };
+export type Section = { name: string; text: string[]; block: string[] };
 export type CommitRecord = {
   sha: string; author: string; subject: string; sections: Section[];
   trailers: Map<string, string>; coauthors: string[]; stat: string[];
@@ -102,8 +104,8 @@ const LITERALS = new Set(["null", "undefined", "true", "false", "NaN"]);
 const BINDERS = new Set("∀∃λΛμ");
 const RELATIONS = new Set("⊢⊨≤≥⊑⊒∈∉⊆⊂=≠≡:⇝↦≜≔");
 const TEXT_WORD = /^(?:a|an|A|An|[A-Za-z][A-Za-z'-]*[a-z][A-Za-z'-]*)$/;
-type MathToken = { kind: "code" | "str" | "intr" | "script" | "word" | "num" | "space" | "sym"; text: string };
-function mathTokens(text: string): MathToken[] {
+export type MathToken = { kind: "code" | "str" | "intr" | "script" | "word" | "num" | "space" | "sym"; text: string };
+export function mathTokens(text: string): MathToken[] {
   const token = /(`[^`]+`)|("[^"\n]*"|%[A-Za-z][^%\s]*%)|(_\{[^{}]*\}|\^\{[^{}]*\}|_[A-Za-z0-9\u0370-\u03ff\u2200-\u22ff]+\u20d7?)|([A-Za-z\u0370-\u03ff][A-Za-z0-9\u0370-\u03ff'′-]*\u20d7?)|(\d+)|(\s+)|([\s\S])/g;
   return [...text.matchAll(token)].map(([t, code, str, script, word, num, space]) => ({
     kind: code ? "code" : str ? (str.startsWith("%") ? "intr" : "str") : script ? "script" : word ? "word" : num ? "num" : space ? "space" : "sym", text: t }));
@@ -112,8 +114,8 @@ function mathTokens(text: string): MathToken[] {
  * code, a quoted string, a sub- or superscript, `refused`, a keyword, an
  * operator applied to arguments, a one-letter variable, a capitalised
  * constructor, a binder, a relation, or other symbols and spaces (`plain`). */
-type MathRole = "text" | "code" | "str" | "intr" | "lit" | "script" | "refused" | "kw" | "op" | "var" | "con" | "bind" | "rel" | "plain";
-function mathRoles(ts: MathToken[]): MathRole[] {
+export type MathRole = "text" | "code" | "str" | "intr" | "lit" | "script" | "refused" | "kw" | "op" | "var" | "con" | "bind" | "rel" | "plain";
+export function mathRoles(ts: MathToken[]): MathRole[] {
   // Side conditions in words: two or more words, or one lowercase word of
   // three letters or more, not applied to arguments; a run continues across
   // spaces, punctuation, quoted strings and code.
@@ -197,7 +199,7 @@ function math(text: string): string {
 }
 
 /** A line's parts: runs of three or more spaces separate side-by-side formulas. */
-const parts = (line: string): string[] => line.trim().split(/\s{3,}/).filter(Boolean);
+export const parts = (line: string): string[] => line.trim().split(/\s{3,}/).filter(Boolean);
 
 /** Formulas, one row per line, an indented line continuing the one above. */
 const formulas = (lines: string[]): string =>
@@ -235,7 +237,7 @@ function rules(block: string[], kind: string = ""): string {
 }
 
 /** Lines without their common indentation. */
-function dedent(lines: string[]): string[] {
+export function dedent(lines: string[]): string[] {
   const indents = lines.filter(l => l.trim()).map(l => /^ */.exec(l)?.[0].length ?? 0);
   const cut = indents.length ? Math.min(...indents) : 0;
   const out = lines.map(l => l.slice(cut));
@@ -247,22 +249,28 @@ const TS_KEYWORDS = new Set(("abstract as async await break case catch class con
   "enum export extends false finally for from function get if implements import in instanceof interface keyof let new null of " +
   "private protected public readonly return set static super switch this throw true try type typeof undefined unique var void while yield").split(" "));
 
-/** TypeScript or JavaScript source, highlighted by token. */
-function highlight(code: string): string {
+/** A token of TypeScript or JavaScript source: a comment (`c`), a string
+ * (`s`), a number (`n`), a keyword (`k`), a capitalised name, read as a type
+ * (`t`), or other text (`""`). */
+export type CodeToken = { kind: "c" | "s" | "n" | "k" | "t" | ""; text: string };
+export function codeTokens(code: string): CodeToken[] {
   const token = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*n?\b)|([A-Za-z_$][\w$]*)/g;
-  let out = "", last = 0;
+  const out: CodeToken[] = [];
+  let last = 0;
   for (const m of code.matchAll(token)) {
-    out += esc(code.slice(last, m.index));
+    if ((m.index ?? 0) > last) out.push({ kind: "", text: code.slice(last, m.index) });
     const [t, comment, str, num, id] = m;
-    out += comment !== undefined ? `<span class="tk-c">${esc(t)}</span>`
-      : str !== undefined ? `<span class="tk-s">${esc(t)}</span>`
-      : num !== undefined ? `<span class="tk-n">${esc(t)}</span>`
-      : id !== undefined && TS_KEYWORDS.has(id) ? `<span class="tk-k">${esc(t)}</span>`
-      : id !== undefined && /^[A-Z]/.test(id) ? `<span class="tk-t">${esc(t)}</span>`
-      : esc(t);
+    out.push({ text: t, kind: comment !== undefined ? "c" : str !== undefined ? "s" : num !== undefined ? "n"
+      : id !== undefined && TS_KEYWORDS.has(id) ? "k" : id !== undefined && /^[A-Z]/.test(id) ? "t" : "" });
     last = (m.index ?? 0) + t.length;
   }
-  return out + esc(code.slice(last));
+  if (last < code.length) out.push({ kind: "", text: code.slice(last) });
+  return out;
+}
+
+/** TypeScript or JavaScript source, highlighted by token. */
+function highlight(code: string): string {
+  return codeTokens(code).map(({ kind, text }) => (kind ? `<span class="tk-${kind}">${esc(text)}</span>` : esc(text))).join("");
 }
 
 /** Code lines; `mark` names the lines the other version lacks. */
@@ -271,10 +279,10 @@ const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string
 
 /** A change to a named object: `<Kind> <action> (<target>)`, the kind deciding
  * how its content is drawn (mathematics or code), Before/After shown side by side. */
-const MATH_KINDS = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
-const CODE_KINDS = new Set(["Example", "Counterexample", "Code"]);
+const MATH_KINDS: ReadonlySet<string> = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
+const CODE_KINDS: ReadonlySet<string> = new Set(["Example", "Counterexample", "Code"]);
 /** Kinds whose lines are drawn as written: commands, layouts, aligned columns. */
-const PLAIN_KINDS = new Set(["Tooling"]);
+const PLAIN_KINDS: ReadonlySet<string> = new Set(["Tooling"]);
 
 /** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
  * mapped to its term in the calculus (operations coloured); `label: …` lines
@@ -335,22 +343,17 @@ function effects(lines: string[], examples: Map<string, Example>): string {
   }).join("")}</ul>`;
 }
 
-function section(s: Section, examples: Map<string, Example> = new Map()): string {
-  const m = /^([A-Z][A-Za-z]*)(?: (added|modified|removed|replaced))?(?: \(((?:[^()]|\([^()]*\))*)\))?$/.exec(s.name);
-  const kind = m?.[1] ?? s.name, action = m?.[2] ?? "", target = m?.[3] ?? "";
-  const lines = dedent(s.block);
-  const head = s.name
-    ? `<h4 class="change">${action ? `<span class="act ${action}">${action}</span>` : ""}${esc(kind)}${target && !CODE_KINDS.has(kind) ? ` <span class="target">${inline(target)}</span>` : ""}</h4>`
-    : "";
-  const text = s.text.length ? `<p>${inline(s.text.join(" "))}</p>` : "";
-  if (!lines.length) return head + text;
-  if (kind === "Effect") return head + text + effects(lines, examples);
-  const split = lines.findIndex(l => /^(Before|After):\s*$/.test(l.trim()));
-  const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
-    kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
-    : PLAIN_KINDS.has(kind) ? `<pre class="code">${body.map(l => `<span class="ln">${esc(l) || " "}</span>`).join("")}</pre>`
-    : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
-  if (split < 0) return head + text + draw(lines);
+/** A section's heading read as a change: its kind (`Rule`), its action
+ * (`added`, `modified`, `removed`, `replaced`, or none) and its target. */
+export function changeHead(name: string): { kind: string; action: string; target: string } {
+  const m = /^([A-Z][A-Za-z]*)(?: (added|modified|removed|replaced))?(?: \(((?:[^()]|\([^()]*\))*)\))?$/.exec(name);
+  return { kind: m?.[1] ?? name, action: m?.[2] ?? "", target: m?.[3] ?? "" };
+}
+
+/** A block's Before and After versions, each dedented, or null for a block
+ * with neither. */
+export function versions(lines: string[]): { before: string[]; after: string[] } | null {
+  if (!lines.some(l => /^(Before|After):\s*$/.test(l.trim()))) return null;
   const before: string[] = [], after: string[] = [];
   let into: string[] | undefined;
   for (const l of lines) {
@@ -359,7 +362,27 @@ function section(s: Section, examples: Map<string, Example> = new Map()): string
     else if (t === "After:") into = after;
     else into?.push(l);
   }
-  const b = dedent(before), a = dedent(after);
+  return { before: dedent(before), after: dedent(after) };
+}
+
+export { MATH_KINDS, CODE_KINDS, PLAIN_KINDS };
+
+function section(s: Section, examples: Map<string, Example> = new Map()): string {
+  const { kind, action, target } = changeHead(s.name);
+  const lines = dedent(s.block);
+  const head = s.name
+    ? `<h4 class="change">${action ? `<span class="act ${action}">${action}</span>` : ""}${esc(kind)}${target && !CODE_KINDS.has(kind) ? ` <span class="target">${inline(target)}</span>` : ""}</h4>`
+    : "";
+  const text = s.text.length ? `<p>${inline(s.text.join(" "))}</p>` : "";
+  if (!lines.length) return head + text;
+  if (kind === "Effect") return head + text + effects(lines, examples);
+  const split = versions(lines);
+  const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
+    kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
+    : PLAIN_KINDS.has(kind) ? `<pre class="code">${body.map(l => `<span class="ln">${esc(l) || " "}</span>`).join("")}</pre>`
+    : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
+  if (!split) return head + text + draw(lines);
+  const b = split.before, a = split.after;
   return head + text + `<div class="versions">` +
     (b.length ? `<figure><figcaption>Before</figcaption>${draw(b, "del", a)}</figure>` : "") +
     (a.length ? `<figure><figcaption>After</figcaption>${draw(a, "add", b)}</figure>` : "") + `</div>`;
@@ -425,15 +448,11 @@ function summary(groups: Group[]): string {
     `</section>`;
 }
 
-export const CSS = `
-:root { --bg:#f6f7f5; --surface:#fff; --ink:#1d2422; --muted:#5b6662; --rule:#d9dedb; --accent:#1f6f66; --code-bg:#eef1ef; --math-bg:#f3f1ea;
-  --ok:#2e7d4f; --ok-bg:#e3f2e8; --principled:#8a5a12; --principled-bg:#f6ecd9; --gap:#5e6870; --gap-bg:#e8ebed; --neutral:#2b5b9c; --neutral-bg:#e2eaf6;
-  --trust:#8b2f4b; --trust-bg:#f6e3ea; --neg:#9a3a2a; --neg-bg:#f7e4df;
-  --display:"IBM Plex Serif",Georgia,serif; --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#131816; --surface:#1b2220; --ink:#e3e9e6; --muted:#9aa6a1; --rule:#2f3936; --accent:#6cc3b6; --code-bg:#222b28; --math-bg:#24231d;
-  --ok:#7fd3a0; --ok-bg:#1f3428; --principled:#e3b46a; --principled-bg:#382c17; --gap:#aab4bb; --gap-bg:#2a3135; --neutral:#8fb3e8; --neutral-bg:#1e2a3d; --trust:#ec97b1; --trust-bg:#3a2029; --neg:#f0a493; --neg-bg:#3a221d; color-scheme:dark } }
-:root[data-theme="dark"] { --bg:#131816; --surface:#1b2220; --ink:#e3e9e6; --muted:#9aa6a1; --rule:#2f3936; --accent:#6cc3b6; --code-bg:#222b28; --math-bg:#24231d;
-  --ok:#7fd3a0; --ok-bg:#1f3428; --principled:#e3b46a; --principled-bg:#382c17; --gap:#aab4bb; --gap-bg:#2a3135; --neutral:#8fb3e8; --neutral-bg:#1e2a3d; --trust:#ec97b1; --trust-bg:#3a2029; --neg:#f0a493; --neg-bg:#3a221d; color-scheme:dark }
+export const CSS: string = `
+:root { ${cssVariables(LIGHT)};
+  --display:${FONTS.display}; --body:${FONTS.body}; --mono:${FONTS.mono}; --math:${FONTS.math}; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${cssVariables(DARK)}; color-scheme:dark } }
+:root[data-theme="dark"] { ${cssVariables(DARK)}; color-scheme:dark }
 * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
 main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
 h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
@@ -482,26 +501,26 @@ h4.change .target { font-weight:400; color:var(--muted) }
 .versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
 .versions .rules { height:calc(100% - 18px); box-sizing:border-box }
 pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
-.tk-k { color:#8e3fb5 } .tk-s { color:#2b7a3d } .tk-n { color:#b0601a } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2b5b9c }
+.tk-k { color:${SYNTAX.k} } .tk-s { color:${SYNTAX.s} } .tk-n { color:${SYNTAX.n} } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:${SYNTAX.t} }
 .prose p { margin:4px 0 }
 ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
 ul.effect .arrow { color:var(--accent); font-weight:600 }
 ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
 ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
 ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
-ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
-ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+ul.effect .was.unsound { color:${SYNTAX.unsound}; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:${SYNTAX.mark}; color:inherit; border-radius:2px }
 @media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
 .lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
 .lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
 .lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
 .lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
-.m-intr { font:14px/1.5 var(--mono); color:#2b5b9c } .m-lit { font:13px/1.5 var(--mono); color:#8e3fb5 }
+.m-intr { font:14px/1.5 var(--mono); color:${SYNTAX.intr} } .m-lit { font:13px/1.5 var(--mono); color:${SYNTAX.lit} }
 .lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
 .lowering .to { color:var(--accent); font-weight:600; font-size:17px }
 .lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
-var { font-style:italic } .m-op { color:#2b5b9c; font-style:normal } .m-con { color:#1f6f66; font-style:normal; font-variant:small-caps }
-.m-kw { color:#8e3fb5; font-weight:600; font-style:normal } .m-bind { color:#8e3fb5 } .m-rel { color:var(--accent); padding:0 .12em }
+var { font-style:italic } .m-op { color:${SYNTAX.op}; font-style:normal } .m-con { color:${SYNTAX.con}; font-style:normal; font-variant:small-caps }
+.m-kw { color:${SYNTAX.kw}; font-weight:600; font-style:normal } .m-bind { color:${SYNTAX.bind} } .m-rel { color:var(--accent); padding:0 .12em }
 .m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
 .refused { color:var(--neg); font-weight:600 }
 .lowering .refused { color:var(--neg); font-weight:600 }

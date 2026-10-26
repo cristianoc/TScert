@@ -4,7 +4,7 @@
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff fmt \
+.PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff deck fmt \
   check-fmt setup-git-hooks clean-store census build-runner
 
 help: ## list the targets
@@ -55,6 +55,9 @@ lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 
 compiler-api-shapes: ## C3: every node of the corpus holds the members its shape states required, or a correction covers them
 	node tests/compiler-api-shapes.mts
+
+deck: ## build the deep-dive deck NAME (docs/deep-dives/NAME/deck.mts): its project/ files, the format and layout checks, and a page to view it; OPEN=1 opens the page
+	node dev/deck-cli.mts $(NAME) $(if $(OPEN),--open)
 
 semantic-diff: ## render the commit records of REV (a commit or base..tip, default HEAD) to OUT and open it
 	node dev/commit-records.mts --out $(OUT) $(REV)
