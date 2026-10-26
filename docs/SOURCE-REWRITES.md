@@ -12,10 +12,49 @@ a type the code already relies on, adds the check a type promised, or makes
 an implicit correlation explicit. A change made for a reason other than
 soundness (a tool's defect) is listed apart. A rewrite that a fix of the
 verifier would make unnecessary is not one: that fix goes to the verifier.
-Rewriting TScert's code to fit the verifier is premature while the
-verifier's rules change (the owner's decision, 2026-10-23): a refusal of
-TScert's own code is fixed in the verifier, or stays a refusal the census
-reports.
+
+## Deciding what a refusal of TScert's code calls for
+
+A refusal of TScert's own code is answered by the first of these routes
+that establishes what the refusal asks, at acceptable cost:
+
+1. **Support:** a rule or a contract admits the construct, where it has
+   useful reach (measured by the census past the first refusal) and a
+   proportionate implementation, with complete contracts and the acceptance
+   theorem kept.
+2. **A runtime check:** the code checks the property it needs, where an
+   executable check establishes all of it, also over time under mutation
+   and aliasing. A check of a value's shape establishes no effect.
+3. **A repair:** the code changes where the refusal exposes a defect (the
+   rewrites below), keeping the intended behaviour.
+4. **Avoidance:** the code drops the construct where support is costly, its
+   use rare by the census, and a rewrite is observationally equivalent:
+   the same returns, exceptions, mutations, method identities, aliasing,
+   receivers and asynchronous effects, for every input and reachable state
+   its callers admit. Passing the verifier shows no equivalence. The
+   construct stays refused, with a control case ([constructs
+   avoided](#constructs-avoided)).
+5. **A host boundary:** a necessary operation on an external service that
+   no rule can model moves to the smallest module performing it, whose
+   signatures only the intended host value inhabits and grant no more than
+   the operation: its callers are verified against them, its own functions
+   stay refused, and its contract is audited against the service and
+   stated with every effect ([host boundaries](#host-boundaries)).
+6. **A trusted unit:** local code exempt from checking, for a narrow unit
+   the owner approves, reported with its full contract and what depends on
+   it. It is never disguised as a host boundary, and no route falls back
+   to it.
+7. **A proof:** a Lean proof of the property, where the semantics it needs
+   exist or building them has wider value. A proof whose hypotheses state
+   the host's behaviour keeps those assumptions.
+8. **The refusal stays,** and the census reports it, where no route above
+   establishes the obligation at acceptable cost. Coverage pressure is
+   evidence of value, not permission to weaken safety.
+
+What TScert verifies of its own front end is its source as it stands: code
+checked, host boundaries and their contracts, trusted units and refused
+functions are reported apart, and a result under a host contract is no proof
+of the host's implementation.
 
 ## Rewrites
 
@@ -295,6 +334,58 @@ For the supported ordinary and type imports, the two tests agree.
 - **Functions:** `importedModules`, `namespaceMembers`, `importBindings`,
   and the declaration graph's local `closure` in `collectDeclarations`.
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+
+## Constructs avoided
+
+Constructs TScert's code once used, refused because sound support is not
+proportionate to their use, and written out of the code by an equivalent
+form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
+
+## Host boundaries
+
+Operations of TScert's code on an external service that no rule models,
+each in the smallest module performing it, its callers verified against
+its signatures and its own functions refused ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
+
+### The compiler client's prototype
+
+The compiler channel checks that an `API`'s private client has its request
+methods and wraps every request, so that its failure is a `CompilerFailure`
+and its answer is noted in the compiler's ledger, and answers a snapshot's
+query asked again from memory. The methods are own data properties of the
+client's class prototype, reachable only through `Object.getPrototypeOf`,
+which has no entry: its result may be `Array.prototype`, or a class's
+prototype that passes `instanceof` for its base while holding none of the
+base's fields (`invalid-get-prototype-array-prototype`). No form within the
+language reads them: a read through the client can run a getter.
+
+- **Boundary:** `tools/client-prototype.mts`. Its functions take the `API`
+  itself, a compiler API value only the package makes, whose private members
+  no ordinary object has (`blocker-client-prototype-forged`).
+  `clientHasMethod(api, member)` tests one of the six request members.
+  `guardClientRequests(api, around)` wraps all six, once per class prototype:
+  each wrapper calls `around(member, receiver, args, send)`, `send` sends the
+  request once, while `around` runs, and the wrapper returns the request's
+  answer itself; it throws when `around` returned without sending, and
+  throws the request's failure when `around` returned after it failed. The
+  memo of a snapshot's queries is in the boundary.
+- **What callers get:** neither the client, its prototype, a method nor a
+  way to answer a request. The channel's `around` (the ledger, the failure
+  conversion) is verified against these signatures (`blocker-client-prototype`).
+- **Contract, audited against the package** (`dist/api/sync/client.js`,
+  `api.js`): the request methods are own data properties of `Client`'s
+  prototype; the package catches no error of a request; `apiRequest` returns
+  a fresh `JSON.parse` of the reply, or `undefined` for an empty one. Every
+  client of the process shares the prototype, so the first call wraps every
+  client's requests. A query of a held snapshot asked again is answered by
+  reading back the earlier answer's JSON text, which assumes the compiler
+  answers it the same each time (query omission, a conjecture).
+- **What depends on it:** the functions of `compiler-channel.mts` that check
+  or guard the client, and every use of the compiler API in the process:
+  every client shares the wrapped prototype, so each answer the package
+  returns passes through the wrapper.
+- **Commit:** the introducing commit, `Confine Object.getPrototypeOf to a
+  host boundary of the compiler channel`.
 
 ## Changes for a tool's defect
 

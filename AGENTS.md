@@ -156,13 +156,13 @@ It prints the outcome and the directory holding what the run wrote: the
 source snapshot, the parser's `fragment.json`, the producer's `claims.json`
 and the verifier's `evidence.json`.
 
-TScert's own source is not rewritten to fit the verifier while the
-verifier's rules change ([source rewrites](docs/SOURCE-REWRITES.md)): a
-refusal of TScert's code is fixed in the verifier, or stays a refusal the
-census reports. A change to the source that repairs what the verifier found
-wrong in it (a guard that promised more than its body) is recorded there in
-the same commit: the property the original code lacked, the general
-rewrite, and the commit.
+A refusal of TScert's own code is answered by the first of the eight routes
+[source rewrites](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
+states that establishes the obligation at acceptable cost: support, a runtime
+check, a repair, avoidance, a host boundary, a trusted unit (owner-approved,
+never a fallback), a proof, or the refusal stays. A repair, an avoidance or a
+host boundary is recorded there in the same commit, with what its kind
+requires.
 
 ## Which tests to keep
 

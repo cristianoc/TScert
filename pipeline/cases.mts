@@ -97,6 +97,9 @@ export const cases: Case[] = [
     /^unsupported: a member read on a t\/boolean where the type TypeScript gives the receiver holds no t\/boolean: the producer and TypeScript disagree on the receiver(?:\n|$)/),
   { ...positive("compiler-api-reviewed-members", "The named views admit the contextual query, project enumeration, snapshot disposal and stable symbol check flags."),
     project: "pipeline/compiler-api-project" },
+  { ...positive("blocker-client-prototype", "An API's private client checked and every request wrapped through tools/client-prototype.mts alone, which takes the API and hands back neither the client, its prototype, a method nor a way to answer a request."), project: "pipeline/blocker-project" },
+  { ...negative("blocker-client-prototype-forged", "A forged API whose client is an array would point the boundary at `Array.prototype`: refused, since `unknown` is no API, whose private members no ordinary object has (run under Node, the boundary throws at its shape check before writing).",
+    /The available claim for \{ client: \[\] \} as unknown is unknown\. This obligation requires \{  \}/), status: "unverified", phase: "search", project: "pipeline/blocker-project" },
   { ...positive("blocker-compiler-api-parse-config", "The reviewed parseConfigFile member, on an API instance read at its default false argument."), project: "pipeline/blocker-project" },
   // Census blocker causes; each source header names the functions it represents.
   // The case project uses the front end's installed Node and compiler declarations.

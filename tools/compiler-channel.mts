@@ -15,10 +15,12 @@
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { API } from "typescript/unstable/sync";
-import { compilerFileSystem, findPackage, importLedger, installed, newLedger, privateLauncher, sharing, takeQueryFailure, treeDigest, unobservable,
+import { compilerFileSystem, findPackage, importLedger, installed, newLedger, privateLauncher, takeQueryFailure, treeDigest, unobservable,
   withLedger, type Ledger } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
 import { compilerEnding, compilerStarted } from "./compiler-processes.mts";
+import { clientHasMethod, guardClientRequests, requestMembers } from "./client-prototype.mts";
+export { heldSnapshots, queryTelemetry } from "./client-prototype.mts";
 
 /** The compiler process, as the client's channel holds it. */
 interface CompilerProcess {
@@ -33,16 +35,8 @@ interface PrivateClient {
   close(): void;
   readonly channel: { readonly child: CompilerProcess };
 }
-type Request = (this: unknown, ...args: unknown[]) => unknown;
-const isRequest = (f: unknown): f is Request => typeof f === "function";
 const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
-/** A value's prototype, where its methods are own members. */
-const prototypeOf = (value: object): unknown => Object.getPrototypeOf(value);
 
-/** The client's members that send a request on its channel: every one of
- * them, the API's requests through the first two, and an echo and the
- * timing queries through the others. */
-const requestMembers = ["apiRequest", "apiRequestBinary", "echo", "echoBinary", "getTimingInfo", "resetTimingInfo"] as const;
 
 /** An `API`'s private client, its members checked by name. */
 export function privateClient(api: API): PrivateClient {
@@ -52,63 +46,12 @@ export function privateClient(api: API): PrivateClient {
   if (!client || typeof client !== "object") throw missing("");
   if (!("close" in client) || !isProcedure(client.close)) throw missing(".close");
   for (const member of requestMembers)
-    if (!isRequest(fieldOf(prototypeOf(client), member))) throw missing(`.${member}`);
+    if (!clientHasMethod(api, member)) throw missing(`.${member}`);
   const child = fieldOf(fieldOf(client, "channel"), "child");
   if (!child || typeof child !== "object" || !("kill" in child) || !isProcedure(child.kill) ||
       !("once" in child) || !isProcedure(child.once) || !("exitCode" in child) || !("signalCode" in child))
     throw missing(".channel.child");
   return client as PrivateClient; // asserted: the decoder of the private client, each member it names checked above
-}
-
-/** The queries of a snapshot the front end asks (docs/drafts/front-end-sharing.md,
- * 3.3): each a read of the snapshot its parameters name, which the compiler
- * holds unchanged until its release. A request off the list (a snapshot's
- * update or release, the client's initialization, a configuration's parse,
- * a profile) goes to the compiler every time. */
-const snapshotQueries: ReadonlySet<string> = new Set([
-  "getAliasedSymbol", "getAliasSymbolOfType", "getConstantValue", "getContextualType", "getDefaultProjectForFile",
-  "getExportsOfModule", "getExportsOfSymbol", "getImmediateAliasedSymbol", "getIndexInfosOfType", "getMembersOfSymbol",
-  "getNonNullableType", "getParameterType", "getParametersOfSignature", "getProgramDiagnostics", "getPropertiesOfType",
-  "getPropertyOfType", "getResolvedSignature", "getReturnTypeOfSignature", "getSemanticDiagnostics",
-  "getShorthandAssignmentValueSymbol", "getSignaturesOfType", "getSourceFileMetadata", "getSourceFileNames",
-  "getSymbolAtLocation", "getSymbolOfType", "getSymbolsAtLocations", "getSyntacticDiagnostics", "getTargetOfType",
-  "getThisParameterOfSignature", "getTypeArguments", "getTypeAtLocation", "getTypeFromTypeNode", "getTypeOfSymbol",
-  "getTypeParametersOfSignature", "getTypePredicateOfSignature", "getTypesOfType", "getWellKnownSymbols", "isArrayType",
-  "isTupleType", "resolveName", "typeToString",
-]);
-/** Each client's answers to the queries of each snapshot it holds, as text
- * by method and parameters: a query asked again of the same snapshot is
- * answered as it was first (query omission, a conjecture), and a snapshot's
- * answers go with its release. */
-const answers = new WeakMap<object, Map<unknown, Map<string, string>>>();
-/** How many queries of a snapshot were made in this process, and how many of
- * them its earlier answer served, for the controls. */
-const queries: { asked: number; served: number } = { asked: 0, served: 0 };
-export const queryTelemetry = (): { asked: number; served: number } => ({ ...queries });
-/** How many snapshots of a compiler hold kept answers, for the controls. */
-export const heldSnapshots = (api: API): number => answers.get(privateClient(api))?.size ?? 0;
-function query(client: object, method: unknown, params: unknown, request: () => unknown): unknown {
-  const snapshot = fieldOf(params, "snapshot");
-  if (typeof method !== "string" || snapshot === undefined) return request();
-  let held = answers.get(client);
-  if (!held) answers.set(client, held = new Map());
-  if (method === "release") {
-    held.delete(snapshot);
-    return request();
-  }
-  if (!snapshotQueries.has(method) || !sharing()) return request();
-  queries.asked++;
-  const key = `${method}\0${JSON.stringify(params)}`;
-  const known = held.get(snapshot)?.get(key);
-  if (known !== undefined) {
-    queries.served++;
-    return known === "" ? undefined : JSON.parse(known);
-  }
-  const value = request();
-  let byKey = held.get(snapshot);
-  if (!byKey) held.set(snapshot, byKey = new Map());
-  byKey.set(key, JSON.stringify(value) ?? "");
-  return value;
 }
 
 /** Each client's ledger (docs/drafts/front-end-sharing.md, 3.5): every
@@ -126,36 +69,24 @@ export function compilerLedger(api: API): Ledger {
 
 /** Each request of a client prototype guarded once: what it throws becomes a
  * `CompilerFailure` naming the request. */
-const guarded = new WeakSet<object>();
-function guard(client: PrivateClient): void {
-  const prototype = prototypeOf(client);
-  if (!prototype || typeof prototype !== "object" || guarded.has(prototype)) return;
+function guard(api: API): void {
   // A request is named by its method, the first argument of the API's two;
   // the others by their member.
-  const wrap = (member: string, original: unknown): Request => {
-    if (!isRequest(original)) throw Error(`the compiler package's private shape changed: API.client.${member} (compiler-channel.mts)`);
+  guardClientRequests(api, (member, receiver, args, send) => {
     const named = member === "apiRequest" || member === "apiRequestBinary";
-    return function (this: unknown, ...args: unknown[]): unknown {
-      takeQueryFailure();
-      try {
-        const ledger = this && typeof this === "object" ? ledgers.get(this) : undefined;
-        const send = (): unknown => original.call(this, ...args);
-        const answer = member === "apiRequest" && this && typeof this === "object"
-          ? (): unknown => query(this, args[0], args[1], send) : send;
-        if (!ledger) return answer();
-        importLedger(ledger);
-        return withLedger(ledger, answer);
-      } catch (error) {
-        // A file-system query the front end answered failed: that failure.
-        const query = takeQueryFailure();
-        if (query !== null) throw query;
-        throw error instanceof CompilerFailure ? error : new CompilerFailure(named ? String(args[0]) : member, error);
-      }
-    };
-  };
-  Object.assign(prototype, Object.fromEntries(requestMembers.map((member) =>
-    [member, wrap(member, fieldOf(prototype, member))])));
-  guarded.add(prototype);
+    takeQueryFailure();
+    try {
+      const ledger = receiver && typeof receiver === "object" ? ledgers.get(receiver) : undefined;
+      if (!ledger) return send();
+      importLedger(ledger);
+      withLedger(ledger, send);
+    } catch (error) {
+      // A file-system query the front end answered failed: that failure.
+      const query = takeQueryFailure();
+      if (query !== null) throw query;
+      throw error instanceof CompilerFailure ? error : new CompilerFailure(named ? String(args[0]) : member, error);
+    }
+  });
 }
 
 /** The documents each compiler holds open, with how many times each was
@@ -177,7 +108,7 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
     throw new CompilerFailure("spawn", error);
   }
   const client = privateClient(api);
-  guard(client);
+  guard(api);
   const open = new Map<string, number>();
   documents.set(api, open);
   const request = api.updateSnapshot.bind(api);
