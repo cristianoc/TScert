@@ -2506,8 +2506,8 @@ A type not stating `cause` is open at it, and no rule derives it at
 $`\mathsf{ErrorOptions}`$: the object may own a getter there, which `Get` runs
 (`invalid-error-options`, `invalid-error-options-spread`, run under Node). A
 getter written at `cause` and a proxy are outside the fragment
-(`invalid-error-options-getter`, `invalid-error-options-proxy`, run under
-Node). The error's own `cause` is not stated: a read of it is refused
+(`invalid-error-options-getter`, `invalid-error-options-class-accessor`,
+`invalid-error-options-proxy`, run under Node). The error's own `cause` is not stated: a read of it is refused
 (`invalid-error-cause-read`), and a write of it is reserved, as `stack`'s
 is ([reserved writes](SOURCE-ELABORATION.md#reserved-writes)). The host is
 trusted to follow ECMA-262's description of the `Error` constructor; the

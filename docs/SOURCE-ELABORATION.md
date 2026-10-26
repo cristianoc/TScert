@@ -930,7 +930,9 @@ undefined` before it defaults, so an argument of another type, which
 refused at it. The options are bound after it at `Error`'s stated options
 ([`JSON` and `Error`](SOURCE-CONTRACTS.md#json-and-error)), at which reading
 `cause` runs no code; the `cause` they may give the instance is not stated.
-An implicit constructor forwards both. The instance's own keys are its declared fields;
+An implicit constructor forwards both; options of a type not stating
+`cause` are refused either way (`invalid-error-super-options-getter`,
+`invalid-error-implicit-options-getter`, run under Node). The instance's own keys are its declared fields;
 `e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
 $`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
 `Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating

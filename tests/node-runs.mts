@@ -447,6 +447,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
     ["invalid-error-options-getter", "wrong([\"a\", \"b\", \"c\"])"],
     ["invalid-error-options-proxy", "wrong([\"a\", \"b\", \"c\"])"],
+    ["invalid-error-options-class-accessor", "wrong([\"a\", \"b\", \"c\"])"],
+    ["invalid-error-implicit-options-getter", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
     ["invalid-error-options-spread", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
@@ -582,6 +584,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // message; a write of the own `cause` keeps it non-enumerable.
   assert.equal(runExample("error-options", `[...make("m", 1, { cause: 2 }, undefined), ...dense(["a", "b"])].join()`),
     "m,m,m,m,m,m,m,m,m,a,b", "error-options: each construction's message");
+  assert.equal(runExample("invalid-error-super-options-getter", `(() => { let runs = 0; make("m", { get cause() { runs++; return 0; } }); return runs; })()`), 1,
+    "invalid-error-super-options-getter: super(m, o) runs the getter at cause");
   assert.equal(runExample("invalid-error-subclass-cause-write", "keys().length"), 0,
     "invalid-error-subclass-cause-write: the assigned own cause stays non-enumerable");
   assert.throws(() => runExample("invalid-error-subclass-stack-method", "trace()"), /not a function/,
