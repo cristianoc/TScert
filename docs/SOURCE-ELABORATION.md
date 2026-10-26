@@ -519,9 +519,11 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 ```
 
 where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
-on any object (`inKeyRefusal`, [guards](#guards)), `Error.prototype`'s `name`
-among them, since any object, a record's value included, may be
-an error; and $`\mathcal F`$ the keys a function owns or inherits from
+on any object (`inKeyRefusal`, [guards](#guards)): among them an error's
+`name`, `message` and `stack`, and the keys the standard prototypes of
+promises, maps, sets, dates, primitive wrappers, buffers and iterators hold
+(`builtinPrototypeKeys`), since any object, a record's value included, may
+be such an object; and $`\mathcal F`$ the keys a function owns or inherits from
 `Function.prototype` that no other built-in prototype holds (`functionKeys`:
 `prototype`, `call`, `apply`, `bind`, `arguments`, `caller`), which the
 model's function lacks.
@@ -1445,7 +1447,8 @@ of its argument, run again after the call:
 ```
 
 with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
-`Array.prototype`'s own string keys, `Error.prototype`'s `name`, array indices,
+`Array.prototype`'s own string keys, an error's `name`, `message` and `stack`,
+the other standard prototypes' keys (`builtinPrototypeKeys`), array indices,
 and the keys the model reserves), and $`\mathcal F`$ the keys a function owns or inherits,
 admitted where no clause of $`A`$ is an arrow or callable one ([`in`](#in)). `in`'s answers are by keys the
 types state (`inAnswer`): a failed test drops an arm owning the key, a passed

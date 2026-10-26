@@ -45,5 +45,5 @@ export function described(e: Decline): string {
 
 export function observed(): string {
   const e = new Deeper([2, 3], "kept");
-  return `${"message" in e},${Object.keys(e).join("|")},${e instanceof Error},${e instanceof DeclarationError}`;
+  return `${Object.keys(e).join("|")},${e instanceof Error},${e instanceof DeclarationError}`;
 }

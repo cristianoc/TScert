@@ -61,12 +61,45 @@ inherits it only from a class's prototype object, which the model's chain
 holds. -/
 def functionKeys : List String := ["prototype", "apply", "bind", "call", "arguments", "caller"]
 
+/-- The string keys the standard prototypes of promises, maps, sets, weak
+collections, dates, the primitive wrappers, buffers, data views, typed arrays,
+iterators and generators own, less those `Object.prototype`, `Array.prototype`,
+`Function.prototype`, `RegExp.prototype` and `Error.prototype` hold, which
+`inKeyRefusal` names apart: node 25's `Object.getOwnPropertyNames` of each, a
+trusted list. -/
+def builtinPrototypeKeys : List String := [
+    "then", "catch", "finally", "get", "set", "has", "delete", "clear", "size", "add",
+    "difference", "intersection", "isSubsetOf", "isSupersetOf", "isDisjointFrom",
+    "symmetricDifference", "union", "deref", "register", "unregister", "toDateString",
+    "toTimeString", "toISOString", "toUTCString", "toGMTString", "getDate", "setDate", "getDay",
+    "getFullYear", "setFullYear", "getHours", "setHours", "getMilliseconds", "setMilliseconds",
+    "getMinutes", "setMinutes", "getMonth", "setMonth", "getSeconds", "setSeconds", "getTime",
+    "setTime", "getTimezoneOffset", "getUTCDate", "setUTCDate", "getUTCDay", "getUTCFullYear",
+    "setUTCFullYear", "getUTCHours", "setUTCHours", "getUTCMilliseconds", "setUTCMilliseconds",
+    "getUTCMinutes", "setUTCMinutes", "getUTCMonth", "setUTCMonth", "getUTCSeconds",
+    "setUTCSeconds", "getYear", "setYear", "toJSON", "toLocaleDateString", "toLocaleTimeString",
+    "anchor", "big", "blink", "bold", "charAt", "charCodeAt", "codePointAt", "endsWith",
+    "fontcolor", "fontsize", "fixed", "isWellFormed", "italics", "link", "localeCompare", "match",
+    "matchAll", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll", "search",
+    "small", "split", "strike", "sub", "substr", "substring", "sup", "startsWith", "toWellFormed",
+    "trim", "trimStart", "trimLeft", "trimEnd", "trimRight", "toLocaleLowerCase",
+    "toLocaleUpperCase", "toLowerCase", "toUpperCase", "toExponential", "toFixed", "toPrecision",
+    "description", "byteLength", "maxByteLength", "resizable", "resize", "transfer",
+    "transferToFixedLength", "detached", "growable", "grow", "buffer", "byteOffset", "getInt8",
+    "setInt8", "getUint8", "setUint8", "getInt16", "setInt16", "getUint16", "setUint16",
+    "getInt32", "setInt32", "getUint32", "setUint32", "getFloat32", "setFloat32", "getFloat64",
+    "setFloat64", "getBigInt64", "setBigInt64", "getBigUint64", "setBigUint64", "getFloat16",
+    "setFloat16", "subarray", "BYTES_PER_ELEMENT", "toBase64", "setFromBase64", "toHex",
+    "setFromHex", "toArray", "take", "drop", "next", "return", "throw"]
+
 /-- `key in o` looks the key up along `o`'s prototype chain; the model's test
 (`Tag.hasKey`) asks whether the object owns it. The two agree for a key none
 of the built-in prototypes an object of the fragment inherits from holds, and
 that no own key of the built-in making the model leaves out names: an array's
 `length` and indices, a function's `length`, `name` and `prototype`, an
-error's `name`, which `Error.prototype` holds and the model's error does not. The names are node's (`Object.getOwnPropertyNames` of
+error's `name`, `message` and `stack`, and the keys the other standard
+prototypes hold (`builtinPrototypeKeys`), since any object, a record's value
+among them, may be such an object. The names are node's (`Object.getOwnPropertyNames` of
 `Object.prototype`, `Array.prototype`, `Error.prototype` and
 `Function.prototype`), a trusted list: a builtins whose
 prototypes hold another string key would answer `true` where the model
@@ -81,9 +114,10 @@ def inKeyRefusal (key : String) : Option String :=
     "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat",
     "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
     "toSpliced", "with"]
-  -- `Error.prototype` holds `name`; any object, a record's value among
-  -- them, may be an error.
-  let errorKeys := ["name"]
+  -- An error inherits `name` and `message` from `Error.prototype` and owns
+  -- `stack`, none of which the model's error holds where JavaScript's
+  -- does; any object, a record's value among them, may be an error.
+  let errorKeys := ["name", "message", "stack"]
   -- A regular expression owns `lastIndex` and inherits the rest from
   -- `RegExp.prototype`; the model's regex states methods and no property.
   let regexpKeys := ["lastIndex", "source", "flags", "global", "ignoreCase", "multiline", "sticky",
@@ -93,7 +127,10 @@ def inKeyRefusal (key : String) : Option String :=
     some "a regular expression owns it or inherits it from RegExp.prototype"
   else if objectKeys.contains key then some "every object inherits it from Object.prototype"
   else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
-  else if errorKeys.contains key then some "an error inherits it from Error.prototype, which the model does not hold"
+  else if errorKeys.contains key then
+    some "an error owns it or inherits it from Error.prototype, which the model does not hold"
+  else if builtinPrototypeKeys.contains key then
+    some "a built-in object (a promise, map, set, date, wrapper, buffer or iterator) inherits it from its standard prototype"
   else if !key.isEmpty && key.all Char.isDigit && (key == "0" || key.front != '0') then
     some "an array index names an element, which the model keeps in the array's store"
   else none
