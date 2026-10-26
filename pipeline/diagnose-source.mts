@@ -213,8 +213,15 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
     report.error = String(error);
     report.unexamined.push({ pos: whole, reason: report.error });
   }
-  attribute(report, scopes);
-  writeFileSync(join(artifacts, "diagnostic.json"), JSON.stringify(report, null, 2) + "\n");
+  try {
+    attribute(report, scopes);
+    writeFileSync(join(artifacts, "diagnostic.json"), JSON.stringify(report, null, 2) + "\n");
+  } catch (error) {
+    // A report that cannot be written releases its run before the failure
+    // propagates, as a written one not retained does.
+    ownedRun(report, false);
+    throw error;
+  }
   return ownedRun(report, retainArtifacts);
 }
 
