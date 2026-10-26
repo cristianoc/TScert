@@ -326,9 +326,12 @@ answer `false`, so the operand must be of object clauses. A class value is
 refused: its static members are bound apart (`static C.x`), so it lacks keys
 JavaScript's has. On the other objects of the fragment own keys are
 JavaScript's, and the key names nothing a prototype holds
-(`Fragment.inKeyRefusal`). -/
+(`Fragment.inKeyRefusal`), nor, where a clause is a function's (an arrow or
+callable clause), what a function owns or inherits (`Fragment.functionKeys`):
+the model's function lacks those keys. A record or dictionary clause's members
+are objects without call code (`semWithArgs`), so no function. -/
 @[nospecialize] def inOperand (p : Span) (tag : Tag) (B : Ty Tree) : Compiler Unit := do
-  let .hasKey _ := tag | return
+  let .hasKey key := tag | return
   let G := SourceTypes.graph (← table)
   let cs := PositiveRules.expand G B
   let located := s!"unsupported source expression at [{p.1},{p.2}): "
@@ -338,6 +341,10 @@ JavaScript's, and the key names nothing a prototype holds
       | .refs .. | .dict .. | .arrs .. | .callable .. => true
       | _ => false) do
     throw (located ++ "`in` needs an object operand: it throws on a primitive")
+  if let .str k := key then
+    if Fragment.functionKeys.contains k && cs.any (fun | .arrs .. | .callable .. => true | _ => false) then
+      throw (located ++ s!"`in` with the key '{k}' on an operand that may be a function, " ++
+        "which owns it or inherits it from Function.prototype")
 
 /-- The keys `key in o` may test, from the key's claim: a union of string
 singletons, each a key `in` answers as JavaScript does (`inKeyRefusal`). -/

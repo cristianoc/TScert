@@ -392,6 +392,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let r ← closureExpr recursive fc (held ⟨"",some key.span⟩ :: scope) (k.type::Γ) o
     inOperand p (.hasKey (.str "")) r.type
     let keys ← inKeyList p k.type
+    for k in keys do inOperand p (.hasKey (.str k)) r.type
     let H := r.type::k.type::Γ
     let test := fun (s : String) => tagTestPlan G (.hasKey (.str s)) H 0 true A
     let chain ← match keys.reverse with

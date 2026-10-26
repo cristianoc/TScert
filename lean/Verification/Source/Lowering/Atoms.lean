@@ -1087,6 +1087,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let C ← exprType fc o
     inOperand p (.hasKey (.str "")) C
     let keys ← inKeyList p B
+    for k in keys do inOperand p (.hasKey (.str k)) C
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some o.span⟩::held ⟨"",some key.span⟩ :: scope

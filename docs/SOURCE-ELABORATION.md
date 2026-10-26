@@ -513,16 +513,36 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 
 ```math
 \frac{\Gamma\vdash o:A\quad \forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
-      \quad \kappa_i\notin\mathcal B}
+      \quad \kappa_i\notin\mathcal B\quad
+      \kappa_i\in\mathcal F\Rightarrow\forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record or dictionary clause}}
      {\Gamma\vdash k\ \mathtt{in}\ o:\mathsf{boolean}}
 ```
 
 where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
-(`inKeyRefusal`, [guards](#guards)). The operand's clauses are
-objects because `in` throws on a primitive, where the test would answer
-`false`, and not a class value, which holds its static fields but not the
-keys JavaScript's class owns besides (`name`, `length`, `prototype`, its static
-methods).
+on any object (`inKeyRefusal`, [guards](#guards)), and $`\mathcal F`$ the
+keys a function owns or inherits from `Function.prototype` that no other
+built-in prototype holds (`functionKeys`: `name`, `prototype`, `call`,
+`apply`, `bind`, `arguments`, `caller`), which the model's function lacks.
+The operand's clauses are objects because `in` throws on a primitive, where
+the test would answer `false`, and not a class value, which holds its static
+fields but not the keys JavaScript's class owns besides (`name`, `length`,
+`prototype`, its static methods). A key of $`\mathcal F`$ is answered as
+JavaScript does on a record or dictionary clause, whose members are objects
+without call code: such an object owns the key only as a field the model
+keeps, or inherits it only from a class's prototype object, which the
+model's prototype chain holds. An arrow or callable clause, a function's,
+makes the test refused:
+
+```math
+\frac{\Gamma\vdash o:A\quad \kappa_i\in\mathcal F\quad \exists\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{an arrow or callable clause}}
+     {k\ \mathtt{in}\ o\ \text{refused}}
+```
+
+The operand's type is the one the conditions before the test establish, so
+a `typeof o === "object"` test, which drops every arrow and callable clause,
+admits a key of $`\mathcal F`$ after it (`in-function-key`);
+`typeof o !== "number"` keeps a function arm, and the key is refused
+(`invalid-in-function-key-call`).
 
 A key TypeScript types as other than string literals (a `string`, a number,
 an array index among them, a symbol) may name what the model does not answer
@@ -1417,13 +1437,15 @@ of its argument, run again after the call:
 
 ```math
 \frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal B\quad
+      \kappa\in\mathcal F\Rightarrow A\ \text{no function}\quad
       \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-in}
 ```
 
-with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s,
-`Array.prototype`'s and `Function.prototype`'s own string keys, array
-indices, and the keys the model reserves). `in`'s answers are by keys the
+with $`\mathcal B`$ the refused keys (`inKeyRefusal`: `Object.prototype`'s
+and `Array.prototype`'s own string keys, array indices, and the keys the
+model reserves), and $`\mathcal F`$ the keys a function owns or inherits,
+admitted where no clause of $`A`$ is an arrow or callable one ([`in`](#in)). `in`'s answers are by keys the
 types state (`inAnswer`): a failed test drops an arm owning the key, a passed
 one drops an arm whose key bounds exclude it and the prototype key, and every
 primitive; a passed test promotes an optional key to a field (`promote`). A
