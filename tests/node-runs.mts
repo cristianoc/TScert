@@ -617,6 +617,27 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
+  // An imported class's `instanceof` walks the chain for the prototype its
+  // declaration creates; where it fails, a record with the class's members
+  // is still returned, and a class binding its module writes tests another
+  // class's prototype.
+  assert.equal(runImporting("instanceof-class-value-import",
+    "[tests(), isFailure({ operation: \"x\" }), atStart, lineOf(new ParseFailure(2))].join()"),
+    "true,false,true,2", "instanceof-class-value-import: the walk");
+  assert.equal(runImporting("invalid-instanceof-class-else-value-import",
+    "typeof label({ operation: \"x\", message: \"m\", name: \"n\" })"),
+    "object", "invalid-instanceof-class-else-value-import: the failed arm returns the record");
+  assert.equal(runImporting("invalid-instanceof-rebound-value-import", "rebound(new Rebound())"),
+    false, "invalid-instanceof-rebound-value-import: an instance made before the write is no instance");
+  assert.equal(runImporting("invalid-instanceof-hooked-value-import", "String(f(\"text\"))"),
+    "undefined", "invalid-instanceof-hooked-value-import: the hook answers true of a string");
+  assert.equal(runImporting("invalid-instanceof-suppressed-value-import", "suppressed(new Suppressed())"),
+    false, "invalid-instanceof-suppressed-value-import: an instance made before the write is no instance");
+  assert.equal(runImporting("invalid-instanceof-getter-value-import", "1 in marked()"),
+    false, "invalid-instanceof-getter-value-import: the getter shrinks the mapped array, leaving a hole");
+  for (const form of ["default", "heritage", "setter"])
+    assert.equal(runImporting(`invalid-instanceof-${form}-hook-value-import`, "String(f(\"text\"))"),
+      "undefined", `invalid-instanceof-${form}-hook-value-import: the defined method answers true of a string`);
   assert.equal(runExample("invalid-number-value-object",
     "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
     false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");

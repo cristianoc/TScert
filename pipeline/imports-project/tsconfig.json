@@ -29,7 +29,17 @@
       "@fixture/stated": ["./stated.ts"],
       "@fixture/stated-overload": ["./stated-overload.ts"],
       "@fixture/partial": ["./partial.ts"],
-      "@fixture/partial-init": ["./partial-init.ts"]
+      "@fixture/partial-init": ["./partial-init.ts"],
+      "@fixture/failures": ["./failures.ts"],
+      "@fixture/failures-relay": ["./failures-relay.ts"],
+      "@fixture/failures-rebound": ["./failures-rebound.ts"],
+      "@fixture/failures-ambient-base": ["./failures-ambient-base.ts"],
+      "@fixture/failures-hooked": ["./failures-hooked.ts"],
+      "@fixture/failures-suppressed": ["./failures-suppressed.ts"],
+      "@fixture/failures-getter": ["./failures-getter.ts"],
+      "@fixture/failures-default-hook": ["./failures-default-hook.ts"],
+      "@fixture/failures-heritage-hook": ["./failures-heritage-hook.ts"],
+      "@fixture/failures-setter-hook": ["./failures-setter-hook.ts"]
     }
   },
   "include": [
@@ -59,6 +69,17 @@
     "./hooks-ambient.d.ts",
     "./partial.ts",
     "./partial-init.ts",
+    "./failures.ts",
+    "./failures-relay.ts",
+    "./failures-rebound.ts",
+    "./failures-ambient.d.ts",
+    "./failures-ambient-base.ts",
+    "./failures-hooked.ts",
+    "./failures-suppressed.ts",
+    "./failures-getter.ts",
+    "./failures-default-hook.ts",
+    "./failures-heritage-hook.ts",
+    "./failures-setter-hook.ts",
     "../../tools/resolvable.d.ts"
   ]
 }

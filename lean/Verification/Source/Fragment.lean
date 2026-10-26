@@ -854,7 +854,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- prototype object, then the test of the key only that object owns
     -- (`Tag.hasKey`, which walks the operand's prototype chain). In the
     -- class's own instance members the read is of the class value, its
-    -- own binding (`selfBindingOf`): the test is the key's either way.
+    -- own binding (`selfBindingOf`): the test is the key's either way. For
+    -- a class another module declares, the read is of its import binding,
+    -- whose name names the key.
     fieldsExactly j ["k","pos","e","proto","key"]
     let key ← jStr (← jField j "key")
     let proto ← decodeExpr (← jField j "proto")
@@ -862,7 +864,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     unless ((binding.dropEnd ".[[prototype]]".length).toString |> fun cls =>
         prototypeBindingOf cls == binding && classKeyOf cls == key) ||
         ((binding.dropEnd ".[[self]]".length).toString |> fun cls =>
-          selfBindingOf cls == binding && classKeyOf cls == key) do
+          selfBindingOf cls == binding && classKeyOf cls == key) ||
+        classKeyOf binding == key do
       throw s!"`instanceof` tests '{key}', not the key of the prototype '{binding}'"
     return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto
   | "tagMember" => do

@@ -1489,8 +1489,18 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
         args: [gate.expr(node.left)] };
       return { k: "not", pos: gate.span(node), e: { k: "not", pos: [keyword, keywordEnd], e: call } };
     }
+    // A class declaration another module checks, imported by name: the
+    // operand, then the import binding, read as `instanceof` reads it, then
+    // the test of the key the import's name gives the class's prototype
+    // (SOURCE-CONTRACTS.md, "Imported classes and `instanceof`").
+    if (!cls && gate.importedClassTests.has(gate.span(node.right).join(":"))) {
+      const e = gate.expr(node.left);
+      const proto = gate.expr(node.right);
+      if (proto.k !== "id") gate.fail(node.right, "an imported class's `instanceof` reads its import binding");
+      return { k: "instanceTest", pos: gate.span(node), e, proto, key: classKey(proto.name) };
+    }
     if (!cls)
-      gate.fail(node, "`instanceof` whose right operand is not a class declared at the file's top level: nothing in the file says which prototype a constructor from elsewhere gives its instances");
+      gate.fail(node, "`instanceof` whose right operand is neither a class declared at the file's top level nor an import of a class declaration another module checks: nothing says which prototype a constructor from elsewhere gives its instances");
     return { k: "instanceTest", pos: gate.span(node), e: gate.expr(node.left),
       proto: { k: "id", pos: gate.span(node.right), name: gate.ownClass(node.right) ?? prototypeName(cls) },
       key: classKey(cls) };

@@ -510,6 +510,10 @@ export function collectDeclarations(file: string, options: {
    * declaration of the program, is reported to `hookTest`. */
   hookTests?: readonly Span[];
   hookTest?: (span: Span) => void;
+  /** Those of them whose type states no `[Symbol.hasInstance]` and which
+   * TypeScript binds to an import of a checked class declaration
+   * (`checkedClass`), reported to `importedClassTest`. */
+  importedClassTest?: (span: Span) => void;
   /** The iterables of the client's `for...of` loops: each that TypeScript
    * types as a string, a `Set`, a `Map` or a host collection iterator is
    * reported to `iterable` with the iteration intrinsic that steps it
@@ -2971,11 +2975,104 @@ export function collectDeclarations(file: string, options: {
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
     }
+    // Whether `file` uses the class `owner` declares as a value other than
+    // by name in these positions: the callee of `new`, the right operand of
+    // `instanceof`, a base class's expression, `export default`'s
+    // expression, or the receiver of a member read by name other than
+    // `__proto__`, the read no assignment, update, `delete` or destructuring
+    // target. Every expression that runs is searched, a heritage clause's,
+    // an export assignment's and a decorator's included; types are not.
+    // Any other use, an alias or an argument among them
+    // (`Object.setPrototypeOf(C, …)`), could reach a function changing the
+    // class value's prototype chain.
+    const escapes = (file: SourceFile, owner: Node): boolean => {
+      const named = (node: Node): boolean => ts.isIdentifier(node) &&
+        (targetOf(checker, node)?.declarations.some(d => d.resolve() === owner) ?? false);
+      const outer = (node: Node): Node => {
+        let at = node;
+        while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
+        return at;
+      };
+      const written = (access: Node): boolean => {
+        const at = outer(access);
+        const up = at.parent;
+        return !!up && ((ts.isBinaryExpression(up) && up.left === at &&
+            up.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+            up.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
+          ((ts.isPrefixUnaryExpression(up) || ts.isPostfixUnaryExpression(up)) &&
+            (up.operator === ts.SyntaxKind.PlusPlusToken || up.operator === ts.SyntaxKind.MinusMinusToken)) ||
+          ts.isDeleteExpression(up) || ts.isArrayLiteralExpression(up) || ts.isSpreadElement(up) ||
+          ts.isSpreadAssignment(up) || ts.isShorthandPropertyAssignment(up) ||
+          (ts.isPropertyAssignment(up) && up.initializer === at) ||
+          ((ts.isForOfStatement(up) || ts.isForInStatement(up)) && up.initializer === at));
+      };
+      const visit = (node: Node): boolean => {
+        if (ts.isImportDeclaration(node) || ts.isExportSpecifier(node)) return false;
+        if (ts.isHeritageClause(node))
+          return node.token === ts.SyntaxKind.ExtendsKeyword && node.types.some(t => visit(t.expression));
+        if (ts.isTypeNode(node)) return false;
+        if (node === owner && ts.isClassDeclaration(owner))
+          return node.forEachChild(c => c === owner.name ? false : visit(c)) ?? false;
+        if (!named(node)) return node.forEachChild(visit) ?? false;
+        const at = outer(node);
+        const parent = at.parent;
+        if (!parent || !(
+          (ts.isNewExpression(parent) && parent.expression === at) ||
+          (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+            parent.right === at) ||
+          (ts.isExpressionWithTypeArguments(parent) && parent.expression === at) ||
+          (ts.isExportAssignment(parent) && parent.expression === at) ||
+          (ts.isPropertyAccessExpression(parent) && parent.expression === at &&
+            parent.name.text !== "__proto__" && !written(parent))))
+          return true;
+        return false;
+      };
+      return visit(file);
+    };
+    // A class declaration of a module of the program other than the client:
+    // a source file with checked bodies that TypeScript accepts whole and
+    // with no comment suppressing its checking, so that no code writes the
+    // class's binding (TS2629), at its module's top level, not ambient,
+    // extending nothing, the standard `Error`, or such a class, whose
+    // module uses its value only in the positions `escapes` admits. Its
+    // `prototype` is the object its class statement creates, a property no
+    // code can change.
+    const checkedClass = (owner: Node | undefined, seen: Set<Node>): boolean => {
+      if (!owner || !ts.isClassDeclaration(owner) || seen.has(owner)) return false;
+      seen.add(owner);
+      const file = owner.getSourceFile();
+      if (!file || file.isDeclarationFile || libraryFile(file) || file.fileName === client.fileName ||
+          owner.parent !== file || owner.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) ||
+          /@ts-(?:ignore|expect-error|nocheck)\b/.test(file.text) || escapes(file, owner) ||
+          [...program.getSyntacticDiagnostics(file.fileName), ...program.getSemanticDiagnostics(file.fileName)]
+            .some(d => d.category === DiagnosticCategory.Error))
+        return false;
+      const base = owner.heritageClauses?.find(h => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
+      if (!base) return true;
+      if (!ts.isIdentifier(base)) return false;
+      const bases = targetOf(checker, base)?.declarations.map(d => d.resolve()) ?? [];
+      if (base.text === "Error" && bases.length > 0 &&
+          bases.every(d => !!d && libraryFile(d.getSourceFile() ?? client)))
+        return true;
+      return bases.length === 1 && checkedClass(bases[0], seen);
+    };
+    // A name the client imports, by a named or default import binding a
+    // value, that TypeScript binds to a checked class declaration.
+    const importedClass = (name: Identifier): boolean => {
+      const symbol = checker.getSymbolAtLocation(name);
+      const binding = symbol?.declarations.length === 1 ? symbol.declarations[0]?.resolve() : undefined;
+      if (!symbol || !(symbol.flags & SymbolFlags.Alias) || !binding ||
+          !(ts.isImportSpecifier(binding) || ts.isImportClause(binding)))
+        return false;
+      const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
+      return owners.length === 1 && checkedClass(owners[0], new Set());
+    };
     for (const span of options.hookTests ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
       const type = checker.getTypeAtLocation(name);
       const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
+      if (!hook && importedClass(name)) options.importedClassTest?.(span);
       // A hook the program's types state, not the one `Function.prototype`
       // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();
