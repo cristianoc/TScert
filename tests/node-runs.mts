@@ -610,11 +610,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
     "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
   // An `Error`-derived message: read through the chain, `""` where omitted,
-  // left out of keys and spreads, serialized where a replacer
+  // seen by `in`, left out of keys and spreads, serialized where a replacer
   // names it.
   assert.equal(runExample("error-subclass",
     `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
-    'declined;ab;here;deep@0;"";at,true,true', "error-subclass: the messages and observations");
+    'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
   assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
     "error-subclass-methods: the methods through the chain");
   // `Error`'s options at a stated `cause`: each construction gives the
@@ -1509,14 +1509,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-regexp-lastindex-in", "hasState(/a/)"), true);
   assert.equal(runExample("invalid-regexp-lastindex-view", "viewed()"), undefined);
   // A function inherits `apply` and `call`, which `in` finds; an open record
-  // arm may own `call` at another type; an error inherits `name` and
-  // `message` from `Error.prototype`.
+  // arm may own `call` at another type. An error inherits `name` and
+  // `message` from `Error.prototype`: at `{ name?: number }` or
+  // `{ message?: number }` it is outside the caller contract.
   assert.equal(runExample("invalid-in-function-key", "report(() => 0)"), true);
   assert.equal(runExample("invalid-in-function-key-call", "report(() => 0)"), true);
   assert.equal(runExample("invalid-in-function-key-member", `wrong({ size: 1, call: () => "s" })`), "s");
-  assert.equal(runExample("invalid-in-error-name", `wrong(Object.assign(new Error("m"), { size: 1 }))`), "Error");
-  assert.equal(runExample("invalid-in-error-message", `wrong(Object.assign(new Error(), { size: 1 }))`), "1");
-  assert.equal(runExample("error-subclass-message-in", "observed()"), true);
+  assert.equal(runExample("in-outside-caller-contract", `withIn(Object.assign(new Error("m"), { size: 1 }))`), "Error");
+  assert.equal(runExample("in-outside-caller-contract", `withMessage(Object.assign(new Error(), { size: 1 }))`), "1");
+  assert.equal(runExample("in-outside-caller-contract", `withoutIn(Object.assign(new Error(), { size: 1 }))`), "1");
   // `matchAll` converts its argument's `flags` before dispatching: client
   // code runs on a structural regex.
   assert.equal(runExample("invalid-regexp-structural-matchall", `const seen = { ran: false };
