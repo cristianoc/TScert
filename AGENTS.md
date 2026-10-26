@@ -87,6 +87,24 @@ merge, and its movement is recorded then. A branch runs no census, over
 slice of the function the change targets and one slice depending on it,
 before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
 
+### Choosing the gap cases to work on
+
+Work on coverage follows two steps, both from the diagnostic census
+(`make census DIAGNOSTIC=1`, [diagnostic traversal](docs/DIAGNOSTIC-MODE.md)),
+run on main with the verified census, which goes past each slice's first
+refusal and reports every refusal it meets:
+
+1. **Where proofs fail:** its record's `ranking` groups the refusals by
+   reason, with the functions and statements each affects. A reason
+   blocking much code that no pipeline case shows gets a case example: the
+   smallest source with that refusal, its header naming the census
+   functions it stands for.
+2. **Priority:** the gap cases are worked in the order of the reasons they
+   show, by the code those block; each is answered by the routes of
+   [deciding what a refusal calls for](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
+   The [gap-priorities deep dive](docs/deep-dives/gap-priorities) presents
+   the ranking and each case, closed or open.
+
 `make census` limits each stage to 300 s unless `TSCERT_STEP_LIMIT` is
 set, so a slow search reports the outcome it reaches rather than a
 timeout; the pipeline cases keep the 60 s default.
