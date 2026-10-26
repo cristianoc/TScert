@@ -2977,32 +2977,55 @@ export function collectDeclarations(file: string, options: {
     }
     // Whether `file` uses the class `owner` declares as a value other than
     // by name in these positions: the callee of `new`, the right operand of
-    // `instanceof`, the receiver of a member read by name other than
-    // `__proto__`, a heritage clause, a type, or an export. Any other use,
-    // an alias or an argument among them (`Object.setPrototypeOf(C, …)`),
-    // could reach a function changing the class value's prototype chain.
+    // `instanceof`, a base class's expression, `export default`'s
+    // expression, or the receiver of a member read by name other than
+    // `__proto__`, the read no assignment, update, `delete` or destructuring
+    // target. Every expression that runs is searched, a heritage clause's,
+    // an export assignment's and a decorator's included; types are not.
+    // Any other use, an alias or an argument among them
+    // (`Object.setPrototypeOf(C, …)`), could reach a function changing the
+    // class value's prototype chain.
     const escapes = (file: SourceFile, owner: Node): boolean => {
       const named = (node: Node): boolean => ts.isIdentifier(node) &&
         (targetOf(checker, node)?.declarations.some(d => d.resolve() === owner) ?? false);
-      const visit = (node: Node): boolean => {
-        if (ts.isTypeNode(node) || ts.isHeritageClause(node) || ts.isExportSpecifier(node) ||
-            ts.isExportAssignment(node) || ts.isImportDeclaration(node))
-          return false;
-        if (ts.isClassDeclaration(node) && node === owner) {
-          for (const member of node.members) if (member.forEachChild(visit)) return true;
-          return false;
-        }
-        if (!named(node)) return node.forEachChild(visit) ?? false;
-        let at: Node = node;
+      const outer = (node: Node): Node => {
+        let at = node;
         while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
+        return at;
+      };
+      const written = (access: Node): boolean => {
+        const at = outer(access);
+        const up = at.parent;
+        return !!up && ((ts.isBinaryExpression(up) && up.left === at &&
+            up.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+            up.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
+          ((ts.isPrefixUnaryExpression(up) || ts.isPostfixUnaryExpression(up)) &&
+            (up.operator === ts.SyntaxKind.PlusPlusToken || up.operator === ts.SyntaxKind.MinusMinusToken)) ||
+          ts.isDeleteExpression(up) || ts.isArrayLiteralExpression(up) || ts.isSpreadElement(up) ||
+          ts.isSpreadAssignment(up) || ts.isShorthandPropertyAssignment(up) ||
+          (ts.isPropertyAssignment(up) && up.initializer === at) ||
+          ((ts.isForOfStatement(up) || ts.isForInStatement(up)) && up.initializer === at));
+      };
+      const visit = (node: Node): boolean => {
+        if (ts.isImportDeclaration(node) || ts.isExportSpecifier(node)) return false;
+        if (ts.isHeritageClause(node))
+          return node.token === ts.SyntaxKind.ExtendsKeyword && node.types.some(t => visit(t.expression));
+        if (ts.isTypeNode(node)) return false;
+        if (node === owner && ts.isClassDeclaration(owner))
+          return node.forEachChild(c => c === owner.name ? false : visit(c)) ?? false;
+        if (!named(node)) return node.forEachChild(visit) ?? false;
+        const at = outer(node);
         const parent = at.parent;
         if (!parent || !(
           (ts.isNewExpression(parent) && parent.expression === at) ||
           (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
             parent.right === at) ||
-          (ts.isPropertyAccessExpression(parent) && parent.expression === at && parent.name.text !== "__proto__")))
+          (ts.isExpressionWithTypeArguments(parent) && parent.expression === at) ||
+          (ts.isExportAssignment(parent) && parent.expression === at) ||
+          (ts.isPropertyAccessExpression(parent) && parent.expression === at &&
+            parent.name.text !== "__proto__" && !written(parent))))
           return true;
-        return node.forEachChild(visit) ?? false;
+        return false;
       };
       return visit(file);
     };

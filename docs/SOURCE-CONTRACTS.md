@@ -293,7 +293,7 @@ local name, which no class of the file shares, and
 D\ \text{is at the top level of a module}\ M\ \text{other than the file, not}\ \mathtt{declare}\text{d},\\
 M\ \text{is a source file of the program, not a declaration file, which TypeScript accepts without an error},\\
 M\ \text{holds no comment}\ \texttt{@ts-ignore},\ \texttt{@ts-expect-error}\ \text{or}\ \texttt{@ts-nocheck},\\
-M\ \text{reads}\ D\text{'s binding only as}\ \mathtt{new}\text{'s callee,}\ \mathtt{instanceof}\text{'s right operand or a member read's receiver (no}\ \mathtt{\_\_proto\_\_}\text{), or names it in a type, a heritage clause or an export},\\
+M\ \text{reads}\ D\text{'s binding only as}\ \mathtt{new}\text{'s callee,}\ \mathtt{instanceof}\text{'s right operand, a base class's or}\ \mathtt{export\ default}\text{'s expression, or a member read's receiver (no}\ \mathtt{\_\_proto\_\_}\text{, no write), or names it in a type or an export},\\
 D\ \text{extends nothing, the standard}\ \mathtt{Error},\ \text{or a class declaration}\ E\ \text{with}\ \mathsf{checked}(E).
 \end{cases}
 ```
@@ -303,9 +303,13 @@ import to. Because $`M`$ has no TypeScript error and suppresses none, no
 code of $`M`$ writes the class's binding (TS2629);
 `invalid-instanceof-rebound-value-import` and
 `invalid-instanceof-suppressed-value-import`, run under Node, show the test
-of a module that does. The uses of the binding $`M`$ may make leave it no
-alias and pass it to no function, so no code of $`M`$ reaches the class
-value by its name to change its prototype chain. A module replacing that
+of a module that does. The uses of the binding $`M`$ may make, searched in
+every expression that runs (heritage clauses, `export default` and
+decorators included), leave it no alias, pass it to no function and write
+none of its members, so no code of $`M`$ reaches the class value by its name
+to change its prototype chain (`invalid-instanceof-default-hook-value-import`,
+`invalid-instanceof-heritage-hook-value-import`, run under Node: `true` of a
+string). A module replacing that
 chain's prototype by an object holding a `[Symbol.hasInstance]` method makes
 that method answer the test (`invalid-instanceof-hooked-value-import`, run
 under Node: `true` of a string); one defining a getter for it through an

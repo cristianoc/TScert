@@ -36,7 +36,10 @@
       "@fixture/failures-ambient-base": ["./failures-ambient-base.ts"],
       "@fixture/failures-hooked": ["./failures-hooked.ts"],
       "@fixture/failures-suppressed": ["./failures-suppressed.ts"],
-      "@fixture/failures-getter": ["./failures-getter.ts"]
+      "@fixture/failures-getter": ["./failures-getter.ts"],
+      "@fixture/failures-default-hook": ["./failures-default-hook.ts"],
+      "@fixture/failures-heritage-hook": ["./failures-heritage-hook.ts"],
+      "@fixture/failures-setter-hook": ["./failures-setter-hook.ts"]
     }
   },
   "include": [
@@ -74,6 +77,9 @@
     "./failures-hooked.ts",
     "./failures-suppressed.ts",
     "./failures-getter.ts",
+    "./failures-default-hook.ts",
+    "./failures-heritage-hook.ts",
+    "./failures-setter-hook.ts",
     "../../tools/resolvable.d.ts"
   ]
 }
