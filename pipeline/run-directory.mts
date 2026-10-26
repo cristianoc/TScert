@@ -87,6 +87,17 @@ export function runRoot(): string {
   return created;
 }
 
+/** Nest every synchronous operation's temporary directories under its owner.
+ * Disposal restores the enclosing scope; the owner releases the whole subtree. */
+export function withinRunDirectory(directory: string): Disposable {
+  const enclosing = process.env[variable];
+  process.env[variable] = directory;
+  return { [Symbol.dispose](): void {
+    if (enclosing === undefined) delete process.env[variable];
+    else process.env[variable] = enclosing;
+  } };
+}
+
 /** A fresh directory under this invocation's root, named from `prefix`. */
 export function runDirectory(name: string): string {
   const root = runRoot();

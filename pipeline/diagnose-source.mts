@@ -9,7 +9,7 @@ import { diagnosticParseCall } from "./parse-stage.mts";
 import { invokeInProcess, Recorder } from "./stages.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
 import { runStep, producerExecutable, verifier, invocationLog, refusalEnd } from "./verify-source.mts";
-import { runDirectory, keepRunDirectories, ownedRun } from "./run-directory.mts";
+import { runDirectory, keepRunDirectories, ownedRun, withinRunDirectory } from "./run-directory.mts";
 
 export type Occurrence = {
   id: string;
@@ -106,6 +106,7 @@ export function diagnose(source: string, project?: string, retainArtifacts: bool
   const file = resolve(source);
   const bytes = readFileSync(file);
   const artifacts = runDirectory("diagnostic-");
+  using directoryScope = withinRunDirectory(artifacts);
   const recorder = new Recorder(join(artifacts, invocationLog));
   const report: DiagnosticReport = { status: "diagnostic", source: file,
     sourceSha256: createHash("sha256").update(bytes).digest("hex"), artifacts,

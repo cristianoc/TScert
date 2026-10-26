@@ -13,7 +13,7 @@ import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts"
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
-import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot } from "./run-directory.mts";
+import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
@@ -465,10 +465,10 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
  * construct the public verified outcome: both Lean phases must succeed. */
 function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Outcome {
+  using directoryScope = withinRunDirectory(artifacts);
   // Every stage invocation's attempt, in order (`stages.mts`).
   const recorder = new Recorder(join(artifacts, invocationLog));
-  // What the run was asked, for a caller finding it in the run root after
-  // its worker died (`dev/census.mts`).
+  // What the run was asked, beside its stage invocation log.
   writeFileSync(join(artifacts, "request.json"), JSON.stringify({ source: resolve(source), project: tsconfigPath ?? null }));
   let phase: Phase = "source";
   try {
@@ -663,18 +663,32 @@ function startWorker(): ChildProcess {
   workers++;
   // The workers write their runs under the caller's root, which outlives them.
   runRoot();
-  const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"], detached: true });
   // What the worker writes to standard error is shown only with a failure.
   worker.stderr?.setEncoding("utf8");
   worker.stderr?.on("data", (text: unknown) => { logs.set(worker, (logs.get(worker) ?? "") + String(text)); });
   if (worker.stderr instanceof Socket) worker.stderr.unref();
   worker.on("exit", () => {
+    stopWorker(worker);
     workers--;
     const at = idle.indexOf(worker);
     if (at >= 0) idle.splice(at, 1);
     dispatch();
   });
   return worker;
+}
+/** A worker owns its process group. Killing its stage runners also closes
+ * their watchdog pipes, which stop the stages' separate process groups. */
+function stopWorker(worker: ChildProcess): void {
+  if (process.platform !== "win32" && worker.pid !== undefined) {
+    try {
+      process.kill(-worker.pid, "SIGKILL");
+      return;
+    } catch {
+      // The group can already be gone after an ordinary worker exit.
+    }
+  }
+  worker.kill("SIGKILL");
 }
 function give(worker: ChildProcess, job: Job): void {
   const artifacts = runDirectory("pipeline-");
@@ -713,7 +727,7 @@ function give(worker: ChildProcess, job: Job): void {
     : `no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`));
   const timer = setTimeout(() => {
     timedOut = true;
-    worker.kill("SIGKILL");
+    stopWorker(worker);
   }, checkTimeoutMs);
   worker.on("message", answered);
   worker.on("close", died);

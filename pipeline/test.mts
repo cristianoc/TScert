@@ -6355,12 +6355,15 @@ control(async (): Promise<void> => {
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-const { runRoot } = await import(${JSON.stringify(module)});
+const { runRoot, runDirectory } = await import(${JSON.stringify(module)});
 const root = runRoot();
 const before = fs.readdirSync(root).sort();
 const write = fs.writeFileSync;
 fs.writeFileSync = (path, ...args) => {
-  if (String(path).endsWith("request.json")) throw Error("injected request write failure");
+  if (String(path).endsWith("request.json")) {
+    runDirectory("nested-stage-");
+    throw Error("injected request write failure");
+  }
   return write(path, ...args);
 };
 syncBuiltinESMExports();
@@ -6374,6 +6377,40 @@ assert.deepEqual(fs.readdirSync(root).sort(), before);
 `], { encoding: "utf8", timeout: 30_000,
     env: { ...process.env, TSCERT_STEP_LIMIT: "0.001", TSCERT_RUN_ROOT: runDirectory("cleanup-control-") } });
   assert.equal(failures.status, 0, failures.stderr);
+  const tree = runDirectory("cleanup-tree-control-");
+  const preload = join(tree, "preload.mjs");
+  const driverFile = join(tree, "driver.mts");
+  const armed = join(tree, "armed");
+  writeFileSync(preload, `
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+const { runDirectory } = await import(${JSON.stringify(module)});
+const write = fs.writeFileSync;
+fs.writeFileSync = (path, ...args) => {
+  if (String(path).endsWith("request.json")) {
+    runDirectory("nested-stage-");
+    spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] });
+    write(${JSON.stringify(armed)}, "");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  }
+  return write(path, ...args);
+};
+syncBuiltinESMExports();
+`);
+  writeFileSync(driverFile, `
+import assert from "node:assert/strict";
+import { existsSync, readdirSync } from "node:fs";
+import { checkApart, RunFailure } from ${JSON.stringify(driver)};
+await assert.rejects(checkApart(${JSON.stringify(source)}), RunFailure);
+assert.ok(existsSync(${JSON.stringify(armed)}));
+assert.deepEqual(readdirSync(${JSON.stringify(tree)}).sort(), ["armed", "driver.mts", "preload.mjs"]);
+`);
+  const killedTree = spawnSync(process.execPath, ["--import", preload, driverFile], {
+    encoding: "utf8", timeout: 10_000,
+    env: { ...process.env, TSCERT_RUN_ROOT: tree, TSCERT_STEP_LIMIT: "0.5" },
+  });
+  assert.equal(killedTree.status, 0, killedTree.stderr);
   const low = spawnSync(process.execPath, ["--input-type=module", "-e", `
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
