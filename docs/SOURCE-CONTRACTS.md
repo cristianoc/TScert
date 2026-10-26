@@ -262,12 +262,14 @@ library modules ([Library modules](#library-modules)).
 ### Imported classes and `instanceof`
 
 `x instanceof C` runs ECMA-262's InstanceofOperator: it looks up
-`C[Symbol.hasInstance]` and calls it where one is found along `C`'s chain of
-constructors other than `Function.prototype`'s; otherwise it reads
+`C[Symbol.hasInstance]` along the class value's prototype chain, every
+object on it and an accessor's getter included, and calls the method where
+one other than `Function.prototype`'s is found; otherwise it reads
 `C.prototype` and looks for that object along `x`'s prototype chain. A class
 declaration's `prototype` is the object its class statement creates, held by
-a property no code can write or redefine, and every instance its constructor
-makes inherits it. For a class another module declares, the test reads the
+a property no code can write or redefine; the object `new C` allocates
+inherits it, and a constructor returning another object makes `new C` that
+object, a value of `C`'s type like any other to the test's refinement. For a class another module declares, the test reads the
 import binding and looks for the key $`\kappa_C`$ the import's name gives
 the class's prototype, as the test of a class of the file does
 ([`instanceof`](SOURCE-ELABORATION.md#instanceof)):
@@ -290,14 +292,21 @@ local name, which no class of the file shares, and
 \begin{cases}
 D\ \text{is at the top level of a module}\ M\ \text{other than the file, not}\ \mathtt{declare}\text{d},\\
 M\ \text{is a source file of the program, not a declaration file, which TypeScript accepts without an error},\\
+M\ \text{holds no comment}\ \texttt{@ts-ignore},\ \texttt{@ts-expect-error}\ \text{or}\ \texttt{@ts-nocheck},\\
+M\ \text{passes}\ D\text{'s name to no}\ \mathtt{setPrototypeOf},\ \mathtt{defineProperty}\ \text{or}\ \mathtt{defineProperties}\ \text{of}\ \mathtt{Object}\ \text{or}\ \mathtt{Reflect},\\
 D\ \text{extends nothing, the standard}\ \mathtt{Error},\ \text{or a class declaration}\ E\ \text{with}\ \mathsf{checked}(E).
 \end{cases}
 ```
 
 A re-export is passed through to the declaration TypeScript resolves the
-import to. Because $`M`$ has no TypeScript error, no code writes the class's
-binding (TS2629); `invalid-instanceof-rebound-value-import`, run under Node,
-shows the test of a module that does. The test refines a tested immutable
+import to. Because $`M`$ has no TypeScript error and suppresses none, no
+code of $`M`$ writes the class's binding (TS2629);
+`invalid-instanceof-rebound-value-import` and
+`invalid-instanceof-suppressed-value-import`, run under Node, show the test
+of a module that does. A module replacing the class's prototype by an object
+holding a `[Symbol.hasInstance]` method makes that method answer the test
+(`invalid-instanceof-hooked-value-import`, run under Node: `true` of a
+string). The test refines a tested immutable
 variable as every tag test does: no value the file makes owns
 $`\kappa_C`$, and a passed test drops the primitive arms; a failed one keeps
 the class's arm, which a record meeting the class's type belongs to
@@ -305,9 +314,13 @@ the class's arm, which a record meeting the class's type belongs to
 
 **What it assumes.** The import meets its declaration, as `import` assumes
 of every imported value ([trust surface](DESIGN.md#trust-surface)): the
-binding holds the class $`D`$'s statement creates, and its constructor and
-those it extends own no `[Symbol.hasInstance]` that $`\mathsf{type}(C)`$ does
-not state. A module of the program is checked on its own; that run checks
+binding holds the class $`D`$'s statement creates, and, throughout
+execution, the lookup of `Symbol.hasInstance` along the class value's
+prototype chain, every object on it and accessors included, finds no method
+but `Function.prototype`'s, unless $`\mathsf{type}(C)`$ states one. The
+checks of $`\mathsf{checked}(D)`$ see the writes $`M`$ makes by the class's
+name; code elsewhere, or reaching the class through another value, is what
+the assumption covers. A module of the program is checked on its own; that run checks
 $`D`$'s code. Under the assumption the JavaScript test reads the binding,
 reads the prototype, which runs no code, and walks `x`'s chain, as the
 lowered test does (argued here, not proved; Lean proves the lowered
@@ -315,7 +328,9 @@ program's safety). Refused, each with its case: a class expression a
 constant holds (`invalid-instanceof-expression-value-import`), a class an
 ambient module declares (`invalid-instanceof-ambient-value-import`), one
 extending such a class (`invalid-instanceof-ambient-base-value-import`), a
-module writing its class's binding, and a local constant holding an imported
+module writing its class's binding, with or without a suppressing comment,
+one replacing its prototype or defining its properties
+(`invalid-instanceof-hooked-value-import`), and a local constant holding an imported
 class (`invalid-instanceof-alias-value-import`). A local class extending an
 imported one is refused already ([derived classes](SOURCE-ELABORATION.md#derived-classes)).
 

@@ -2975,19 +2975,40 @@ export function collectDeclarations(file: string, options: {
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
     }
+    // Whether `file` passes the class `owner` names to a function that
+    // replaces its prototype or defines a property on it: the
+    // `setPrototypeOf`, `defineProperty` and `defineProperties` of `Object`
+    // or `Reflect`, the class's own name their first argument.
+    const reshapes = (file: SourceFile, owner: Node): boolean => {
+      const visit = (node: Node): boolean => {
+        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+            ts.isIdentifier(node.expression.expression) &&
+            ["Object", "Reflect"].includes(node.expression.expression.text) &&
+            ["setPrototypeOf", "defineProperty", "defineProperties"].includes(node.expression.name.text)) {
+          const [target] = node.arguments;
+          if (target && ts.isIdentifier(target) &&
+              (targetOf(checker, target)?.declarations.some(d => d.resolve() === owner) ?? false))
+            return true;
+        }
+        return node.forEachChild(visit) ?? false;
+      };
+      return visit(file);
+    };
     // A class declaration of a module of the program other than the client:
-    // a source file with checked bodies that TypeScript accepts whole, so
-    // that no code writes the class's binding (TS2629), at its module's top
-    // level, not ambient, extending nothing, the standard `Error`, or such a
-    // class. Its `prototype` is the object its class statement creates, a
-    // property no code can change, which every instance its constructor
-    // makes inherits.
+    // a source file with checked bodies that TypeScript accepts whole and
+    // with no comment suppressing its checking, so that no code writes the
+    // class's binding (TS2629), at its module's top level, not ambient,
+    // extending nothing, the standard `Error`, or such a class, and whose
+    // module passes it to no function replacing its prototype or defining
+    // its properties. Its `prototype` is the object its class statement
+    // creates, a property no code can change.
     const checkedClass = (owner: Node | undefined, seen: Set<Node>): boolean => {
       if (!owner || !ts.isClassDeclaration(owner) || seen.has(owner)) return false;
       seen.add(owner);
       const file = owner.getSourceFile();
       if (!file || file.isDeclarationFile || libraryFile(file) || file.fileName === client.fileName ||
           owner.parent !== file || owner.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) ||
+          /@ts-(?:ignore|expect-error|nocheck)\b/.test(file.text) || reshapes(file, owner) ||
           [...program.getSyntacticDiagnostics(file.fileName), ...program.getSemanticDiagnostics(file.fileName)]
             .some(d => d.category === DiagnosticCategory.Error))
         return false;

@@ -33,7 +33,9 @@
       "@fixture/failures": ["./failures.ts"],
       "@fixture/failures-relay": ["./failures-relay.ts"],
       "@fixture/failures-rebound": ["./failures-rebound.ts"],
-      "@fixture/failures-ambient-base": ["./failures-ambient-base.ts"]
+      "@fixture/failures-ambient-base": ["./failures-ambient-base.ts"],
+      "@fixture/failures-hooked": ["./failures-hooked.ts"],
+      "@fixture/failures-suppressed": ["./failures-suppressed.ts"]
     }
   },
   "include": [
@@ -68,6 +70,8 @@
     "./failures-rebound.ts",
     "./failures-ambient.d.ts",
     "./failures-ambient-base.ts",
+    "./failures-hooked.ts",
+    "./failures-suppressed.ts",
     "../../tools/resolvable.d.ts"
   ]
 }

@@ -127,12 +127,8 @@ const slides: Slide[] = [
       "export function wrap(operation: string, run: () => string): string {",
       "  try { return run(); }", "  catch (error) { throw error instanceof IoFailure ? error : new IoFailure(operation); }", "}"],
     why: "x instanceof C narrows x to C's instances, which needs the prototype C's constructor gives them. The gate reads that only for a class declared at the file's top level; the front end tests its own error classes (IoFailure, CompilerFailure …), which other modules declare.",
-    todo: "",
-    trust: `${trust}: the imported class meets its declaration, as every imported value is read at its declared type: its binding holds the class its statement creates, whose constructors own no [Symbol.hasInstance] its type does not state.`,
-    closed: {
-      status: `${status("ok", "verified")} blocker-instanceof-imported-class, instanceof-class-value-import; ${status("neg", "refused")} five forms, a case each`,
-      how: "route 1, support: rule import-instanceof. A named or default import, through re-exports, of a class declaration at the top level of a source file TypeScript accepts without an error, not declared ambient, extending nothing, Error or such a class: the test reads the import binding and looks for the key the import's name gives the prototype. Refused: a class expression a constant holds, an ambient class, a class extending one, a module writing its class's binding, a local constant holding the class.",
-    },
+    todo: "read an imported class's construction and prototype through the import, as a local class's are read, the declaring module being checked on its own; the rule goes with the reading of classes in SOURCE-CONTRACTS.md.",
+    trust: "the imported class meets its declaration, as every imported value is read at its declared type.",
   }),
   cause("error", "Cause 6 · 1,134 statements, 14 functions", "The options argument of Error", {
     cases: "blocker-error-super-options, blocker-error-options",
@@ -201,11 +197,12 @@ const slides: Slide[] = [
     label: "Part 2 · order of work", title: "The open cases, least new assumption first", gap: 22,
     body: table(["Step", "Cases", "Trust"], [
       ["Readings with no new assumption: \"name\" in x (cause 3), a library type as callback context (cause 7)", `${c("blocker-in-name-object")}, ${c("blocker-closure-map-context")}`, status("ok", "none")],
+      ["Imported classes read through the import (cause 5)", c("blocker-instanceof-imported-class"), status("trust", "the import's declaration")],
       ["Error's options (cause 6)", `${c("blocker-error-super-options")}, ${c("blocker-error-options")}`, status("trust", "ECMAScript's Error")],
       ["Contracts for Node values with methods, a kind of entry no contract has yet: fs and Buffer (cause 2), createHash (cause 4)", `${c("blocker-node-buffer-contract")}, ${c("blocker-node-hash-contract")}`, status("trust", "an audited entry each")],
     ], [46, 36, 18]) + bullets([
       "Each step turns its gap cases into verified ones; the census and the diagnostic census, run once on main after a merge, then measure what it moved.",
-      "Estimated cost order, which overrides the ranking by size: readings that add no assumption first; Error's options are one more stated constructor; new forms of entry come last.",
+      "Estimated cost order, which overrides the ranking by size: readings that add no assumption first; an imported class rests on what imports already rest on; Error's options are one more stated constructor; new forms of entry come last.",
     ]),
   }),
 ];
