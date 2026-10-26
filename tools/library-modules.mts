@@ -272,7 +272,8 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `StatsBase.prototype` → `Object.prototype`, whose two Node prototypes
   // hold the seven `is…` tests, `_checkModeProperty` and the date getters
   // (`atime`, `mtime`, `ctime`, `birthtime`), none named by the stated
-  // fields, the tests callable throughout execution, also in external code
+  // fields, the tests data properties holding callable values throughout
+  // execution, also in external code
   // (SOURCE-CONTRACTS.md, "Library modules"). A test calls
   // `this._checkModeProperty`, a writable property of `Stats.prototype`
   // other code may replace: each is stated at `() => unknown`, its effect

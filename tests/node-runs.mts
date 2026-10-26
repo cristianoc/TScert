@@ -517,6 +517,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-readdir-options-signal",
     "typeof names(\".\", { withFileTypes: true, encoding: \"utf8\", get signal() { this.encoding = \"buffer\"; return undefined; } })[0]"),
     "object", "invalid-node-readdir-options-signal: a signal getter switching encoding gives a Buffer name");
+  assert.equal(runImporting("invalid-node-stat-test-result",
+    "(() => { const P = process.getBuiltinModule(\"node:fs\").Stats.prototype; const saved = P._checkModeProperty; P._checkModeProperty = () => 7; try { return isFile(\".\"); } finally { P._checkModeProperty = saved; } })()"),
+    7, "invalid-node-stat-test-result: a replaced _checkModeProperty answers 7");
+  assert.equal(runImporting("invalid-node-stat-bigint", "typeof size(\".\")"), "bigint",
+    "invalid-node-stat-bigint: bigint: true gives a bigint size");
+  assert.equal(runImporting("invalid-node-stat-options-getter",
+    "size(\".\") - process.getBuiltinModule(\"node:fs\").statSync(\".\").size"), 1,
+    "invalid-node-stat-options-getter: the getter runs once inside the call");
+  assert.equal(runImporting("invalid-node-stat-date-getter",
+    "(() => { Object.defineProperty(process.getBuiltinModule(\"node:fs\").Stats.prototype, \"mtime\", { get() { return 42; } }); return modified(\".\"); })()"),
+    42, "invalid-node-stat-date-getter: a replaced getter answers a number");
+  assert.equal(runImporting("invalid-node-stat-method-getter",
+    "(() => { const xs = [1, 2]; hook(xs); return 1 in rows(xs, \".\"); })()"),
+    false, "invalid-node-stat-method-getter: reading isFile in a map callback leaves a hole");
   assert.equal(runImporting("invalid-node-readdir-test-result",
     "(() => { const fs = process.getBuiltinModule(\"node:fs\"); fs.Dirent.prototype.isDirectory = () => 7; return typeof flags(\".\")[0]; })()"),
     "number", "invalid-node-readdir-test-result: a replaced isDirectory answers a number");

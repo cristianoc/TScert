@@ -1862,21 +1862,33 @@ export function collectDeclarations(file: string, options: {
           type: { ...entry.stated.result, span } };
       }
       if (entries.some(e => e.constant)) throw Error(`${what} is reviewed both as a constant and as a function`);
-      // A constant whose declared type is one interface of Node's
+      // A `const` whose declared type is one interface of Node's
       // declarations (`const statSync: StatSyncFn`): its overloads are the
-      // interface's call signatures, every member it has besides.
+      // interface's call signatures. The interface has no other member and
+      // no base but the standard library's `Function`, so its call
+      // signatures are every member the value's type states.
       const [variable] = callable;
+      const list = variable?.parent;
       const typeName = variable && callable.length === 1 && ts.isVariableDeclaration(variable) && variable.type &&
         ts.isTypeReferenceNode(variable.type) && ts.isIdentifier(variable.type.typeName) && !variable.type.typeArguments?.length
         ? variable.type.typeName : undefined;
+      if (typeName && !(list && ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0))
+        throw Error(`${what} is a variable Node's declarations do not declare \`const\``);
       const callTyped = typeName ? typeDeclarationsOf(typeName) : [];
-      const viaInterface = callTyped.length === 1 && callTyped.every(ts.isInterfaceDeclaration)
-        ? callTyped.flatMap(d => d.members) : null;
+      const [callInterface] = callTyped;
+      const viaInterface = callInterface && callTyped.length === 1 && ts.isInterfaceDeclaration(callInterface)
+        ? callInterface : null;
+      const functionBase = (base: ts.ExpressionWithTypeArguments): boolean => ts.isIdentifier(base.expression) &&
+        base.expression.text === "Function" && !base.typeArguments?.length &&
+        typeDeclarationsOf(base.expression).some(ts.isInterfaceDeclaration) &&
+        typeDeclarationsOf(base.expression).every(d => libraryFile(d.getSourceFile()));
+      if (viaInterface && !(viaInterface.heritageClauses ?? []).every(clause => clause.types.every(functionBase)))
+        throw Error(`${what}'s declared type has a base other than Function`);
       const overloads = viaInterface
-        ? viaInterface.filter(ts.isCallSignatureDeclaration)
+        ? viaInterface.members.filter(ts.isCallSignatureDeclaration)
         : callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
           (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
-      if (viaInterface && overloads.length !== viaInterface.length)
+      if (viaInterface && overloads.length !== viaInterface.members.length)
         throw Error(`${what}'s declared type has members besides its call signatures`);
       if (!overloads.length || (!viaInterface && overloads.length !== callable.length) ||
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))

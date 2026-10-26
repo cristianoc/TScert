@@ -2669,9 +2669,11 @@ An entry names one overload of the function's declaration in Node's
 declarations, with exactly the text it was reviewed against, and states the signature the host meets at the arguments it
 admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
 imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to,
-or, where $`f`$ is a constant whose declared type is one interface of Node's
-declarations holding call signatures alone (`statSync: StatSyncFn`), those
-call signatures:
+or, where $`f`$ is a `const` whose declared type is one interface of Node's
+declarations holding call signatures alone, with no base but the standard
+library's `Function` (`statSync: StatSyncFn`), those call signatures; a
+`let`, another base or another member is refused
+(`invalid-node-types-let-stat`, `invalid-node-types-heritage-stat`):
 
 ```math
 \frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=f\}=\{\omega_1\ldots\omega_n\}\neq\emptyset\quad
@@ -2794,8 +2796,11 @@ unrestricted in its effect unless its entry states one. The entries:
   prototype chain, `Stats.prototype` → `StatsBase.prototype` →
   `Object.prototype`, whose two Node prototypes hold the seven tests,
   `_checkModeProperty` and the date getters `atime`, `mtime`, `ctime` and
-  `birthtime`, none named by $`S`$'s numbers, the tests callable throughout
-  execution, also in external code. A test calls
+  `birthtime`, none named by $`S`$'s numbers, the seven tests data
+  properties holding callable values throughout execution, also in external
+  code. A getter in a test's place runs where the member is read, a read no
+  call's effect covers (`invalid-node-stat-method-getter`, run under Node: a
+  `map` callback reading `s.isFile` leaves a hole). A test calls
   `this._checkModeProperty`, a writable property of `Stats.prototype` other
   code may replace, so each is $`()\Rightarrow\mathtt{unknown}`$, its effect
   unrestricted (`invalid-node-stat-test-result`, run under Node: 7); a
