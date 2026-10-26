@@ -52,6 +52,31 @@ function span(value: unknown): Span {
   return [xs[0], xs[1]];
 }
 
+/** A report as its command prints it (`diagnose-source.mts source.ts
+ * [project]`): every field required, no other. */
+export function readDiagnosticReport(value: unknown): DiagnosticReport {
+  const exact = (raw: unknown, fields: string[]): Record<string, unknown> => {
+    const x = object(raw);
+    for (const key of Object.keys(x)) if (!fields.includes(key)) throw Error(`unknown diagnostic field ${key}`);
+    return x;
+  };
+  const o = exact(value, ["status", "source", "sourceSha256", "artifacts", "attempted", "completed", "occurrences", "unexamined", "error"]);
+  const { status, attempted, completed, error } = o;
+  if (status !== "diagnostic" && status !== "error") throw Error("expected diagnostic status");
+  if (typeof attempted !== "number" || !Number.isSafeInteger(attempted)) throw Error("expected diagnostic count");
+  if (typeof completed !== "boolean") throw Error("expected diagnostic completion");
+  if (error !== null && typeof error !== "string") throw Error("expected diagnostic error");
+  const occurrences = list(o.occurrences).map((raw): Occurrence => {
+    const x = exact(raw, ["id", "layer", "pos", "reason", "conditional", "dependencies"]);
+    if (typeof x.conditional !== "boolean") throw Error("expected diagnostic condition");
+    return { id: string(x.id), layer: string(x.layer), pos: span(x.pos), reason: string(x.reason),
+      conditional: x.conditional, dependencies: list(x.dependencies).map(string) };
+  });
+  const unexamined = list(o.unexamined).map(raw => { const x = exact(raw, ["pos", "reason"]); return { pos: span(x.pos), reason: string(x.reason) }; });
+  return { status, source: string(o.source), sourceSha256: string(o.sourceSha256), artifacts: string(o.artifacts),
+    attempted, completed, occurrences, unexamined, error };
+}
+
 type DiagnosticScope = { name: string; pos: Span; references: Set<string> };
 
 /** All strings are conservative possible references, including closure captures.

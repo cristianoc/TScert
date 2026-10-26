@@ -20,15 +20,15 @@
 // checkout for a census of a dirty tree, or by `--sources`), without
 // running a slice.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
-import { execFileSync } from "node:child_process";
-import { setImmediate as yieldToLoop } from "node:timers/promises";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
-import { diagnose, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
+import { readDiagnosticReport, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
+import { runRoot } from "../pipeline/run-directory.mts";
 import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
@@ -36,6 +36,17 @@ import { classify, coverageComparison, coverageReport, inventory, type Unit, typ
   from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
+/** A process's standard output, once it exits with status 0, or 1 with an
+ * output (`diagnose-source.mts` printing a report whose status is "error"). */
+const outputOf = (file: string, args: string[]): Promise<string> => new Promise((done, fail) => {
+  execFile(file, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
+    if (error && !(error.code === 1 && stdout)) fail(Error(`${basename(args[0] ?? file)} failed: ${error.message}\n${stderr}`));
+    else done(stdout);
+  });
+});
+/** How many slice groups the diagnostic census checks at once: half the cores,
+ * each group's stages running in its own process. */
+const diagnosticJobs = Math.max(1, Math.floor(availableParallelism() / 2));
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** One slice: its file, the function it holds, and its text. */
@@ -316,26 +327,47 @@ async function census(args: string[]): Promise<void> {
     const results: { targets: string[]; report: DiagnosticReport; detail: string; invocations: InvocationReference[];
       occurrences: { file: string; start: number; end: number; reason: string; layer: string; conditional: boolean }[];
       holes: { file: string; start: number; end: number; reason: string }[] }[] = [];
-    for (const group of groups.values()) {
-      const first = group[0];
-      if (!first) continue;
-      using fullReport = diagnose(join(root, first.slice), project, true);
-      const detail = join(detailDirectory, `${results.length}.json`);
-      writeFileSync(detail, JSON.stringify(fullReport) + "\n");
-      const invocations = readInvocationLog(join(fullReport.artifacts, invocationLog)).map(reference);
-      const report: DiagnosticReport = { ...fullReport,
-        occurrences: fullReport.occurrences.map(o => ({ ...o, reason: o.reason.split("\n")[0] })) };
-      const original = (pos: [number, number]): { file: string; start: number; end: number }[] =>
-        first.segments.filter(s => pos[0] < s.end && s.start < pos[1]).map(s => ({ file: first.file,
-          start: s.exact ? s.original + Math.max(0, pos[0] - s.start) : s.original,
-          end: s.exact ? s.original + Math.min(s.end - s.start, pos[1] - s.start) : s.originalEnd }));
-      results.push({ targets: group.map(s => `${s.file}#${s.fn}`), report, detail, invocations,
-        occurrences: report.occurrences.flatMap(o => original(o.pos).map(p => ({ ...p,
-          reason: o.reason, layer: o.layer, conditional: o.conditional }))),
-        holes: report.unexamined.flatMap(o => original(o.pos).map(p => ({ ...p, reason: o.reason }))) });
-      process.stderr.write(`${results.length}/${groups.size} diagnostic slice groups: ${report.occurrences.length} refusals\n`);
-      await yieldToLoop();
-    }
+    // Each group is diagnosed in a process of its own, half the cores at a
+    // time; its report is read back, and its run directory removed once its
+    // invocation log is read. Results keep the groups' order.
+    // The processes inherit this one's run root, removed when it exits.
+    runRoot();
+    const ordered = [...groups.values()];
+    const slots: (typeof results[number] | undefined)[] = ordered.map(() => undefined);
+    let next = 0, finishedGroups = 0;
+    const diagnoseApart = async (i: number): Promise<void> => {
+      const group = ordered[i];
+      const first = group?.[0];
+      if (!group || !first) return;
+      const stdout = await outputOf(process.execPath,
+        [join(repository, "pipeline", "diagnose-source.mts"), join(root, first.slice), project]);
+      const printed: unknown = JSON.parse(stdout);
+      const fullReport = readDiagnosticReport(printed);
+      try {
+        const detail = join(detailDirectory, `${i}.json`);
+        writeFileSync(detail, JSON.stringify(fullReport) + "\n");
+        const invocations = readInvocationLog(join(fullReport.artifacts, invocationLog)).map(reference);
+        const report: DiagnosticReport = { ...fullReport,
+          occurrences: fullReport.occurrences.map(o => ({ ...o, reason: o.reason.split("\n")[0] ?? "" })) };
+        const original = (pos: [number, number]): { file: string; start: number; end: number }[] =>
+          first.segments.filter(s => pos[0] < s.end && s.start < pos[1]).map(s => ({ file: first.file,
+            start: s.exact ? s.original + Math.max(0, pos[0] - s.start) : s.original,
+            end: s.exact ? s.original + Math.min(s.end - s.start, pos[1] - s.start) : s.originalEnd }));
+        slots[i] = { targets: group.map(s => `${s.file}#${s.fn}`), report, detail, invocations,
+          occurrences: report.occurrences.flatMap(o => original(o.pos).map(p => ({ ...p,
+            reason: o.reason, layer: o.layer, conditional: o.conditional }))),
+          holes: report.unexamined.flatMap(o => original(o.pos).map(p => ({ ...p, reason: o.reason }))) };
+      } finally {
+        rmSync(fullReport.artifacts, { recursive: true, force: true });
+      }
+      finishedGroups++;
+      process.stderr.write(`${finishedGroups}/${groups.size} diagnostic slice groups: ${slots[i]?.report.occurrences.length ?? 0} refusals · ${first.file}#${first.fn}\n`);
+    };
+    const worker = async (): Promise<void> => {
+      while (next < ordered.length) await diagnoseApart(next++);
+    };
+    await Promise.all(Array.from({ length: Math.min(ordered.length, diagnosticJobs) }, worker));
+    for (const slot of slots) if (slot) results.push(slot);
     const ranked = new Map<string, Set<string>>();
     for (const result of results) for (const o of result.occurrences) {
       const key = `${o.layer}: ${blocker(o.reason.split("\n")[0]).replace(/node \d+/g, "node").replace(/edge \d+/g, "edge")}`;
