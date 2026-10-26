@@ -1,16 +1,15 @@
-<section id="limits" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:16px">
+<section id="limits" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
 <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Refused forms</p><p style="font-size:24px;color:#5b6662">the main ones; docs/SOURCE-FRAGMENT.md lists the rest</p></div>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Forms that cannot carry a statement</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Forms that cannot carry a statement</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:34%;text-align:left;font-weight:600"><span style="color:#9a3a2a">Refused</span></th><th style="width:66%;text-align:left;font-weight:600">Why</th></tr>
+<tr><th style="width:30%;text-align:left;font-weight:600"><span style="color:#9a3a2a">Refused</span></th><th style="width:70%;text-align:left;font-weight:600">Why</th></tr>
 <tr><td>async functions</td><td>the body may run on after an await, once the call has returned, and a throw in it rejects the returned Promise instead of leaving the call, so no statement covers the body</td></tr>
 <tr><td>overloaded functions</td><td>the body is checked once, at one signature, so a statement on one overload would not cover the others</td></tr>
 <tr><td>generic arrows, function expressions and methods, any method of a generic class</td><td>each is checked at bounds (upper types) the producer chooses for its type parameters, which may not cover every type argument a caller uses</td></tr>
 <tr><td>constructors and construct signatures</td><td>the effect of constructing an object belongs to its class’s whole construction (field initialisers and constructor body), so no constructor carries a statement</td></tr>
 <tr><td>declaration files and packages</td><td>their code lies outside the checked program, and no run of TScert checks it</td></tr>
 <tr><td>getters and setters</td><td>TScert refuses every accessor definition, with or without a statement</td></tr>
-<tr><td>Within as the type of a parameter, a field or an array element itself (x: Within&lt;…&gt;)</td><td>a statement is the effect of the signature whose result it is</td></tr>
-<tr><td>F given as a named type alias</td><td>TScert reads F only from the literal written inside Within</td></tr>
-</table>
-<p style="font-size:24px;color:#1d2422;line-height:1.38;">A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a map callback calling one gets map’s signature with holes (generic-stated-declaration-refused.ts, a gap: a known limit, recorded by its expected refusal).</p>
+<tr><td><span style="color:#2b5b9c">Within</span> as the type of a parameter, a field or an array element itself (<span style="color:#2b5b9c">x: Within&lt;…&gt;</span>)</td><td>a statement is the effect of the signature whose result it is</td></tr>
+<tr><td>F given as a named type alias</td><td>TScert reads F only from the literal written inside <span style="color:#2b5b9c">Within</span></td></tr>
+</table><p style="font-size:24px;color:#1d2422;line-height:1.4">A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a <span style="color:#2b5b9c">map</span> callback calling one gets <span style="color:#2b5b9c">map</span>’s signature with holes (<span style="color:#2b5b9c">generic-stated-declaration-refused.ts</span>, a <span style="color:#5e6870">gap</span>: a known limit, recorded by its expected refusal).</p>
 </section>

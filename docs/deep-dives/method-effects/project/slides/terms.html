@@ -1,18 +1,5 @@
-<section id="terms" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:28px">
+<section id="terms" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:28px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Words used in this deck</p>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">How TScert works, in three cards</h2>
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
-<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
-<h3 style="font-size:28px;font-weight:600">Verified, refused</h3>
-<p style="font-size:24px;color:#1d2422;line-height:1.36;">TScert verifies a function when it proves it safe: every value the function reads, writes or returns has its declared type. Otherwise it refuses the function, naming the first place it could not prove.</p>
-</div>
-<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
-<h3 style="font-size:28px;font-weight:600">Statement</h3>
-<p style="font-size:24px;color:#1d2422;line-height:1.36;">An effect is what a call may change; in this deck a statement is an effect a function declares in its result type (“What you write”), bounded by a footprint (“The footprint F”). A statement of TypeScript code, such as an if, is called a TypeScript statement.</p>
-</div>
-<div style="background:#ffffff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
-<h3 style="font-size:28px;font-weight:600">Producer and checker</h3>
-<p style="font-size:24px;color:#1d2422;line-height:1.36;">TScert’s parser, its front end, reads the TypeScript source; it is trusted, and reviewed by hand. From the parser’s output an untrusted producer proposes type claims (the types it asserts each value has) and effects, also of code that states none, and an untrusted search looks for their proofs. Untrusted: their mistakes cannot make TScert accept, since a checker, written and proved in Lean, a proof assistant, accepts only what it checks.</p>
-</div>
-</div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">How TScert works, in three cards</h2>
+<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:20px"><div style="background:#fff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Verified, refused</h3><p style="font-size:24px;color:#1d2422;line-height:1.36">TScert verifies a function when it proves it safe: every value the function reads, writes or returns has its declared type. Otherwise it refuses the function, naming the first place it could not prove.</p></div><div style="background:#fff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Statement</h3><p style="font-size:24px;color:#1d2422;line-height:1.36">An effect is what a call may change; in this deck a statement is an effect a function declares in its result type (“What you write”), bounded by a footprint (“The footprint F”). A statement of TypeScript code, such as an if, is called a TypeScript statement.</p></div><div style="background:#fff;border:1px solid #d9dedb;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px"><h3 style="font-size:28px;font-weight:600">Producer and checker</h3><p style="font-size:24px;color:#1d2422;line-height:1.36">TScert’s parser, its front end, reads the TypeScript source; it is trusted, and reviewed by hand. From the parser’s output an untrusted producer proposes type claims (the types it asserts each value has) and effects, also of code that states none, and an untrusted search looks for their proofs. Untrusted: their mistakes cannot make TScert accept, since a checker, written and proved in Lean, a proof assistant, accepts only what it checks.</p></div></div>
 </section>

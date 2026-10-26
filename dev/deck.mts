@@ -73,12 +73,13 @@ const label = (text: string): string =>
   `<p style="font-size:24px;color:${C.muted};font-weight:600;letter-spacing:2px;text-transform:uppercase">${text}</p>`;
 
 /** A slide: a label, a heading and a body, in a column with the standard
- * 128 px margins. */
-export function slide(id: string, o: { label: string; title: string; body: string; note?: string; gap?: number }): Slide {
+ * 128 px margins; `tone: "code"` sets it on the second tone, for a slide
+ * that sets a contrast. */
+export function slide(id: string, o: { label: string; title: string; body: string; note?: string; gap?: number; tone?: "code" }): Slide {
   const lab = o.note
     ? `<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap">${label(o.label)}<p style="font-size:24px;color:${C.muted}">${o.note}</p></div>`
     : label(o.label);
-  return { id, html: `<section id="${id}" style="background:${C.bg};color:${C.ink};${SANS};padding:120px 128px;display:flex;flex-direction:column;gap:${o.gap ?? 24}px">
+  return { id, html: `<section id="${id}" style="background:${o.tone === "code" ? C["code-bg"] : C.bg};color:${C.ink};${SANS};padding:120px 128px;display:flex;flex-direction:column;gap:${o.gap ?? 24}px">
 ${lab}
 <h2 style="${SERIF};font-size:56px;font-weight:500;line-height:1.15">${o.title}</h2>
 ${o.body}
@@ -124,10 +125,26 @@ export const stat = (value: string, html: string, kind?: Status): string =>
 export const cards = (items: string[], cols: number = 3): string =>
   `<div style="display:grid;grid-template-columns:repeat(${cols}, 1fr);gap:20px">${items.join("")}</div>`;
 
-/** A table: its header, its rows, and each column's share of the width. */
-export function table(head: string[], rows: string[][], widths: number[]): string {
-  const th = head.map((h, i) => `<th style="width:${widths[i] ?? 10}%;text-align:left;font-weight:600">${h}</th>`).join("");
-  return `<table style="font-size:24px;color:${C.ink}">\n<tr>${th}</tr>\n${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("\n")}\n</table>`;
+/** A card whose body is blocks (paragraphs, code, lists), under a title
+ * when one is given, on the surface colour. */
+export const panel = (title: string, body: string): string =>
+  `<div style="background:${C.surface};border:1px solid ${C.rule};border-radius:16px;padding:16px 22px;display:flex;flex-direction:column;gap:6px">` +
+  (title ? `<h3 style="font-size:28px;font-weight:600">${title}</h3>` : "") + `${body}</div>`;
+
+/** Blocks side by side, top-aligned, each column a stack of blocks; `shares`
+ * gives the columns' relative widths, equal by default. */
+export const columns = (items: string[], shares: number[] = []): string =>
+  `<div style="display:grid;grid-template-columns:${items.map((_, i) => `minmax(0, ${shares[i] ?? 1}fr)`).join(" ")};gap:36px;align-items:start">` +
+  items.map(i => `<div style="display:flex;flex-direction:column;gap:14px">${i}</div>`).join("") + `</div>`;
+
+/** A table: its header, its rows, and each column's share of the width;
+ * `compact` sets the cells' padding to 4 px by 12 px, for a table of many
+ * wrapped rows. */
+export function table(head: string[], rows: string[][], widths: number[], o: { compact?: boolean } = {}): string {
+  const pad = o.compact ? ";padding:4px 12px" : "";
+  const th = head.map((h, i) => `<th style="width:${widths[i] ?? 10}%;text-align:left;font-weight:600${pad}">${h}</th>`).join("");
+  const td = pad ? `<td style="${pad.slice(1)}">` : "<td>";
+  return `<table style="font-size:24px;color:${C.ink}">\n<tr>${th}</tr>\n${rows.map(r => `<tr>${r.map(c => `${td}${c}</td>`).join("")}</tr>`).join("\n")}\n</table>`;
 }
 
 /** Code in the mono typeface: one paragraph per line on the code background,
