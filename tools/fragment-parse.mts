@@ -713,7 +713,7 @@ export class Gate {
         const result = this.symbolNames.get(this.span(name).join(":"));
         return result?.ok && typeof result.value !== "number" ? result.value.literal : null;
       },
-      keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
+      keys: (node) => this.keyType(node),
       modifiers: (node) => this.mappedMembers.get(this.span(node).join(":")) ?? null,
       // A named type's record shape, at the complete declaration document.
       record: (reference, fail) => {
@@ -774,7 +774,7 @@ export class Gate {
         const library = this.libraryTypes.get(name);
         if (library !== undefined && !this.hasTypeParam(name))
           return libraryTerm(library, libraryArguments(library, node.typeArguments ?? [], read,
-            part => this.keyTypes.get(this.span(part).join(":")) ?? null), span,
+            part => this.keyType(part)), span,
             message => this.fail(node, message), this.scope.record);
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name))
@@ -829,6 +829,11 @@ export class Gate {
     });
   }
 
+  keyType(node: Node): Within<{ value: "any"; store: "grow" }, TypeTerm | null> {
+    const term = this.keyTypes.get(this.span(node).join(":"));
+    return term ? this.settled(term, node) : null;
+  }
+
   typeOf(node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
     return typeTerm(this.scope, node, at);
   }
@@ -860,7 +865,7 @@ export class Gate {
     const answered = this.contextualParams.get(this.span(p.name).join(":"));
     if (!answered) return this.typeOf(undefined, p);
     if (!answered.ok) return this.fail(p, answered.refused);
-    const found = answered.value;
+    const found = this.settled(answered.value, p);
     visitType(found, (t, bound) => {
       if (t.k === "reference") {
         const target = t.reference.target;

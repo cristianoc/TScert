@@ -451,12 +451,12 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     if (guard && argument && ts.isIdentifier(argument) && !node.questionDotToken &&
         gate.unassigned(argument) &&
         !gate.libraryValues.has(gate.span(argument).join(":")))
-      return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
+      return { k: "tagMember", pos: gate.span(node), domain: gate.settled(guard.domain, node), field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
         onUndefined: guard.onUndefined,
         e: { k: "id", pos: gate.span(argument), name: gate.local(argument) } };
     if (guard && argument && !ts.isIdentifier(argument) && !node.questionDotToken)
-      return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
+      return { k: "tagMember", pos: gate.span(node), domain: gate.settled(guard.domain, node), field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
         onUndefined: guard.onUndefined,
         e: gate.expr(argument) };
@@ -509,7 +509,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       const typeArguments = node.typeArguments;
       const inferred = typeArguments ? null : gate.assignTypes.get(gate.span(node).join(":"));
       if (inferred && !inferred.ok) gate.fail(node, inferred.refused);
-      const [functionType, bagType] = inferred?.ok ? [inferred.value.functionType, inferred.value.bagType]
+      const [functionType, bagType] = inferred?.ok ? [gate.settled(inferred.value.functionType, node), gate.settled(inferred.value.bagType, node)]
         : typeArguments?.length === 2 ? [gate.typeOf(typeArguments[0]), gate.typeOf(typeArguments[1])]
         : gate.fail(node, "Object.assign's callable form needs its two type arguments");
       // These names either replace an intrinsic used by the lowering or

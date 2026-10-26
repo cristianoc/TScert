@@ -1258,8 +1258,9 @@ indexes $`\iota_j^{r_j}\colon U_j`$, and $`m`$ the mapped type's modifiers:
      {⟦\{[P\ \mathtt{in}\ K]^m\colon X[P]\}⟧=\{k_{i_1}^{m\,\triangleleft\,m_{i_1}}\colon T_{i_1};\ \ldots;\ k_{i_j}^{m\,\triangleleft\,m_{i_j}}\colon T_{i_j}\}}\ \textsf{mapped-pick}
 ```
 
-At no key the type is `{}`, every value but `null` and
-`undefined` (`mapped-pick-no-key`). Where $`m`$ writes `-?`, an optional
+At no key, and over a record with no member, the type is `{}`, every
+value but `null` and `undefined` (`mapped-pick-no-key`, `mapped-named-empty`,
+`invalid-mapped-named-empty-object`). Where $`m`$ writes `-?`, an optional
 field's type must hold no `undefined`: TypeScript takes `undefined` from it
 without `exactOptionalPropertyTypes` and keeps it with the option, so a field
 whose type may hold it is refused (`mapped-required-undefined-refused`,

@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -3850,8 +3850,14 @@ function promisedNames(type: TypeTerm): Set<string> {
         if (t.rest) visit(t.rest, inside);
         visit(t.result, inside);
         if (t.k === "function" && t.receiver) visit(t.receiver, inside);
+        if (t.k === "constructor") t.statics?.forEach(field => visit(field.type, inside));
         return;
-      case "scheme": for (const f of t.signatures) visit(f, inside); return;
+      case "scheme":
+        for (const b of t.binders) {
+          if (b.bound) visit(b.bound, inside);
+          if (b.default) visit(b.default, inside);
+        }
+        for (const f of t.signatures) visit(f, inside); return;
       case "pack": visit(t.of, inside); return;
       default: return;
     }
@@ -3868,12 +3874,8 @@ function promisedBinders<B extends { name: string; bound: TypeTerm | null }>(bin
 /** The generic methods of a type, each binder a promise argument names
  * bounded by `nonThenable`. */
 function promisedMethods(type: TypeTerm): TypeTerm {
-  if (type.k === "object")
-    return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })),
-      ...(type.prototype ? { prototype: promisedMethods(type.prototype) } : {}) };
-  if (type.k === "scheme") return { ...type, binders: promisedBinders(type.binders, type) };
-  if (type.k === "union" || type.k === "intersection") return { ...type, parts: type.parts.map(promisedMethods) };
-  return type;
+  const mapped = mapTypeParts(type, promisedMethods);
+  return mapped.k === "scheme" ? { ...mapped, binders: promisedBinders(mapped.binders, mapped) } : mapped;
 }
 
 /** The specifier of a primitive wrapper's prototype: the built-ins', which no

@@ -49,7 +49,8 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
     case "function": if (term.receiver) go(term.receiver);
       term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
     case "constructor":
-      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
+      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result);
+      term.statics?.forEach(field => go(field.type)); return;
     case "pack": go(term.of); return;
     case "reference": term.args.forEach(go); return;
     case "scheme": {
@@ -742,6 +743,9 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
   if (id.homomorphic) {
     if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
       return fail("an optional mapped type over an index signature's keys is outside the fragment");
+    // No member: `{}`, every value but null and undefined, as TypeScript
+    // reads a mapped type over an empty record.
+    if (!x.fields.length && !x.stringIndex && !x.numberIndex && !x.symbolIndex) return emptyObject(span);
     return { ...x, fields: x.fields.map(f => ({ ...f, type: value(f), readonly: readonly(f.readonly), optional: optional(f.optional) })),
       stringIndex: x.stringIndex && { ...x.stringIndex, readonly: readonly(x.stringIndex.readonly) },
       ...(x.numberIndex ? { numberIndex: { ...x.numberIndex, readonly: readonly(x.numberIndex.readonly) } } : {}),
@@ -766,16 +770,24 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
 /** `term` with each of its declaration's parameters replaced by the term at
  * that position of `args`. */
 export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  const go = (t: TypeTerm): TypeTerm => substitute(t, args);
+  if (term.k === "parameter") {
+    const arg = args[term.index];
+    if (!arg) throw Error("declaration parameter index outside its application");
+    return arg;
+  }
+  return mapTypeParts(term, part => substitute(part, args));
+}
+
+/** A term's parts each mapped by `go`. */
+export function mapTypeParts(term: TypeTerm, go: (part: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
   const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
     params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });
+  const ctor = (c: Extract<TypeTerm, { k: "constructor" }>): Extract<TypeTerm, { k: "constructor" }> =>
+    ({ ...c, params: c.params.map(go), rest: c.rest && go(c.rest), result: go(c.result),
+      ...(c.statics ? { statics: c.statics.map(s => ({ ...s, type: go(s.type) })) } : {}) });
   switch (term.k) {
-    case "parameter": {
-      const arg = args[term.index];
-      if (!arg) throw Error("declaration parameter index outside its application");
-      return arg;
-    }
-    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": return term;
+    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": case "parameter": return term;
     case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
     case "array": return { ...term, element: go(term.element) };
     case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),
@@ -787,12 +799,11 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ 
       ...(term.prototype ? { prototype: go(term.prototype) } : {}),
       calls: term.calls.map(fn) };
     case "function": return fn(term);
-    case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
-      result: go(term.result) };
+    case "constructor": return ctor(term);
     case "pack": return { ...term, of: go(term.of) };
     case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
       default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
-        : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
+        : ctor(f)) };
     case "reference": return { ...term, args: term.args.map(go) };
   }
 }

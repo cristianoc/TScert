@@ -151,10 +151,26 @@ function print(term: TypeTerm): string | null {
       }
       return `{ ${fields.join(" ")} }`;
     }
+    case "constructor": {
+      const signature = printSignature({ binders: [], params: term.params, result: term.result,
+        ...(term.rest === null ? {} : { rest: term.rest }) });
+      if (signature === null) return null;
+      const fields: string[] = [];
+      for (const field of term.statics ?? []) {
+        const type = print(field.type);
+        if (type === null || typeof field.name !== "string") return null;
+        fields.push(`${field.readonly ? "readonly " : ""}${JSON.stringify(field.name)}: ${type};`);
+      }
+      return `{ new ${signature}; ${fields.join(" ")} }`;
+    }
     case "function": {
       const signature = printSignature({ binders: [], params: term.params, result: term.result,
         ...(term.rest === null ? {} : { rest: term.rest }) });
-      return signature === null ? null : signature.replace(/\): /, ") => ");
+      if (signature === null) return null;
+      const receiver = term.receiver && print(term.receiver);
+      if (term.receiver && receiver === null) return null;
+      const arrow = signature.replace(/\): /, ") => ");
+      return receiver ? arrow.replace("(", `(this: ${receiver}${term.params.length || term.rest ? ", " : ""}`) : arrow;
     }
     case "binder": return term.name;
     case "reference": {

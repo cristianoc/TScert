@@ -5,7 +5,7 @@
  * declaration graph once its collection ends, and the gate for the file's
  * annotations, read after the declaration document is complete. */
 import type { DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { DEFERRED_MODULE, deferredOf, expandMapped, substitute, type TermScope } from "./type-term.mts";
+import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type TermScope } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
 type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
@@ -100,34 +100,6 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
   return named(reference, []);
 }
 
-/** A term's parts each mapped by `go`. */
-function mapParts(term: TypeTerm, go: (part: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
-  const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
-    params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });
-  switch (term.k) {
-    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": case "parameter": return term;
-    case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
-    case "array": return { ...term, element: go(term.element) };
-    case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),
-      rest: term.rest && go(term.rest) };
-    case "object": return { ...term, fields: term.fields.map(f => ({ ...f, type: go(f.type) })),
-      stringIndex: term.stringIndex && { ...term.stringIndex, value: go(term.stringIndex.value) },
-      ...(term.numberIndex ? { numberIndex: { ...term.numberIndex, value: go(term.numberIndex.value) } } : {}),
-      ...(term.symbolIndex ? { symbolIndex: { ...term.symbolIndex, value: go(term.symbolIndex.value) } } : {}),
-      ...(term.prototype ? { prototype: go(term.prototype) } : {}),
-      calls: term.calls.map(fn) };
-    case "function": return fn(term);
-    case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
-      result: go(term.result), ...(term.statics ? { statics: term.statics.map(s => ({ ...s, type: go(s.type) })) } : {}) };
-    case "pack": return { ...term, of: go(term.of) };
-    case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
-      default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
-        : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
-    case "reference": return { ...term, args: term.args.map(go) };
-  }
-}
-
 /** Every deferred mapped type of a declaration document's definitions,
  * values and applications replaced by its expansion at the complete
  * definitions (`settleTerm`): each definition settled once, before a
@@ -179,7 +151,7 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
     refused: (where: string, error: unknown) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => {
     const deferred = deferredOf(t);
-    if (!deferred) return mapParts(t, go);
+    if (!deferred) return mapTypeParts(t, go);
     const object = go(deferred.identity.object);
     const key = go(deferred.key);
     const fail: Fail = message => { throw Error(`${message} in ${where}`); };
