@@ -1,0 +1,9 @@
+<section id="sep" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Aspect 3 · 3,055 statements, 29 functions</p><p style="font-size:24px;color:#5b6662"><span style="color:#5e6870">gap</span> blocker-node-path-sep</p></div>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">The constant sep of node:path</h2>
+<p style="font-family:'IBM Plex Mono', monospace;font-size:24px;background:#eef1ef;padding:16px 22px;border-radius:12px;line-height:1.42;">import { sep } from "node:path";<br>export function use(path: string): string[] { return path.split(sep); }</p><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Why it is not proven:</b> Node's declarations make the module a single object, const path: PlatformPath, and sep a property of that object's interface, readonly sep: "\\" | "/". The gate reads an import from a Node module as an annotated constant, function or class, or through the contracts for Node modules, which list functions only; sep is none of these, so it is refused at the import. 27 of the 29 functions meet it first (measured).</li>
+<li><b style="font-weight:600">What proving it needs:</b> a new form of contract entry, a module constant: sep of node:path at the type "\\" | "/", after an audit that the module's sep is a data property no code changes.</li>
+<li><b style="font-weight:600">What it would trust:</b> <span style="color:#8b2f4b">trust change</span>: one assumption about Node's path module.</li>
+</ul>
+</section>
