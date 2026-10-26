@@ -223,9 +223,13 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 ## Diagnostic inventories
 
-- **diagnostic traversal**: a run collecting refusals under explicit recovery assumptions, with a result separate from verification ([diagnostic traversal](DIAGNOSTIC-MODE.md)).
-- **opaque region**: source whose internal obligations a diagnostic approximation leaves unexamined ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
+- **aggregate check** / **diagnostic completion**: search and certificate checking of every retained unit together; a slice completes when every unit has a plan that passes them ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
+- **assumed input**: a value a diagnostic approximation supplies at its expected type in place of a refused expression or edge, its region opaque ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
 - **coverage with holes**: original statements outside opaque regions in a slice whose retained program passes aggregate checks under diagnostic assumptions ([attribution and coverage](DIAGNOSTIC-MODE.md#attribution-and-coverage)).
+- **diagnostic census**: the census run in diagnostic traversal (`make census DIAGNOSTIC=1`): every refusal of each slice, past the first, with coverage with holes ([attribution and coverage](DIAGNOSTIC-MODE.md#attribution-and-coverage)). Its holes are opaque regions, unrelated to an array's holes.
+- **diagnostic traversal** (diagnostic mode, a diagnostic run): a run collecting refusals under explicit recovery assumptions, with a result separate from verification ([diagnostic traversal](DIAGNOSTIC-MODE.md)).
+- **local attempt**: a diagnostic search of one node, expression or edge of a failed unit under its supplied interface, which traversal counts and which establishes nothing ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
+- **opaque region**: source whose internal obligations a diagnostic approximation leaves unexamined ([recovery boundaries](DIAGNOSTIC-MODE.md#recovery-boundaries)).
 
 ## Trust
 
