@@ -1,10 +1,10 @@
-<section id="next" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:24px">
+<section id="next" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Limits, and the next round</p>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">The catalogue of rewrites decides how far the loop sees</h2>
-<ul style="font-size:24px;color:#1d2422;line-height:1.38">
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The catalogue of rewrites decides how far the loop sees</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
 <li><b style="font-weight:600">What the loop cannot see:</b> the obligations inside what a rewrite removed (64 original statements in this run, measured), and refusals with no rule: a refusal where branches meet, or about what memory holds, has no local rewrite.</li>
 <li><b style="font-weight:600">Where it stops:</b> 295 of 312 functions at a refusal no rule rewrites (measured). Each new rule lets the loop look past one more kind, and adds the repros it then finds.</li>
-<li><b style="font-weight:600">The next phase:</b> grow the catalogue and rerun, turning every new blocker into a case; the gap cases are worked on one at a time with make cases P=blocker-, and the census measures the effect from time to time.</li>
+<li><b style="font-weight:600">The next phase:</b> grow the catalogue and rerun, turning every new blocker into a case; the gap cases are worked on one at a time with <span style="color:#2b5b9c">make cases P=blocker-</span>, and the census measures the effect from time to time.</li>
 <li><b style="font-weight:600">Conjecture:</b> coverage with holes grows faster than verified coverage as rules are added, and the families that most often appear after rewrites gain weight in the ranking: library globals, Readonly and crypto; the most frequent, the callback parameter typed any (21 functions), is a pattern removed from tools/ (slide “Changes to tools/”).</li>
 </ul>
 </section>

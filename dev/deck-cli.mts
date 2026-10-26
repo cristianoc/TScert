@@ -29,7 +29,7 @@ const deck = exported;
 const project = join(root, "project"), slidesDir = join(project, "slides");
 mkdirSync(slidesDir, { recursive: true });
 const indexPath = join(project, "deck.json");
-const previous = existsSync(indexPath) ? /"at":"([^"]+)"/.exec(readFileSync(indexPath, "utf8"))?.[1] : undefined;
+const previous = existsSync(indexPath) ? /"at":\s*"([^"]+)"/.exec(readFileSync(indexPath, "utf8"))?.[1] : undefined;
 writeFileSync(indexPath, index(deck, previous ?? new Date().toISOString().replace(/\.\d+Z$/, "Z")));
 const ids = new Set(deck.slides.map(s => s.id));
 for (const f of readdirSync(slidesDir)) if (f.endsWith(".html") && !ids.has(f.slice(0, -5))) rmSync(join(slidesDir, f));

@@ -1,16 +1,16 @@
-<section id="kinds" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<section id="kinds" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">The seven, side by side</p>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Three are defects or omissions; the rest need contracts or a rule</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Three are defects or omissions; the rest need contracts or a rule</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:27%;text-align:left;font-weight:600">Blocker</th><th style="width:22%;text-align:left;font-weight:600">Kind</th><th style="width:30%;text-align:left;font-weight:600">Repair</th><th style="width:21%;text-align:left;font-weight:600">Trust it adds</th></tr>
-<tr><td>empty array into a field</td><td><span style="color:#9a3a2a">defect</span> of the producer</td><td>the field's type passed to the value</td><td>none</td></tr>
-<tr><td>API class as a type</td><td><span style="color:#9a3a2a">defect</span> of a reviewed list</td><td>read per use, at its arguments</td><td>none</td></tr>
-<tr><td>5 compiler-API members</td><td>omission</td><td>a reviewed entry each</td><td>5 audited members</td></tr>
-<tr><td>Readonly over a record</td><td>limit of the reader (estimated)</td><td>a mapped type read key by key</td><td>none (trusted gate)</td></tr>
-<tr><td>Object.entries</td><td>limit of the translation</td><td>a member of both kinds</td><td>none; the helper stays refused</td></tr>
-<tr><td>sep</td><td>missing contract</td><td>a constant entry</td><td>path.sep is not replaced</td></tr>
-<tr><td>Buffer, createHash</td><td>missing contracts</td><td>reviewed entries</td><td>host assumptions to audit</td></tr>
-</table><ul style="font-size:24px;color:#1d2422;line-height:1.38">
+<tr><td>empty array into a field</td><td><span style="color:#9a3a2a">defect</span> of the producer</td><td>the field's type passed to the value</td><td><span style="color:#2e7d4f">none</span></td></tr>
+<tr><td><span style="color:#2b5b9c">API</span> class as a type</td><td><span style="color:#9a3a2a">defect</span> of a reviewed list</td><td>read per use, at its arguments</td><td><span style="color:#2e7d4f">none</span></td></tr>
+<tr><td>5 compiler-API members</td><td>omission</td><td>a reviewed entry each</td><td><span style="color:#8b2f4b">5 audited members</span></td></tr>
+<tr><td>Readonly over a record</td><td>limit of the reader (estimated)</td><td>a mapped type read key by key</td><td><span style="color:#2e7d4f">none</span> (trusted gate)</td></tr>
+<tr><td><span style="color:#2b5b9c">Object.entries</span></td><td>limit of the translation</td><td>a member of both kinds</td><td><span style="color:#2e7d4f">none</span>; the helper stays refused</td></tr>
+<tr><td><span style="color:#2b5b9c">sep</span></td><td>missing contract</td><td>a constant entry</td><td><span style="color:#8b2f4b">path.sep is not replaced</span></td></tr>
+<tr><td><span style="color:#2b5b9c">Buffer</span>, <span style="color:#2b5b9c">createHash</span></td><td>missing contracts</td><td>reviewed entries</td><td><span style="color:#8b2f4b">host assumptions to audit</span></td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
 <li>Every repair is estimated, not built. Behind each, the hand rewrites found more blockers: lifting one rarely lets a slice reach the end by itself (observed: sep 1 of 7, Readonly 3 of 13).</li>
 </ul>
 </section>

@@ -112,6 +112,14 @@ export const card = (title: string, html: string): string =>
   `<div style="background:${C.surface};border:1px solid ${C.rule};border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">` +
   `<h3 style="font-size:28px;font-weight:600">${title}</h3><p style="font-size:24px;color:${C.ink};line-height:1.36">${html}</p></div>`;
 
+/** A figure: a number in the heading typeface over its caption, on a card's
+ * surface; the number takes its status's colour, by default the accent.
+ * Figures side by side are `cards` of figures. */
+export const stat = (value: string, html: string, kind?: Status): string =>
+  `<div style="background:${C.surface};border:1px solid ${C.rule};border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">` +
+  `<p style="${SERIF};font-size:56px;font-weight:500;color:${kind ? C[kind] : C.accent}">${value}</p>` +
+  `<p style="font-size:24px;color:${C.ink};line-height:1.34">${html}</p></div>`;
+
 /** Cards in equal columns. */
 export const cards = (items: string[], cols: number = 3): string =>
   `<div style="display:grid;grid-template-columns:repeat(${cols}, 1fr);gap:20px">${items.join("")}</div>`;
@@ -123,13 +131,24 @@ export function table(head: string[], rows: string[][], widths: number[]): strin
 }
 
 /** Code in the mono typeface: one paragraph per line on the code background,
- * TypeScript highlighted by the record renderer's tokens; `marks` gives a
+ * TypeScript highlighted by the record renderer's tokens over the whole
+ * block (a comment spanning lines is a comment on each); `marks` gives a
  * line's mark, an added (`add`) or removed (`del`) line drawn on its pair's
  * background. */
 export function code(lines: string[], marks: ("add" | "del" | "")[] = []): string {
   const tokenColour = { c: C.muted, s: SYNTAX.s, n: SYNTAX.n, k: SYNTAX.k, t: SYNTAX.t, "": "" };
-  const line = (l: string, i: number): string => {
-    const body = codeTokens(l).map(({ kind, text }) => {
+  // The block is tokenized whole, so a comment or a template string that
+  // spans lines keeps its colour on each, then cut back into its lines.
+  const byLine: { kind: keyof typeof tokenColour; text: string }[][] = lines.map(() => []);
+  let at = 0;
+  for (const { kind, text } of codeTokens(lines.join("\n"))) {
+    text.split("\n").forEach((piece, k) => {
+      if (k > 0) at++;
+      if (piece) byLine[at]?.push({ kind, text: piece });
+    });
+  }
+  const line = (_: string, i: number): string => {
+    const body = (byLine[i] ?? []).map(({ kind, text }) => {
       const e = esc(text).replace(/ /g, "&#160;");
       return kind === "c" ? `<i>${color(tokenColour.c, e)}</i>` : kind ? color(tokenColour[kind], e) : e;
     }).join("") || "&#160;";

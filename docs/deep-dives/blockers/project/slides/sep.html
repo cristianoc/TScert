@@ -1,10 +1,10 @@
-<section id="sep" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:128px;display:flex;flex-direction:column;gap:18px">
+<section id="sep" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
 <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Blocker · 27 functions, 701 statements</p><p style="font-size:24px;color:#5b6662">investigated by hand</p></div>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">node:path's constant sep</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">node:path's constant <span style="color:#2b5b9c">sep</span></h2>
 <ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Where:</b> the slices of tools/family-activation.mts (21), declaration-graph.mts (5) and files.mts (1) read sep, a property of the object node:path exports.</li>
+<li><b style="font-weight:600">Where:</b> the slices of tools/family-activation.mts (21), declaration-graph.mts (5) and files.mts (1) read <span style="color:#2b5b9c">sep</span>, a property of the object node:path exports.</li>
 <li><b style="font-weight:600">Who refuses, and why:</b> the gate. TScert reads a library module's value only through a reviewed entry, and the entries cover functions, not constants: a missing contract, not a restriction any document states (cited: SOURCE-CONTRACTS.md, “Library modules”).</li>
-<li><b style="font-weight:600">Repair, and what it trusts:</b> a constant entry in the reviewed list of library modules, stating sep as "/" | "\\". It adds one host assumption: nothing replaces path.sep while the program runs; Node lets code write it (observed with a Node script). Size: about 30–50 lines (estimated).</li>
-<li><b style="font-weight:600">Behind it:</b> rewriting sep by hand in 7 of the 27 slices (a test apart from the loop), 1 reaches the end; the others stop at Node's Buffer, crypto's hash options, and an in test ("name" in f) on a function value (observed).</li>
+<li><b style="font-weight:600">Repair, and what it trusts:</b> a constant entry in the reviewed list of library modules, stating <span style="color:#2b5b9c">sep</span> as <span style="color:#2b5b9c">&quot;/&quot; | &quot;\\&quot;</span>. It adds one host assumption: nothing replaces <span style="color:#2b5b9c">path.sep</span> while the program runs; Node lets code write it (observed with a Node script). Size: about 30–50 lines (estimated).</li>
+<li><b style="font-weight:600">Behind it:</b> rewriting <span style="color:#2b5b9c">sep</span> by hand in 7 of the 27 slices (a test apart from the loop), 1 reaches the end; the others stop at Node's <span style="color:#2b5b9c">Buffer</span>, crypto's hash options, and an in test (<span style="color:#2b5b9c">&quot;name&quot; in f</span>) on a function value (observed).</li>
 </ul>
 </section>
