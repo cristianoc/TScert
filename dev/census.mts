@@ -29,10 +29,9 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { diagnose, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
-import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
+import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
-import { runRoot } from "../pipeline/run-directory.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
   from "./statement-coverage.mts";
 
@@ -251,20 +250,6 @@ function reference(r: AttemptRecord): InvocationReference {
   };
 }
 
-/** The invocations of the run that checked `source`, found by its request
- * in the run root: for a run whose worker died before its outcome. */
-function invocationsOfRequest(source: string): InvocationReference[] {
-  const root = runRoot();
-  for (const name of readdirSync(root).filter((n) => n.startsWith("pipeline-"))) {
-    const request = join(root, name, "request.json");
-    if (!existsSync(request)) continue;
-    const parsed: unknown = JSON.parse(readFileSync(request, "utf8"));
-    if (typeof parsed === "object" && parsed !== null && "source" in parsed && parsed.source === source)
-      return readInvocationLog(join(root, name, invocationLog)).map(reference);
-  }
-  return [];
-}
-
 async function census(args: string[]): Promise<void> {
   const diagnosticMode = args.includes("--diagnostic");
   if (diagnosticMode) args.splice(args.indexOf("--diagnostic"), 1);
@@ -392,7 +377,7 @@ async function census(args: string[]): Promise<void> {
         artifactBytes: documentBytes(o.artifacts) };
     } catch (error) {
       return { ...base, status: "error", phase: "-", detail: String(error).split("\n")[0], functions: 0,
-        invocations: invocationsOfRequest(path), artifactBytes: null };
+        invocations: error instanceof RunFailure ? error.invocations.map(reference) : [], artifactBytes: null };
     }
   };
   const finish = async (s: Slice): Promise<SliceRecord> => {

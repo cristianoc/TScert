@@ -6297,10 +6297,42 @@ control(async (): Promise<void> => {
   }, /consumer failed/);
   assert.equal(existsSync(path), false);
   const module = pathToFileURL(join(here, "run-directory.mts")).href;
+  const driver = pathToFileURL(join(here, "verify-source.mts")).href;
+  const failures = spawnSync(process.execPath, ["--input-type=module", "-e", `
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const { runRoot } = await import(${JSON.stringify(module)});
+const root = runRoot();
+const before = fs.readdirSync(root).sort();
+const write = fs.writeFileSync;
+fs.writeFileSync = (path, ...args) => {
+  if (String(path).endsWith("request.json")) throw Error("injected request write failure");
+  return write(path, ...args);
+};
+syncBuiltinESMExports();
+const { check, checkApart, RunFailure } = await import(${JSON.stringify(driver)});
+assert.throws(() => check(${JSON.stringify(source)}), RunFailure);
+assert.deepEqual(fs.readdirSync(root).sort(), before);
+fs.writeFileSync = write;
+syncBuiltinESMExports();
+await assert.rejects(checkApart(${JSON.stringify(source)}), RunFailure);
+assert.deepEqual(fs.readdirSync(root).sort(), before);
+`], { encoding: "utf8", timeout: 30_000,
+    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001", TSCERT_RUN_ROOT: runDirectory("cleanup-control-") } });
+  assert.equal(failures.status, 0, failures.stderr);
   const low = spawnSync(process.execPath, ["--input-type=module", "-e", `
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-fs.statfsSync = () => ({ bavail: 0, bsize: 4096 });
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const stale = fs.mkdtempSync(join(tmpdir(), "tscert-runs-"));
+fs.writeFileSync(join(stale, ".owner"), "2147483647");
+delete process.env.TSCERT_RUN_ROOT;
+fs.statfsSync = () => {
+  if (fs.existsSync(stale)) throw Error("space checked before pruning");
+  return { bavail: 0, bsize: 4096 };
+};
 syncBuiltinESMExports();
 const { runDirectory } = await import(${JSON.stringify(module)});
 runDirectory("must-not-start-");

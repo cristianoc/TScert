@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
@@ -21,7 +21,7 @@ import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assemblyCall } from "./claims-assembly.mts";
-import { currentStore, invokeInProcess, invokeProcess, Recorder } from "./stages.mts";
+import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { producerBuild, producerCall, refusalEnd, verifierBuild, verifierCall, type ProcessCall } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -433,18 +433,38 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   return { parsed, bytes, snapshot, resolution };
 }
 
+/** A failed job carries its invocation log after its directory is removed. */
+export class RunFailure extends Error {
+  readonly invocations: AttemptRecord[];
+  constructor(reason: string, invocations: AttemptRecord[]) {
+    super(reason);
+    this.invocations = invocations;
+  }
+}
+function failedRun(artifacts: string, reason: string): RunFailure {
+  try {
+    return new RunFailure(reason, readInvocationLog(join(artifacts, invocationLog)));
+  } finally {
+    rmSync(artifacts, { recursive: true, force: true });
+  }
+}
+
 /** A completed run releases its artifacts. A file consumer requests retention
  * and uses `using result = check(...)` to release them after consumption. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number, retainArtifacts: boolean = false): Outcome & Disposable {
-  return ownedRun(checkUnowned(source, tsconfigPath, typescriptErrors, subtypeRounds), retainArtifacts);
+  const artifacts = runDirectory("pipeline-");
+  try {
+    return ownedRun(checkUnowned(artifacts, source, tsconfigPath, typescriptErrors, subtypeRounds), retainArtifacts);
+  } catch (error) {
+    throw failedRun(artifacts, messageOf(error));
+  }
 }
 
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
-function checkUnowned(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
+function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Outcome {
-  const artifacts = runDirectory("pipeline-");
   // Every stage invocation's attempt, in order (`stages.mts`).
   const recorder = new Recorder(join(artifacts, invocationLog));
   // What the run was asked, for a caller finding it in the run root after
@@ -599,25 +619,26 @@ export function readOutcome(value: unknown): Outcome {
   throw Error("not an outcome");
 }
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
-type Request = { source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number; retainArtifacts: boolean };
+type Request = { artifacts: string; source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number; retainArtifacts: boolean };
 function readRequest(value: unknown): Request {
   if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
+      !("artifacts" in value) || typeof value.artifacts !== "string" ||
       !("typescriptErrors" in value) || typeof value.typescriptErrors !== "boolean" ||
       !("retainArtifacts" in value) || typeof value.retainArtifacts !== "boolean")
     throw Error("not a request");
   const project = "project" in value && typeof value.project === "string" ? value.project : undefined;
   const subtypeRounds = "subtypeRounds" in value && typeof value.subtypeRounds === "number"
     ? value.subtypeRounds : undefined;
-  return { source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
+  return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
     retainArtifacts: value.retainArtifacts };
 }
 const checkRequest = (r: Request): Outcome =>
-  check(r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds, r.retainArtifacts);
+  checkUnowned(r.artifacts, r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds);
 
 /** A whole check is killed after this long: the parser runs inside the worker,
  * so its step has no limit of its own. */
 const checkTimeoutMs = 4 * stepTimeoutMs;
-type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => void };
+type Job = { request: Omit<Request, "artifacts">; done: (o: Outcome) => void; fail: (e: Error) => void };
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
 /** The workers that answer their current check and exit: their caches may
@@ -656,14 +677,16 @@ function startWorker(): ChildProcess {
   return worker;
 }
 function give(worker: ChildProcess, job: Job): void {
-  requireDiskSpace();
+  const artifacts = runDirectory("pipeline-");
+  let timedOut = false;
+  const fail = (reason: string): void => job.fail(failedRun(artifacts, reason));
   logs.set(worker, "");
   worker.ref();
   worker.channel?.ref();
   const settle = (finish: () => void) => {
     clearTimeout(timer);
     worker.off("message", answered);
-    worker.off("exit", died);
+    worker.off("close", died);
     finish();
   };
   const answered = (message: unknown) => {
@@ -681,19 +704,20 @@ function give(worker: ChildProcess, job: Job): void {
     try {
       job.done(readOutcome(message));
     } catch (error) {
-      job.fail(new Error(`no outcome: ${messageOf(error)} ${logs.get(worker)?.trim() ?? ""}`));
+      fail(`no outcome: ${messageOf(error)} ${logs.get(worker)?.trim() ?? ""}`);
     }
     dispatch();
   });
-  const died = () => settle(() =>
-    job.fail(new Error(`no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`)));
-  const timer = setTimeout(() => settle(() => {
-    worker.kill();
-    job.fail(new Error(`timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`));
-  }), checkTimeoutMs);
+  const died = () => settle(() => fail(timedOut
+    ? `timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`
+    : `no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`));
+  const timer = setTimeout(() => {
+    timedOut = true;
+    worker.kill("SIGKILL");
+  }, checkTimeoutMs);
   worker.on("message", answered);
-  worker.on("exit", died);
-  worker.send(job.request);
+  worker.on("close", died);
+  worker.send({ ...job.request, artifacts });
 }
 /** The same check in one of a pool of worker processes, one per core, each
  * keeping its compiler between checks: for a caller that must stay responsive
@@ -702,6 +726,7 @@ function give(worker: ChildProcess, job: Job): void {
  * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number, retainArtifacts: boolean = false): Promise<Outcome & Disposable> {
+  runRoot();
   requireDiskSpace();
   return new Promise<Outcome>((done, fail) => {
     queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts }, done, fail });

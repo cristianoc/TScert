@@ -89,8 +89,9 @@ export function runRoot(): string {
 
 /** A fresh directory under this invocation's root, named from `prefix`. */
 export function runDirectory(name: string): string {
+  const root = runRoot();
   requireDiskSpace();
-  return mkdtempSync(join(runRoot(), name));
+  return mkdtempSync(join(root, name));
 }
 
 /** Keep this invocation's directories after it exits: for a command that
