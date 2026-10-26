@@ -2849,8 +2849,9 @@ type names does, and a definition's methods name it as their receiver
   string as UTF-8 and returns its receiver; `digest("hex")` checks the
   same, marks the hash finalized and returns the digest as hexadecimal
   digits. Either throws on a hash already digested, an outcome
-  (`node-crypto-hash`, run under Node). Neither calls a function of the
-  client's; both state no effect, as each writes host state. `digest` at
+  (`node-crypto-hash`, run under Node). Each reads the hash's state
+  through a symbol-keyed property, on which other code may install a getter, and
+  writes host state: both state no effect. `digest` at
   another encoding, and without one, which returns a `Buffer`, are outside
   the stated method (`invalid-node-crypto-hash-encoding`,
   `invalid-node-crypto-hash-buffer`, run under Node), and so is `update`

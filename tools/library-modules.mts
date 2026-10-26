@@ -337,9 +337,9 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // string validates it, hashes it as UTF-8 and returns the receiver;
   // `digest("hex")` converts the encoding by a template, a string's own
   // value, marks the hash finalized and returns the digest as hexadecimal
-  // digits, a string. Either throws on a hash already digested. Neither
-  // runs code of the client's; both state no effect, as each writes host
-  // state the program's facts do not name.
+  // digits, a string. Either throws on a hash already digested. Each reads
+  // the hash's state through a symbol-keyed property, on which other code
+  // may install a getter, and writes host state: both state no effect.
   { module: "crypto", name: "createHash",
     signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
     stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition] },
