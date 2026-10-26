@@ -329,9 +329,10 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // SHAKE algorithm without an output length alone, emits a deprecation
   // warning, which reads `process.noDeprecation` during the call, a property
   // other code may replace by a getter; an unsupported algorithm throws.
-  // Stated at "sha256", the call runs no code of the client's and writes
-  // only what it allocates, on a throw too. The result's `update` and
-  // `digest` are `Hash.prototype`'s, a host assumption as `Dirent`'s tests
+  // Stated at "sha256". `LazyTransform` assigns the hash's `_options`, which
+  // a setter `Hash.prototype` inherits from other code would intercept: the
+  // call states no effect. The result's `update` and `digest` are own data
+  // properties of `Hash.prototype`, a host assumption as `Dirent`'s tests
   // are (SOURCE-CONTRACTS.md, "Library modules"). `update(data)` with a
   // string validates it, hashes it as UTF-8 and returns the receiver;
   // `digest("hex")` converts the encoding by a template, a string's own
@@ -341,8 +342,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // state the program's facts do not name.
   { module: "crypto", name: "createHash",
     signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
-    stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition],
-    effect: { ...emptyEffect, onThrow: true } },
+    stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition] },
   // `node:path`'s string functions compute a path from strings. `dirname`
   // and `basename` with an optional suffix validate their strings and
   // compute from them alone (Node 25.2.1's lib/path.js): they run no code of

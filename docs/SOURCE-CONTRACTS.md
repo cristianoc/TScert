@@ -2835,9 +2835,12 @@ type names does, and a definition's methods name it as their receiver
   each member a method, so $`\Gamma(\mathtt{createHash})=(\texttt{"sha256"})\Rightarrow\mathit{Hash}`$
   (`node-crypto-hash`, `blocker-node-hash-contract`). By Node's
   `lib/internal/crypto/hash.js`, the call validates the algorithm and
-  allocates the native handle and a state record; it runs no code of the
-  client's and writes only what it allocates, the empty footprint on a throw
-  too ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
+  allocates the native handle and a state record. `LazyTransform` then
+  assigns the hash's `_options`, which a setter the hash inherits from other
+  code would intercept, so the call states no effect
+  (`invalid-node-crypto-hash-callback`, run under Node: the setter shrinks
+  the array `map` visits). Every use in `tools/` calls `update` next, which
+  states none either.
   At a SHAKE algorithm without an output length it emits a deprecation
   warning, which reads `process.noDeprecation` during the call, a property
   other code may make a getter, so the algorithm is stated at `"sha256"`
@@ -2854,10 +2857,14 @@ type names does, and a definition's methods name it as their receiver
   with bytes or an input encoding. The methods are `Hash.prototype`'s,
   which a copy does not take (`invalid-node-crypto-hash-spread`, run under
   Node). That a member read finds them rests on a host assumption
-  ([trust surface](DESIGN.md#trust-surface)): a `Hash` `createHash` returns
-  keeps `Hash.prototype` as its prototype and owns no `update` or `digest`,
-  and `Hash.prototype`'s `update` and `digest` and its native handle's are
-  Node's own, also in external code.
+  ([trust surface](DESIGN.md#trust-surface)): every `Hash`, created by the
+  program or by external code, keeps `Hash.prototype` as its prototype and
+  owns no `update` or `digest`, and `Hash.prototype` holds `update` and
+  `digest` as own data properties, Node's own functions, throughout
+  execution, as its native handle holds Node's own methods. A getter there
+  would run at the member read, before the call
+  (`invalid-node-crypto-hash-method-getter`, run under Node: it pops the
+  array).
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
   too (Node's `lib/path.js`). `join` of any number of strings,

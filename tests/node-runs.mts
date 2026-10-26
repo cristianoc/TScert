@@ -539,6 +539,29 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-dirent-prototype-write",
     "(() => { replace(); const fs = process.getBuiltinModule(\"node:fs\"); return fs.readdirSync(\".\", { withFileTypes: true }).every((e) => e.isDirectory() === true); })()"),
     true, "invalid-node-dirent-prototype-write: every entry reads the replaced member");
+  // `node:crypto`'s `Hash`: a second `digest` throws, `digest()` returns a
+  // Buffer, a copy has no `digest`, a SHAKE algorithm reads
+  // `process.noDeprecation` inside `createHash`, an inherited `_options`
+  // setter runs inside it, and an `update` getter runs at the lookup.
+  assert.equal(runImporting("node-crypto-hash",
+    "(() => { try { twice(\"x\"); return \"returned\"; } catch (e) { return e.code; } })()"),
+    "ERR_CRYPTO_HASH_FINALIZED", "node-crypto-hash: a second digest throws");
+  assert.equal(runImporting("node-crypto-hash", "digestOf(\"1\", [\"a\"]).length"), 64,
+    "node-crypto-hash: the hex digest of SHA-256 is 64 digits");
+  assert.equal(runImporting("invalid-node-crypto-hash-buffer", "Buffer.isBuffer(use(\"x\"))"), true,
+    "invalid-node-crypto-hash-buffer: digest() returns a Buffer");
+  assert.equal(runImporting("invalid-node-crypto-hash-spread",
+    "(() => { try { use(\"x\"); return \"returned\"; } catch (e) { return e.constructor.name; } })()"),
+    "TypeError", "invalid-node-crypto-hash-spread: the copy's digest is no function");
+  assert.equal(runImporting("invalid-node-crypto-hash-algorithm",
+    "(() => { let ran = 0, inside = false; Object.defineProperty(process, \"noDeprecation\", { configurable: true, get() { if (inside) ran++; return true; } }); inside = true; use(\"shake128\", \"x\"); inside = false; return ran > 0; })()"),
+    true, "invalid-node-crypto-hash-algorithm: at shake128 createHash reads process.noDeprecation");
+  assert.equal(runImporting("invalid-node-crypto-hash-callback",
+    "(() => { const xs = [\"a\", \"b\", \"c\"]; const crypto = process.getBuiltinModule(\"node:crypto\"); Object.defineProperty(Object.getPrototypeOf(crypto.createHash(\"sha256\")), \"_options\", { set(v) { xs.pop(); }, get() { return undefined; } }); return 2 in hashed(xs); })()"),
+    false, "invalid-node-crypto-hash-callback: an inherited _options setter shrinks the array map visits, leaving a hole");
+  assert.equal(runImporting("invalid-node-crypto-hash-method-getter",
+    "(() => { const xs = [1, 2]; hook(xs); const crypto = process.getBuiltinModule(\"node:crypto\"); crypto.createHash(\"sha256\").update; return xs.length; })()"),
+    1, "invalid-node-crypto-hash-method-getter: the lookup pops the array");
   assert.equal(runImporting("invalid-node-readdir-dirent-path", "paths(\".\").every((p) => p === undefined)"), true,
     "invalid-node-readdir-dirent-path: an entry has no path");
   assert.equal(runImporting("invalid-node-assert-deep-preserving",
