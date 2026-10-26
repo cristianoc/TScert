@@ -238,6 +238,10 @@ export class Gate {
   /** `instanceof` right operands whose type TypeScript gives states
    * `[Symbol.hasInstance]`, by span. */
   readonly hookTests: Set<string> = new Set();
+  /** `instanceof` right operands TypeScript binds to an import of a class
+   * declaration another module of the program checks, whose type states no
+   * `[Symbol.hasInstance]` (`importedClassTest`), by span. */
+  readonly importedClassTests: Set<string> = new Set();
   /** A `for...of` iterable's iteration intrinsic, where TypeScript's type of
    * it picks one other than `%Iterate%`, or, for a program's iterable,
    * `client`, `client-method` (its iterator's `return` a required method) or
@@ -1957,6 +1961,7 @@ function lowerFile(file: string, carriesContext: boolean,
         },
         hookTests: hookTestNodes.map(node => gate.span(node)),
         hookTest: ([start, end]) => gate.hookTests.add(`${start}:${end}`),
+        importedClassTest: ([start, end]) => gate.importedClassTests.add(`${start}:${end}`),
         privateNames: privateNodes.map(node => gate.span(node)),
         privateName: ([start, end], symbol) => gate.privateKeys.set(`${start}:${end}`, symbol),
         bindingReads: bindingNodes.map(node => gate.span(node)),

@@ -604,6 +604,18 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
+  // An imported class's `instanceof` walks the chain for the prototype its
+  // declaration creates; where it fails, a record with the class's members
+  // is still returned, and a class binding its module writes tests another
+  // class's prototype.
+  assert.equal(runImporting("instanceof-class-value-import",
+    "[tests(), isFailure({ operation: \"x\" }), atStart, lineOf(new ParseFailure(2))].join()"),
+    "true,false,true,2", "instanceof-class-value-import: the walk");
+  assert.equal(runImporting("invalid-instanceof-class-else-value-import",
+    "typeof label({ operation: \"x\", message: \"m\", name: \"n\" })"),
+    "object", "invalid-instanceof-class-else-value-import: the failed arm returns the record");
+  assert.equal(runImporting("invalid-instanceof-rebound-value-import", "rebound(new Rebound())"),
+    false, "invalid-instanceof-rebound-value-import: an instance made before the write is no instance");
   assert.equal(runExample("invalid-number-value-object",
     "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
     false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");

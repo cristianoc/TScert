@@ -22,7 +22,7 @@ export const runImporting = (file: string, expression: string): unknown => {
   const out = runDirectory("imports-");
   const project = join(here, "imports-project");
   const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
-  for (const name of ["lib", "relay", "certified", "scaled", "outer", "ping", "pong", "cell-left", "cell-right"]) {
+  for (const name of ["lib", "relay", "certified", "scaled", "outer", "ping", "pong", "cell-left", "cell-right", "failures", "failures-relay", "failures-rebound"]) {
     const ts = join(project, `${name}.ts`);
     writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(present(ts) ? ts : join(project, `${name}.mts`), "utf8")));
   }

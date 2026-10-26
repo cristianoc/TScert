@@ -362,6 +362,9 @@ e\ \mathtt{instanceof}\ C\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\ \mathsf{let}\
 Any operand is admitted: $`\mathsf{hasKey}`$ answers `false` on a primitive,
 as `instanceof` does (it throws only on its right operand). A tested
 immutable variable is refined as by every tag test ([guards](#guards)).
+A class another module declares, imported by name, is tested alike, the
+import binding read in place of the prototype binding
+([imported classes](SOURCE-CONTRACTS.md#imported-classes-and-instanceof)).
 
 A class whose chain of bases, classes of the file, holds a static method
 keyed by the built-in `Symbol.hasInstance` (TypeScript binds the key to the

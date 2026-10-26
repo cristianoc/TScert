@@ -4,11 +4,10 @@
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:46%;text-align:left;font-weight:600">Step</th><th style="width:36%;text-align:left;font-weight:600">Cases</th><th style="width:18%;text-align:left;font-weight:600">Trust</th></tr>
 <tr><td>Readings with no new assumption: "name" in x (cause 3), a library type as callback context (cause 7)</td><td><span style="color:#2b5b9c">blocker-in-name-object</span>, <span style="color:#2b5b9c">blocker-closure-map-context</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
-<tr><td>Imported classes read through the import (cause 5)</td><td><span style="color:#2b5b9c">blocker-instanceof-imported-class</span></td><td><span style="color:#8b2f4b">the import's declaration</span></td></tr>
 <tr><td>Error's options (cause 6)</td><td><span style="color:#2b5b9c">blocker-error-super-options</span>, <span style="color:#2b5b9c">blocker-error-options</span></td><td><span style="color:#8b2f4b">ECMAScript's Error</span></td></tr>
 <tr><td>Contracts for Node values with methods, a kind of entry no contract has yet: fs and Buffer (cause 2), createHash (cause 4)</td><td><span style="color:#2b5b9c">blocker-node-buffer-contract</span>, <span style="color:#2b5b9c">blocker-node-hash-contract</span></td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
 <li>Each step turns its gap cases into verified ones; the census and the diagnostic census, run once on main after a merge, then measure what it moved.</li>
-<li>Estimated cost order, which overrides the ranking by size: readings that add no assumption first; an imported class rests on what imports already rest on; Error's options are one more stated constructor; new forms of entry come last.</li>
+<li>Estimated cost order, which overrides the ranking by size: readings that add no assumption first; Error's options are one more stated constructor; new forms of entry come last.</li>
 </ul>
 </section>

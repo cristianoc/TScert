@@ -510,6 +510,10 @@ export function collectDeclarations(file: string, options: {
    * declaration of the program, is reported to `hookTest`. */
   hookTests?: readonly Span[];
   hookTest?: (span: Span) => void;
+  /** Those of them whose type states no `[Symbol.hasInstance]` and which
+   * TypeScript binds to an import of a checked class declaration
+   * (`checkedClass`), reported to `importedClassTest`. */
+  importedClassTest?: (span: Span) => void;
   /** The iterables of the client's `for...of` loops: each that TypeScript
    * types as a string, a `Set`, a `Map` or a host collection iterator is
    * reported to `iterable` with the iteration intrinsic that steps it
@@ -2971,11 +2975,48 @@ export function collectDeclarations(file: string, options: {
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
     }
+    // A class declaration of a module of the program other than the client:
+    // a source file with checked bodies that TypeScript accepts whole, so
+    // that no code writes the class's binding (TS2629), at its module's top
+    // level, not ambient, extending nothing, the standard `Error`, or such a
+    // class. Its `prototype` is the object its class statement creates, a
+    // property no code can change, which every instance its constructor
+    // makes inherits.
+    const checkedClass = (owner: Node | undefined, seen: Set<Node>): boolean => {
+      if (!owner || !ts.isClassDeclaration(owner) || seen.has(owner)) return false;
+      seen.add(owner);
+      const file = owner.getSourceFile();
+      if (!file || file.isDeclarationFile || libraryFile(file) || file.fileName === client.fileName ||
+          owner.parent !== file || owner.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) ||
+          [...program.getSyntacticDiagnostics(file.fileName), ...program.getSemanticDiagnostics(file.fileName)]
+            .some(d => d.category === DiagnosticCategory.Error))
+        return false;
+      const base = owner.heritageClauses?.find(h => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
+      if (!base) return true;
+      if (!ts.isIdentifier(base)) return false;
+      const bases = targetOf(checker, base)?.declarations.map(d => d.resolve()) ?? [];
+      if (base.text === "Error" && bases.length > 0 &&
+          bases.every(d => !!d && libraryFile(d.getSourceFile() ?? client)))
+        return true;
+      return bases.length === 1 && checkedClass(bases[0], seen);
+    };
+    // A name the client imports, by a named or default import binding a
+    // value, that TypeScript binds to a checked class declaration.
+    const importedClass = (name: Identifier): boolean => {
+      const symbol = checker.getSymbolAtLocation(name);
+      const binding = symbol?.declarations.length === 1 ? symbol.declarations[0]?.resolve() : undefined;
+      if (!symbol || !(symbol.flags & SymbolFlags.Alias) || !binding ||
+          !(ts.isImportSpecifier(binding) || ts.isImportClause(binding)))
+        return false;
+      const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
+      return owners.length === 1 && checkedClass(owners[0], new Set());
+    };
     for (const span of options.hookTests ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
       const type = checker.getTypeAtLocation(name);
       const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
+      if (!hook && importedClass(name)) options.importedClassTest?.(span);
       // A hook the program's types state, not the one `Function.prototype`
       // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();

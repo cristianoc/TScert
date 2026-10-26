@@ -259,6 +259,66 @@ are the [ambient assumption](DESIGN.md#trust-surface). A
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
 
+### Imported classes and `instanceof`
+
+`x instanceof C` runs ECMA-262's InstanceofOperator: it looks up
+`C[Symbol.hasInstance]` and calls it where one is found along `C`'s chain of
+constructors other than `Function.prototype`'s; otherwise it reads
+`C.prototype` and looks for that object along `x`'s prototype chain. A class
+declaration's `prototype` is the object its class statement creates, held by
+a property no code can write or redefine, and every instance its constructor
+makes inherits it. For a class another module declares, the test reads the
+import binding and looks for the key $`\kappa_C`$ the import's name gives
+the class's prototype, as the test of a class of the file does
+([`instanceof`](SOURCE-ELABORATION.md#instanceof)):
+
+```math
+\frac{\begin{array}{c}
+C\ \text{a named or default import TypeScript binds to a class declaration}\ D\quad
+\mathsf{checked}(D)\\
+\mathsf{type}(C)\ \text{states no}\ \texttt{[Symbol.hasInstance]}\qquad
+\Gamma\vdash e:A\qquad \Gamma(C)=⟦\mathsf{type}(D)⟧
+\end{array}}
+{e\ \mathtt{instanceof}\ C\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\ \mathsf{let}\ p=C\ \mathsf{in}\ \mathsf{hasKey}(\kappa_C)(x)\ :\ \mathsf{boolean}}\ \textsf{import-instanceof}
+```
+
+with $`\kappa_C = \texttt{[[}C\texttt{.prototype]]}`$, $`C`$ the import's
+local name, which no class of the file shares, and
+
+```math
+\mathsf{checked}(D)\iff
+\begin{cases}
+D\ \text{is at the top level of a module}\ M\ \text{other than the file, not}\ \mathtt{declare}\text{d},\\
+M\ \text{is a source file of the program, not a declaration file, which TypeScript accepts without an error},\\
+D\ \text{extends nothing, the standard}\ \mathtt{Error},\ \text{or a class declaration}\ E\ \text{with}\ \mathsf{checked}(E).
+\end{cases}
+```
+
+A re-export is passed through to the declaration TypeScript resolves the
+import to. Because $`M`$ has no TypeScript error, no code writes the class's
+binding (TS2629); `invalid-instanceof-rebound-value-import`, run under Node,
+shows the test of a module that does. The test refines a tested immutable
+variable as every tag test does: no value the file makes owns
+$`\kappa_C`$, and a passed test drops the primitive arms; a failed one keeps
+the class's arm, which a record meeting the class's type belongs to
+(`invalid-instanceof-class-else-value-import`, run under Node).
+
+**What it assumes.** The import meets its declaration, as `import` assumes
+of every imported value ([trust surface](DESIGN.md#trust-surface)): the
+binding holds the class $`D`$'s statement creates, and its constructor and
+those it extends own no `[Symbol.hasInstance]` that $`\mathsf{type}(C)`$ does
+not state. A module of the program is checked on its own; that run checks
+$`D`$'s code. Under the assumption the JavaScript test reads the binding,
+reads the prototype, which runs no code, and walks `x`'s chain, as the
+lowered test does (argued here, not proved; Lean proves the lowered
+program's safety). Refused, each with its case: a class expression a
+constant holds (`invalid-instanceof-expression-value-import`), a class an
+ambient module declares (`invalid-instanceof-ambient-value-import`), one
+extending such a class (`invalid-instanceof-ambient-base-value-import`), a
+module writing its class's binding, and a local constant holding an imported
+class (`invalid-instanceof-alias-value-import`). A local class extending an
+imported one is refused already ([derived classes](SOURCE-ELABORATION.md#derived-classes)).
+
 ### Types stated by annotations
 
 The written annotations that determine a declaration's exposed type, by its

@@ -29,7 +29,11 @@
       "@fixture/stated": ["./stated.ts"],
       "@fixture/stated-overload": ["./stated-overload.ts"],
       "@fixture/partial": ["./partial.ts"],
-      "@fixture/partial-init": ["./partial-init.ts"]
+      "@fixture/partial-init": ["./partial-init.ts"],
+      "@fixture/failures": ["./failures.ts"],
+      "@fixture/failures-relay": ["./failures-relay.ts"],
+      "@fixture/failures-rebound": ["./failures-rebound.ts"],
+      "@fixture/failures-ambient-base": ["./failures-ambient-base.ts"]
     }
   },
   "include": [
@@ -59,6 +63,11 @@
     "./hooks-ambient.d.ts",
     "./partial.ts",
     "./partial-init.ts",
+    "./failures.ts",
+    "./failures-relay.ts",
+    "./failures-rebound.ts",
+    "./failures-ambient.d.ts",
+    "./failures-ambient-base.ts",
     "../../tools/resolvable.d.ts"
   ]
 }
