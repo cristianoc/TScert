@@ -1,15 +1,15 @@
 <section id="next" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Order of work</p>
-<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">Readings first, then contracts</h2>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">The reading rule first, then audited entries, then new forms</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:42%;text-align:left;font-weight:600">Step</th><th style="width:40%;text-align:left;font-weight:600">Cases</th><th style="width:18%;text-align:left;font-weight:600">Trust</th></tr>
 <tr><td>Mapped types naming their key (aspect 1)</td><td><span style="font-family:'IBM Plex Mono', monospace">written-partial-argument-refused</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
-<tr><td>Math.random, Object.hasOwn, Object.getPrototypeOf, the process properties, Checker.getBaseTypes, getExports, getMembers and TypePredicateKind (aspects 2, 4)</td><td><span style="font-family:'IBM Plex Mono', monospace">library-global-unreviewed</span>, <span style="font-family:'IBM Plex Mono', monospace">invalid-compiler-api-view-member</span></td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
+<tr><td>Checker.getBaseTypes, getExports, getMembers and TypePredicateKind (aspect 4)</td><td><span style="font-family:'IBM Plex Mono', monospace">invalid-compiler-api-view-member</span></td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
 <tr><td>Error's options (aspect 5)</td><td><span style="font-family:'IBM Plex Mono', monospace">blocker-error-super-options</span>, <span style="font-family:'IBM Plex Mono', monospace">blocker-error-options</span></td><td><span style="color:#8b2f4b">ECMAScript's Error</span></td></tr>
-<tr><td>Module constants and contracts for Node values with methods: sep, createHash, fs, Buffer and Uint8Array (aspects 3, 6, 7)</td><td><span style="font-family:'IBM Plex Mono', monospace">blocker-node-path-sep</span>, <span style="font-family:'IBM Plex Mono', monospace">blocker-node-hash-contract</span>, <span style="font-family:'IBM Plex Mono', monospace">blocker-node-buffer-contract</span></td><td><span style="color:#8b2f4b">new entry forms</span></td></tr>
+<tr><td>Contracts for Node values with methods: createHash, fs, Buffer and Uint8Array (aspects 2, 6, 7)</td><td><span style="font-family:'IBM Plex Mono', monospace">blocker-node-hash-contract</span>, <span style="font-family:'IBM Plex Mono', monospace">blocker-node-buffer-contract</span></td><td><span style="color:#8b2f4b">a new entry form</span></td></tr>
 <tr><td>Stated type guards; a class contract for WeakMap and WeakSet</td><td><span style="font-family:'IBM Plex Mono', monospace">type-guard-this-refused</span>, <span style="font-family:'IBM Plex Mono', monospace">blocker-weakmap</span></td><td><span style="color:#8b2f4b">each guard's promise; a new form</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>The two aspects with no case get one first. Each step turns its gap cases into verified ones; the census, run once on main after a merge, then measures what it moved.</li>
+<li>The two aspects of the slide “What the ranking found with no case” get a case first. Each step turns its gap cases into verified ones; the census, run once on main after a merge, then measures what it moved.</li>
 <li>Order (estimated): the reading rule adds no trust; plain entries follow the audits already done for compiler-interface members; Error's options follow as one more stated constructor; new forms of entry come after, and guards and class contracts last.</li>
 </ul>
 </section>
