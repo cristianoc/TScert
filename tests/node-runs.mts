@@ -444,7 +444,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-json-stringify-tojson", "(() => { const xs = [1, 2, 3]; return wrong(xs, { toJSON() { xs.pop(); return \"\"; } }); })()"],
     ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
     ["invalid-stated-effect-stringify", "(() => { const xs = [1, 2, 3]; return wrong(xs, { k: \"a\", span: 0, toJSON() { xs.pop(); return \"\"; } }); })()"],
-    ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { get cause() { xs.pop(); return 0; } }); })()"],
+    ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
+    ["invalid-error-options-getter", "wrong([\"a\", \"b\", \"c\"])"],
+    ["invalid-error-options-proxy", "wrong([\"a\", \"b\", \"c\"])"],
+    ["invalid-error-options-spread", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
       `${file}: the hook shrinks the mapped array, leaving a hole in the result`);
@@ -575,6 +578,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
   assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
     "error-subclass-methods: the methods through the chain");
+  // `Error`'s options at a stated `cause`: each construction gives the
+  // message; a write of the own `cause` keeps it non-enumerable.
+  assert.equal(runExample("error-options", `[...make("m", 1, { cause: 2 }, undefined), ...dense(["a", "b"])].join()`),
+    "m,m,m,m,m,m,m,m,m,a,b", "error-options: each construction's message");
+  assert.equal(runExample("invalid-error-subclass-cause-write", "keys().length"), 0,
+    "invalid-error-subclass-cause-write: the assigned own cause stays non-enumerable");
   assert.throws(() => runExample("invalid-error-subclass-stack-method", "trace()"), /not a function/,
     "invalid-error-subclass-stack-method: the own stack shadows the method");
   assert.equal(runExample("invalid-error-subclass-null-message", "read()"), "null",

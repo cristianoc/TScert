@@ -7,6 +7,7 @@ import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { isStatic, nameOf } from "./syntax.mts";
 import { numberText } from "./intrinsics.mts";
+import { errorOptions } from "./library-globals.mts";
 
 /** A value typed `Promise<T>` is assumed to be a built-in promise, which is
  * never fulfilled with a thenable (SOURCE-CONTRACTS.md, "Async functions and await"):
@@ -193,10 +194,12 @@ export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods:
    * `Error`). */
   error?: "native" | "derived" };
 
-/** The standard `Error` as a base: its construction takes one optional
- * message, a string; its prototype holds no method the file reads. */
+/** The standard `Error` as a base: its construction takes an optional
+ * message, a string, and optional options, at `errorOptions`; its prototype
+ * holds no method the file reads. */
 export const errorBase = (span: Span): ClassRecord => ({ params: [{ name: "message",
-  type: { k: "union", parts: [{ k: "atom", name: "string", span }, { k: "atom", name: "undefined", span }], span } }],
+  type: { k: "union", parts: [{ k: "atom", name: "string", span }, { k: "atom", name: "undefined", span }], span } },
+  { name: "options", type: errorOptions(span) }],
   methods: new Map(), fresh: "", proto: null, binders: [], error: "native" });
 
 /** The binding holding an `Error`-derived instance's message. */
@@ -204,6 +207,9 @@ export const messageName = (cls: string): string => `${cls}.[[message]]`;
 
 /** The binding holding the message argument `super` passes to `Error`. */
 export const messageArgumentName = (cls: string): string => `${cls}.[[messageArgument]]`;
+
+/** The binding holding the options argument `super` passes to `Error`. */
+export const optionsArgumentName = (cls: string): string => `${cls}.[[optionsArgument]]`;
 
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose

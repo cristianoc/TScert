@@ -10,7 +10,8 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { errorOptions } from "./library-globals.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, optionsArgumentName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -283,10 +284,11 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // read that binding directly.
   gate.strict = true;
   gate.superClass = base;
-  // An `Error`-derived instance owns `message` and `stack` in JavaScript
-  // (Node gives every instance an own `stack`, and an own `message` where one
-  // is passed): an instance member under either name would be shadowed by the
-  // own property. Each class extending one of the family is checked here, so
+  // An `Error`-derived instance owns `message`, `stack` and `cause` in
+  // JavaScript (Node gives every instance an own `stack`, an own `message`
+  // where one is passed, and an own `cause` where its options hold one): an
+  // instance member under any of these names would be shadowed by the own
+  // property. Each class extending one of the family is checked here, so
   // the names are reserved at every depth. A parameter property and a
   // constructor's `this.k = e` are fields of the instance's allocation, which
   // the lowering defines, and are reserved here too; any other write of
@@ -297,7 +299,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
     const reserved = (key: Node | undefined): string | undefined => {
       const text = key && ts.isComputedPropertyName(key) ? spelled(key.expression) : spelled(key);
-      return text === "message" || text === "stack" ? text : undefined;
+      return text === "message" || text === "stack" || text === "cause" ? text : undefined;
     };
     for (const m of node.members) {
       const key = isStatic(m) ? undefined : reserved(nameOf(m));
@@ -748,13 +750,16 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       }
       const extendsAt: Span = [heritage.getStart(gate.file), heritage.getStart(gate.file) + "extends".length];
       if (base.error === "native") {
-        // `super(m)` runs `Error(m)`: its message, `m` a string, or none,
-        // which `Error.prototype.message`, `""`, stands for.
-        if (actuals.length > 1)
-          gate.fail(heritage, "`super(message, options)` of `Error` is outside the fragment: its options are not stated");
+        // `super(m, o)` runs `Error(m, o)`: its message, `m` a string, or
+        // none, which `Error.prototype.message`, `""`, stands for, and its
+        // options, read for `cause` (`errorOptions`).
+        if (actuals.length > 2)
+          gate.fail(heritage, "`super(message, options, …)` of `Error` passes more arguments than `Error` reads");
         // The argument is bound at `string | undefined` before it defaults:
-        // another value would be converted by `ToString`.
-        const [actual] = actuals;
+        // another value would be converted by `ToString`. The options are
+        // bound at `errorOptions` after it, in the arguments' order: the
+        // instance's own `cause` they may give is not stated.
+        const [actual, options] = actuals;
         const empty: Expr = { k: "lit", pos: calleeAt, lit: { a: "stringlit", v: "" } };
         const argument = messageArgumentName(name.text);
         if (actual) {
@@ -763,6 +768,9 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
             annot: { k: "union", parts: [{ k: "atom", name: "string", span: actualAt }, { k: "atom", name: "undefined", span: actualAt }], span: actualAt },
             init: actual }] });
         }
+        if (options)
+          prelude.push({ k: "const", pos: options.pos, bindings: [{ early: false, name: optionsArgumentName(name.text),
+            namePos: options.pos, annot: errorOptions(options.pos), init: options }] });
         prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: messageName(name.text), namePos: at,
           annot: { k: "atom", name: "string", span: at },
           init: actual ? { k: "coalesce", pos: at, left: { k: "id", pos: actual.pos, name: argument }, right: empty } : empty }] });

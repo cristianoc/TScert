@@ -2474,11 +2474,45 @@ is `null`, absent or a list of keys (primitive numbers and strings, read by
 length and index), and an indent that is a primitive number or string:
 none runs code (`json-stringify-space`). A boxed key or indent would run
 its `toString` or `valueOf` (`invalid-json-stringify-boxed-key`,
-`invalid-json-stringify-boxed-space`, run under Node). `Error` is read with its one
-argument. A `toJSON` hook, a replacer function and `Error`'s options run
-code of the client's, which may write what a footprint excludes
-(`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
-`invalid-error-options`, each run under Node).
+`invalid-json-stringify-boxed-space`, run under Node). A `toJSON` hook and a
+replacer function run code of the client's, which may write what a footprint
+excludes (`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
+each run under Node).
+
+`Error` is read with a message and options. After converting the message,
+[ECMA-262](REFERENCES.md#ecma-262)'s `Error ( message [ , options ] )` runs
+InstallErrorCause: where the options are an object and `HasProperty(options,
+"cause")` holds, it reads `Get(options, "cause")` and defines the value as the
+error's own non-enumerable data property `cause`. The options are stated at
+
+```math
+\mathsf{ErrorOptions}=\{\mathsf{readonly}\ \mathit{cause}?:\mathsf{unknown}\}\mid\mathsf{undefined}
+```
+
+and the construct, called or with `new`, at
+
+```math
+\frac{\mathit{lib}(\mathtt{Error})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{Error},\ \cdot,\ \mathsf{text}(s),\ \mathsf{stated}\ (\mathsf{string},\ \mathsf{ErrorOptions})\Rightarrow\mathsf{Err})}
+     {⟦s⟧_\Omega=\mathsf{new}(\mathsf{string},\ \mathsf{ErrorOptions})\Rightarrow\mathsf{Err}\quad\text{within}\ \varnothing,\ \text{on a throw too}}\ \textsf{library-error-options}
+```
+
+with $`\mathsf{Err}`$ the object whose link holds the message
+([a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error)).
+Neither step runs code at $`\mathsf{ErrorOptions}`$: no object is a proxy, a
+value meeting a stated field holds it as a data property, and
+`Object.prototype` owns no `cause` ([trust surface](DESIGN.md#trust-surface)).
+A type not stating `cause` is open at it, and no rule derives it at
+$`\mathsf{ErrorOptions}`$: the object may own a getter there, which `Get` runs
+(`invalid-error-options`, `invalid-error-options-spread`, run under Node). A
+getter written at `cause` and a proxy are outside the fragment
+(`invalid-error-options-getter`, `invalid-error-options-proxy`, run under
+Node). The error's own `cause` is not stated: a read of it is refused
+(`invalid-error-cause-read`), and a write of it is reserved, as `stack`'s
+is ([reserved writes](SOURCE-ELABORATION.md#reserved-writes)). The host is
+trusted to follow ECMA-262's description of the `Error` constructor; the
+other error constructors (`AggregateError`, `TypeError`) have no entry
+(`error-options`, `map-stable-json-error`).
 
 ### `Array.isArray` and `instanceof Array`
 

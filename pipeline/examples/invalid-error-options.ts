@@ -1,6 +1,6 @@
-// `Error`'s options are read for `cause` through `[[Get]]`, which runs a
-// getter: client code that may shrink the array `map` visits. The call is
-// read with the message only.
-export function wrong(xs: string[], options: { cause: unknown }): string[] {
+// A type not stating `cause` is open at it: the options may own a getter
+// there, which `Error` runs through `[[Get]]`, client code that may shrink
+// the array `map` visits. Refused at the options.
+export function wrong(xs: string[], options: { reason: string }): string[] {
   return xs.map((x) => Error(x, options).message);
 }

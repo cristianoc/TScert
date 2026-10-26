@@ -8,6 +8,6 @@ class Failure extends Error {
     super(message, {});
   }
 }
-export function use(): Error {
-  return new Failure("failed");
+export function use(): string {
+  return new Failure("failed").message;
 }

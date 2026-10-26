@@ -474,11 +474,12 @@ lowered only onto a receiver whose checked claim excludes every such object
 (SOURCE-ELABORATION.md, "Reserved writes"). The policy is its two parts: the
 reserved keys, and the receiver exclusion, `ProtoFree.clause` over the
 receiver's clauses. An instance of the `Error` family owns a non-enumerable
-`message` (where its construction passed one) and `stack`; every such
-instance owns the prototype key in the model. -/
+`message` (where its construction passed one), `stack`, and `cause` (where
+its construction's options held one); every such instance owns the prototype
+key in the model. -/
 
 /-- The keys a write may reach only on a proto-free receiver. -/
-def reservedKeys : List String := ["message", "stack"]
+def reservedKeys : List String := ["message", "stack", "cause"]
 
 /-- A key a write names. -/
 def reservedKey : PropKey → Bool

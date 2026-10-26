@@ -895,7 +895,8 @@ depth. JavaScript constructs such an instance in the base: `super(m)` runs
 `Error(m)` with the derived class as the new target (ECMA-262, `Error (
 message [ , options ] )` and OrdinaryCreateFromConstructor), which allocates
 an ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
-non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and,
+non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`), a
+non-enumerable `cause` where the options hold one (InstallErrorCause) and,
 in V8, a non-enumerable `stack`; each derived constructor then defines its
 own fields on it.
 
@@ -918,14 +919,18 @@ base gives:
 \mathsf{\%ErrorMessage\%}(m)=m\ ??\ \texttt{""},\ \ m:\mathsf{string}\mid\mathsf{undefined}
 ```
 
-where $`\vec a_B`$ is what `super` passes, none or the one message, and
+where $`\vec a_B`$ is what `super` passes, none, the message, or the
+message and the options, and
 $`\textit{base}`$ is the base's construction, as for any [derived class](#derived-classes), absent where $`B`$ is `Error`; its own keys are copied and its links
 replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
 it is and an omitted or `undefined` one to `""`, which JavaScript's instance
 reads from `Error.prototype.message`. The argument is bound at `string |
 undefined` before it defaults, so an argument of another type, which
 `ToString` converts (`null` to `"null"`, an object by running its code), is
-refused at it. The instance's own keys are its declared fields;
+refused at it. The options are bound after it at `Error`'s stated options
+([`JSON` and `Error`](SOURCE-CONTRACTS.md#json-and-error)), at which reading
+`cause` runs no code; the `cause` they may give the instance is not stated.
+An implicit constructor forwards both. The instance's own keys are its declared fields;
 `e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
 $`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
 `Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
@@ -934,8 +939,9 @@ the Boolean).
 The model and JavaScript place the message differently: an own
 non-enumerable property in JavaScript, a field of a link in the model (for an
 omitted message, `Error.prototype`'s in JavaScript, `""` on the link in the
-model). JavaScript's instance also owns a non-enumerable `stack`, which the
-model does not state. That the two agree on every admitted observation is the
+model). JavaScript's instance also owns a non-enumerable `stack`, and a
+non-enumerable `cause` where its options held one, which the model does not
+state. That the two agree on every admitted observation is the
 conclusion of this audit of the operations reaching an instance, given stable
 prototypes. Each operation is in one of three groups.
 
@@ -975,27 +981,28 @@ Operations excluded, refused with a location:
   message through `[[Get]]`; the parameter is a JSON value, which an instance
   holding a prototype is not;
 - members JavaScript's instance or `Error.prototype` holds and the model does
-  not state: `e.stack`, `e.toString()`, `D.captureStackTrace`, `super.m(…)`;
-- an instance member named `message` or `stack` (a method, a field or an
-  accessor), and a parameter property of either name, of a class extending
-  `Error` at any depth, refused at the member: JavaScript's own property
-  shadows a method, and a field or a parameter property defines or assigns
-  the own property where the model would add an enumerable field;
-- `super(m, options)`, whose `options.cause` is read through `[[Get]]`, as
-  the overlay's `Error` is;
+  not state: `e.stack`, `e.cause`, `e.toString()`, `D.captureStackTrace`,
+  `super.m(…)`;
+- an instance member named `message`, `stack` or `cause` (a method, a field
+  or an accessor), and a parameter property of any of these names, of a
+  class extending `Error` at any depth, refused at the member: JavaScript's
+  own property shadows a method, and a field or a parameter property defines
+  or assigns the own property where the model would add an enumerable field
+  (`invalid-error-subclass-cause-field`);
 - another library base (`TypeError`, `Map`, an ambient class).
 
 #### Reserved writes
 
 JavaScript keeps an instance's own `stack`
-non-enumerable through an assignment, and its own `message` too where the
-construction passed one; after `new D()` or `new D(undefined)` the instance
+non-enumerable through an assignment, and its own `message` and `cause` too
+where the construction passed them (`invalid-error-subclass-cause-write`,
+run under Node); after `new D()` or `new D(undefined)` the instance
 owns no `message`, and an assignment creates an own enumerable one (observed
 under Node, `invalid-error-subclass-assign-target`). Either way the model,
-which states neither property, would add or change an enumerable own field,
+which states none of these properties, would add or change an enumerable own field,
 which a later copy, `Object.keys` or an exact-key claim observes. The
 restriction is one policy of two parts: a set $`R`$ of reserved keys, here
-$`R = \{\texttt{"message"}, \texttt{"stack"}\}`$, and an exclusion of the
+$`R = \{\texttt{"message"}, \texttt{"stack"}, \texttt{"cause"}\}`$, and an exclusion of the
 receivers that may hold them, here every object owning the prototype key.
 Lean's lowering decides it on the claims evidence establishes, at every
 write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim

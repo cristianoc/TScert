@@ -100,6 +100,20 @@ export function errorInstance(span: Span): TypeTerm {
       type: { k: "atom", name: "string", span }, span }], stringIndex: null, calls: [], span } };
 }
 
+/** What `Error` reads of its options, `options` absent or `undefined`, or
+ * an object whose `cause` its type states, at any value, or absent: ECMA-262's
+ * InstallErrorCause checks `HasProperty(options, "cause")`, which looks the
+ * key up along the prototype chain, and where it holds reads it by `Get`.
+ * Neither runs code on such an object: no object is a proxy, a value
+ * meeting a stated field holds it as a data property, and
+ * `Object.prototype` owns no `cause` (DESIGN.md, the trust surface). A
+ * type not stating `cause` is open at it: the object may own an accessor
+ * there, whose getter `Get` would run. */
+export function errorOptions(span: Span): TypeTerm {
+  return { k: "union", span, parts: [{ k: "object", stringIndex: null, calls: [], span, fields: [{ name: "cause",
+    optional: true, readonly: true, type: { k: "atom", name: "unknown", span }, span }] }, { k: "atom", name: "undefined", span }] };
+}
+
 const at: [number, number] = [0, 0];
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
@@ -428,7 +442,16 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // object, so a read and `in` find it and a spread does not copy it. Its
   // `name` and a missing message are `Error.prototype`'s, which the model
   // does not hold, so only the message is stated, and it is required.
-  // `stack` is the engine's and is not stated. ES2022 adds `options`.
+  // `stack` is the engine's and is not stated.
+  //
+  // ES2022's `options`: after converting the message, the host runs
+  // InstallErrorCause (ECMA-262, "Error ( message [ , options ] )"): where
+  // `options` is an object and `HasProperty(options, "cause")` holds, it
+  // reads `Get(options, "cause")` and defines the value as the error's own
+  // non-enumerable data property `cause`. The options are stated at
+  // `errorOptions`, at which neither step runs code. The error's own
+  // `cause`, like `stack`, is not stated: a read of it is refused, and a
+  // write of it is reserved (`reservedKeys` in Lean's lowering).
   //
   // `Error(m)` called runs the same steps: with no new target, the error
   // constructor takes itself as the target (ECMA-262, "Error ( message [ ,
@@ -440,7 +463,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
       ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
-      stated: { binders: [], params: [atom("string")], result: errorInstance(at) } })),
+      stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
+        result: errorInstance(at) } })),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
   // which run no code on a string and a number, the calculus's primitive
   // types its declaration states: a number, `NaN` where `s` spells none.
