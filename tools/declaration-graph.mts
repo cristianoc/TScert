@@ -38,6 +38,8 @@ import { literal, SweepError, writtenApplications, type Entity } from "./written
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+// named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
+import { definitionKey, deferredIn, settleDocument } from "./named-record.mts";
 // files.mts makes every file-system failure a tool failure.
 import { orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
@@ -107,7 +109,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    fail: (message: string) => never, record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
@@ -116,7 +118,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
   return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args),
-    ...(t.identity ? { identity: { ...t.identity, object: substitute(t.identity.object, args) } } : {}) }, span, fail);
+    ...(t.identity ? { identity: { ...t.identity, object: substitute(t.identity.object, args) } } : {}) }, span, fail, record);
 }
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
@@ -426,6 +428,10 @@ export function collectDeclarations(file: string, options: {
    * (`globals`), that TypeScript binds to a library type read at its meaning
    * rather than joining the graph (`LibraryType`). */
   library?: (span: Span, library: LibraryType) => void;
+  /** Told each definition that is a record written as one: an interface or
+   * a type alias read as its declared body, outside a class and a host
+   * type (`NamedRecords`, named-record.mts). */
+  record?: (declaration: DeclarationIdentity) => void;
   /** The standard associated-result alias, resolved at a source name. */
   awaited?: (span: Span) => void;
   /** The verifier's resolution-qualification bound (`resolvable.d.ts`),
@@ -3671,6 +3677,7 @@ export function collectDeclarations(file: string, options: {
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
+    const records = new Set<string>();
     const starts = [
       ...roots.map(({ root, node }) => ({ node, span: root.binding.span })),
       ...valueStarts.map((node, index): { node: TypeDeclaration; span: Span } =>
@@ -3688,6 +3695,10 @@ export function collectDeclarations(file: string, options: {
             libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
             guardPromises,
             keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: statement,
+            record: identity => {
+              records.add(definitionKey(identity));
+              options.record?.(identity);
+            },
             collecting: (node, key) => {
               collecting = key;
               if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
@@ -3739,6 +3750,17 @@ export function collectDeclarations(file: string, options: {
     definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
+    // The graph is complete: each mapped type read at a named type before
+    // its definition was is expanded at it (`settleDocument`).
+    const settledAt = starts[0]?.span ?? [0, 0];
+    const settledDocument = settleDocument({ definitions, values, applications }, id => records.has(definitionKey(id)),
+      (_where, error) => {
+        recover(settledAt, error);
+        return { k: "atom", name: "unknown", span: settledAt };
+      });
+    definitions.splice(0, definitions.length, ...settledDocument.definitions);
+    values.splice(0, values.length, ...settledDocument.values);
+    applications = settledDocument.applications;
     // Trusted generic promise results have a stable non-thenable payload
     // contract, so fresh resolution preserves that payload. Bound each
     // type parameter a Promise or PromiseLike position names accordingly
@@ -3753,7 +3775,10 @@ export function collectDeclarations(file: string, options: {
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule || localInstances.has(d.declaration.module) ? d :
       { ...d, expression: d.expression && promisedMethods(d.expression) });
     if (options.familySelected) options.familySelected(scan());
-    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
+    const document: DeclarationDocument = { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
+    if (deferredIn(document))
+      throw new DeclarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
+    return document;
   });
 }
 
@@ -4609,6 +4634,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   collecting: (node: TypeDeclaration | null, key: string | null) => void;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
+  /** Told each definition that is a record written as one (`NamedRecords`). */
+  record: (identity: DeclarationIdentity) => void;
   /** A mapped type over `keyof` as TypeScript resolves it. */
   modifiers: NonNullable<TermScope["modifiers"]>;
   /** A declaration's type parameters, its merged declarations together. */
@@ -5147,6 +5174,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         });
     });
     definitions.push({ declaration: identity, parameters, bases, expression });
+    // A record written as one: an interface or an alias read as its declared
+    // body, outside a class, a host type and a view; or an alias of a named
+    // type, whose shape is that type's.
+    if (!view && !context.hostType(node) && !parts.some(ts.isClassDeclaration) &&
+        ((expression.k === "object" && !expression.prototype && !expression.host) ||
+          (ts.isTypeAliasDeclaration(node) && expression.k === "reference")))
+      context.record(identity);
     } catch (error) {
       passToolFailure(error);
       if (!context.diagnostic) throw error;

@@ -20,6 +20,7 @@ import { check as checkSource, invocationLog, producerExecutable, readClaimsFile
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
+import { deferredIdentity } from "../tools/type-term.mts";
 import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
@@ -468,6 +469,33 @@ control(async (): Promise<void> => {
   refusedAt(artifacts, forged, "forged-grouped-array-length", at);
   assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts).includes(at));
   process.stdout.write("grouped array length claim: refused at the member access in search and check\n");
+});
+
+// A mapped type the front end deferred at a named type (`deferredIdentity`)
+// names no declaration. The front end writes no document holding one
+// (`deferredIn`); a forged document holding one, at a parameter's type and at
+// a definition's equation, is refused by the verifier as well, so no
+// acceptance rests on that check.
+control(async (): Promise<void> => {
+  const good = run("mapped-identity-named");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const viewed = source.functions.find(f => f.name === "viewed");
+  const [param] = viewed?.params ?? [];
+  assert.ok(viewed && param && param.type.k === "reference", "viewed takes a Shape");
+  const deferred = deferredIdentity({ object: param.type, homomorphic: true, readonlyMod: "add", optionalMod: "keep" },
+    { k: "atom", name: "never", span: param.type.span }, param.type.span);
+  const atParameter = { ...source, functions: source.functions.map(f => f !== viewed ? f
+    : { ...f, params: [{ ...param, type: deferred }] }) };
+  const atDefinition = { ...source, declarations: { ...source.declarations,
+    definitions: source.declarations.definitions.map(d => d.declaration.name === "Copy" ? { ...d, expression: deferred } : d) } };
+  for (const [name, forged] of [["parameter", atParameter], ["definition", atDefinition]] as const) {
+    const ast = join(good, `deferred-identity-${name}.json`);
+    writeFileSync(ast, JSON.stringify(forged));
+    const refused = invoke(join(good, "claims.json"), join(good, "evidence.json"), good, ast);
+    assert.doesNotMatch(refused, /accept:/);
+    assert.match(refused, /reference has no declaration equation/);
+  }
+  process.stdout.write("a deferred mapped type in a forged parser document, at a parameter and at a definition: refused\n");
 });
 
 control(async (): Promise<void> => {

@@ -251,6 +251,12 @@ export type TermScope = {
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
   equation?(reference: Extract<TypeTerm, { k: "reference" }>): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+  /** A named type's outer record shape, where the definitions it reaches
+   * are complete (`recordShape`, named-record.mts): the record a mapped type
+   * whose value is `X[P]` maps at a named X; null where they are not yet
+   * complete. A scope without it, or answering null, defers the mapped type
+   * (`deferredIdentity`). */
+  record?(reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
 };
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
@@ -429,7 +435,8 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   }
   if (ts.isTypeLiteralNode(node))
     return members(scope, node.members, node, span, node === scope.body ? true : "nested");
-  if (ts.isMappedTypeNode(node)) return expandMapped(mapped(scope, node), span, message => scope.fail(node, message));
+  if (ts.isMappedTypeNode(node))
+    return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record?.bind(scope));
   if (ts.isFunctionTypeNode(node)) {
     if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
     // A generic function type, `<A>(x: A) => R`, in a declaration or an
@@ -618,8 +625,9 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
  * `number`, a number index, which number literals add nothing to; over
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
-export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  if (m.identity) return expandIdentity(m.identity, m.key, span, fail);
+export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never,
+    record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record);
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -662,16 +670,61 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
   }), ...indexes, calls: [], span };
 }
 
-/** `term` with each of its declaration's parameters replaced by the term at
- * that position of `args`. */
+/** The module of a deferred mapped type's marker (`deferredIdentity`): no
+ * declaration has it, since every module identity is a path
+ * (`DeclarationIdentity`). */
+export const DEFERRED_MODULE = "#deferred-mapped-identity";
+
+/** A mapped type whose value is `X[P]` at a named X, read where the
+ * definitions X reaches are not yet complete: a reference to no
+ * declaration, of module `DEFERRED_MODULE`, whose target's name spells the
+ * mapping's form and modifiers and whose arguments are X and the key. A
+ * term of the wire's type holds it so that substitution and every traversal
+ * carry it; each is replaced by its expansion once the definitions are
+ * complete (`settleTerm`, named-record.mts), and a document holding one is
+ * refused (`deferredIn`). */
+export function deferredIdentity(id: Identity, key: TypeTerm, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
+    arguments: [], target: { module: DEFERRED_MODULE,
+      name: `${id.homomorphic ? "keyof" : "pick"}:${id.readonlyMod}:${id.optionalMod}`, span } } };
+}
+
+const isModifier = (text: string | undefined): text is Modifier =>
+  text === "keep" || text === "add" || text === "remove";
+
+/** A deferred mapped type's identity and key (`deferredIdentity`), or null
+ * for any other term. */
+export function deferredOf(term: TypeTerm): Within<{ value: "any"; store: "grow" }, { identity: Identity; key: TypeTerm } | null> {
+  if (term.k !== "reference" || term.reference.target.module !== DEFERRED_MODULE) return null;
+  const [form, readonlyMod, optionalMod] = term.reference.target.name.split(":");
+  const [object, key, ...more] = term.args;
+  if ((form !== "keyof" && form !== "pick") || !isModifier(readonlyMod) || !isModifier(optionalMod) || !object || !key || more.length)
+    throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
+  return { identity: { object, homomorphic: form === "keyof", readonlyMod, optionalMod }, key };
+}
+
 /** A mapped type whose value is `X[P]` at a known X: X's members (all of
  * them over `keyof X`, the fields its key union names otherwise) with the
- * modifiers the mapping adds or removes. X must be a record type the reader
- * holds as one: a named type, a union or a type parameter is refused. */
-function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  const x = id.object;
+ * modifiers the mapping adds or removes. X is a record type written as one,
+ * or a named type, read at its outer record shape where `record` gives it
+ * (`recordShape`) and deferred where the definitions it reaches are not yet
+ * complete; a union or a type parameter is refused. */
+function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never,
+    record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  let x = id.object;
+  if (x.k === "reference") {
+    const shape = record?.(x, fail) ?? null;
+    if (!shape) return deferredIdentity(id, key, span);
+    x = shape;
+  }
   if (x.k !== "object") return fail("a mapped type's value names its key, over a type that is no record the reader holds");
-  if (x.calls.length || x.prototype) return fail("a mapped type's value names its key, over a type with call signatures or a prototype");
+  if (x.calls.length || x.prototype || x.host || x.stable)
+    return fail("a mapped type's value names its key, over a type with call signatures, a prototype or a host's members");
+  // A method's receiver is the declaration it is a member of: mapped, the
+  // member is a field of another type, of which no receiver is stated.
+  let receiver = false;
+  for (const f of x.fields) visitType(f.type, part => { if (part.k === "self") receiver = true; });
+  if (receiver) return fail("a mapped type's value names its key, over a type with a method whose receiver is that type");
   const apply = (mod: Modifier, own: boolean): boolean => (mod === "keep" ? own : mod === "add");
   const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
   const optional = (own: boolean): boolean => apply(id.optionalMod, own);
@@ -710,6 +763,8 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
     stringIndex: null, calls: [], span };
 }
 
+/** `term` with each of its declaration's parameters replaced by the term at
+ * that position of `args`. */
 export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => substitute(t, args);
   const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),

@@ -33,6 +33,8 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
+// named-record.mts reads a named type's record shape, which a mapped type over it maps.
+import { definitionKey, deferredIn, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
 import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type Answered,
   type BlockType, type LibraryType, type SeenDiagnostic }
@@ -183,6 +185,11 @@ export class Gate {
   /** Global spellings TypeScript binds to a standard library type read at
    * its meaning, `Array<T>` as `T[]` (`LibraryType`). */
   readonly libraryTypes: Map<string, LibraryType> = new Map();
+  /** The declaration document's definitions by identity (`definitionKey`),
+   * once it is complete, and those that are records written as one: a
+   * named type's record shape is read from them (`recordShape`). */
+  recordDefinitions: ReadonlyMap<string, TypeDefinition> | null = null;
+  readonly recordKeys: Set<string> = new Set();
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
@@ -708,6 +715,11 @@ export class Gate {
       },
       keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
       modifiers: (node) => this.mappedMembers.get(this.span(node).join(":")) ?? null,
+      // A named type's record shape, at the complete declaration document.
+      record: (reference, fail) => {
+        const records = this.namedRecords();
+        return records && recordShape(reference, records, fail);
+      },
       // The alias the reference names, as TypeScript resolved it, at every
       // one of its parameters.
       equation: (reference) => {
@@ -719,7 +731,7 @@ export class Gate {
         const result = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (!result) return this.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
         if (!result.ok) return this.fail(node, result.refused);
-        return result.value;
+        return this.settled(result.value, node);
       },
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
@@ -733,7 +745,7 @@ export class Gate {
         const computed = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (computed) {
           if (!computed.ok) return this.fail(node, computed.refused);
-          return computed.value;
+          return this.settled(computed.value, node);
         }
         // A type declared in a block, at the binders it closes over, which
         // TypeScript resolves to themselves here (`blockTypes`).
@@ -763,7 +775,7 @@ export class Gate {
         if (library !== undefined && !this.hasTypeParam(name))
           return libraryTerm(library, libraryArguments(library, node.typeArguments ?? [], read,
             part => this.keyTypes.get(this.span(part).join(":")) ?? null), span,
-            message => this.fail(node, message));
+            message => this.fail(node, message), this.scope.record);
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name))
           return this.declaredReference(node, name, span, declared, [], read);
@@ -793,7 +805,28 @@ export class Gate {
     if (!omitted.ok) return this.fail(node, omitted.refused);
     return { k: "reference", reference: { name, span,
       arguments: args.map(arg => this.span(arg)), target: declared.declaration },
-      args: [...closed, ...args.map(read), ...omitted.value], span };
+      args: [...closed, ...args.map(read), ...omitted.value.map(t => this.settled(t, node))], span };
+  }
+
+  /** The complete declaration document's definitions, as a named type's
+   * record shape is read from them (`NamedRecords`); null before it is
+   * complete. */
+  namedRecords(): Within<{ value: "any"; store: "grow" }, NamedRecords | null> {
+    const definitions = this.recordDefinitions;
+    if (!definitions) return null;
+    return { definition: id => definitions.get(definitionKey(id)), record: id => this.recordKeys.has(definitionKey(id)) };
+  }
+
+  /** A term the declaration graph read while it was collected, with each
+   * mapped type it deferred at a named type expanded at the complete
+   * document (`settleTerm`); a refusal located at `node`. */
+  settled(term: TypeTerm, node: Node): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    const records = this.namedRecords();
+    if (!records) return term;
+    return settleTerm(term, records, "the source", (_where, error) => {
+      passToolFailure(error);
+      return this.fail(node, messageOf(error));
+    });
   }
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
@@ -2015,6 +2048,7 @@ function lowerFile(file: string, carriesContext: boolean,
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
         },
+        record: identity => gate.recordKeys.add(definitionKey(identity)),
         awaited: () => { gate.standardAwaited = true; },
         resolvable: () => { gate.standardResolvable = true; },
         awaitable: () => { gate.standardAwaitable = true; },
@@ -2052,6 +2086,7 @@ function lowerFile(file: string, carriesContext: boolean,
     gate.tagSymbols = new Set(declarations.symbols.flatMap((s, i) => isTagSymbol(s) ? [i] : []));
     for (const { declaration } of declarations.definitions)
       gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
+    gate.recordDefinitions = new Map(declarations.definitions.map(d => [definitionKey(d.declaration), d]));
     for (const root of declarations.roots) {
       const identity = root.declaration;
       const definition = declarations.definitions.find(d =>
@@ -2143,6 +2178,10 @@ function lowerFile(file: string, carriesContext: boolean,
   const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init, modules: [] };
   const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
     declarations, init, functions: parsed, absent }, absolute, location);
+  // A mapped type over a named type read before the document was complete,
+  // by a term the graph handed the gate, names no declaration.
+  if (deferredIn(ast) || deferredIn(module))
+    gate.fail(null, "a mapped type's value names its key, over a named type read before its definitions were complete");
   return { ast, module, imported: importedFrom };
 }
 

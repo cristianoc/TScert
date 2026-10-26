@@ -1243,7 +1243,7 @@ so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
 the writable string index.
 
 A mapped type whose value is $`X[P]`$, at a record $`X`$ the reader holds as
-one (an object type with no call signature and no prototype), is $`X`$'s
+one (an object type with no call signature, prototype or method), is $`X`$'s
 members at the modifiers the mapped type writes: `Readonly`, `Partial`,
 `Required` and `Pick`. With $`⟦X⟧`$ the fields $`k_i^{m_i}\colon T_i`$ and the
 indexes $`\iota_j^{r_j}\colon U_j`$, and $`m`$ the mapped type's modifiers:
@@ -1269,11 +1269,57 @@ cases are `mapped-identity`, `invalid-mapped-readonly-write`,
 `invalid-mapped-partial-alias` and
 `blocker-readonly-record`. In a library alias $`X`$ is its parameter at the
 reference's arguments, so
-`Readonly<Record<string, V>>` is the readonly string index. A named type,
-a union, an array, or a type with call signatures as $`X`$ is refused
-(`mapped-identity-named-refused`), as is a written key union in place of a
-bounded parameter, over which TypeScript copies no modifiers
-(`mapped-literal-keys-value-refused`). An interface's `extends` clauses are the meet of
+`Readonly<Record<string, V>>` is the readonly string index. A union, an
+array, or a type with call signatures as $`X`$ is refused, as is a written
+key union in place of a bounded parameter, over which TypeScript copies no
+modifiers (`mapped-literal-keys-value-refused`).
+
+At a named type $`N`$, an interface or an alias applied at arguments
+$`\vec A`$, both rules read $`N`$'s outer record shape
+$`\mathsf{shape}(N)`$: its definition's equation at $`\vec A`$, an alias
+followed to the type it names, with the members of every base:
+
+```math
+\frac{D\langle\vec X\rangle=E\ \text{an alias}\quad \mathsf{shape}(E[\vec A/\vec X])=R}
+     {\mathsf{shape}(D\langle\vec A\rangle)=R}\ \textsf{shape-alias}
+\qquad
+\frac{D\langle\vec X\rangle=R_0\ \mathtt{extends}\ B_1,\ldots,B_n\quad \mathsf{shape}(B_i[\vec A/\vec X])=R_i\quad R=R_0[\vec A/\vec X]\oplus R_1\oplus\cdots\oplus R_n}
+     {\mathsf{shape}(D\langle\vec A\rangle)=R}\ \textsf{shape-interface}
+```
+
+```math
+\frac{N\ \text{named}\quad \mathsf{shape}(N)=R\quad ⟦\{[P\ \mathtt{in}\ \mathtt{keyof}\ R]^m\colon R[P]\}⟧=S}
+     {⟦\{[P\ \mathtt{in}\ \mathtt{keyof}\ N]^m\colon N[P]\}⟧=S}\ \textsf{mapped-named}
+\qquad
+\frac{N\ \text{named}\quad \mathsf{shape}(N)=R\quad ⟦\{[P\ \mathtt{in}\ K]^m\colon R[P]\}⟧=S}
+     {⟦\{[P\ \mathtt{in}\ K]^m\colon N[P]\}⟧=S}\ \textsf{mapped-named-pick}
+```
+
+$`D\langle\vec X\rangle=E`$ is the complete definition, the parts of a
+merged interface together. $`\mathsf{shape}(R)=R`$ for a record written as
+one; a class, a host type, a library interface read through its overlay, a
+union, an array, a tuple, an intersection, and a record with call or
+construct signatures, a prototype or a method (whose receiver is the
+declaration, of which the mapped field is no member) have no shape.
+$`R\oplus R'`$ is $`R`$'s members and indexes with those of $`R'`$ whose key
+$`R`$ lacks; it is defined where every member and index both declare is the
+same, type and modifiers. Each member keeps the modifiers it is declared
+with, inherited ones included, and its type as declared: the shape is one
+unfolding, so a field naming $`N`$ keeps that reference. A shape reaching
+itself through its equations and bases has none, nor has one a mapped type
+inside its own definition needs. The cases are `mapped-identity-named`,
+`mapped-named-bases`, `mapped-named-generic`, `mapped-named-default`,
+`mapped-named-pick`, `mapped-named-hook-value-import` and
+`invalid-mapped-named-readonly-write`; the refusals are
+`mapped-named-required-undefined-refused`, `mapped-named-conflict-refused`,
+`mapped-named-call-refused`, `mapped-named-call-refused-value-import`,
+`mapped-named-method-refused`, `mapped-named-cycle-refused` and
+`mapped-named-class-refused`. The front end reads $`\mathsf{shape}`$ from
+the declaration document once it is complete (`named-record.mts`); a mapped
+type the declaration graph reads before then is expanded when its
+collection ends, and a document holding one unexpanded is refused.
+
+An interface's `extends` clauses are the meet of
 its own clauses with each base's, its own members first (`inheritRows`,
 [conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
 intersection has the same meaning (`meetRow`).

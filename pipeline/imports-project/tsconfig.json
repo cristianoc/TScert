@@ -56,6 +56,7 @@
     "./stated.ts",
     "./stated-overload.ts",
     "./stated-ambient.d.ts",
+    "./hooks-ambient.d.ts",
     "./partial.ts",
     "./partial-init.ts",
     "../../tools/resolvable.d.ts"
