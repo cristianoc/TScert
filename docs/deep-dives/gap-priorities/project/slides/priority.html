@@ -1,9 +1,9 @@
 <section id="priority" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, diagnostic census at 83cdb42</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Seven causes, eight gap cases, ranked by the code they block</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Seven causes ranked by the code they block: cause 1's cases verified, seven gap cases open</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:4%;text-align:left;font-weight:600">#</th><th style="width:44%;text-align:left;font-weight:600">Cause</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:30%;text-align:left;font-weight:600">Cases</th></tr>
-<tr><td>1</td><td>Mapped types naming their key: Readonly, Pick, Partial</td><td>2,520</td><td>51</td><td><span style="color:#2b5b9c">written-partial-argument-refused</span></td></tr>
+<tr><td>1</td><td>Mapped types whose field type is T[P]: Readonly, Pick, Partial</td><td>2,520</td><td>51</td><td><span style="color:#2b5b9c">written-partial-argument</span>, <span style="color:#2b5b9c">blocker-readonly-record</span>: <span style="color:#2e7d4f">verified</span></td></tr>
 <tr><td>2</td><td>Node's Buffer and its byte types</td><td>1,887</td><td>72</td><td><span style="color:#2b5b9c">blocker-node-buffer-contract</span></td></tr>
 <tr><td>3</td><td>A key test "name" in x</td><td>1,708</td><td>32</td><td><span style="color:#2b5b9c">blocker-in-name-object</span></td></tr>
 <tr><td>4</td><td>Node's crypto hash and stream declarations</td><td>1,539</td><td>47</td><td><span style="color:#2b5b9c">blocker-node-hash-contract</span></td></tr>
@@ -11,7 +11,7 @@
 <tr><td>6</td><td>The options argument of Error</td><td>1,134</td><td>14</td><td><span style="color:#2b5b9c">blocker-error-super-options</span>, <span style="color:#2b5b9c">blocker-error-options</span></td></tr>
 <tr><td>7</td><td>A callback parameter whose context is a library type</td><td>1,045</td><td>16</td><td><span style="color:#2b5b9c">blocker-closure-map-context</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>A cause's statements and functions are those of the functions it blocks at any point; causes overlap (measured).</li>
-<li>Every case listed is <span style="color:#5e6870">open</span>. Closed before this census: node:path's sep and five library globals (slides “Closed: …”); Object.getPrototypeOf is confined to a host boundary.</li>
+<li>A cause's statements and functions are those of the functions it blocks at any point: a function blocked by several causes counts under each, so the columns do not add up.</li>
+<li>Cause 1's cases verify since this census was taken (slide “Mapped types …”); every other case listed is <span style="color:#5e6870">open</span>. Closed before this census: node:path's sep and five library globals (slides “Closed: …”); Object.getPrototypeOf is confined to a host boundary (route 5, next slide).</li>
 </ul>
 </section>

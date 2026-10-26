@@ -30,7 +30,7 @@ function cause(id: string, label: string, title: string, o: {
 }
 
 const prio: [string, string, string, string, string][] = [
-  ["1", "Mapped types naming their key: Readonly, Pick, Partial", "2,520", "51", c("written-partial-argument-refused")],
+  ["1", "Mapped types whose field type is T[P]: Readonly, Pick, Partial", "2,520", "51", `${c("written-partial-argument")}, ${c("blocker-readonly-record")}: ${status("ok", "verified")}`],
   ["2", "Node's Buffer and its byte types", "1,887", "72", c("blocker-node-buffer-contract")],
   ["3", "A key test \"name\" in x", "1,708", "32", c("blocker-in-name-object")],
   ["4", "Node's crypto hash and stream declarations", "1,539", "47", c("blocker-node-hash-contract")],
@@ -80,10 +80,10 @@ const slides: Slide[] = [
     ]),
   }),
   slide("priority", {
-    label: "Part 2 · cases by priority, diagnostic census at 83cdb42", title: "Seven causes, eight gap cases, ranked by the code they block", gap: 18,
+    label: "Part 2 · cases by priority, diagnostic census at 83cdb42", title: "Seven causes ranked by the code they block: cause 1's cases verified, seven gap cases open", gap: 18,
     body: table(["#", "Cause", "Statements", "Functions", "Cases"], prio, [4, 44, 12, 10, 30]) + bullets([
-      "A cause's statements and functions are those of the functions it blocks at any point; causes overlap (measured).",
-      `Every case listed is ${status("gap", "open")}. Closed before this census: node:path's sep and five library globals (slides “Closed: …”); Object.getPrototypeOf is confined to a host boundary.`,
+      "A cause's statements and functions are those of the functions it blocks at any point: a function blocked by several causes counts under each, so the columns do not add up.",
+      `Cause 1's cases verify since this census was taken (slide “Mapped types …”); every other case listed is ${status("gap", "open")}. Closed before this census: node:path's sep and five library globals (slides “Closed: …”); Object.getPrototypeOf is confined to a host boundary (route 5, next slide).`,
     ]),
   }),
   slide("routes", {
@@ -98,13 +98,6 @@ const slides: Slide[] = [
       ["7. A proof", "a proof in Lean, the proof assistant TScert's checker is proved in, where the model of JavaScript it needs exists or has wider value"],
       ["8. The refusal stays", "no route works at acceptable cost; the census reports it"],
     ], [22, 78]) + bullets(["Stated in SOURCE-REWRITES.md, “Deciding what a refusal of TScert's code calls for”. The closed cases took route 1; Object.getPrototypeOf took route 5."]),
-  }),
-  cause("mapped", "Cause 1 · 2,520 statements, 51 functions", "A mapped type whose field type depends on its key", {
-    cases: "written-partial-argument-refused",
-    source: ["type G<T, K extends keyof T> = K;", `export function f(x: keyof { z: G<Partial<{ 0: number }>, 0> }): "z" {`, "  return x;", "}"],
-    why: "a mapped type {[P in K]: V} gives every key P the same field type V, and TScert reads it only when V does not mention P. Partial, Readonly and Pick write T[P], the type of the source's own field P, so the gate refuses them wherever they are written (tools/type-term.mts:546). In tools/, Readonly meets 45 of the 51 functions, Partial 4 and Pick 3 (measured).",
-    todo: "one reading rule more: when the keys are a known list of literal keys, each field k gets V with P replaced by k, T[k] reads the field k of T, and the modifiers ? and readonly apply as written. Readonly&lt;{ a: string }&gt; is then { readonly a: string }. A mapped type over a type parameter with no known keys stays refused.",
-    trust: "nothing: it is a reading of a type annotation, not a contract.",
   }),
   cause("buffer", "Cause 2 · 1,887 statements, 72 functions", "Node's Buffer and its byte types", {
     cases: "blocker-node-buffer-contract",
@@ -153,6 +146,18 @@ const slides: Slide[] = [
     todo: "read a context type that names a library interface as an annotation naming it would be read, with the same refusals where that reading has none.",
     trust: "nothing new: an annotation of the same type already rests on the same library declarations.",
   }),
+  cause("mapped", "Cases verified since the census · cause 1, which blocked 51 functions at 83cdb42", "Mapped types whose field type is T[P], the type of T's field P", {
+    cases: "", source: ["// blocker-readonly-record: verified",
+      "export function joined(files: Readonly<Record<string, string>>): string {",
+      "  let out = \"\";", "  for (const [, text] of Object.entries(files)) out += text;", "  return out;", "}"],
+    why: "a mapped type {[P in K]: V} gives every key P the same field type V, and TScert read it only when V does not mention P. Partial, Readonly, Required and Pick write T[P], the type of T's own field P, so the gate refused them wherever they were written. In tools/, Readonly met 45 of the 51 functions, Partial 4 and Pick 3 (measured).",
+    todo: "",
+    trust: "nothing: it is a reading of a type annotation, not a contract. Still refused, each a stated restriction with its case: T[P] at an interface or alias held by name, a union, an array or a callable; over a written key union; -? over an optional field that may hold undefined, whose meaning depends on the option exactOptionalPropertyTypes.",
+    closed: {
+      status: `${status("ok", "verified")} blocker-readonly-record, written-partial-argument; mapped-identity, a case of each form`,
+      how: "route 1, support: rules mapped-identity and mapped-pick. Over keyof T the type is T's own fields and indexes; over Pick's K, bounded by keyof T, the fields K names. Each marker ? and readonly is added, removed (-) or kept from T, as written. Readonly&lt;Record&lt;string, V&gt;&gt; is the readonly string index. Measured on three census copies: guardClosure now stops at crypto's TransformOptions (cause 4), selectGlobal at keyof over a type parameter; familyTable stops where it did. The effect on the 51 functions is for the next census.",
+    },
+  }),
   cause("sep", "Closed by aa3c69a · sep, which blocked 29 functions at 963ffa4", "Closed: the constant sep of node:path", {
     cases: "", source: [`import { sep } from "node:path";`, "export function use(path: string): string[] { return path.split(sep); }"],
     why: `Node's declarations make the module one object, whose interface declares readonly sep: "\\\\" | "/". The gate reads an import from a Node module as an annotated constant, function or class, or through a contract, and the contracts listed functions only.`,
@@ -189,15 +194,15 @@ const slides: Slide[] = [
     ]),
   }),
   slide("next", {
-    label: "Part 2 · order of work", title: "The open cases, cheapest trust first", gap: 22,
+    label: "Part 2 · order of work", title: "The open cases, least new assumption first", gap: 22,
     body: table(["Step", "Cases", "Trust"], [
-      ["Readings with no new assumption: mapped types (1), \"name\" in x (3), a library type as callback context (7)", `${c("written-partial-argument-refused")}, ${c("blocker-in-name-object")}, ${c("blocker-closure-map-context")}`, status("ok", "none")],
-      ["Imported classes read through the import (5)", c("blocker-instanceof-imported-class"), status("trust", "the import's declaration")],
-      ["Error's options (6)", `${c("blocker-error-super-options")}, ${c("blocker-error-options")}`, status("trust", "ECMAScript's Error")],
-      ["Contracts for Node values with methods, a new form of entry: fs, Buffer, createHash (2, 4)", `${c("blocker-node-buffer-contract")}, ${c("blocker-node-hash-contract")}`, status("trust", "an audited entry each")],
+      ["Readings with no new assumption: \"name\" in x (cause 3), a library type as callback context (cause 7)", `${c("blocker-in-name-object")}, ${c("blocker-closure-map-context")}`, status("ok", "none")],
+      ["Imported classes read through the import (cause 5)", c("blocker-instanceof-imported-class"), status("trust", "the import's declaration")],
+      ["Error's options (cause 6)", `${c("blocker-error-super-options")}, ${c("blocker-error-options")}`, status("trust", "ECMAScript's Error")],
+      ["Contracts for Node values with methods, a kind of entry no contract has yet: fs and Buffer (cause 2), createHash (cause 4)", `${c("blocker-node-buffer-contract")}, ${c("blocker-node-hash-contract")}`, status("trust", "an audited entry each")],
     ], [46, 36, 18]) + bullets([
       "Each step turns its gap cases into verified ones; the census and the diagnostic census, run once on main after a merge, then measure what it moved.",
-      "Order (estimated): readings that add no trust first; an imported class rests on what imports already rest on; Error's options are one more stated constructor; new forms of entry come last.",
+      "Estimated cost order, which overrides the ranking by size: readings that add no assumption first; an imported class rests on what imports already rest on; Error's options are one more stated constructor; new forms of entry come last.",
     ]),
   }),
 ];

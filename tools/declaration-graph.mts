@@ -115,7 +115,8 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   }
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
-  return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args) }, span, fail);
+  return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args),
+    ...(t.identity ? { identity: { ...t.identity, object: substitute(t.identity.object, args) } } : {}) }, span, fail);
 }
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;

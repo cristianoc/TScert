@@ -1240,8 +1240,40 @@ mapped type is that type at the reference's arguments:
 ```
 
 so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
-the writable string index. One whose value names its key, as `Pick`'s and
-`Readonly`'s $`T[P]`$, is refused. An interface's `extends` clauses are the meet of
+the writable string index.
+
+A mapped type whose value is $`X[P]`$, at a record $`X`$ the reader holds as
+one (an object type with no call signature and no prototype), is $`X`$'s
+members at the modifiers the mapped type writes: `Readonly`, `Partial`,
+`Required` and `Pick`. With $`⟦X⟧`$ the fields $`k_i^{m_i}\colon T_i`$ and the
+indexes $`\iota_j^{r_j}\colon U_j`$, and $`m`$ the mapped type's modifiers:
+
+```math
+\frac{P\notin\mathrm{fv}(X)\quad⟦X⟧=\{k_1^{m_1}\colon T_1;\ \ldots;\ k_n^{m_n}\colon T_n;\ \iota_1^{r_1}\colon U_1;\ \ldots\}\quad(\mathtt{?}\notin m\ \text{or no index})}
+     {⟦\{[P\ \mathtt{in}\ \mathtt{keyof}\ X]^m\colon X[P]\}⟧=\{k_1^{m\,\triangleleft\,m_1}\colon T_1;\ \ldots;\ \iota_1^{m\,\triangleleft\,r_1}\colon U_1;\ \ldots\}}\ \textsf{mapped-identity}
+```
+
+```math
+\frac{K\ \text{a parameter bounded by}\ \mathtt{keyof}\ X\quad ⟦K⟧=\lambda_1\mid\cdots\mid\lambda_j\ \text{literals}\ (j\ge1)\quad \mathsf{key}(\lambda_l)=k_{i_l}}
+     {⟦\{[P\ \mathtt{in}\ K]^m\colon X[P]\}⟧=\{k_{i_1}^{m\,\triangleleft\,m_{i_1}}\colon T_{i_1};\ \ldots;\ k_{i_j}^{m\,\triangleleft\,m_{i_j}}\colon T_{i_j}\}}\ \textsf{mapped-pick}
+```
+
+At no key the type is `{}`, every value but `null` and
+`undefined` (`mapped-pick-no-key`). Where $`m`$ writes `-?`, an optional
+field's type must hold no `undefined`: TypeScript takes `undefined` from it
+without `exactOptionalPropertyTypes` and keeps it with the option, so a field
+whose type may hold it is refused (`mapped-required-undefined-refused`,
+`mapped-required-alias-undefined-refused`). The
+cases are `mapped-identity`, `invalid-mapped-readonly-write`,
+`invalid-mapped-pick-readonly`, `invalid-mapped-readonly-index-write`,
+`invalid-mapped-partial-alias` and
+`blocker-readonly-record`. In a library alias $`X`$ is its parameter at the
+reference's arguments, so
+`Readonly<Record<string, V>>` is the readonly string index. A named type,
+a union, an array, or a type with call signatures as $`X`$ is refused
+(`mapped-identity-named-refused`), as is a written key union in place of a
+bounded parameter, over which TypeScript copies no modifiers
+(`mapped-literal-keys-value-refused`). An interface's `extends` clauses are the meet of
 its own clauses with each base's, its own members first (`inheritRows`,
 [conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
 intersection has the same meaning (`meetRow`).

@@ -531,7 +531,14 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
  * nothing is copied, so a `-` modifier states nothing; over `keyof X`, X's
  * are copied where none is written, and each member's are TypeScript's. */
 export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean;
-  members?: readonly MappedMember[] };
+  members?: readonly MappedMember[]; identity?: Identity };
+/** A mapped type whose value is `X[P]`, `P` its key and `X` a type that
+ * names no `P`: over `keyof X`, X's own members and indexes (`Readonly`,
+ * `Partial`, `Required`); over a key union `K`, the fields of X that K names
+ * (`Pick`). Each modifier is added (`+`, or written alone), removed (`-`), or
+ * kept from X where none is written. */
+export type Identity = { object: TypeTerm; homomorphic: boolean; readonlyMod: Modifier; optionalMod: Modifier };
+export type Modifier = "keep" | "add" | "remove";
 /** A property of a mapped type over `keyof X` and its modifiers. */
 export type MappedMember = { name: string; optional: boolean; readonly: boolean };
 
@@ -543,6 +550,50 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
   const names = (t: Node): boolean =>
     (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === name) ||
     (t.forEachChild(names) ?? false);
+  const modifier = (token: Node | undefined): Modifier =>
+    !token ? "keep" : token.kind === ts.SyntaxKind.MinusToken ? "remove" : "add";
+  // `{ [P in keyof X]: X[P] }` or `{ [P in K]: X[P] }`: the value indexes a
+  // type naming no `P` by the key itself.
+  const value = node.type;
+  const constraint0 = parameter.constraint;
+  if (value && ts.isIndexedAccessTypeNode(value) && ts.isTypeReferenceNode(value.indexType) &&
+      ts.isIdentifier(value.indexType.typeName) && value.indexType.typeName.text === name && !value.indexType.typeArguments &&
+      !names(value.objectType) && constraint0) {
+    // The same type written twice: the same nodes, leaves spelled alike.
+    const same = (a: Node, b: Node): boolean => {
+      if (a.kind !== b.kind) return false;
+      const as: Node[] = [], bs: Node[] = [];
+      a.forEachChild(c => void as.push(c));
+      b.forEachChild(c => void bs.push(c));
+      if (!as.length && !bs.length) return a.getText(a.getSourceFile()) === b.getText(b.getSourceFile());
+      return as.length === bs.length && as.every((c, i) => { const d = bs[i]; return !!d && same(c, d); });
+    };
+    const keyofObject = (t: TypeNode | undefined): boolean => !!t && ts.isTypeOperatorNode(t) &&
+      t.operator === ts.SyntaxKind.KeyOfKeyword && same(t.type, value.objectType);
+    const homomorphic = keyofObject(constraint0);
+    // Over a type parameter bounded by `keyof X` (`Pick`'s `K`) TypeScript
+    // copies X's modifiers too; over any other key union it copies none,
+    // and that form is refused below.
+    const bound = (t: TypeNode): TypeNode | undefined => {
+      if (!ts.isTypeReferenceNode(t) || !ts.isIdentifier(t.typeName) || t.typeArguments) return undefined;
+      const k = t.typeName.text;
+      for (let n: Node | undefined = node.parent; n; n = n.parent) {
+        const own = (ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n) ? n.typeParameters : undefined)
+          ?.find(q => q.name.text === k);
+        if (own) return own.constraint;
+      }
+      return undefined;
+    };
+    if (homomorphic || keyofObject(bound(constraint0))) {
+    const object = typeTerm(scope, value.objectType);
+    // Over `keyof X` the keys are X's own, read from X when it is known;
+    // the key term then names nothing.
+    const key: TypeTerm = homomorphic ? { k: "atom", name: "never", span: [constraint0.pos, constraint0.end] }
+      : scope.keys?.(constraint0) ?? typeTerm(scope, constraint0, parameter);
+    return { key, value: object, optional: false, readonly: false,
+      identity: { object, homomorphic, readonlyMod: modifier(node.readonlyToken), optionalMod: modifier(node.questionToken) } };
+    }
+  }
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
   // A homomorphic mapped type, `{ [P in keyof X]: V }`, copies X's
   // modifiers to each key where it writes none of its own: each member at
@@ -568,6 +619,7 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  if (m.identity) return expandIdentity(m.identity, m.key, span, fail);
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -612,6 +664,52 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
 
 /** `term` with each of its declaration's parameters replaced by the term at
  * that position of `args`. */
+/** A mapped type whose value is `X[P]` at a known X: X's members (all of
+ * them over `keyof X`, the fields its key union names otherwise) with the
+ * modifiers the mapping adds or removes. X must be a record type the reader
+ * holds as one: a named type, a union or a type parameter is refused. */
+function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  const x = id.object;
+  if (x.k !== "object") return fail("a mapped type's value names its key, over a type that is no record the reader holds");
+  if (x.calls.length || x.prototype) return fail("a mapped type's value names its key, over a type with call signatures or a prototype");
+  const apply = (mod: Modifier, own: boolean): boolean => (mod === "keep" ? own : mod === "add");
+  const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
+  const optional = (own: boolean): boolean => apply(id.optionalMod, own);
+  // `-?` takes `undefined` from a field that was optional where
+  // `exactOptionalPropertyTypes` is off, and keeps it where it is on: a field
+  // whose type may hold `undefined` is refused, and any other keeps its type.
+  const mayHoldUndefined = (t: TypeTerm): boolean =>
+    t.k === "union" ? t.parts.some(mayHoldUndefined)
+      : t.k === "atom" ? t.name === "undefined" || t.name === "void" || t.name === "unknown"
+      : t.k === "binder" || t.k === "parameter" || t.k === "reference" || t.k === "intersection" || t.k === "self" || t.k === "pack";
+  const value = (f: { optional: boolean; type: TypeTerm }): TypeTerm =>
+    f.optional && id.optionalMod === "remove" && mayHoldUndefined(f.type)
+      ? fail("`-?` over an optional field whose type may hold undefined, whose meaning depends on exactOptionalPropertyTypes, is outside the fragment")
+      : f.type;
+  if (id.homomorphic) {
+    if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
+      return fail("an optional mapped type over an index signature's keys is outside the fragment");
+    return { ...x, fields: x.fields.map(f => ({ ...f, type: value(f), readonly: readonly(f.readonly), optional: optional(f.optional) })),
+      stringIndex: x.stringIndex && { ...x.stringIndex, readonly: readonly(x.stringIndex.readonly) },
+      ...(x.numberIndex ? { numberIndex: { ...x.numberIndex, readonly: readonly(x.numberIndex.readonly) } } : {}),
+      ...(x.symbolIndex ? { symbolIndex: { ...x.symbolIndex, readonly: readonly(x.symbolIndex.readonly) } } : {}), span };
+  }
+  // A key union: each literal names a field of X.
+  const names: PropertyKey[] = [];
+  const collect = (k: TypeTerm): void => {
+    if (k.k === "union") k.parts.forEach(collect);
+    else if (k.k === "literal" && k.name === "string") names.push(k.text);
+    else if (k.k === "literal" && k.name === "number") names.push(numericKey(k.text));
+    else if (!(k.k === "atom" && k.name === "never")) fail("a mapped type's value names its key, over keys that are not literals");
+  };
+  collect(key);
+  // No key: `{}`, every value but null and undefined.
+  if (!names.length) return emptyObject(span);
+  const fields = names.map(n => x.fields.find(f => f.name === n) ?? fail(`a mapped type's value names its key, and the record has no field ${String(n)}`));
+  return { k: "object", fields: fields.map(f => ({ ...f, type: value(f), readonly: readonly(f.readonly), optional: optional(f.optional), span })),
+    stringIndex: null, calls: [], span };
+}
+
 export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => substitute(t, args);
   const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
