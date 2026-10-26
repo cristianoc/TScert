@@ -163,9 +163,10 @@ declared contracts retain their own entry checks. -/
     | .value | .slot _ => return A
     | .cell _ reference | .early _ reference => return reference
 
-@[nospecialize] def env (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
+@[nospecialize] def env (fc : SourceClaims.Function Tree) (source : Span) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do
-  recoverDiagnostic (pos, pos) (do
+  let pos := source.1
+  recoverDiagnostic source (do
     try envCore fc pos scope
     catch msg => throw s!"source environment obligation at {pos}: {msg}") do
     scope.mapM fun b => do

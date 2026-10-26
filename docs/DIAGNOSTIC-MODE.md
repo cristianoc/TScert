@@ -29,11 +29,15 @@ the same transactions. A statement-list preparation refusal retains its live
 prefix for independent statement attempts and marks the whole list opaque. Compiler and file-system failures propagate as
 tool failures. The original file remains the source of all offsets.
 
-Diagnostic execution planning replaces a literal-key `in` test excluded by the
-source decoder with `undefined`, recording the whole test as opaque. Its output
-contains both the approximated syntax and its execution graph; proposal and
-typed extraction consume that same syntax. Ordinary decoding retains its
-key restriction.
+Diagnostic execution planning attempts ordinary decoding at each expression and
+statement boundary after visiting its children. A refused expression becomes
+`undefined`; a refused statement becomes an empty block. Binding patterns belong
+to their enclosing declaration's transaction. Nested expression bodies and each
+function or module execution body receive independent planning attempts. A body
+that cannot be planned becomes empty, retaining its declared interface. Each
+replacement records the whole affected region as opaque. Proposal and typed
+extraction consume the same recovered syntax and execution graph. These
+transactions belong exclusively to diagnostic planning.
 
 The producer recovers at expressions, statement transfers, binding-schedule
 operations, conditions and iterator steps. Each refusal restores candidate
@@ -71,7 +75,7 @@ required before typed extraction can use that store.
 Typed extraction recovers executable operations at their supplied result types,
 or `unknown`, retaining the result slot and continuation. Missing environments
 retain each binding's fixed type or storage contract; an unavailable value
-contract becomes `unknown`. A refused flow action retains its destinations and
+contract becomes `unknown`. The affected statement region is opaque. A refused flow action retains its destinations and
 lexical slots, including both branch arms, handlers and reference representations
 for cells. Its whole source region is opaque. The immutable entry state is
 restored before each replacement. A diagnostic hole discards output heap facts

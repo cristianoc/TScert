@@ -80,7 +80,7 @@ reference representation. Every such action is recorded as an opaque region. -/
   if let some target := (← flowTarget id) then
     return ← jumpTo incoming target scope
   let fc := base.atPoint (SourceFlow.pointId graph.owner id)
-  let Γ ← env fc node.source.1 scope
+  let Γ ← env fc node.source scope
   let reserved ← withHandler none (emitAt node.source .nul .ret Γ [Labels.nul]
     "flow-entry" (some node.source.1) scope)
   rememberFlowTarget id reserved
@@ -242,7 +242,7 @@ reference representation. Every such action is recorded as an opaque region. -/
       match guarded with
       | some (ds, K, read, tested, e, rp) =>
         let yesClaims := base.atPoint (SourceFlow.pointId graph.owner yesId)
-        let Γy ← env yesClaims rp.1 ds
+        let Γy ← env yesClaims rp ds
         let e ← comparisonsExpr yesClaims e
         let p ← LoweringExpression.closureExpr recursive yesClaims ds Γy e
         let yes ← emitPlanned e.span p .ret Γy R "return-contract" (scope := ds)
@@ -331,7 +331,7 @@ private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) 
     (withFreshFlowTargets (flowNode recursive graph inner fc R inner graph.entry))
   let mut target := start
   let some entry := graph.nodes[graph.entry]? | throw "internal flow error: missing entry"
-  let Γ ← env (fc.atPoint (SourceFlow.pointId graph.owner graph.entry)) entry.source.1 scope
+  let Γ ← env (fc.atPoint (SourceFlow.pointId graph.owner graph.entry)) entry.source scope
   for i in List.range witnesses.length do
     let remaining := witnesses.drop (i+1) ++ scope
     target ← emitAt owner .undef (.bind target)

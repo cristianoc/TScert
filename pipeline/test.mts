@@ -133,6 +133,59 @@ control(async (): Promise<void> => {
   assert.ok(!inventory.stdout.includes("shared extraction failed"));
 });
 
+// Recovery covers decoder refusals and whole-body planning refusals through
+// the same diagnostic boundary, while ordinary planning rejects each input.
+control(async (): Promise<void> => {
+  const good = await run("stateful-source/arithmetic");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const fn = source.functions[0];
+  assert.ok(fn);
+  const expression = (k: string, pos: [number, number]): object =>
+    ({ k: "effect", pos, e: { k, pos, op: "invalid", e: { k: "lit", pos, lit: { a: "undefined" } } } });
+  for (const body of [
+    [expression("unary", [1, 3]), expression("typeofTest", [4, 6]), expression("futureExpression", [7, 9]), ...fn.body],
+    [{ k: "break", pos: [1, 3], label: null }],
+  ]) {
+    const ast = join(good, "diagnostic-planning-boundaries.json");
+    writeFileSync(ast, JSON.stringify({ ...source, functions: [{ ...fn, body }] }));
+    const ordinary = tested(verifierCall(verifier, ["--lower-control-flow", ast]));
+    assert.notEqual(ordinary.status, 0);
+    writeFileSync(ast, JSON.stringify({ diagnostic: { ...source, functions: [{ ...fn, body }] }, occurrences: [], incomplete: null }));
+    const diagnostic = tested(verifierCall(verifier, ["--diagnostic-control-flow", ast]));
+    assert.equal(diagnostic.status, 0, diagnostic.stdout + diagnostic.stderr);
+    const report: unknown = JSON.parse(diagnostic.stdout);
+    assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
+    assert.equal(report.occurrences.length, body.length === 1 ? 1 : 3);
+    assert.ok("graph" in report && Array.isArray(report.graph) && report.graph.length === 1);
+  }
+});
+
+// Missing producer environments mark actual statements, so their holes have
+// nonempty overlap with the coverage inventory.
+control(async (): Promise<void> => {
+  const good = await run("stateful-source/arithmetic");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const proposal = readClaimsFile(join(good, "claims.json"));
+  const ast = join(good, "diagnostic-environment.json");
+  const claims = join(good, "diagnostic-environment-claims.json");
+  writeFileSync(ast, JSON.stringify({ diagnostic: source, occurrences: [], incomplete: null }));
+  writeFileSync(claims, JSON.stringify({ claims: { ...proposal,
+    functions: proposal.functions.map(f => ({ ...f, entries: [] })) }, occurrences: [] }));
+  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
+  assert.equal(inventory.status, 0, inventory.stdout + inventory.stderr);
+  const report: unknown = JSON.parse(inventory.stdout);
+  assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
+  const environments = report.occurrences.filter((o: unknown) => o && typeof o === "object" &&
+    "reason" in o && typeof o.reason === "string" && o.reason.includes("source environment obligation") && "layer" in o && o.layer === "extraction");
+  assert.ok(environments.length > 0);
+  for (const o of environments) {
+    assert.ok(o && typeof o === "object" && "pos" in o && Array.isArray(o.pos));
+    const pos = o.pos;
+    assert.ok(typeof pos[0] === "number" && typeof pos[1] === "number" && pos[0] < pos[1], JSON.stringify(o));
+    assert.ok(source.functions.some(f => f.body.some(s => s.pos[0] === pos[0] && s.pos[1] === pos[1])));
+  }
+});
+
 // Every allowed compiler enum uses the same Node binding identity check as
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.
