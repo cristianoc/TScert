@@ -521,18 +521,24 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 where $`\mathcal B`$ is the keys the model does not answer as JavaScript does
 on any object (`inKeyRefusal`, [guards](#guards)), and $`\mathcal F`$ the
 keys a function owns or inherits from `Function.prototype` that no other
-built-in prototype holds (`functionKeys`: `name`, `prototype`, `call`,
-`apply`, `bind`, `arguments`, `caller`), which the model's function lacks.
+built-in prototype holds but `Error.prototype`, which holds `name`
+(`functionKeys`: `name`, `prototype`, `call`, `apply`, `bind`, `arguments`,
+`caller`), which the model's function lacks.
 The operand's clauses are objects because `in` throws on a primitive, where
 the test would answer `false`, and not a class value, which holds its static
 fields but not the keys JavaScript's class owns besides (`name`, `length`,
 `prototype`, its static methods). A key of $`\mathcal F`$ is answered as
 JavaScript does on a record or dictionary clause, whose members are objects
-without call code: such an object owns the key only as a field the model
-keeps, or inherits it only from a class's prototype object, which the
-model's prototype chain holds; on a value a unit receives, a key it
-inherits from another prototype counts as owned, by the
-[caller contract](DESIGN.md#trust-surface). An arrow or callable clause, a
+without call code: such an object owns the key as a field the model keeps,
+inherits it from a class's prototype object, which the model's prototype
+chain holds, or, an error, inherits `name` from `Error.prototype`, which the
+model's error lacks. A value a unit receives meets the
+[caller contract](DESIGN.md#trust-surface): a stated optional field `in`
+finds reads a value of its type, and a key a key bound excludes it neither
+owns nor inherits. An error the program builds meets no type stating `name`
+(`invalid-error-optional-name`): `new Error(m)`'s result meets no `Error`,
+and an open object type establishes no optional field it does not state;
+where `name` is unstated, both answers of the test are checked. An arrow or callable clause, a
 function's, makes the test refused:
 
 ```math

@@ -1,10 +1,10 @@
-// A key a function owns or inherits from `Function.prototype` and no other
-// built-in prototype holds (`prototype`, `call`, `apply`, `bind`,
-// `arguments`, `caller`) tested on an operand no arm of which is a function:
-// an object without call code owns such a key only as a field, or inherits it
-// from a class's prototype object, as the model holds it. A failed test drops
-// the arms owning the key, and a `typeof` test finding an object drops a
-// function arm. A passed test on a class instance reads the inherited method.
+// A key a function owns or inherits from `Function.prototype` (`name`,
+// `prototype`, `call`, `apply`, `bind`, `arguments`, `caller`) tested on an
+// operand no arm of which is a function: an object without call code owns
+// such a key as a field or inherits it from a class's prototype object, as
+// the model holds it. A failed test drops the arms owning the key, a `typeof`
+// test finding an object drops a function arm, and a passed test on a class
+// instance reads the inherited method.
 type Binder = { call: string; bound: number } | { kind: "plain"; size: number };
 
 export function sizeOf(v: Binder): number {
@@ -38,4 +38,14 @@ export function count(vs: Binder[], k: "call" | "bind"): number {
 
 export function read(c: Caller): number {
   return "call" in c ? c.call() : 0;
+}
+
+export function named(x: { name: string } | (() => number)): string {
+  return typeof x === "object" && "name" in x ? x.name : "";
+}
+
+export function labelled(
+  v: { name: string; size: number } | { size: number },
+): number {
+  return "name" in v ? 1 : v.size;
 }

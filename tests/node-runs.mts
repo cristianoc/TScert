@@ -1518,6 +1518,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("in-outside-caller-contract", `withIn(Object.assign(new Error("m"), { size: 1 }))`), "Error");
   assert.equal(runExample("in-outside-caller-contract", `withMessage(Object.assign(new Error(), { size: 1 }))`), "1");
   assert.equal(runExample("in-outside-caller-contract", `withoutIn(Object.assign(new Error(), { size: 1 }))`), "1");
+  assert.equal(runExample("invalid-error-optional-name", "wrong()"), "Error");
   // `matchAll` converts its argument's `flags` before dispatching: client
   // code runs on a structural regex.
   assert.equal(runExample("invalid-regexp-structural-matchall", `const seen = { ran: false };
