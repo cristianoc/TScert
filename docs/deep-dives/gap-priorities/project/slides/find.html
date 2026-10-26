@@ -1,0 +1,10 @@
+<section id="find" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans', Arial, sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 1 · where proofs fail</p>
+<h2 style="font-family:'IBM Plex Serif', Georgia, serif;font-size:56px;font-weight:500;line-height:1.15">The census, run past the first refusal</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">The census:</b> each top-level function of tools/ is copied into a file of its own and run through TScert. At commit 963ffa4 (2026-10-24), 178 of 490 functions are verified and 312 refused (measured).</li>
+<li><b style="font-weight:600">Past the first refusal:</b> a refused function stops at its first reason. A diagnostic tool rewrites the copy crudely at each refusal and runs it again, so that later reasons show up too; its run finished for 210 of the 312 functions (measured). Every reason it meets, first or later, is kept.</li>
+<li><b style="font-weight:600">Aspects:</b> the gate's reasons are grouped by cause, an aspect. Each aspect is weighted by the statements (an if, a return, an assignment …) of the functions it blocks, and by the number of those functions. The later stages' reasons are left out: they vary from function to function.</li>
+<li><b style="font-weight:600">One caveat:</b> the function collectDeclarations has 2,334 statements and meets five of the heaviest aspects, so it dominates their statement weight; the function counts have no such bias.</li>
+</ul>
+</section>
