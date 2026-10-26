@@ -32,6 +32,9 @@ export type ModuleEntry = {
    * value of `type` (`asserts actual is T`), which the host's comparison
    * establishes before it returns. */
   promise?: { param: number; type: TypeTerm };
+  /** The export is a constant, not a function: its value has the type
+   * `stated.result`, and `stated` has no parameters. */
+  constant?: true;
   /** The call is the calculus's own test: written as a statement with no
    * message or a literal one, `assert(v, m)` is `if (!v) throw
    * %AssertionFailure%(m)`, narrowing `v` as an `if` does. */
@@ -318,6 +321,12 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     effect: pathEffect },
   { module: "path", name: "relative", signature: "relative(from: string, to: string): string;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
+  // `node:path`'s `sep`, the separator of the platform's paths: a data
+  // property of the object the module exports, set when Node loads it (`"/"`
+  // on POSIX, `"\\"` on Windows; Node 25.2.1's lib/path.js). It is writable:
+  // no code writes it, an assumption, as of `process.argv`.
+  { module: "path", name: "sep", signature: 'readonly sep: "\\\\" | "/";', constant: true,
+    stated: { binders: [], params: [], result: union(text("\\"), text("/")) } },
 ];
 
 /** A declaration's text as messages print it: white space collapsed. */

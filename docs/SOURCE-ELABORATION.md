@@ -956,6 +956,8 @@ Observations that agree:
 Observations that differ, abstracted by a broad result type, also admitted:
 
 - `"message" in e` is `true` in JavaScript; it is typed a Boolean.
+- `Object.hasOwn(e, "message")` is `true` in JavaScript; it is typed a
+  Boolean (`error-subclass-has-own`).
 - `for (k in e)` enumerates the declared fields; its keys are typed strings,
   `%ForIn%`'s contract.
 - `Object.getOwnPropertyDescriptor(e, k)` exposes JavaScript's descriptor of
@@ -966,8 +968,9 @@ Observations that differ, abstracted by a broad result type, also admitted:
 
 Operations excluded, refused with a location:
 
-- ownness and the prototype: `e.hasOwnProperty`, `Object.hasOwn` and
-  `Object.getPrototypeOf`, whose results tell the placements apart;
+- ownness through the prototype's method and the prototype itself:
+  `e.hasOwnProperty`, a member `Error.prototype` inherits and the model does
+  not state, and `Object.getPrototypeOf`, which has no entry;
 - serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
   message through `[[Get]]`; the parameter is a JSON value, which an instance
   holding a prototype is not;

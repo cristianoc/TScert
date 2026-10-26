@@ -1,5 +1,5 @@
-// An imported property of an export-assigned Node module needs a reviewed
-// constant contract.
+// `sep` imported from `node:path`: a constant of the object the module
+// exports, read through its reviewed entry in the overlay of library modules.
 // Census functions:
 // declaration-graph.mts#declarationOrigin,
 // declaration-graph.mts#globalFunction, declaration-graph.mts#moduleIds,

@@ -2197,6 +2197,8 @@ keeps from running.
   no conversion code runs on, and write nothing: as declared, within the empty
   footprint (`library-parse-int`, `library-math-ceil`). No argument of their
   parameter types converts by code.
+- `Math.random()` reads no argument and writes no location a program
+  reaches: as declared, within the empty footprint (`library-math-random`).
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
@@ -2236,6 +2238,12 @@ keeps from running.
 ```math
 \mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
 ```
+- `Object.hasOwn(o, k)` converts `o` by ToObject, an object here, and `k` by
+  ToPropertyKey, which runs no code of a string, number or symbol, then looks
+  the key up by [[GetOwnProperty]], which runs no code (no object is a
+  proxy): as declared, $`(\mathtt{object},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathtt{boolean}`$,
+  within the empty footprint. No value of `o` reaches the program, so a host
+  object is admitted (`object-has-own`).
 - `Object.values(o)` and `Object.entries(o)` at TypeScript's `{}` overload
   read the values of `o`'s own enumerable string keys:
   $`(\mathsf{NonHost})\Rightarrow\mathtt{unknown}[]`$ and
@@ -2250,6 +2258,13 @@ its clauses is: an object clause names an invariant field or an index, or
 bounds its own keys without the key (`CoversBounds`), so `{ a: number }` is
 below it and `{ readonly a: number }`, `object` and `unknown` are not
 (`host-exclusion-reflection`, `object-values-readonly-refused`).
+
+`Object.getPrototypeOf` has no entry: it names built-in prototypes, among
+them `Array.prototype`, an array that does not inherit from
+`Array.prototype`. The `isArray` test stands for both `Array.isArray` and
+`instanceof Array` because no program can name such an array
+(`invalid-get-prototype-array-prototype`; under Node its write lands in
+`Array.prototype`, where every array's holes read it).
 
 `Reflect` is a namespace, whose functions are no annotated variable's
 members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
@@ -2505,6 +2520,12 @@ through `process` or through the process a registration returns
   $`\mathtt{readonly\ string}[\,]`$. The property is writable: no code
   replaces it or writes a non-string into it, an assumption.
 - `process.execPath`, a string, and `process.pid`, a number.
+- `process.execArgv`: the Node options the process started with, an array
+  of strings built at start-up, read as `argv` is,
+  $`\mathtt{readonly\ string}[\,]`$, with the same assumption.
+- `process.platform` and `process.arch`: the names of the operating system
+  and the processor, strings fixed at start-up; their declared unions of
+  names are read as `string` (`node-process-platform`).
 - `process.env`: an object whose own entries hold strings and on which no
   accessor can be defined (`defineProperty` with a getter throws), its chain
   a prototype holding `constructor` and then `Object.prototype`: read as the
@@ -2735,6 +2756,20 @@ unrestricted in its effect unless its entry states one. The entries:
   and `invalid-node-path-resolve-callback`, run under Node). The module
   exports one object (`export = path`), whose methods are the overloads an
   entry names.
+- `node:path`'s `sep`, a constant: a data property of the exported object,
+  `"/"` on POSIX and `"\\"` on Windows, set when Node loads the module
+  (`lib/path.js`). It is writable: no code writes it, an assumption, as of
+  `process.argv`. An entry for a constant names its property declaration,
+  exactly as reviewed, and states the value's type, with $`\omega.\mathit{text}=\mathsf{text}(d)`$
+  for $`d`$ the declaration TypeScript binds $`x`$ to:
+
+```math
+\frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=x\}=\{\omega\}\quad
+      \omega.\mathit{text}=\mathsf{text}(d)\quad \omega.\mathit{constant}=T}
+     {\Gamma(x)=T}\ \textsf{library-module-constant}
+```
+
+  so `sep` is $`\mathtt{"\backslash\backslash"}\mid\mathtt{"/"}`$, as declared (`blocker-node-path-sep`).
 
 ### `node:assert/strict`
 

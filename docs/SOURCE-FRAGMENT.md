@@ -273,7 +273,7 @@ representation does not state it; the paths are in
 
 | Construct | Obstacle | Owner | Cases |
 | --- | --- | --- | --- |
-| Any library signature the overlays do not list (`Math.random`, `concat`) | Not reviewed; nothing is trusted by default | [library globals](SOURCE-CONTRACTS.md#library-globals) | `invalid-host-global-unreviewed`, `invalid-node-global-unreviewed` |
+| Any library signature the overlays do not list (`Math.floor`, `concat`) | Not reviewed; nothing is trusted by default | [library globals](SOURCE-CONTRACTS.md#library-globals) | `invalid-host-global-unreviewed`, `invalid-node-global-unreviewed` |
 | `key in o` for a string key the built-in prototypes hold; a class value as `in`'s operand; `in` on an `unknown` a `typeof` test found an object | The model holds no key of the built-in prototypes nor a class value's static methods; `typeof` gives `unknown` no narrower type | [`in`](SOURCE-ELABORATION.md#in) | — |
 | A regex's property (`lastIndex`, `source`, `flags`, a flag); `in` with a key a regex owns or inherits; a regex where a record stating such a key is expected | The model's regex states methods only | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-lastindex-view` (Node) |
 | A regex replacement callback; `new RegExp` of a regex pattern; a write to a match result | Not stated: the callback's arguments follow the shape, a regex pattern is read through accessors, match results are readonly views | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-object-pattern` |

@@ -1840,6 +1840,21 @@ export function collectDeclarations(file: string, options: {
       // exports whole (`export = path`, `path.PlatformPath`'s); a namespace
       // merged into a function (`realpathSync.native`) is its other members.
       const callable = declared.filter(n => !ts.isModuleDeclaration(n));
+      // A constant the module's exported object declares (`path.sep`): the
+      // value has the entry's stated type.
+      if (entries.length && entries.every(e => e.constant)) {
+        const [entry] = entries;
+        if (entries.length !== 1 || entries.some(e => e.stated.binders.length || e.stated.params.length || e.stated.rest || e.effect))
+          throw Error(`${what} is reviewed as a constant with parameters or an effect`);
+        const match = entry && callable.length === 1 ? callable.find(n => ts.isPropertySignatureDeclaration(n) &&
+          idOf(n.getSourceFile()).includes("@types/node/") && n.getText(n.getSourceFile()) === entry.signature) : undefined;
+        if (!entry || !match) throw Error(`${what} is not declared as reviewed: ${entries.map(e => e.signature).join(" ")}`);
+        const source = match.getSourceFile();
+        const span: Span = [match.getStart(source), match.end];
+        return { declaration: { module: idOf(source), name: what, span }, construct: false, typeParams: [],
+          type: { ...entry.stated.result, span } };
+      }
+      if (entries.some(e => e.constant)) throw Error(`${what} is reviewed both as a constant and as a function`);
       const overloads = callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
         (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
       if (!overloads.length || overloads.length !== callable.length ||

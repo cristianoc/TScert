@@ -201,6 +201,18 @@ const processEntries: GlobalEntry[] = [
     stated: { binders: [], params: [], result: atom("string") } },
   { host: contract, origin: node, global: "process", member: "pid", signature: "readonly pid: number;",
     stated: { binders: [], params: [], result: atom("number") } },
+  // `process.execArgv`: the array of the Node options the process was
+  // started with, built at start-up, read as `argv` is: a readonly view of
+  // strings, an assumption that no code replaces it or writes a non-string.
+  { host: contract, origin: node, global: "process", member: "execArgv", signature: "execArgv: string[];",
+    stated: { binders: [], params: [], result: readonlyArray(atom("string")) } },
+  // `process.platform` and `process.arch`: strings naming the operating
+  // system and the processor Node was built for, fixed at start-up; the
+  // declared unions of names are read as `string`.
+  { host: contract, origin: node, global: "process", member: "platform", signature: "readonly platform: Platform;",
+    stated: { binders: [], params: [], result: atom("string") } },
+  { host: contract, origin: node, global: "process", member: "arch", signature: "readonly arch: Architecture;",
+    stated: { binders: [], params: [], result: atom("string") } },
   // `process.env`: an object of the environment whose own entries hold
   // strings, its chain a prototype holding `constructor` and then
   // `Object.prototype`, which no accessor can be defined on: a readonly
@@ -336,6 +348,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
   { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
+  // `Object.hasOwn(o, k)`: ToObject of `o`, an object here, then the key, which
+  // a string, number or symbol converts to without running code, then `o`'s
+  // own lookup of it, [[GetOwnProperty]], which runs no code (no object is a
+  // proxy, as for `Object.getOwnPropertyDescriptor`). The result is a
+  // Boolean; no value of the object reaches the program, and nothing is
+  // written.
+  { host: contract, global: "Object", member: "hasOwn", signature: "hasOwn(o: object, v: PropertyKey): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called) and writes only the array it allocates: the empty
@@ -468,6 +487,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
   // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
+  // `Math.random()`: a number in [0, 1); it reads no argument and writes no
+  // location a program can reach.
+  { host: contract, global: "Math", member: "random", signature: "random(): number;", effect: emptyEffect },
   // `Object.fromEntries(entries)` iterates `entries` and, for each element,
   // reads its 0 and 1, converts the key by ToPropertyKey and defines it as
   // an own data property of a fresh object (CreateDataPropertyOrThrow, a

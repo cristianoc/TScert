@@ -77,7 +77,7 @@ for (const { name, site, text, force, at } of sites) {
 // the next parse reads replies of its own.
 const iterable = sites.find((s) => s.name === "iterable.ts")?.text ?? "";
 // A source the declaration reader refuses where the compiler is open.
-const refusedText = "export function f(): number {\n  return Math.random();\n}\n";
+const refusedText = "export function f(): number {\n  return Math.floor(1.5);\n}\n";
 for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the declaration reader's", "at kindsOf \\("]]) {
   const report = forcedParse("sent.ts", iterable, { TSCERT_FORCE_FRAME: frame ?? "", TSCERT_FORCE_AFTER_SEND: "1" });
   assert.match(report, /^tool failure: the front end exhausted the call stack/, `${site}, after a request was sent: ${report}`);
