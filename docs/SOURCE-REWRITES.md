@@ -335,6 +335,24 @@ For the supported ordinary and type imports, the two tests agree.
   and the declaration graph's local `closure` in `collectDeclarations`.
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
 
+### A host test whose result its contract leaves unknown
+
+`installed` (`tools/files.mts`) returned `statSync(path).isFile()` as a
+`boolean`. A `Stats`'s `isFile` calls `this._checkModeProperty`, a writable
+property of `Stats.prototype` other code may replace, so its contract
+states the result `unknown` ([library modules](SOURCE-CONTRACTS.md#library-modules)),
+and the return was refused.
+
+- **Rewrite:** a runtime check, `statSync(path).isFile() === true`. It
+  excludes one behaviour: with `_checkModeProperty` replaced by one
+  answering a value other than a Boolean (`() => 7`), the original returned
+  that value (7) where its annotation promises a `boolean`; the rewrite
+  returns `false`. With Node's own prototypes the two agree.
+- **Pattern:** a host predicate whose contract leaves its result `unknown`
+  is compared with `true` where the code promises a Boolean.
+- **Functions:** `installed`.
+- **Commit:** 5c3f858.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
