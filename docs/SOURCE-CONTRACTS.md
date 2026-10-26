@@ -293,7 +293,7 @@ local name, which no class of the file shares, and
 D\ \text{is at the top level of a module}\ M\ \text{other than the file, not}\ \mathtt{declare}\text{d},\\
 M\ \text{is a source file of the program, not a declaration file, which TypeScript accepts without an error},\\
 M\ \text{holds no comment}\ \texttt{@ts-ignore},\ \texttt{@ts-expect-error}\ \text{or}\ \texttt{@ts-nocheck},\\
-M\ \text{passes}\ D\text{'s name to no}\ \mathtt{setPrototypeOf},\ \mathtt{defineProperty}\ \text{or}\ \mathtt{defineProperties}\ \text{of}\ \mathtt{Object}\ \text{or}\ \mathtt{Reflect},\\
+M\ \text{reads}\ D\text{'s binding only as}\ \mathtt{new}\text{'s callee,}\ \mathtt{instanceof}\text{'s right operand or a member read's receiver (no}\ \mathtt{\_\_proto\_\_}\text{), or names it in a type, a heritage clause or an export},\\
 D\ \text{extends nothing, the standard}\ \mathtt{Error},\ \text{or a class declaration}\ E\ \text{with}\ \mathsf{checked}(E).
 \end{cases}
 ```
@@ -303,10 +303,15 @@ import to. Because $`M`$ has no TypeScript error and suppresses none, no
 code of $`M`$ writes the class's binding (TS2629);
 `invalid-instanceof-rebound-value-import` and
 `invalid-instanceof-suppressed-value-import`, run under Node, show the test
-of a module that does. A module replacing the class's prototype by an object
-holding a `[Symbol.hasInstance]` method makes that method answer the test
-(`invalid-instanceof-hooked-value-import`, run under Node: `true` of a
-string). The test refines a tested immutable
+of a module that does. The uses of the binding $`M`$ may make leave it no
+alias and pass it to no function, so no code of $`M`$ reaches the class
+value by its name to change its prototype chain. A module replacing that
+chain's prototype by an object holding a `[Symbol.hasInstance]` method makes
+that method answer the test (`invalid-instanceof-hooked-value-import`, run
+under Node: `true` of a string); one defining a getter for it through an
+alias runs the getter at every test (`invalid-instanceof-getter-value-import`,
+run under Node: the getter shrinks the array a `map` visits, leaving a
+hole). The test refines a tested immutable
 variable as every tag test does: no value the file makes owns
 $`\kappa_C`$, and a passed test drops the primitive arms; a failed one keeps
 the class's arm, which a record meeting the class's type belongs to
@@ -316,11 +321,12 @@ the class's arm, which a record meeting the class's type belongs to
 of every imported value ([trust surface](DESIGN.md#trust-surface)): the
 binding holds the class $`D`$'s statement creates, and, throughout
 execution, the lookup of `Symbol.hasInstance` along the class value's
-prototype chain, every object on it and accessors included, finds no method
-but `Function.prototype`'s, unless $`\mathsf{type}(C)`$ states one. The
-checks of $`\mathsf{checked}(D)`$ see the writes $`M`$ makes by the class's
-name; code elsewhere, or reaching the class through another value, is what
-the assumption covers. A module of the program is checked on its own; that run checks
+prototype chain finds only data properties, no getter and no proxy trap,
+and yields the standard method of `Function.prototype`. The checks of
+$`\mathsf{checked}(D)`$ see the uses $`M`$ makes of the class's binding by
+name; code of other modules, and code reaching the class value otherwise
+(`this` in its static code, an instance's `constructor`), is what the
+assumption covers. A module of the program is checked on its own; that run checks
 $`D`$'s code. Under the assumption the JavaScript test reads the binding,
 reads the prototype, which runs no code, and walks `x`'s chain, as the
 lowered test does (argued here, not proved; Lean proves the lowered
@@ -329,8 +335,8 @@ constant holds (`invalid-instanceof-expression-value-import`), a class an
 ambient module declares (`invalid-instanceof-ambient-value-import`), one
 extending such a class (`invalid-instanceof-ambient-base-value-import`), a
 module writing its class's binding, with or without a suppressing comment,
-one replacing its prototype or defining its properties
-(`invalid-instanceof-hooked-value-import`), and a local constant holding an imported
+one using the binding otherwise (`invalid-instanceof-hooked-value-import`,
+`invalid-instanceof-getter-value-import`), and a local constant holding an imported
 class (`invalid-instanceof-alias-value-import`). A local class extending an
 imported one is refused already ([derived classes](SOURCE-ELABORATION.md#derived-classes)).
 

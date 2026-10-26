@@ -2975,21 +2975,33 @@ export function collectDeclarations(file: string, options: {
           owner.parent === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
     }
-    // Whether `file` passes the class `owner` names to a function that
-    // replaces its prototype or defines a property on it: the
-    // `setPrototypeOf`, `defineProperty` and `defineProperties` of `Object`
-    // or `Reflect`, the class's own name their first argument.
-    const reshapes = (file: SourceFile, owner: Node): boolean => {
+    // Whether `file` uses the class `owner` declares as a value other than
+    // by name in these positions: the callee of `new`, the right operand of
+    // `instanceof`, the receiver of a member read by name other than
+    // `__proto__`, a heritage clause, a type, or an export. Any other use,
+    // an alias or an argument among them (`Object.setPrototypeOf(C, …)`),
+    // could reach a function changing the class value's prototype chain.
+    const escapes = (file: SourceFile, owner: Node): boolean => {
+      const named = (node: Node): boolean => ts.isIdentifier(node) &&
+        (targetOf(checker, node)?.declarations.some(d => d.resolve() === owner) ?? false);
       const visit = (node: Node): boolean => {
-        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-            ts.isIdentifier(node.expression.expression) &&
-            ["Object", "Reflect"].includes(node.expression.expression.text) &&
-            ["setPrototypeOf", "defineProperty", "defineProperties"].includes(node.expression.name.text)) {
-          const [target] = node.arguments;
-          if (target && ts.isIdentifier(target) &&
-              (targetOf(checker, target)?.declarations.some(d => d.resolve() === owner) ?? false))
-            return true;
+        if (ts.isTypeNode(node) || ts.isHeritageClause(node) || ts.isExportSpecifier(node) ||
+            ts.isExportAssignment(node) || ts.isImportDeclaration(node))
+          return false;
+        if (ts.isClassDeclaration(node) && node === owner) {
+          for (const member of node.members) if (member.forEachChild(visit)) return true;
+          return false;
         }
+        if (!named(node)) return node.forEachChild(visit) ?? false;
+        let at: Node = node;
+        while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
+        const parent = at.parent;
+        if (!parent || !(
+          (ts.isNewExpression(parent) && parent.expression === at) ||
+          (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+            parent.right === at) ||
+          (ts.isPropertyAccessExpression(parent) && parent.expression === at && parent.name.text !== "__proto__")))
+          return true;
         return node.forEachChild(visit) ?? false;
       };
       return visit(file);
@@ -2998,17 +3010,17 @@ export function collectDeclarations(file: string, options: {
     // a source file with checked bodies that TypeScript accepts whole and
     // with no comment suppressing its checking, so that no code writes the
     // class's binding (TS2629), at its module's top level, not ambient,
-    // extending nothing, the standard `Error`, or such a class, and whose
-    // module passes it to no function replacing its prototype or defining
-    // its properties. Its `prototype` is the object its class statement
-    // creates, a property no code can change.
+    // extending nothing, the standard `Error`, or such a class, whose
+    // module uses its value only in the positions `escapes` admits. Its
+    // `prototype` is the object its class statement creates, a property no
+    // code can change.
     const checkedClass = (owner: Node | undefined, seen: Set<Node>): boolean => {
       if (!owner || !ts.isClassDeclaration(owner) || seen.has(owner)) return false;
       seen.add(owner);
       const file = owner.getSourceFile();
       if (!file || file.isDeclarationFile || libraryFile(file) || file.fileName === client.fileName ||
           owner.parent !== file || owner.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) ||
-          /@ts-(?:ignore|expect-error|nocheck)\b/.test(file.text) || reshapes(file, owner) ||
+          /@ts-(?:ignore|expect-error|nocheck)\b/.test(file.text) || escapes(file, owner) ||
           [...program.getSyntacticDiagnostics(file.fileName), ...program.getSemanticDiagnostics(file.fileName)]
             .some(d => d.category === DiagnosticCategory.Error))
         return false;

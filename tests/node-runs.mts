@@ -620,6 +620,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "undefined", "invalid-instanceof-hooked-value-import: the hook answers true of a string");
   assert.equal(runImporting("invalid-instanceof-suppressed-value-import", "suppressed(new Suppressed())"),
     false, "invalid-instanceof-suppressed-value-import: an instance made before the write is no instance");
+  assert.equal(runImporting("invalid-instanceof-getter-value-import", "1 in marked()"),
+    false, "invalid-instanceof-getter-value-import: the getter shrinks the mapped array, leaving a hole");
   assert.equal(runExample("invalid-number-value-object",
     "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
     false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");
