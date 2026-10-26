@@ -2805,7 +2805,12 @@ The declaration's types are not read, and neither are the types they name
 (`Buffer`, `URL`, streams). Each statement is an assumption a result is
 relative to, as an import's declared type is, and each says what the host
 does at its parameters, where the declaration may say otherwise. A call is
-unrestricted in its effect unless its entry states one. The entries:
+unrestricted in its effect unless its entry states one. A statement may name
+a type that no declaration file declares, which its entry defines: with
+$`D_\omega`$ the definitions of $`\omega`$, each $`D\in D_\omega`$ joins the
+document's definitions where $`\omega`$ is read, as a declaration a value's
+type names does, and a definition's methods name it as their receiver
+(`this`), so a method may return it. The entries:
 
 - `execFileSync(file, args, options)` runs `file` and returns its standard
   output when it exits with status 0; a failure to run, a nonzero status, a
@@ -2999,6 +3004,43 @@ unrestricted in its effect unless its entry states one. The entries:
   The declared `Dirent.path` is absent at run time, so the entry states
   none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
   whose parameter TypeScript types as `Dirent` is refused.
+- `createHash("sha256")` returns a fresh `Hash`, of the type its entry
+  defines,
+  $`\mathit{Hash}=\{\mathtt{update}\colon(\mathtt{string})\Rightarrow\mathtt{this};\ \mathtt{digest}\colon(\texttt{"hex"})\Rightarrow\mathtt{string}\}`$,
+  each member a method, so $`\Gamma(\mathtt{createHash})=(\texttt{"sha256"})\Rightarrow\mathit{Hash}`$
+  (`node-crypto-hash`, `blocker-node-hash-contract`). By Node's
+  `lib/internal/crypto/hash.js`, the call validates the algorithm and
+  allocates the native handle and a state record. `LazyTransform` then
+  assigns the hash's `_options`, which a setter the hash inherits from other
+  code would intercept, so the call states no effect
+  (`invalid-node-crypto-hash-callback`, run under Node: the setter shrinks
+  the array `map` visits). Every use in `tools/` calls `update` next, which
+  states none either.
+  At a SHAKE algorithm without an output length it emits a deprecation
+  warning, which reads `process.noDeprecation` during the call, a property
+  other code may make a getter, so the algorithm is stated at `"sha256"`
+  alone (`invalid-node-crypto-hash-algorithm`, run under Node).
+  `update(data)` with a string checks the hash is not finalized, hashes the
+  string as UTF-8 and returns its receiver; `digest("hex")` checks the
+  same, marks the hash finalized and returns the digest as hexadecimal
+  digits. Either throws on a hash already digested, an outcome
+  (`node-crypto-hash`, run under Node). Each reads the hash's state
+  through a symbol-keyed property, on which other code may install a getter, and
+  writes host state: both state no effect. `digest` at
+  another encoding, and without one, which returns a `Buffer`, are outside
+  the stated method (`invalid-node-crypto-hash-encoding`,
+  `invalid-node-crypto-hash-buffer`, run under Node), and so is `update`
+  with bytes or an input encoding. The methods are `Hash.prototype`'s,
+  which a copy does not take (`invalid-node-crypto-hash-spread`, run under
+  Node). That a member read finds them rests on a host assumption
+  ([trust surface](DESIGN.md#trust-surface)): every `Hash`, created by the
+  program or by external code, keeps `Hash.prototype` as its prototype and
+  owns no `update` or `digest`, and `Hash.prototype` holds `update` and
+  `digest` as own data properties, Node's own functions, throughout
+  execution, as its native handle holds Node's own methods. A getter there
+  would run at the member read, before the call
+  (`invalid-node-crypto-hash-method-getter`, run under Node: it pops the
+  array).
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
   too (Node's `lib/path.js`). `join` of any number of strings,
