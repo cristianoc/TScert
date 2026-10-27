@@ -33,9 +33,9 @@ export const stringFamily: FamilyDescription = {
       },
       edges: [["ast.js", "UnitType", "kinds.js", "UnitType", [], "import"]],
     },
-    helpers: {
-      "ast.js#isExpressionKind": "function isExpressionKind(type) {\n    return type === UnitType.Name\n        || type === UnitType.Call;\n}",
-    },
+    helpers: [
+      ["ast.js#isExpressionKind", "function isExpressionKind(type) {\n    return type === UnitType.Name\n        || type === UnitType.Call;\n}"],
+    ],
     guards: [
       { name: "isExpression", kind: "node", domain: "Unit", tags: ["Call", "Name"], onUndefined: "throws", module: "ast.js",
         helpers: ["ast.js#isExpressionKind"], edges: [["ast.js", "UnitType", "kinds.js", "UnitType"]],

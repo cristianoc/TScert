@@ -116,8 +116,8 @@ export type GuardEntry = {
 export type GuardUndefined = "unadmitted" | "throws" | "false";
 /** A family's guard table: the entry point and the resolution conditions
  * its entries were resolved under, the entry point's module and complete
- * executable closure (file digests and static edges), the helpers'
- * texts, the entries, and
+ * executable closure (file digests and static edges), each helper with
+ * its text (no helper twice), the entries, and
  * the guards the package declares that the recognition contract excludes,
  * each with its reason. */
 export type GuardTable = {
@@ -125,7 +125,7 @@ export type GuardTable = {
   conditions: readonly string[];
   entryModule: string;
   closure: GuardClosure;
-  helpers: { readonly [helper: string]: string };
+  helpers: readonly (readonly [string, string])[];
   guards: readonly GuardEntry[];
   excluded: readonly (readonly [string, string])[];
 };

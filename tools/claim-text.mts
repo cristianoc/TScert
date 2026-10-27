@@ -67,11 +67,15 @@ interface PrintState {
   printable: boolean;
 }
 
+/** The keys of an atom's metadata, literals naming no member of
+ * `Object.prototype`. */
+type MetadataKey = "call" | "construct" | "array";
 function atomText(atom: JsonValue, state: PrintState): string {
   const text = bareAtomText(atom, state);
   if (!isObject(atom)) return text;
   const metadata: { [key: string]: JsonValue } = {};
-  for (const key of ["call", "construct", "array"]) {
+  const keys: readonly MetadataKey[] = ["call", "construct", "array"];
+  for (const key of keys) {
     const value = atom[key];
     if (value !== undefined && value !== "unknown") metadata[key] = value;
   }
@@ -437,8 +441,10 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
   if (clause === "top") return "calculus top";
   if (clause === "source") return "unknown";
   // A clause states one kind, under its own key. The table above is what
-  // says these are all of them; here the key is only read.
-  const body = (key: string): JsonRead =>
+  // says these are all of them; here the key is only read, at one of the
+  // literal keys of `ClauseKey`, so no read finds a member of
+  // `Object.prototype`.
+  const body = (key: ClauseKey): JsonRead =>
     isObject(clause) ? clause[key] : undefined;
   const boolLit = body("boolLit");
   if (boolLit)

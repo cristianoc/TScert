@@ -279,8 +279,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 function knowledge(v: Json | undefined): void {
   if (v === null) return;
   const k = record(v,["cells","values","links","separation"]);
-  for (const key of ["cells","values"]) {
-    const facts = k[key];
+  for (const facts of [k.cells, k.values]) {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
     for (const fact of facts) {
       const f = record(fact,["slot","contents","field"]); nat(f.slot);
@@ -335,15 +334,17 @@ export function readDiagnostic(
     const parsed: Json = JSON.parse(lines[0].slice(PREFIX.length));
     if (!isRecord(parsed) || illFormedString(parsed)) return undefined;
     const d = parsed;
-    const variants: Record<string,string[]> = {
-      "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],
-      "direct-obligation":["id","sourceMap","judgment"],
-      "source-refusal":["id","sourceMap","reason"],
-      "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
-    };
+    // A table looked up at the parsed kind: a Map, which holds no inherited
+    // member.
+    const variants = new Map<string, string[]>([
+      ["node-typing",["id","source","sequent"]], ["expression-claim",["id","sourceMap","sequent"]],
+      ["direct-obligation",["id","sourceMap","judgment"]],
+      ["source-refusal",["id","sourceMap","reason"]],
+      ["edge-coverage",["id","edgeIndex","source","destination","transfer"]], ["production-failure",["failure"]],
+    ]);
     const kind = d.kind;
     if (typeof kind !== "string") return undefined;
-    const fields = variants[kind];
+    const fields = variants.get(kind);
     if (!fields) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names"]);
     diagnosticOutcome(d.outcome);

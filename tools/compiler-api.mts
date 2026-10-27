@@ -47,11 +47,12 @@ export const hostEnums: readonly { name: string; file: string }[] = [
   { name: "DiagnosticCategory", file: "diagnosticCategory" },
 ];
 
-/** The entry points whose enum exports C1 compares with the audited objects.
- * Binding recognition resolves imports to these modules through Node. */
-export const hostEnumModules: readonly { specifier: string; namespace: Readonly<Record<string, unknown>> }[] = [
-  { specifier: "typescript/unstable/ast", namespace: ts },
-  { specifier: "typescript/unstable/sync", namespace: sync },
+/** The entry points whose enum exports C1 compares with the audited objects,
+ * each with its exports by name. Binding recognition resolves imports to
+ * these modules through Node. */
+export const hostEnumModules: readonly { specifier: string; namespace: ReadonlyMap<string, unknown> }[] = [
+  { specifier: "typescript/unstable/ast", namespace: new Map(Object.entries(ts)) },
+  { specifier: "typescript/unstable/sync", namespace: new Map(Object.entries(sync)) },
 ];
 
 /** The compiler API's family description (HOST-FAMILIES.md, "The compiler

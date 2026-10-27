@@ -424,6 +424,53 @@ fragment refuses. Every implementation is an arrow, which uses no receiver.
   `blocker-optional-method-bind` are the refused forms as gap cases.
 - **Commit:** the introducing commit, `A scope's hooks are fields of written function types`.
 
+### A dictionary read at a key known only at run time
+
+Tables built in TScert's code were records read at a string computed at run
+time: the guard table's helper texts (`helpers`, read at
+`module#name` in `checkedGuards` of `tools/family-activation.mts`), each
+loaded module's exports (`entryLoaded[entry.name]`, `declaring[entry.name]`,
+`target[imported.name]`, `namespace[imported]`, `entry?.[enum]` there), the
+reviewed interfaces (`interfaceOverlay` of `tools/array-prototype.mts`, read
+in `collect`), the intrinsics' definitions (`intrinsics`) and the
+diagnostic variants' fields (`readDiagnostic`). Decoders of JSON read a
+value at a key drawn from a list typed `string` (`atomText` and
+`liftClause` of `tools/claim-text.mts`, `knowledge` of
+`tools/diagnostic.mts`). Every object inherits `Object.prototype`'s
+members, so a read at a string the object may lack can find `toString` or
+`constructor`, a function where the type says a value or nothing, and TScert
+refuses it (`invalid-dictionary-inherited-key`, run under Node). In
+`checkedGuards` the defect was reachable: an import named `constructor`
+passed `imported.name in target` and read `Object.prototype.constructor`,
+and `readDiagnostic` read `variants["toString"]`, a function, as a field
+list.
+
+- **Rewrite:** a table built in the code and looked up at a run-time string
+  is a `Map`, read by `get` and `has`, which find only the entries it was
+  given: the module exports are a `Map` of each loaded namespace's entries,
+  `hostEnumModules` (`tools/compiler-api.mts`) holds each namespace's, and
+  the guard table states its helpers as pairs (`GuardTable.helpers`,
+  `tools/host-families.mts`; `dev/guard-table.mts` writes them), each key
+  once, from which `checkedGuards` builds a `Map` and refuses a table that
+  states a key twice. Pairs keep the table's JSON form, which the stage
+  keys hash (`activeFamilies()` in `pipeline/parse-stage.mts`); a `Map`
+  serializes to `{}`. A JSON value read at keys from a fixed list is read
+  at keys whose type is the union of those literals (`ClauseKey` of
+  `tools/type-graph.mts`, `"call" | "construct" | "array"`), or by name
+  (`k.cells`, `k.values`). Behaviour is kept at every key the tables hold;
+  at a key naming an inherited member, a lookup finds nothing: the import
+  binds no export, the diagnostic line is no diagnostic, and `intrinsics`
+  throws `no intrinsic`.
+- **Pattern:** a lookup at a string known only at run time is a `Map`'s; a
+  read of a record is at a key whose type names no member of
+  `Object.prototype`.
+- **Functions:** `checkedGuards`, `importedExport`, `hostEnumObject`,
+  `tagEnumObject`, `activatedModules`, `collect`, `intrinsics`,
+  `readDiagnostic`, `knowledge`, `atomText`, `liftClause`, and their
+  callers; `invalid-dictionary-inherited-key` is the refused read as a
+  case.
+- **Commit:** the introducing commit, `Run-time lookups go through a Map`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

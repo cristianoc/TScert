@@ -5086,9 +5086,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     }
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
-    const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
-        parts.every(part => context.libraryFile(part.getSourceFile()))
-      ? interfaceOverlay[node.name.text] : undefined;
+    const overlaid = ts.isInterfaceDeclaration(node) && parts.every(part => context.libraryFile(part.getSourceFile()))
+      ? interfaceOverlay.get(node.name.text) : undefined;
     if (overlaid && ts.isInterfaceDeclaration(node)) {
       definitions.push({ declaration: identity, parameters, bases: [],
         expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,

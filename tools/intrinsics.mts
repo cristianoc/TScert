@@ -405,8 +405,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))), effect: emptyEffect } }),
   };
+  // Each needed name is looked up in a Map, which holds no inherited member.
+  const byName = new Map(Object.entries(definitions));
   return [...needed].map(name => {
-    const make = definitions[name];
+    const make = byName.get(name);
     if (!make) throw Error(`no intrinsic ${name}`);
     return { name, ...make() };
   });

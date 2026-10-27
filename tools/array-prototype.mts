@@ -418,8 +418,8 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
  * footprints"). */
 const changesValues = footprintEffect({ value: "any", store: "keep" });
-export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
-  Set: [
+export const interfaceOverlay: ReadonlyMap<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
+  ["Set", [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
     { name: "clear", from: "Set", signature: "clear(): void;", effect: changesValues },
     { name: "delete", from: "Set", signature: "delete(value: T): boolean;", effect: changesValues },
@@ -441,8 +441,8 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
     { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
     { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "NativeIterator", effect: emptyEffect },
-  ],
-  Map: [
+  ]],
+  ["Map", [
     { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
     { name: "delete", from: "Map", signature: "delete(key: K): boolean;", effect: changesValues },
     { name: "forEach", from: "Map",
@@ -460,7 +460,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "NativeIterator", effect: emptyEffect },
     { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "NativeIterator", effect: emptyEffect },
     { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "NativeIterator", effect: emptyEffect },
-  ],
+  ]],
   // The readers' views of a `Set` and a `Map`, read through the overlay as
   // `ReadonlyArray` is through `ArrayProto`, at the restriction of the
   // collection's own readers (`thisArg` dropped, an iterator read as an
@@ -468,7 +468,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
   // a `ReadonlyMap<K, V>`. A program's object may meet these interfaces,
   // which state no `[Symbol.toStringTag]`: each member keeps the effect its
   // declaration states, and an iteration runs the iterator protocol.
-  ReadonlySet: [
+  ["ReadonlySet", [
     { name: "forEach", from: "ReadonlySet",
       signature: "forEach(callbackfn: (value: T, value2: T, set: ReadonlySet<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
@@ -479,8 +479,8 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "keys", from: "ReadonlySet", signature: "keys(): SetIterator<T>;", resultAs: "Iterator" },
     { name: "values", from: "ReadonlySet", signature: "values(): SetIterator<T>;", resultAs: "Iterator" },
     { name: "entries", from: "ReadonlySet", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator" },
-  ],
-  ReadonlyMap: [
+  ]],
+  ["ReadonlyMap", [
     { name: "forEach", from: "ReadonlyMap",
       signature: "forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
@@ -492,8 +492,8 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "keys", from: "ReadonlyMap", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },
     { name: "values", from: "ReadonlyMap", signature: "values(): MapIterator<V>;", resultAs: "Iterator" },
     { name: "entries", from: "ReadonlyMap", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator" },
-  ],
-  Date: [
+  ]],
+  ["Date", [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
@@ -501,8 +501,8 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "setTime", from: "Date", signature: "setTime(time: number): number;", effect: changesValues },
     ...["toString", "toISOString"]
       .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
-  ],
-};
+  ]],
+]);
 
 /** The native collection iterator `NativeCollectionIterator<T>`, what a
  * `Set`'s or a `Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`
@@ -666,7 +666,7 @@ export const mergeMessage = (name: string, refusal: string): string =>
  * `ArrayProto`, whose members `ReadonlyArray` declares too. */
 function reviewedEntries(name: string): OverlayEntry[] {
   const from = name === "Array" ? ["Array", "ReadonlyArray"] : [name];
-  return [overlay, ...Object.values(primitiveOverlay), ...Object.values(interfaceOverlay)]
+  return [overlay, ...Object.values(primitiveOverlay), ...interfaceOverlay.values()]
     .flatMap(entries => entries.filter(entry => from.includes(entry.from)));
 }
 
