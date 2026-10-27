@@ -608,6 +608,9 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-bytes-decoder-replaced",
     "(() => { replace(() => 7); return typeof new TextDecoder().decode(Buffer.from(\"a\")); })()"), "number",
     "invalid-node-bytes-decoder-replaced: a replaced decode answers a number");
+  assert.equal(runImporting("invalid-node-bytes-length-shadowed",
+    "(() => { shadow(\"wrong\"); return typeof Buffer.from(\"ab\").length; })()"), "string",
+    "invalid-node-bytes-length-shadowed: a shadowing length answers a string");
   assert.equal(runImporting("invalid-node-bytes-in", "measured(Buffer.from(\"a\"))"), true,
     "invalid-node-bytes-in: a view has length on its prototype chain");
   assert.equal(runImporting("node-bytes-text-decoder", "decoded(Buffer.from([0xff, 0xfe, 0x61, 0x00, 0x62]))"), "a",

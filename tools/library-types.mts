@@ -68,10 +68,11 @@ export const bytesMarker = "node:bytes";
  * number and a read of `length` of a value TypeScript types as a view: the
  * host's [[Get]] of an integer-indexed exotic object at a canonical numeric
  * key, which never reads the prototype chain, and `%TypedArray%.prototype`'s
- * `length` getter. The model holds no element and no `length` of it, so no
- * operation copying or listing own keys, which a host object refuses,
- * observes them, and no record type naming `length` admits it. A write is
- * not stated. */
+ * `length` getter. The model holds no element and no `length` of it: a
+ * host object refuses the operations copying its own properties or
+ * exposing their values, `Object.keys` and `Object.hasOwn` answer strings
+ * and Booleans no type tells, and no record type naming `length` admits a
+ * view. A write is not stated. */
 const bytesIdentity = identity("Uint8Array");
 export const bytes: TypeTerm = named(bytesIdentity);
 const bytesDefinition = definitionOf(bytesIdentity,

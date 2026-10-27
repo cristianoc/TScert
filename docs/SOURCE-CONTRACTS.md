@@ -1563,8 +1563,11 @@ $`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
 required readonly view of the model's `[[host]]` at $`m`$, which no
 allocation of the program owns, so no program object meets a view's type
 (`invalid-node-bytes-program-object`, run under Node: `decode` of such an
-object throws), and the steps that copy or expose an object's own keys
-refuse it ([host objects](HOST-FAMILIES.md#host-objects)). A view of bytes
+object throws), and the steps that copy an object's own properties or
+expose their values refuse it ([host objects](HOST-FAMILIES.md#host-objects)).
+`Object.keys` and `Object.hasOwn`, which a host object admits, answer a
+view's element keys, which the model does not hold: strings and Booleans,
+at no type that tells them. A view of bytes
 is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
 [[Get]] at a canonical numeric key is the element at a valid index, a
 number from 0 to 255, and `undefined` at any other, never reading the
@@ -1602,11 +1605,15 @@ assumption ([trust surface](DESIGN.md#trust-surface)): every `Uint8Array`
 and `Buffer`, the program's or external code's, is created by the host,
 keeps its standard prototype chain (`Buffer.prototype` →
 `Uint8Array.prototype` → `%TypedArray%.prototype` → `Object.prototype` for
-a `Buffer`) and owns its elements alone, and `%TypedArray%.prototype`'s
-getters `length`, `buffer` and `byteOffset` and `Buffer.prototype`'s
-`toString`, `subarray`, `slice` and `utf8Slice` are the host's own, data
-properties for the methods, throughout execution, as are `Buffer`'s
-`allocUnsafe`, `allocUnsafeSlow` and `concat`, which `readFileSync` calls.
+a `Buffer`) and owns its elements alone, and a lookup along that chain of
+`length`, `buffer` and `byteOffset` finds `%TypedArray%.prototype`'s
+getters, and one of `toString`, `subarray`, `slice` and `utf8Slice` finds
+`Buffer.prototype`'s data properties, each the host's own, no object before
+it on the chain holding the key, throughout execution, as `Buffer`'s
+`allocUnsafe`, `allocUnsafeSlow` and `concat`, which `readFileSync` calls,
+are the host's own. A property shadowing a getter on an intervening
+prototype answers what it holds (`invalid-node-bytes-length-shadowed`, run
+under Node: a string).
 A replaced method answers what it returns
 (`invalid-node-bytes-method-replaced`, run under Node: a number), and a
 getter in a method's place runs where the member is read
