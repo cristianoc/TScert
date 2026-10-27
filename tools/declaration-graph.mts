@@ -41,7 +41,7 @@ import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe
 import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
-import { definitionKey, deferredIn, settleDocument } from "./named-record.mts";
+import { definitionKey, deferredIn, settleDocument, termText } from "./named-record.mts";
 // files.mts makes every file-system failure a tool failure.
 import { manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -1606,7 +1606,9 @@ export function collectDeclarations(file: string, options: {
       args.forEach(arg => visitType(arg, term => { if (term.k === "binder" || term.k === "parameter") open = true; }));
       if (open) throw Error(`${node.name?.text}: computed members are read only at closed type arguments`);
       const original = identityOf(node);
-      const key = JSON.stringify([original, args]);
+      // An instance is its declaration at its arguments' data: the spans of
+      // an occurrence are its provenance, which the reference keeps.
+      const key = termText([original, args]);
       let instance = instances.get(key);
       if (!instance) {
         if (instances.size >= 256) throw Error("computed declaration instances exceed the graph budget of 256");

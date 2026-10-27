@@ -190,6 +190,7 @@ export const cases: Case[] = [
     /the contextual type typeof Box is a class constructor, not an instance type/), status: "unsupported", phase: "source" },
   positive("computed-member-nested", "A conditional field names a generic interface at number."),
   positive("computed-member-instance", "Closed arguments determine the whole recursive interface, including conditional field and method contracts."),
+  positive("computed-member-repeated", "Occurrences of one declaration at the same arguments are one instance, whatever their spans."),
   negative("invalid-computed-member-bound", "Closed computed members retain the declaration's bound obligation.", /does not establish its declared bound/),
   negative("invalid-computed-member-instance", "A conditional member at false supplies string, which cannot satisfy a number return."),
   { ...negative("computed-member-binder-refused", "A computed member at an open type argument has no instance equation.",

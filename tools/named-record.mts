@@ -28,16 +28,19 @@ export type NamedRecords = {
 
 const PREFIX = "a mapped type's value names its key, over a named type";
 
-/** Whether two terms are the same type, their spans aside. */
-const sameTerm = (a: unknown, b: unknown): Within<{ value: "any"; store: "grow" }, boolean> => {
-  const text = (t: unknown): string => JSON.stringify(t, function (this: unknown, key: string, value: unknown) {
+/** A term's data as text, its spans aside: equal texts are the same type. */
+export const termText = (t: unknown): Within<{ value: "any"; store: "grow" }, string> =>
+  JSON.stringify(t, function (this: unknown, key: string, value: unknown) {
     // A declaration identity's span is the declaration's; any other span,
     // and a reference's argument spans, only locate the term.
     const identity = typeof this === "object" && this !== null && "module" in this;
     return (key === "span" && !identity) || (key === "arguments" && typeof this === "object" && this !== null && "target" in this)
       ? undefined : value;
   }) ?? "";
-  return text(a) === text(b);
+
+/** Whether two terms are the same type, their spans aside. */
+const sameTerm = (a: unknown, b: unknown): Within<{ value: "any"; store: "grow" }, boolean> => {
+  return termText(a) === termText(b);
 };
 
 const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, string> =>
