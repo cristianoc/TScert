@@ -5,6 +5,7 @@
  *
  *   node dev/deck-cli.mts gap-priorities           # write, check, write the page
  *   node dev/deck-cli.mts gap-priorities --open    # and open the page
+ *   node dev/deck-cli.mts gap-priorities --since a479e5c   # the page marks what changed since a479e5c
  *
  * The layout check renders the slides in headless Chrome (`CHROME`, by
  * default the macOS application's path) and reports a slide whose content
@@ -14,9 +15,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { check, FACES, index, viewer, type Deck } from "./deck.mts";
+import { check, FACES, index, markChanges, slidesForm, viewer, type Deck } from "./deck.mts";
 
 const [name, ...flags] = process.argv.slice(2);
+const sinceAt = flags.indexOf("--since");
+const since = sinceAt < 0 ? undefined : flags[sinceAt + 1];
 if (!name || !/^[a-z0-9-]+$/.test(name)) throw Error("usage: deck-cli.mts <deck name> [--open]");
 const root = resolve(import.meta.dirname, "..", "docs", "deep-dives", name);
 const loaded: unknown = await import(pathToFileURL(join(root, "deck.mts")).href);
@@ -64,8 +67,32 @@ if (existsSync(chrome)) {
   } else layout = "not checked: Chrome reported no measurement";
 }
 
+// With --since, the page and a marked copy of the project show what
+// changed since that commit, the copy in the forms the Slides format keeps
+// (`slidesForm`); the project's own files stay unmarked.
+let shown: Deck = deck;
+if (since) {
+  if (!/^[0-9A-Za-z._/-]+$/.test(since)) throw Error(`--since takes a commit: ${since}`);
+  const repository = resolve(import.meta.dirname, "..");
+  const at = (id: string): string | null => {
+    try {
+      return execFileSync("git", ["-C", repository, "show", `${since}:docs/deep-dives/${name}/project/slides/${id}.html`],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      return null;
+    }
+  };
+  shown = { ...deck, slides: deck.slides.map(s => ({ ...s, html: markChanges(s.html, at(s.id)) })) };
+  const marked = join(tmpdir(), `tscert-deck-${name}-since`, "project");
+  rmSync(marked, { recursive: true, force: true });
+  mkdirSync(join(marked, "slides"), { recursive: true });
+  writeFileSync(join(marked, "deck.json"), readFileSync(indexPath, "utf8"));
+  for (const s of shown.slides) writeFileSync(join(marked, "slides", `${s.id}.html`), slidesForm(s.html));
+  const changed = shown.slides.filter((s, i) => s.html !== deck.slides[i]?.html).map(s => s.id);
+  process.stdout.write(`marked since ${since}: ${changed.length ? changed.join(", ") : "no slide"}; marked project: ${marked}\n`);
+}
 const page = join(tmpdir(), `tscert-deck-${name}.html`);
-writeFileSync(page, viewer(deck));
+writeFileSync(page, viewer(shown));
 process.stdout.write(`${deck.slides.length} slides written to ${project}\nlayout ${layout}\n${problems.length ? problems.join("\n") : "no problems"}\npage: ${page}\n`);
 if (flags.includes("--open")) execFileSync("open", [page]);
 if (problems.length) process.exitCode = 1;

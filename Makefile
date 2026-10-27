@@ -56,8 +56,8 @@ lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 compiler-api-shapes: ## C3: every node of the corpus holds the members its shape states required, or a correction covers them
 	node tests/compiler-api-shapes.mts
 
-deck: ## build the deep-dive deck NAME (docs/deep-dives/NAME/deck.mts): its project/ files, the format and layout checks, and a page to view it; OPEN=1 opens the page
-	node dev/deck-cli.mts $(NAME) $(if $(OPEN),--open)
+deck: ## build the deep-dive deck NAME (docs/deep-dives/NAME/deck.mts): its project/ files, the format and layout checks, and a page to view it; OPEN=1 opens the page; SINCE=rev marks on the page what changed since rev
+	node dev/deck-cli.mts $(NAME) $(if $(OPEN),--open) $(if $(SINCE),--since $(SINCE))
 
 semantic-diff: ## render the commit records of REV (a commit or base..tip, default HEAD) to OUT and open it
 	node dev/commit-records.mts --out $(OUT) $(REV)

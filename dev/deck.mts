@@ -354,6 +354,74 @@ export function check(s: Slide): string[] {
 /** A standalone page of the deck for a browser: each slide on its
  * 1920×1080 canvas scaled to the window, the arrow keys moving between
  * them, the typefaces linked. */
+/** A slide's HTML with what changed since `before`, the slide's HTML at an
+ * earlier commit, marked for a reader comparing the two: every paragraph,
+ * heading, list item and table cell whose text `before` does not hold gets
+ * the mark colour, and a slide with any such block, or none before, a frame
+ * and a "changed" or "new" tag. Unchanged slides come back as they are. */
+export function markChanges(html: string, before: string | null): string {
+  const text = (fragment: string): string => fragment.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  const blocks = /<(p|h1|h2|h3|li|td|th)( style="[^"]*")?>([\s\S]*?)<\/\1>/g;
+  const old = new Set<string>();
+  if (before !== null) for (const m of before.matchAll(blocks)) old.add(text(m[3] ?? ""));
+  let changed = 0;
+  const marked = html.replace(blocks, (...groups: unknown[]): string => {
+    const [whole, tag, style, inner] = groups.map(g => (typeof g === "string" ? g : ""));
+    const t = text(inner ?? "");
+    if (!t || old.has(t)) return whole ?? "";
+    changed++;
+    const own = style ? style.slice(8, -1) : "";
+    return `<${tag ?? "p"} style="${own}${own ? ";" : ""}background:${SYNTAX.mark};box-shadow:-10px 0 0 ${SYNTAX.mark}">${inner ?? ""}</${tag ?? "p"}>`;
+  });
+  if (before !== null && changed === 0) return html;
+  const tag = before === null ? "new" : "changed";
+  return marked.replace(/^<section ([^>]*?)style="([^"]*)">/, (...groups: unknown[]): string => {
+    const [, attrs, style] = groups.map(g => (typeof g === "string" ? g : ""));
+    return `<section ${attrs ?? ""}style="${style ?? ""};box-shadow:inset 0 0 0 10px ${SYNTAX.mark}">` +
+    `<p style="position:absolute;top:40px;right:128px;font-size:24px;font-weight:600;background:${SYNTAX.mark};color:#1d2422;padding:4px 14px;border-radius:8px">${tag}</p>`;
+  });
+}
+
+/** A marked slide (`markChanges`) in the forms the Slides format keeps, for
+ * a published copy: the frame becomes a bar pinned along the top edge, a
+ * list holding a marked item becomes one paragraph per item, each opening
+ * with "•", the marked ones keeping their fill, and a table holding a
+ * marked cell, whose cells the format neither fills nor colours, becomes
+ * rows of boxes: one flex row per table row, one box per cell at the first
+ * row's column widths, its text a paragraph, a marked box filled. */
+export function slidesForm(html: string): string {
+  const fill = `background:${SYNTAX.mark}`;
+  const frame = `;box-shadow:inset 0 0 0 10px ${SYNTAX.mark}"`;
+  if (!html.includes(frame)) return html;
+  let out = html.replace(frame, '"').replace(/^(<section [^>]*>)/,
+    `$1<div style="position:absolute;left:0;top:0;width:1920px;height:12px;${fill}"></div>`);
+  out = out.replace(/<(ul|ol) style="([^"]*)">([\s\S]*?)<\/\1>/g, (...groups: unknown[]): string => {
+    const [whole, kind, style, body] = groups.map(g => (typeof g === "string" ? g : ""));
+    const items = [...(body ?? "").matchAll(/<li( style="[^"]*")?>([\s\S]*?)<\/li>/g)];
+    if (!items.some(m => (m[1] ?? "").includes(fill))) return whole ?? "";
+    return `<div style="display:flex;flex-direction:column;gap:6px">` + items.map((m, i) =>
+      `<p style="${style ?? ""}${(m[1] ?? "").includes(fill) ? ";" + fill : ""}">${kind === "ol" ? `${i + 1}.` : "•"} ${m[2] ?? ""}</p>`).join("") + "</div>";
+  });
+  return out.replace(/<table style="([^"]*)">([\s\S]*?)<\/table>/g, (...groups: unknown[]): string => {
+    const [whole, tableStyle, body] = groups.map(g => (typeof g === "string" ? g : ""));
+    if (!(body ?? "").includes(fill)) return whole ?? "";
+    const rows = [...(body ?? "").matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(r =>
+      [...(r[1] ?? "").matchAll(/<(td|th)( style="([^"]*)")?>([\s\S]*?)<\/\1>/g)]
+        .map(c => ({ head: c[1] === "th", style: c[3] ?? "", inner: c[4] ?? "" })));
+    const widths = (rows[0] ?? []).map(c => /width:([\d.]+)%/.exec(c.style)?.[1] ?? "");
+    const stroke = `1px solid ${C.rule}`;
+    return `<div style="display:flex;flex-direction:column">` + rows.map((row, r) =>
+      `<div style="display:flex;flex-direction:row">` + row.map((cell, k) => {
+        const width = widths[k] ? `width:${widths[k]}%;` : "flex:1;";
+        const edges = `border:${stroke}${r > 0 ? ";border-top:none" : ""}${k > 0 ? ";border-left:none" : ""}`;
+        const marked = cell.style.includes(fill) ? `;${fill}` : "";
+        const weight = cell.head ? ";font-weight:600" : "";
+        return `<div style="${width}padding:8px 14px;${edges}${marked}"><p style="${tableStyle ?? ""}${weight}">${cell.inner}</p></div>`;
+      }).join("") + "</div>").join("") + "</div>";
+  });
+}
+
 export function viewer(deck: Deck): string {
   const links = Object.values(FACES).map(f => `<link rel="stylesheet" href="${f.href}">`).join("\n");
   return `<!doctype html>

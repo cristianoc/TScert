@@ -102,6 +102,23 @@ A deck is handed to the owner only after independent validation:
    without an explanation, or a forward pointer, on that slide or before
    it.
 
+### A revised deck
+
+A revised deck is read for what changed since the version the owner last
+approved, the commit that checked that version in (its record names the
+version before it). `make deck NAME=<name> SINCE=<commit>` builds as above
+and, beside it, marks what differs from the slides at that commit: each
+paragraph, heading, list item and table cell whose text the old slide does
+not hold is filled with the mark colour (`SYNTAX.mark`), and a changed or
+new slide gets a frame and a "changed" or "new" tag. The marks go to the
+standalone page and to a marked copy of `project/` in the temporary
+directory, never to the checked-in files. In that copy, for publishing as a
+Slides artifact, the marks take forms the format keeps (`slidesForm`): the
+frame is a bar along the top edge, a list holding a marked item is one
+paragraph per item, and a table holding a marked cell is rows of boxes, one
+per cell. The owner reads the marked copy; once approved, the unmarked
+`project/` is committed and published to the deck's artifact.
+
 ### Converging
 
 A review reports only **blocking** findings: a term the reader meets on a
