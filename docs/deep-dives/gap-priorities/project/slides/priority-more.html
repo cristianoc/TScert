@@ -1,0 +1,18 @@
+<section id="priority-more" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, continued</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Nine more causes meet at least 10 functions</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:54%;text-align:left;font-weight:600">Cause</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:24%;text-align:left;font-weight:600">Cases</th></tr>
+<tr><td>A spread of a value that may not be a plain object (a module namespace)</td><td>724</td><td>18</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>Number both called and read through its members</td><td>674</td><td>20</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">number-call-and-members</span></td></tr>
+<tr><td>A for statement's condition read after ts.isForStatement on a union of loops</td><td>663</td><td>22</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>A method of the compiler's Type TScert has not reviewed (isUnionType …)</td><td>660</td><td>17</td><td><span style="color:#9a3a2a">refused</span> <span style="color:#2b5b9c">invalid-compiler-api-sync-guard</span></td></tr>
+<tr><td>A write that may add a key to an object others hold</td><td>626</td><td>25</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-loop-key-adding-write</span></td></tr>
+<tr><td>The library type ArrayBufferLike, at a site the census does not locate</td><td>452</td><td>20</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>fileURLToPath and pathToFileURL of node:url</td><td>435</td><td>19</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-node-url-import</span></td></tr>
+<tr><td>An assignment to a module's let</td><td>387</td><td>42</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-module-assignment</span></td></tr>
+<tr><td>import.meta</td><td>190</td><td>25</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-import-meta</span></td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Refusals naming no construct:</b> a failed search, or an expression with no proposed type, often follows an earlier refusal that left a value of unknown type: in the 202 functions that also meet a construct refusal it counts under that one (a judgement). The 79 that meet none, 2,058 statements, spread over forms of at most 8 functions each (measured).</li>
+</ul>
+</section>
