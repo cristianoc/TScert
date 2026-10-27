@@ -5,7 +5,7 @@
  */
 import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
-import type { JsonObject, JsonRead, JsonValue } from "./calculus.mts";
+import type { Json, JsonObject, JsonRead, JsonValue } from "./calculus.mts";
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
@@ -303,7 +303,7 @@ function isIndexClass(v: unknown): v is IndexClass {
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
-export function decodeGraph(value: JsonRead): TypeGraph {
+export function decodeGraph(value: Json | undefined): TypeGraph {
   requireWellFormed(value, "type graph");
   const rows = array(value);
   const labels = (v: JsonRead) => decodeLabels(v, rows.length);

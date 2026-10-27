@@ -128,15 +128,16 @@ singleton `single` names (`conditionSingletons`) leaves its operand that value
 alone, which `tagMember` checks on the edge. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
-    (single : Tag → Option ι := fun _ => none) (original : String → String := id) : List (Ty ι) :=
+    (single : Tag → Option ι := fun _ => none) (original : String → String := id)
+    (kinds : List ι := []) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original kinds
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer arrays single original) right answer arrays single original
+      conditionContext G scope (conditionContext G scope Γ left answer arrays single original kinds) right answer arrays single original kinds
     else
-      joinContexts Γ (conditionContext G scope Γ left answer arrays single original)
-        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original) right answer arrays single original)
+      joinContexts Γ (conditionContext G scope Γ left answer arrays single original kinds)
+        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original kinds) right answer arrays single original kinds)
   | .tagMember _ _ field tags onUndefined (.var _ saved) =>
     -- A family guard's test leaves the name's type, or its object's arms, as
     -- its answer's yields state them (`PromiseCalls.memberYield`); a saved
@@ -158,7 +159,7 @@ alone, which `tagMember` checks on the edge. -/
       match tag, answer == equal, arrays with
       | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)
       | _, holds, _ =>
-        let sliced := BranchRefinement.tagSlice G (Γ[i]?.getD []) tag holds
+        let sliced := BranchRefinement.sourceRefine G kinds (Γ[i]?.getD []) tag holds
         match (if holds && !sliced.isEmpty then single tag else none) with
         | some l => Γ.set i [l]
         | none => Γ.set i sliced
@@ -171,7 +172,7 @@ alone, which `tagMember` checks on the edge. -/
       -- labels its truthiness admits.
       if BranchRefinement.onlyBoolean G (Γ[i]?.getD []) then
         Γ.set i (if answer then [Labels.tru] else [Labels.fls])
-      else Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) .truthy answer)
+      else Γ.set i (BranchRefinement.sourceRefine G kinds (Γ[i]?.getD []) .truthy answer)
     else Γ
 where
   /-- Two paths' contexts over the same slots: a slot either path leaves at

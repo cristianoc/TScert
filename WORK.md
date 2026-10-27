@@ -25,7 +25,7 @@ each item's design and evidence, not its progress.
 | [The sync API's checking wrapper](#sync-api-checking-wrapper) | open | `make suite` runs the front end's sync-API calls through the wrapper C5 describes |
 | [The compiler API's full shape check](#compiler-api-shape-check) | open | C3 checks every member and child kind over the corpus it names, the absent required members exactly the corrections |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
-| [Slices of the value universe](#universe-slices) | open: a design | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
+| [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | open: a design | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [An assertion's promise on a field](#guard-promise-field) | open | `guard-field-assertion` verifies: an assertion function's call on a field narrows the field reread in the next statement |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
@@ -223,30 +223,19 @@ compiler API's code switches on `node.kind` this way.
 
 <a id="universe-slices"></a>
 **Slices of the value universe.** A tag test on a value at `unknown`
-narrows nothing: `typeof v === "object" && v !== null` leaves `v` at
-`unknown`. Every source value is of exactly one kind (`null`, `undefined`, a
-Boolean, a number, a string, a bigint, a symbol, an object without call
-code, or one with call code), so the source universe $`J`$ is the disjoint
-union of the primitive clauses, $`J_{\mathrm{ref}}`$ and
-$`J_{\mathrm{fun}}`$ ([the source-value boundary](docs/SOURCE-MODEL.md#source-value-boundary)),
-and `tagHolds` of each shape tag is decided by the kind alone. The design:
-where a test of a tag answers $`q`$ on a value at the `source` clause, the
-value is at the union of the kinds whose members answer $`q`$, a primitive
-kind its existing clause and $`J_{\mathrm{ref}}`$, $`J_{\mathrm{fun}}`$ new
-clauses, the `source` clause restricted to the kind:
+keeps the kinds of a JavaScript value it does not contradict
+([the rule](docs/SOURCE-MODEL.md#slices-of-the-value-universe-by-tag-tests)).
+Two slices remain, the negative `Array.isArray` answer and a type
+parameter's meet with `unknown` (`T ∩ unknown`, whose meet row the rule
+does not read):
 
 ```math
-\frac{\Gamma\vdash x:J\qquad \mathsf{typeof}\ x = \texttt{"object"}\ \text{answers}\ \mathsf{true}\qquad x\neq\mathsf{null}\ \text{answers}\ \mathsf{true}}
-     {\Gamma\vdash x:J_{\mathrm{ref}}}\ \textsf{slice-object}
-\qquad
 \frac{\Gamma\vdash x:J_{\mathrm{ref}}\qquad \mathsf{Array.isArray}(x)\ \text{answers}\ \mathsf{false}}
      {\Gamma\vdash x:J_{\mathrm{ref}}\setminus\mathsf{arrays}}\ \textsf{slice-non-array}
 ```
 
 $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ is $`J_{\mathrm{ref}}`$ with an
-own-key bound excluding the store key. The partition is a lemma of
-`isSourceVal` and `tagHolds` by cases; a test's answer on a slot is a value
-fact, so a call does not end it.
+own-key bound excluding the store key.
 
 The slices do not give the dictionary view
 `{ readonly [key: string]: unknown }`: a member of

@@ -216,6 +216,19 @@ let variadic_arrow ?(call_effect=ordinary_effect) ?(quantified=[]) ?(receiver=to
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result;call_effect}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
+(* `unknown` as the union of the kinds of a JavaScript value (Lean's
+   `sourceKinds`): null, undefined, a Boolean, a number, a string, a bigint,
+   a symbol, an object without call code, and one with call code, invocable
+   or a class. *)
+let unknown_kinds = [Nul;Undef;True;False;Num;Str;Bigint;Symbol;
+  Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
+(* What a test keeps of `unknown`: the kinds [keeps] admits, the Boolean kind
+   whole where it admits either value, as Lean slices `unknown` by kinds, and
+   `unknown` itself where it admits every kind. *)
+let unknown_slice keeps =
+  let kept = List.filter keeps unknown_kinds in
+  let kept = if List.mem True kept || List.mem False kept then True :: False :: kept else kept in
+  if List.for_all (fun k -> List.mem k kept) unknown_kinds then Atoms [Top] else ground kept
 let union a b = match a,b with
   | Atoms [], t | t, Atoms [] -> t
   | Atoms xs, Atoms ys -> ground (xs @ ys)
@@ -317,6 +330,9 @@ let truthiness = function
 (* The part of a type a truthiness test answering [truth] leaves: the atoms
    that may answer so. *)
 let rec truthy_slice truth = function
+  | Atoms xs when List.mem Top xs ->
+    union (truthy_slice truth (Atoms (List.filter (fun a -> a <> Top) xs)))
+      (unknown_slice (fun a -> truthiness a <> Some (not truth)))
   | Atoms xs -> ground (List.filter (fun a -> truthiness a <> Some (not truth)) xs)
   | Rigid _ | Meet _ as t -> t
   | Union ts -> List.fold_left union (Atoms []) (List.map (truthy_slice truth) ts)

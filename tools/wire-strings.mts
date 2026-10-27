@@ -6,6 +6,7 @@
  * refuse such a string and every reader refuses a document holding one,
  * before reading any value. */
 
+import type { Json } from "./calculus.mts";
 import { passToolFailure } from "./thrown.mts";
 
 /** Whether a string is well-formed UTF-16: each surrogate in a pair. */
@@ -24,7 +25,7 @@ export function wellFormed(s: string): boolean {
 /** The first string of a parsed JSON value, key or value, that is not
  * well-formed, with the source span of the nearest enclosing object stating
  * one (`pos`), where any does. */
-export function illFormedString(value: unknown, pos: unknown = null): { text: string; pos: unknown } | null {
+export function illFormedString(value: Json | undefined, pos: Json = null): { text: string; pos: Json } | null {
   if (typeof value === "string") return wellFormed(value) ? null : { text: value, pos };
   if (Array.isArray(value)) {
     for (const x of value) {
@@ -44,17 +45,45 @@ export function illFormedString(value: unknown, pos: unknown = null): { text: st
   return null;
 }
 
-/** Refuse a document holding a string that is not well-formed Unicode. */
-export function requireWellFormed(value: unknown, what: string): void {
+/** Refuse a parsed document holding a string that is not well-formed
+ * Unicode. */
+export function requireWellFormed(value: Json | undefined, what: string): void {
   const refusal = wellFormedRefusal(value, what);
   if (refusal !== null) throw Error(refusal);
 }
-/** The refusal of a document holding a string that is not well-formed
- * Unicode, the first in document order, or null. */
-export function wellFormedRefusal(value: unknown, what: string): string | null {
+/** The refusal of a parsed document holding a string that is not
+ * well-formed Unicode, the first in document order, or null. */
+export function wellFormedRefusal(value: Json | undefined, what: string): string | null {
   const found = illFormedString(value);
   return found ? `${what}: a string that is not well-formed Unicode, a lone surrogate, is refused` +
-    (Array.isArray(found.pos) ? ` (at [${found.pos.join(",")}))` : "") : null;
+    spanText(found.pos) : null;
+}
+
+/** A source span `[start, end]` as the refusal locates it, or nothing. */
+function spanText(pos: Json): string {
+  if (!Array.isArray(pos) || pos.length !== 2) return "";
+  const start = pos[0];
+  const end = pos[1];
+  return typeof start === "number" && typeof end === "number" ? ` (at [${start},${end}))` : "";
+}
+
+/** `JSON.stringify` writes a lone surrogate, and only one, as an escape
+ * `\udXXX` whose hex digits begin with 8 to f. */
+const LONE_SURROGATE_ESCAPE = /\\u[dD][89a-fA-F]/;
+
+/** Refuse a document's text, as `JSON.stringify` wrote it, where a string
+ * the document holds is not well-formed Unicode: the refusal of the text
+ * parsed back, which is read only where the text holds a surrogate's
+ * escape. */
+export function requireWellFormedText(text: string, what: string): void {
+  const refusal = wellFormedTextRefusal(text, what);
+  if (refusal !== null) throw Error(refusal);
+}
+/** `wellFormedRefusal` of the document a text `JSON.stringify` wrote. */
+export function wellFormedTextRefusal(text: string, what: string): string | null {
+  if (!LONE_SURROGATE_ESCAPE.test(text)) return null;
+  const parsed: Json = JSON.parse(text);
+  return wellFormedRefusal(parsed, what);
 }
 
 /** A wire document's bytes as text, refused where they are not valid UTF-8:

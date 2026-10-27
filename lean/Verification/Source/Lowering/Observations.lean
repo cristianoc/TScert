@@ -171,6 +171,14 @@ store of `unknown`. -/
   let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
   return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
 
+/-- The labels of the kinds of a JavaScript value (`sourceKinds`), where a
+slot of `Γ` holds `unknown`, whose tests keep its kinds; none otherwise. -/
+@[nospecialize] def sourceKindLabels (Γ : List (Ty Tree)) : Compiler (List Tree) := do
+  let G := SourceTypes.graph (← table)
+  if Γ.any (·.any fun a => G.plain a && G a == [.source]) then
+    (BranchRefinement.sourceKinds : List (PositiveNormalization.Clause (List Tree))).mapM fun k => lower (SourceTypes.use k)
+  else return []
+
 /-- What a tag test answering `q` keeps of `A`: `tagSlice`, and where
 `Array.isArray` holds, `arrayRefine`. -/
 @[nospecialize] def tagRefine (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do

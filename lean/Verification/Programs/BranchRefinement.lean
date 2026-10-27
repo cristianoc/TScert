@@ -1556,6 +1556,126 @@ theorem setSlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {t : 
     · obtain ⟨hdv, hdr⟩ := litIn_sound hlit hev.1
       exact expand_sem_mpr ⟨d, expand_sub hd, hdv, builtinInvariant_of_withoutInvariant hdr _ _ _⟩
 
+/-! ### `unknown` under a test
+
+A JavaScript value (`isSourceVal`) is of exactly one kind: `null`,
+`undefined`, a Boolean, a number, a string, a bigint, a symbol, an object
+without call code, or one with call code, invocable or constructible. Each
+kind is a clause, so a test on a value at the `source` clause keeps the
+kinds it does not contradict (SOURCE-MODEL.md, "Slices of the value
+universe by tag tests"). -/
+
+/-- The kinds of a JavaScript value, each as its clause: an object without
+call code is the record of no field (`refs` with no operand), an object
+with call code `arrs [] []` where it is invocable and `ctors []` where it
+is constructible. -/
+def sourceKinds : List (Clause α) :=
+  [.nul, .undef, .bool, .num, .str, .bigint, .symbol, .refs [] [] [], .arrs [] [], .ctors []]
+
+/-- **The kinds cover `unknown`**: a member of the `source` clause is in one
+of the kinds' clauses, meeting the built-ins' invariant there. -/
+theorem sourceKinds_cover {G : NormalGraph ι} {n W v} (hv : clauseSem G .source n W v) :
+    ∃ k ∈ (sourceKinds : List (Clause (List ι))), clauseSem G k n W v := by
+  obtain ⟨⟨hsv, hsc⟩, hinv⟩ := hv
+  have hval := sourceVal_isVal hsv
+  -- A kind no record's: its family's test admits the value.
+  have family : ∀ t, familyMember (sourceKinds : List (Clause (List ι))) t true = true →
+      tagHolds t v = true → ∃ k ∈ (sourceKinds : List (Clause (List ι))), clauseSem G k n W v := by
+    intro t hm ht
+    obtain ⟨k, hk, hkv, hr⟩ := familyMember_sound (Ξ := builtinExc G (builtinValues G))
+      (X := meaning G) (P := argMeaning G) hm hval hsc ht
+    exact ⟨k, hk, hkv, builtinInvariant_of_withoutInvariant hr _ _ _⟩
+  cases v with
+  | nul => exact family .isNul (by simp [familyMember, sourceKinds]) rfl
+  | undef => exact family .isUndef (by simp [familyMember, sourceKinds]) rfl
+  | tru => exact family .isBool (by simp [familyMember, sourceKinds]) rfl
+  | fls => exact family .isBool (by simp [familyMember, sourceKinds]) rfl
+  | num b => exact family .isNum (by simp [familyMember, sourceKinds]) rfl
+  | str s => exact family .isStr (by simp [familyMember, sourceKinds]) rfl
+  | bigint i => exact family .isBigint (by simp [familyMember, sourceKinds]) rfl
+  | sym i => exact family .isSymbol (by simp [familyMember, sourceKinds]) rfl
+  | objAt fs code oid =>
+    cases code with
+    | absent =>
+      refine ⟨.refs [] [] [], by simp [sourceKinds], ⟨⟨⟨⟨fs, oid, rfl, fun f T hm => by
+          simp [ReferenceConjunctions.famsOf] at hm⟩, by simp, by simp [ReferenceConjunctions.famsOf]⟩,
+        fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, optT_nil,
+        MethodMembers.methodT_nil _ _ _, fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, ?_⟩⟩
+      exact (builtinInvariant_carriesInvariant rfl rfl).mp hinv
+    | bound t r pre => exact family .isFun (by simp [familyMember, sourceKinds]) rfl
+    | graph arity E K start caps kind rest =>
+      cases kind <;> exact family .isFun (by simp [familyMember, sourceKinds]) rfl
+  | _ => simp [isSourceVal] at hsv
+
+/-- Whether the clauses `cs` hold a kind: as one of them, or, the Boolean
+kind, as its two singletons. -/
+def kindIn [DecidableEq α] (cs : List (Clause α)) (k : Clause α) : Bool :=
+  cs.contains k || (k == .bool && cs.contains (.boolLit true) && cs.contains (.boolLit false))
+
+theorem kindIn_sound [DecidableEq ι] {G : NormalGraph ι} {cs : List (Clause (List ι))} {k}
+    (h : kindIn cs k = true) {n W v} (hv : clauseSem G k n W v) :
+    ∃ c ∈ cs, clauseSem G c n W v := by
+  simp only [kindIn, Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at h
+  rcases h with hk | ⟨⟨rfl, ht⟩, hf⟩
+  · exact ⟨k, hk, hv⟩
+  · obtain ⟨hb, -⟩ := hv
+    rcases hb with rfl | rfl
+    · exact ⟨_, ht, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
+    · exact ⟨_, hf, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
+
+/-- Every label the tag slice keeps is in `B`, or each of its clauses the
+test contradicts, `B` holds, or is `source`, each of whose kinds the test
+contradicts or `B` holds. -/
+def sourceSlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) (t : Tag) (q : Bool) : Bool :=
+  (tagSlice G A t q).all fun a => B.contains a ||
+    (G.plain a && (expand G [a]).all fun c => tagClause t c == some (!q) ||
+      (expand G B).contains c ||
+      (c == .source && (sourceKinds : List (Clause (List ι))).all fun k =>
+        tagClause t k == some (!q) || kindIn (expand G B) k))
+
+theorem sourceSlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {t : Tag} {q : Bool}
+    (h : sourceSlice G A B t q = true) {n W v} (hv : meaning G A n W v)
+    (ho : tagHolds t v = q ∨ protoFree t v = false) : meaning G B n W v := by
+  obtain ⟨a, ha, hva⟩ := tagSlice_sound hv ho
+  have ha' := List.all_eq_true.mp h a ha
+  simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem] at ha'
+  rcases ha' with hB | ⟨hplain, hcs⟩
+  · exact ⟨a, hB, hva⟩
+  have hpt : G.plainTy [a] = true := by simp [NormalGraph.plainTy, hplain]
+  obtain ⟨c, hc, hcv⟩ := (expand_sem G [a] hpt n W v).mp ⟨a, by simp, hva⟩
+  -- A clause the test contradicts holds no tested value.
+  have contra : ∀ d, tagClause t d = some (!q) → semWithArgs (builtinExc G (builtinValues G))
+      (meaning G) (argMeaning G) d n W v → False := by
+    intro d hd hdv
+    have hpf := tagClause_protoFree hd hdv
+    have hans := tagClause_sound hd hdv
+    rcases ho with ho | ho
+    · rw [ho] at hans; cases q <;> simp at hans
+    · rw [hpf] at ho; cases ho
+  have hcc := List.all_eq_true.mp hcs c hc
+  simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, List.contains_iff_mem,
+    List.all_eq_true] at hcc
+  rcases hcc with (hno | hin) | ⟨rfl, hkinds⟩
+  · exact (contra c hno hcv.1).elim
+  · exact expand_sem_mpr ⟨c, expand_sub hin, hcv⟩
+  · obtain ⟨k, hk, hkv⟩ := sourceKinds_cover hcv
+    rcases hkinds k hk with hno | hin
+    · exact (contra k hno hkv.1).elim
+    · obtain ⟨d, hd, hdv⟩ := kindIn_sound hin hkv
+      exact expand_sem_mpr ⟨d, expand_sub hd, hdv⟩
+
+/-- What a test answering `q` keeps of `A`, a `source` row given as the
+kinds it does not contradict, read at `kinds`, the kinds' labels in the
+order of `sourceKinds`: the type `sourceSlice` checks. Untrusted: the edge's
+check decides. -/
+def sourceRefine [DecidableEq ι] (G : NormalGraph ι) (kinds : List ι) (A : Ty ι) (t : Tag) (q : Bool) : Ty ι :=
+  let sliced := tagSlice G A t q
+  if kinds.isEmpty then sliced else
+  sliced.flatMap fun a =>
+    if G.plain a && G a == [.source] then
+      kinds.filter fun k => !(G.plain k && (G k).all fun c => tagClause t c == some (!q))
+    else [a]
+
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
 @[nospecialize] def checkObservedSubResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -1565,7 +1685,8 @@ an algorithm for the tag case, not the meaning of refinement. -/
   | .tag t q =>
       (ProgramCertificates.checkSubtypeUsing G images (tagSlice G A t q) B p).orElse fun _ =>
       CheckResult.ofBool (tagMember G B t q || presentKey t q (promotes G (tagSlice G A t q) B) ||
-        (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q)
+        (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q ||
+        sourceSlice G A B t q)
 
 @[nospecialize] def checkObservedSubUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
@@ -1582,7 +1703,8 @@ theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images :
   | .boolean q => booleanMember G B q
   | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || tagMember G B t q ||
       presentKey t q (promotes G (tagSlice G A t q) B) ||
-      (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q := by
+      (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q ||
+      sourceSlice G A B t q := by
   cases o <;> simp only [checkObservedSubUsing, checkObservedSubResult, CheckResult.accepted_ofBool,
     CheckResult.accepted_orElse, ProgramCertificates.checkSubtypeUsing_accepted, Bool.or_assoc]
 
@@ -1598,7 +1720,7 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
     exact booleanMember_sound hb n W
   | tag t q =>
     simp only [checkObservedSubUsing_eq, Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with ((((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet) | hset
+    rcases hc with (((((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet) | hset) | hsource
     · exact PositiveCertificates.acceptedUsing hc n W v (tagSlice_sound hv ho)
     · exact tagMember_sound hm (meaning_value hv).1 (meaning_value hv).2 (ho.resolve_right (by
         cases t <;> cases q <;> simp [tagMember, familyMember] at hm <;> simp [protoFree]))
@@ -1609,6 +1731,7 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
       exact arraySlice_sound hs hv (ho.resolve_right (by simp [protoFree]))
     · exact meetSlice_sound hmeet hv ho
     · exact setSlice_sound hset hv ho
+    · exact sourceSlice_sound hsource hv ho
 
 /-- The field refinements a tag observation admits for other slots: each
 object a current read link says the tested value was read from, and the

@@ -690,6 +690,10 @@ let operation_result declarations op left right =
    singleton value. Unknown/rigid predicates conservatively retain their type;
    proof checking validates each narrower cut. *)
 let rec restrict ?declarations singleton equal t = match t with
+  (* `unknown` other than null: its other kinds (Lean's `sourceSlice`). *)
+  | Atoms xs when List.mem Top xs && not equal && singleton = Nul ->
+    union (restrict ?declarations singleton equal (Atoms (List.filter (fun a -> a <> Top) xs)))
+      (unknown_slice (fun a -> a <> singleton))
   | Atoms xs -> ground (List.filter (fun atom ->
       let rec known atom = match atom,singleton with
         | Nul,Nul | Undef,Undef | True,True | False,False -> Some true
