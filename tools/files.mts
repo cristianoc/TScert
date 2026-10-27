@@ -21,6 +21,7 @@ import { createRequire, isBuiltin, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { Json } from "./calculus.mts";
 import { fieldOf, IoFailure } from "./thrown.mts";
 
 /** `run`, its failure an `IoFailure` of `operation` at `path`. */
@@ -677,21 +678,32 @@ export function findPackage(name: string, directory: string): string | null {
   return null;
 }
 
+/** A key of a package manifest the front end reads; `Object.prototype` and
+ * `Array.prototype` hold none of them. */
+export type ManifestKey = "name" | "version" | "exports" | "imports";
+/** A package manifest's member at `key`, where the manifest, `JSON.parse`'s
+ * result, is an object owning one; else undefined. A JSON array owns only
+ * its indices and its length, so an array has no member. */
+export function manifestMember(manifest: Json, key: ManifestKey): Json | undefined {
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) return undefined;
+  return manifest[key];
+}
 /** A manifest's field, or undefined where it has none or is no JSON. */
-function manifestField(bytes: Buffer | null, field: string): unknown {
+function manifestField(bytes: Buffer | null, field: ManifestKey): Json | undefined {
   if (bytes === null) return undefined;
   try {
-    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
-    return fieldOf(parsed, field);
+    const parsed: Json = JSON.parse(bytes.toString("utf8"));
+    return manifestMember(parsed, field);
   } catch {
     return undefined;
   }
 }
 /** Every string target in a JSON imports map is relative to its scope. */
-function relativeImportTargets(value: unknown): boolean {
+function relativeImportTargets(value: Json | undefined): boolean {
   if (typeof value === "string") return value.startsWith("./");
+  if (Array.isArray(value)) return value.every((target: Json) => relativeImportTargets(target));
   if (typeof value === "object" && value !== null)
-    return Object.values(value).every((target: unknown) => relativeImportTargets(target));
+    return Object.values(value).every((target: Json) => relativeImportTargets(target));
   return true;
 }
 /** The package scope of a module: the nearest `package.json` of its

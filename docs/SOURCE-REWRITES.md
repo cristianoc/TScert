@@ -353,6 +353,56 @@ and the return was refused.
 - **Functions:** `installed`.
 - **Commit:** 5c3f858.
 
+### A parsed JSON value read as `unknown`
+
+The readers of a package manifest (`digestOf`, `checkInventory` and
+`checkedGuards` of `tools/family-activation.mts`, `originOf` of
+`tools/declaration-graph.mts`, `manifestField` of `tools/files.mts`) and of
+a worker's output (`isResult` of `tools/unchecked.mts`) typed
+`JSON.parse`'s result `unknown` and read a member after `"k" in v`, which
+no rule admits on an open object ("field read on non-object"), and
+converted a member with `String`, which is admitted at a primitive only.
+The parse had established the value's grammar, which the annotation
+discarded.
+
+- **Rewrite:** the parsed value keeps `Json`, `JSON.parse`'s result
+  (`tools/calculus.mts`), and one reader per format reads it:
+  `manifestMember` (`tools/files.mts`) returns an object's member at a
+  manifest key, undefined at a non-object or an array; `decodeResult`
+  returns the worker's result as fresh objects of its fields, or null.
+  `"k" in v` and `v[k]` agree with these where neither `Object.prototype`
+  nor `Array.prototype` holds the key, which the keys' types restrict them
+  to, and a parsed array owns only its indices and its length.
+  `stringOfJson` (`tools/family-activation.mts`) converts a member as
+  `String` does, by its arms: a primitive by `String`; an array by joining
+  its elements' conversions with commas, an element `null` as the empty
+  string; an object as `"[object Object]"`, or a throw where the object owns
+  `toString`, which JSON data never makes callable. Each reader throws where
+  the original threw: `JSON.parse`'s `SyntaxError` of a text that is no
+  JSON, in `digestOf`, `checkInventory`, `checkedGuards` and `originOf`;
+  `manifestField` catches it and answers undefined, as the original did;
+  `decodeResult` answers null where `isResult` answered false. Two
+  behaviours differ:
+  - where a manifest's `name` or `version` is an object owning `toString`,
+    at any depth of arrays, `String` throws a `TypeError` and the rewrite
+    an `Error`, with the same message, Node's `Cannot convert object to
+    primitive value`: TScert's contracts construct no `TypeError` and convert
+    no object by `String`. The front end reads a thrown error by its message (`toolFailureOf`,
+    `tools/thrown.mts`), so its reports agree;
+  - the conversion of nested arrays recurses on the call stack, so the
+    depth at which it exhausts the stack, a `RangeError`, differs from
+    Node's own `Array.prototype.join`, as any change of the frames would.
+
+  `decodeResult`'s objects hold only the fields its callers read, where the
+  original passed on the parsed object with any further members.
+- **Pattern:** a value `JSON.parse` returns keeps its JSON type from the
+  parse onward, and is read through a decoder of its format.
+- **Functions:** `digestOf`, `checkInventory`, `checkedGuards`, `originOf`,
+  `manifestField`, `relativeImportTargets`, `isResult`
+  (rewritten as `decodeResult`), and their callers; `json-parse-manifest` is the pattern
+  as a case.
+- **Commit:** the introducing commit, `Parsed manifests and worker results keep their JSON type`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

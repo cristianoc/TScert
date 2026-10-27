@@ -15,8 +15,9 @@ import type { Node } from "typescript/unstable/ast";
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { toolFailureOf } from "./thrown.mts";
 // files.mts makes every file-system failure a tool failure.
-import { findPackage, listDirectory, loadModule, nodeResolve, orAbsent, readBytes, readText, realPath, remembered, runtimeConditions,
-  type Remembered } from "./files.mts";
+import { findPackage, listDirectory, loadModule, manifestMember, nodeResolve, orAbsent, readBytes, readText, realPath, remembered,
+  runtimeConditions, type Remembered } from "./files.mts";
+import type { Json } from "./calculus.mts";
 export { nodeResolve, runtimeConditions } from "./files.mts";
 
 /** The reviewed family descriptions the front end activates: each a
@@ -77,8 +78,9 @@ export function declarationsDigest(root: string): string {
 }
 function digestOf(real: string, inventory: readonly string[]): string {
   const hash = createHash("sha256");
-  const manifest: unknown = JSON.parse(readText(join(real, "package.json")));
-  const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? String(manifest.version) : "";
+  const manifest: Json = JSON.parse(readText(join(real, "package.json")));
+  const member = manifestMember(manifest, "version");
+  const version = member === undefined ? "" : stringOfJson(member);
   hash.update(`${version}\0`);
   for (const file of inventory) {
     hash.update(`${file}\0`);
@@ -86,6 +88,19 @@ function digestOf(real: string, inventory: readonly string[]): string {
     hash.update("\0");
   }
   return hash.digest("hex");
+}
+/** `String` of a JSON value, by its arms: a primitive as `String` converts
+ * it; an array as `Array.prototype.toString` joins its elements with
+ * commas, `null` as the empty string; an object through
+ * `Object.prototype.toString`, `"[object Object]"`, unless it owns a
+ * `toString`, which, as JSON data, is not callable, so that `String` finds
+ * no callable conversion (its `valueOf` returns the object) and throws, with
+ * the message Node gives. */
+function stringOfJson(value: Json): string {
+  if (typeof value !== "object" || value === null) return String(value);
+  if (Array.isArray(value)) return value.map((x: Json) => (x === null ? "" : stringOfJson(x))).join(",");
+  if (Object.hasOwn(value, "toString")) throw Error("Cannot convert object to primitive value");
+  return "[object Object]";
 }
 
 /** The directory of a description's package: the package of the
@@ -124,12 +139,12 @@ function checkedInventory(description: FamilyDescription): ReadonlySet<string> {
   return remembered(checkedInstallations, key, () => checkInventory(description, root));
 }
 function checkInventory(description: FamilyDescription, root: string): ReadonlySet<string> {
-  const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
-  const name = typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;
-  const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? manifest.version : null;
+  const manifest: Json = JSON.parse(readText(join(root, "package.json")));
+  const name = manifestMember(manifest, "name") ?? null;
+  const version = manifestMember(manifest, "version") ?? null;
   if (name !== description.package.name || version !== description.package.version)
     throw Error(`the package at ${root} is not the family ${description.marker}'s ${description.package.name} ` +
-      `${description.package.version}: its manifest names ${String(name)} ${String(version)}`);
+      `${description.package.version}: its manifest names ${stringOfJson(name)} ${stringOfJson(version)}`);
   const inventory = declarationInventory(root);
   const digest = digestOf(root, inventory);
   if (digest !== description.installation.digest)
@@ -257,8 +272,8 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   // contains it: the entry point through the package's name, from its
   // manifest; each import from its module. A module is its path in the
   // package; a file outside it, or any error, is no table.
-  const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
-  const name = typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;
+  const manifest: Json = JSON.parse(readText(join(root, "package.json")));
+  const name = manifestMember(manifest, "name");
   if (typeof name !== "string") return null;
   // The table's conditions are the ones Node enables in this process.
   const runtime = runtimeConditions();

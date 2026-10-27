@@ -472,6 +472,7 @@ export const cases: Case[] = [
     status: "unsupported", phase: "proposal", diagnostic: /missing field cause at \[110,144\)/ },
   positive("json-parse-stringify-tojson-member", "`JSON.stringify` of `JSON.parse`'s result, also inside a fresh literal with a member named `toJSON`: a parsed member is an own data property holding JSON data, never callable, so a nested \"toJSON\" member is read and not called (run under Node: the text round-trips)"),
   positive("json-parse-data", "`JSON.parse` without a reviver is parsed data: `Array.isArray` of it leaves its array arm, whose `map` stays dense, and a dictionary is read by key"),
+  positive("json-parse-manifest", "a manifest `JSON.parse` returns keeps its JSON type: a member is read after the tests that leave the dictionary arm, and a member's text is computed by its arms"),
   negative("invalid-json-parse-class", "a class instance, at a record type an implicit index signature admits, is no parsed JSON: its prototype holds members a read by key finds (run under Node)",
     /a record at an index signature/),
   negative("invalid-json-parse-inherited", "a parsed object inherits `Object.prototype`: a read at `toString` finds a function, and is refused (run under Node)",
