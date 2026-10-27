@@ -6,47 +6,49 @@ open Proposal_diagnostics
 
 let primitive_shape shape = List.mem shape ["string";"number";"bigint";"symbol";"undefined";"boolean"]
 let rec rigid_arm = function Rigid _ -> true | Union ts -> List.exists rigid_arm ts | _ -> false
+(* A `typeof` test's answer on every value of an atom, where the atom
+   settles it. *)
+let typeof_answer shape = function
+  (* `Array.isArray`: an array owns its store; an open record may be an
+     array carrying other keys, and stays on both arms. *)
+  | Shape s when shape="array" ->
+    (* An indexed dictionary owns no prototype, which an array owns
+       (Lean's `not_array_of_indexed`). *)
+    if s.elements<>None then Some true else if s.calls<>[] || s.indexes<>[] then Some false else None
+  | Top | Named _ when shape="array" -> None
+  | _ when shape="array" -> Some false
+  (* `"object"`: null, or an object without call code. *)
+  | Nul when shape="object" -> Some true
+  | Shape s when shape="object" -> Some (s.calls=[])
+  | Exact _ when shape="object" -> Some true
+  | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
+  | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
+  | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol | SymbolLit _ -> Some (shape="symbol")
+  | Shape s -> Some (shape="function" && s.calls<>[])
+  | Exact _ -> Some false
+  (* A class is a function to `typeof`. *)
+  | Ctors _ | Callable -> Some (shape="function")
+  | Nul -> Some false
+  (* A declaration's shape is not known here: it stays on both arms. No
+     value is an argument pack. *)
+  | Top | Named _ -> None
+let any_function = Atoms [Callable;Ctors ([],[])]
 (* Keep the atoms of a `typeof` test's shape where it holds, and the others
    where it fails. *)
-let any_function = Atoms [Callable;Ctors ([],[])]
 let rec typeof_slice shape holds = function
   | Atoms xs when not (List.mem Top xs) ->
-    let has = function
-      (* `Array.isArray`: an array owns its store; an open record may be an
-         array carrying other keys, and stays on both arms. *)
-      | Shape s when shape="array" ->
-        (* An indexed dictionary owns no prototype, which an array owns
-           (Lean's `not_array_of_indexed`). *)
-        if s.elements<>None then Some true else if s.calls<>[] || s.indexes<>[] then Some false else None
-      | Top | Named _ when shape="array" -> None
-      | _ when shape="array" -> Some false
-      (* `"object"`: null, or an object without call code. *)
-      | Nul when shape="object" -> Some true
-      | Shape s when shape="object" -> Some (s.calls=[])
-      | Exact _ when shape="object" -> Some true
-      | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
-      | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
-      | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol | SymbolLit _ -> Some (shape="symbol")
-      | Shape s -> Some (shape="function" && s.calls<>[])
-      | Exact _ -> Some false
-      (* A class is a function to `typeof`. *)
-      | Ctors _ | Callable -> Some (shape="function")
-      | Nul -> Some false
-      (* A declaration's shape is not known here: it stays on both arms. No
-         value is an argument pack. *)
-      | Top | Named _ -> None in
-    Atoms (List.filter (fun a -> match has a with
+    Atoms (List.filter (fun a -> match typeof_answer shape a with
       | Some result -> result = holds | None -> true) xs)
-  (* `unknown`, where a test naming one primitive family holds: that
-     family, whatever the value was (a caught value, say); where
-     `typeof x === "function"` holds, a function: one invocable, or a class
-     (`Function`, of no known signature). *)
-  | Atoms _ when holds ->
-    (match shape with
-     | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
-     | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
-     | "function" -> any_function
-     | _ -> Atoms [Top])
+  (* `unknown`: the kinds of a JavaScript value the test keeps (Lean's
+     `sourceSlice`): where `typeof x === "object"` holds, null or an object
+     without call code; where `typeof x === "function"` holds, a function,
+     one invocable or a class. `Array.isArray` reads `unknown` at the
+     built-ins' array instead (`array_refine`). *)
+  | Atoms xs when shape <> "array" ->
+    union (typeof_slice shape holds (Atoms (List.filter (fun a -> a <> Top) xs)))
+      (unknown_slice (fun a -> match typeof_answer shape a with
+        | Some result -> result = holds | None -> true))
+  | Atoms _ when holds -> Atoms [Top]
   (* A type parameter's value, where a test naming one primitive family
      holds: that family, as for `unknown` (TypeScript's `T & number`, of
      which the model states the `number`). Where `typeof x === "function"`

@@ -1281,7 +1281,9 @@ with the knowledge their edges carry, such as the field a failed test left
     let original := fun (n : String) => match origins.lookup n with
       | some (.var _ o) => o
       | _ => n
-    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original
+    let kinds ← sourceKindLabels Γ
+    let G := SourceTypes.graph (← table)
+    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original kinds
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e => compileConditionAtom recursive fc scope Γ e no yes

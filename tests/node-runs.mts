@@ -1582,6 +1582,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-in-function-key", "report(() => 0)"), true);
   assert.equal(runExample("invalid-in-function-key-call", "report(() => 0)"), true);
   assert.equal(runExample("invalid-in-function-key-member", `wrong({ size: 1, call: () => "s" })`), "s");
+  // `in` throws on a primitive and on null, which tests on `unknown` may
+  // leave; a function owns `name`.
+  assert.throws(() => runExample("invalid-in-unknown-primitive", "probe(5)"), /Cannot use 'in' operator/);
+  assert.throws(() => runExample("invalid-in-unknown-null", "probe(null)"), /Cannot use 'in' operator/);
+  assert.equal(runExample("invalid-in-unknown-function-key", "probe(() => 0)"), true);
+  assert.equal(JSON.stringify(runExample("in-unknown-object", `[anything({ a: 1 }), anything(5), closable({ close() {} }),
+    closable(""), named(() => { throw new Error("m"); }), named(() => { throw 5; }), kind(null), kind(() => 0),
+    kind(1), kind({ code: 1 }), kind({})]`)), JSON.stringify([true, false, true, false, true, false, "nullish",
+    "function", "primitive", "coded", "object"]));
   assert.equal(runExample("in-outside-caller-contract", `withIn(Object.assign(new Error("m"), { size: 1 }))`), "Error");
   assert.equal(runExample("in-outside-caller-contract", `withMessage(Object.assign(new Error(), { size: 1 }))`), "1");
   assert.equal(runExample("in-outside-caller-contract", `withoutIn(Object.assign(new Error(), { size: 1 }))`), "1");

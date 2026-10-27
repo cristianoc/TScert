@@ -1305,6 +1305,8 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             else if BranchRefinement.meetSlice G A B t q then some {}
             -- A tag set: the elements the test leaves.
             else if BranchRefinement.setSlice G A B t q then some {}
+            -- `unknown`: the kinds the test leaves.
+            else if BranchRefinement.sourceSlice G A B t q then some {}
             else none
       else ((subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
@@ -1414,7 +1416,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
                 match compared.value with
                 | some p => choices := choices ++ [.slicedRead tag q i e p]
                 | none =>
-                  if tag == .isArray && q && BranchRefinement.arraySlice G C j.type then
+                  if (tag == .isArray && q && BranchRefinement.arraySlice G C j.type) ||
+                      BranchRefinement.sourceSlice G C j.type tag q then
                     choices := choices ++ [.slicedRead tag q i e {}]
   | _ => pure ()
   if let some e := ordinary.value then
@@ -1543,6 +1546,11 @@ where
       -- leaves.
       let decided := decided <|> (pool.filter fun B => !B.isEmpty &&
         BranchRefinement.setSlice G A B tag q).foldl (fun best B => match best with
+          | some b => if B.length < b.length then some B else best
+          | none => some B) none
+      -- `unknown`'s kinds the test leaves: a claimed type holding them.
+      let decided := decided <|> (pool.filter fun B => !B.isEmpty &&
+        BranchRefinement.sourceSlice G A B tag q).foldl (fun best B => match best with
           | some b => if B.length < b.length then some B else best
           | none => some B) none
       match (if sliced != A then none else decided) with

@@ -868,13 +868,15 @@ prepared predicate without replaying an effectful source operand. -/
         (BranchRefinement.onlyBoolean G A || truthOnly) && readOnly origin && !origin.freeNames.contains ""
       let arrays ← if correlated && arrayTested origin then some <$> builtinArrayTy else pure none
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
+      let kinds ← if correlated then sourceKindLabels Δ else pure []
+      let G := SourceTypes.graph (← table)
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
         let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
         -- A promise's actual is the name its saved operand was read from.
         let original := fun (n : String) => match previous.origins.lookup n with
           | some (.var _ o) => o
           | _ => n
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original else
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds else
           match alias with
           | some i => Δ.set i T
           | none => Δ

@@ -1031,6 +1031,41 @@ control(async (): Promise<void> => {
   process.stdout.write("forged for-of patterns: the element's read and the step's value claimed at a string, refused\n");
 });
 control(async (): Promise<void> => {
+  // `unknown` under a test is the kinds the test leaves (`sourceSlice`): a
+  // read claimed at fewer kinds is refused where evidence is produced, and,
+  // in a positive case, where its evidence is checked: `in`'s operand at an
+  // object where the tests leave null or a primitive, or owning the key at a
+  // type; a function's slice without its classes.
+  const empty: Row[number] = { refs: { first: [], rest: [], views: [] } };
+  const sites: [file: string, fn: string, read: string, offset: number, name: string,
+      row: (claims: SourceClaims) => number, at: string][] = [
+    ["invalid-in-unknown-null", "probe", `"a" in x`, `"a" in `.length, "forged-in-unknown-null",
+      (claims) => rowOf(claims, empty), "source incoming edge obligation at [173,206)"],
+    ["invalid-in-unknown-primitive", "probe", `"a" in x`, `"a" in `.length, "forged-in-unknown-primitive",
+      (claims) => rowOf(claims, empty), "source incoming edge obligation at [191,226)"],
+    ["in-unknown-object", "anything", `"a" in x`, `"a" in `.length, "forged-in-unknown-owned",
+      (claims) => rowOf(claims, { refs: { first: [["a", [rowOf(claims, "source")]]], rest: [], views: [] } }),
+      "source incoming edge obligation at [421,468)"],
+    ["in-unknown-object", "callable", "? x : null", "? ".length, "forged-unknown-function-classes",
+      (claims) => rowOf(claims, { arrs: { arrows: [] } }), "source incoming edge obligation at [1325,1359)"],
+  ];
+  for (const [file, fn, read, offset, name, row, at] of sites) {
+    const artifacts = run(file);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const operand = source.indexOf(read) + offset;
+    const claims = readClaims(artifacts);
+    const f = must(claims.functions.find((g) => g.name === fn), `${fn}'s claims`);
+    const claim = must(f.expressions.find((e) => e.pos[0] === operand && e.pos[1] === operand + 1), `the claim at ${operand}`);
+    claim.type = [row(claims)];
+    const forged = writeClaims(artifacts, name, claims);
+    refusedAt(artifacts, forged, name, at);
+    // A negative case's run has no evidence.
+    if (existsSync(join(artifacts, "evidence.json")))
+      assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /does not establish this node's claim/);
+  }
+  process.stdout.write("forged unknown slices: a read claimed at fewer kinds than the tests leave, refused\n");
+});
+control(async (): Promise<void> => {
   // The allocation route's trusted boundary: the parser reserves `message`
   // and `stack` as member names of a class extending `Error` (SOURCE-ELABORATION.md, "A class
   // extending Error"), and Lean reads no class declaration. A fragment, claims

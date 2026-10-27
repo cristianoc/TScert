@@ -72,10 +72,37 @@ alone (a lemma of `isSourceVal` and `tagHolds` by cases). A `true` answer of
 `readonly unknown[]` (`arraySlice`). A test's answer on a slot is a value
 fact, held by the slot's value, so a call does not end it.
 
-The calculus has no clause for $`J_{\mathrm{ref}}`$ or $`J_{\mathrm{fun}}`$,
-so a `typeof` test on `unknown` narrows nothing. Rules adding them as the
-`source` clause restricted to the kind are conjectured sound:
-[slices of the value universe](../WORK.md#universe-slices).
+Each kind is a clause: $`J_{\mathrm{ref}}`$ is the record of no field
+(every object without call code), and $`J_{\mathrm{fun}}`$ the union of the
+invocable functions (`arrs [] []`) and the classes (`ctors []`). Writing
+$`K`$ for the ten kind clauses (the seven primitive ones,
+$`J_{\mathrm{ref}}`$ and the two of $`J_{\mathrm{fun}}`$), a test on a value
+at the `source` clause keeps the kinds it does not contradict:
+
+```math
+\frac{\Gamma\vdash x:A\qquad t\ \text{answers}\ q\ \text{on}\ x\qquad
+      \forall a\in\mathrm{slice}_t^q(A).\ a\in B\ \lor\ \bigl(a\ \text{a clause row}\ \land\ \forall c\in a.\ c\perp_t^q\ \lor\ c\in\mathrm{cl}(B)\ \lor\ (c=\mathsf{source}\ \land\ \forall k\in K.\ k\perp_t^q\ \lor\ k\in\mathrm{cl}(B))\bigr)}
+     {\Gamma\vdash x:B}\ \textsf{slice-source}
+```
+
+where $`\mathrm{slice}_t^q(A)`$ is the labels of $`A`$ that may answer
+$`q`$, $`\mathrm{cl}(B)`$ the clauses of $`B`$ where every label of $`B`$ is a
+clause row (none otherwise), $`c\perp_t^q`$ says the test answers
+$`\lnot q`$ on every member of $`c`$, and the Boolean kind is in
+$`\mathrm{cl}(B)`$ also as its two singletons. A type parameter's row or a
+meet row is no clause row, so `T ∩ unknown` is not sliced. So
+`typeof x === "object"` leaves `null` and $`J_{\mathrm{ref}}`$, then
+`x !== null` leaves $`J_{\mathrm{ref}}`$; a truthy answer leaves every kind
+but `null` and `undefined`; `x != null` every kind but those two. The
+members of each kind meet the built-ins' invariant as members of `source`
+do. Proved: `BranchRefinement.sourceKinds_cover` (the kinds cover `source`)
+and `sourceSlice_sound`, part of `checkObservedSub_sound`. A key test
+`"k" in x` on $`J_{\mathrm{ref}}`$ is the [`in`](SOURCE-ELABORATION.md#in)
+test on a record clause, which establishes the Boolean alone: no field is
+stated for the key, so a read of `x.k` after it has no rule
+([a key found on an open object](../WORK.md#key-on-open-object)). The
+negative `Array.isArray` slice and a type parameter's meet with `unknown`
+are not sliced ([slices of the value universe](../WORK.md#universe-slices)).
 
 No slice is the dictionary view. `{ readonly [key: string]: unknown }` is
 `dictViewT` at the string keys and $`J`$: an object without call code,
