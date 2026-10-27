@@ -372,6 +372,21 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-json-parse-class: the class's prototype method where parsed JSON is promised");
   assert.equal(runExample("invalid-json-parse-inherited", `typeof wrong("{}")`), "function",
     "invalid-json-parse-inherited: Object.prototype's toString where parsed JSON is promised");
+  // The manifest's member converted by its arms throws and returns what
+  // `String` of it does, a TypeError of an object owning `toString` too.
+  for (const text of ['{"version":{"toString":1}}', '{"version":[1,[{"toString":null}]]}', '{"version":[1,null,[2,"a"]]}',
+    '{"version":{}}', '{"version":null}', '{"name":"a"}', "[]"])
+    assert.equal(runExample("json-parse-manifest", `(() => { const t = ${JSON.stringify(text)}; ` +
+      `const run = (f) => { try { return f(); } catch (e) { return e.constructor.name + ": " + e.message; } }; ` +
+      `const v = JSON.parse(t); const s = run(() => v !== null && typeof v === "object" && "version" in v ? String(v.version) : ""); ` +
+      `return run(() => version(t)) === s ? "same" : s; })()`), "same", `json-parse-manifest: ${text} converts as String does`);
+  assert.equal(runExample("json-parse-manifest", `(() => { try { version('{"version":{"toString":1}}'); } catch (e) { ` +
+    `return e instanceof TypeError ? e.message : "other"; } })()`), "Cannot convert object to primitive value",
+    "json-parse-manifest: an object owning toString throws String's TypeError");
+  assert.equal(runExample("type-error-construct", `(() => { try { fail("m"); } catch (e) { ` +
+    `return [e instanceof TypeError, made("n"), (() => { try { caused("c", 7); } catch (f) { return f.cause; } })()].join(); } })()`),
+    "true,TypeError: n,7",
+    "type-error-construct: a TypeError thrown, and its inherited name");
   assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
     "json-parse-own-proto: the own __proto__ member set no prototype");
   assert.equal(runExample("invalid-field-equality-call", `(() => { const c = { kind: "a" }; return wrong(c, () => { c.kind = "b"; }); })()`), "b",
@@ -445,6 +460,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
     ["invalid-stated-effect-stringify", "(() => { const xs = [1, 2, 3]; return wrong(xs, { k: \"a\", span: 0, toJSON() { xs.pop(); return \"\"; } }); })()"],
     ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
+    ["invalid-type-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { reason: \"r\", get cause() { xs.pop(); return 0; } }); })()"],
     ["invalid-error-options-getter", "wrong([\"a\", \"b\", \"c\"])"],
     ["invalid-error-options-proxy", "wrong([\"a\", \"b\", \"c\"])"],
     ["invalid-error-options-class-accessor", "wrong([\"a\", \"b\", \"c\"])"],

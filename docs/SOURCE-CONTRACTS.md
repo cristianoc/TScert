@@ -2793,9 +2793,28 @@ getter written at `cause` and a proxy are outside the fragment
 `invalid-error-options-proxy`, run under Node). The error's own `cause` is not stated: a read of it is refused
 (`invalid-error-cause-read`), and a write of it is reserved, as `stack`'s
 is ([reserved writes](SOURCE-ELABORATION.md#reserved-writes)). The host is
-trusted to follow ECMA-262's description of the `Error` constructor; the
-other error constructors (`AggregateError`, `TypeError`) have no entry
+trusted to follow ECMA-262's description of the `Error` constructor
 (`error-options`, `map-stable-json-error`).
+
+`TypeError` is read, with `new`, at the same two statements: ECMA-262's
+`NativeError ( message [ , options ] )` runs `Error`'s steps, with
+`TypeError.prototype` as the error's prototype, an object whose `name` is
+`"TypeError"` and which inherits from `Error.prototype`. So the construct
+is stated at $`\mathsf{Err}`$ too, within $`\varnothing`$, on a throw too:
+
+```math
+\frac{\mathit{lib}(\mathtt{TypeError})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{TypeError},\ \cdot,\ \mathsf{text}(s),\ \mathsf{stated}\ (\mathsf{string},\ \mathsf{ErrorOptions})\Rightarrow\mathsf{Err})}
+     {⟦s⟧_\Omega=\mathsf{new}(\mathsf{string},\ \mathsf{ErrorOptions})\Rightarrow\mathsf{Err}\quad\text{within}\ \varnothing,\ \text{on a throw too}}\ \textsf{library-type-error}
+```
+
+and at the message alone, $`(\mathsf{string})\Rightarrow\mathsf{Err}`$
+(`type-error-construct`, run under Node); options typed without `cause` are
+refused as `Error`'s are (`invalid-type-error-options`, run under Node).
+The host is trusted to follow ECMA-262's description of the `TypeError`
+constructor, as of `Error`'s;
+`TypeError` called without `new`, `instanceof TypeError` and
+`AggregateError` have no entry.
 
 The library's `Error` interface, its members declared as reviewed, is read as
 what `Error` constructs:

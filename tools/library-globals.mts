@@ -519,6 +519,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
       ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
         result: errorInstance(at) } })),
+  // `new TypeError(m)` with a string is ECMA-262's NativeError constructor
+  // ("NativeError ( message [ , options ] )") at a string message without
+  // options, or with options read as `Error`'s: the steps of `Error`'s,
+  // with `TypeError.prototype`, whose `name` is `"TypeError"` and which
+  // inherits from `Error.prototype`, as the error's prototype. The error
+  // owns `message` and inherits `name`, as `errorInstance` states; it
+  // converts a string message with no code of the client's and writes
+  // nothing it did not allocate: the empty footprint, on a throw too.
+  ...["new (message?: string): TypeError;", "new (message?: string, options?: ErrorOptions): TypeError;"].map(
+    (signature): GlobalEntry => ({ host: contract, global: "TypeError", signature, effect: { ...emptyEffect, onThrow: true },
+      stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
+        result: errorInstance(at) } })),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
   // which run no code on a string and a number, the calculus's primitive
   // types its declaration states: a number, `NaN` where `s` spells none.

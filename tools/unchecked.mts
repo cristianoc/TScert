@@ -106,6 +106,7 @@ import { isHostFile } from "./family-activation.mts";
 import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
 import { toolFailureOf } from "./thrown.mts";
 import { openCompiler } from "./compiler-channel.mts";
+import type { Json } from "./calculus.mts";
 
 /** What was found, which report it is, and the reason written with it. */
 type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected" | "tool failure";
@@ -469,15 +470,41 @@ function check(config: string, part: number, parts: number, inputs: ReplacedInpu
   return { files, found };
 }
 
-/** Whether a worker's output is its result, field by field. */
-function isResult(value: unknown): value is { files: string[]; found: Found[] } {
-  if (!value || typeof value !== "object" || !("files" in value) || !("found" in value)) return false;
-  const { files, found } = value;
-  return Array.isArray(files) && files.every((f: unknown) => typeof f === "string") && Array.isArray(found) &&
-    found.every((f: unknown) => !!f && typeof f === "object" && "file" in f && typeof f.file === "string" &&
-      "line" in f && typeof f.line === "number" && "column" in f && typeof f.column === "number" &&
-      "kind" in f && KINDS.some((k) => k === f.kind) && "text" in f && typeof f.text === "string" &&
-      "reason" in f && (f.reason === null || typeof f.reason === "string"));
+/** A worker's output, `JSON.parse`'s result, read as its result, field by
+ * field, or null where it is none: an object holding a list of file names
+ * and a list of findings, each an object holding a file, a line, a column, a
+ * kind, a text and a reason. Members beyond these are not read. */
+function decodeResult(value: Json | undefined): { files: string[]; found: Found[] } | null {
+  const files = objectMember(value, "files");
+  const found = objectMember(value, "found");
+  if (!Array.isArray(files) || !Array.isArray(found)) return null;
+  const names: string[] = [];
+  for (const f of files) {
+    if (typeof f !== "string") return null;
+    names.push(f);
+  }
+  const findings: Found[] = [];
+  for (const f of found) {
+    const file = objectMember(f, "file");
+    const line = objectMember(f, "line");
+    const column = objectMember(f, "column");
+    const at = objectMember(f, "kind");
+    const kind = KINDS.find((k) => k === at);
+    const text = objectMember(f, "text");
+    const reason = objectMember(f, "reason");
+    if (typeof file !== "string" || typeof line !== "number" || typeof column !== "number" || kind === undefined ||
+        typeof text !== "string" || (reason !== null && typeof reason !== "string")) return null;
+    findings.push({ file, line, column, kind, text, reason });
+  }
+  return { files: names, found: findings };
+}
+/** A JSON object's member at `key`, which neither `Object.prototype` nor
+ * `Array.prototype` holds; undefined where the value is no object or owns
+ * no such member. */
+function objectMember(value: Json | undefined, key: "files" | "found" | "file" | "line" | "column" | "kind" | "text" | "reason"):
+    Json | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return value[key];
 }
 
 const args = process.argv.slice(2);
@@ -510,8 +537,9 @@ const results = await Promise.all<Promise<{ files: string[]; found: Found[] }>[]
   let out = "";
   child.stdout.on("data", (chunk: unknown) => (out += String(chunk)));
   child.on("close", (code) => {
-    const parsed: unknown = code === 0 ? JSON.parse(out) : undefined;
-    if (isResult(parsed)) done(parsed);
+    const parsed: Json | undefined = code === 0 ? JSON.parse(out) : undefined;
+    const result = decodeResult(parsed);
+    if (result) done(result);
     else fail(new Error(`part ${part} of ${parts} of unchecked.mts failed (${code})`));
   });
 })));

@@ -42,7 +42,8 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredIn, settleDocument } from "./named-record.mts";
 // files.mts makes every file-system failure a tool failure.
-import { orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
+import { manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
+import type { Json } from "./calculus.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 // declaration-session.mts retains a named project's compiler between collections.
@@ -4321,8 +4322,8 @@ function originOf(path: string): string {
     // A directory without a manifest is the project's; a manifest that
     // cannot be read or parsed is no absence.
     const text = orAbsent(readText, join(directory, "package.json"));
-    const manifest: unknown = text === null ? null : JSON.parse(text);
-    if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
+    const manifest: Json = text === null ? null : JSON.parse(text);
+    if (manifestMember(manifest, "name") === name) origin = name;
   }
   return origin;
 }
