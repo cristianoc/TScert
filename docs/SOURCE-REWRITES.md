@@ -397,6 +397,33 @@ discarded.
   as a case.
 - **Commit:** the introducing commit, `Parsed manifests and worker results keep their JSON type`.
 
+### A scope's hook read as an optional method
+
+`TermScope` (`tools/type-term.mts`) declared its hooks `record`,
+`computed`, `awaited`, `keys`, `modifiers` and `enumerated` as optional
+methods, and the readers that pass one on or implement it apart from a
+scope typed it by indexed access, `TermScope["record"]` or
+`NonNullable<TermScope["computed"]>`. An optional method's function takes
+the object it is a member of as its receiver, which the indexed access does
+not name, so the type reader refused the type; `typeTerm` passed
+`scope.record?.bind(scope)`, a method read off its object, which the
+fragment refuses. Every implementation is an arrow, which uses no receiver.
+
+- **Rewrite:** each hook's function type is written out as a named
+  function type (`RecordHook`, `ComputedHook`, `AwaitedHook`, `KeysHook`,
+  `ModifiersHook`, `EnumeratedHook`), and `TermScope` holds each as a field
+  of that type; `typeTerm` and the parser pass `scope.record` as the value
+  it is. An arrow ignores the receiver `.bind` gave it, so the calls return,
+  throw and mutate as before.
+- **Pattern:** a hook a scope holds and its readers pass on is a field of a
+  function type, called without a receiver.
+- **Functions:** `typeTerm`, `expandMapped`, `expandIdentity` and their
+  callers in `tools/type-term.mts`; `libraryTerm`, `collect` and
+  `collectDeclarations` (`tools/declaration-graph.mts`); `settleTerm`
+  (`tools/named-record.mts`); `blocker-indexed-optional-method` and
+  `blocker-optional-method-bind` are the refused forms as gap cases.
+- **Commit:** the introducing commit, `A scope's hooks are fields of written function types`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

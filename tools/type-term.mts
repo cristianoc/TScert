@@ -205,7 +205,7 @@ export type TermScope = {
   stated?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, boolean>;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
-  awaited?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, boolean>;
+  awaited?: AwaitedHook;
   associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** A resolved associated-result alias expanded in this lexical scope. */
   associatedAlias?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeAliasDeclaration | null>;
@@ -232,22 +232,22 @@ export type TermScope = {
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
    * type and the enum's object type (SOURCE-CONTRACTS.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
-  enumerated?(node: TypeNode, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+  enumerated?: EnumeratedHook;
   /** A type TypeScript computes from other types (`COMPUTED`): `typeof x`,
    * `keyof T`, `T[K]`, a template literal type. The scope evaluates it to the
    * equivalent type the fragment states, or refuses it with the reason; `read`
    * reads an operand in this scope. A scope without it reads none. */
-  computed?(node: TypeNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm>;
+  computed?: ComputedHook;
   /** A mapped type's keys, or a library mapped type's key argument
    * (`Record<K, V>`), as the union of literals and primitives TypeScript
    * computes for it, `"a" | "b"` for an alias of those, or null. A scope
    * without it reads the keys as written. */
-  keys?(node: TypeNode): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+  keys?: KeysHook;
   /** A mapped type over `keyof X` at a finite record `X`: each property of
    * the type TypeScript resolves it to, with the modifiers it copies from
    * `X` and its own overrides, or null where TypeScript resolves no such
    * record. A scope without it reads only a mapped type writing both. */
-  modifiers?(node: ts.MappedTypeNode): Within<{ value: "any"; store: "grow" }, readonly MappedMember[] | null>;
+  modifiers?: ModifiersHook;
   /** A reference to a declared type alias of an array, a tuple or another
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
@@ -257,8 +257,17 @@ export type TermScope = {
    * whose value is `X[P]` maps at a named X; null where they are not yet
    * complete. A scope without it, or answering null, defers the mapped type
    * (`deferredIdentity`). */
-  record?(reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+  record?: RecordHook;
 };
+
+/** The hooks of a scope its readers pass on or implement apart from it:
+ * functions of their arguments, which take no receiver. */
+export type AwaitedHook = (node: TypeReferenceNode) => Within<{ value: "any"; store: "grow" }, boolean>;
+export type EnumeratedHook = (node: TypeNode, span: Span) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+export type ComputedHook = (node: TypeNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
+export type KeysHook = (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+export type ModifiersHook = (node: ts.MappedTypeNode) => Within<{ value: "any"; store: "grow" }, readonly MappedMember[] | null>;
+export type RecordHook = (reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
@@ -437,7 +446,7 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isTypeLiteralNode(node))
     return members(scope, node.members, node, span, node === scope.body ? true : "nested");
   if (ts.isMappedTypeNode(node))
-    return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record?.bind(scope));
+    return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record);
   if (ts.isFunctionTypeNode(node)) {
     if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
     // A generic function type, `<A>(x: A) => R`, in a declaration or an
@@ -627,7 +636,7 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never,
-    record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record);
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
@@ -711,7 +720,7 @@ export function deferredOf(term: TypeTerm): Within<{ value: "any"; store: "grow"
  * (`recordShape`) and deferred where the definitions it reaches are not yet
  * complete; a union or a type parameter is refused. */
 function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never,
-    record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   let x = id.object;
   if (x.k === "reference") {
     const shape = record?.(x, fail) ?? null;
