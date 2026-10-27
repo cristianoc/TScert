@@ -1,5 +1,6 @@
-// A callback index and an iterator index need their array-index fact available
-// at an indexed read.
+// The index forEach passes its callback, read in another array through an
+// optional chain: `%ElementAt%` on the chain's present value, the element or
+// `undefined`.
 // Census functions:
 // computed-types.mts#parameterMembers, declaration-graph.mts#mergedParameters.
 import type {

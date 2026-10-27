@@ -75,6 +75,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-length-union-last", "last({ length: 1 })"],
     ["invalid-program-node-array-last", "last({ length: 1 })"],
     ["invalid-array-past-end", `pastTheEnd(["a"])`],
+    ["invalid-optional-chain-dynamic-index", `at(["a"], 1)`],
+    ["invalid-optional-chain-dynamic-index", `argAt({ args: ["a"] }, 1)`],
     ["invalid-array-before-last", `beforeLast(["a"])`],
     // `map`'s result holds a hole where its callback shrank the array; a
     // spread passes it to `push` as `undefined`.

@@ -327,6 +327,43 @@ export type EnumInfo = { end: number; ambient: boolean; members: EnumEntry[] };
 export type EnumEntry = { name: string; node: ts.EnumMember; span: Span; nameSpan: Span; init: Span | null;
   value: string | number | undefined };
 
+/** Whether a call takes `node` as its callee, through parentheses and the
+ * type wrappers the emit erases (`!`, `as`, `<T>`, `satisfies`): JavaScript
+ * calls the value read with the reference's object as its receiver. */
+export function callTarget(node: ts.Expression): Within<{ value: "any"; store: "grow" }, boolean> {
+  let at: Node = node;
+  while (at.parent && (ts.isParenthesizedExpression(at.parent) || ts.isNonNullExpression(at.parent) ||
+      ts.isAssertionExpression(at.parent) || ts.isSatisfiesExpression(at.parent)))
+    at = at.parent;
+  return !!at.parent && ts.isCallExpression(at.parent) && at.parent.expression === at;
+}
+
+/** Whether a callee is a member read wrapped in `!`, `as`, `<T>` or
+ * `satisfies`: JavaScript calls it with the member's object as the receiver,
+ * which the call of the wrapped value does not pass. */
+export function wrappedMemberCallee(callee: ts.Expression): Within<{ value: "any"; store: "grow" }, boolean> {
+  let at = callee;
+  let wrapped = false;
+  for (;;) {
+    if (ts.isParenthesizedExpression(at)) at = at.expression;
+    else if (ts.isNonNullExpression(at) || ts.isAssertionExpression(at) || ts.isSatisfiesExpression(at)) {
+      wrapped = true;
+      at = at.expression;
+    } else break;
+  }
+  return wrapped && (ts.isPropertyAccessExpression(at) || ts.isElementAccessExpression(at));
+}
+
+/** Why a call of a wrapped member read is refused. */
+export const WRAPPED_MEMBER_CALL =
+  "a call of a member read through `!`, `as` or `satisfies` passes the member's object as its receiver, which a call of the asserted value would not: outside the fragment";
+
+/** The span of an element access's `[` token. */
+export function elementBracket(node: ts.ElementAccessExpression): Within<{ value: "any"; store: "grow" }, Span> {
+  const bracket = node.argumentExpression.pos - 1;
+  return [bracket, bracket + 1];
+}
+
 /** Whether an element or property access is written rather than read: the
  * target of an assignment, a compound assignment or an update, or
  * `delete`'s operand. */

@@ -2858,7 +2858,13 @@ export function collectDeclarations(file: string, options: {
       if (!read || !ts.isElementAccessExpression(read)) throw new DeclarationError(span, "TypeScript element read missing");
       const object = checker.getTypeAtLocation(read.expression);
       const key = checker.getTypeAtLocation(read.argumentExpression);
-      const objects = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
+      // A link of an optional chain reads the chain's present value: the
+      // `null` and `undefined` TypeScript's type of its object carries are
+      // the values the chain skipped, or ones the read's operand obligation
+      // refuses.
+      const present = (t: Type): boolean =>
+        !(read.flags & ts.NodeFlags.OptionalChain) || !(t.flags & (TypeFlags.Null | TypeFlags.Undefined));
+      const objects = (object && isUnionType(object) ? object.getTypes() : object ? [object] : []).filter(present);
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
       // `b[k]` of a view of bytes at a number, a literal one included.
       if (bytesOnly(objects) && keys.length && keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral)))) {
