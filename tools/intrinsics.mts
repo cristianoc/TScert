@@ -49,6 +49,9 @@
  *   conversion of a string, a number or a symbol runs no code, and neither
  *   does the lookup on the objects a program holds (no proxy, DESIGN.md
  *   "Trust surface"); the answer is a Boolean, which narrows nothing.
+ * - `b[k]` of a view of bytes at a key TypeScript types as `number` is
+ *   `%ByteAt%(b, k)`, and `b.length` is `%ByteLength%(b)`
+ *   (`library-types.mts`): the host's element read and `length` getter.
  * - `xs[k]` of an array or a tuple at a key TypeScript types as `number` (no
  *   literal) is `%ElementAt%(xs, k)`: the property the number names, an
  *   element where it is an index below the length, an own property of
@@ -78,6 +81,7 @@ import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
 import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { bytes } from "./library-types.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -103,6 +107,8 @@ export const forInName = "%ForIn%";
 export const iterateForInName = "%Iterate:ForIn%";
 export const hasPropertyName = "%HasProperty%";
 export const elementAtName = "%ElementAt%";
+export const byteAtName = "%ByteAt%";
+export const byteLengthName = "%ByteLength%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
@@ -384,6 +390,17 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // The read runs no code and writes nothing: an own numeric key of an
     // array holds a data property (`numericOwn`), and neither
     // `Array.prototype` nor `Object.prototype` owns one, so no getter runs.
+    // A view of bytes's [[Get]] at a number, ToPropertyKey's canonical
+    // numeric string: the element at a valid index, a number, and
+    // `undefined` at any other key, the prototype chain never read
+    // (ECMA-262, "TypedArray Objects", TypedArrayGetElement). It runs no code
+    // and writes nothing.
+    [byteAtName]: () => ({ typeParams: [],
+      type: { ...fn([bytes, atom("number")], either(atom("number"), atom("undefined"))), effect: emptyEffect } }),
+    // `%TypedArray%.prototype`'s `length` getter, the view's length, 0 where
+    // its buffer is detached: it reads the view's slots, runs no code and
+    // writes nothing.
+    [byteLengthName]: () => ({ typeParams: [], type: { ...fn([bytes], atom("number")), effect: emptyEffect } }),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))), effect: emptyEffect } }),

@@ -600,6 +600,16 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-bytes-method-getter",
     "(() => { const xs = [1, 2]; hook(xs); Buffer.from(\"ab\").subarray; return xs.length; })()"), 1,
     "invalid-node-bytes-method-getter: the lookup pops the array");
+  assert.equal(runImporting("invalid-node-bytes-length-record", "measured(Buffer.from(\"ab\")) === undefined"), true,
+    "invalid-node-bytes-length-record: the copy has no length");
+  assert.equal(runImporting("invalid-node-bytes-program-object",
+    "(() => { try { return decoded(); } catch (e) { return e.code; } })()"), "ERR_INVALID_ARG_TYPE",
+    "invalid-node-bytes-program-object: decode throws on a program's object");
+  assert.equal(runImporting("invalid-node-bytes-decoder-replaced",
+    "(() => { replace(() => 7); return typeof new TextDecoder().decode(Buffer.from(\"a\")); })()"), "number",
+    "invalid-node-bytes-decoder-replaced: a replaced decode answers a number");
+  assert.equal(runImporting("invalid-node-bytes-in", "measured(Buffer.from(\"a\"))"), true,
+    "invalid-node-bytes-in: a view has length on its prototype chain");
   assert.equal(runImporting("node-bytes-text-decoder", "decoded(Buffer.from([0xff, 0xfe, 0x61, 0x00, 0x62]))"), "a",
     "node-bytes-text-decoder: a UTF-16LE byte order mark decodes the rest's whole code units");
   assert.equal(runImporting("node-bytes-text-decoder",

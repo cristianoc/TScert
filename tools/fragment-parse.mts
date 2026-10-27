@@ -256,6 +256,9 @@ export class Gate {
   readonly methodTargets: Set<string> = new Set();
   /** The element reads `%ElementAt%` answers. */
   readonly hostElements: Set<string> = new Set();
+  /** The element reads at a number and the `length` reads of a view of
+   * bytes, by span: the intrinsic reading each (`library-types.mts`). */
+  readonly byteReads: Map<string, string> = new Map();
   /** Each regular expression literal's intrinsic, `%RegExp:Σ%`, by span. */
   readonly regexps: Map<string, string> = new Map();
   /** Each string method call dispatching to its object argument's
@@ -1688,6 +1691,16 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findElementReads);
   };
   if (!carriesContext) findElementReads(source);
+  // Reads `e.length` other than a write's target: TypeScript's type of the
+  // object decides whether `%ByteLength%` reads it.
+  const lengthReadNodes: Node[] = [];
+  const findLengthReads = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) && node.name.text === "length" &&
+        !node.questionDotToken && !writtenElement(node))
+      lengthReadNodes.push(node);
+    node.forEachChild(findLengthReads);
+  };
+  if (!carriesContext) findLengthReads(source);
   // Regular expression literals: each is a call of the intrinsic its shape
   // names, which the declaration graph lists.
   const regexpNodes: Node[] = [];
@@ -1910,13 +1923,13 @@ function lowerFile(file: string, carriesContext: boolean,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || lengthReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
     const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ?? lengthReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0] ?? blockNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named, default and namespace imports. A type import joins the
@@ -2021,6 +2034,8 @@ function lowerFile(file: string, carriesContext: boolean,
         libraryValues: libraryValueNodes.map(node => gate.span(node)),
         libraryValue: ([start, end]) => gate.libraryValues.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
+        lengthReads: lengthReadNodes.map(node => gate.span(node)),
+        byteRead: ([start, end], intrinsic) => gate.byteReads.set(`${start}:${end}`, intrinsic),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         regexps: regexpNodes.map(node => gate.span(node)),
         regexp: ([start, end], intrinsic) => gate.regexps.set(`${start}:${end}`, intrinsic),

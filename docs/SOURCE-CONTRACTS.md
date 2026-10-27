@@ -1505,10 +1505,12 @@ read as those values are (`Buffer` names the conditional type
 through the reviewed overlay of library types (`library-types.mts`). An
 entry $`\theta`$ names the type, reviews each of its declaration parts by
 the part's origin ([library globals](#library-globals): the standard
-library, or an installed package) and heading, the part's text before its
-body with white space collapsed, exactly as reviewed, and states the type
-the host's values meet, a definition $`D_\theta`$ no declaration file
-declares. With $`P_N`$ the type declarations TypeScript binds $`N`$ to and
+library, or an installed package by its name) and heading, the part's text
+before its body with white space collapsed, exactly as reviewed, and states
+the type the host's values meet, a definition $`D_\theta`$ no declaration
+file declares. The pin is of the headings alone: the statement is audited
+against the host's code, which the bodies of the declarations do not
+describe. With $`P_N`$ the type declarations TypeScript binds $`N`$ to and
 $`\Theta`$ the overlay:
 
 ```math
@@ -1518,8 +1520,8 @@ $`\Theta`$ the overlay:
 ```
 
 The declarations are not read, and neither are the types they name. A name
-with a part the entry reviews beside one it does not, a changed declaration
-or a program's declaration merged into it, is refused; a name none of whose
+with a part the entry reviews beside one whose origin or heading it does
+not, a program's declaration merged into it among them, is refused; a name none of whose
 parts the entry reviews is another type of that name, read as declared. The
 name written with type arguments is refused (`Buffer<ArrayBuffer>`):
 $`D_\theta`$ has no parameters. Where TypeScript types a value from its
@@ -1537,15 +1539,14 @@ The entries of [library modules](#library-modules) and
 values name $`D_\theta`$ too. Each $`D_\theta`$ joins the document once,
 where a statement or a name reads it. The entries:
 
-- `Uint8Array`, the standard library's parts and Node's part adding `at`:
-  `{ readonly [k: number]: number; readonly length: number }`.
-- `Buffer`: `{ readonly [k: number]: number; readonly length: number;
-  toString(encoding: "utf8"): string; subarray(start: number, end?: number):
-  Buffer }`, each method within the empty footprint. `toString("utf8")`
-  reads `this.length` and calls `this.utf8Slice`; `subarray` reads
-  `this.length`, `this.buffer` and `this.byteOffset`, clamps its integers
-  and constructs a `FastBuffer` over the same memory. A `Buffer` is a
-  `Uint8Array`.
+- `Uint8Array`, the standard library's parts and Node's part adding `at`, a
+  host object of no stated member, $`\mathsf{host}_b\,\{\}`$, with $`b`$
+  the marker `"node:bytes"`.
+- `Buffer`: $`\mathsf{host}_b\,\{\mathtt{toString}\colon(\texttt{"utf8"})\Rightarrow_\emptyset\mathtt{string};\ \mathtt{subarray}\colon(\mathtt{number},\ \mathtt{number}\mid\mathtt{undefined})\Rightarrow_\emptyset\mathit{Buffer}\}`$,
+  each a method, within the empty footprint. `toString("utf8")` reads
+  `this.length` and calls `this.utf8Slice`; `subarray` reads `this.length`,
+  `this.buffer` and `this.byteOffset`, clamps its integers and constructs a
+  `FastBuffer` over the same memory. A `Buffer` is a `Uint8Array`.
 - `BigIntStats`: `{ dev, mode, nlink, uid, gid, rdev, blksize, ino, size,
   blocks, atimeMs, mtimeMs, ctimeMs, birthtimeMs, atimeNs, mtimeNs, ctimeNs,
   birthtimeNs: bigint; isFile, isDirectory, isBlockDevice,
@@ -1557,36 +1558,56 @@ where a statement or a name reads it. The entries:
   isSocket(): unknown }`, the strings writable, as `readdirSync` with
   `withFileTypes` returns its entries ([library modules](#library-modules)).
 
-A view of bytes is an integer-indexed exotic object (ECMA-262,
-"TypedArray Objects"): its [[Get]] at a canonical numeric key is the
-element at a valid index, a number from 0 to 255, and `undefined` at any
-other, the prototype chain never read, and runs no code; the read is
-$`\mathtt{number}\mid\mathtt{undefined}`$, as at any number index
-(`invalid-node-bytes-past-end`, run under Node). A write converts its value
-by ToNumber, which runs an object's `valueOf`, and keeps it modulo 256: the
-index is readonly, and a key it alone states is not written
-(`invalid-node-bytes-write`, run under Node: 300 reads back as 44).
-`length` is `%TypedArray%.prototype`'s getter, which reads the view's own
-slots. The model holds it as the view's own readonly member, where
-JavaScript holds it on the prototype chain. Only an observation of own keys
-tells the two apart, and none is typed at what it tells: the copy a spread
-makes of a value with an index is a dictionary stating no member
-(`invalid-node-bytes-spread`, run under Node: the copy's `length` is
-`undefined`), and `Object.keys`, `Object.values`, `Object.entries`,
-`Object.hasOwn` and `Object.getOwnPropertyDescriptor` answer strings,
-`unknown` values, Booleans and descriptors at `unknown`. `JSON.stringify`
-of a `Buffer` calls `Buffer.prototype.toJSON`; a `Buffer` is no `JsonValue`
-(`invalid-node-bytes-json`, run under Node). That a member read finds the
-host's code, and that reading it runs no other, rest on a host assumption
-([trust surface](DESIGN.md#trust-surface)): every view of bytes, the
-program's or external code's, keeps its standard prototype chain
-(`Buffer.prototype` → `Uint8Array.prototype` → `%TypedArray%.prototype` →
-`Object.prototype` for a `Buffer`) and owns its elements alone, and
-`%TypedArray%.prototype`'s getters `length`, `buffer` and `byteOffset` and
-`Buffer.prototype`'s `toString`, `subarray`, `slice` and `utf8Slice` are
-the host's own, data properties for the methods, throughout execution, as
-are `Buffer`'s `allocUnsafe`, `allocUnsafeSlow` and `concat`, which
-`readFileSync` calls. A replaced method answers what it returns
+$`\mathsf{host}_m\,R`$ is the record $`R`$ with a host family's marker
+$`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
+required readonly view of the model's `[[host]]` at $`m`$, which no
+allocation of the program owns, so no program object meets a view's type
+(`invalid-node-bytes-program-object`, run under Node: `decode` of such an
+object throws), and the steps that copy or expose an object's own keys
+refuse it ([host objects](HOST-FAMILIES.md#host-objects)). A view of bytes
+is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
+[[Get]] at a canonical numeric key is the element at a valid index, a
+number from 0 to 255, and `undefined` at any other, never reading the
+prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
+The model holds neither: an element read at a number and a read of
+`length` of a value TypeScript types as views of bytes only are calls of
+the intrinsics stating them,
+
+```math
+⟦b[k]⟧=\%\mathrm{ByteAt}\%(⟦b⟧,⟦k⟧)\qquad ⟦b.\mathtt{length}⟧=\%\mathrm{ByteLength}\%(⟦b⟧)\ \ \textsf{byte-reads}
+```
+
+```math
+\%\mathrm{ByteAt}\%\colon(\mathit{Uint8Array},\ \mathtt{number})\Rightarrow_\emptyset\mathtt{number}\mid\mathtt{undefined}
+\qquad
+\%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset\mathtt{number}
+```
+
+each checked at its argument as any call is, so a read the parser writes
+of another value is refused, and one it leaves a member read finds no
+member (`invalid-node-bytes-past-end`, run under Node: `undefined` past the
+end). A write converts its value by ToNumber, which runs an object's
+`valueOf`, and keeps it modulo 256: it is not stated
+(`invalid-node-bytes-write`, run under Node: 300 reads back as 44). A
+spread copies a view's elements and not `length`, so its copy states no
+member (`invalid-node-bytes-spread`), and a view meets no record naming
+`length`, whose spread would copy it (`invalid-node-bytes-length-record`,
+run under Node: the copy's `length` is `undefined`); `"length" in` a view
+is refused (`invalid-node-bytes-in`, run under Node: `true`).
+`JSON.stringify` of a `Buffer` calls `Buffer.prototype.toJSON`; a `Buffer`
+is no `JsonValue` (`invalid-node-bytes-json`, run under Node). That a view
+is a host object, that the intrinsics' reads are the host's, and that a
+member read finds the host's code and runs no other, rest on a host
+assumption ([trust surface](DESIGN.md#trust-surface)): every `Uint8Array`
+and `Buffer`, the program's or external code's, is created by the host,
+keeps its standard prototype chain (`Buffer.prototype` →
+`Uint8Array.prototype` → `%TypedArray%.prototype` → `Object.prototype` for
+a `Buffer`) and owns its elements alone, and `%TypedArray%.prototype`'s
+getters `length`, `buffer` and `byteOffset` and `Buffer.prototype`'s
+`toString`, `subarray`, `slice` and `utf8Slice` are the host's own, data
+properties for the methods, throughout execution, as are `Buffer`'s
+`allocUnsafe`, `allocUnsafeSlow` and `concat`, which `readFileSync` calls.
+A replaced method answers what it returns
 (`invalid-node-bytes-method-replaced`, run under Node: a number), and a
 getter in a method's place runs where the member is read
 (`invalid-node-bytes-method-getter`, run under Node: it pops the array). A
@@ -2639,8 +2660,16 @@ setter other code defines on `TextDecoder.prototype` would intercept, and
 getter other code may replace: neither states an effect. `decode` of a
 view gives its text; a malformed byte at `fatal: true`, and a value of the
 view's type that is no view, throw (`node-bytes-text-decoder`, run under
-Node). The standard library's DOM, which declares `TextDecoder` too, gives
-the global a second declaration, which the entry does not review.
+Node). That `decode` finds Node's method and that reading it runs no code
+rest on a host assumption ([trust surface](DESIGN.md#trust-surface)): every
+`TextDecoder` keeps `TextDecoder.prototype` as its prototype and owns no
+`decode`, and `TextDecoder.prototype` holds `decode` as an own data
+property, Node's own function, throughout execution. A replaced `decode`
+answers what it returns (`invalid-node-bytes-decoder-replaced`, run under
+Node: a number); the program reads the global only to construct it, so it
+reaches no prototype. The standard library's DOM, which declares
+`TextDecoder` too, gives the global a second declaration, which the entry
+does not review.
 
 ### `JSON` and `Error`
 

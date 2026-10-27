@@ -245,6 +245,10 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     // (`namespace-members.mts`).
     const member = gate.namespaceMember(node);
     if (member !== undefined) return { k: "id", pos: gate.span(node), name: member };
+    // `b.length` of a view of bytes is `%ByteLength%(b)` (`library-types.mts`).
+    const byteLength = gate.byteReads.get(gate.span(node).join(":"));
+    if (byteLength !== undefined)
+      return gate.intrinsic(byteLength, gate.span(node), gate.span(node.name), [gate.expr(node.expression)]);
     if (node.questionDotToken)
       gate.fail(node, "optional property access is outside the fragment");
     // `C.x` that TypeScript binds to a static field of class `C` reads the
@@ -334,6 +338,13 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     if (entry !== undefined)
       return { k: "index", pos: gate.span(node), e: { k: "id", pos: gate.span(node.expression), name: entry },
         key: { k: "lit", pos: gate.span(node.argumentExpression), lit: { a: "numberlit", v: "1" } } };
+    // `b[k]` of a view of bytes is `%ByteAt%(b, k)` (`library-types.mts`).
+    const byteAt = gate.byteReads.get(gate.span(node).join(":"));
+    if (byteAt !== undefined) {
+      const bracket = node.expression.end;
+      return gate.intrinsic(byteAt, gate.span(node), [bracket, bracket + 1],
+        [gate.expr(node.expression), gate.expr(node.argumentExpression)]);
+    }
     if (gate.hostElements.has(gate.span(node).join(":"))) {
       const bracket = node.expression.end;
       return gate.intrinsic(elementAtName, gate.span(node), [bracket, bracket + 1],

@@ -21,14 +21,14 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTy
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { typeEntry, type TypeEntry } from "./library-types.mts";
+import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -573,6 +573,13 @@ export function collectDeclarations(file: string, options: {
    * `%ElementAt%`, which reads it, join the values. */
   elementReads?: readonly Span[];
   hostElement?: (span: Span) => void;
+  /** The client's reads `e.length`. Each of these and of the element reads
+   * whose object TypeScript types as views of bytes only
+   * (`library-types.mts`), at a number key for an element, is reported to
+   * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
+   * which joins the values. */
+  lengthReads?: readonly Span[];
+  byteRead?: (span: Span, intrinsic: string) => void;
   /** The client's regular expression literals: each is reported to
    * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
    * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
@@ -2825,6 +2832,15 @@ export function collectDeclarations(file: string, options: {
       listIntrinsics(span, [hasPropertyName]);
       options.hostIn?.(span);
     }
+    // A value TypeScript types as views of bytes only (`TypeEntry.view`):
+    // each part's symbol a name the overlay of library types states as one.
+    const bytesOnly = (parts: readonly Type[]): boolean => parts.length > 0 && parts.every(t =>
+      statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.view === "bytes");
+    const viewRead = (span: Span, name: string): void => {
+      listIntrinsics(span, [name]);
+      defineOverlay(typeDefinitions.bytes);
+      options.byteRead?.(span, name);
+    };
     for (const span of options.elementReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isElementAccessExpression(read)) throw new DeclarationError(span, "TypeScript element read missing");
@@ -2832,11 +2848,23 @@ export function collectDeclarations(file: string, options: {
       const key = checker.getTypeAtLocation(read.argumentExpression);
       const objects = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
+      // `b[k]` of a view of bytes at a number, a literal one included.
+      if (bytesOnly(objects) && keys.length && keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral)))) {
+        viewRead(span, byteAtName);
+        continue;
+      }
       if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t)) &&
           keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
         listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);
       }
+    }
+    // `b.length` of a view of bytes.
+    for (const span of options.lengthReads ?? []) {
+      const read = expressionAt(client, span);
+      if (!read || !ts.isPropertyAccessExpression(read)) throw new DeclarationError(span, "TypeScript length read missing");
+      const object = checker.getTypeAtLocation(read.expression);
+      if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) viewRead(span, byteLengthName);
     }
     // A regular expression literal is a call of the intrinsic of its shape,
     // listed once per shape at the first literal of it.

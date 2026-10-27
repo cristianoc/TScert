@@ -7,8 +7,10 @@
  * again, and states the type the host's values of that name meet, at the
  * members the overlay states: a definition of its own, which every reference
  * to the name denotes and which the module and global entries returning such
- * values name. The declarations are not read, so the types they name
- * (`ArrayBufferLike`, `ImplicitArrayBuffer`) are not collected. */
+ * values name. The pin is of the headings alone: the statement is audited
+ * against the host's code, which the declarations' bodies do not describe.
+ * The declarations are not read, so the types they name (`ArrayBufferLike`,
+ * `ImplicitArrayBuffer`) are not collected. */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
@@ -24,6 +26,9 @@ export type TypeEntry = {
   parts: { origin: string; heading: string }[];
   /** The type the host's values of the name meet. */
   definition: TypeDefinition;
+  /** A view of bytes: an element read at a number and a read of `length` of
+   * a value TypeScript types at the name are `%ByteAt%` and `%ByteLength%`. */
+  view?: "bytes";
   /** The type arguments TypeScript must give the name, where its
    * declaration takes any, when it types a value from its context, for a
    * statement that holds at these alone (a `Dirent`'s names are strings at
@@ -47,33 +52,36 @@ const named = (id: DeclarationIdentity): TypeTerm =>
 const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefinition =>
   ({ declaration: id, parameters: [], bases: [], expression });
 
-/** A view of bytes: a `Uint8Array`, or a `Buffer`, read at what the host
- * gives it (ECMA-262, "TypedArray Objects"),
+/** The marker of a view of bytes: a host object (HOST-FAMILIES.md, "Host
+ * objects"), which the model holds as owning `[[host]]` at this string and
+ * no allocation of the program owns, so no program object meets a view's
+ * type. */
+export const bytesMarker = "node:bytes";
+
+/** A view of bytes: a `Uint8Array`, or a `Buffer`, a host object read at
+ * what the host gives it (ECMA-262, "TypedArray Objects"),
  *
- *     type Uint8Array = { readonly [k: number]: number; readonly length: number };
+ *     type Uint8Array = host "node:bytes" {};
  *
- * A canonical numeric key that is a valid index holds its byte, a number
- * from 0 to 255, as a data property; any other reads `undefined`, the host
- * never looking along the prototype chain at a numeric key. `length` is
- * `%TypedArray%.prototype`'s getter, which reads the view's own slots and
- * runs no other code. The model holds it as the view's own readonly member,
- * where JavaScript holds it on the prototype chain: only an observation of
- * own keys tells them apart, and none is typed at what it would tell
- * (SOURCE-CONTRACTS.md, "Stated library types"). The index is readonly: a
- * write converts its value by ToNumber, which runs an object's `valueOf`,
- * and is not stated. */
+ * Its bytes and its `length` are read through `%ByteAt%` and `%ByteLength%`
+ * (`intrinsics.mts`), which the parser writes for an element read at a
+ * number and a read of `length` of a value TypeScript types as a view: the
+ * host's [[Get]] of an integer-indexed exotic object at a canonical numeric
+ * key, which never reads the prototype chain, and `%TypedArray%.prototype`'s
+ * `length` getter. The model holds no element and no `length` of it, so no
+ * operation copying or listing own keys, which a host object refuses,
+ * observes them, and no record type naming `length` admits it. A write is
+ * not stated. */
 const bytesIdentity = identity("Uint8Array");
 export const bytes: TypeTerm = named(bytesIdentity);
-const length = field("length", atom("number"));
-const elements = { readonly: true, value: atom("number"), span: at };
 const bytesDefinition = definitionOf(bytesIdentity,
-  { k: "object", fields: [length], stringIndex: null, numberIndex: elements, calls: [], span: at });
+  { k: "object", fields: [], stringIndex: null, calls: [], host: bytesMarker, span: at });
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 25.2.1's `lib/buffer.js`),
  *
- *     type Buffer = { readonly [k: number]: number; readonly length: number;
- *       toString(encoding: "utf8"): string; subarray(start: number, end?: number): Buffer };
+ *     type Buffer = host "node:bytes" { toString(encoding: "utf8"): string;
+ *       subarray(start: number, end?: number): Buffer };
  *
  * `toString("utf8")` reads `this.length` and calls `this.utf8Slice`, and
  * `subarray(start, end)` reads `this.length`, `this.buffer` and
@@ -81,11 +89,11 @@ const bytesDefinition = definitionOf(bytesIdentity,
  * the same memory: a fresh `Buffer`. Under the host assumption that these
  * members are the host's own (SOURCE-CONTRACTS.md, "Stated library types"),
  * neither runs code of the client's nor writes a location it did not
- * allocate. */
+ * allocate. A `Buffer` is a `Uint8Array`: it has the marker and more. */
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);
 export const bufferDefinition: TypeDefinition = definitionOf(bufferIdentity,
-  { k: "object", stringIndex: null, numberIndex: elements, calls: [], span: at, fields: [length,
+  { k: "object", stringIndex: null, calls: [], host: bytesMarker, span: at, fields: [
     field("toString", method([text("utf8")], atom("string"), emptyEffect)),
     field("subarray", method([atom("number"), union(atom("number"), atom("undefined"))], buffer, emptyEffect))] });
 
@@ -126,7 +134,10 @@ const direntDefinition = definitionOf(direntIdentity, { k: "object", stringIndex
  *
  *     type TextDecoder = { decode(input: Uint8Array): string };
  *
- * `decode` is `TextDecoder.prototype`'s method. It reads the decoder's state
+ * `decode` is `TextDecoder.prototype`'s method, under the host assumption
+ * that it is Node's own data property throughout execution and that no
+ * decoder owns a `decode` (SOURCE-CONTRACTS.md, "Node's `Buffer` and
+ * `TextDecoder`"). It reads the decoder's state
  * through symbol-keyed properties, on which other code may install a getter,
  * and, outside UTF-8 and windows-1252, the decoder's `encoding` getter,
  * which other code may replace: it states no effect. A view of bytes it
@@ -145,11 +156,11 @@ const library = "library";
 export const typesOverlay: readonly TypeEntry[] = [
   // The standard library's `Uint8Array`, as the configured standard library
   // declares it in parts, and Node's part adding `at`.
-  { name: "Uint8Array", definition: bytesDefinition, parts: [
+  { name: "Uint8Array", definition: bytesDefinition, view: "bytes", parts: [
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> {" },
     { origin: library, heading: "interface Uint8Array<TArrayBuffer extends ArrayBufferLike> {" },
     { origin: node, heading: "interface Uint8Array extends RelativeIndexable<number> {" }] },
-  { name: "Buffer", definition: bufferDefinition, parts: [
+  { name: "Buffer", definition: bufferDefinition, view: "bytes", parts: [
     { origin: node, heading: "interface Buffer<TArrayBuffer extends ArrayBufferLike = ArrayBufferLike> extends Uint8Array<TArrayBuffer> {" },
     { origin: node, heading: "interface Buffer {" }] },
   { name: "BigIntStats", definition: bigIntStatsDefinition, parts: [
@@ -162,8 +173,9 @@ export const typesOverlay: readonly TypeEntry[] = [
 /** The entry stating `name`, where every part TypeScript binds it to as a
  * type is one of the entry's, exactly as reviewed; null where no entry names
  * it or none of the parts is one it reviews (another type of that name, a
- * program's). A name with a part the entry reviews and one it does not, a
- * changed declaration or one merged into it, is refused. */
+ * program's). A name with a part the entry reviews and one whose origin or
+ * heading it does not, a declaration merged into it among them, is
+ * refused. */
 export function typeEntry(name: string, parts: readonly { origin: string; heading: string }[]): TypeEntry | null {
   const entry = typesOverlay.find(e => e.name === name);
   const reviewed = (p: { origin: string; heading: string }): boolean =>
