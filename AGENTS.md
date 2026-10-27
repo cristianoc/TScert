@@ -118,7 +118,10 @@ refusal and reports every refusal it meets:
    getter, by any code) is approved by this policy; any other kind goes to
    the owner.
    The [gap-priorities deep dive](docs/deep-dives/gap-priorities) presents
-   the ranking and each case, closed or open.
+   the ranking and each case, closed or open; after the census on main
+   that follows a batch of merged cases, it is rebuilt from that census and
+   reaches the owner marked since the version last approved
+   ([a revised deck](docs/STYLE.md#a-revised-deck)).
 
 `make census` limits each stage to 300 s unless `TSCERT_STEP_LIMIT` is
 set, so a slow search reports the outcome it reaches rather than a
