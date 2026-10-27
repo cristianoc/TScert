@@ -1607,8 +1607,8 @@ keeps its standard prototype chain (`Buffer.prototype` →
 `Uint8Array.prototype` → `%TypedArray%.prototype` → `Object.prototype` for
 a `Buffer`) and owns its elements alone, and a lookup along that chain of
 `length`, `buffer` and `byteOffset` finds `%TypedArray%.prototype`'s
-getters, and one of `toString`, `subarray`, `slice` and `utf8Slice` finds
-`Buffer.prototype`'s data properties, each the host's own, no object before
+getters, and, for a `Buffer`, one of `toString`, `subarray`, `slice` and
+`utf8Slice` finds `Buffer.prototype`'s data properties, each the host's own, no object before
 it on the chain holding the key, throughout execution, as `Buffer`'s
 `allocUnsafe`, `allocUnsafeSlow` and `concat`, which `readFileSync` calls,
 are the host's own. A property shadowing a getter on an intervening
@@ -2630,12 +2630,15 @@ Each entry names the declaration of each pinned `@types/node` installation
 where the two differ; the types are the
 [stated library types](#stated-library-types).
 
-- `Buffer.from(s)` of a string encodes it as UTF-8 into a fresh `Buffer`
-  (Node's `lib/buffer.js`, `fromString`), its own or a view into the
-  module's pool past every view the pool has given:
-  $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$. It reads
-  `Buffer.poolSize`, a writable property other code may make a getter, to
-  choose, so it states no effect.
+- `Buffer.from(s)` of a string returns a fresh `Buffer` (Node's
+  `lib/buffer.js`, `fromString`), its own or a view into the module's pool
+  past every view the pool has given, into which it writes the string's
+  UTF-8 bytes through the `Buffer`'s `utf8Write`, a writable property of
+  `Buffer.prototype` other code may replace, so its contents are the
+  string's encoding only where that method is Node's own; the stated type
+  does not depend on them: $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$.
+  It reads `Buffer.poolSize`, a writable property other code may make a
+  getter, to choose, so it states no effect.
 - `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its internal
   slots, throwing otherwise, and compares the bytes in the native layer:
   $`(\mathit{Uint8Array},\ \mathit{Uint8Array})\Rightarrow\texttt{-1}\mid\texttt{0}\mid\texttt{1}`$,

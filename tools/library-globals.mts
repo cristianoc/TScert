@@ -274,11 +274,14 @@ const processEntries: GlobalEntry[] = [
  * declaration in `@types/node`; the two texts of a member are the two pinned
  * installations' (the tools' and `library-project`'s). */
 const bytesEntries: GlobalEntry[] = [
-  // `Buffer.from(s)` with a string encodes it as UTF-8 into a fresh
-  // `Buffer` (Node 25.2.1's `lib/buffer.js`, `fromString`): one of its own,
-  // or a view into the module's pool past every view the pool has given.
-  // It reads `Buffer.poolSize`, a writable property of `Buffer` other code
-  // may make a getter, to choose: no effect is stated.
+  // `Buffer.from(s)` with a string returns a fresh `Buffer` (Node 25.2.1's
+  // `lib/buffer.js`, `fromString`): one of its own, or a view into the
+  // module's pool past every view the pool has given. It writes the string's
+  // UTF-8 bytes into it through `utf8Write`, a writable property of
+  // `Buffer.prototype` other code may replace, so the contents are the
+  // encoding only where that is Node's own; the stated type does not depend
+  // on them. It reads `Buffer.poolSize`, a writable property of `Buffer`
+  // other code may make a getter, to choose: no effect is stated.
   ...["from(string: WithImplicitCoercion<string>, encoding?: BufferEncoding): Buffer<ArrayBuffer>;",
     "from(data: WithImplicitCoercion<Uint8Array | readonly number[] | string>): Buffer<ArrayBuffer>;"].map(
     (signature): GlobalEntry => ({ host: contract, origin: node, global: "Buffer", member: "from", signature,
