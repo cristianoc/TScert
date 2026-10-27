@@ -1108,7 +1108,11 @@ no other effect, so evaluating the argument and testing its tag is the call.
 The argument's evaluation is the call's, its exceptions the call's. So
 `ts.isIdentifier(m.name)` refines the slot of its read of `m.name`, which the
 next read of `m.name` is by `read-linked`. The guard's signature
-(`guard-value`) remains the reading of a guard used as a value.
+(`guard-value`) remains the reading of a guard used as a value. A
+user-defined guard's call on a member path refines the slot of its read the
+same way where the call keeps the heap
+([a call that keeps the heap](PROGRAM-TYPING.md#a-call-that-keeps-the-heap)),
+the path's witness holding the value the call was passed.
 
 #### Entries
 

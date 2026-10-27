@@ -774,8 +774,14 @@ prepared predicate without replaying an effectful source operand. -/
     let preservesReads := match operation with
       | .evaluate _ _ .none | .methodRead .. | .referenceRead .. | .positionRead .. => true
       | _ => false
+    -- A read of a member path names its witness slot, which holds the value
+    -- read whatever an effect changes later: a promise about the saved value
+    -- is one about the witness (HOST-FAMILIES.md, "Entries").
     let retained := if preservesReads then previous else
-      previous.filter fun (_, origin) => match origin with | .var .. => true | _ => false
+      previous.filter fun (_, origin) => match origin with
+        | .var .. => true
+        | read@(.read ..) => (pathWitness scope read).isSome
+        | _ => false
     let next ← withExecutionOrigins retained do
       let origin ← match operation with
         | .evaluate original@(.read ..) prepared .none =>
@@ -788,6 +794,9 @@ prepared predicate without replaying an effectful source operand. -/
       let saved := (← executionBindings).origins
       let original := fun (n : String) => match saved.lookup n with
         | some (.var _ o) => o
+        | some read@(.read ..) => match pathWitness scope read with
+          | some i => ((scope[i]?).map fun (b : ScopeBinding Tree) => b.source.name).getD n
+          | none => n
         | _ => n
       let called := match operation with
         | .invokeSaved source _ _ _ => source
@@ -870,9 +879,14 @@ prepared predicate without replaying an effectful source operand. -/
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
         let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
-        -- A promise's actual is the name its saved operand was read from.
+        -- A promise's actual is the name its saved operand was read from,
+        -- or the witness of the member path it was read from, which holds
+        -- the same value (HOST-FAMILIES.md, "Entries").
         let original := fun (n : String) => match previous.origins.lookup n with
           | some (.var _ o) => o
+          | some read@(.read ..) => match pathWitness scope' read with
+            | some i => ((scope'[i]?).map fun (b : ScopeBinding Tree) => b.source.name).getD n
+            | none => n
           | _ => n
         let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original else
           match alias with

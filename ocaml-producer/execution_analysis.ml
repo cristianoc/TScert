@@ -136,6 +136,21 @@ open S
       let restore = Option.map (fun env -> if optional then restore_optional original env else env) in
       restore (either ~refine base yt nt),restore (either ~refine base yf nf),
       restore (either ~refine:false base yall nall)
+  (* A call whose callee's every signature keeps the heap (its footprint
+     within the empty one, its receiver's store included): Lean's
+     `call-keep` keeps every heap fact across it, so the step keeps the
+     fields and paths a test found. *)
+  and keeps_heap source = match expression_hint source with
+    | Some {node=(Call (callee,_,_,_,_) | Invoke (callee,_,_,_));_} ->
+      (match claimed_type callee.pos with
+       | Some t ->
+         (match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+          | Some (Atoms [Shape {calls=(_ :: _ as calls);_}]) ->
+            List.for_all (fun (s:Semantic.signature) ->
+              footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store) calls
+          | _ -> false)
+       | None -> false)
+    | _ -> false
   and step env operation = match operation.Execution.impact with
       (* A completed member read narrows its receiver: reading a member of
          `null` or `undefined` throws, so past it the constant or owned local
@@ -148,6 +163,7 @@ open S
         | _ -> env)
       (* A step that may write cells keeps the path entries through stable
          members, as Lean keeps their read links. *)
+      | Execution.Havoc when keeps_heap operation.Execution.source -> env
       | Execution.Havoc -> forget ~keep:(Refinement.stable_path declarations env) env
       | Execution.CellWrite (name,value) ->
         (match List.assoc_opt name env,claimed_type value with

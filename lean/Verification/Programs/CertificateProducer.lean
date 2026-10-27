@@ -1390,6 +1390,14 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       -- dictionary's index, with `undefined` where the key is absent.
       let contract : Option (Ty ι) := match expand G Ref with
         | [.refs fs _ vs _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld <|> vs.lookup fld else none
+        -- A union of records each fixing the field: the union of their
+        -- fields' types, which a read of the union gives.
+        | cs@(_ :: _ :: _) =>
+          if HeapExpressionRules.fieldOperand cs fld then
+            cs.foldlM (fun (acc : Ty ι) c => match c with
+              | .refs fs _ vs _ _ _ _ => (fs.lookup fld <|> vs.lookup fld).map fun T => (acc ++ T).eraseDups
+              | _ => none) []
+          else none
         | [.dict _ _ _ ds _ _ _ cs _] =>
           if HeapExpressionRules.optionalOperand (expand G Ref) fld then
             -- The graph's `undefined` row, among the labels the search knows.
@@ -1464,8 +1472,8 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
     (out k : HeapKnowledge.Knowledge) : StateM (Answered G) (List (PromiseCalls.Yield ι)) :=
   match PromiseCalls.promiseOf G e with
   | some (effect, a, T) =>
-    if out == HeapExpressionRules.ordinaryOutput k ||
-        out == HeapExpressionRules.withStable G Γ k (HeapExpressionRules.ordinaryOutput k) then
+    if [HeapExpressionRules.ordinaryOutput k, PromiseCalls.promiseOutput effect k].any fun o =>
+        out == o || out == HeapExpressionRules.withStable G Γ k o then
       pure [{ conditional := match effect.promise with | some (.guards _) => true | _ => false, target := a, type := T }]
     else pure []
   | none =>

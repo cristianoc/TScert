@@ -27,7 +27,7 @@ each item's design and evidence, not its progress.
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Slices of the value universe](#universe-slices) | open: a design | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | open: a design | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
-| [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
+| [An assertion's promise on a field](#guard-promise-field) | open | `guard-field-assertion` verifies: an assertion function's call on a field narrows the field reread in the next statement |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
@@ -313,12 +313,14 @@ result; a read at `toString` after `"toString" in v`, a host value and a
 symbol key stay refused; a write at the key is not admitted.
 
 <a id="guard-promise-field"></a>
-**A guard's promise on a field.** A promise narrows an actual that is an
-immutable name: `str(o.name)` (`asserts v is string`) leaves `o.name` at its
-type, and a field's current-content facts hold primitive atoms only. The
-promise of a call whose actual is a field read, a primitive one, would be a
-current-content fact of the field through the read's link (`claim.mts`'s
-`atom` and `decodeClaimType`).
+**An assertion's promise on a field.** A type guard's call on a field
+narrows the field reread through the read's link, where the call keeps the
+heap ([a call that keeps the heap](docs/PROGRAM-TYPING.md#a-call-that-keeps-the-heap)).
+An assertion function's call on a field, a statement of its own, narrows the
+call's saved operand, which no witness of the next statement's entry holds:
+`assertList(x.args); return x.args.length` reads `x.args` at its contract
+(`guard-field-assertion`). The narrowing needs the statement's read of the
+field carried into a witness of the next statement's entry.
 
 <a id="guard-answer-constant"></a>
 **A guard's answer held in a constant.** `const ok = isRecord(v)` keeps the

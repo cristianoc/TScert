@@ -3354,10 +3354,52 @@ establishes no new contents and keeps the separated atoms all the same:
 where $`\Sigma_{\neq x.f}=\{z.g\mapsto S\in\Sigma\mid \mathrm{apart}(x.f,z.g)\}`$ (`writeOutput`,
 `write_sound`).
 
+##### A call that keeps the heap
+
+A call (an invocation, a variadic invocation or a construction) whose
+evidence selects a signature with effect $`\epsilon`$, its footprint within
+the empty one and stating no change of its receiver's store, keeps every
+atom of the heap part on a normal return:
+
+```math
+\frac{\Gamma\vdash_G \mathrm{invoke}(f,v,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
+      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\neg\,\epsilon.\mathsf{receiverStore}}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,v,\vec u):A\dashv \Pi\;;\;\Sigma}\ \textsf{call-keep}
+```
+
+The signature's postcondition makes the heap a normal return leaves an
+extension of the one the call started in (`Closed.holds_empty`), and every
+atom of $`\Sigma`$ holds of an extension (`HeapKnowledge.alloc_frames`);
+`PromiseCalls.keepsCall_sound` proves the rule from `selectedCall_sound`. A
+throw keeps nothing. A call at a promise signature (a type guard's, an
+assertion function's) keeps $`\Sigma`$ where that signature's effect meets
+the same condition, and gives its actual the promise's type
+(`promiseCall_sound`). The operands are evaluated before the call, by nodes
+of their own, so the rule speaks of the call alone.
+
+A read link gives its cell what its value's type says
+(`HeapKnowledge.withTypedLinks`), checked on every edge: with
+$`(\Gamma;\Pi)(y)=R`$ a finite union of primitive predicates,
+
+```math
+\frac{x.f\mapsto y\in\Sigma\quad\text{or}\quad x.f\mapsto^{?}y\in\Sigma\qquad \Gamma(y)\ \text{denotes}\ R}
+{\Gamma;\Pi;\Sigma\vdash x.f\mapsto R}\ \textsf{link-fact}
+```
+
+So a test of a field's read, by a guard keeping the heap, narrows the field
+reread, primitive and object contents alike: `isList(x.args)` saves the read
+$`s\leftarrow x.\mathit{args}`$ with its link, `call-keep` keeps the link,
+the promise types $`s`$ where the guard answered `true`, and the reread is
+`read-linked` to $`s`$ (an object's contents) or `read-sliced` by the
+`link-fact` atom (a primitive's). A write, or a call at a signature not
+keeping the heap, between the test and the reread discards the link as
+before (`invalid-guard-field-write`, `invalid-guard-field-call`, run under
+Node; a declared guard states no effect, `invalid-guard-field-declared`).
+
 ##### Every other expression
 
-Every other expression, calls included, empties the heap part and leaves the
-equalities untouched:
+Every other expression, calls at a signature not keeping the heap included,
+empties the heap part and leaves the equalities untouched:
 
 ```math
 \frac{\Gamma\vdash_G t:A}

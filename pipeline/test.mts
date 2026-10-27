@@ -1812,6 +1812,34 @@ control(async (): Promise<void> => {
   process.stdout.write("unequal bound member effects: refused by the producer's union signature comparison\n");
 });
 
+control(async (): Promise<void> => {
+  // A guard's call keeps the heap only at a signature keeping the
+  // receiver's store too: the guard claimed at one that may change it keeps
+  // no read link, and the field reread after it is refused
+  // (PROGRAM-TYPING.md, "A call that keeps the heap").
+  const artifacts = run("guard-field-primitive");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("isText(x.f)");
+  const fn = must(claims.functions.find(f => f.name === "size"), "size");
+  const callee = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "isText".length), "the guard read");
+  assert.ok(Array.isArray(callee.type) && callee.type.length === 1);
+  const label = callee.type[0];
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(claims.types[label], "the guard's row"));
+  const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  assert.equal(arrows.length, 2);
+  for (const arrow of arrows) {
+    assert.deepEqual(arrow.effect.footprint, emptyEffect.footprint);
+    arrow.effect = { ...arrow.effect, receiverStore: true };
+  }
+  callee.type = [claims.types.push(row) - 1];
+  const forged = writeClaims(artifacts, "guard-receiver-store", claims);
+  const reread = source.indexOf("return x.f.length");
+  refusedAt(artifacts, forged, "guard-receiver-store", `source incoming edge obligation at [${reread},`);
+  process.stdout.write("a guard at a signature changing its receiver's store: the field reread refused\n");
+});
+
 for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union-host", "total"]]) control(async (): Promise<void> => {
   // Only the bound function's claimed effect changes. Its hosts' members
   // permit writes, so a claim preserving all locations needs refusal.

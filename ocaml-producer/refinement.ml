@@ -355,7 +355,8 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
     (match chosen with
      | (p,s) :: _ -> (match List.nth_opt args p with
        | Some {node=Id name;_} -> refine_value env name (fun _ -> s.result)
-       | _ -> env)
+       | Some a -> refine_path env a (claimed a.pos) (fun _ -> s.result)
+       | None -> env)
      | [] -> env)
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in

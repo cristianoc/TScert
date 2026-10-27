@@ -1843,10 +1843,6 @@ stable cell facts. -/
     intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
     exact checkStep_sound hc hcodes hsums he hk hw hh
 
-/-- The steps' rules, each keeping its input's stable links. -/
-@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) : Checker G images :=
-  (Checker.steps G images).keepingStable
 
 /-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
 as ordinary calls. Other effect rules retain their existing checks. A read
