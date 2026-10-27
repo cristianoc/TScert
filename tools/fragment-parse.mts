@@ -2054,9 +2054,12 @@ function lowerFile(file: string, carriesContext: boolean,
           gate.hostGuards.set(local, { domain, field, tags, onUndefined: entry.onUndefined }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
-        library: ([start, end], library) => {
+        library: ([start, end], library, local) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
+          // An imported type the overlay of library types states.
+          else if (library.k === "stated" && importNodes.some(n => n.getStart(source) === start && n.end === end))
+            gate.libraryTypes.set(local, library);
         },
         record: identity => gate.recordKeys.add(definitionKey(identity)),
         awaited: () => { gate.standardAwaited = true; },

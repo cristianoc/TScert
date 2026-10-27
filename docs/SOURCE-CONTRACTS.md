@@ -1490,6 +1490,113 @@ another specification states those iterators' done value. An imported
 `Intl.SegmentIterator` is refused before it, as a qualified type reference,
 so no case reaches this refusal.
 
+### Stated library types
+
+**Audited against:** TypeScript 7.0.2's standard library and `@types/node`
+22.20.2 and 22.10.7 (`tools/package.json`,
+`pipeline/library-project/package.json`); host behaviour from ECMA-262's
+TypedArray objects, Node 25.2.1's `lib/buffer.js`, `lib/internal/buffer.js`
+and `lib/internal/fs/utils.js`, and probes run under Node 25.2.1
+(2026-10-27).
+
+A type name some host values have, whose declarations the reader does not
+read as those values are (`Buffer` names the conditional type
+`ImplicitArrayBuffer` and the indexed access `ArrayBufferLike`), is read
+through the reviewed overlay of library types (`library-types.mts`). An
+entry $`\theta`$ names the type, reviews each of its declaration parts by
+the part's origin ([library globals](#library-globals): the standard
+library, or an installed package) and heading, the part's text before its
+body with white space collapsed, exactly as reviewed, and states the type
+the host's values meet, a definition $`D_\theta`$ no declaration file
+declares. With $`P_N`$ the type declarations TypeScript binds $`N`$ to and
+$`\Theta`$ the overlay:
+
+```math
+\frac{\theta\in\Theta\quad \theta.\mathit{name}=N\quad P_N\neq\emptyset\quad
+      \forall p\in P_N.\ (\mathsf{origin}(p),\ \mathsf{heading}(p))\in\theta.\mathit{parts}}
+     {⟦N⟧=D_\theta}\ \textsf{library-type}
+```
+
+The declarations are not read, and neither are the types they name. A name
+with a part the entry reviews beside one it does not, a changed declaration
+or a program's declaration merged into it, is refused; a name none of whose
+parts the entry reviews is another type of that name, read as declared. The
+name written with type arguments is refused (`Buffer<ArrayBuffer>`):
+$`D_\theta`$ has no parameters. Where TypeScript types a value from its
+context at the name (an unannotated closure parameter), it is $`D_\theta`$
+at the arguments the entry states, or at any where it states none:
+
+```math
+\frac{\theta\in\Theta\quad \theta.\mathit{name}=N\quad
+      \bigl(\theta.\mathit{arguments}\ \text{absent, or}\ ⟦\vec A⟧=\theta.\mathit{arguments}\ \text{or}\ \vec A=\varepsilon\bigr)}
+     {⟦N\langle\vec A\rangle⟧_{\mathit{ctx}}=D_\theta}\ \textsf{library-type-context}
+```
+
+The entries of [library modules](#library-modules) and
+[library globals](#nodes-buffer-and-textdecoder) returning or taking such
+values name $`D_\theta`$ too. Each $`D_\theta`$ joins the document once,
+where a statement or a name reads it. The entries:
+
+- `Uint8Array`, the standard library's parts and Node's part adding `at`:
+  `{ readonly [k: number]: number; readonly length: number }`.
+- `Buffer`: `{ readonly [k: number]: number; readonly length: number;
+  toString(encoding: "utf8"): string; subarray(start: number, end?: number):
+  Buffer }`, each method within the empty footprint. `toString("utf8")`
+  reads `this.length` and calls `this.utf8Slice`; `subarray` reads
+  `this.length`, `this.buffer` and `this.byteOffset`, clamps its integers
+  and constructs a `FastBuffer` over the same memory. A `Buffer` is a
+  `Uint8Array`.
+- `BigIntStats`: `{ dev, mode, nlink, uid, gid, rdev, blksize, ino, size,
+  blocks, atimeMs, mtimeMs, ctimeMs, birthtimeMs, atimeNs, mtimeNs, ctimeNs,
+  birthtimeNs: bigint; isFile, isDirectory, isBlockDevice,
+  isCharacterDevice, isSymbolicLink, isFIFO, isSocket(): unknown }`, the
+  bigints writable, assigned by `StatsBase` and `BigIntStats`; each test
+  calls `this._checkModeProperty`, as a `Stats`'s does
+  ([library modules](#library-modules)), so it states no effect.
+- `Dirent`, at `Dirent<string>`: `{ name, parentPath: string; isFile, …,
+  isSocket(): unknown }`, the strings writable, as `readdirSync` with
+  `withFileTypes` returns its entries ([library modules](#library-modules)).
+
+A view of bytes is an integer-indexed exotic object (ECMA-262,
+"TypedArray Objects"): its [[Get]] at a canonical numeric key is the
+element at a valid index, a number from 0 to 255, and `undefined` at any
+other, the prototype chain never read, and runs no code; the read is
+$`\mathtt{number}\mid\mathtt{undefined}`$, as at any number index
+(`invalid-node-bytes-past-end`, run under Node). A write converts its value
+by ToNumber, which runs an object's `valueOf`, and keeps it modulo 256: the
+index is readonly, and a key it alone states is not written
+(`invalid-node-bytes-write`, run under Node: 300 reads back as 44).
+`length` is `%TypedArray%.prototype`'s getter, which reads the view's own
+slots. The model holds it as the view's own readonly member, where
+JavaScript holds it on the prototype chain. Only an observation of own keys
+tells the two apart, and none is typed at what it tells: the copy a spread
+makes of a value with an index is a dictionary stating no member
+(`invalid-node-bytes-spread`, run under Node: the copy's `length` is
+`undefined`), and `Object.keys`, `Object.values`, `Object.entries`,
+`Object.hasOwn` and `Object.getOwnPropertyDescriptor` answer strings,
+`unknown` values, Booleans and descriptors at `unknown`. `JSON.stringify`
+of a `Buffer` calls `Buffer.prototype.toJSON`; a `Buffer` is no `JsonValue`
+(`invalid-node-bytes-json`, run under Node). That a member read finds the
+host's code, and that reading it runs no other, rest on a host assumption
+([trust surface](DESIGN.md#trust-surface)): every view of bytes, the
+program's or external code's, keeps its standard prototype chain
+(`Buffer.prototype` → `Uint8Array.prototype` → `%TypedArray%.prototype` →
+`Object.prototype` for a `Buffer`) and owns its elements alone, and
+`%TypedArray%.prototype`'s getters `length`, `buffer` and `byteOffset` and
+`Buffer.prototype`'s `toString`, `subarray`, `slice` and `utf8Slice` are
+the host's own, data properties for the methods, throughout execution, as
+are `Buffer`'s `allocUnsafe`, `allocUnsafeSlow` and `concat`, which
+`readFileSync` calls. A replaced method answers what it returns
+(`invalid-node-bytes-method-replaced`, run under Node: a number), and a
+getter in a method's place runs where the member is read
+(`invalid-node-bytes-method-getter`, run under Node: it pops the array). A
+program reaches none of them: `Buffer.prototype`, `Object.defineProperty`
+and `Object.getPrototypeOf` are refused. The cases are `node-bytes-buffer`,
+`node-bytes-text-decoder`, `node-fs-stat-bigint`, `node-readdir-dirents`,
+`blocker-node-buffer-contract`, `blocker-node-hash-contract` and
+`invalid-node-stat-bigint` (run under Node: a `BigIntStats`'s `size` is a
+bigint).
+
 ### Intersections of functions and records
 
 A record type's clause is a plain object, which no function is, so the
@@ -2489,6 +2596,52 @@ getter, code no type of `o` states: it is refused.
   $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{undefined}`$
   (`console-log-object-refused`).
 
+#### Node's `Buffer` and `TextDecoder`
+
+Each entry names the declaration of each pinned `@types/node` installation
+where the two differ; the types are the
+[stated library types](#stated-library-types).
+
+- `Buffer.from(s)` of a string encodes it as UTF-8 into a fresh `Buffer`
+  (Node's `lib/buffer.js`, `fromString`), its own or a view into the
+  module's pool past every view the pool has given:
+  $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$. It reads
+  `Buffer.poolSize`, a writable property other code may make a getter, to
+  choose, so it states no effect.
+- `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its internal
+  slots, throwing otherwise, and compares the bytes in the native layer:
+  $`(\mathit{Uint8Array},\ \mathit{Uint8Array})\Rightarrow\texttt{-1}\mid\texttt{0}\mid\texttt{1}`$,
+  within the empty footprint (`node-bytes-buffer`).
+- `TextDecoder`, whose declared type is a conditional type over
+  `globalThis`, is read through an entry naming the variable's declaration
+  (`constructs`): its type is not read, and every reference to the global
+  is a `new` expression of at most as many arguments as the entry's
+  statement, read at that construct signature:
+
+```math
+\frac{\omega\in\Omega\quad \omega.\mathit{global}=x\quad \omega.\mathit{text}=\mathsf{text}(d_x)\quad
+      \omega.\mathit{constructs}=(\vec P)\Rightarrow R\quad
+      \text{every use of}\ x\ \text{is}\ \mathtt{new}\ x(\vec a),\ |\vec a|\le|\vec P|}
+     {\Gamma(x)=\mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-global-constructs}
+```
+
+with $`d_x`$ the variable's one declaration. `new TextDecoder(label,
+options)` (Node's `lib/internal/encoding.js`, the ICU build) converts the
+label by a template, a string's own value, throws where it names no
+supported encoding, and reads the options' `fatal` and `ignoreBOM` by
+ToBoolean:
+$`(\mathtt{string}^?,\ \{\mathtt{fatal}^?,\ \mathtt{ignoreBOM}^?\colon\mathtt{boolean}\mid\mathtt{undefined}\}^?)\Rightarrow\mathit{TextDecoder}`$,
+with $`\mathit{TextDecoder}=\{\mathtt{decode}\colon(\mathit{Uint8Array})\Rightarrow\mathtt{string}\}`$,
+`decode` a method of `TextDecoder.prototype`. The construction writes the
+decoder's state to symbol-keyed properties of the fresh decoder, which a
+setter other code defines on `TextDecoder.prototype` would intercept, and
+`decode` reads them and, outside UTF-8 and windows-1252, the `encoding`
+getter other code may replace: neither states an effect. `decode` of a
+view gives its text; a malformed byte at `fatal: true`, and a value of the
+view's type that is no view, throw (`node-bytes-text-decoder`, run under
+Node). The standard library's DOM, which declares `TextDecoder` too, gives
+the global a second declaration, which the entry does not review.
+
 ### `JSON` and `Error`
 
 Overloads stated alike are one signature. A statement may name a library
@@ -2785,8 +2938,10 @@ is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
 imported value ([imported values](#imported-ambient-and-global-values)).
 An entry names one overload of the function's declaration in Node's
-declarations, with exactly the text it was reviewed against, and states the signature the host meets at the arguments it
-admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
+declarations, with exactly the text it was reviewed against, its
+$`\mathit{texts}`$ the text and the same overload's text in the other pinned
+installation where they differ, and states the signature the host meets at
+the arguments it admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
 imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to,
 or, where $`f`$ is a `const` whose declared type is one interface of Node's
 declarations holding call signatures alone, with no base but the standard
@@ -2796,7 +2951,7 @@ library's `Function` (`statSync: StatSyncFn`), those call signatures; a
 
 ```math
 \frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=f\}=\{\omega_1\ldots\omega_n\}\neq\emptyset\quad
-      \forall i.\ \exists s\in O_f.\ \omega_i.\mathit{text}=\mathsf{text}(s)\quad
+      \forall i.\ \exists s\in O_f.\ \mathsf{text}(s)\in\omega_i.\mathit{texts}\quad
       \omega_i.\mathit{stated}=(\vec P_i)\Rightarrow R_i}
      {\Gamma(f)=\bigwedge_{i}(\vec P_i)\Rightarrow R_i}\ \textsf{library-module}
 ```
@@ -2930,15 +3085,27 @@ type names does, and a definition's methods name it as their receiver
   unrestricted (`invalid-node-stat-test-result`, run under Node: 7); a
   caller wanting a Boolean compares it with `true`. The date getters are not
   stated (`invalid-node-stat-date-getter`, run under Node: a replaced
-  getter answers a number). Options are outside the stated call: `bigint:
-  true` gives bigint numbers (`invalid-node-stat-bigint`, run under Node),
-  and an options object may hold a getter the host reads inside the call
-  (`invalid-node-stat-options-getter`, run under Node).
+  getter answers a number). An options object may hold a getter the host
+  reads inside the call (`invalid-node-stat-options-getter`, run under
+  Node). With options $`o`$ stating the two properties the host reads,
+  $`o=\{\mathtt{bigint}\colon\mathtt{true};\ \mathtt{throwIfNoEntry}^?\colon\mathtt{true}\mid\mathtt{undefined}\}`$,
+  it returns a fresh `BigIntStats`
+  ([stated library types](#stated-library-types)), its numbers bigints,
+  throwing where the path names nothing as without options:
+  $`(\mathtt{string},\ o)\Rightarrow\mathit{BigIntStats}`$, stating no
+  effect (`node-fs-stat-bigint`; `invalid-node-stat-bigint`, run under
+  Node). That a `BigIntStats` owns its bigints and that reading a test runs
+  no code rest on the assumption a `Stats` rests on, of its chain
+  `BigIntStats.prototype` → `StatsBase.prototype` → `Object.prototype`.
 - `readFileSync(path, "utf8")` with a string path returns the file's
   contents decoded as UTF-8; a path it cannot read throws:
-  $`(\mathtt{string},\ \texttt{"utf8"})\Rightarrow\mathtt{string}`$. Without
-  an encoding it returns a `Buffer`, outside the stated call
-  (`node-fs-read`, `invalid-node-fs-read-buffer`).
+  $`(\mathtt{string},\ \texttt{"utf8"})\Rightarrow\mathtt{string}`$
+  (`node-fs-read`). Without an encoding it reads the file into a fresh
+  `Buffer` ([stated library types](#stated-library-types)):
+  $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$, stating no effect, as it
+  opens, reads and closes the file through `fs.openSync`, `fs.readSync` and
+  `fs.closeSync`, writable properties of the module's object other code may
+  replace (`node-bytes-buffer`).
 - `existsSync(path)` with a string returns whether the path exists, and does
   not throw: $`(\mathtt{string})\Rightarrow\mathtt{boolean}`$.
 - `mkdtempSync(prefix)` with a string creates a directory named by the prefix
@@ -3002,11 +3169,19 @@ type names does, and a definition's methods name it as their receiver
   (`invalid-node-readdir-test-result`, run under Node: a replaced test
   answers a number).
   The declared `Dirent.path` is absent at run time, so the entry states
-  none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
-  whose parameter TypeScript types as `Dirent` is refused.
+  none (`invalid-node-readdir-dirent-path`, run under Node). The element is
+  the `Dirent` the overlay of library types states
+  ([stated library types](#stated-library-types)), which an annotation
+  names and a closure whose parameter TypeScript types as `Dirent<string>`
+  reads (`node-readdir-dirents`).
+- `readdirSync(path)` with a string path and no options reads the default
+  options, a frozen object of no property, and returns a fresh array of the
+  entries' names, decoded as UTF-8; a path it cannot read throws:
+  $`(\mathtt{string})\Rightarrow\mathtt{string}[\,]`$, stating no effect
+  (`node-fs-stat-bigint`).
 - `createHash("sha256")` returns a fresh `Hash`, of the type its entry
   defines,
-  $`\mathit{Hash}=\{\mathtt{update}\colon(\mathtt{string})\Rightarrow\mathtt{this};\ \mathtt{digest}\colon(\texttt{"hex"})\Rightarrow\mathtt{string}\}`$,
+  $`\mathit{Hash}=\{\mathtt{update}\colon(\mathtt{string}\mid\mathit{Uint8Array})\Rightarrow\mathtt{this};\ \mathtt{digest}\colon(\texttt{"hex"})\Rightarrow\mathtt{string}\}`$,
   each member a method, so $`\Gamma(\mathtt{createHash})=(\texttt{"sha256"})\Rightarrow\mathit{Hash}`$
   (`node-crypto-hash`, `blocker-node-hash-contract`). By Node's
   `lib/internal/crypto/hash.js`, the call validates the algorithm and
@@ -3020,8 +3195,10 @@ type names does, and a definition's methods name it as their receiver
   warning, which reads `process.noDeprecation` during the call, a property
   other code may make a getter, so the algorithm is stated at `"sha256"`
   alone (`invalid-node-crypto-hash-algorithm`, run under Node).
-  `update(data)` with a string checks the hash is not finalized, hashes the
-  string as UTF-8 and returns its receiver; `digest("hex")` checks the
+  `update(data)` checks the hash is not finalized, hashes a string as UTF-8
+  and a view of bytes (`isArrayBufferView`), a `Uint8Array` or a `Buffer`
+  ([stated library types](#stated-library-types)), as its bytes, and
+  returns its receiver; a value of the view's type that is no view throws; `digest("hex")` checks the
   same, marks the hash finalized and returns the digest as hexadecimal
   digits. Either throws on a hash already digested, an outcome
   (`node-crypto-hash`, run under Node). Each reads the hash's state
@@ -3030,7 +3207,7 @@ type names does, and a definition's methods name it as their receiver
   another encoding, and without one, which returns a `Buffer`, are outside
   the stated method (`invalid-node-crypto-hash-encoding`,
   `invalid-node-crypto-hash-buffer`, run under Node), and so is `update`
-  with bytes or an input encoding. The methods are `Hash.prototype`'s,
+  with an input encoding. The methods are `Hash.prototype`'s,
   which a copy does not take (`invalid-node-crypto-hash-spread`, run under
   Node). That a member read finds them rests on a host assumption
   ([trust surface](DESIGN.md#trust-surface)): every `Hash`, created by the
