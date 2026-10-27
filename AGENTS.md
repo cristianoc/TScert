@@ -112,7 +112,11 @@ refusal and reports every refusal it meets:
    typed `unknown`): those sites are repaired in the code. A case blocked
    by external code no contract describes yet is answered by describing
    it, in whatever shape it needs; the trust that description states is
-   reviewed by the owner before the merge, not waited on.
+   reviewed by the owner before the merge, not waited on. An assumption
+   that standard objects are not tampered with (no method of a Node or
+   JavaScript built-in prototype or object replaced, or wrapped in a
+   getter, by any code) is approved by this policy; any other kind goes to
+   the owner.
    The [gap-priorities deep dive](docs/deep-dives/gap-priorities) presents
    the ranking and each case, closed or open.
 
