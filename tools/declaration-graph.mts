@@ -17,7 +17,8 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
-  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
+  typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
+  type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
@@ -114,7 +115,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never, record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    fail: (message: string) => never, record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (library.k === "stated") {
     if (args.length) return fail(`${library.identity.name} is read at the type the overlay of library types states, which takes no type arguments`);
     return { k: "reference", args: [], span,
@@ -2130,7 +2131,7 @@ export function collectDeclarations(file: string, options: {
         if (!argument) throw Error(`${what} has no argument for the captured type parameter ${parameter.name.text}`);
         return argument;
       });
-      const evaluate: NonNullable<TermScope["computed"]> = (part, pos, read) => {
+      const evaluate: ComputedHook = (part, pos, read) => {
         if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
           "and is evaluated only at an application written in source");
@@ -4884,10 +4885,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** The native collection iterator over an element type. */
   collectionIterator: (element: TypeTerm) => TypeTerm;
   /** A computed type's term (`computed-types.mts`). */
-  computed: NonNullable<TermScope["computed"]>;
+  computed: ComputedHook;
   /** The type alias a reference names, if any. */
   alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
-  awaited: NonNullable<TermScope["awaited"]>;
+  awaited: AwaitedHook;
   /** Whether a reference is a statement (`Within`), recording that the
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
@@ -4896,11 +4897,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
    * definitions reading a statement are recorded (`externalStatements`). */
   collecting: (node: TypeDeclaration | null, key: string | null) => void;
   /** A mapped type's keys as TypeScript computes them. */
-  keys: NonNullable<TermScope["keys"]>;
+  keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
   record: (identity: DeclarationIdentity) => void;
   /** A mapped type over `keyof` as TypeScript resolves it. */
-  modifiers: NonNullable<TermScope["modifiers"]>;
+  modifiers: ModifiersHook;
   /** A declaration's type parameters, its merged declarations together. */
   parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
@@ -4910,7 +4911,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
    * name that is no enum's. */
   enumType: (identifier: Identifier, at: SourceFile, span: Span) => TypeTerm | null;
   /** An enum member's literal type `E.M`, or `typeof E`. */
-  enumerated: NonNullable<TermScope["enumerated"]>;
+  enumerated: EnumeratedHook;
   /** The name a type reference reads, a namespace member's included. */
   memberName: (name: ts.EntityName) => Identifier | null;
   /** A host family's table and the run's tag selection, where `node` is a
@@ -5014,7 +5015,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     }
     // A declaration's own parameters are positional: a computed type that
     // reaches a function's binder has no reading in its equation.
-    const computed: NonNullable<TermScope["computed"]> = (part, pos, read) => {
+    const computed: ComputedHook = (part, pos, read) => {
       const term = applied ? context.instantiate(node, applied.args, applied.use)(part) : context.computed(part, pos, read);
       if (JSON.stringify(term).includes('"k":"binder"'))
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);

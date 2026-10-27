@@ -5,7 +5,7 @@
  * declaration graph once its collection ends, and the gate for the file's
  * annotations, read after the declaration document is complete. */
 import type { DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type TermScope } from "./type-term.mts";
+import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
 type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
@@ -155,7 +155,7 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
     const object = go(deferred.identity.object);
     const key = go(deferred.key);
     const fail: Fail = message => { throw Error(`${message} in ${where}`); };
-    const record: NonNullable<TermScope["record"]> = (reference, failed) => recordShape(reference, records, failed);
+    const record: RecordHook = (reference, failed) => recordShape(reference, records, failed);
     try {
       return expandMapped({ key, value: object, optional: false, readonly: false,
         identity: { ...deferred.identity, object } }, t.span, fail, record);
