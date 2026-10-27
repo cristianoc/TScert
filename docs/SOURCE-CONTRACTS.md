@@ -2635,24 +2635,30 @@ copy of an error lacks `name` (`invalid-error-name-spread`, run under Node).
 The engine's `stack`, an own accessor in V8 whose getter may run
 `Error.prepareStackTrace`, and the `cause` the options give are left
 unstated: a read of either is refused. `cause?: unknown` admits every value
-an error holds or lacks. Inside the program `stack` is read only by
-calls stating no effect and an `unknown` result: Node's `structuredClone`
-of an error reads it, running an installed `Error.prepareStackTrace`, and so
-does building an `AssertionError`; every other operation reading it is
-refused (`e.stack`; `console.log`, `console.error`, `String`, a template
-literal or `+` of an error; `JSON.stringify`). `stack?: string` is an
-obligation on what the program gives external code at `Error`, by a return,
-a throw, a rejection or a store: the engine's `stack` reads a string unless
-an `Error.prepareStackTrace` returns another value (observed under Node: a
-hook returning 5 makes `stack` a number; the source writes no
-`Error.prepareStackTrace`). The trust this reading states:
+an error holds or lacks. Inside the program `stack` is read only by calls
+whose contracts state no footprint where they read it and nothing of
+`stack` in their results: Node's `structuredClone` (an `unknown` result),
+`assert.throws` with a validation object (`void`),
+`assert.ifError` of an error, which reads it as it throws, where its stated
+empty footprint does not apply, and every failing `assert` call, which
+builds an `AssertionError` (observed under Node: each calls an installed
+`Error.prepareStackTrace`). Every other operation reading it is refused
+(`e.stack`; `console.log`, `console.error`, `String`, a template literal or
+`+` of an error; `JSON.stringify`). `stack?: string` is an obligation on
+the errors the program gives external code at a type stating `stack`
+(TypeScript's `Error`): returned, thrown, rejected, passed to external code
+or a callback, or written where such a type is stated. V8's `stack` reads a
+string unless an `Error.prepareStackTrace` returns another value or code
+writes another value through its setter (observed under Node: a hook
+returning 5, or `e.stack = 5`, makes it a number, still not enumerable; the
+source writes no `Error.prepareStackTrace` and no `stack`). The trust this reading states:
 `Error.prototype` holds `name` as a data property whose value is `"Error"`
 throughout execution: external code installs no accessor there and writes no
 other value (`invalid-error-prototype-name-getter`, run under Node: a getter
 returns a number; the source reaches neither `Object.defineProperty` nor
-`Error.prototype`); external code installs no `Error.prepareStackTrace`
-returning a non-string, so an error the program gives it at `Error` meets
-`stack?: string`; and a value a unit receives at `Error`, or at an
+`Error.prototype`); an error the program gives external code at a type
+stating `stack` reads a string at `stack` wherever `in` finds it, whenever external code reads it: external code installs no `Error.prepareStackTrace` returning
+another value for it and writes no other value there; and a value a unit receives at `Error`, or at an
 interface extending it, meets the
 [caller contract](DESIGN.md#trust-surface)'s clause for errors.
 
