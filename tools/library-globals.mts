@@ -90,15 +90,23 @@ export type GlobalEntry = {
   origin?: string;
 };
 
-/** What `Error` constructs, and what a class extending it is beside its own
- * members: an object whose prototype link holds its `message`, a string, a
- * key no copy takes, as JavaScript's own non-enumerable `message` is not
- * copied either. */
+/** What `Error` constructs, what a class extending it is beside its own
+ * members, and what the library's `Error` interface is read as: an object
+ * whose prototype link holds its `message` and its `name`, strings, keys no
+ * copy takes, as JavaScript's own non-enumerable `message` and the `name` it
+ * inherits from `Error.prototype` are not copied either. */
 export function errorInstance(span: Span): TypeTerm {
+  const text = (name: string) => ({ name, optional: false, readonly: true,
+    type: { k: "atom" as const, name: "string" as const, span }, span });
   return { k: "object", fields: [], stringIndex: null, calls: [], span,
-    prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
-      type: { k: "atom", name: "string", span }, span }], stringIndex: null, calls: [], span } };
+    prototype: { k: "object", fields: [text("message"), text("name")], stringIndex: null, calls: [], span } };
 }
+
+/** The members of the library's `Error` interface, as `errorInstance`
+ * reads them: `name` and `message` on the link, and `stack` and `cause`
+ * unstated, so that a read of either is refused. */
+export const reviewedErrorMembers: readonly string[] =
+  ["name: string;", "message: string;", "stack?: string;", "cause?: unknown;"];
 
 /** What `Error` reads of its options, `options` absent or `undefined`, or
  * an object whose `cause` its type states, at any value, or absent: ECMA-262's
@@ -438,11 +446,11 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     (signature): GlobalEntry => ({ host: contract, global: "Array", signature,
       stated: { binders: ["T"], params: [], result: { k: "array", presence: "readable", readonly: false, element: binder("T"), span: at } } })),
   // `new Error(m)` with a string owns `message`, that string, as a property
-  // that is not enumerable: the model holds it on a prototype it gives the
-  // object, so a read and `in` find it and a spread does not copy it. Its
-  // `name` and a missing message are `Error.prototype`'s, which the model
-  // does not hold, so only the message is stated, and it is required.
-  // `stack` is the engine's and is not stated.
+  // that is not enumerable, and inherits `name` from `Error.prototype`: the
+  // model holds both on a prototype it gives the object, so a read and `in`
+  // find them and a spread does not copy them (`errorInstance`). A missing
+  // message is `Error.prototype`'s, so the message is required. `stack` is
+  // the engine's and is not stated.
   //
   // ES2022's `options`: after converting the message, the host runs
   // InstallErrorCause (ECMA-262, "Error ( message [ , options ] )"): where

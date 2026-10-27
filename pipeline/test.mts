@@ -5396,7 +5396,7 @@ control(async (): Promise<void> => {
       if (n.effect !== null && "reading" in n.effect && uses(n.effect).length > 0) n.effect = { ordinary: must(n.effect.reading, "the inspection") };
   };
   for (const [name, rule] of [["widthOf", "read"], ["optionalOf", "readOptional"], ["indexOf", "readDict"],
-      ["tagOfCallable", "readCallable"], ["classTag", "readCallable"], ["constructorTag", "readBagView"], ["errorName", "read"], ["sizeOf", "len"], ["textSize", "lenStr"],
+      ["tagOfCallable", "readCallable"], ["classTag", "readCallable"], ["constructorTag", "readBagView"], ["errorName", "readProto"], ["sizeOf", "len"], ["textSize", "lenStr"],
       ["upper", "readProto"]] as const) {
     assert.equal(uses(unit(e0, name)).length, 0, `${name} reads through no summary`);
     assert.ok(rules(unit(e0, name)).has(rule), `${name} reads by ${rule}`);

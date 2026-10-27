@@ -293,21 +293,29 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // constructor's `this.k = e` are fields of the instance's allocation, which
   // the lowering defines, and are reserved here too; any other write of
   // either key is Lean's (`reservedWriteCheck`, SOURCE-ELABORATION.md,
-  // "Reserved writes").
+  // "Reserved writes"). `name` is refused at the same members: the model
+  // states it on the instance's link.
   if (base?.error) {
     const spelled = (key: Node | undefined): string | undefined =>
       key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
     const reserved = (key: Node | undefined): string | undefined => {
       const text = key && ts.isComputedPropertyName(key) ? spelled(key.expression) : spelled(key);
-      return text === "message" || text === "stack" || text === "cause" ? text : undefined;
+      return text === "message" || text === "stack" || text === "cause" || text === "name" ? text : undefined;
     };
+    // The model states an instance's `name` on its first link, the string
+    // `Error.prototype` holds: a member or a field of that name would hold
+    // another beside it, which the model's error cannot state.
+    const named = (subject: string): string =>
+      `${subject} of a class extending \`Error\` is outside the fragment: the model states an error's \`name\` where \`Error.prototype\` holds it, which no class member or own field replaces`;
     for (const m of node.members) {
       const key = isStatic(m) ? undefined : reserved(nameOf(m));
+      if (key === "name") gate.fail(m, named("a member named `name`"));
       if (key) gate.fail(m, `a member named \`${key}\` of a class extending \`Error\` is outside the fragment: an instance's own \`${key}\` in JavaScript shadows it`);
       // A parameter property is a field the constructor defines.
       if (ts.isConstructorDeclaration(m))
         for (const p of m.parameters) {
           const field = p.modifiers?.length ? reserved(p.name) : undefined;
+          if (field === "name") gate.fail(p, named("a parameter property named `name`"));
           if (field) gate.fail(p, `a parameter property named \`${field}\` of a class extending \`Error\` is outside the fragment: it assigns the instance's own \`${field}\`, which JavaScript keeps non-enumerable`);
         }
       // A constructor's write through `this` is a field of the allocation.
@@ -325,6 +333,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
               ts.isSetAccessorDeclaration(n) ? undefined
           : n.forEachChild(write);
         const written = write(m.body);
+        if (written && ts.isBinaryExpression(written) && target(written.left) === "name")
+          gate.fail(written, named("a write of `this.name` in the constructor"));
         if (written && ts.isBinaryExpression(written))
           gate.fail(written, `a write of \`this.${target(written.left)}\` in the constructor of a class extending \`Error\` is outside the fragment: it defines the instance's own \`${target(written.left)}\`, which JavaScript keeps non-enumerable`);
       }
@@ -696,11 +706,14 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         // then its own fields over it: the allocation from parts an object
         // literal with a spread is.
         const at = gate.span(name);
-        // An `Error`-derived instance's first link holds its message, then
-        // the class's prototype: what JavaScript's own non-enumerable
-        // `message` is to every read, copy and test the fragment admits.
+        // An `Error`-derived instance's first link holds its message and
+        // `Error.prototype.name`, `"Error"`, then the class's prototype: what
+        // JavaScript's own non-enumerable `message` and the `name` it
+        // inherits are to every read, copy and test the fragment admits.
         const link: Expr | null = base?.error && heritage ? { k: "alloc", pos: [heritage.getStart(gate.file), heritage.end],
-          fields: [{ name: "message", e: { k: "id", pos: [heritage.end - 1, heritage.end], name: messageName(name.text) } }],
+          fields: [{ name: "message", e: { k: "id", pos: [heritage.end - 1, heritage.end], name: messageName(name.text) } },
+            { name: "name", e: { k: "lit", pos: [heritage.getStart(gate.file) + 1, heritage.getStart(gate.file) + 2],
+              lit: { a: "stringlit", v: "Error" } } }],
           ...(proto ? { proto } : {}) } : null;
         const proto_ = link ?? proto;
         const instanceValue: Expr = derivedBase

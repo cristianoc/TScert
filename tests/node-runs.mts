@@ -650,6 +650,18 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       `${file}: the instance's stack stays non-enumerable`);
   assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
     "invalid-error-subclass-spread: the copy has no message");
+  assert.equal(runExample("error-name",
+    `[named(), described(new Failure("y")), inherited(), found(), listed().length, both().length, wrapped().message].join(";")`),
+    "Error;Error: y;Error;true;0;2;boom", "error-name: the name Error.prototype holds, read, found and not listed");
+  assert.equal(runExample("blocker-error-options-return", "use().name"), "Error", "blocker-error-options-return: the name");
+  assert.equal(runExample("blocker-error-super-options-return", "use().name"), "Error",
+    "blocker-error-super-options-return: the name a subclass inherits");
+  assert.equal(runExample("invalid-error-name-spread", "main()"), undefined, "invalid-error-name-spread: the copy has no name");
+  assert.equal(runExample("invalid-error-name-write", "main()"), 5, "invalid-error-name-write: a number written over the name");
+  assert.equal(runExample("invalid-error-prototype-name-getter", "main()"), 5,
+    "invalid-error-prototype-name-getter: the getter's number");
+  for (const file of ["invalid-error-subclass-name-field", "invalid-error-subclass-name-write"])
+    assert.equal(runExample(file, "main()"), "Failure", `${file}: the instance's own name`);
   assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',
     "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
