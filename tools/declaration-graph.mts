@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
-import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
@@ -1385,6 +1385,16 @@ export function collectDeclarations(file: string, options: {
       const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
         parts.every(part => libraryFile(part.getSourceFile()));
       if (library && node.name.text === "Function") return { k: "callable", span: [node.getStart(source), node.end] };
+      // The standard library's `Error`: what `Error` constructs
+      // (SOURCE-CONTRACTS.md, `JSON` and `Error`), its members declared as
+      // reviewed.
+      if (library && node.name.text === "Error") {
+        const members = parts.flatMap(part => ts.isInterfaceDeclaration(part)
+          ? part.members.map(m => m.getText(part.getSourceFile()).trim()) : []);
+        if (members.some(m => !reviewedErrorMembers.includes(m)))
+          throw Error(`the library's Error declares a member not reviewed: ${members.filter(m => !reviewedErrorMembers.includes(m)).join(" ")}`);
+        return errorInstance([node.getStart(source), node.end]);
+      }
       return library ? libraryRegExp(node.name.text, parts) : null;
     };
     // The library's `RegExp`, `RegExpExecArray` and `RegExpMatchArray`, read

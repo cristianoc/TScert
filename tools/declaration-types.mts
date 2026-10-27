@@ -92,9 +92,10 @@ export type TypeTerm =
   | { k: "tuple"; presence: ArrayPresence; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   /** `prototype`, stated by the library overlay only: members the object
-   * holds as own properties that are not enumerable (an `Error`'s
-   * `message`), which the model holds on a prototype it gives the object, so
-   * that a spread does not copy them and `in` and reads still find them. */
+   * holds as own properties that are not enumerable or inherits (an
+   * `Error`'s `message` and `name`), which the model holds on a prototype it
+   * gives the object, so that a spread does not copy them and `in` and reads
+   * still find them. */
   | { k: "object"; fields: { name: PropertyKey; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
       /** A number index, `[k: number]: V` with a contract of its own: it

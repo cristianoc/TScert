@@ -180,6 +180,7 @@ representation does not state it; the paths are in
 | An optional call of `Object.assign`, or one whose target and sources are not written as arguments | The copy is lowered from its written operands | [object literals](SOURCE-MODEL.md#object-literals) | — |
 | An accessor (`get`/`set`), `__proto__`, or a computed key in a literal other than a `unique symbol` constant or a name or member read typed as one string or number literal; a computed or symbol key in a literal with a spread | The heap has data properties only; another key is known only at run time | [object literals](SOURCE-MODEL.md#object-literals) | `object-computed-literal-key` |
 | In a class extending `Error`, an instance member, parameter property or constructor's `this.k = e` named `message` or `stack`; a write that may set either key on a receiver not excluding every object with a prototype | JavaScript's instance owns them non-enumerable, which the model does not state | [reserved writes](SOURCE-ELABORATION.md#reserved-writes) | `invalid-error-subclass-assign-target`; `reserved-write-twin` |
+| In a class extending `Error`, an instance member, parameter property or constructor's `this.name = e` named `name` | The model states an error's `name` on its link, where `Error.prototype` holds it; a member or own field would stand beside it | [a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error) | `invalid-error-subclass-name-field`, `invalid-error-subclass-name-write` |
 
 **Arrays and iteration**
 

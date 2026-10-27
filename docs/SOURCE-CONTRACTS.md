@@ -2582,8 +2582,13 @@ and the construct, called or with `new`, at
      {⟦s⟧_\Omega=\mathsf{new}(\mathsf{string},\ \mathsf{ErrorOptions})\Rightarrow\mathsf{Err}\quad\text{within}\ \varnothing,\ \text{on a throw too}}\ \textsf{library-error-options}
 ```
 
-with $`\mathsf{Err}`$ the object whose link holds the message
-([a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error)).
+with $`\mathsf{Err}`$ the object owning neither `message` nor `name`, whose link
+holds both, strings
+([a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error)):
+
+```math
+\mathsf{Err}=\{\texttt{[[proto]]}{:}\,\{\mathsf{readonly}\ \mathit{message}:\mathsf{string};\ \mathsf{readonly}\ \mathit{name}:\mathsf{string}\}\}\ \text{owning neither key}
+```
 Neither step runs code at $`\mathsf{ErrorOptions}`$: no object is a proxy, a
 value meeting a stated field holds it as a data property, and
 `Object.prototype` owns no `cause` ([trust surface](DESIGN.md#trust-surface)).
@@ -2598,6 +2603,51 @@ is ([reserved writes](SOURCE-ELABORATION.md#reserved-writes)). The host is
 trusted to follow ECMA-262's description of the `Error` constructor; the
 other error constructors (`AggregateError`, `TypeError`) have no entry
 (`error-options`, `map-stable-json-error`).
+
+The library's `Error` interface, its members declared as reviewed, is read as
+what `Error` constructs:
+
+```math
+\frac{\mathit{lib}(\mathtt{Error})\quad \mathsf{members}(\mathtt{Error})\subseteq\{\mathit{name}:\mathsf{string},\ \mathit{message}:\mathsf{string},\ \mathit{stack}?:\mathsf{string},\ \mathit{cause}?:\mathsf{unknown}\}}
+     {⟦\mathtt{Error}⟧=\mathsf{Err}}\ \textsf{library-error-type}
+```
+
+so an error the program builds, by `Error` or by a class extending it, meets
+it (`error-name`, `blocker-error-options-return`,
+`blocker-error-super-options-return`, run under Node). By
+[ECMA-262](REFERENCES.md#ecma-262), `Error.prototype.name` is a data property
+whose initial value is `"Error"`, writable, not enumerable and configurable,
+as every data property of a built-in prototype is; each NativeError's
+prototype and `AggregateError.prototype` holds its constructor's name the
+same way. An error `Error` constructs owns no `name` and reads this one; so
+does an instance of a class extending `Error`, whose prototype holds no `name`
+(the parser refuses a member, a parameter property and a constructor's
+`this.name = e` of that name, `invalid-error-subclass-name-field`,
+`invalid-error-subclass-name-write`, run under Node). The model states the
+name on the error's link, `"Error"` where a class constructs it, so a read,
+a destructuring and `in` find it and neither a copy nor `Object.keys` takes
+it, as in JavaScript. A write of `name` onto an error creates an own
+enumerable property in JavaScript, as a write does in the model, so `name`
+is no reserved key; the calculus refuses the write at $`\mathsf{Err}`$, which
+excludes an own `name`, and an error meets no record owning `name`
+(`invalid-error-name-write`, run under Node: a number written over it). A
+copy of an error lacks `name` (`invalid-error-name-spread`, run under Node).
+The engine's `stack`, an own accessor in V8 whose getter may run
+`Error.prepareStackTrace`, and the `cause` the options give are left
+unstated: a read of either is refused. `cause?: unknown` admits every value
+an error holds or lacks; `stack?: string` holds of an error given to
+external code where the engine's `stack` reads a string, which V8's does
+unless an `Error.prepareStackTrace` returns another value (observed under
+Node: a hook returning 5 makes it a number; the source writes no
+`Error.prepareStackTrace`). The trust this reading states:
+`Error.prototype` holds `name` as a data property whose value is `"Error"`
+throughout execution: external code installs no accessor there and writes no
+other value (`invalid-error-prototype-name-getter`, run under Node: a getter
+returns a number; the source reaches neither `Object.defineProperty` nor
+`Error.prototype`); external code installs no `Error.prepareStackTrace`
+returning what is no string; and a value a unit receives at `Error`, or at
+an interface extending it, meets the
+[caller contract](DESIGN.md#trust-surface)'s clause for errors.
 
 ### `Array.isArray` and `instanceof Array`
 

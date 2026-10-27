@@ -532,13 +532,14 @@ JavaScript does on a record or dictionary clause, whose members are objects
 without call code: such an object owns the key as a field the model keeps,
 inherits it from a class's prototype object, which the model's prototype
 chain holds, or, an error, inherits `name` from `Error.prototype`, which the
-model's error lacks. A value a unit receives meets the
+model states on the error's link ([`JSON` and
+`Error`](SOURCE-CONTRACTS.md#json-and-error)), so the test answers `true` in
+both. A value a unit receives meets the
 [caller contract](DESIGN.md#trust-surface): a stated optional field `in`
 finds reads a value of its type, and a key a key bound excludes it neither
-owns nor inherits. An error the program builds meets no type stating `name`
-(`invalid-error-optional-name`): `new Error(m)`'s result meets no `Error`,
-and an open object type establishes no optional field it does not state;
-where `name` is unstated, both answers of the test are checked. An arrow or callable clause, a
+owns nor inherits. An open object type establishes no optional field it does
+not state, so an error is not read at `{ name?: number }` through `object`
+(`invalid-error-optional-name`). An arrow or callable clause, a
 function's, makes the test refused:
 
 ```math
@@ -938,7 +939,7 @@ construction serves the family, at the class's prototype and the message its
 base gives:
 
 ```math
-\mathsf{new}\ D(\vec a)\;\equiv\;\{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,\mu_D\},\ \ldots\textit{base},\ \varphi\}
+\mathsf{new}\ D(\vec a)\;\equiv\;\{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,\mu_D,\ \mathit{name}{:}\,\texttt{"Error"}\},\ \ldots\textit{base},\ \varphi\}
 ```
 
 ```math
@@ -964,7 +965,8 @@ refused at it. The options are bound after it at `Error`'s stated options
 An implicit constructor forwards both; options of a type not stating
 `cause` are refused either way (`invalid-error-super-options-getter`,
 `invalid-error-implicit-options-getter`, run under Node). The instance's own keys are its declared fields;
-`e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
+`e.message` reads $`\mu_D`$; `e.name` reads `"Error"`, the value
+`Error.prototype.name` holds ([`JSON` and `Error`](SOURCE-CONTRACTS.md#json-and-error)); `e instanceof D` finds $`\kappa_D`$ on
 $`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
 `Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
 the Boolean).
@@ -981,12 +983,14 @@ prototypes. Each operation is in one of three groups.
 Observations that agree:
 
 - `e.message` and a destructuring `{ message }` read the message, or `""`,
-  in both: $`\mu_D`$ on the link.
+  in both: $`\mu_D`$ on the link; `e.name` and `{ name }` read `"Error"`, on
+  `Error.prototype` in JavaScript and on the link in the model, and
+  `"name" in e` is `true` in both.
 - `e instanceof D` walks the chain in both, finding $`\kappa_D`$;
   `instanceof Error` is the intrinsic stating a Boolean.
 - `Object.keys(e)` and `{ ...e }` see the declared fields in both: the
-  message and `stack` are not enumerable in JavaScript, and not own in the
-  model.
+  message and `stack` are not enumerable in JavaScript, `name` is inherited,
+  and none is own in the model.
 - `Object.values(e)` and `Object.entries(e)` hand over the values of the
   same own enumerable fields, by the overlay's obligated contracts; evidence
   search finds no derivation of either at an instance holding a prototype
@@ -1022,6 +1026,13 @@ Operations excluded, refused with a location:
   own property shadows a method, and a field or a parameter property defines
   or assigns the own property where the model would add an enumerable field
   (`invalid-error-subclass-cause-field`);
+- an instance member, a parameter property and a constructor's
+  `this.name = e` named `name`, of a class extending `Error` at any depth: a
+  method would stand on the class's prototype, before `Error.prototype`,
+  where the model's link stands before it, and a field would be an own
+  `name` beside the link's, which the model's error cannot state
+  (`invalid-error-subclass-name-field`, `invalid-error-subclass-name-write`,
+  run under Node);
 - another library base (`TypeError`, `Map`, an ambient class).
 
 #### Reserved writes
@@ -1037,6 +1048,8 @@ which a later copy, `Object.keys` or an exact-key claim observes. The
 restriction is one policy of two parts: a set $`R`$ of reserved keys, here
 $`R = \{\texttt{"message"}, \texttt{"stack"}, \texttt{"cause"}\}`$, and an exclusion of the
 receivers that may hold them, here every object owning the prototype key.
+`name` is not in $`R`$: an error inherits it, and an assignment creates an own
+enumerable `name` in JavaScript, as the model's write does.
 Lean's lowering decides it on the claims evidence establishes, at every
 write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
 $`T`$ when $`T`$ is of clause rows (`plainTy`), its declared names expanded

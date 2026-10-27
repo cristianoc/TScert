@@ -58,9 +58,8 @@ too, and `constructor` and `toString`, which `Object.prototype` holds
 (`inKeyRefusal`). An object of the fragment that is no function owns one of
 them only as a field the model keeps, or inherits it from a class's prototype
 object, which the model's chain holds, or, an error, inherits `name` from
-`Error.prototype`, which the model's error lacks; no type an error the
-program builds meets states `name`. A value a unit receives meets the caller
-contract on its inherited keys. -/
+`Error.prototype`, which the model states on the error's link. A value a unit
+receives meets the caller contract on its inherited keys. -/
 def functionKeys : List String := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
 
 /-- `key in o` looks the key up along `o`'s prototype chain; the model's test
