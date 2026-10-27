@@ -2640,7 +2640,7 @@ whose contracts state no footprint where they read it and nothing of
 `stack` in their results: Node's `structuredClone` (an `unknown` result),
 `assert.throws` with a validation object (`void`),
 `assert.ifError` of an error, which reads it as it throws, where its stated
-empty footprint does not apply, and every failing `assert` call, which
+empty footprint does not apply, and an `assert` call's failure where it
 builds an `AssertionError` (observed under Node: each calls an installed
 `Error.prepareStackTrace`). Every other operation reading it is refused
 (`e.stack`; `console.log`, `console.error`, `String`, a template literal or
