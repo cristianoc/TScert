@@ -1,14 +1,14 @@
 <section id="next" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · order of work</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The open cases, least new assumption first</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">What stays open, ordered by the trust each adds, least first</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:46%;text-align:left;font-weight:600">Step</th><th style="width:36%;text-align:left;font-weight:600">Cases</th><th style="width:18%;text-align:left;font-weight:600">Trust</th></tr>
-<tr><td>Readings with no new assumption: "name" in x (cause 3), a library type as callback context (cause 7)</td><td><span style="color:#2b5b9c">blocker-in-name-object</span>, <span style="color:#2b5b9c">blocker-closure-map-context</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
-<tr><td>Imported classes read through the import (cause 5)</td><td><span style="color:#2b5b9c">blocker-instanceof-imported-class</span></td><td><span style="color:#8b2f4b">the import's declaration</span></td></tr>
-<tr><td>Error's options (cause 6)</td><td><span style="color:#2b5b9c">blocker-error-super-options</span>, <span style="color:#2b5b9c">blocker-error-options</span></td><td><span style="color:#8b2f4b">ECMAScript's Error</span></td></tr>
-<tr><td>Contracts for Node values with methods, a kind of entry no contract has yet: fs and Buffer (cause 2), createHash (cause 4)</td><td><span style="color:#2b5b9c">blocker-node-buffer-contract</span>, <span style="color:#2b5b9c">blocker-node-hash-contract</span></td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
+<tr><th style="width:52%;text-align:left;font-weight:600">Step</th><th style="width:30%;text-align:left;font-weight:600">Cases</th><th style="width:18%;text-align:left;font-weight:600">Trust</th></tr>
+<tr><td>1. A type naming every non-null object, which typeof x === "object" and x !== null narrow unknown to (cause 3)</td><td><span style="color:#2b5b9c">blocker-in-name-object</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
+<tr><td>2. A library type as a callback parameter's context (cause 7)</td><td><span style="color:#2b5b9c">blocker-closure-map-context</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
+<tr><td>3. An Error read at TypeScript's type, name included (cause 6, returning the Error)</td><td><span style="color:#2b5b9c">blocker-error-options-return</span></td><td><span style="color:#8b2f4b">Error.prototype's name</span></td></tr>
+<tr><td>4. A stated type for Node's Buffer, treated as a Uint8Array, also for update with bytes (causes 2 and 4), a new form of entry</td><td>no case yet</td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Each step turns its gap cases into verified ones; the census and the diagnostic census, run once on main after a merge, then measure what it moved.</li>
-<li>Estimated cost order, which overrides the ranking by size: readings that add no assumption first; an imported class rests on what imports already rest on; Error's options are one more stated constructor; new forms of entry come last.</li>
+<li>The census and the diagnostic census, run once on main after the merges of e93eb63–960767f, measure what the closed and narrowed causes gained and rank what stays open.</li>
+<li>The order is by trust added, which overrides the ranking by size: steps 1 and 2 add none, step 3 one stated property, step 4 a new form of entry.</li>
 </ul>
 </section>
