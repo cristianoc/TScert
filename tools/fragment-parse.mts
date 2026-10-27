@@ -27,7 +27,7 @@ import type { DeclarationIdentity, StatedEffect, TypeDefinition, TypeTerm } from
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { requireWellFormed, wellFormedRefusal } from "./wire-strings.mts";
+import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -1117,7 +1117,7 @@ export function parseFile(file: string, carriesContext: boolean = false,
     const { ast, modules } = parseModules(file, carriesContext, tsconfigPath, resolutionFile, seen, lowerModule);
     const whole = { ...ast, modules };
     // A source string the wire cannot carry as itself (SOURCE-FRAGMENT.md).
-    requireWellFormed(whole, "gate");
+    requireWellFormedText(JSON.stringify(whole), "gate");
     return whole;
   });
 }
@@ -1151,9 +1151,9 @@ export function parseFragment(file: string, tsconfigPath: string | undefined, re
   seen: (diagnostic: SeenDiagnostic) => void, lower: (request: ModuleRequest) => LoweredModule<ModuleText>): string {
   return failingAsTool(file, () => {
     const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower);
-    requireWellFormed(ast, "gate");
-    for (const m of modules) if (m.illFormed !== null) throw Error(m.illFormed);
     const text = JSON.stringify(ast);
+    requireWellFormedText(text, "gate");
+    for (const m of modules) if (m.illFormed !== null) throw Error(m.illFormed);
     const empty = `,"modules":[]}`;
     if (!text.endsWith(empty)) throw Error("tool failure: the fragment does not end with its modules");
     return `${text.slice(0, -empty.length)},"modules":[${modules.map((m) => m.text).join(",")}]}`;
@@ -1209,9 +1209,9 @@ export function lowerModule(request: ModuleRequest): LoweredModule<ModuleAst> {
 /** `lowerModule`'s lowering with the module's entry as text. */
 export function lowerModuleText(request: ModuleRequest): LoweredModule<ModuleText> {
   const lowered = lowerModule(request);
-  return lowered.refused !== undefined ? lowered
-    : { module: { text: JSON.stringify(lowered.module), illFormed: wellFormedRefusal(lowered.module, "gate") },
-      imported: lowered.imported };
+  if (lowered.refused !== undefined) return lowered;
+  const text = JSON.stringify(lowered.module);
+  return { module: { text, illFormed: wellFormedTextRefusal(text, "gate") }, imported: lowered.imported };
 }
 
 /** The fragment of `file` without its modules, and each program module it

@@ -397,6 +397,39 @@ discarded.
   as a case.
 - **Commit:** the introducing commit, `Parsed manifests and worker results keep their JSON type`.
 
+### A wire document's strings checked at `unknown`
+
+`illFormedString` of `tools/wire-strings.mts`, which finds a string of a
+wire document that is not well-formed Unicode, took the document at
+`unknown` and read `value.pos` after `"pos" in value` on an open object
+("field read on non-object"; the diagnostic census of 5dfb065 reports it in
+`illFormedString`, `requireWellFormed` and `wellFormedRefusal`). Its readers
+pass a value `JSON.parse` returned; its writers (`parseFile`,
+`parseFragment` and `lowerModuleText` of `tools/fragment-parse.mts`) pass
+the document they are about to write with `JSON.stringify`, whose strings
+are the strings the text carries.
+
+- **Rewrite:** the check takes `Json`, `JSON.parse`'s result. A reader
+  passes its parsed value (`decodeFlowDocument` and `decodeGraph` take
+  `Json`); a writer passes the text it writes to
+  `requireWellFormedText` or `wellFormedTextRefusal`, which parse the text
+  back and check that, where the text holds an escape `\ud8`–`\udf`:
+  `JSON.stringify` writes a lone surrogate as such an escape and a
+  well-formed string as itself, so a text without one holds no lone
+  surrogate. A writer refuses the same documents with the same message: a
+  string of the document is a string of the text, and the nearest
+  enclosing object stating `pos` states the same span in the text. The
+  span is written as `[start,end)` where `pos` is two numbers, as every
+  span of the Fragment is, and left out otherwise, where the original
+  joined any array.
+- **Pattern:** a check of the data a document carries reads the document
+  as the format's parsed value: at the reader, the parse; at the writer,
+  the text parsed back.
+- **Functions:** `illFormedString`, `requireWellFormed`,
+  `wellFormedRefusal`, `requireWellFormedText`, `wellFormedTextRefusal`;
+  `invalid-lone-surrogate-string` is the writer's refusal as a case.
+- **Commit:** the introducing commit, `A wire document's strings are checked at its JSON type`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

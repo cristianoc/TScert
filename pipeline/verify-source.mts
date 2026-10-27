@@ -14,6 +14,7 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
 import { keepRunDirectories, ownedRun, requireDiskSpace, runDirectory, runRoot, withinRunDirectory } from "./run-directory.mts";
+import type { Json as ParsedJson } from "../tools/calculus.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
@@ -34,9 +35,10 @@ export const invocationLog = "invocations.jsonl";
  * exists. The assertion stands for the parser's output; it is not checked
  * before the test reads it. */
 export function readFragmentFile(file: string): Ast {
-  const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
+  const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
   requireWellFormed(parsed, file);
-  return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
+  const fragment: unknown = parsed;
+  return fragment as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
 /** The file identity a run's Fragment names, its snapshot's path: what the
@@ -50,9 +52,10 @@ export function sourceKey(artifacts: string): string {
  * its type, and no TypeScript decoder of the claims exists; the assertion
  * stands for the producer's output, unchecked before the test reads it. */
 export function readClaimsFile(file: string): SourceClaims {
-  const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
+  const parsed: ParsedJson = JSON.parse(wireText(readFileSync(file), file));
   requireWellFormed(parsed, file);
-  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
+  const claims: unknown = parsed;
+  return claims as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
 const here = import.meta.dirname;

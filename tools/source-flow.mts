@@ -1,4 +1,5 @@
 /** Claim-independent execution graphs supplied by Lean to the producer. */
+import type { Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 
@@ -540,7 +541,7 @@ const bindingPlan = (value: unknown): void => {
   }
 };
 
-export function decodeFlowDocument(value: unknown): FlowDocument {
+export function decodeFlowDocument(value: Json): FlowDocument {
   requireWellFormed(value, "flow document");
   const owners = new Set<string>();
   for (const raw of array(value)) {
@@ -683,5 +684,6 @@ export function decodeFlowDocument(value: unknown): FlowDocument {
       }
     });
   }
-  return value as FlowDocument; // asserted: every field, action variant, node identity and edge target is checked above.
+  const document: unknown = value;
+  return document as FlowDocument; // asserted: every field, action variant, node identity and edge target is checked above.
 }
