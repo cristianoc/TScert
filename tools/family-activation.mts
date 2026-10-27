@@ -94,12 +94,12 @@ function digestOf(real: string, inventory: readonly string[]): string {
  * commas, `null` as the empty string; an object through
  * `Object.prototype.toString`, `"[object Object]"`, unless it owns a
  * `toString`, which, as JSON data, is not callable, so that `String` finds
- * no callable conversion (its `valueOf` returns the object) and throws, with
- * the message Node gives. */
+ * no callable conversion (its `valueOf` returns the object) and throws a
+ * `TypeError`, with the message Node gives. */
 function stringOfJson(value: Json): string {
   if (typeof value !== "object" || value === null) return String(value);
   if (Array.isArray(value)) return value.map((x: Json) => (x === null ? "" : stringOfJson(x))).join(",");
-  if (Object.hasOwn(value, "toString")) throw Error("Cannot convert object to primitive value");
+  if (Object.hasOwn(value, "toString")) throw new TypeError("Cannot convert object to primitive value");
   return "[object Object]";
 }
 

@@ -376,22 +376,16 @@ discarded.
   `stringOfJson` (`tools/family-activation.mts`) converts a member as
   `String` does, by its arms: a primitive by `String`; an array by joining
   its elements' conversions with commas, an element `null` as the empty
-  string; an object as `"[object Object]"`, or a throw where the object owns
-  `toString`, which JSON data never makes callable. Each reader throws where
-  the original threw: `JSON.parse`'s `SyntaxError` of a text that is no
+  string; an object as `"[object Object]"`, or a `TypeError` with Node's
+  message where the object owns `toString`, which JSON data never makes
+  callable. Each reader throws where the original threw: `JSON.parse`'s `SyntaxError` of a text that is no
   JSON, in `digestOf`, `checkInventory`, `checkedGuards` and `originOf`;
   `manifestField` catches it and answers undefined, as the original did;
-  `decodeResult` answers null where `isResult` answered false. Two
-  behaviours differ:
-  - where a manifest's `name` or `version` is an object owning `toString`,
-    at any depth of arrays, `String` throws a `TypeError` and the rewrite
-    an `Error`, with the same message, Node's `Cannot convert object to
-    primitive value`: TScert's contracts construct no `TypeError` and convert
-    no object by `String`. The front end reads a thrown error by its message (`toolFailureOf`,
-    `tools/thrown.mts`), so its reports agree;
-  - the conversion of nested arrays recurses on the call stack, so the
-    depth at which it exhausts the stack, a `RangeError`, differs from
-    Node's own `Array.prototype.join`, as any change of the frames would.
+  `decodeResult` answers null where `isResult` answered false. One
+  behaviour differs: the conversion of nested arrays recurses on the call
+  stack, so the depth at which it exhausts the stack, a `RangeError`,
+  differs from Node's own `Array.prototype.join`, as any change of the
+  frames would.
 
   `decodeResult`'s objects hold only the fields its callers read, where the
   original passed on the parsed object with any further members.

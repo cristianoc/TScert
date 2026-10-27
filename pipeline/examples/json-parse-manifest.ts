@@ -20,7 +20,7 @@ export function text(value: Json): string {
   if (Array.isArray(value))
     return value.map((x: Json) => (x === null ? "" : text(x))).join(",");
   if (Object.hasOwn(value, "toString"))
-    throw Error("Cannot convert object to primitive value");
+    throw new TypeError("Cannot convert object to primitive value");
   return "[object Object]";
 }
 export function version(source: string): string {
