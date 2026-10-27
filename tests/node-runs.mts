@@ -581,6 +581,45 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-crypto-hash-method-getter",
     "(() => { const xs = [1, 2]; hook(xs); const crypto = process.getBuiltinModule(\"node:crypto\"); crypto.createHash(\"sha256\").update; return xs.length; })()"),
     1, "invalid-node-crypto-hash-method-getter: the lookup pops the array");
+  // Node's `Buffer` and `TextDecoder`: a byte past the end is `undefined`, a
+  // write keeps its value modulo 256, a copy has no `length`, `JSON.stringify`
+  // calls `toJSON`, a replaced `toString` answers what it returns, a
+  // `subarray` getter runs at the lookup; a BOM selects UTF-16, and a
+  // malformed byte throws at `fatal`.
+  assert.equal(runImporting("invalid-node-bytes-past-end", "last(Buffer.from(\"ab\")) === undefined"), true,
+    "invalid-node-bytes-past-end: a byte past the end is undefined");
+  assert.equal(runImporting("invalid-node-bytes-write", "write(Buffer.from(\"a\"), 300)"), 44,
+    "invalid-node-bytes-write: 300 reads back as 44");
+  assert.equal(runImporting("invalid-node-bytes-spread", "copied(Buffer.from(\"ab\")) === undefined"), true,
+    "invalid-node-bytes-spread: the copy has no length");
+  assert.equal(runImporting("invalid-node-bytes-json", "JSON.parse(serialized(Buffer.from(\"a\"))).type"), "Buffer",
+    "invalid-node-bytes-json: JSON.stringify calls Buffer.prototype.toJSON");
+  assert.equal(runImporting("invalid-node-bytes-method-replaced",
+    "(() => { replace(() => 7); return typeof Buffer.from(\"a\").toString(\"utf8\"); })()"), "number",
+    "invalid-node-bytes-method-replaced: a replaced toString answers a number");
+  assert.equal(runImporting("invalid-node-bytes-method-getter",
+    "(() => { const xs = [1, 2]; hook(xs); Buffer.from(\"ab\").subarray; return xs.length; })()"), 1,
+    "invalid-node-bytes-method-getter: the lookup pops the array");
+  assert.equal(runImporting("invalid-node-bytes-length-record", "measured(Buffer.from(\"ab\")) === undefined"), true,
+    "invalid-node-bytes-length-record: the copy has no length");
+  assert.equal(runImporting("invalid-node-bytes-program-object",
+    "(() => { try { return decoded(); } catch (e) { return e.code; } })()"), "ERR_INVALID_ARG_TYPE",
+    "invalid-node-bytes-program-object: decode throws on a program's object");
+  assert.equal(runImporting("invalid-node-bytes-decoder-replaced",
+    "(() => { replace(() => 7); return typeof new TextDecoder().decode(Buffer.from(\"a\")); })()"), "number",
+    "invalid-node-bytes-decoder-replaced: a replaced decode answers a number");
+  assert.equal(runImporting("invalid-node-bytes-length-shadowed",
+    "(() => { shadow(\"wrong\"); return typeof Buffer.from(\"ab\").length; })()"), "string",
+    "invalid-node-bytes-length-shadowed: a shadowing length answers a string");
+  assert.equal(runImporting("invalid-node-bytes-in", "measured(Buffer.from(\"a\"))"), true,
+    "invalid-node-bytes-in: a view has length on its prototype chain");
+  assert.equal(runImporting("node-bytes-text-decoder", "decoded(Buffer.from([0xff, 0xfe, 0x61, 0x00, 0x62]))"), "a",
+    "node-bytes-text-decoder: a UTF-16LE byte order mark decodes the rest's whole code units");
+  assert.equal(runImporting("node-bytes-text-decoder",
+    "(() => { try { return decoded(Buffer.from([0xc3, 0x28])); } catch (e) { return e.code; } })()"),
+    "ERR_ENCODING_INVALID_ENCODED_DATA", "node-bytes-text-decoder: a malformed byte throws");
+  assert.equal(runImporting("node-fs-stat-bigint", "/^\\d+:\\d+:\\d+:\\d+:\\d+$/.test(signature(\".\"))"), true,
+    "node-fs-stat-bigint: the nanosecond times a BigIntStats owns print as integers");
   assert.equal(runImporting("invalid-node-readdir-dirent-path", "paths(\".\").every((p) => p === undefined)"), true,
     "invalid-node-readdir-dirent-path: an entry has no path");
   assert.equal(runImporting("invalid-node-assert-deep-preserving",

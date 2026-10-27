@@ -12,6 +12,7 @@
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { bigIntStats, buffer, bytes, definitions as stated, dirent } from "./library-types.mts";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
@@ -20,6 +21,9 @@ export type ModuleEntry = {
   name: string;
   /** The overload, exactly as reviewed: its text in the declaration file. */
   signature: string;
+  /** The same overload's text in another pinned `@types/node` installation,
+   * where it differs, also exactly as reviewed. */
+  alternatives?: string[];
   stated: Stated;
   /** The effect the stated signature states, where reviewed: a call at it
    * changes at most what its footprint says; absent, it may change anything. */
@@ -64,9 +68,10 @@ const pathEffect: CallEffect = { ...emptyEffect, onThrow: true };
 /** What `createHash("sha256")` returns, a `Hash` at the members the
  * overlay states (SOURCE-CONTRACTS.md, "Library modules"),
  *
- *     type Hash = { update(data: string): this; digest(encoding: "hex"): string };
+ *     type Hash = { update(data: string | Uint8Array): this; digest(encoding: "hex"): string };
  *
- * each a method of `Hash.prototype`, its receiver a `Hash`. */
+ * each a method of `Hash.prototype`, its receiver a `Hash`. A `Buffer` is a
+ * `Uint8Array` (`library-types.mts`). */
 const hashIdentity: DeclarationIdentity = { module: "tscert/crypto", name: "Hash", span: at };
 const hash: TypeTerm = { k: "reference", args: [], span: at,
   reference: { name: hashIdentity.name, span: at, arguments: [], target: hashIdentity } };
@@ -74,8 +79,13 @@ const method = (params: TypeTerm[], result: TypeTerm): TypeTerm =>
   ({ k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at }, params, rest: null, result, span: at });
 const hashDefinition: TypeDefinition = { declaration: hashIdentity, parameters: [], bases: [],
   expression: { k: "object", stringIndex: null, calls: [], span: at, fields: [
-    field("update", method([atom("string")], { k: "self", span: at }), false),
+    field("update", method([union(atom("string"), bytes)], { k: "self", span: at }), false),
     field("digest", method([text("hex")], atom("string")), false)] } };
+
+/** `readFileSync`'s overload without an encoding, as each pinned
+ * installation declares its result. */
+const readBytesText = (declared: string): string =>
+  `export function readFileSync(\n        path: PathOrFileDescriptor,\n        options?: {\n            encoding?: null | undefined;\n            flag?: string | undefined;\n        } | null,\n    ): ${declared};`;
 
 /** The standard streams of a child: standard output piped, the others piped,
  * ignored or inherited. */
@@ -275,11 +285,18 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("encoding", union(text("utf8"), atom("undefined")), true),
         field("recursive", union(no(), atom("undefined")), true),
         field("signal", atom("undefined"), true)] }],
-      result: { k: "array", presence: "readable", readonly: false, span: at, element: { k: "object", stringIndex: null,
-        calls: [], span: at, fields: [{ ...field("name", atom("string"), false), readonly: false },
-          { ...field("parentPath", atom("string"), false), readonly: false },
-          ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"].map(name => field(name, { k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at },
-            params: [], rest: null, result: atom("unknown"), span: at }, false))] } } } },
+      result: { k: "array", presence: "readable", readonly: false, span: at, element: dirent } },
+    definitions: [stated.dirent] },
+  // `readdirSync(path)` with a string path and no options reads the
+  // default options' `recursive`, `encoding` and `withFileTypes`, a frozen
+  // object of no property (Node 25.2.1's `lib/fs.js`), and returns a fresh
+  // array of the entries' names, strings decoded as UTF-8; a path it cannot
+  // read throws. It runs no code of the client's on a string path. The call
+  // states no effect.
+  { module: "fs", name: "readdirSync",
+    signature: "export function readdirSync(\n        path: PathLike,\n        options?:\n            | {\n                encoding: BufferEncoding | null;\n                withFileTypes?: false | undefined;\n                recursive?: boolean | undefined;\n            }\n            | BufferEncoding\n            | null,\n    ): string[];",
+    stated: { binders: [], params: [atom("string")],
+      result: { k: "array", presence: "readable", readonly: false, element: atom("string"), span: at } } },
   // `statSync(path)` with a string path and no options stats what the path
   // names, its symbolic links followed, and returns a fresh `Stats`; a path
   // that names nothing, or one it cannot stat, throws (`throwIfNoEntry`
@@ -306,6 +323,18 @@ export const modulesOverlay: readonly ModuleEntry[] = [
       ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"]
         .map(name => field(name, { k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at },
           params: [], rest: null, result: atom("unknown"), span: at }, false))] } } },
+  // `statSync(path, options)` with a string path and options naming
+  // `bigint: true` reads, of the options, `bigint` and `throwIfNoEntry`
+  // (Node 25.2.1's `lib/fs.js`), both stated: at `throwIfNoEntry` absent,
+  // `undefined` or `true` a path that names nothing throws, as without
+  // options. It returns a fresh `BigIntStats` (`library-types.mts`), whose
+  // numbers are bigints. It runs no code of the client's at the stated
+  // options. The call states no effect.
+  { module: "fs", name: "statSync",
+    signature: "(\n            path: PathLike,\n            options: StatSyncOptions & {\n                bigint: true;\n            },\n        ): BigIntStats;",
+    stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at,
+      fields: [field("bigint", yes(), false), field("throwIfNoEntry", union(yes(), atom("undefined")), true)] }],
+      result: bigIntStats }, definitions: [stated.bigIntStats] },
   // `writeFileSync(file, data)` with a path and a string writes the string,
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A
   // path it cannot open or write, or one holding a NUL character, throws.
@@ -358,6 +387,19 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "readFileSync",
     signature: "export function readFileSync(\n        path: PathOrFileDescriptor,\n        options:\n            | {\n                encoding: BufferEncoding;\n                flag?: string | undefined;\n            }\n            | BufferEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"), text("utf8")], result: atom("string") } },
+  // `readFileSync(path)` with a string path and no options opens the file,
+  // reads it whole into a fresh `Buffer` (`library-types.mts`) and closes
+  // it; a path it cannot open or read throws. It opens, reads and closes
+  // through `fs.openSync`, `fs.readSync` and `fs.closeSync`, writable
+  // properties of the module's object other code may replace, and allocates
+  // through `Buffer.allocUnsafe`, `Buffer.concat` and `Buffer.prototype.slice`
+  // (Node 25.2.1's `lib/fs.js`): the call states no effect, and its result
+  // is a `Buffer` under the host assumption that `Buffer`'s and
+  // `Buffer.prototype`'s functions are Node's own (SOURCE-CONTRACTS.md,
+  // "Stated library types"). The two texts are the two pinned `@types/node`
+  // installations'.
+  { module: "fs", name: "readFileSync", signature: readBytesText("NonSharedBuffer"), alternatives: [readBytesText("Buffer")],
+    stated: { binders: [], params: [atom("string")], result: buffer }, definitions: [stated.buffer] },
   // `existsSync(path)` with a string tests whether the path exists on the
   // file system and returns a Boolean; it does not throw. It runs no code of
   // the client's on a string.
@@ -397,7 +439,9 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // call states no effect. The result's `update` and `digest` are own data
   // properties of `Hash.prototype`, a host assumption as `Dirent`'s tests
   // are (SOURCE-CONTRACTS.md, "Library modules"). `update(data)` with a
-  // string validates it, hashes it as UTF-8 and returns the receiver;
+  // string validates it and hashes it as UTF-8, with a view of bytes (a
+  // `Uint8Array`, a `Buffer`) hashes its bytes, and returns the receiver; a
+  // value meeting the view's type that is no view throws;
   // `digest("hex")` converts the encoding by a template, a string's own
   // value, marks the hash finalized and returns the digest as hexadecimal
   // digits, a string. Either throws on a hash already digested. Each reads
@@ -405,7 +449,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // may install a getter, and writes host state: both state no effect.
   { module: "crypto", name: "createHash",
     signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
-    stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition] },
+    stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition, stated.bytes] },
   // `node:path`'s string functions compute a path from strings. `dirname`
   // and `basename` with an optional suffix validate their strings and
   // compute from them alone (Node 25.2.1's lib/path.js): they run no code of
@@ -431,6 +475,12 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "path", name: "sep", signature: 'readonly sep: "\\\\" | "/";', constant: true,
     stated: { binders: [], params: [], result: union(text("\\"), text("/")) } },
 ];
+
+/** The texts an entry reviews its overload as: its signature and its
+ * alternatives. */
+export function reviewedTexts(entry: ModuleEntry): readonly string[] {
+  return [entry.signature, ...entry.alternatives ?? []];
+}
 
 /** A declaration's text as messages print it: white space collapsed. */
 export function reviewedText(declaration: string): string {

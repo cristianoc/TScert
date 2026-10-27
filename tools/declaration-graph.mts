@@ -21,13 +21,14 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTy
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
+import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
+import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -105,11 +106,19 @@ export interface SeenDiagnostic {
 export type LibraryType =
   /** `dense`: the host package's node list, which has no hole. */
   | { k: "array"; readonly: boolean; dense?: true }
-  | { k: "mapped"; parameters: number; template: Mapped };
+  | { k: "mapped"; parameters: number; template: Mapped }
+  /** A type the overlay of library types states (`library-types.mts`): a
+   * reference to its definition, which takes no arguments. */
+  | { k: "stated"; identity: DeclarationIdentity };
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
     fail: (message: string) => never, record?: TermScope["record"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  if (library.k === "stated") {
+    if (args.length) return fail(`${library.identity.name} is read at the type the overlay of library types states, which takes no type arguments`);
+    return { k: "reference", args: [], span,
+      reference: { name: library.identity.name, span, arguments: [], target: library.identity } };
+  }
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
@@ -426,8 +435,10 @@ export function collectDeclarations(file: string, options: {
   globals?: readonly Span[];
   /** Told each of the client's global type names, at its first reference
    * (`globals`), that TypeScript binds to a library type read at its meaning
-   * rather than joining the graph (`LibraryType`). */
-  library?: (span: Span, library: LibraryType) => void;
+   * rather than joining the graph (`LibraryType`), and each imported one the
+   * overlay of library types states, at its import declaration: its local
+   * name and its meaning. */
+  library?: (span: Span, library: LibraryType, local: string) => void;
   /** Told each definition that is a record written as one: an interface or
    * a type alias read as its declared body, outside a class and a host
    * type (`NamedRecords`, named-record.mts). */
@@ -562,6 +573,13 @@ export function collectDeclarations(file: string, options: {
    * `%ElementAt%`, which reads it, join the values. */
   elementReads?: readonly Span[];
   hostElement?: (span: Span) => void;
+  /** The client's reads `e.length`. Each of these and of the element reads
+   * whose object TypeScript types as views of bytes only
+   * (`library-types.mts`), at a number key for an element, is reported to
+   * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
+   * which joins the values. */
+  lengthReads?: readonly Span[];
+  byteRead?: (span: Span, intrinsic: string) => void;
   /** The client's regular expression literals: each is reported to
    * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
    * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
@@ -1335,8 +1353,41 @@ export function collectDeclarations(file: string, options: {
     // declaration TypeScript binds the name to must be the library's, so a
     // client that declares its own `Array`, merging into the global one, is
     // read as any other interface.
+    // The definitions the overlays state for library values and types
+    // (`ModuleEntry.definitions`, `GlobalEntry.definitions`, `TypeEntry`),
+    // each joining the document once, wherever it is named.
+    const overlayDefinitions: TypeDefinition[] = [];
+    const defineOverlay = (definition: TypeDefinition): void => {
+      if (!overlayDefinitions.some(d => d.declaration.module === definition.declaration.module &&
+          d.declaration.name === definition.declaration.name)) overlayDefinitions.push(definition);
+    };
+    // A type the overlay of library types states (`library-types.mts`): every
+    // part TypeScript binds the name to as a type is one its entry reviews,
+    // by origin and heading. Its declarations are not read.
+    const statedType = (nodes: readonly (Node | undefined)[]): TypeEntry | null => {
+      const parts = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
+      const [first] = parts;
+      const name = first?.name?.text;
+      if (!first || !name || parts.some(p => p.name?.text !== name)) return null;
+      const entry = typeEntry(name, parts.map(part => {
+        const file = part.getSourceFile();
+        const end = ts.isTypeAliasDeclaration(part) ? part.end : part.members.pos;
+        return { origin: declarationOrigin(file, libraryFile),
+          heading: reviewedText(file.text.slice(part.getStart(file), end)) };
+      }));
+      return entry;
+    };
+    // Whether a name is a stated type, without its definitions joining the
+    // document: for the sweep, which reads no type.
+    const isStatedType = (identifier: Identifier): boolean =>
+      statedType((targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve())) !== null;
     const library = (identifier: Identifier, what: string): LibraryType | null => {
       const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      const stated = statedType(nodes);
+      if (stated) {
+        defineOverlay(stated.definition);
+        return { k: "stated", identity: stated.definition.declaration };
+      }
       // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
       // host type of its own, a node list read as a dense readonly array of
       // its elements. Its heritage and members are not read.
@@ -1857,12 +1908,9 @@ export function collectDeclarations(file: string, options: {
     // the entries' statements; the declarations' types are not read.
     // The declarations a read entry's statement names (`ModuleEntry.definitions`)
     // join the document once each.
-    const moduleDefinitions: TypeDefinition[] = [];
     const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
         Omit<ValueRoot, "binding"> => {
-      for (const definition of entries.flatMap(e => e.definitions ?? []))
-        if (!moduleDefinitions.some(d => d.declaration.module === definition.declaration.module &&
-            d.declaration.name === definition.declaration.name)) moduleDefinitions.push(definition);
+      for (const definition of entries.flatMap(e => e.definitions ?? [])) defineOverlay(definition);
       // A function's overloads, or the methods of the object a module
       // exports whole (`export = path`, `path.PlatformPath`'s); a namespace
       // merged into a function (`realpathSync.native`) is its other members.
@@ -1914,7 +1962,7 @@ export function collectDeclarations(file: string, options: {
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {
-        const match = overloads.find(o => o.getText(o.getSourceFile()) === entry.signature);
+        const match = overloads.find(o => reviewedTexts(entry).includes(o.getText(o.getSourceFile())));
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
@@ -2321,6 +2369,13 @@ export function collectDeclarations(file: string, options: {
           }
         }
         if (!nodes.some(isTypeDeclaration)) continue;
+        // An imported type the overlay of library types states is read at
+        // that statement, as a library type is.
+        const known = library(binding.at, binding.name);
+        if (known?.k === "stated") {
+          options.library?.(binding.span, known, binding.name);
+          continue;
+        }
         const declaration = lookup(binding.at, binding.name);
         // An imported alias TypeScript computes from its parameters has no
         // equation, as a local one has none: each application is a computed type.
@@ -2419,7 +2474,7 @@ export function collectDeclarations(file: string, options: {
         }
         const known = library(identifier, identifier.text);
         if (known) {
-          options.library?.(span, known);
+          options.library?.(span, known, identifier.text);
           continue;
         }
         const node = lookup(identifier, identifier.text);
@@ -2787,6 +2842,15 @@ export function collectDeclarations(file: string, options: {
       listIntrinsics(span, [hasPropertyName]);
       options.hostIn?.(span);
     }
+    // A value TypeScript types as views of bytes only (`TypeEntry.view`):
+    // each part's symbol a name the overlay of library types states as one.
+    const bytesOnly = (parts: readonly Type[]): boolean => parts.length > 0 && parts.every(t =>
+      statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.view === "bytes");
+    const viewRead = (span: Span, name: string): void => {
+      listIntrinsics(span, [name]);
+      defineOverlay(typeDefinitions.bytes);
+      options.byteRead?.(span, name);
+    };
     for (const span of options.elementReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isElementAccessExpression(read)) throw new DeclarationError(span, "TypeScript element read missing");
@@ -2794,11 +2858,23 @@ export function collectDeclarations(file: string, options: {
       const key = checker.getTypeAtLocation(read.argumentExpression);
       const objects = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
+      // `b[k]` of a view of bytes at a number, a literal one included.
+      if (bytesOnly(objects) && keys.length && keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral)))) {
+        viewRead(span, byteAtName);
+        continue;
+      }
       if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t)) &&
           keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
         listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);
       }
+    }
+    // `b.length` of a view of bytes.
+    for (const span of options.lengthReads ?? []) {
+      const read = expressionAt(client, span);
+      if (!read || !ts.isPropertyAccessExpression(read)) throw new DeclarationError(span, "TypeScript length read missing");
+      const object = checker.getTypeAtLocation(read.expression);
+      if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) viewRead(span, byteLengthName);
     }
     // A regular expression literal is a call of the intrinsic of its shape,
     // listed once per shape at the first literal of it.
@@ -2922,10 +2998,7 @@ export function collectDeclarations(file: string, options: {
           },
           construct: span => options.globalConstruct?.(span),
           library: libraryReference,
-          define: definition => {
-            const key = (d: TypeDefinition) => `${d.declaration.module}#${d.declaration.name}`;
-            if (!selections.some(d => key(d) === key(definition))) selections.push(definition);
-          } });
+          define: defineOverlay });
         if (!selection) continue;
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
         // A global only constructed is its construct signatures, as a class
@@ -3351,6 +3424,21 @@ export function collectDeclarations(file: string, options: {
         const symbol = type.getAliasSymbol() ?? type.getSymbol();
         const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
         const [node] = nodes;
+        // A type the overlay of library types states, at the arguments its
+        // statement holds at (`TypeEntry.arguments`), or at any where it
+        // states none.
+        const stated = statedType(nodes);
+        if (stated) {
+          const actuals = isTypeReference(type) ? checker.getTypeArguments(type) : [];
+          const written = (t: TypeTerm): string =>
+            JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
+          if (stated.arguments && actuals.length && (actuals.length !== stated.arguments.length ||
+              actuals.some((a, i) => written(contextualTerm(a, span)) !== written(stated.arguments?.[i] ?? { k: "atom", name: "never", span }))))
+            throw Error(`the contextual type ${text()} is read at the type the overlay of library types states, which holds at ${stated.name}'s default arguments alone`);
+          defineOverlay(stated.definition);
+          const id = stated.definition.declaration;
+          return { k: "reference", reference: { name: id.name, span, arguments: [], target: id }, args: [], span };
+        }
         if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
           if (ts.isClassDeclaration(node) && !isInstanceReference(type))
             throw Error(`the contextual type ${text()} is a class constructor, not an instance type`);
@@ -3750,6 +3838,8 @@ export function collectDeclarations(file: string, options: {
           if (verifierAlias(name) === "Within") return null;
           // A target matters only where it has a bounded parameter.
           if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
+          // A stated type takes no arguments and has no declaration read.
+          if (isStatedType(name)) return null;
           const node = lookup(name, name.text);
           return partners.get(node) ?? [node];
         },
@@ -3793,6 +3883,11 @@ export function collectDeclarations(file: string, options: {
             if (exported && selected) return { symbol: exported, entity: selected };
             return null;
           };
+          // A type name the overlay of library types states, where a type
+          // reference writes it: its declarations are not read.
+          const reference = name.parent;
+          if (reference && ts.isTypeReferenceNode(reference) && reference.typeName === name && isStatedType(name))
+            return { declarations: [], members: () => [], stated: true };
           return resolved(name)?.entity ?? null;
         },
         moduleOf: specifier => entityOf(checker.getSymbolAtLocation(specifier)),
@@ -3876,7 +3971,7 @@ export function collectDeclarations(file: string, options: {
     // read at `Array.prototype`'s contract as one the client writes is; the
     // declarations that contract names join the graph.
     if (!arrayProto.length &&
-        [values, definitions, applications, selections, moduleDefinitions, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
+        [values, definitions, applications, selections, overlayDefinitions, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
       const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
       const from = valueStarts.length;
       try {
@@ -3886,7 +3981,7 @@ export function collectDeclarations(file: string, options: {
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
-    definitions.push(...selections, ...moduleDefinitions, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
+    definitions.push(...selections, ...overlayDefinitions, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // The graph is complete: each mapped type read at a named type before
@@ -4295,6 +4390,32 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (forms && forms.length > 1) throw Error(`${what} states several forms, read only as construct signatures`);
     return { ...rest, ...(forms?.[0] ? { stated: forms[0] } : {}) };
   };
+  // A global whose declared type is not read (`GlobalEntry.constructs`):
+  // its one declaration as reviewed, every use a `new` expression, read at
+  // the stated forms.
+  const declaredText = declaration.getText(declaration.getSourceFile()).trim();
+  const constructed = variables.length === 1 ? globalEntry(context.overlay, name, undefined,
+    signature => signature === declaredText, declarationOrigin(declaration.getSourceFile(), context.libraryFile)) : undefined;
+  if (constructed?.constructs) {
+    const written = typeof constructed.stated === "function" ? constructed.stated(context.library) : constructed.stated;
+    const forms = written === undefined ? [] : Array.isArray(written) ? written : [written];
+    const [form] = forms;
+    if (!form || forms.length !== 1 || form.binders.length || form.rest)
+      throw Error(`new ${name}(…) is reviewed with no one construct form`);
+    for (const definition of constructed.definitions ?? []) context.define(definition);
+    for (const use of uses) {
+      const parent = use.parent;
+      if (!ts.isNewExpression(parent) || parent.expression !== use)
+        throw Error(`the global ${name} is only constructed`);
+      if ((parent.arguments?.length ?? 0) > form.params.length || parent.arguments?.some(ts.isSpreadElement))
+        throw Error(`new ${name}(…) is read with at most ${form.params.length} argument(s)`);
+    }
+    const source = declaration.getSourceFile();
+    return { construct: { declaration: { module: context.identityOf(source), name,
+      span: [declaration.getStart(source), declaration.end] }, typeParams: [],
+      type: { k: "constructor", effect: constructed.effect ?? ordinaryEffect, params: form.params, rest: null,
+        result: form.result, span: [declaration.getStart(source), declaration.end] } } };
+  }
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;
   const written = annotation && ts.isTypeReferenceNode(annotation)

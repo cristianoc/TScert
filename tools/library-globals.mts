@@ -30,6 +30,7 @@ import { asyncCompleteName, instanceOfErrorName, promiseResolveName, newPromiseN
   symbolKeyForName } from "./intrinsics.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
+import { buffer, bytes, definitions as stated, textDecoder } from "./library-types.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -61,6 +62,11 @@ export type GlobalEntry = {
    * global is read as a value only where every call signature's entry says
    * so. */
   value?: true;
+  /** The entry's signature is the variable's declaration, whose type is
+   * not read: the global is only constructed, `new X(…)` read at the stated
+   * forms as construct signatures. For a global whose declared type the
+   * reader has no reading of (Node's `TextDecoder`, a conditional type). */
+  constructs?: true;
   /** The call runs the global's construct steps: the parser writes `Error(m)`
    * as `new Error(m)`, and the call is read at `stated` as a construct
    * signature, joining the global's construct signatures. */
@@ -271,8 +277,48 @@ const processEntries: GlobalEntry[] = [
         stated: { binders: [], params: [signal, listener(atom("string"))], result: { k: "self", span: at } } }))]),
 ];
 
+/** Node's `Buffer` and `TextDecoder` (SOURCE-CONTRACTS.md, "Stated library
+ * types"), at the members the repository's code reads, each pinned to its
+ * declaration in `@types/node`; the two texts of a member are the two pinned
+ * installations' (the tools' and `library-project`'s). */
+const bytesEntries: GlobalEntry[] = [
+  // `Buffer.from(s)` with a string returns a fresh `Buffer` (Node 25.2.1's
+  // `lib/buffer.js`, `fromString`), its own memory or a view into the
+  // module's pool. It writes the string's UTF-8 bytes through `utf8Write`, a
+  // writable property of `Buffer.prototype` other code may replace, whose
+  // answer also sets the view's length and the pool's next offset: the
+  // contents, and the memory's disjointness from the pool's other views,
+  // hold only where that is Node's own. The stated type depends on neither. It reads `Buffer.poolSize`, a writable property of `Buffer`
+  // other code may make a getter, to choose: no effect is stated.
+  ...["from(string: WithImplicitCoercion<string>, encoding?: BufferEncoding): Buffer<ArrayBuffer>;",
+    "from(data: WithImplicitCoercion<Uint8Array | readonly number[] | string>): Buffer<ArrayBuffer>;"].map(
+    (signature): GlobalEntry => ({ host: contract, origin: node, global: "Buffer", member: "from", signature,
+      stated: { binders: [], params: [atom("string")], result: buffer }, definitions: [stated.buffer] })),
+  // `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its
+  // internal slots, throwing otherwise, and compares their bytes in the
+  // native layer: `-1`, `0` or `1`. It runs no code and writes nothing on
+  // normal return.
+  { host: contract, origin: node, global: "Buffer", member: "compare",
+    signature: "compare(buf1: Uint8Array, buf2: Uint8Array): -1 | 0 | 1;", effect: emptyEffect,
+    stated: { binders: [], params: [bytes, bytes], result: { k: "union", span: at, parts: ["-1", "0", "1"].map(
+      (n): TypeTerm => ({ k: "literal", name: "number", text: n, span: at })) } }, definitions: [stated.bytes] },
+  // `new TextDecoder(label, options)` (Node 25.2.1's
+  // `lib/internal/encoding.js`, the ICU build) converts the label by a
+  // template, a string's own value, and throws where it names no supported
+  // encoding; of the options it reads `fatal` and `ignoreBOM`, both stated,
+  // by ToBoolean. It writes the decoder's state to symbol-keyed properties
+  // of the fresh decoder, which a setter `TextDecoder.prototype` gets from
+  // other code would intercept: no effect is stated.
+  ...["TextDecoder: typeof globalThis extends {\n            onmessage: any;\n            TextDecoder: infer TextDecoder;\n        } ? TextDecoder\n            : typeof _TextDecoder"].map(
+    (signature): GlobalEntry => ({ host: contract, origin: node, global: "TextDecoder", signature, constructs: true,
+      stated: { binders: [], params: [optional(atom("string")), optional({ k: "object", stringIndex: null, calls: [], span: at,
+        fields: ["fatal", "ignoreBOM"].map(name => ({ name, optional: true, readonly: true, type: optional(atom("boolean")), span: at })) })],
+        result: textDecoder }, definitions: [stated.textDecoder, stated.bytes] })),
+];
+
 export const globalsOverlay: readonly GlobalEntry[] = [
   ...processEntries,
+  ...bytesEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,
   // as `console.log` below: each argument at a primitive, no effect stated.
   ...["log(message?: any, ...optionalParams: any[]): void;", "error(message?: any, ...optionalParams: any[]): void;",

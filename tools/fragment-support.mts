@@ -327,9 +327,11 @@ export type EnumInfo = { end: number; ambient: boolean; members: EnumEntry[] };
 export type EnumEntry = { name: string; node: ts.EnumMember; span: Span; nameSpan: Span; init: Span | null;
   value: string | number | undefined };
 
-/** Whether an element access is written rather than read: the target of an
- * assignment, a compound assignment or an update, or `delete`'s operand. */
-export function writtenElement(node: ts.ElementAccessExpression): Within<{ value: "any"; store: "grow" }, boolean> {
+/** Whether an element or property access is written rather than read: the
+ * target of an assignment, a compound assignment or an update, or
+ * `delete`'s operand. */
+export function writtenElement(node: ts.ElementAccessExpression | ts.PropertyAccessExpression):
+    Within<{ value: "any"; store: "grow" }, boolean> {
   let at: Node = node;
   while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
   const parent = at.parent;

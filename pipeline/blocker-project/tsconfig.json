@@ -11,6 +11,10 @@
     "typeRoots": ["../../tools/node_modules/@types"],
     "lib": ["es2022"]
   },
-  "include": ["../examples/blocker-*.ts"],
+  "include": [
+    "../examples/blocker-*.ts",
+    "../examples/node-bytes-*.ts",
+    "../examples/invalid-node-bytes-*.ts"
+  ],
   "files": ["../../tools/resolvable.d.ts"]
 }

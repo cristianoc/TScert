@@ -24,6 +24,9 @@ export type Entity = {
   /** A value the language defines, `undefined` or `globalThis`, which no
    * declaration states. */
   intrinsic?: true;
+  /** A type name the overlay of library types states (`library-types.mts`),
+   * whose declarations are not read. */
+  stated?: true;
 };
 
 /** What the sweep needs from the declaration graph. */
@@ -149,7 +152,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const determining = (entity: Entity): Determined => {
     // An entity has declarations: one the checker synthesised without one
     // has no origin found, and its type no annotation states.
-    if (entity.intrinsic) return { nodes: [] };
+    if (entity.intrinsic || entity.stated) return { nodes: [] };
     if (!entity.declarations.length) return { inferred: null };
     const declarations = entity.declarations.filter(d => !context.library(d) &&
       (d.getSourceFile() !== context.client || withinTypeDeclaration(d)));
