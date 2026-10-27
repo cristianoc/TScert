@@ -1426,6 +1426,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // A guard writing the field it tests, or a call between the guard and
     // the reread, leaves a number where the list's length is returned.
     ["invalid-guard-field-write", "String(wrong({ args: [1, 2] }))", "undefined"],
+    ["invalid-guard-field-saved", "String(wrong({ f: 'a' }))", "undefined"],
     ["invalid-guard-field-call", "(() => { const b = { args: [1, 2] }; return String(wrong(b, () => { b.args = 0; })); })()", "undefined"],
     ["invalid-slot-path-write", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-loop", "String(lastKey({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, 2))", "undefined"],

@@ -3391,10 +3391,15 @@ reread, primitive and object contents alike: `isList(x.args)` saves the read
 $`s\leftarrow x.\mathit{args}`$ with its link, `call-keep` keeps the link,
 the promise types $`s`$ where the guard answered `true`, and the reread is
 `read-linked` to $`s`$ (an object's contents) or `read-sliced` by the
-`link-fact` atom (a primitive's). A write, or a call at a signature not
-keeping the heap, between the test and the reread discards the link as
-before (`invalid-guard-field-write`, `invalid-guard-field-call`, run under
-Node; a declared guard states no effect, `invalid-guard-field-declared`).
+`link-fact` atom (a primitive's). A call keeping the heap between them
+keeps the link (`guard-field-keeping-call`); a write, or a call at a
+signature not keeping the heap, discards it (`invalid-guard-field-write`,
+`invalid-guard-field-call`, `invalid-guard-field-saved`, run under Node; a
+guard known by its declaration alone states no effect,
+`invalid-guard-field-declared`). The lowering gives a guard's type to the
+path's witness, the slot holding the value the field's read gave, by a
+claim the edges check; a predicate never reads the field again in its
+place.
 
 ##### Every other expression
 
