@@ -446,6 +446,35 @@ spread arguments are refused (`optional-method-call-object-refused`). On a `null
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
 
+An element read in the body, `r?.[k]` or a later link `r?.a[k]`, is the
+read the same object and key make outside a chain, on the chain's value: at
+a key TypeScript types as `number`, a call of
+[$`\%\mathsf{ElementAt}\%`$](PROGRAM-TYPING.md#arrays) where TypeScript types
+its object as arrays, tuples and node lists only, and of
+[$`\%\mathsf{ByteAt}\%`$](SOURCE-CONTRACTS.md#stated-library-types) where it
+types it as views of bytes only, the `null` and `undefined` parts of the
+object's type left out first, since the chain skips those values:
+
+```math
+\frac{e[k]\ \text{a link of a chain}\quad \tau_k=\mathtt{number}\quad \tau_e\setminus\{\mathtt{null},\mathtt{undefined}\}\ \text{arrays, tuples and node lists}\quad e[k]\ \text{no callee}}
+     {⟦e[k]⟧=\%\mathsf{ElementAt}\%(⟦e⟧,⟦k⟧)}\ \textsf{chain-element}
+```
+
+and $`\%\mathsf{ByteAt}\%`$ alike over views of bytes. The type TypeScript
+gives decides only which read the parser writes; the call is checked at its
+argument, the chain's value, as any call is, so an object that may still be
+`undefined` (`o?.a[k]` with an optional `a`, or `o?.a![k]`, whose cast is an
+obligation) is refused at the call. The key is evaluated in the body, only
+where the chain does not skip (`optional-chain-dynamic-index`,
+`node-bytes-optional-chain`; `invalid-optional-chain-dynamic-index`, run
+under Node: `undefined` past the end). An element read that a call takes as
+its callee, inside a chain or outside, stays a member read, so its call
+passes the object as the receiver, which a call of an intrinsic would not.
+A call of a member read through a wrapper the emit erases (`!`, `as`, `<T>`,
+`satisfies`) passes that receiver too, which a call of the asserted value
+would not: it is refused (`wrapped-member-call-refused`,
+`wrapped-member-chain-call-refused`).
+
 A chain compared with a literal, `x?.p ⊙ c` or `c ⊙ x?.p`, with $`\odot`$
 one of `===`, `!==`, `==`, `!=`, $`c`$ a literal, $`x`$ `this` or a name
 the file binds outside an ambient context (`inertRead`), and $`.p`$ one or

@@ -45,7 +45,7 @@ import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInNa
   throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
-import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
+import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement, callTarget } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
@@ -1682,11 +1682,13 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findReceiverTargets);
   };
   if (!carriesContext) findReceiverTargets(source);
-  // Element reads `e[k]` other than a write's target: TypeScript's types of
-  // the object and the key decide whether `%ElementAt%` reads it.
+  // Element reads `e[k]`, links of an optional chain (`r?.[k]`, `r?.a[k]`)
+  // among them, other than a write's target and a call's callee, whose call
+  // passes the object as its receiver: TypeScript's types of the object and
+  // the key decide whether `%ElementAt%` or `%ByteAt%` reads it.
   const elementReadNodes: Node[] = [];
   const findElementReads = (node: Node): void => {
-    if (ts.isElementAccessExpression(node) && !node.questionDotToken && !writtenElement(node))
+    if (ts.isElementAccessExpression(node) && !writtenElement(node) && !callTarget(node))
       elementReadNodes.push(node);
     node.forEachChild(findElementReads);
   };

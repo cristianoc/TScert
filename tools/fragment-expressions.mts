@@ -13,7 +13,7 @@ import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -340,16 +340,12 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
         key: { k: "lit", pos: gate.span(node.argumentExpression), lit: { a: "numberlit", v: "1" } } };
     // `b[k]` of a view of bytes is `%ByteAt%(b, k)` (`library-types.mts`).
     const byteAt = gate.byteReads.get(gate.span(node).join(":"));
-    if (byteAt !== undefined) {
-      const bracket = node.expression.end;
-      return gate.intrinsic(byteAt, gate.span(node), [bracket, bracket + 1],
+    if (byteAt !== undefined)
+      return gate.intrinsic(byteAt, gate.span(node), elementBracket(node),
         [gate.expr(node.expression), gate.expr(node.argumentExpression)]);
-    }
-    if (gate.hostElements.has(gate.span(node).join(":"))) {
-      const bracket = node.expression.end;
-      return gate.intrinsic(elementAtName, gate.span(node), [bracket, bracket + 1],
+    if (gate.hostElements.has(gate.span(node).join(":")))
+      return gate.intrinsic(elementAtName, gate.span(node), elementBracket(node),
         [gate.expr(node.expression), gate.expr(node.argumentExpression)]);
-    }
     const [start, end] = gate.span(node.argumentExpression);
     const symbol = gate.symbolKeys.get(`${start}:${end}`);
     if (symbol !== undefined)
@@ -626,6 +622,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     // A property reference, parenthesized or not, is a call target that
     // keeps its object as the receiver (EvaluateCall). A copied method is a
     // value, and takes the `apply` form below.
+    if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
     let target: Expression = node.expression;
     while (ts.isParenthesizedExpression(target)) target = target.expression;
     // `super.m(args)` calls the method the base class's prototype holds,
@@ -852,8 +849,17 @@ export function chainLink(this: Gate,
     const [start, end] = gate.span(node.argumentExpression);
     const symbol = gate.symbolKeys.get(`${start}:${end}`);
     if (symbol !== undefined) return { k: "read", pos, field: { symbol }, e: object };
+    // `[k]` of a view of bytes, or of an array, a tuple or a node list at a
+    // `number` key, reads through `%ByteAt%` or `%ElementAt%`, as outside a
+    // chain, the intrinsic read at `[`.
+    const byteAt = gate.byteReads.get(gate.span(node).join(":"));
+    if (byteAt !== undefined)
+      return gate.intrinsic(byteAt, pos, elementBracket(node), [object, gate.expr(node.argumentExpression)]);
+    if (gate.hostElements.has(gate.span(node).join(":")))
+      return gate.intrinsic(elementAtName, pos, elementBracket(node), [object, gate.expr(node.argumentExpression)]);
     return { k: "index", pos, e: object, key: gate.expr(node.argumentExpression) };
   }
+  if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
   let target: Expression = node.expression;
   while (ts.isParenthesizedExpression(target)) target = target.expression;
   // `o.m?.(a)` reads `o.m` once, the chain's tested value, and calls it with

@@ -1257,7 +1257,9 @@ A read `xs[k]` of an array, a tuple or a compiler-API node list
 types as `number`, no literal, is the host's read of the property the number
 names, a call of the intrinsic $`\%\mathsf{ElementAt}\%`$ (`intrinsics.mts`),
 which the parser writes where TypeScript's types of the object, each part of
-a union alike, and the key are these:
+a union alike, and the key are these, a link of an optional chain among them
+([optional chains](SOURCE-ELABORATION.md#optional-chains)), and a read a call
+takes as its callee not:
 
 ```math
 \mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
