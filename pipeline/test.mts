@@ -1851,6 +1851,45 @@ for (const signature of ["plain", "promise"] as const) control(async (): Promise
 });
 
 control(async (): Promise<void> => {
+  // The producer refuses `invalid-guard-field-saved-callback`, so the
+  // verifier is given its twin's claims, at the negative's call spans:
+  // the comparison's left operand is the field's value read before the
+  // callback, which may write the field, and the lowering compares that
+  // saved value, never a second read of the field. The reread after the
+  // call is then at the field's contract, and the claim that it holds "a"
+  // is refused in search, and in checking the twin's evidence. A lowering
+  // comparing the field read again accepts these claims.
+  const real = run("invalid-guard-field-saved-callback");
+  const twin = run("guard-field-saved-twin-prettier-ignore");
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  const test = source.indexOf("x.f === reset(x)");
+  const call = source.indexOf("reset(x)", test);
+  const fn = must(claims.functions.find(f => f.name === "wrong"), "wrong");
+  const point = must(fn.expressions.find(e => e.pos[0] === test), "the comparison's operand").point;
+  const param = (name: string) => must(fn.params.find(p => p.name === name), name).type;
+  const literal = must(fn.expressions.find(e => e.pos[0] === call), "the literal").type;
+  const tested = must(fn.expressions.find(e => e.pos[0] === test && e.pos[1] > call), "the comparison").type;
+  fn.expressions = fn.expressions.filter(e => e.pos[0] !== call && !(e.pos[0] === test && e.pos[1] > call));
+  fn.expressions.push(
+    { point, pos: [call, call + "reset".length], type: param("reset"), current: null },
+    { point, pos: [call + "reset(".length, call + "reset(x".length], type: param("x"), current: null },
+    { point, pos: [call, call + "reset(x)".length], type: literal, current: null },
+    { point, pos: [test, call + "reset(x)".length], type: tested, current: null });
+  // The callback may change every location, and so may `wrong`.
+  fn.footprint = { value: "any", store: "any" };
+  fn.onThrow = false;
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const forged = writeClaims(real, "guard-field-saved-twin", claims);
+  const reread = source.indexOf("return x.f.length");
+  refusedAt(real, forged, "guard-field-saved-twin", `source incoming edge obligation at [${reread},`);
+  assert.match(invoke(forged, join(twin, "evidence.json"), real), /refusal/);
+  process.stdout.write("a comparison of a field's value saved before a callback: the reread after it refused\n");
+});
+
+control(async (): Promise<void> => {
   // A call between a guard and the field's reread keeps the guard's
   // finding only at a signature keeping the heap: `count` claimed at the
   // ordinary effect, which lets it change every location, is refused at the
