@@ -44,9 +44,10 @@ const outputOf = (file: string, args: string[]): Promise<string> => new Promise(
     else done(stdout);
   });
 });
-/** How many slice groups the diagnostic census checks at once: half the cores,
- * each group's stages running in its own process. */
-const diagnosticJobs = Math.max(1, Math.floor(availableParallelism() / 2));
+/** How many slice groups the diagnostic census checks at once, each group's
+ * stages running in its own process: `TSCERT_DIAGNOSTIC_JOBS`, or all cores
+ * but two, left to the system and to other work. */
+const diagnosticJobs = Math.max(1, Number(process.env["TSCERT_DIAGNOSTIC_JOBS"]) || availableParallelism() - 2);
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** One slice: its file, the function it holds, and its text. */
