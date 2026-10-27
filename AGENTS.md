@@ -95,13 +95,24 @@ run on main with the verified census, which goes past each slice's first
 refusal and reports every refusal it meets:
 
 1. **Where proofs fail:** its record's `ranking` groups the refusals by
-   reason, with the functions and statements each affects. A reason
-   blocking much code that no pipeline case shows gets a case example: the
-   smallest source with that refusal, its header naming the census
-   functions it stands for.
+   reason, with the functions and statements each affects. Every reason
+   that names one construct counts, whatever stage refuses it, the
+   producer's included; a reason that may stand for several causes (a
+   failed search, an expression with no claimed type) is first split into
+   its causes by the functions it meets. A refusal that exists only because
+   an earlier refusal made a value `unknown` counts toward that earlier
+   reason, not its own. A reason blocking much code that
+   no pipeline case shows gets a case example: the smallest source with
+   that refusal, its header naming the census functions it stands for.
 2. **Priority:** the gap cases are worked in the order of the reasons they
    show, by the code those block; each is answered by the routes of
    [deciding what a refusal calls for](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
+   Before a route is chosen, a reason's sites are split by whether
+   TScert's own code discards what it already knew (a parsed JSON value
+   typed `unknown`): those sites are repaired in the code. A case blocked
+   by external code no contract describes yet is answered by describing
+   it, in whatever shape it needs; the trust that description states is
+   reviewed by the owner before the merge, not waited on.
    The [gap-priorities deep dive](docs/deep-dives/gap-priorities) presents
    the ranking and each case, closed or open.
 
