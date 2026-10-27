@@ -786,9 +786,10 @@ prepared predicate without replaying an effectful source operand. -/
       -- An assertion function's call leaves its actual, the name its saved
       -- operand was read from, at the promise's type from its return on.
       let saved := (← executionBindings).origins
+      let witnesses ← executionWitnesses
       let original := fun (n : String) => match saved.lookup n with
         | some (.var _ o) => o
-        | _ => n
+        | _ => (witnesses.lookup n).getD n
       let called := match operation with
         | .invokeSaved source _ _ _ => source
         | _ => origin
@@ -839,8 +840,16 @@ prepared predicate without replaying an effectful source operand. -/
             else executionPredicate G Δ scope' previous.origins origin
         | _ => executionPredicate G Δ scope' previous.origins origin
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
-      withExecutionBindings ⟨(binding.name,A)::previous.types,(binding.name,origin)::previous.origins⟩
+      -- A value read from a member path is the path's witness's value.
+      let witness := match origin with
+        | .read .. => (pathWitness scope' origin).bind fun i =>
+            (scope'[i]?).map fun (b : ScopeBinding Tree) => b.source.name
+        | _ => none
+      let rest := withExecutionBindings ⟨(binding.name,A)::previous.types,(binding.name,origin)::previous.origins⟩
         (executePlanTail recursive fc (bound :: scope'.tail) Δ next k)
+      match witness with
+      | some w => withExecutionWitness binding.name w rest
+      | none => rest
   | .choose source _ test binding evaluate yes no =>
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
       let some result := Δ.head? | throw "internal execution plan: no condition result"
@@ -848,6 +857,7 @@ prepared predicate without replaying an effectful source operand. -/
       -- Its value expression must prove this equivalent expanded type.
       let A ← byClause result
       let previous ← executionBindings
+      let witnesses ← executionWitnesses
       let origin := executionPredicate (SourceTypes.graph (← table)) Δ scope' previous.origins origin
       let G := SourceTypes.graph (← table)
       let tag := match test with
@@ -870,10 +880,12 @@ prepared predicate without replaying an effectful source operand. -/
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
         let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
-        -- A promise's actual is the name its saved operand was read from.
+        -- A promise's actual is the name its saved operand was read from,
+        -- or the witness of the member path it was read from, which holds
+        -- the same value (HOST-FAMILIES.md, "Entries").
         let original := fun (n : String) => match previous.origins.lookup n with
           | some (.var _ o) => o
-          | _ => n
+          | _ => (witnesses.lookup n).getD n
         let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original else
           match alias with
           | some i => Δ.set i T

@@ -137,6 +137,11 @@ private structure GraphFrame where
   executionTypes : List (String × Ty Tree) := []
   /-- Immutable aliases retained by evaluated operands for predicate refinement. -/
   executionOrigins : List (String × Fragment.Expr) := []
+  /-- Saved values read from a member path, each with the path's witness
+  slot, which holds the value read: a promise about the saved value is one
+  about the witness, a claim the graph's edges check. Read by promise
+  narrowing alone, never by predicates or dispatch. -/
+  executionWitnesses : List (String × String) := []
   /-- Prepared atoms consume saved operands; the plan owns source observations. -/
   atomicPrepared : Bool := false
   /-- Source metadata for a primitive whose executable operands are saved values. -/
@@ -308,6 +313,14 @@ def executionType (name : String) : Compiler (Option (Ty Tree)) :=
   readBuilt fun s => s.executionTypes.lookup name
 
 def executionOrigins : Compiler (List (String × Fragment.Expr)) := readBuilt (·.executionOrigins)
+
+def executionWitnesses : Compiler (List (String × String)) := readBuilt (·.executionWitnesses)
+
+/-- A saved value read from a member path names the path's witness for its
+continuation (`executionWitnesses`). -/
+def withExecutionWitness (name witness : String) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with executionWitnesses := (name,witness)::s.executionWitnesses })
+    (fun before after => { after with executionWitnesses := before.executionWitnesses }) action
 
 /-- A saved binding's computed type is visible for its continuation. -/
 def withExecutionType (name : String) (A : Ty Tree) (action : Compiler α) : Compiler α :=

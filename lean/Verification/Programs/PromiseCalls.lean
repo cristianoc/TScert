@@ -815,11 +815,49 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
     (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
 
+/-- Whether a signature's effect keeps the contents of every location a
+call starts with on a normal return: the empty footprint, on the receiver's
+array store as well (PROGRAM-TYPING.md, "A call that keeps the heap"). -/
+def keepsHeap (e : Effect) : Bool := e.footprint.le .empty && !e.receiverStore
+
+/-- The heap facts of a call's entry kept on a normal return of a call at a
+promise signature: every one where its effect keeps the heap (`call-keep`),
+else those no call changes. -/
+def promiseOutput (effect : Effect) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  if keepsHeap effect then HeapKnowledge.shift k else HeapExpressionRules.ordinaryOutput k
+
+/-- A normal return at an effect keeping the heap returns in an extension of
+the heap the call started in. -/
+theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {before after : Heap} {v}
+    (hp : e.post r before after v) : before.IsPrefix after := by
+  simp only [keepsHeap, Bool.and_eq_true, Bool.not_eq_true'] at hk
+  exact Footprints.Closed.holds_empty.mp ((CallEffects.Effect.within_holds hp.1 hk.2).mono hk.1)
+
+theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
+    {r : Tm} {v} (hk : HeapKnowledge.Holds k ρ h) (hp : effect.post r h h' v) :
+    HeapKnowledge.Holds (promiseOutput effect k) (push v ρ) h' := by
+  unfold promiseOutput
+  split
+  · rename_i hkeep
+    obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hp
+    exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
+  · exact ordinaryOutput_holds hk v h'
+
+/-- What the ordinary output states holds wherever a promise call's output
+holds: it keeps less. -/
+theorem promiseOutput_ordinary {effect : Effect} {k : HeapKnowledge.Knowledge} {τ : Env} {h : Heap}
+    (hk : HeapKnowledge.Holds (promiseOutput effect k) τ h) :
+    HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) τ h := by
+  unfold promiseOutput at hk
+  split at hk
+  · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2⟩
+  · exact hk
+
 /-- **A call at a promise signature** returns where the promise holds: its
 callee meets the promise signature it holds beside the one the call is
 checked at, at the same receiver and actuals, so the call's own run is one the
 promise is about (`CallEffects.call_safe`). The result meets the claim's type,
-and the facts kept are those no call changes. -/
+and the facts kept are those its effect keeps (`promiseOutput`). -/
 theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {e : Evidence ι}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {effect a T} {ys : List (Yield ι)}
     (hp : promiseOf G e = some (effect, a, T))
@@ -829,7 +867,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {k ρ n W h} (he : EnvOk G (claim e).context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (fun m U u => meaning G (claim e).type m U u ∧ YieldsOk G ys ρ m U u)
-      (fun h' v => HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) (push v ρ) h') n W h
+      (fun h' v => HeapKnowledge.Holds (promiseOutput effect k) (push v ρ) h') n W h
       (instantiate 0 ρ (claim e).term) := by
   rcases e with ⟨⟨Γ, t, A⟩, r, ps⟩
   simp only [claim] at he hy ⊢
@@ -918,7 +956,11 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) := by
       simp [instantiate, instantiateArgs_eq_map, htf, htr]
     rw [hterm]
-    refine consequence (fun m U u hu => ?_) (fun h' v _ => ordinaryOutput_holds hk v h') hs'
+    have hsel : s.effect = effect := by
+      revert hsome
+      split <;> (try split) <;> intro hsome <;> simp_all
+    refine consequence (fun m U u hu => ?_) (fun h' v hq => promiseOutput_holds hk (hsel ▸ hq)) hs'
+    clear hsel
     split at hsome
     · rename_i p heff
       split at hsome
@@ -977,5 +1019,73 @@ theorem onlyUndef_sound {G : NormalGraph ι} {A : Ty ι} {n W v}
   have h := List.all_eq_true.mp h.2 c hc
   cases c <;> simp_all [PositiveNormalization.semWithArgs, undefT]
 
+/-! ### A call that keeps the heap (PROGRAM-TYPING.md, "A call that keeps the heap")
+
+A call whose selected signature's footprint is within the empty one, its
+receiver's store included, returns normally in an extension of the heap it
+started in, so every heap fact of its entry still holds there (`call-keep`).
+A call at a promise signature keeps them only where the promise signature's
+effect keeps the heap too, as its node's check (`checkYields`) requires. -/
+
+/-- Whether an ordinary step's evidence is a call `call-keep` applies to: at
+the sequent `j`, at a selected signature keeping the heap, its derivation
+checked, and, at a promise signature, that signature's effect keeping the
+heap as well. -/
+@[nospecialize] def keepsCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
+  match e with
+  | .ordinary p =>
+    decide (claim p = j) && ExpressionEffects.selectedCallWithin .empty p &&
+      (match promiseOf G p with | some (effect, _, _) => keepsHeap effect | none => true) &&
+      checkTreeUsing G images p codes sums
+  | _ => false
+
+theorem keepsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold keepsCall at hc
+  split at hc
+  · rename_i p
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
+    refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
+      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh)
+    obtain ⟨vs, rfl⟩ := Footprints.Closed.holds_empty.mp hq
+    exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
+  · contradiction
+
 end
 end Verification.PromiseCalls
+
+namespace Verification.HeapExpressionRules
+open ProgramCertificates PositiveGraphs HeapObservations
+open PositiveCertificates (InstanceImageCheck)
+
+/-- A checker whose ordinary steps that are calls keeping the heap keep every
+heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
+`base`'s. -/
+@[nospecialize] def Checker.keepingCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    if PromiseCalls.keepsCall G images j e codes sums then pure (HeapKnowledge.shift k) else base.run j k e codes sums
+  select := fun j k e codes sums =>
+    if PromiseCalls.keepsCall G images j e codes sums then pure (HeapKnowledge.shift k) else base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i hkeep
+      cases hc
+      exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh
+
+/-- The steps' rules, a call keeping the heap keeping every heap fact, each
+keeping its input's stable links. -/
+@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) : Checker G images :=
+  (Checker.steps G images).keepingCalls.keepingStable
+
+end Verification.HeapExpressionRules

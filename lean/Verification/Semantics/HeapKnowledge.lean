@@ -423,12 +423,42 @@ theorem observedAtoms_sound {G : NormalGraph ι} {A : Ty ι} {tag q R n W v}
     exact ⟨.strLit _, by simp, rfl⟩
   · exact (atoms_sem h n W v).mp (BranchRefinement.tagSlice_sound hm ho)
 
+/-- What every live read link states of its cell where its value's slot has
+a type denoting finitely many primitive predicates (`link-fact`,
+PROGRAM-TYPING.md, "A call that keeps the heap"): reading the field gives that
+value, so it meets one of them. -/
+def typedLinkFacts (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
+  k.links.filterMap fun g => if g.alias then none else
+    match Γ[g.value]? with
+    | some A => (atoms G A).map fun R => ⟨g.cell, R, g.field⟩
+    | none => none
+
+/-- The knowledge with its read links' typed facts (`typedLinkFacts`). -/
+def withTypedLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Knowledge :=
+  { k with cells := typedLinkFacts G Γ k ++ k.cells }
+
+theorem withTypedLinks_holds {G : NormalGraph ι} {Γ k ρ n W h}
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) : Holds (withTypedLinks G Γ k) ρ h := by
+  refine ⟨fun f hf => ?_, hk.2.1, hk.2.2⟩
+  rcases List.mem_append.mp hf with hf | hf
+  · obtain ⟨g, hg, hf⟩ := List.mem_filterMap.mp hf
+    split at hf
+    · cases hf
+    · rename_i ha
+      split at hf
+      · rename_i A hA
+        obtain ⟨R, hR, rfl⟩ := Option.map_eq_some_iff.mp hf
+        have hv := (atoms_sem hR n W (ρ g.value)).mp (he.2 g.value A hA)
+        exact linkFacts_holds hk hv _ (List.mem_map.mpr ⟨g, List.mem_filter.mpr ⟨hg, by simp [ha]⟩, rfl⟩)
+      · cases hf
+  · exact hk.1 f hf
+
 /-- A tag observation combines the saved predicate with the tested value's
 ordinary type. This retains facts such as a falsy object-or-undefined being
 undefined, whose broad saved nullish predicate alone is insufficient. -/
 @[nospecialize] def observeTyped (G : NormalGraph ι) (Γ : List (Ty ι))
     (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Knowledge :=
-  let out := observe k slot o
+  let out := observe (withTypedLinks G Γ k) slot o
   match o, Γ[slot]? with
   | .tag tag q, some A =>
     match observedAtoms G A tag q with
@@ -449,7 +479,7 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
 theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
     (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (ho : o.holds (ρ slot)) :
     Holds (observeTyped G Γ k slot o) ρ h := by
-  have hout := observe_holds hk ho
+  have hout := observe_holds (withTypedLinks_holds he hk) ho
   unfold observeTyped
   split
   · rename_i tag q A hi
@@ -467,9 +497,9 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         · exact hout.2.1 f hf
     · have htag : ∃ a ∈ [Atom.tag tag q], a.holds (ρ slot) :=
         ⟨.tag tag q, by simp, (meaning_value (he.2 slot A hi)).1, ho⟩
-      have hout : Holds ⟨linkFacts k slot [.tag tag q] ++ (observe k slot (.tag tag q)).cells,
-          (observe k slot (.tag tag q)).values, (observe k slot (.tag tag q)).links,
-          (observe k slot (.tag tag q)).separation⟩ ρ h := by
+      have hout : Holds ⟨linkFacts k slot [.tag tag q] ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).values, (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).separation⟩ ρ h := by
         refine ⟨?_, hout.2.1, hout.2.2⟩
         intro f hf
         rcases List.mem_append.mp hf with hf | hf

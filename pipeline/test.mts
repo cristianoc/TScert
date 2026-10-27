@@ -1812,6 +1812,103 @@ control(async (): Promise<void> => {
   process.stdout.write("unequal bound member effects: refused by the producer's union signature comparison\n");
 });
 
+/** Forge the effects of the signatures a call site's callee read is claimed
+ * at, `forge` choosing and changing them; the claims keep every other row. */
+const forgeCallee = (claims: SourceClaims, fn: string, start: number, name: string,
+    forge: (arrows: Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"]) => void): void => {
+  const unit = must(claims.functions.find(f => f.name === fn), fn);
+  const callee = must(unit.expressions.find(e => e.pos[0] === start && e.pos[1] === start + name.length), `the read of ${name}`);
+  assert.ok(Array.isArray(callee.type) && callee.type.length === 1);
+  const label = callee.type[0];
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(claims.types[label], `${name}'s row`));
+  forge(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []));
+  callee.type = [claims.types.push(row) - 1];
+};
+
+for (const signature of ["plain", "promise"] as const) control(async (): Promise<void> => {
+  // A guard's call keeps the heap only where both the signature its call is
+  // checked at and its promise signature keep the receiver's store as well:
+  // either one claimed at a signature that may change it keeps no read
+  // link, and the field reread after the call is refused
+  // (PROGRAM-TYPING.md, "A call that keeps the heap").
+  const artifacts = run("guard-field-primitive");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  forgeCallee(claims, "size", source.indexOf("isText(x.f)"), "isText", (arrows) => {
+    assert.equal(arrows.length, 2);
+    for (const arrow of arrows) {
+      assert.deepEqual(arrow.effect.footprint, emptyEffect.footprint);
+      if ((arrow.effect.promise === null) === (signature === "plain"))
+        arrow.effect = { ...arrow.effect, receiverStore: true };
+    }
+  });
+  const forged = writeClaims(artifacts, `guard-receiver-store-${signature}`, claims);
+  const reread = source.indexOf("return x.f.length");
+  refusedAt(artifacts, forged, `guard-receiver-store-${signature}`, `source incoming edge obligation at [${reread},`);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  process.stdout.write(`a guard whose ${signature} signature may change its receiver's store: the field reread refused in search and in checking\n`);
+});
+
+control(async (): Promise<void> => {
+  // The producer refuses `invalid-guard-field-saved-callback`, so the
+  // verifier is given its twin's claims, at the negative's call spans:
+  // the comparison's left operand is the field's value read before the
+  // callback, which may write the field, and the lowering compares that
+  // saved value, never a second read of the field. The reread after the
+  // call is then at the field's contract, and the claim that it holds "a"
+  // is refused in search, and in checking the twin's evidence. A lowering
+  // comparing the field read again accepts these claims.
+  const real = run("invalid-guard-field-saved-callback");
+  const twin = run("guard-field-saved-twin-prettier-ignore");
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  const test = source.indexOf("x.f === reset(x)");
+  const call = source.indexOf("reset(x)", test);
+  const fn = must(claims.functions.find(f => f.name === "wrong"), "wrong");
+  const point = must(fn.expressions.find(e => e.pos[0] === test), "the comparison's operand").point;
+  const param = (name: string) => must(fn.params.find(p => p.name === name), name).type;
+  const literal = must(fn.expressions.find(e => e.pos[0] === call), "the literal").type;
+  const tested = must(fn.expressions.find(e => e.pos[0] === test && e.pos[1] > call), "the comparison").type;
+  fn.expressions = fn.expressions.filter(e => e.pos[0] !== call && !(e.pos[0] === test && e.pos[1] > call));
+  fn.expressions.push(
+    { point, pos: [call, call + "reset".length], type: param("reset"), current: null },
+    { point, pos: [call + "reset(".length, call + "reset(x".length], type: param("x"), current: null },
+    { point, pos: [call, call + "reset(x)".length], type: literal, current: null },
+    { point, pos: [test, call + "reset(x)".length], type: tested, current: null });
+  // The callback may change every location, and so may `wrong`.
+  fn.footprint = { value: "any", store: "any" };
+  fn.onThrow = false;
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const forged = writeClaims(real, "guard-field-saved-twin", claims);
+  const reread = source.indexOf("return x.f.length");
+  refusedAt(real, forged, "guard-field-saved-twin", `source incoming edge obligation at [${reread},`);
+  assert.match(invoke(forged, join(twin, "evidence.json"), real), /refusal/);
+  process.stdout.write("a comparison of a field's value saved before a callback: the reread after it refused\n");
+});
+
+control(async (): Promise<void> => {
+  // A call between a guard and the field's reread keeps the guard's
+  // finding only at a signature keeping the heap: `count` claimed at the
+  // ordinary effect, which lets it change every location, is refused at the
+  // reread, bypassing the producer, which keeps the field only across a call
+  // its claims say keeps the heap.
+  const artifacts = run("guard-field-keeping-call");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  forgeCallee(claims, "size", source.indexOf("count(x.args)"), "count", (arrows) => {
+    assert.equal(arrows.length, 1);
+    for (const arrow of arrows) arrow.effect = ordinaryEffect;
+  });
+  const forged = writeClaims(artifacts, "guard-unrestricted-call", claims);
+  const reread = source.indexOf("return n + x.args.length");
+  refusedAt(artifacts, forged, "guard-unrestricted-call", `[${reread},`);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  process.stdout.write("an unrestricted call between a guard and the field's reread: refused in search and in checking\n");
+});
+
 for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union-host", "total"]]) control(async (): Promise<void> => {
   // Only the bound function's claimed effect changes. Its hosts' members
   // permit writes, so a claim preserving all locations needs refusal.

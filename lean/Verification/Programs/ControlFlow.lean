@@ -223,7 +223,7 @@ the target's claims whatever they are (`vacuous-edge`). -/
   match P[target.label]?, C[target.label]? with
   | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
       (checkMappedResult G images Γ (entry c) target.mapping p).bind fun _ =>
-      CheckResult.ofBool (HeapKnowledge.check facts c.knowledge target.mapping && carries G Γ facts xs sources target c)
+      CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge target.mapping && carries G Γ facts xs sources target c)
   | _, _ => failure
 
 @[nospecialize] def checkTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
@@ -237,7 +237,7 @@ theorem checkTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Inst
     checkTargetUsing G images P C Γ target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => unsatisfiable G Γ || (checkMappedUsing G images Γ (entry c) target.mapping p &&
-      (HeapKnowledge.check facts c.knowledge target.mapping && carries G Γ facts xs sources target c))
+      (HeapKnowledge.check (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge target.mapping && carries G Γ facts xs sources target c))
   | _, _ => false
   ) := by
   cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
@@ -359,9 +359,9 @@ expression's; without one, by those of a slot read and of a tag test. -/
   match PromiseCalls.promiseOf G c.expression with
   | some (effect, a, T) => checkTreeUsing G images c.expression codes sums &&
       PromiseCalls.promiseYields G (result c) effect a T c.yields &&
-      (decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge) ||
-        decide (c.output = HeapExpressionRules.withStable G (entry c) c.knowledge
-          (HeapExpressionRules.ordinaryOutput c.knowledge)))
+      ([HeapExpressionRules.ordinaryOutput c.knowledge, PromiseCalls.promiseOutput effect c.knowledge].any fun out =>
+        decide (c.output = out) ||
+          decide (c.output = HeapExpressionRules.withStable G (entry c) c.knowledge out))
   | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies c.knowledge.links
       (claim c.expression).term slices)
 
@@ -737,7 +737,8 @@ theorem checkGraphResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target)
     (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) : Prop :=
   ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (MappedCovers G Γ (entry c) l.mapping ∧
-    HeapKnowledge.check facts c.knowledge l.mapping = true ∧ carries G Γ facts xs sources l c = true))
+    HeapKnowledge.check (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge l.mapping = true ∧
+      carries G Γ facts xs sources l c = true))
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge)
@@ -819,7 +820,7 @@ theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   subst d
   constructor
   · exact (covers.env he).2 witness A typed
-  · have link := (HeapKnowledge.check_sound knowledge hk).2.2.1 _ linked
+  · have link := (HeapKnowledge.check_sound knowledge (HeapKnowledge.withTypedLinks_holds he hk)).2.2.1 _ linked
     cases optional <;> simp only [Bool.false_eq_true, ite_false, ite_true] at link
     · obtain ⟨flds, cls, oid, loc, obj, key, value⟩ := link
       exact ⟨flds, cls, oid, obj, HeapFacts.ReadGave.present key value⟩
@@ -904,14 +905,23 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     unfold checkYields at hy
     split at hy
     · rename_i effect a T hp
-      simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hy
+      simp only [Bool.and_eq_true] at hy
       have hs := PromiseCalls.promiseCall_sound hp hy.1.1 hcodes hsums hy.1.2 he hf hw hh
-      rcases hy.2 with ho | ho
-      · rw [ho]
-        simpa only [entry, result, hterm] using hs
-      · rw [ho]
-        have hs' := HeapExpressionRules.withStable_sound (Γ := entry c) (out := HeapExpressionRules.ordinaryOutput c.knowledge)
-          he hf hh (by simpa only [entry] using hs)
+      have ho : ∀ out ∈ [HeapExpressionRules.ordinaryOutput c.knowledge, PromiseCalls.promiseOutput effect c.knowledge],
+          HeapObservations.SafePost (excOf G) (fun m U u => meaning G (claim c.expression).type m U u ∧ YieldsOk G c.yields ρ m U u)
+            (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h (instantiate 0 ρ (claim c.expression).term) := by
+        intro out hout
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hout
+        rcases hout with rfl | rfl
+        · exact HeapObservations.consequence (fun _ _ _ hv => hv) (fun _ _ hq => PromiseCalls.promiseOutput_ordinary hq) hs
+        · exact hs
+      obtain ⟨out, hout, hor⟩ := List.any_eq_true.mp hy.2
+      rcases Bool.or_eq_true_iff.mp hor with hsame | hstable
+      · rw [decide_eq_true_eq.mp hsame]
+        simpa only [entry, result, hterm] using ho out hout
+      · rw [decide_eq_true_eq.mp hstable]
+        have hs' := HeapExpressionRules.withStable_sound (Γ := entry c) (out := out)
+          he hf hh (by simpa only [entry] using ho out hout)
         simpa only [entry, result, hterm] using hs'
     · have ht := checker.sound hc.1.1.2 hcodes hsums he hf hw hh
       have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2.1 ht
@@ -972,7 +982,7 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h 
   exact ⟨c, hc, hcov.env he,
     PromiseCalls.impliesCheck_sound hcar.1 he (PromiseCalls.aliasImplications_holds hf.2.2.1 hi),
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
-    HeapKnowledge.check_sound hfact hf⟩
+    HeapKnowledge.check_sound hfact (HeapKnowledge.withTypedLinks_holds he hf)⟩
 
 theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h facts xs sources v0}
     (ht : BranchTargetOk G C Γ q l facts xs sources) (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h)
