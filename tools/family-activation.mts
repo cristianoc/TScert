@@ -228,7 +228,7 @@ export function familyOfGuard(entry: GuardEntry): FamilyDescription {
  * refuses, is no table: every guard of the family is then read without
  * predicate. */
 type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry>;
-  modules: ReadonlyMap<string, Readonly<Record<string, unknown>>> };
+  modules: ReadonlyMap<string, ReadonlyMap<string, unknown>> };
 /** The guard tables activated, by root and table, each with the
  * observations it was computed from (`remembered`). */
 const activeTables = new Map<string, Map<GuardTable, Remembered<Loaded | null>>>();
@@ -285,17 +285,19 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const realRoot = realPath(root);
   // A module of the package as Node loads it, the instance a program
   // importing it shares; null where the load throws.
-  // Each module loaded, by its URL; recognition reads these alone.
+  // Each module loaded, by its URL; recognition reads these alone. A
+  // module's exports are a Map by name, which holds no inherited member.
   const urlOf = (module: string): string => pathToFileURL(join(realRoot, module)).href;
-  const modules = new Map<string, Record<string, unknown>>();
-  const load = (module: string): Record<string, unknown> | null => {
+  const modules = new Map<string, ReadonlyMap<string, unknown>>();
+  const load = (module: string): ReadonlyMap<string, unknown> | null => {
     if (!Object.hasOwn(table.closure.files, module)) return null;
     const known = modules.get(urlOf(module));
     if (known) return known;
     try {
       const loaded: unknown = loadModule(realRoot, join(realRoot, module));
       if (typeof loaded !== "object" || loaded === null) return null;
-      const namespace = { ...loaded };
+      const exported: Record<string, unknown> = { ...loaded };
+      const namespace = new Map(Object.entries(exported));
       modules.set(urlOf(module), namespace);
       return namespace;
     } catch {
@@ -333,6 +335,9 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   // when a malformed table names a different declaring module or helper.
   const entryLoaded = load(table.entryModule);
   if (!entryLoaded) return null;
+  // Each helper's text, by its key, which a table states once.
+  const helperTexts = new Map(table.helpers);
+  if (helperTexts.size !== table.helpers.length) return null;
   // The names a module assigns anywhere: an assignment, compound or not, or
   // an update of a plain name.
   const assignedIn = new Map<string, Set<string>>();
@@ -402,9 +407,9 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     // the declaring module exports, of the entry's text.
     const f = functionOf(entry.module, entry.name);
     const declaring = load(entry.module);
-    const loaded = entryLoaded[entry.name];
+    const loaded = entryLoaded.get(entry.name);
     if (!f || textOf(entry.module, f) !== entry.text || !runs(loaded, entry.text) || !declaring ||
-        declaring[entry.name] !== loaded) return null;
+        declaring.get(entry.name) !== loaded) return null;
     // The dependency closure: helpers and binding edges reached.
     const helpers = new Set<string>();
     const edges = new Set<string>();
@@ -419,7 +424,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
         const imported: { module: string; name: string } | undefined = imports.get(name);
         if (local) {
           const key = `${module}#${name}`;
-          if (table.helpers[key] !== textOf(module, local)) return null;
+          if (helperTexts.get(key) !== textOf(module, local)) return null;
           if (!helpers.has(key)) { helpers.add(key); pending.push({ module, f: local }); }
         } else if (imported) {
           const edge = JSON.stringify([module, name, imported.module, imported.name]);
@@ -428,11 +433,12 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
           edges.add(edge);
           // The binding the target module exports, as Node loads it.
           const target = load(imported.module);
-          if (!target || !(imported.name in target) || target[imported.name] === undefined) return null;
+          const value = target?.get(imported.name);
+          if (value === undefined) return null;
           const helper = functionOf(imported.module, imported.name);
           if (helper) {
             const key = `${imported.module}#${imported.name}`;
-            if (table.helpers[key] !== textOf(imported.module, helper) || !runs(target[imported.name], textOf(imported.module, helper)))
+            if (helperTexts.get(key) !== textOf(imported.module, helper) || !runs(value, textOf(imported.module, helper)))
               return null;
             if (!helpers.has(key)) { helpers.add(key); pending.push({ module: imported.module, f: helper }); }
           }
@@ -478,14 +484,14 @@ export function importedExport(from: string, specifier: string, imported: string
     if (relative(root, path).split(sep)[0] === "..") continue;
     checkedInstallation(description);
     const namespace = activatedModules(description).get(resolved);
-    return namespace && Object.hasOwn(namespace, imported) ? { description, value: namespace[imported] } : null;
+    return namespace?.has(imported) ? { description, value: namespace.get(imported) } : null;
   }
   return { program: path };
 }
 
 /** Activated family modules, including the compiler entry points whose enum
  * exports C1 audits. All binding recognition uses this one module inventory. */
-function activatedModules(description: FamilyDescription): ReadonlyMap<string, Readonly<Record<string, unknown>>> {
+function activatedModules(description: FamilyDescription): ReadonlyMap<string, ReadonlyMap<string, unknown>> {
   const root = checkedInstallation(description);
   const modules = new Map(loadedGuards(description.guards, root)?.modules);
   if (description === compilerApiFamily) {
@@ -503,7 +509,7 @@ export function hostEnumObject(description: FamilyDescription, name: string): un
   checkedInstallation(description);
   if (description === compilerApiFamily) {
     for (const { namespace } of hostEnumModules)
-      if (Object.hasOwn(namespace, name)) return namespace[name];
+      if (namespace.has(name)) return namespace.get(name);
   }
   if (name !== description.tag.constants.enum) return undefined;
   return tagEnumObject(description);
@@ -522,7 +528,7 @@ export function tagEnumObject(description: FamilyDescription): unknown {
   const root = checkedInstallation(description);
   const table = description.guards;
   const entry = loadedGuards(table, root)?.modules.get(pathToFileURL(join(realPath(root), table.entryModule)).href);
-  return entry?.[description.tag.constants.enum];
+  return entry?.get(description.tag.constants.enum);
 }
 
 /** Whether a family's tag enum, declared with the members `declared` (each

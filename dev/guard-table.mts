@@ -339,7 +339,7 @@ export async function guardTable(description: FamilyDescription): Promise<GuardT
     conditions,
     entryModule: relative(root, join(root, entryFile)),
     closure,
-    helpers: Object.fromEntries([...helperTexts].sort(([a], [b]) => a < b ? -1 : 1)),
+    helpers: [...helperTexts].sort(([a], [b]) => a < b ? -1 : 1),
     guards: entries,
     excluded,
   };
@@ -361,9 +361,9 @@ export const compilerApiGuards: GuardTable = {
   conditions: ${json(table.conditions)},
   entryModule: ${json(table.entryModule)},
   closure: ${json(table.closure)},
-  helpers: {
-${Object.entries(table.helpers).map(([k, t]) => `    ${json(k)}: ${json(t)},`).join("\n")}
-  },
+  helpers: [
+${table.helpers.map(([k, t]) => `    [${json(k)}, ${json(t)}],`).join("\n")}
+  ],
   guards: [
 ${table.guards.map((e) => `    { name: ${json(e.name)}, kind: ${json(e.kind)}, domain: ${json(e.domain)}, tags: ${json(e.tags)}, onUndefined: ${json(e.onUndefined)},
       module: ${json(e.module)}, helpers: ${json(e.helpers)}, edges: ${json(e.edges)},

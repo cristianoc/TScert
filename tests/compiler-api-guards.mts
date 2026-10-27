@@ -140,7 +140,9 @@ for (const description of [compilerApiFamily, stringFamily]) {
     ["a helper more", one({ ...identifier, helpers: [helper] })],
     ["a helper less", one({ ...helped, helpers: helped.helpers.slice(1) })],
     ["an edge less", one({ ...identifier, edges: [] })],
-    ["another helper text", { ...one(helped), helpers: { ...compilerApiGuards.helpers, [helper]: "function f() {}" } }],
+    ["another helper text", { ...one(helped),
+      helpers: compilerApiGuards.helpers.map(([key, text]) => [key, key === helper ? "function f() {}" : text]) }],
+    ["a helper twice", { ...one(helped), helpers: [...compilerApiGuards.helpers, [helper, "function f() {}"]] }],
   ];
   for (const [what, table] of mismatches)
     assert.equal(activeGuards(table, root), null, `${what}: no table`);

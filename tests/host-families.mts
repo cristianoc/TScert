@@ -57,7 +57,7 @@ const description: FamilyDescription = {
   omitted: [],
   footprints: [],
   stable: { excluded: [] },
-  guards: { entryPoint: "", conditions: [], entryModule: "", closure: { files: {}, edges: [] }, helpers: {}, guards: [], excluded: [] },
+  guards: { entryPoint: "", conditions: [], entryModule: "", closure: { files: {}, edges: [] }, helpers: [], guards: [], excluded: [] },
   undefinedInputs: [],
 };
 const graph = (declarations: readonly ts.InterfaceDeclaration[]): FamilyGraph => ({
