@@ -275,12 +275,12 @@ const processEntries: GlobalEntry[] = [
  * installations' (the tools' and `library-project`'s). */
 const bytesEntries: GlobalEntry[] = [
   // `Buffer.from(s)` with a string returns a fresh `Buffer` (Node 25.2.1's
-  // `lib/buffer.js`, `fromString`): one of its own, or a view into the
-  // module's pool past every view the pool has given. It writes the string's
-  // UTF-8 bytes into it through `utf8Write`, a writable property of
-  // `Buffer.prototype` other code may replace, so the contents are the
-  // encoding only where that is Node's own; the stated type does not depend
-  // on them. It reads `Buffer.poolSize`, a writable property of `Buffer`
+  // `lib/buffer.js`, `fromString`), its own memory or a view into the
+  // module's pool. It writes the string's UTF-8 bytes through `utf8Write`, a
+  // writable property of `Buffer.prototype` other code may replace, whose
+  // answer also sets the view's length and the pool's next offset: the
+  // contents, and the memory's disjointness from the pool's other views,
+  // hold only where that is Node's own. The stated type depends on neither. It reads `Buffer.poolSize`, a writable property of `Buffer`
   // other code may make a getter, to choose: no effect is stated.
   ...["from(string: WithImplicitCoercion<string>, encoding?: BufferEncoding): Buffer<ArrayBuffer>;",
     "from(data: WithImplicitCoercion<Uint8Array | readonly number[] | string>): Buffer<ArrayBuffer>;"].map(

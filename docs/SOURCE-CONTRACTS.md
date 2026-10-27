@@ -2631,12 +2631,13 @@ where the two differ; the types are the
 [stated library types](#stated-library-types).
 
 - `Buffer.from(s)` of a string returns a fresh `Buffer` (Node's
-  `lib/buffer.js`, `fromString`), its own or a view into the module's pool
-  past every view the pool has given, into which it writes the string's
-  UTF-8 bytes through the `Buffer`'s `utf8Write`, a writable property of
-  `Buffer.prototype` other code may replace, so its contents are the
-  string's encoding only where that method is Node's own; the stated type
-  does not depend on them: $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$.
+  `lib/buffer.js`, `fromString`), its own memory or a view into the
+  module's pool, into which it writes the string's UTF-8 bytes through
+  `utf8Write`, a writable property of `Buffer.prototype` other code may
+  replace, whose answer also sets the view's length and the pool's next
+  offset; so its contents, and its memory's disjointness from the pool's
+  other views, hold only where that method is Node's own. The stated type
+  depends on neither: $`(\mathtt{string})\Rightarrow\mathit{Buffer}`$.
   It reads `Buffer.poolSize`, a writable property other code may make a
   getter, to choose, so it states no effect.
 - `Buffer.compare(a, b)` checks that each is a `Uint8Array` by its internal
