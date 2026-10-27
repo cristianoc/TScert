@@ -397,6 +397,32 @@ discarded.
   as a case.
 - **Commit:** the introducing commit, `Parsed manifests and worker results keep their JSON type`.
 
+### A field reread after a callback writing other storage
+
+`atomText` (`tools/claim-text.mts`) printed an array atom by
+`atom.required.map((t) => typeText(t, state))` and then
+`atom.optional.map(…)`, both after `isList(atom.required) &&
+isList(atom.optional)`, and a function atom's parameters by
+`atom.params.map(…)` after `typeText(atom.this, state)`. `typeText` writes
+`state.printable`, so the call keeps no heap fact
+([a call that keeps the heap](PROGRAM-TYPING.md#a-call-that-keeps-the-heap)),
+and the second read of the field is at its contract, a JSON value that may
+be no array ("a read of map through a field holding an object beside null
+or undefined"; `invalid-guard-field-call`, run under Node, is a callback
+that writes the field). The atom is parsed data `state` does not reach,
+which only separating storage an unknown call cannot reach would show
+([deferred precision](FOOTPRINTS.md#deferred-extra-precision)).
+
+- **Rewrite:** each tested field is read into a constant before the first
+  call of `typeText`: `const requiredTypes = atom.required`, `optionalTypes`,
+  `params`. A read of a field of a parsed object has no effect, so reading
+  it earlier gives the value the later read gave.
+- **Pattern:** a field a guard tested is read into a constant before a call
+  that changes storage, rather than read again after it.
+- **Functions:** `atomText`, and `typeText`, `printType` and the others
+  calling it.
+- **Commit:** the introducing commit, `Fields atomText's guards test are read before its callbacks run`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

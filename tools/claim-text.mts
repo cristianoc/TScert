@@ -107,8 +107,12 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
     isList(atom.required) &&
     isList(atom.optional)
   ) {
-    const required = atom.required.map((t) => typeText(t, state));
-    const optional = atom.optional.map((t) => typeText(t, state) + "?");
+    // Both lists are read before a callback runs: `typeText` writes `state`,
+    // and a field read after it is read at its contract.
+    const requiredTypes = atom.required;
+    const optionalTypes = atom.optional;
+    const required = requiredTypes.map((t) => typeText(t, state));
+    const optional = optionalTypes.map((t) => typeText(t, state) + "?");
     const rest = atom.rest === null ? null : typeText(atom.rest, state);
     const text =
       (isArrayPresence(atom.presence)
@@ -196,7 +200,9 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
       ") => " +
       typeText(atom.result, state)
     );
-  if (atom.a === "function" && isList(atom.params))
+  if (atom.a === "function" && isList(atom.params)) {
+    // The parameters are read before `typeText` writes `state`.
+    const params = atom.params;
     return (
       "(" +
       [
@@ -204,7 +210,7 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
         ...(isObject(atom.this) && atom.this.top === true
           ? []
           : ["this: " + typeText(atom.this, state)]),
-        ...atom.params.map((p) => typeText(p, state)),
+        ...params.map((p) => typeText(p, state)),
         ...(atom.rest === undefined
           ? []
           : ["...Array<" + typeText(atom.rest, state) + ">"]),
@@ -212,6 +218,7 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
       ") => " +
       typeText(atom.result, state)
     );
+  }
   state.printable = false;
   return atom.a ? "«" + String(atom.a) + "»" : "«type»";
 }
