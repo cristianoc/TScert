@@ -248,7 +248,6 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 - **deep dive**: a checked-in slide deck that explains a design or a piece of work end to end ([decks](STYLE.md#decks)).
 - **draft**: a design kept under `docs/drafts/` for the owner's decision; `§n` and `Dn` in a record name its sections and decisions ([documentation map](DESIGN.md#documentation-map)).
-- **front-end-sharing draft**: the design of front-end work done once, keyed by what it read ([front-end sharing](drafts/front-end-sharing.md)).
 - **investigation**: a WORK row for a failure whose cause is not known ([conventions](../AGENTS.md#conventions)).
 - **method-effects draft**: the design of stated effects for class methods and fields, whose decisions D1–D8 records cite ([method effects](drafts/method-effects.md)).
 - **owner**: the project's maintainer, who decides the designs kept as drafts ([documentation map](DESIGN.md#documentation-map)).

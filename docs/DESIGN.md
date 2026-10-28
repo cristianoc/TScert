@@ -614,7 +614,7 @@ owner; other documents link to them and give only the context their readers need
 | [DESIGN](DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
 | [STAGE-STORE](STAGE-STORE.md) | The stage store: keys, observed stages, retained declaration sessions, entries, publication, replay's trust, controls and timing. |
 | [WORK](../WORK.md) | Open work, its reasons and completion conditions; the one place progress is recorded. |
-| [Drafts](drafts/) | Designs kept for the owner's decision ([method effects](drafts/method-effects.md), [verification server](drafts/verification-server.md)); their status is WORK's. |
+| [Drafts](drafts/) | Designs kept for the owner's decision ([method effects](drafts/method-effects.md)); their status is WORK's. |
 | [SOURCE-MODEL](SOURCE-MODEL.md) | Source values, the heap and host assumptions, and how values map to the calculus. |
 | [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | The refusal index: every refused construct with its reason, owning section and cases. |
 | [SOURCE-REWRITES](SOURCE-REWRITES.md) | Changes made to TScert's own source so that it verifies, each with the property the original lacked and the general rewrite. |

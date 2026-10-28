@@ -54,7 +54,7 @@ export function privateClient(api: API): PrivateClient {
   return client as PrivateClient; // asserted: the decoder of the private client, each member it names checked above
 }
 
-/** Each client's ledger (docs/drafts/front-end-sharing.md, 3.5): every
+/** Each client's ledger (docs/STAGE-STORE.md, "Shared work"): every
  * answer its compiler was given over its lifetime. Before each request the
  * ledger is noted in every record being made that does not hold it, and the
  * request runs with the ledger kept, so a record using the compiler holds

@@ -443,7 +443,7 @@ declarations in front-end files whose text the two commits differ in.
 
 Work whose result depends only on its inputs is kept and served again,
 each kind at the lifetime its inputs fix, its read set the observations it
-was computed from ([the design](drafts/front-end-sharing.md)). Store
+was computed from. Store
 entries and process caches are described above; within a process three
 further kinds of work are kept.
 

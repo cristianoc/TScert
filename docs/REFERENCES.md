@@ -614,7 +614,7 @@ language's documentation, `skiplang/docs/SKStore.md`, in
 computed from named inputs, lazy entries computed on demand, and a
 computation's dependencies being exactly what it read, so that sharing and
 invalidation follow from its read set.
-**Discussed in** [the front-end sharing draft](drafts/front-end-sharing.md#2-the-model).
+**Discussed in** [shared work](STAGE-STORE.md#shared-work).
 
 ### Lean 4
 

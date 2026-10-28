@@ -47,8 +47,8 @@ export function clientHasMethod(api: API, member: RequestMember): boolean {
   return prototype !== null && isMethod(fieldOf(prototype, member));
 }
 
-/** The queries of a snapshot the front end asks (docs/drafts/front-end-sharing.md,
- * 3.3): each a read of the snapshot its parameters name, which the compiler
+/** The queries of a snapshot the front end asks (docs/STAGE-STORE.md, "Shared
+ * work"): each a read of the snapshot its parameters name, which the compiler
  * holds unchanged until its release. A request off the list (a snapshot's
  * update or release, the client's initialization, a configuration's parse,
  * a profile) goes to the compiler every time. */
