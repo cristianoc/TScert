@@ -115,8 +115,7 @@ arguments must be inert for the deferred primitive member lookup. -/
       | .var .. | .lit .. => true
       | _ => false
     let G := SourceTypes.graph (← table)
-    pure (if O.length > 1 && (B.length > 1 || !Lowering.hasPrimitiveShape G O) && args.all plain &&
-      (ProgramTyping.restSigs G B).isEmpty then some fld else none)
+    pure (if Lowering.dispatchesCall G O B fld (args.all plain) then some fld else none)
   | _ => pure none
 
 /-- A method operation reads the member before argument evaluation. A primitive

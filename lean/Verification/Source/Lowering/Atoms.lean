@@ -190,8 +190,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
         | .var .. | .lit .. => true
         | _ => false
       let G := SourceTypes.graph (← table)
-      pure (if O.length > 1 && (B.length > 1 || !Lowering.hasPrimitiveShape G O) && args.all plain
-          && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
+      pure (if Lowering.dispatchesCall G O B fld (args.all plain) then some fld else none)
     | _, _, _ => pure none
   let headTys : List (Ty Tree) ← match method, dispatch with
     | none, _ => pure [headType]

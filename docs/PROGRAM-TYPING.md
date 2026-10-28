@@ -1775,7 +1775,13 @@ mixed shapes; that representation needs additional decomposition rules.
 
 A method call on a union receiver is split on its receiver the same way
 where its alternatives read different members, or where every alternative
-is an object, holding one member each reads. A union with a primitive's
+is an object, holding one member each reads, and not every alternative is a
+host holding it as a member (`Lowering.dispatchesCall`). A union of such
+hosts keeps the call one host gets: the member is read and bound before the
+actuals (`memberHead`), and `unionVar` splits the slot for `bindMember`. A
+closure's body lowers to one program for all its signatures, so a closure
+whose object is one host at one signature and a union of hosts at another
+is lowered alike at both. A union with a primitive's
 shape whose alternatives read one member keeps the plain call: this is an
 eligibility choice, not a semantic limit, since `dispatchCallTerm` reads a
 primitive's member through its wrapper. A dispatched call is an outer

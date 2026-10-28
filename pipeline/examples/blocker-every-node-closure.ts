@@ -1,6 +1,6 @@
-// A closure calling a compiler node's method, passed to `every`: its body
-// lowers differently under one of the signatures it is claimed at. Called
-// directly, or passed to `every` without the method call, it verifies.
+// A closure calling a compiler node's method, passed to `every`: its object
+// is a union of nodes at the closure's own signature and one node at
+// `every`'s, and its body reads and binds the member alike at both.
 // Census functions:
 // array-prototype.mts#mergeRefusal, array-prototype.mts#prototype,
 // array-prototype.mts#arrayPrototype, array-prototype.mts#primitivePrototype.

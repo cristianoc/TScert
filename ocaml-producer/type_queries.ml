@@ -776,12 +776,13 @@ let rec unfolded_arms declarations seen t = match t with
   | Union ts -> List.concat_map (unfolded_arms declarations seen) ts
   | Rigid _ | Meet _ -> [t]
 (* Whether the lowering dispatches a method call on its object in one node
-   (Lean's `executionDispatch`), which no bounded node rule admits: the
-   object's claim, its declarations unfolded (`unfolded_arms`), has several
-   alternatives, and every actual is a name or a literal. Lean dispatches
-   only where the callee's claim has several labels too or the object has no
-   primitive arm, so a call this answers true for but Lean does not dispatch
-   is proposed unbounded, which Lean accepts. *)
+   (Lean's `Lowering.dispatchesCall`), which no bounded node rule admits:
+   the object's claim, its declarations unfolded (`unfolded_arms`), has
+   several alternatives, and every actual is a name or a literal. Lean
+   dispatches only where the callee's claim has several labels too, or the
+   object has no primitive arm and not every alternative is a host holding
+   the member, so a call this answers true for but Lean does not dispatch is
+   proposed unbounded, which Lean accepts. *)
 let dispatches_call declarations (object_claim:ty) args =
   plain_actuals args
   && List.length (List.sort_uniq compare (unfolded_arms declarations [] object_claim)) > 1

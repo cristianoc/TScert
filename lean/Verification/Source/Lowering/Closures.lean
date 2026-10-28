@@ -183,7 +183,7 @@ signature's frame, whose certificate the unit's code table records. -/
     match code with
     | some c =>
       if c != (P, start) then
-        throw "a closure's body lowers differently under one of its signatures"
+        throw s!"a closure's body lowers differently under one of its signatures at [{s.pos.1},{s.pos.2})"
     | none => code := some (P, start)
     let entry : CodeEntry Tree := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
       start, Cs ++ (selfEntry.map Prod.snd).toList, sig, store⟩

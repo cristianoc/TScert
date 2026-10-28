@@ -218,8 +218,8 @@ of every signature its callee may take, a call its own typing claims at
 `never` the empty footprint, an async definition none, and a method call,
 in a function's or a closure's body, on an object whose claim has several
 alternatives once each declaration it names is unfolded, with actuals that
-are names or literals none: the lowering reads and invokes its member in one
-node dispatched on the object, which no bounded node rule above admits; declarations are proposed at the least
+are names or literals none: the lowering may read and invoke its member in one
+node dispatched on the object (`Lowering.dispatchesCall`), which no bounded node rule above admits; declarations are proposed at the least
 fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
 every node.
 

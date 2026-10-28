@@ -569,6 +569,19 @@ number, a bigint or a boolean, whose members are its prototype's. -/
     | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ => true
     | _ => false
 
+/-- Whether a method call `x.k(a…)`, its object at `O` and its member at `B`,
+is read and called in one step dispatched on the object (`dispatchCallTerm`):
+`O` is a union whose alternatives read different members (`B` a union), or a
+union of objects (no primitive's shape) not all hosts holding `k`; its actuals
+are inert (each a name or a literal) and its callee takes no rest. A union of
+hosts each holding `k` gets the call one host gets, its member bound by
+splitting the slot (`memberHead`), so a closure body lowers to one program
+whether a signature claims its object at one host or at a union of them. -/
+@[nospecialize] def Lowering.dispatchesCall (G : PositiveGraphs.NormalGraph ι) (O B : Ty ι) (fld : PropKey)
+    (inert : Bool) : Bool :=
+  O.length > 1 && (B.length > 1 || (!hasPrimitiveShape G O && (unionMemberHosts G O fld).isEmpty)) &&
+    inert && (ProgramTyping.restSigs G B).isEmpty
+
 /-- The shapes a member read of `O` dispatches on: each primitive shape among
 `O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
 prototype is the built-ins'). An object shape needs none. -/
