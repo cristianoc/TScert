@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { availableParallelism, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
-import { syntax as ts } from "../tools/syntax.mts";
+import { syntax as ts, isTypeAlias } from "../tools/syntax.mts";
 import { readDiagnosticReport, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
@@ -123,7 +123,7 @@ function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
     }
     const names: string[] = [];
     if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isInterfaceDeclaration(s) ||
-        ts.isTypeAliasDeclaration(s) || ts.isEnumDeclaration(s)) && s.name)
+        isTypeAlias(s) || ts.isEnumDeclaration(s)) && s.name)
       names.push(s.name.text);
     if (ts.isVariableStatement(s))
       for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) names.push(d.name.text);

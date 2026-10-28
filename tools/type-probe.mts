@@ -40,7 +40,7 @@ import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable
 import { isInstanceReference, literalUnion } from "./computed-types.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf } from "./syntax.mts";
+import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 
 
 /** A symbol of the checker. */
@@ -234,8 +234,8 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
         visit(file);
         return found;
       };
-      const probeAlias = marked("probe", ts.isTypeAliasDeclaration);
-      const alias = marked("use", ts.isTypeAliasDeclaration);
+      const probeAlias = marked("probe", isTypeAlias);
+      const alias = marked("use", isTypeAlias);
       const reference = marked("reference", ts.isIdentifier);
       if (!probeAlias || probeAlias.name.text !== probeName || !alias || alias.name.text !== useName ||
           !reference || reference.text !== probeName)

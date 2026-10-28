@@ -15,7 +15,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf } from "./syntax.mts";
+import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
@@ -52,7 +52,7 @@ import { inDeclarationSession, noteAutomaticCollection } from "./declaration-ses
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
-  ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
+  isTypeAlias(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
 
 /** Whether `file` is a declaration of the compiler API's installation, the
  * one where the compiler-API contract's tables by name (its branded strings,
@@ -735,7 +735,7 @@ export function collectDeclarations(file: string, options: {
     // refused (`externalStatements`).
     const verifierAlias = (identifier: Identifier): string | null => {
       const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
-      return declaration && ts.isTypeAliasDeclaration(declaration) &&
+      return declaration && isTypeAlias(declaration) &&
         verifierFile(declaration.getSourceFile()) ? declaration.name.text : null;
     };
     const ambient = (node: Node): boolean => {
@@ -811,7 +811,7 @@ export function collectDeclarations(file: string, options: {
       // declaration here has a name.
       const identity: DeclarationIdentity = { module: idOf(source), name: node.name?.text ?? "",
         span: [node.getStart(source), node.end] };
-      const brand = ts.isTypeAliasDeclaration(node) && compilerApiFile(source.fileName)
+      const brand = isTypeAlias(node) && compilerApiFile(source.fileName)
         ? brandedTypes.find(b => b.name === node.name.text) : undefined;
       if (brand) {
         if (node.getText(source).trim() !== brand.text)
@@ -833,7 +833,7 @@ export function collectDeclarations(file: string, options: {
       });
       // The verifier's `Within` and `Footprint` are no types: a statement
       // is read at a signature's result (`statedResult`), and nowhere else.
-      if (nodes.some(n => ts.isTypeAliasDeclaration(n) && verifierFile(n.getSourceFile()) &&
+      if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) &&
           (n.name.text === "Within" || n.name.text === "Footprint")))
         throw Error(`${WITHIN_PLACE}: ${what}`);
       for (const statement of statementsOnPath(checker, identifier))
@@ -1030,7 +1030,7 @@ export function collectDeclarations(file: string, options: {
         const target = (targetOf(checker, type.typeName)?.declarations ?? []).map(d => d.resolve());
         const [only] = target;
         if (!only || target.length !== 1 || seen.has(only)) return null;
-        if (ts.isTypeAliasDeclaration(only) && !only.typeParameters?.length && isHostFile(only.getSourceFile().fileName)) {
+        if (isTypeAlias(only) && !only.typeParameters?.length && isHostFile(only.getSourceFile().fileName)) {
           seen.add(only);
           return literalsAlong(only.type, seen);
         }
@@ -1162,7 +1162,7 @@ export function collectDeclarations(file: string, options: {
         if (!name) return;
         for (const d of (targetOf(checker, name)?.declarations ?? []).map(x => x.resolve())) {
           if (!d || !isHostFile(d.getSourceFile().fileName)) continue;
-          if (ts.isTypeAliasDeclaration(d) && !d.typeParameters?.length && !seenAliases.has(d)) {
+          if (isTypeAlias(d) && !d.typeParameters?.length && !seenAliases.has(d)) {
             seenAliases.add(d);
             namedType(d.type);
           }
@@ -1268,7 +1268,7 @@ export function collectDeclarations(file: string, options: {
       const target = targetOf(checker, reference.typeName);
       const declarations = target?.declarations.map(d => d.resolve()) ?? [];
       const [only] = declarations;
-      return declarations.length === 1 && !!only && ts.isTypeAliasDeclaration(only) &&
+      return declarations.length === 1 && !!only && isTypeAlias(only) &&
         only.name.text === "Awaited" && libraryFile(only.getSourceFile());
     };
     // Whether an alias reaches `Awaited` through the aliases its body names,
@@ -1280,7 +1280,7 @@ export function collectDeclarations(file: string, options: {
         if (ts.isTypeReferenceNode(part)) {
           if (awaited(part)) return true;
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
-          if (target && ts.isTypeAliasDeclaration(target) && associatedAlong(target, seen)) return true;
+          if (target && isTypeAlias(target) && associatedAlong(target, seen)) return true;
         }
         return part.forEachChild(visit) ?? false;
       };
@@ -1335,7 +1335,7 @@ export function collectDeclarations(file: string, options: {
         clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
       }
       partners.set(node, types);
-      if (ts.isTypeAliasDeclaration(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
+      if (isTypeAlias(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
       return node;
     };
     const lookup = (identifier: Identifier, what: string): TypeDeclaration =>
@@ -1345,7 +1345,7 @@ export function collectDeclarations(file: string, options: {
       if (!ts.isIdentifier(reference.typeName)) return null;
       try {
         const node = lookup(reference.typeName, reference.typeName.text);
-        return ts.isTypeAliasDeclaration(node) ? node : null;
+        return isTypeAlias(node) ? node : null;
       } catch (error) {
         passToolFailure(error);
         return null;
@@ -1373,7 +1373,7 @@ export function collectDeclarations(file: string, options: {
       if (!first || !name || parts.some(p => p.name?.text !== name)) return null;
       const entry = typeEntry(name, parts.map(part => {
         const file = part.getSourceFile();
-        const end = ts.isTypeAliasDeclaration(part) ? part.end : part.members.pos;
+        const end = isTypeAlias(part) ? part.end : part.members.pos;
         return { origin: declarationOrigin(file, libraryFile),
           heading: reviewedText(file.text.slice(part.getStart(file), end)) };
       }));
@@ -1409,7 +1409,7 @@ export function collectDeclarations(file: string, options: {
         cleanAll();
         return { k: "array", readonly: name === "ReadonlyArray" };
       }
-      let body = types.length === 1 && ts.isTypeAliasDeclaration(first) ? first.type : undefined;
+      let body = types.length === 1 && isTypeAlias(first) ? first.type : undefined;
       while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
       if (!body || !ts.isMappedTypeNode(body)) return null;
       cleanAll();
@@ -1586,7 +1586,7 @@ export function collectDeclarations(file: string, options: {
     // Computed members have an equation only at closed arguments. Each
     // instance retains the declaration's whole admitted shape and heritage.
     const computedMembers = (node: TypeDeclaration): boolean => {
-      if (ts.isTypeAliasDeclaration(node) || !node.typeParameters?.length) return false;
+      if (isTypeAlias(node) || !node.typeParameters?.length) return false;
       const names = new Set(node.typeParameters.map(p => p.name.text));
       const mentions = (part: Node): boolean =>
         (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
@@ -1636,7 +1636,7 @@ export function collectDeclarations(file: string, options: {
         stated: part => statement(part, null),
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
-          return target && ts.isTypeAliasDeclaration(target) && associatedAlias(target) ? target : null;
+          return target && isTypeAlias(target) && associatedAlias(target) ? target : null;
         },
         // An alias's body, its parameters read as the reference's arguments.
         equation: (reference) => {
@@ -1780,7 +1780,7 @@ export function collectDeclarations(file: string, options: {
         { ...plainForm, rest }] };
     };
     const valueRead = (declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
-      const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
+      const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !isTypeAlias(n));
       valueDeclarations.push(...nodes);
       const [node] = nodes;
       if (!node) throw Error(`unresolved value ${what}`);
@@ -2348,7 +2348,7 @@ export function collectDeclarations(file: string, options: {
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.name}`);
         // A class is a type and, imported as a value, a constructor too.
-        if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n))) {
+        if (!binding.typeOnly && nodes.some(n => !isTypeAlias(n) && !ts.isInterfaceDeclaration(n))) {
           const guard = node && nodes.length === 1 && ts.isFunctionDeclaration(node) && node.name &&
             isHostFile(node.getSourceFile().fileName) ? bindingGuard(binding) : null;
           // A guard whose runtime function is of another family than its
@@ -2434,7 +2434,7 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
-        if (ts.isTypeAliasDeclaration(node) && associatedAlias(node)) {
+        if (isTypeAlias(node) && associatedAlias(node)) {
           resolutionContextAt ??= span;
           options.associatedAlias?.(declaration.name.text, identityOf(node));
           continue;
@@ -2458,18 +2458,18 @@ export function collectDeclarations(file: string, options: {
       if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
           declaration.getSourceFile().fileName === client.fileName) continue;
       try {
-        if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Awaited" &&
+        if (isTypeAlias(declaration) && declaration.name.text === "Awaited" &&
             libraryFile(declaration.getSourceFile())) {
           resolutionContextAt ??= span;
           options.awaited?.(span);
           continue;
         }
-        if (ts.isTypeAliasDeclaration(declaration) && verifierFile(declaration.getSourceFile()) &&
+        if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             declaration.name.text === "Within") {
           options.within?.(span);
           continue;
         }
-        if (ts.isTypeAliasDeclaration(declaration) && verifierFile(declaration.getSourceFile()) &&
+        if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             (declaration.name.text === "Resolvable" || declaration.name.text === "Awaitable")) {
           resolutionContextAt ??= span;
           if (declaration.name.text === "Resolvable") options.resolvable?.(span);
@@ -2963,7 +2963,7 @@ export function collectDeclarations(file: string, options: {
       if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
       // An interface or a type merged with the value declares no value.
       const values = symbol.declarations.map(d => d.resolve())
-        .filter(node => !node || !(ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)));
+        .filter(node => !node || !(ts.isInterfaceDeclaration(node) || isTypeAlias(node)));
       if (values.length && values.every(node => {
         if (!node || !libraryFile(node.getSourceFile())) return false;
         if (ts.isFunctionDeclaration(node)) return true;
@@ -3751,13 +3751,13 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, "TypeScript type reference missing");
       const name = node.typeName;
       const declared = typeDeclarationsOf(name);
-      if (!declared.some(d => (ts.isTypeAliasDeclaration(d) || ts.isInterfaceDeclaration(d)) &&
+      if (!declared.some(d => (isTypeAlias(d) || ts.isInterfaceDeclaration(d)) &&
           !!d.parent && !ts.isSourceFile(d.parent) && !ts.isModuleBlock(d.parent)))
         continue;
       try {
         const target = lookup(name, name.text);
         const what = `${idOf(client)}#${name.text}`;
-        if (ts.isTypeAliasDeclaration(target) && associatedAlias(target))
+        if (isTypeAlias(target) && associatedAlias(target))
           throw Error(`an associated-result alias declared in a block is outside the fragment: ${what}`);
         const computed = computedAlias(target, aliasOf);
         const captured = capturedOf(target);
@@ -4268,7 +4268,7 @@ function typesOnly(node: Node): boolean {
   if (!ts.isModuleDeclaration(node) || !node.body) return false;
   const body = node.body;
   return ts.isModuleBlock(body)
-    ? body.statements.every(s => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || typesOnly(s))
+    ? body.statements.every(s => ts.isInterfaceDeclaration(s) || isTypeAlias(s) || typesOnly(s))
     : typesOnly(body);
 }
 
@@ -5015,7 +5015,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // is `undefined`, as `strictBuiltinIteratorReturn` reads it. Another
       // interface naming it (Intl's, the DOM's) is another specification's
       // iterator, which this reading does not attribute.
-      if (ts.isTypeAliasDeclaration(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
+      if (isTypeAlias(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
           context.libraryFile(targetNode.getSourceFile())) {
         const owner = ts.isInterfaceDeclaration(node) ? node.name.text : "";
         if (context.libraryFile(source) && ecmaIterators.includes(owner))
@@ -5039,7 +5039,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     };
     // Each declaration part is read in its own file, which its spans index.
     let body: TypeNode | undefined;
-    if (ts.isTypeAliasDeclaration(node)) {
+    if (isTypeAlias(node)) {
       body = node.type;
       while (ts.isParenthesizedTypeNode(body)) body = body.type;
     }
@@ -5303,7 +5303,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       }
       continue;
     }
-    let expression = ts.isTypeAliasDeclaration(node)
+    let expression = isTypeAlias(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
@@ -5473,7 +5473,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // type, whose shape is that type's.
     if (!view && !context.hostType(node) && !parts.some(ts.isClassDeclaration) &&
         ((expression.k === "object" && !expression.prototype && !expression.host) ||
-          (ts.isTypeAliasDeclaration(node) && expression.k === "reference")))
+          (isTypeAlias(node) && expression.k === "reference")))
       context.record(identity);
     } catch (error) {
       passToolFailure(error);

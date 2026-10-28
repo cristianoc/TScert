@@ -5,7 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { childrenOf } from "./syntax.mts";
+import { childrenOf, isTypeAlias } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
@@ -294,7 +294,7 @@ export function computedForm(node: TypeNode): Within<{ value: "any"; store: "gro
  * (`computed-types.mts`). `aliasOf` is the alias a reference names, if any. */
 export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode) => TypeAliasDeclaration | null,
     seen: Set<Node> = new Set()): node is TypeAliasDeclaration {
-  if (!ts.isTypeAliasDeclaration(node) || !node.typeParameters?.length || seen.has(node)) return false;
+  if (!isTypeAlias(node) || !node.typeParameters?.length || seen.has(node)) return false;
   seen.add(node);
   const body = unwrap(node.type);
   if (computedForm(body) !== null) return true;
@@ -595,7 +595,7 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
       if (!ts.isTypeReferenceNode(t) || !ts.isIdentifier(t.typeName) || t.typeArguments) return undefined;
       const k = t.typeName.text;
       for (let n: Node | undefined = node.parent; n; n = n.parent) {
-        const own = (ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n) ? n.typeParameters : undefined)
+        const own = (isTypeAlias(n) || ts.isInterfaceDeclaration(n) ? n.typeParameters : undefined)
           ?.find(q => q.name.text === k);
         if (own) return own.constraint;
       }

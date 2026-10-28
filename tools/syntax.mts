@@ -5,7 +5,7 @@
  * children here, where each one is checked to be a node.
  */
 import * as ts from "typescript/unstable/ast";
-import type { Node } from "typescript/unstable/ast";
+import type { Node, TypeAliasDeclaration } from "typescript/unstable/ast";
 
 /** The compiler's syntax module as the front end resolves it, for the suites
  * outside tools/ that read trees (tests/host-families.mts). */
@@ -34,6 +34,15 @@ export function childrenOf(node: Node, key: Children): Within<{ value: "any"; st
 
 /** The name a declaration or member declares, where its kind has one. */
 export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node | undefined> => childOf(node, "name");
+
+/** Whether `node` is a type alias declaration of a TypeScript file, by its
+ * kind. The compiler's `isTypeAliasDeclaration` also accepts a JavaScript
+ * file's JSDoc `@typedef` (`JSTypeAliasDeclaration`, a kind of its own),
+ * which the compiler-API contract describes by the members every node has
+ * (COMPILER-API.md, "The node invariant"). */
+export function isTypeAlias(node: Node): node is TypeAliasDeclaration {
+  return node.kind === ts.SyntaxKind.TypeAliasDeclaration;
+}
 
 /** Whether a member is written `static`. */
 export const isStatic = (node: Node): Within<{ value: "any"; store: "grow" }, boolean> =>

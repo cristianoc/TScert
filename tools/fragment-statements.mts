@@ -13,6 +13,7 @@ import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, it
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
+import { isTypeAlias } from "./syntax.mts";
 
 export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: Node, mutable: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
@@ -610,7 +611,7 @@ export function statements(this: Gate, list: readonly Statement[]): Within<{ val
  * type readers resolve as TypeScript does (SOURCE-CONTRACTS.md,
  * "Block-scoped type declarations"). */
 function typeStatement(s: Statement): Within<{ value: "any"; store: "grow" }, boolean> {
-  return ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s);
+  return isTypeAlias(s) || ts.isInterfaceDeclaration(s);
 }
 
 /** The early bindings of a statement list (SOURCE-ELABORATION.md, "Lexical

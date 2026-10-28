@@ -107,6 +107,7 @@ import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts"
 import { toolFailureOf } from "./thrown.mts";
 import { openCompiler } from "./compiler-channel.mts";
 import type { Json } from "./calculus.mts";
+import { isTypeAlias } from "./syntax.mts";
 
 /** What was found, which report it is, and the reason written with it. */
 type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected" | "tool failure";
@@ -320,7 +321,7 @@ function valued(node: Node): boolean {
  * declaration, a heritage clause. */
 function typeOnly(node: Node): boolean {
   return ts.isTypeNode(node) || ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ||
-    ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isHeritageClause(node);
+    ts.isInterfaceDeclaration(node) || isTypeAlias(node) || ts.isHeritageClause(node);
 }
 
 /** The type of each node, `null` where the compiler's API fails to return

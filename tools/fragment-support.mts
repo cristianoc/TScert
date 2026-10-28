@@ -5,7 +5,7 @@ import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, Nod
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { isStatic, nameOf } from "./syntax.mts";
+import { isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { numberText } from "./intrinsics.mts";
 import { errorOptions } from "./library-globals.mts";
 
@@ -658,7 +658,7 @@ export function bindingScope(node: Node): Within<{ value: "any"; store: "grow" }
 export function shadowingLocals(source: SourceFile): Map<string, Identifier> {
   const declared: { id: Identifier; scope: Node; own: boolean }[] = [];
   const visit = (node: Node): void => {
-    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
+    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || isTypeAlias(node)) return;
     const name = nameOf(node);
     if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isBindingElement(node) ||
          ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node) || ts.isEnumDeclaration(node) ||

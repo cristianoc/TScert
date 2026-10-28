@@ -10,7 +10,7 @@ import type { Node, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import type { SourceTypeParameter, TypeTerm, WrittenApplication } from "./declaration-types.mts";
 import { visitType } from "./type-term.mts";
-import { childrenOf, nameOf } from "./syntax.mts";
+import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { messageOf, passToolFailure } from "./thrown.mts";
 
 /** What a name or a selection denotes, as TypeScript's checker has it: one
@@ -205,7 +205,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     const none: Determined = { nodes: [] };
     // A type's declaration is type syntax throughout; a type parameter's
     // bound is its owner's.
-    if (ts.isInterfaceDeclaration(d) || ts.isTypeAliasDeclaration(d) || ts.isTypeParameterDeclaration(d) ||
+    if (ts.isInterfaceDeclaration(d) || isTypeAlias(d) || ts.isTypeParameterDeclaration(d) ||
         ts.isIndexSignatureDeclaration(d))
       return { nodes: [d] };
     // An enum member's type is its value; a namespace or a module is its
@@ -282,7 +282,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   };
   const site = (node: Node): string => {
     let at: Node | undefined = node;
-    while (at && !(ts.isTypeAliasDeclaration(at) || ts.isInterfaceDeclaration(at) || ts.isClassDeclaration(at) ||
+    while (at && !(isTypeAlias(at) || ts.isInterfaceDeclaration(at) || ts.isClassDeclaration(at) ||
         ts.isFunctionDeclaration(at) || ts.isVariableDeclaration(at)))
       at = at.parent;
     const name = at && "name" in at && at.name && ts.isIdentifier(at.name) ? at.name.text : "the module";
@@ -345,7 +345,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   };
   const visitNode = (node: Node, env: Env, client: boolean, root: boolean): void => {
     // A client's interface or alias is swept where something names it.
-    if (client && node.parent && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
+    if (client && node.parent && (ts.isInterfaceDeclaration(node) || isTypeAlias(node)) &&
         node.getSourceFile() === context.client) {
       return;
     }
@@ -657,7 +657,7 @@ function isFunctionLike(node: Node): boolean {
 /** Whether `node` is or is in an interface or a type alias. */
 function withinTypeDeclaration(node: Node): boolean {
   for (let at: Node | undefined = node; at; at = at.parent)
-    if (ts.isInterfaceDeclaration(at) || ts.isTypeAliasDeclaration(at)) return true;
+    if (ts.isInterfaceDeclaration(at) || isTypeAlias(at)) return true;
   return false;
 }
 

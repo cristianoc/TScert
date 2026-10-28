@@ -954,7 +954,8 @@ JavaScript file the guard accepts `JSTypeAliasDeclaration` and the kind test
 rejects it. The front end reads TypeScript files only: its parser refuses a
 file no strict `tsconfig.json` claims, and declarations come from `.ts` and
 `.d.ts` files. So replacing such a guard by its kind test changes no input it
-accepts.
+accepts, and the front end recognises a type alias by its kind
+([the rewrite](SOURCE-REWRITES.md#a-type-alias-recognised-by-a-guard-accepting-a-jsdoc-typedef)).
 
 ## Tests
 

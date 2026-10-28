@@ -546,6 +546,34 @@ arguments" in `query` and `guardClientRequests`, census of b81675f).
 - **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
   traversal keeps their bindings, three sites rewritten`.
 
+### A type alias recognised by a guard accepting a JSDoc `@typedef`
+
+The front end recognised a type alias declaration with the compiler's
+`ts.isTypeAliasDeclaration(node)` and then read its members
+(`node.typeParameters`, `node.name`). The guard also accepts a JavaScript
+file's `@typedef` (`JSTypeAliasDeclaration`), and is read by what its code
+accepts ([guard recognition](HOST-FAMILIES.md#guard-recognition)); the
+compiler-API contract describes that kind by the members every node has, so
+each such read was refused ("missing field typeParameters", "missing field
+name"; the diagnostic census of b81675f reports it in 33 functions, among
+them `typeTerm`'s callers in `tools/type-term.mts`, `computedType`,
+`makeProbe` and `lowerFile`). The front end reads TypeScript files only,
+where the guard and the kind test accept the same nodes
+([restrictions](COMPILER-API.md#restrictions)).
+
+- **Rewrite:** `isTypeAlias(node): node is TypeAliasDeclaration` of
+  `tools/syntax.mts` tests `node.kind === SyntaxKind.TypeAliasDeclaration`,
+  and every recognition of a type alias in `tools/`, `dev/` and `tests/`
+  calls it. Its promise is what its test establishes, so its true edge reads
+  the declaration's members; on a JavaScript `@typedef` it answers `false`.
+- **Pattern:** a node is recognised by the kind whose members the code
+  reads, where the compiler's guard accepts more kinds than that one.
+- **Functions:** `isTypeAlias`, and the 33 functions reading an alias's
+  members after the guard; `compiler-api-alias-kind-guard` is the guard
+  and its reads as a case, and `blocker-type-alias-guard-member` the
+  refused read after `ts.isTypeAliasDeclaration`.
+- **Commit:** the introducing commit, `A type alias is recognised by its kind, excluding the JSDoc typedef`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

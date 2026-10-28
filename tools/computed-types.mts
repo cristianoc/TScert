@@ -8,7 +8,7 @@
  * declared. What is read from the checker's types is only what has no
  * syntax: a union of literals and primitives, and the record an object
  * literal's inferred type is. */
-import { childOf, childrenOf, isStatic } from "./syntax.mts";
+import { childOf, childrenOf, isStatic, isTypeAlias } from "./syntax.mts";
 import { SignatureKind, SymbolFlags, TypeFlags, isTypeReference, type Checker, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
@@ -304,7 +304,7 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   const symbol = checker.getSymbolAtLocation(last);
   // A name that is also an interface or type alias denotes its value here.
   const nodes = (symbol?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node =>
-    !!d && !ts.isInterfaceDeclaration(d) && !ts.isTypeAliasDeclaration(d));
+    !!d && !ts.isInterfaceDeclaration(d) && !isTypeAlias(d));
   const [first] = nodes;
   if (!first) throw Error(`${what} names nothing TypeScript declares`);
   // An annotation's `typeof E` is the enum's object type, which the parser
@@ -505,7 +505,7 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
     if (!ts.isTypeReferenceNode(reference) || !ts.isIdentifier(reference.typeName)) return null;
     const nodes = (checker.getSymbolAtLocation(reference.typeName)?.declarations ?? []).map(d => d.resolve());
     const [only] = nodes;
-    return nodes.length === 1 && only && ts.isTypeAliasDeclaration(only) && !only.typeParameters?.length
+    return nodes.length === 1 && only && isTypeAlias(only) && !only.typeParameters?.length
       ? only : null;
   };
   // A member of a named type: its declaration's annotation, when that is

@@ -24,7 +24,7 @@ import { dirname, join, resolve } from "node:path";
 import { compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { familyTable, type FamilyGraph, type FlatMember, type TagValue } from "../tools/host-families.mts";
-import { syntax as ts } from "../tools/syntax.mts";
+import { syntax as ts, isTypeAlias } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -43,7 +43,7 @@ const aliases = new Map<string, ts.TypeAliasDeclaration>();
 for (const file of declarationFiles)
   for (const statement of file.statements) {
     if (ts.isInterfaceDeclaration(statement)) interfaces.set(statement.name.text, statement);
-    if (ts.isTypeAliasDeclaration(statement)) aliases.set(statement.name.text, statement);
+    if (isTypeAlias(statement)) aliases.set(statement.name.text, statement);
   }
 const textOf = (node: ts.Node): string => node.getText(node.getSourceFile()).trim();
 const basesOf = (d: ts.InterfaceDeclaration): ts.InterfaceDeclaration[] =>

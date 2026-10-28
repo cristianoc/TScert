@@ -3,7 +3,7 @@
 // function whose body holds it, and each classified by the census outcome of
 // its top-level function's slice. Verified coverage is 100·V/N over the units
 // of the census's functions, counts summed before any percentage.
-import { syntax as ts, childrenOf, nameOf } from "../tools/syntax.mts";
+import { syntax as ts, childrenOf, nameOf, isTypeAlias } from "../tools/syntax.mts";
 
 /** Where a unit's owner lies relative to the census: a function the census
  * slices, module-level code, or a function the census does not slice (a
@@ -122,7 +122,7 @@ export function inventory(file: string, tree: ts.SourceFile): Unit[] {
   };
   type Owner = { fn: string; inner: string | null; scope: UnitScope };
   const visit = (node: ts.Node, owner: Owner, top: boolean): void => {
-    if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isModuleDeclaration(node) ||
+    if (ts.isInterfaceDeclaration(node) || isTypeAlias(node) || ts.isModuleDeclaration(node) ||
         ts.isImportDeclaration(node) || has(node, ts.SyntaxKind.DeclareKeyword))
       return;
     const body = bodyOf(node);

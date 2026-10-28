@@ -1329,6 +1329,8 @@ export const cases: Case[] = [
   { ...negative("invalid-path-witness-closure", "a closure assigning the root invalidates the path's read link (run under Node)", /missing field text/), status: "unsupported", phase: "proposal" },
   { ...positive("compiler-api-kind-narrowing", "the compiler API's nodes as a host family: `Node` is the union of the shapes the run names and a residual, so a kind test against a constant reads the named shape's members on its true edge, the JavaScript typedef's base shape included; an identifier and a token are nodes"),
     project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-alias-kind-guard", "a type alias declaration recognised by its kind, in a guard of its own: the test excludes the JSDoc `@typedef` `isTypeAliasDeclaration` also accepts, so the guard's promise holds and its true edge reads `typeParameters`, and `name` after a disjunction with `isInterfaceDeclaration`"),
+    project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-guard-after-kind-tests", "a guard after failed `kind` tests: the tests leave a fact of `kind`, the guard's read of `kind` answered by it keeps a present link, since `Node` states `kind`, and the guard's true edge narrows the node through it (`written-applications.mts#literal`)"),
     project: "pipeline/compiler-api-project" },
   negative("invalid-guard-after-kind-optional", "Two failed tests of a field optional in one receiver arm do not make the field present: the return at a record requiring it is refused (run under Node)",

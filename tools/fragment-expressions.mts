@@ -10,7 +10,7 @@ import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numer
 import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { nameOf } from "./syntax.mts";
+import { nameOf, isTypeAlias } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
@@ -947,7 +947,7 @@ export function resolve(this: Gate, id: Identifier): Within<{ value: "any"; stor
   if (table === null) {
     const bindings = new Map<Node, Map<string, Node>>();
     const visit = (n: Node): void => {
-      if (ts.isTypeNode(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n)) return;
+      if (ts.isTypeNode(n) || ts.isInterfaceDeclaration(n) || isTypeAlias(n)) return;
       const name = nameOf(n);
       if ((ts.isParameterDeclaration(n) || ts.isVariableDeclaration(n) || ts.isBindingElement(n) ||
            ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n) || ts.isEnumDeclaration(n) ||
@@ -1203,7 +1203,7 @@ export function moduleFunction(this: Gate, node: Identifier): Within<{ value: "a
   const declared = gate.file.statements.filter((s) => {
     const name = nameOf(s);
     return !!name && ts.isIdentifier(name) && name.text === node.text &&
-      !ts.isInterfaceDeclaration(s) && !ts.isTypeAliasDeclaration(s);
+      !ts.isInterfaceDeclaration(s) && !isTypeAlias(s);
   });
   return declared.every((s) => ts.isFunctionDeclaration(s) && !!s.body &&
       !s.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword || m.kind === ts.SyntaxKind.ExportKeyword)) &&

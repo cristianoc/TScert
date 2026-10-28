@@ -31,7 +31,7 @@ import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
-import { childOf, isStatic, nameOf } from "./syntax.mts";
+import { childOf, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
 import { definitionKey, deferredIn, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
@@ -1344,7 +1344,7 @@ function lowerFile(file: string, carriesContext: boolean,
   evalForms(source);
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
-    if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
+    if (isTypeAlias(s)) aliasNodes.push(s);
     else if (ts.isInterfaceDeclaration(s) && !carriesContext) interfaceNodes.push(s);
     // A class declaration declares its instance type, and its value is part of
     // the module's initialization, in order: classes are not hoisted.
@@ -1466,7 +1466,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // to read.
   const blockNames = new Set<string>();
   const findBlockTypes = (node: Node): void => {
-    if ((ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) && node.parent &&
+    if ((isTypeAlias(node) || ts.isInterfaceDeclaration(node)) && node.parent &&
         !ts.isSourceFile(node.parent))
       blockNames.add(node.name.text);
     node.forEachChild(findBlockTypes);
@@ -1476,7 +1476,7 @@ function lowerFile(file: string, carriesContext: boolean,
     ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && blockNames.has(node.typeName.text);
   const blockNodes: ts.TypeReferenceNode[] = [];
   const findBlockReferences = (node: Node): void => {
-    if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
+    if (isTypeAlias(node) || ts.isInterfaceDeclaration(node)) return;
     if (blockReference(node)) blockNodes.push(node);
     node.forEachChild(findBlockReferences);
   };
@@ -1529,7 +1529,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // Reads of a shadowing local above its declaration (`bindingRead`).
   const early: Identifier[] = [];
   const findBindingReads = (node: Node): void => {
-    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
+    if (ts.isTypeNode(node) || ts.isInterfaceDeclaration(node) || isTypeAlias(node)) return;
     if (ts.isIdentifier(node) && shadowedTexts.has(node.text) &&
         !shadowing.has(`${node.getStart(source)}:${node.end}`))
       bindingNodes.push(node);
@@ -1540,7 +1540,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const globalValueNodes: Identifier[] = [];
   const findGlobalValues = (node: Node): void => {
     if (ts.isTypeNode(node) || ts.isComputedPropertyName(node) || ts.isImportDeclaration(node) ||
-        ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isHeritageClause(node))
+        ts.isInterfaceDeclaration(node) || isTypeAlias(node) || ts.isHeritageClause(node))
       return;
     if (ts.isIdentifier(node) && !bound.has(node.text) && node.text !== "undefined") {
       const parent = node.parent;
@@ -1889,7 +1889,7 @@ function lowerFile(file: string, carriesContext: boolean,
   };
   const computedAliases = new Set(aliasNodes.filter(a => computedAlias(a, localAlias)).map(a => a.name.text));
   const findComputed = (node: Node): void => {
-    if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
+    if (isTypeAlias(node) || ts.isInterfaceDeclaration(node)) return;
     if (ts.isTypeNode(node) && (computedForm(node) !== null ||
         (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && computedAliases.has(node.typeName.text) &&
           !enclosingBinders(node).includes(node.typeName.text)))) {
