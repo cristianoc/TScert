@@ -306,17 +306,17 @@ applies to the nested promise and its parameter.
 
 ### A callback inheriting `any` from object entries
 
-`sameData` (`tools/type-term.mts`) filters `Object.entries(o)` with an
-unannotated destructuring callback. The standard library's object overload
-supplies `[string, any]`, so the callback's value has no stated contract.
-`mergeRefusal` (`tools/array-prototype.mts`) uses the same overload in its
-local canonical representation, through both `filter` and `map`.
+`mergeRefusal` (`tools/array-prototype.mts`) reads `Object.entries(o)` in
+its local canonical representation, through `filter` and `map` with
+unannotated destructuring callbacks. The standard library's object
+overload supplies `[string, any]`, so the callback's value has no stated
+contract.
 
 - **Rewrite:** each callback declares its entry `[string, unknown]`.
-  Equality and the recursive reader already accept `unknown`.
+  The recursive reader already accepts `unknown`.
 - **Pattern:** a callback receiving untyped external data states the
   weakest contract its body needs, checking values before using them.
-- **Functions:** `sameData` and `mergeRefusal` (its local `canonical`).
+- **Functions:** `mergeRefusal` (its local `canonical`).
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
 
 ### An import phase read through an undeclared host field
@@ -644,6 +644,34 @@ to share.
   `tools/diagnostic-gate.mts`) have no grammar of TScert's to walk and keep
   their refusal.
 - **Commit:** the introducing commit, `Typed trees are walked through their grammar's typed traversal`.
+
+### Type terms compared as untyped data
+
+`sameIndex` (`tools/type-term.mts`) decides whether two index signatures
+state the same contract, and compared their value terms with `sameData`, an
+equality over `unknown`: it listed each object's entries with
+`Object.entries`, at an array too, and recursed on the values. Its callers
+hold `TypeTerm`s, which the parameter type discarded. Over `unknown`, the
+call at an object is the overload at `{}`, whose parameter excludes host
+objects ([excluding host values](HOST-FAMILIES.md#excluding-host-values)),
+and `object` does not; the call at an array, which TypeScript resolves to
+the generic overload, meets no dictionary. The diagnostic census of
+b81675f reports the gate's refusal of the two overloads together
+(`blocker-entries-mixed-overloads`) in 23 functions of
+`tools/type-term.mts`, each reaching `sameIndex` through `readTypeTerm`.
+
+- **Rewrite:** `sameTerm(a: TypeTerm, b: TypeTerm)` compares two terms by
+  their kind, field by field, each `span` left out, and `sameIndex` calls
+  it; a call effect's promise, a `JsonObject` of one key, is compared by
+  its `JSON.stringify` text. A kind added to `TypeTerm` fails the
+  compilation of `sameTerm`'s `switch`; a field added to a kind is compared
+  only once `sameTerm` names it. Two terms that `sameData` called different
+  only for the order of their fields' insertion are equal.
+- **Pattern:** a comparison of data the caller has typed takes that type,
+  and reads each field its type states.
+- **Functions:** `sameIndex`, `sameTerm` and its helpers, and the functions
+  of `tools/type-term.mts` reaching them.
+- **Commit:** the introducing commit, `Index contracts are compared as type terms, kind by kind`.
 
 ## Constructs avoided
 

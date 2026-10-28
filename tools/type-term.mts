@@ -1279,24 +1279,114 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 }
 
 /** Whether two index signatures state the same contract. */
-function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): Within<{ value: "any"; store: "grow" }, boolean> {
-  return a.readonly === b.readonly && sameData(a.value, b.value);
+function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a.readonly === b.readonly && sameTerm(a.value, b.value);
 }
 
-/** Whether two values hold the same data, field by field in order, leaving
- * out each object's `span` field and each field holding `undefined`: the comparison
- * of their `JSON.stringify` texts with `span` dropped, made without
- * serializing, so no `toJSON` of either is called. */
-function sameData(a: unknown, b: unknown): Within<{ value: "keep"; store: "keep" }, boolean> {
-  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return a === b;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const kept = (o: object): [string, unknown][] =>
-    Array.isArray(o) ? Object.entries(o) : Object.entries(o).filter(([k, v]: [string, unknown]) => k !== "span" && v !== undefined);
-  const x = kept(a), y = kept(b);
-  return x.length === y.length && x.every(([k, v], i) => {
-    const other = y[i];
-    return other !== undefined && other[0] === k && sameData(v, other[1]);
+/** Whether two type terms state the same contract: equal field by field,
+ * each `span` left out, an absent optional field equal only to an absent
+ * one. */
+function sameTerm(a: TypeTerm, b: TypeTerm): Within<{ value: "keep"; store: "keep" }, boolean> {
+  switch (a.k) {
+    case "atom": return b.k === "atom" && a.name === b.name;
+    case "literal": return b.k === "literal" && a.name === b.name && a.text === b.text;
+    case "unique": return b.k === "unique" && a.symbol === b.symbol;
+    case "union": return b.k === "union" && sameTerms(a.parts, b.parts);
+    case "intersection": return b.k === "intersection" && sameTerms(a.parts, b.parts);
+    case "array":
+      return b.k === "array" && a.presence === b.presence && a.readonly === b.readonly && sameTerm(a.element, b.element);
+    case "tuple":
+      return b.k === "tuple" && a.presence === b.presence && a.readonly === b.readonly &&
+        sameTerms(a.required, b.required) && sameTerms(a.optional, b.optional) && sameOptionalTerm(a.rest, b.rest);
+    case "object":
+      return b.k === "object" && a.fields.length === b.fields.length && a.fields.every((f, i) => {
+        const g = b.fields[i];
+        return g !== undefined && sameKey(f.name, g.name) && f.optional === g.optional && f.readonly === g.readonly &&
+          sameTerm(f.type, g.type);
+      }) && sameOptionalIndex(a.stringIndex, b.stringIndex) &&
+        sameOptionalIndex(a.numberIndex ?? null, b.numberIndex ?? null) &&
+        sameOptionalIndex(a.symbolIndex ?? null, b.symbolIndex ?? null) && sameTerms(a.calls, b.calls) &&
+        sameOptionalTerm(a.prototype ?? null, b.prototype ?? null) && a.host === b.host &&
+        sameStrings(a.stable ?? null, b.stable ?? null);
+    case "function":
+      return b.k === "function" && sameEffect(a.effect, b.effect) && sameOptionalTerm(a.receiver, b.receiver) &&
+        sameTerms(a.params, b.params) && sameOptionalTerm(a.rest, b.rest) && sameTerm(a.result, b.result);
+    case "constructor":
+      return b.k === "constructor" && sameEffect(a.effect, b.effect) && sameTerms(a.params, b.params) &&
+        sameOptionalTerm(a.rest, b.rest) && sameTerm(a.result, b.result) && sameStatics(a.statics ?? null, b.statics ?? null);
+    case "pack": return b.k === "pack" && sameTerm(a.of, b.of);
+    case "scheme":
+      return b.k === "scheme" && a.binders.length === b.binders.length && a.binders.every((x, i) => {
+        const y = b.binders[i];
+        return y !== undefined && x.name === y.name && sameOptionalTerm(x.bound, y.bound) &&
+          sameSlots(x.resolution, y.resolution) && sameOptionalTerm(x.default, y.default);
+      }) && sameTerms(a.signatures, b.signatures);
+    case "callable": return b.k === "callable";
+    case "self": return b.k === "self";
+    case "parameter": return b.k === "parameter" && a.index === b.index;
+    case "binder": return b.k === "binder" && a.name === b.name;
+    case "reference":
+      return b.k === "reference" && a.reference.name === b.reference.name &&
+        a.reference.arguments.length === b.reference.arguments.length &&
+        a.reference.arguments.every(([start, end], i) => {
+          const other = b.reference.arguments[i];
+          return other !== undefined && other[0] === start && other[1] === end;
+        }) &&
+        a.reference.target.module === b.reference.target.module && a.reference.target.name === b.reference.target.name &&
+        sameTerms(a.args, b.args);
+  }
+}
+
+/** Whether two lists of type terms are equal element by element. */
+function sameTerms(a: readonly TypeTerm[], b: readonly TypeTerm[]): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a.length === b.length && a.every((x, i) => {
+    const y = b[i];
+    return y !== undefined && sameTerm(x, y);
   });
+}
+
+/** Whether two type terms, each possibly absent, are equal. */
+function sameOptionalTerm(a: TypeTerm | null, b: TypeTerm | null): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a === null || b === null ? a === b : sameTerm(a, b);
+}
+
+/** Whether two index signatures, each possibly absent, state the same contract. */
+function sameOptionalIndex(a: { readonly: boolean; value: TypeTerm } | null, b: { readonly: boolean; value: TypeTerm } | null): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a === null || b === null ? a === b : sameIndex(a, b);
+}
+
+/** Whether two property keys are the same key. */
+function sameKey(a: PropertyKey, b: PropertyKey): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return typeof a === "string" || typeof b === "string" ? a === b : a.symbol === b.symbol;
+}
+
+/** Whether two lists of strings, each possibly absent, are equal. */
+function sameStrings(a: readonly string[] | null, b: readonly string[] | null): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a === null || b === null ? a === b : a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/** Whether two class values' static fields, each list possibly absent, are equal. */
+function sameStatics(a: readonly { name: PropertyKey; type: TypeTerm; readonly?: true }[] | null,
+  b: readonly { name: PropertyKey; type: TypeTerm; readonly?: true }[] | null): Within<{ value: "keep"; store: "keep" }, boolean> {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((x, i) => {
+    const y = b[i];
+    return y !== undefined && sameKey(x.name, y.name) && sameTerm(x.type, y.type) && (x.readonly === true) === (y.readonly === true);
+  });
+}
+
+/** Whether two resolution slots, each possibly absent, are equal. */
+function sameSlots(a: ResolutionSlots | null, b: ResolutionSlots | null): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a === null || b === null ? a === b : a.observation === b.observation && a.result === b.result;
+}
+
+/** Whether two call effects are equal; a promise, data of one key, by its
+ * JSON text. */
+function sameEffect(a: CallEffect, b: CallEffect): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return a.footprint.value === b.footprint.value && a.footprint.store === b.footprint.store &&
+    a.fresh === b.fresh && a.receiverStore === b.receiverStore && a.onThrow === b.onThrow &&
+    (a.promise === null || b.promise === null ? a.promise === b.promise
+      : JSON.stringify(a.promise) === JSON.stringify(b.promise));
 }
 
 /** The key kinds an index signature's parameter type names: `string`,
