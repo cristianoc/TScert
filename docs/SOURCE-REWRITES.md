@@ -594,6 +594,57 @@ functions of `files.mts` that reach `kindOf`, census of b81675f).
   body only reads is readonly in the bound.
 - **Commit:** the introducing commit.
 
+### A typed tree walked as `unknown`
+
+Five walks took a value of a known grammar at `unknown` and found its nodes
+by key name: `namesArray` (`tools/declaration-graph.mts`, the type terms of
+the declaration document's lists), `deferredIn` (`tools/named-record.mts`,
+a declaration document, a lowered file and an imported module's entry),
+`namesRead` (`tools/fragment-support.mts`, a Fragment expression),
+`renamedModule` (`tools/fragment-parse.mts`, an imported module's entry)
+and the visit of `presentObligation` (`tools/diagnostic-view.mts`, a
+decoded calculus term). Each read a member after `"k" in v` on an object
+of unknown type, which no rule admits ("missing field k"), and recursed
+through `Object.values`; the diagnostic census of b81675f reports these
+refusals in 24 functions, `lowerFile` among them. The value's type had
+established its grammar, which the parameter's annotation discarded, and a
+node kind added to the grammar was met by whatever key names it happened
+to share.
+
+- **Rewrite:** each grammar has one typed traversal of a node's parts, an
+  exhaustive switch on its kind, so that a kind added to the grammar fails
+  to compile until its parts are listed: `typeParts` (`tools/type-term.mts`)
+  for type terms, which `visitType` and `someType` fold; the maps
+  `mapExprParts`, `mapStmtParts`, `mapPatternParts`, `mapFunctionParts`
+  and `mapDocument` (`tools/fragment-parts.mts`) for the Fragment AST and
+  the declaration document, of which `forEachPart`, `documentHolds`,
+  `moduleHolds` and `astHolds` are folds and `deepPartMap` the map of
+  every part under a node; and `termParts` and `codeTerms`
+  (`tools/diagnostic-view.mts`) for calculus terms. `namesArray` and
+  `deferredInDocument`, `deferredInAst`, `deferredInModule` ask whether a
+  document's type terms, or its declaration identities, hold a given node;
+  `namesRead` folds the expressions under one; `renamedModule` maps a
+  module's identities, binder names and application sites; the summary
+  reads the slots among a term's parts, the parts of a part, and its call
+  code's terms. Each answers what the walk it replaces answered: run side
+  by side over every pipeline case's documents (2,363 cases), they agreed
+  on every value (2,081 `namesArray` lists, 2,102 files' and 21 modules'
+  deferred tests, the names read of every expression of 2,102 files, 21
+  renamed modules, 257 summaries' slots), and on the slots of 2,788
+  generated terms.
+- **Pattern:** a value of a declared grammar is walked through that
+  grammar's typed traversal.
+- **Functions:** `namesArray`, `deferredIn` (rewritten as
+  `deferredInDocument`, `deferredInAst` and `deferredInModule`),
+  `namesRead`, `renamedModule`, `presentObligation`, and their callers;
+  `typed-tree-fold` is the pattern as a case, and
+  `blocker-in-unknown-walk` the refused walk. Three sites reading an
+  object the compiler provides (`privateClient` of
+  `tools/compiler-channel.mts`, `isNode` of `tools/syntax.mts`, `copied` of
+  `tools/diagnostic-gate.mts`) have no grammar of TScert's to walk and keep
+  their refusal.
+- **Commit:** the introducing commit, `Typed trees are walked through their grammar's typed traversal`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

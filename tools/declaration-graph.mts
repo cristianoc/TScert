@@ -41,7 +41,8 @@ import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe
 import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
-import { definitionKey, deferredIn, settleDocument, termText } from "./named-record.mts";
+import { definitionKey, deferredInDocument, settleDocument, termText } from "./named-record.mts";
+import { documentHolds } from "./fragment-parts.mts";
 // files.mts makes every file-system failure a tool failure.
 import { manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
@@ -231,13 +232,10 @@ function withOwnProject<T>(file: string,
   }
 }
 
-/** Whether a part of the declaration document names an array or a tuple
+/** Whether the parts of a declaration document name an array or a tuple
  * type, which Lean reads at `ArrayProto`. */
-function namesArray(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(namesArray);
-  if (typeof value !== "object" || value === null) return false;
-  if ("k" in value && (value.k === "array" || value.k === "tuple")) return true;
-  return Object.values(value).some(namesArray);
+function namesArray(parts: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }): boolean {
+  return documentHolds({ roots: [], symbols: [], ...parts }, t => t.k === "array" || t.k === "tuple", () => false);
 }
 
 /** A module's identity: the client by its absolute path, a standard library
@@ -4013,7 +4011,8 @@ export function collectDeclarations(file: string, options: {
     // read at `Array.prototype`'s contract as one the client writes is; the
     // declarations that contract names join the graph.
     if (!arrayProto.length &&
-        [values, definitions, applications, selections, overlayDefinitions, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
+        namesArray({ values, applications, definitions: [...definitions, ...selections, ...overlayDefinitions, ...primitiveProtos,
+          ...regexpDefinitions, ...collectionDefinitions] })) {
       const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
       const from = valueStarts.length;
       try {
@@ -4052,7 +4051,7 @@ export function collectDeclarations(file: string, options: {
       { ...d, expression: d.expression && promisedMethods(d.expression) });
     if (options.familySelected) options.familySelected(scan());
     const document: DeclarationDocument = { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
-    if (deferredIn(document))
+    if (deferredInDocument(document))
       throw new DeclarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
     return document;
   });

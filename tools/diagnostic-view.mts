@@ -6,7 +6,7 @@
  * See ../OBLIGATION-DIAGNOSTICS.md.
  */
 
-import type { JsonRead, JsonValue } from "./calculus.mts";
+import type { CallCode, JsonRead, JsonValue, Term } from "./calculus.mts";
 import surface from "./claim-text.mts";
 import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 
@@ -82,6 +82,45 @@ const requiresKnowledge = (knowledge: HeapKnowledge | null): boolean =>
 
 const sameType = (a: JsonRead, b: JsonRead): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+/* ---------- terms ---------- */
+/** A part of a term: a term, a list of terms, or call code. */
+type TermPart = { k: "term"; t: Term } | { k: "terms"; ts: Term[] } | { k: "code"; c: CallCode };
+
+/** A term's parts, in the order of their field names: the one traversal of
+ * the term grammar the summary reads. */
+function termParts(t: Term): TermPart[] {
+  const one = (x: Term): TermPart => ({ k: "term", t: x });
+  const list = (xs: Term[]): TermPart => ({ k: "terms", ts: xs });
+  const code = (c: CallCode): TermPart => ({ k: "code", c });
+  switch (t.kind) {
+    case "nul": case "undef": case "tru": case "fls": case "num": case "str": case "bigint": case "var": case "arr": return [];
+    case "invoke": return [list(t.args), one(t.f), one(t.r)];
+    case "construct": return [list(t.args), one(t.f)];
+    case "letE": case "writeAt": case "arith": case "merge": return [one(t.a), one(t.b)];
+    case "objAt": return [code(t.call)];
+    case "makeAt": return [code(t.call), list(t.inits)];
+    case "readAt": case "test": case "lenOf": case "spread": case "throw": return [one(t.a)];
+    case "indexAt": return [one(t.a), one(t.key)];
+    case "ite": return [one(t.c), one(t.e), one(t.t)];
+    case "arrLit": return [list(t.inits)];
+    case "elemAt": return [one(t.a), one(t.i)];
+    case "setElem": return [one(t.a), one(t.i), one(t.v)];
+    case "makeKey": return [one(t.init), one(t.key)];
+    default: { const exhaustive: never = t; return exhaustive; }
+  }
+}
+
+/** Call code's terms, in the order of their field names; a list of terms
+ * it holds is not among them. */
+function codeTerms(c: CallCode): Term[] {
+  switch (c.kind) {
+    case "absent": case "graph": return [];
+    case "closure": case "variadic": return [c.body];
+    case "bound": return [c.receiver, c.target];
+    default: { const exhaustive: never = c; return exhaustive; }
+  }
+}
+
 /** Uniform report contract: the source-named summary of a failed obligation and
  * how its search ended, as strings a report shows without decoding the
  * calculus or applying slot transfers. */
@@ -148,36 +187,23 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       if (term.kind === "nul" || term.kind === "undef" || term.kind === "tru" || term.kind === "fls")
         return { searchOutcome: searched };
       // Not a slot: name the term's form and the claims of the slots it reads
-      // directly, which are what the rule for that form would use: those
-      // within three levels of the wire's nesting, where a constructor's
-      // fields sit two levels below it, in the wire's order of their names.
+      // directly, which are what the rule for that form would use: a slot
+      // that is a part of it, an element of a list of its parts, a part of a
+      // part, or a part of its call code, in the order of the parts' names.
       const form = term.kind;
       const op = term.kind === "arith" ? ` ${term.op}` : "";
       const slots = new Set<number>();
-      const visitFields = (v: object, depth: number): void => {
-        const entries: [string, unknown][] = Object.entries(v);
-        const named = entries.filter(([k]) => k !== "kind").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-        for (const [, x] of named) visit(x, depth);
-      };
-      const visit = (v: unknown, depth: number): void => {
-        if (typeof v !== "object" || v === null || depth > 3) return;
-        if (Array.isArray(v)) {
-          const elements: unknown[] = v;
-          for (const x of elements) visit(x, depth + 1);
-          return;
+      const slot = (t: Term): void => { if (t.kind === "var") slots.add(t.i); };
+      for (const part of termParts(term)) {
+        switch (part.k) {
+          case "term":
+            if (part.t.kind === "var") slots.add(part.t.i);
+            else for (const inner of termParts(part.t)) if (inner.k === "term") slot(inner.t);
+            break;
+          case "terms": part.ts.forEach(slot); break;
+          case "code": codeTerms(part.c).forEach(slot); break;
         }
-        if ("kind" in v) {
-          if (v.kind === "var" && "i" in v && typeof v.i === "number") {
-            slots.add(v.i);
-            return;
-          }
-          if (depth + 1 <= 3) visitFields(v, depth + 2);
-          return;
-        }
-        const values: unknown[] = Object.values(v);
-        for (const x of values) visit(x, depth + 1);
-      };
-      visitFields(term, 1);
+      }
       const operands = [...slots].flatMap((s) =>
         inContext(s) ? [`${binding(s)}: ${recordType(ob, q.context[s])}`] : []);
       return {

@@ -23,8 +23,9 @@ import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
 import { noteInput, readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
-import type { DeclarationIdentity, StatedEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
+import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
+import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
@@ -34,7 +35,7 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
-import { definitionKey, deferredIn, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
+import { definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
 import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type Answered,
   type BlockType, type LibraryType, type SeenDiagnostic }
@@ -1247,31 +1248,34 @@ function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: st
  * module, and the program modules it imports functions from. */
 type Lowered = { ast: Ast; module: ModuleAst | null; imported: ImportedModule[] };
 
-/** The same value with each `module` field naming `from` naming `to`, each
- * written application's `site` in `from` sited in `to`, and each binder name
- * a declaration of `from` gives (`T@from:offset`) given by `to`: in a binder's
+/** The module with each declaration of `from` named by `to`, each written
+ * application's `site` in `from` sited in `to`, and each binder name a
+ * declaration of `from` gives (`T@from:offset`) given by `to`: in a binder's
  * declaration (a type parameter's `name` and its resolution slots) and in a
  * binder term's `name`, and nowhere else, so a literal type or a property key
  * spelling such a name keeps it. An imported module's own declarations, which
  * its lowering names by its path, named by its identity in the importer's
  * documents. */
-function renamedModule<T>(value: T, from: string, to: string): T {
-  const binderName = (x: unknown): unknown => typeof x === "string" ? x.split(`@${from}:`).join(`@${to}:`) : x;
-  const rename = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(rename);
-    if (!v || typeof v !== "object") return v;
-    const binderTerm = "k" in v && v.k === "binder";
-    const binderDeclaration = "name" in v && "bound" in v && "resolution" in v;
-    return Object.fromEntries(Object.entries(v).map(([k, x]: [string, unknown]) => [k,
-      k === "module" && x === from ? to
-      : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
-      : k === "name" && (binderTerm || binderDeclaration) ? binderName(x)
-      : k === "resolution" && binderDeclaration && x && typeof x === "object"
-        ? Object.fromEntries(Object.entries(x).map(([s, n]: [string, unknown]) => [s, binderName(n)]))
-      : rename(x)]));
+function renamedModule(module: ModuleAst, from: string, to: string): ModuleAst {
+  const name = (x: string): string => x.split(`@${from}:`).join(`@${to}:`);
+  const identity = (id: DeclarationIdentity): DeclarationIdentity => id.module === from ? { ...id, module: to } : id;
+  const slots = (r: ResolutionSlots | null): ResolutionSlots | null =>
+    r && { ...r, observation: name(r.observation), result: r.result === null ? null : name(r.result) };
+  const node = (t: TypeTerm): TypeTerm => {
+    switch (t.k) {
+      case "binder": return { ...t, name: name(t.name) };
+      case "reference": return { ...t, reference: { ...t.reference, target: identity(t.reference.target) } };
+      case "scheme": return { ...t, binders: t.binders.map(b => ({ ...b, name: name(b.name), resolution: slots(b.resolution) })) };
+      default: return t;
+    }
   };
-  // asserted: a structural copy of the value, its shape unchanged
-  return rename(value) as T;
+  const term = (t: TypeTerm): TypeTerm => mapTypeParts(node(t), term);
+  const param = (p: TypeParamAst): TypeParamAst =>
+    ({ ...p, name: name(p.name), bound: p.bound && term(p.bound), resolution: slots(p.resolution) });
+  const site = (at: string): string => at.startsWith(`${from}#`) ? `${to}${at.slice(from.length)}` : at;
+  const parts = deepPartMap(term, param);
+  return { ...module, declarations: mapDocument(module.declarations, { type: term, param, identity, site }),
+    init: module.init.map(parts.stmt), functions: module.functions.map(f => mapFunctionParts(f, parts)) };
 }
 
 function lowerFile(file: string, carriesContext: boolean,
@@ -2210,7 +2214,7 @@ function lowerFile(file: string, carriesContext: boolean,
     declarations, init, functions: parsed, absent }, absolute, location);
   // A mapped type over a named type read before the document was complete,
   // by a term the graph handed the gate, names no declaration.
-  if (deferredIn(ast) || deferredIn(module))
+  if (deferredInAst(ast) || (module !== null && deferredInModule(module)))
     gate.fail(null, "a mapped type's value names its key, over a named type read before its definitions were complete");
   return { ast, module, imported: importedFrom };
 }

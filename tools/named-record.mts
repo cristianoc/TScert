@@ -4,7 +4,9 @@
  * definitions they reach were complete. Both readers use it: the
  * declaration graph once its collection ends, and the gate for the file's
  * annotations, read after the declaration document is complete. */
-import type { DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { DeclarationDocument, DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { Ast, ModuleAst } from "./fragment.mts";
+import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
 import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
@@ -169,12 +171,27 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
   return go(term);
 }
 
-/** Whether a document holds a deferred mapped type (`deferredIdentity`):
+/* Whether a document holds a deferred mapped type (`deferredIdentity`):
  * none may reach a serialized document, where it would name no
- * declaration. */
-export function deferredIn(value: unknown): Within<{ value: "any"; store: "grow" }, boolean> {
-  if (typeof value !== "object" || value === null) return false;
-  if (Array.isArray(value)) return value.some(deferredIn);
-  if ("module" in value && value.module === DEFERRED_MODULE) return true;
-  return Object.values(value).some(deferredIn);
+ * declaration. A declaration of its module is one, wherever it is named. */
+const deferredTerm = (t: TypeTerm): Within<{ value: "any"; store: "grow" }, boolean> =>
+  t.k === "reference" && t.reference.target.module === DEFERRED_MODULE;
+const deferredDeclaration = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, boolean> =>
+  id.module === DEFERRED_MODULE;
+
+/** Whether a declaration document holds a deferred mapped type. */
+export function deferredInDocument(doc: DeclarationDocument): Within<{ value: "any"; store: "grow" }, boolean> {
+  return documentHolds(doc, deferredTerm, deferredDeclaration);
+}
+
+/** Whether a lowered file, its documents and code, holds a deferred mapped
+ * type. */
+export function deferredInAst(ast: Ast): Within<{ value: "any"; store: "grow" }, boolean> {
+  return astHolds(ast, deferredTerm, deferredDeclaration);
+}
+
+/** Whether an imported module's entry, its documents and code, holds a
+ * deferred mapped type. */
+export function deferredInModule(module: ModuleAst): Within<{ value: "any"; store: "grow" }, boolean> {
+  return moduleHolds(module, deferredTerm, deferredDeclaration);
 }

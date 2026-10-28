@@ -27,44 +27,43 @@ const ownedSlots = (slots: ResolutionSlots | null): Within<{ value: "any"; store
 // its integer, whatever its spelling (`bigintText`).
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
+/** A term's parts, the terms it is made of, in the order of its fields:
+ * the one traversal of the type-term grammar its folds use. */
+export function typeParts(term: TypeTerm): Within<{ value: "any"; store: "grow" }, TypeTerm[]> {
+  switch (term.k) {
+    case "atom": case "literal": case "unique": case "callable": case "self": case "parameter": case "binder": return [];
+    case "union": case "intersection": return term.parts;
+    case "array": return [term.element];
+    case "tuple": return [...term.required, ...term.optional, ...(term.rest ? [term.rest] : [])];
+    case "object": return [...term.fields.map(field => field.type), ...term.calls,
+      ...(term.stringIndex ? [term.stringIndex.value] : []), ...(term.numberIndex ? [term.numberIndex.value] : []),
+      ...(term.symbolIndex ? [term.symbolIndex.value] : []), ...(term.prototype ? [term.prototype] : [])];
+    case "function": return [...(term.receiver ? [term.receiver] : []), ...term.params,
+      ...(term.rest ? [term.rest] : []), term.result];
+    case "constructor": return [...term.params, ...(term.rest ? [term.rest] : []), term.result,
+      ...(term.statics ?? []).map(field => field.type)];
+    case "pack": return [term.of];
+    case "reference": return term.args;
+    case "scheme": return [...term.binders.flatMap(binder => [...(binder.bound ? [binder.bound] : []),
+      ...(binder.default ? [binder.default] : [])]), ...term.signatures];
+    default: { const exhaustive: never = term; return exhaustive; }
+  }
+}
+
+/** Whether `term`, or a term it is made of, passes `test`. */
+export function someType(term: TypeTerm, test: (term: TypeTerm) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
+  return test(term) || typeParts(term).some(part => someType(part, test));
+}
+
 /** Visit every source type constructor, with the generic method binders in scope.
  * Readers use the same walk for annotation admissibility and name checking. */
 export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: ReadonlySet<string>) => Within<{ value: "any"; store: "grow" }, void>,
     bound: ReadonlySet<string> = new Set()): Within<{ value: "any"; store: "grow" }, void> {
   visit(term, bound);
-  const go = (part: TypeTerm): void => visitType(part, visit, bound);
-  switch (term.k) {
-    case "atom": case "literal": case "unique": case "callable": case "self": case "parameter": case "binder": return;
-    case "union": case "intersection": term.parts.forEach(go); return;
-    case "array": go(term.element); return;
-    case "tuple":
-      term.required.forEach(go); term.optional.forEach(go); if (term.rest) go(term.rest); return;
-    case "object":
-      term.fields.forEach(field => go(field.type)); term.calls.forEach(go);
-      if (term.stringIndex) go(term.stringIndex.value);
-      if (term.numberIndex) go(term.numberIndex.value);
-      if (term.symbolIndex) go(term.symbolIndex.value);
-      if (term.prototype) go(term.prototype);
-      return;
-    case "function": if (term.receiver) go(term.receiver);
-      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
-    case "constructor":
-      term.params.forEach(go); if (term.rest) go(term.rest); go(term.result);
-      term.statics?.forEach(field => go(field.type)); return;
-    case "pack": go(term.of); return;
-    case "reference": term.args.forEach(go); return;
-    case "scheme": {
-      const inner = new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
-        ...ownedSlots(binder.resolution)])]);
-      const scoped = (part: TypeTerm): void => visitType(part, visit, inner);
-      term.binders.forEach(binder => {
-        if (binder.bound) scoped(binder.bound);
-        if (binder.default) scoped(binder.default);
-      });
-      term.signatures.forEach(scoped); return;
-    }
-    default: { const exhaustive: never = term; return exhaustive; }
-  }
+  // A scheme's binders are in scope in its bounds, defaults and signatures.
+  const inner = term.k !== "scheme" ? bound : new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
+    ...ownedSlots(binder.resolution)])]);
+  for (const part of typeParts(term)) visitType(part, visit, inner);
 }
 
 /** Admissibility of a source annotation, independent of its input representation. */

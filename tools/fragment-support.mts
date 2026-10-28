@@ -4,6 +4,7 @@ import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, Node, SourceFile, TypeParameterDeclaration } from "typescript/unstable/ast";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Expr, PatternAst, Stmt } from "./fragment.mts";
+import { forEachPart } from "./fragment-parts.mts";
 import type { Span } from "./span.mts";
 import { isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { numberText } from "./intrinsics.mts";
@@ -255,12 +256,9 @@ export function unnamedMember(member: ts.ClassElement, isStatic: boolean): strin
 
 /** The names an expression reads, closures' included: a superset of what
  * it may read when it runs. */
-export function namesRead(e: unknown, out: Set<string> = new Set()): Within<{ value: "any"; store: "grow" }, Set<string>> {
-  if (Array.isArray(e)) e.forEach((x: unknown) => namesRead(x, out));
-  else if (e !== null && typeof e === "object") {
-    if ("k" in e && e.k === "id" && "name" in e && typeof e.name === "string") out.add(e.name);
-    Object.values(e).forEach((v: unknown) => namesRead(v, out));
-  }
+export function namesRead(e: Expr): Within<{ value: "any"; store: "grow" }, Set<string>> {
+  const out = new Set<string>();
+  forEachPart({ k: "expr", e }, part => { if (part.k === "expr" && part.e.k === "id") out.add(part.e.name); });
   return out;
 }
 
