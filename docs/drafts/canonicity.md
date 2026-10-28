@@ -135,9 +135,12 @@ destinations become aliases by a law).
 meaning: which locations differ. Today: a pair stated from either side, one
 fact over two fields and two facts of one field each, whole-object and
 per-field forms over the keys a slot's type admits, depth after `rebase`,
-order and duplicates. Requirements: identify those forms, except
-whole-object and per-field forms, which a key bound does not make
-equivalent where a field list may hold a key twice
+order and duplicates. Requirements: identify the forms a pair takes on the
+slots of one alias class, group a subject's pairs into one fact and merge a
+partner's fields, with a bound on the facts; whole-object and per-field
+forms stay distinct, since a key bound does not make them equivalent where
+a field list may hold a key twice, and grouping is not unique, so S has no
+uniqueness requirement
 ([heap knowledge, §5](heap-knowledge-canonical.md#5-s-separation)).
 
 **K, the whole:** `Knowledge`, the four above; meaning
@@ -198,7 +201,7 @@ stated once per alias class.
 
 **X · Evidence documents.** The interned tables of the evidence
 (`Interned`, [EvidenceWire.lean](../../lean/Verification/Source/EvidenceWire.lean)):
-types, contexts, knowledge, links, separations, proofs, numbered in order
+types, contexts, links, separations, value sets, knowledge, proofs, numbered in order
 of first encounter. Meaning of a document: the tree its roots unfold to,
 so that two identical entries and one shared entry mean the same.
 Requirements (canonical serialization): only entries reachable from the

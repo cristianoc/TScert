@@ -1,6 +1,7 @@
 import Verification.Semantics.HeapLinks
 import Verification.Semantics.Partitions
 import Verification.Semantics.ValueSets
+import Std.Data.HashMap.Lemmas
 
 /-! The alias classes of links (heap-knowledge draft, §3): the slots alias
 links relate, closed under the law that two reads of one field from one
@@ -85,13 +86,15 @@ def step (cs : Partition) (r : Link × Link) : Partition :=
 give one value. -/
 def key (cs : Partition) (g : Link) : List Nat × PropKey := (cls cs g.cell, g.field)
 
-/-- Each read with its key. -/
-def table (cs : Partition) (ls : Links) : List ((List Nat × PropKey) × Link) :=
-  (ls.filter (!·.alias)).map fun g => (key cs g, g)
+instance : LawfulHashable PropKey := ⟨fun a b h => by rw [eq_of_beq h]⟩
+
+/-- The first read of each key, by hash. -/
+def table (cs : Partition) (ls : Links) : Std.HashMap (List Nat × PropKey) Link :=
+  (ls.filter (!·.alias)).foldl (fun m g => m.insertIfNew (key cs g) g) ∅
 
 /-- The first read of a read's key: one link per key. -/
-def anchor (cs : Partition) (t : List ((List Nat × PropKey) × Link)) (g : Link) : Link :=
-  ((t.find? (·.1 == key cs g)).map (·.2)).getD g
+def anchor (cs : Partition) (t : Std.HashMap (List Nat × PropKey) Link) (g : Link) : Link :=
+  (t[key cs g]?).getD g
 
 /-- The rule instances a pass applies: each alias link with itself, and each
 read with its key's first read. -/
@@ -122,34 +125,61 @@ theorem mem_pairs {ls : Links} {r : Link × Link} (hr : r ∈ pairs ls) : r.1 �
 section steps
 variable {ls : Links}
 
+theorem table_fold {cs : Partition} : ∀ (l : Links) (m : Std.HashMap (List Nat × PropKey) Link),
+    (∀ g ∈ l, g ∈ ls ∧ g.alias = false) →
+    (∀ k a, m[k]? = some a → a ∈ ls ∧ a.alias = false ∧ key cs a = k) →
+    (∀ k a, (l.foldl (fun m g => m.insertIfNew (key cs g) g) m)[k]? = some a →
+      a ∈ ls ∧ a.alias = false ∧ key cs a = k) ∧
+    (∀ g ∈ l, (l.foldl (fun m g => m.insertIfNew (key cs g) g) m).contains (key cs g) = true) ∧
+    (∀ k, m.contains k = true → (l.foldl (fun m g => m.insertIfNew (key cs g) g) m).contains k = true)
+  | [], m, _, hm => ⟨hm, by simp, fun _ h => h⟩
+  | g :: l, m, hl, hm => by
+    have hm' : ∀ k a, (m.insertIfNew (key cs g) g)[k]? = some a → a ∈ ls ∧ a.alias = false ∧ key cs a = k := by
+      intro k a h
+      rw [Std.HashMap.getElem?_insertIfNew] at h
+      split at h
+      · rename_i hc
+        cases h
+        exact ⟨(hl g (List.mem_cons_self ..)).1, (hl g (List.mem_cons_self ..)).2, eq_of_beq hc.1⟩
+      · exact hm k a h
+    obtain ⟨h₁, h₂, h₃⟩ := table_fold l _ (fun g' hg' => hl g' (List.mem_cons_of_mem _ hg')) hm'
+    refine ⟨h₁, fun g' hg' => ?_, fun k hk => h₃ k (by rw [Std.HashMap.contains_insertIfNew, hk]; simp)⟩
+    rcases List.mem_cons.mp hg' with rfl | hg'
+    · exact h₃ _ (by rw [Std.HashMap.contains_insertIfNew]; simp)
+    · exact h₂ g' hg'
+
+theorem table_props {cs : Partition} :
+    (∀ k a, (table cs ls)[k]? = some a → a ∈ ls ∧ a.alias = false ∧ key cs a = k) ∧
+    (∀ g ∈ ls, g.alias = false → (table cs ls).contains (key cs g) = true) := by
+  obtain ⟨h₁, h₂, -⟩ := table_fold (cs := cs) (ls := ls) (ls.filter (!·.alias)) ∅
+    (fun g hg => by
+      obtain ⟨hg, ha⟩ := List.mem_filter.mp hg
+      exact ⟨hg, by simpa using ha⟩)
+    (fun k a h => by simp at h)
+  exact ⟨h₁, fun g hg ha => h₂ g (List.mem_filter.mpr ⟨hg, by simp [ha]⟩)⟩
+
 /-- A read's key's first read: a read of the links, of that key. -/
 theorem anchor_spec {cs : Partition} {g : Link} (hg : g ∈ ls) (ha : g.alias = false) :
     anchor cs (table cs ls) g ∈ ls ∧ (anchor cs (table cs ls) g).alias = false ∧
       key cs (anchor cs (table cs ls) g) = key cs g := by
   unfold anchor
-  cases hf : (table cs ls).find? (·.1 == key cs g) with
+  have hc := (table_props (cs := cs) (ls := ls)).2 g hg ha
+  cases hf : (table cs ls)[key cs g]? with
   | none =>
-    exfalso
-    have hm : (key cs g, g) ∈ table cs ls :=
-      List.mem_map.mpr ⟨g, List.mem_filter.mpr ⟨hg, by simp [ha]⟩, rfl⟩
-    have := List.find?_eq_none.mp hf _ hm
-    simp at this
+    have hs : ((table cs ls)[key cs g]?).isSome = true := by
+      rw [Std.HashMap.isSome_getElem?_iff_mem]; exact Std.HashMap.contains_iff_mem.mp hc
+    rw [hf] at hs
+    cases hs
   | some e =>
-    have hm := List.mem_of_find?_eq_some hf
-    have hk := List.find?_some hf
-    simp only [beq_iff_eq] at hk
-    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
-    obtain ⟨hx, hxa⟩ := List.mem_filter.mp hx
-    simp only [Bool.not_eq_true'] at hxa
-    exact ⟨hx, hxa, hk⟩
+    simpa using (table_props (cs := cs) (ls := ls)).1 _ _ hf
 
 /-- Two reads of one key have one first read. -/
 theorem anchor_key {cs : Partition} {g g' : Link} (h : key cs g = key cs g') :
     anchor cs (table cs ls) g = anchor cs (table cs ls) g' ∨
-      ((table cs ls).find? (·.1 == key cs g)).isNone := by
+      ((table cs ls)[key cs g]?).isNone := by
   unfold anchor
   rw [h]
-  cases (table cs ls).find? (·.1 == key cs g') <;> simp
+  cases (table cs ls)[key cs g']? <;> simp
 
 theorem rules_pairs {cs : Partition} {r : Link × Link} (hr : r ∈ rules ls cs) : r ∈ pairs ls := by
   simp only [rules, List.mem_map] at hr
@@ -287,10 +317,9 @@ theorem closed {cs : Partition} (h : Ok (slots ls) cs) (hg : ∀ x y, same cs x 
       rcases anchor_key (ls := ls) hk with e | e
       · exact e
       · exfalso
-        have hm : (key cs g, g) ∈ table cs ls :=
-          List.mem_map.mpr ⟨g, List.mem_filter.mpr ⟨hg, by simp [ha]⟩, rfl⟩
-        have hs : ((table cs ls).find? (·.1 == key cs g)).isSome = true :=
-          List.find?_isSome.mpr ⟨_, hm, beq_self_eq_true _⟩
+        have hc := (table_props (cs := cs) (ls := ls)).2 g hg ha
+        have hs : ((table cs ls)[key cs g]?).isSome = true := by
+          rw [Std.HashMap.isSome_getElem?_iff_mem]; exact Std.HashMap.contains_iff_mem.mp hc
         rw [Option.isNone_iff_eq_none] at e
         rw [e] at hs
         cases hs

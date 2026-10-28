@@ -1,5 +1,6 @@
 import Verification.Semantics.Purity
 import Verification.Semantics.HeapKnowledge
+import Verification.Semantics.LinkClasses
 
 /-! Checked expression rules with primitive state postconditions. Ordinary evidence
 retains only immutable-value facts; special rules justify stronger heap facts.
@@ -870,7 +871,7 @@ written value is a known primitive (`R`), and retains immutable values
 already read into slots. -/
 def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) : Knowledge :=
   ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
-      (k.cells.filter fun f => HeapSeparation.apart k.separation i fld f.slot f.field).map
+      (k.cells.filter fun f => HeapSeparation.apartBy (Partitions.cls (LinkClasses.closure k.links)) k.separation i fld f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation⟩
@@ -933,7 +934,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             | none => rw [hfd0] at hrd; exact hrd
             | some l0 =>
               rw [hfd0] at hrd
-              have hne : l ≠ l0 := HeapSeparation.apart_sound hg.2 hk.2.2.2 hl hfd hs0 hfd0
+              have hne : l ≠ l0 := HeapSeparation.apartBy_sound (fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm) hg.2 hk.2.2.2 hl hfd hs0 hfd0
               simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf

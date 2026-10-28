@@ -151,16 +151,18 @@ theorem entryFacts_holds {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W h} (
 
 /-- The contexts of a node's output slots: the entry's, one further; the
 result's slot has none. -/
-def outputCtx (G : NormalGraph ι) (c : NodeEvidence ι) : KnowledgeNormal.Ctx
-  | 0 => none
-  | i + 1 => KnowledgeExpand.ctxOf G (entry c) i
+@[inline] def outputCtx (G : NormalGraph ι) (c : NodeEvidence ι) : KnowledgeNormal.Ctx :=
+  HeapKnowledge.setsCtx (HeapKnowledge.typeSets G (entry c)) 1
 
 theorem outputCtx_ok {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W} (he : EnvOk G (entry c) ρ n W) (v : Tm) :
     KnowledgeNormal.CtxOk (outputCtx G c) (push v ρ) := by
   intro i C hC
   cases i with
-  | zero => cases hC
-  | succ i => exact KnowledgeExpand.ctxOf_ok he i C hC
+  | zero => simp [outputCtx, HeapKnowledge.setsCtx] at hC
+  | succ i =>
+    simp only [outputCtx, HeapKnowledge.setsCtx, Nat.add_lt_iff_lt_sub_right, Nat.succ_sub_one,
+      Nat.not_lt_zero, if_false] at hC
+    exact HeapKnowledge.typeSets_mem he (by simpa using hC)
 
 /-- A node's stated output follows from the output its step computes. -/
 def outputFits (G : NormalGraph ι) (c : NodeEvidence ι) (out : HeapKnowledge.Knowledge) : Bool :=

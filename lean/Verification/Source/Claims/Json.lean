@@ -157,7 +157,7 @@ Claim agreement is checked before this diagnostic is selected. -/
       let some destination := c.certificate[target.label]? | continue
       let some proof := e.edges[index]? | continue
       let Γ := CertificateProducer.edgeContextOf G e node.continuation index
-      let facts := CertificateProducer.edgeImplicationsOf.edgeFactsOf G e node.continuation
+      let facts := CertificateProducer.edgeImplicationsOf.edgeFactsOf (ControlFlow.outFacts G e) node.continuation
       let observed := match node.continuation with
         | .branchBind .. => some (BranchRefinement.Observation.boolean (index == 0))
         | .tagBind tag .. => some (BranchRefinement.Observation.tag tag (index == 0))

@@ -274,7 +274,7 @@ const jsonIndex = (v: JsonValue | undefined): number => {
 };
 /** The kinds of an evidence bundle's tables, in the order each names only
  * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
-const evidenceTables = ["types", "contexts", "links", "separations", "knowledge", "proofs"] as const;
+const evidenceTables = ["types", "contexts", "links", "separations", "valueSets", "knowledge", "proofs"] as const;
 /** Every bundle of an evidence document: the main one, then each module's. */
 const evidenceBundles = (document: JsonValue): JsonObject[] => [jsonObject(jsonObject(document).main),
   ...jsonArray(jsonObject(document).modules).map((m) => jsonObject(jsonObject(m).evidence))];
@@ -288,10 +288,15 @@ function unfoldedEvidence(path: string): JsonValue {
     const at = (table: JsonValue[], k: JsonValue | undefined): JsonValue =>
       structuredClone(must(table[jsonIndex(k)], "an entry of its table"));
     const types = jsonArray(b.types), links = jsonArray(b.links), separations = jsonArray(b.separations);
+    const valueSets = jsonArray(b.valueSets);
+    const facts = (fs: JsonValue | undefined): JsonValue => jsonArray(fs).map((f) => {
+      const e = jsonObject(f);
+      return { slot: e.slot ?? null, contents: at(valueSets, e.contents), field: e.field ?? null };
+    });
     const contexts = jsonArray(b.contexts).map((c) => jsonArray(c).map((t) => at(types, t)));
     const knowledge = jsonArray(b.knowledge).map((k): JsonValue => {
       const e = jsonObject(k);
-      return { cells: e.cells ?? null, values: e.values ?? null, links: jsonArray(e.links).map((l) => at(links, l)),
+      return { cells: facts(e.cells), values: facts(e.values), links: jsonArray(e.links).map((l) => at(links, l)),
         separation: { depth: e.depth ?? null, facts: jsonArray(e.separation).map((a) => at(separations, a)) } };
     });
     const sequent = (s: JsonValue): JsonValue => {
@@ -360,10 +365,14 @@ function tabledEvidence(document: unknown): string {
       const premises = jsonArray(e.premises).map(proof);
       return add("proofs", { claim: sequent(e.claim), rule: e.rule ?? null, premises });
     };
+    const facts = (fs: JsonValue | undefined): JsonValue => jsonArray(fs).map((f) => {
+      const e = jsonObject(f);
+      return { slot: e.slot ?? null, contents: add("valueSets", e.contents ?? null), field: e.field ?? null };
+    });
     const knowledge = (k: JsonValue | undefined): number => {
       const e = jsonObject(k);
       const separation = jsonObject(e.separation);
-      return add("knowledge", { cells: e.cells ?? null, values: e.values ?? null,
+      return add("knowledge", { cells: facts(e.cells), values: facts(e.values),
         links: jsonArray(e.links).map((l) => add("links", l)), depth: separation.depth ?? null,
         separation: jsonArray(separation.facts).map((a) => add("separations", a)) });
     };

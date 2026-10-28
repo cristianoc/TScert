@@ -115,7 +115,7 @@ def cellParts (c : CellKey) : List ValueSet :=
 def norm : Knowledge :=
   ⟨(cellKeys k).map (fun c => ⟨c.slot, ValueSet.top.normIn (meetAll ValueSet.top (cellParts k c)), c.field⟩),
    (classes k).filterMap (valueFact ctx k), LinkClasses.norm k.links,
-   SeparationNormal.norm (rep k) k.separation⟩
+   SeparationNormal.compact (rep k) k.separation⟩
 
 end
 
@@ -172,7 +172,7 @@ theorem classCtx_mem (hc : CtxOk ctx ρ) (hl : HeapLinks.Holds k.links ρ h) {r 
 theorem norm_holds (hc : CtxOk ctx ρ) (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (norm ctx k) ρ h := by
   refine ⟨?_, ?_, (LinkClasses.norm_holds (ls := k.links)).mpr hk.2.2.1,
-    (SeparationNormal.norm_holds (SeparationNormal.wellFormed_of_holds hk.2.2.2) rep_le (rep_eq hk)).mpr hk.2.2.2⟩
+    (SeparationNormal.compact_holds (SeparationNormal.wellFormed_of_holds hk.2.2.2) rep_le (rep_eq hk)).mpr hk.2.2.2⟩
   · -- A cell fact per key: every fact on its slots reads one object's field.
     intro F hF
     simp only [norm, List.mem_map] at hF
@@ -267,7 +267,7 @@ theorem parts_of_norm (hc : CtxOk ctx ρ) (hn : HeapKnowledge.Holds (norm ctx k)
 theorem holds_of_norm (hc : CtxOk ctx ρ) (wf : SeparationNormal.WellFormed k.separation)
     (hn : HeapKnowledge.Holds (norm ctx k) ρ h) : HeapKnowledge.Holds k ρ h := by
   have hl : HeapLinks.Holds k.links ρ h := (LinkClasses.norm_holds (ls := k.links)).mp hn.2.2.1
-  refine ⟨?_, ?_, hl, (SeparationNormal.norm_holds wf rep_le (rep_eq' hl)).mp hn.2.2.2⟩
+  refine ⟨?_, ?_, hl, (SeparationNormal.compact_holds wf rep_le (rep_eq' hl)).mp hn.2.2.2⟩
   · intro f hf
     cases hd : readDest k (rep k f.slot) f.field with
     | some d =>
@@ -565,16 +565,16 @@ theorem norm_idem (wf : SeparationNormal.WellFormed k.separation) : norm ctx (no
     obtain ⟨ha, hs⟩ := List.mem_filter.mp ha
     obtain ⟨F, hF⟩ := Option.isSome_iff_exists.mp hs
     rw [valueFact_norm ha hF, hF]
-  have hsep : SeparationNormal.norm (rep (norm ctx k)) (SeparationNormal.norm (rep k) k.separation) =
-      SeparationNormal.norm (rep k) k.separation := by
+  have hsep : SeparationNormal.compact (rep (norm ctx k)) (SeparationNormal.compact (rep k) k.separation) =
+      SeparationNormal.compact (rep k) k.separation := by
     rw [show rep (norm ctx k) = rep k from funext rep_norm]
-    exact SeparationNormal.norm_idem wf rep_le fun x => LinkClasses.rep_rep _
+    exact SeparationNormal.compact_idem wf rep_le fun x => LinkClasses.rep_rep _
   show Knowledge.mk ((cellKeys (norm ctx k)).map (cellFact (norm ctx k)))
       ((classes (norm ctx k)).filterMap (valueFact ctx (norm ctx k)))
       (LinkClasses.norm (LinkClasses.norm k.links))
-      (SeparationNormal.norm (rep (norm ctx k)) (SeparationNormal.norm (rep k) k.separation)) =
+      (SeparationNormal.compact (rep (norm ctx k)) (SeparationNormal.compact (rep k) k.separation)) =
     Knowledge.mk ((cellKeys k).map (cellFact k)) ((classes k).filterMap (valueFact ctx k))
-      (LinkClasses.norm k.links) (SeparationNormal.norm (rep k) k.separation)
+      (LinkClasses.norm k.links) (SeparationNormal.compact (rep k) k.separation)
   rw [hcells, hvalues, LinkClasses.norm_idem, hsep]
 
 end idem4
@@ -639,9 +639,9 @@ theorem norm_congr (hL : LinkClasses.norm k₁.links = LinkClasses.norm k₂.lin
     simp only [cellFact, ValueSet.normIn_congr (fun v _ => hW c hc v) hnum hobj]
   have hrep : rep k₁ = rep k₂ := funext (LinkClasses.rep_congr hG)
   show Knowledge.mk ((cellKeys k₁).map (cellFact k₁)) ((classes k₁).filterMap (valueFact ctx k₁))
-      (LinkClasses.norm k₁.links) (SeparationNormal.norm (rep k₁) k₁.separation) =
+      (LinkClasses.norm k₁.links) (SeparationNormal.compact (rep k₁) k₁.separation) =
     Knowledge.mk ((cellKeys k₂).map (cellFact k₂)) ((classes k₂).filterMap (valueFact ctx k₂))
-      (LinkClasses.norm k₂.links) (SeparationNormal.norm (rep k₂) k₂.separation)
+      (LinkClasses.norm k₂.links) (SeparationNormal.compact (rep k₂) k₂.separation)
   rw [List.map_congr_left hcell, filterMap_congr hval, hck, hclasses, hL, hS, hrep]
 
 end unique
@@ -671,7 +671,7 @@ def normFast (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let cellParts := fun (c : CellKey) =>
     (k.cells.filter fun f => r f.slot == c.slot && f.field == c.field).map (·.contents)
   ⟨cellKeys.map (fun c => ⟨c.slot, ValueSet.top.normIn (meetAll ValueSet.top (cellParts c)), c.field⟩),
-   classes.filterMap valueFact, nl, SeparationNormal.norm r k.separation⟩
+   classes.filterMap valueFact, nl, SeparationNormal.compact r k.separation⟩
 
 theorem normFast_eq (ctx : Ctx) (k : Knowledge) : normFast ctx k = norm ctx k := rfl
 

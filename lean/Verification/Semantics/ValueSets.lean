@@ -13,7 +13,7 @@ open ProgramTyping HeapFacts CanonicalLists
 inductive Lit (α : Type) where
   | these (xs : List α)
   | allBut (xs : List α)
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Hashable, Repr
 
 namespace Lit
 variable {α : Type} [DecidableEq α]
@@ -76,12 +76,14 @@ theorem le_sound {l m : Lit α} {x : α} (h : le l m = true) (hx : l.mem x = tru
 
 end Lit
 
+deriving instance Hashable for Tag
+
 /-- A tag answer on an object: the tag answers `answer`, or reads a
 prototype for it (`Atom.holds`). -/
 structure Literal where
   tag : Tag
   answer : Bool
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Hashable, Repr
 
 abbrev Clause := List Literal
 
@@ -244,7 +246,7 @@ structure ValueSet where
   str : Lit String := .none
   big : Lit Int := .none
   obj : Obj := none
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Hashable, Repr
 
 namespace ValueSet
 
@@ -441,14 +443,31 @@ theorem holds_ofAtom {a : Atom} {v : Tm} (ht : a.isTag = false) (h : (ofAtom a).
   all_goals cases v <;> simp_all [ofAtom, ValueSet.mem, ValueSet.top, isVal, Obj.mem, Atom.holds,
     Lit.mem, Lit.none, Lit.all]
 
+/-- A union whose literal lists are appended without removing repeats:
+linear, where the union removing them is quadratic. -/
+def Lit.append {α : Type} [DecidableEq α] : Lit α → Lit α → Lit α
+  | .these a, .these b => .these (a ++ b)
+  | l, m => l.join m
+
+theorem Lit.mem_append {α : Type} [DecidableEq α] (l m : Lit α) (x : α) :
+    (l.append m).mem x = (l.mem x || m.mem x) := by
+  cases l <;> cases m <;> simp only [Lit.append, Lit.mem_join] <;> simp [Lit.mem]
+
+def ValueSet.append (a b : ValueSet) : ValueSet :=
+  ⟨a.nul || b.nul, a.undef || b.undef, a.tru || b.tru, a.fls || b.fls, a.sym || b.sym, a.arr || b.arr,
+    a.num.append b.num, a.str.append b.str, a.big.append b.big, a.obj.join b.obj⟩
+
+theorem ValueSet.mem_append (a b : ValueSet) (v : Tm) : (a.append b).mem v = (a.mem v || b.mem v) := by
+  cases v <;> simp [ValueSet.append, ValueSet.mem, Lit.mem_append, Obj.mem_join]
+
 /-- A list of atoms denotes the union of their sets. -/
-def ofAtoms (as : List Atom) : ValueSet := as.foldr (fun a V => (ofAtom a).join V) ValueSet.bot
+def ofAtoms (as : List Atom) : ValueSet := as.foldr (fun a V => (ofAtom a).append V) ValueSet.bot
 
 theorem ofAtoms_holds {as : List Atom} {v : Tm} (h : ∃ a ∈ as, a.holds v) : (ofAtoms as).mem v = true := by
   induction as with
   | nil => simp at h
   | cons a as ih =>
-    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_join, Bool.or_eq_true] at ih ⊢
+    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_append, Bool.or_eq_true] at ih ⊢
     obtain ⟨b, hb, hv⟩ := h
     rcases List.mem_cons.mp hb with rfl | hb
     · exact Or.inl (ofAtom_holds hv)
@@ -459,7 +478,7 @@ theorem holds_ofAtoms {as : List Atom} {v : Tm} (ht : as.all (!·.isTag) = true)
   induction as with
   | nil => simp [ofAtoms] at h
   | cons a as ih =>
-    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_join, Bool.or_eq_true] at ih h
+    simp only [ofAtoms, List.foldr_cons, ValueSet.mem_append, Bool.or_eq_true] at ih h
     simp only [List.all_cons, Bool.and_eq_true, Bool.not_eq_true'] at ht
     rcases h with h | h
     · exact ⟨a, List.mem_cons_self .., holds_ofAtom ht.1 h⟩

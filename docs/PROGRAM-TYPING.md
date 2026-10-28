@@ -3196,62 +3196,86 @@ $`y`$ and not of $`z`$ (`HeapLinks.aliases`). A write therefore propagates to th
 directly recorded aliases only. That is sound — `aliases_eq` proves each one
 denotes the same value — and incomplete, and the rules below say $`\approx_\Pi`$
 rather than $`=`$ so as not to claim otherwise. A node's rules read the
-[expansion](#stored-knowledge-and-its-expansion) of its stored knowledge,
-which records an alias between every two slots of a class.
+[view](#stored-knowledge-and-how-it-is-read) of its stored knowledge, which
+links each slot of a class to the class's least slot, so every two slots of
+a class are within two links.
 
-#### Stored knowledge and its expansion
+#### Stored knowledge and how it is read
 
 A node's stored knowledge $`k`$ states each fact once, about its alias
-class (the [normal form](drafts/heap-knowledge-canonical.md)). The node's
-rules read its **expansion** $`\mathsf{expand}_\Gamma(k)`$, which restates on
-every slot what the stored form leaves implicit
-([KnowledgeExpand.lean](../lean/Verification/Semantics/KnowledgeExpand.lean)).
+class (the [normal form](drafts/heap-knowledge-canonical.md)).
 Write $`[x]`$ for the class of slot $`x`$: the least equivalence containing
 each alias link and identifying the values of two reads of one field from
 one class (`LinkClasses.Gen`). Write $`C_{[x]}`$ for the class's context, the
 meet of the value sets its slots' types denote where a type is of finitely
 many primitive predicates (`ctxOf`, `classCtx`), and $`R\sqcap C`$ for $`R`$
-restricted to it ($`R`$ where there is no context). The expansion holds:
+restricted to it ($`R`$ where there is no context).
 
-- each value fact $`(i,R)`$ as $`(y,R\sqcap C_{[y]})`$ for every $`y\in[i]`$,
-  and $`(y,C_{[y]})`$ for every $`y`$ in the class of a read's value;
-- each cell fact $`(i,f,R)`$ as $`(y,f,R)`$ for every $`y\in[i]`$, and, behind
-  each read link $`c.f\mapsto y`$, every value fact $`(y,R)`$ as $`(c,f,R)`$;
-- an alias link between every two slots of a class, and each read link
-  $`c.f\mapsto v`$ as $`c'.f\mapsto v'`$ for every $`c'\in[c]`$ and $`v'\in[v]`$;
-- the separation's facts, and each of its atomic pairs on every two slots of
-  their classes.
+The node's rules read $`k`$ through its **view** $`\mathsf{view}_\Gamma(k)`$
+([KnowledgeExpand.lean](../lean/Verification/Semantics/KnowledgeExpand.lean),
+`expandLinks`), which holds:
 
-`expand_holds` proves $`\mathrm{Holds}(k,\rho,h)\Rightarrow\mathrm{Holds}(\mathsf{expand}_\Gamma(k),\rho,h)`$
-for every $`\rho`$ meeting the contexts. An edge from a state $`a`$ to a target
-storing $`b`$, under slot map $`m`$, reads the source through its expansion
-$`a^+=\mathsf{expand}(a)`$ (no contexts) and each target fact through the
-target class's context:
+- each value fact $`(i,R)`$ as $`(i,R\sqcap C_{[i]})`$, and $`(v,C_{[v]})`$ for
+  the value $`v`$ of each read link;
+- each cell fact, and, behind each read link $`c.f\mapsto y`$, every value
+  fact $`(y,R)`$ of the view as $`(c,f,R)`$;
+- an alias link from each slot of a class to its least slot, and each read
+  link $`c.f\mapsto v`$ as $`c'.f\mapsto v'`$ for every $`c'\in[c]`$ and
+  $`v'\in[v]`$;
+- the separation as stored.
+
+`expandLinks_holds` proves $`\mathrm{Holds}(k,\rho,h)\Rightarrow\mathrm{Holds}(\mathsf{view}_\Gamma(k),\rho,h)`$
+for every $`\rho`$ meeting the contexts. A rule reading a slot's value or a
+field gathers the facts of the slot's class:
+
+```math
+\begin{aligned}
+\mathsf{value}_a(s) &= \mathop{\textstyle\sqcap}\{R \mid (y,R)\in V_a,\ y\in[s]\}\sqcap\mathop{\textstyle\sqcap}\{R \mid (c,f,R)\in\Sigma_a,\ c.f\mapsto y\in L_a,\ y\in[s]\}\\
+\mathsf{cell}_a(s,f) &= \mathop{\textstyle\sqcap}\{R \mid (y,f,R)\in\Sigma_a,\ y\in[s]\}\sqcap\mathop{\textstyle\sqcap}\{R \mid (v,R)\in V_a,\ y.f\mapsto v\in L_a,\ y\in[s]\}
+\end{aligned}
+```
+
+each defined only where some fact contributes (`HeapKnowledge.valueBy`,
+`cellBy`). A write keeps a cell fact on field $`g`$ of slot $`s`$ where the
+separation states field $`f`$ of a slot of $`[i]`$ and $`g`$ of a slot of
+$`[s]`$ apart (`HeapSeparation.apartBy`). Dropping a slot first restates its
+facts, links and separation on a remaining alias (`HeapKnowledge.dropResult`).
+
+The stored separation is compacted (`SeparationNormal.compact`): its levels
+read through their slots' representatives, one fact per subject and fields,
+its partners merged by level, and levels and fields in order, each once. It
+holds exactly where the separation holds (`compact_holds`), is its own
+compacted form (`compact_idem`) and has at most the separation's facts
+(`compact_size`).
+
+An edge from a state $`a`$ to a target storing $`b`$, under slot map $`m`$,
+reads the source by class and each target fact through the target class's
+context:
 
 ```math
 \frac{
-  \forall(i,W)\in V_b.\ \mathsf{value}_{a^+}(m(i))\sqcap C^b_{[i]}\subseteq W\qquad
-  \forall(i,f,W)\in\Sigma_b.\ \mathsf{cell}_{a^+}(m(i),f)\subseteq W\qquad
-  L_b\preceq^m_{[\cdot]_a}L_a\qquad S_b\preceq^m S_{a^+}
+  \forall(i,W)\in V_b.\ \mathsf{value}_{a}(m(i))\sqcap C^b_{[i]}\subseteq W\qquad
+  \forall(i,f,W)\in\Sigma_b.\ \mathsf{cell}_{a}(m(i),f)\subseteq W\qquad
+  L_b\preceq^m_{[\cdot]_a}L_a\qquad S_b\preceq^m_{[\cdot]_a}S_a
 }{
   \mathrm{Holds}(a,\rho,h)\Longrightarrow\mathrm{Holds}(b,\mathrm{mapEnv}(m,\rho),h)
 }\ \textsf{knowledge-edge}
 ```
 
-$`\mathsf{value}_a(s)`$ is the meet of $`a`$'s value facts on $`s`$ and of its cell
-facts behind the reads giving $`s`$; $`\mathsf{cell}_a(s,f)`$ is the meet of its
-cell facts on $`s`$ and $`f`$; each is defined only where some fact contributes.
 The links compare by the source's classes, a target alias holding where its
 two mapped slots share a class and a target read where a source read joins
-the same classes (`HeapLinks.checkWith`). `checkIn_sound` proves the rule,
+the same classes (`HeapLinks.checkWith`). The separation compares the same
+way: each target pair of fields is a source pair between the same fields of
+slots whose representatives are those of the mapped slots, in either
+orientation (`HeapSeparation.checkBy`). `checkIn_sound` proves the rule,
 given that the mapped environment meets the target's contexts, which the
 edge's type coverage establishes first.
 
 A node's stated `output` need not be the output its step computes from the
-expansion: the computed output $`o`$ must establish it, by the same rule with
+view: the computed output $`o`$ must establish it, by the same rule with
 the identity map and the entry's contexts one slot further, the result's
 slot having none (`outputFits`, `outputFits_sound`). The node's edges read the stated
-output through its expansion at those contexts (`outFacts`).
+output through its view at those contexts (`outFacts`).
 
 #### The reference operations
 

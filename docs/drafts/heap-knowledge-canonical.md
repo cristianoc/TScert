@@ -276,18 +276,10 @@ $`\mathsf{Apart}(i, F, j, g)`$: the locations of scope $`F`$ of slot
 $`i`$'s object (one field, or every own location) differ from field $`g`$
 of slot $`j`$'s (`HeapSeparation.Apart`: **cited**).
 
-**Representation.** A set of atomic pairs between **scoped endpoints**
-$`(c, \sigma)`$, a class representative and a scope, a field or *whole*:
-
-- a **field pair** $`\{(c, f), (c', g)\}`$, unordered, since
-  $`\mathsf{Apart}`$ on two fields is symmetric (`Apart.symm`), stored with
-  the smaller endpoint first, ordered by class and then by field, so a pair
-  within one class is ordered by its fields;
-- a **whole pair** $`(c, \mathit{whole}) \to (c', g)`$, ordered: the whole
-  scope stays on the side that carries it.
-
-The depth is the point's slot count, part of the context, and levels are
-computed from it.
+**Representation.** Grouped facts between class representatives: a
+subject, its scope (a list of fields, or *whole*) and its partners, each a
+representative with the fields of it. The depth is the point's slot count,
+part of the context, and levels are computed from it.
 
 **Laws.** Grouped and split statements are one set of atomic pairs (a fact
 with several fields and partners is the pairs it states); a whole pair
@@ -303,10 +295,20 @@ location only, and no premise of the meaning (`EnvOk`, `ownKeysT`) states
 that field keys are distinct (**cited**: `HeapSeparation.At`, `ownKeysT`,
 `EnvOk`). The property draft's requirement for S is amended to read so.
 
-**Stored** is a set of atomic pairs with no field pair absorbed by a whole
-pair, sorted. **The invariant** is that set: absorption, grouping and
-renaming to representatives preserve it, and a stored value is it. The four
-obligations follow as for L.
+**Stored** is the compacted form (`SeparationNormal.compact`): every level
+read through its slot's representative, one fact per subject and scope, its
+partners merged by level, levels and fields in order and each once, facts
+without partners dropped. It holds exactly where the separation holds
+(`compact_holds`: **proved**), is its own compacted form (`compact_idem`:
+**proved**) and has at most the separation's facts, with at most one
+partner per level and each field once (`compact_size`: **proved**). It is
+not unique: two groupings of the same atomic pairs stay two forms, and
+structural equality of S is equality of representation. Its readers ask by
+class rather than by spelling: an edge compares each target pair with the
+source's pairs through the source's representatives
+(`HeapSeparation.checkBy`: **proved** sound), and a write asks whether some
+slots of the two classes are apart (`HeapSeparation.apartBy`: **proved**
+sound), so no pair is restated on the aliases of its slots.
 
 ## 6. Knowledge
 
@@ -330,7 +332,9 @@ $`\mathsf{expand}_\Gamma\ k`$ restates what the laws omitted:
   stored;
 - each cell fact on every slot of its receiver class, and behind each read
   link the destination's value fact as a cell fact (`linkFacts`);
-- each atomic separation pair on every slot of its classes.
+- each atomic separation pair on every slot of its classes, a reference
+  reading the edge check and the write rule answer by class without it
+  (§5).
 
 Theorem: $`\mathsf{HoldsIn}\ \Gamma\ k \iff \mathsf{HoldsIn}\ \Gamma\
 (\mathsf{norm}_\Gamma\ k)`$ and $`\mathsf{Holds}\ (\mathsf{expand}_\Gamma\
@@ -352,7 +356,7 @@ separation pair of the target $`b`$ against $`\mathsf{expand}_\Gamma\ a`$
 at the mapped slots, by value-set inclusion after restricting the source's
 meet at the mapped slot to the target class's context:
 $`V_a \sqcap C_b \le V_b`$
-([`knowledge-edge`](../PROGRAM-TYPING.md#stored-knowledge-and-its-expansion)). The target's omitted facts need no
+([`knowledge-edge`](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)). The target's omitted facts need no
 check: its context facts follow from the target typing, which `ControlFlow`
 checks before the knowledge (`MappedCovers`), and its cell facts behind
 links follow from its checked links and value facts. Theorem
@@ -407,11 +411,13 @@ meets.
 
 ## 7. The evidence
 
-A knowledge entry carries its partition, read links, value facts, cell
-facts and separation pairs. A value set is written component by component,
-empty components left out; a literal set lists its literals and whether it
-is *these* or *all but*. The format changes in place, and the fixtures
-carrying it are regenerated.
+A knowledge entry carries its links, value facts, cell facts and
+separation facts, each link and separation fact a position in its table. A
+fact's contents are a position in the document's table of value sets, each
+distinct value set written once
+([evidence document](../REQUEST-PROTOCOL.md#evidence-document)); a value set
+is written component by component, and a literal set lists its literals
+and whether it is *these* or *all but*.
 
 ## 8. Bounds
 
@@ -525,6 +531,8 @@ changes from step 4.
    `expand` restores them for every reader.
 3. **Widening at merges to 8 clauses per object component** (§2.3), with
    observations and meets exact and unrestricted.
-4. **S keeps whole and per-field forms distinct** (§5): a field list may
-   hold a key twice, so a key bound does not make them equivalent; the
-   property draft's requirement for S is amended accordingly.
+4. **S keeps whole and per-field forms distinct, and is stored compacted
+   rather than as atomic pairs** (§5): a field list may hold a key twice,
+   so a key bound does not make the two forms equivalent; the compacted
+   form is bounded and idempotent but not unique, and its readers ask by
+   class. The property draft's requirement for S is amended accordingly.

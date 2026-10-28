@@ -79,7 +79,8 @@ export function mutationVerifier(): string {
       for (const symbol of ["HeapLinks_check", "HeapLinks_checkWith"])
         text = inject(text, symbol, () => 'if (mutation("links")) return 1;');
     if (module === "Semantics/HeapSeparation")
-      text = inject(text, "HeapSeparation_check", () => 'if (mutation("separation")) return 1;');
+      for (const symbol of ["HeapSeparation_check", "HeapSeparation_checkAgainst"])
+        text = inject(text, symbol, () => 'if (mutation("separation")) return 1;');
     if (module === "Semantics/HeapKnowledge") {
       // Only the heap-cell conjunct; immutable value facts remain checked.
       const pattern = /(v_\w+) = (lp_verification_List_all___at___00Verification_HeapFacts_check_spec__1\(v_\w+, v_cells_\w+, v_cells_\w+\));/g;

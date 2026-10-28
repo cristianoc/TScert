@@ -37,11 +37,19 @@ structure ProofEntry (ι : Type) where
   premises : List Nat
   deriving ToJson, FromJson
 
-/-- Heap knowledge whose links are entries of `links` and whose separation
-facts, at its depth, are entries of `separations`. -/
+/-- A heap fact whose contents are an entry of `valueSets`. -/
+structure FactRef where
+  slot : Nat
+  contents : Nat
+  field : PropKey
+  deriving ToJson, FromJson
+
+/-- Heap knowledge whose facts' contents are entries of `valueSets`, whose
+links are entries of `links` and whose separation facts, at its depth, are
+entries of `separations`. -/
 structure KnowledgeEntry where
-  cells : HeapFacts.Facts
-  values : HeapFacts.Facts
+  cells : List FactRef
+  values : List FactRef
   links : List Nat
   depth : Nat
   separation : List Nat
@@ -109,6 +117,7 @@ structure Document (ι : Type) where
   contexts : List (List Nat)
   links : List HeapLinks.Link
   separations : List HeapSeparation.Fact
+  valueSets : List ValueSets.ValueSet
   knowledge : List KnowledgeEntry
   proofs : List (ProofEntry ι)
   functions : List (ResponseRef ι)
@@ -164,9 +173,17 @@ structure Tables (ι : Type) where
   | .error m, _ => .error m
   | .ok _, .error m => .error m
 
+/-- The facts a list of fact references names. -/
+@[nospecialize] def facts (valueSets : Array ValueSets.ValueSet) : List FactRef → Except String HeapFacts.Facts
+  | [] => .ok []
+  | f :: fs => match entry "value set" valueSets f.contents, facts valueSets fs with
+    | .ok V, .ok gs => .ok (⟨f.slot, V, f.field⟩ :: gs)
+    | .error m, _ => .error m
+    | .ok _, .error m => .error m
+
 @[nospecialize] def knowledge (links : Array HeapLinks.Link) (separations : Array HeapSeparation.Fact)
-    (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
-  return ⟨e.cells, e.values, ← entries "link" links e.links,
+    (valueSets : Array ValueSets.ValueSet) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
+  return ⟨← facts valueSets e.cells, ← facts valueSets e.values, ← entries "link" links e.links,
     ⟨e.depth, ← entries "separation fact" separations e.separation⟩⟩
 
 @[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
@@ -174,7 +191,8 @@ structure Tables (ι : Type) where
   let contexts ← build (fun _ c => entries "type" types c) d.contexts #[]
   let links := d.links.toArray
   let separations := d.separations.toArray
-  let knowledge ← build (fun _ e => knowledge links separations e) d.knowledge #[]
+  let valueSets := d.valueSets.toArray
+  let knowledge ← build (fun _ e => knowledge links separations valueSets e) d.knowledge #[]
   let proofs ← build (proof types contexts) d.proofs #[]
   return ⟨types, contexts, knowledge, proofs⟩
 
@@ -368,9 +386,11 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
   contexts : Interned (List Nat) (List Nat) := {}
   links : Interned HeapLinks.Link HeapLinks.Link := {}
   separations : Interned HeapSeparation.Fact HeapSeparation.Fact := {}
-  /-- Knowledge by its facts' JSON text, its link positions, its depth and
-  its separation facts' positions. -/
-  knowledge : Interned (String × String × List Nat × Nat × List Nat) KnowledgeEntry := {}
+  valueSets : Interned ValueSets.ValueSet ValueSets.ValueSet := {}
+  /-- Knowledge by its facts, link positions, depth and separation facts'
+  positions. -/
+  knowledge : Interned (List (Nat × Nat × PropKey) × List (Nat × Nat × PropKey) × List Nat × Nat × List Nat)
+    KnowledgeEntry := {}
   /-- Derivation nodes by their JSON text, whose premises are positions. -/
   proofs : Interned String (ProofEntry ι) := {}
 
@@ -394,12 +414,19 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let (k, t) := s.separations.add a a
   (k, { s with separations := t })
 
+@[nospecialize] def internFact (f : HeapFacts.Fact) : InternM ι FactRef := modifyGet fun s =>
+  let (k, t) := s.valueSets.add f.contents f.contents
+  (⟨f.slot, k, f.field⟩, { s with valueSets := t })
+
 @[nospecialize] def internKnowledge (k : HeapKnowledge.Knowledge) : InternM ι Nat := do
   let ls ← k.links.mapM internLink
   let ss ← k.separation.facts.mapM internSeparation
-  let key := ((toJson k.cells).compress, (toJson k.values).compress, ls, k.separation.depth, ss)
+  let cs ← k.cells.mapM internFact
+  let vs ← k.values.mapM internFact
+  let flat := fun (fs : List FactRef) => fs.map fun f => (f.slot, f.contents, f.field)
+  let key := (flat cs, flat vs, ls, k.separation.depth, ss)
   modifyGet fun s =>
-    let (i, t) := s.knowledge.add key ⟨k.cells, k.values, ls, k.separation.depth, ss⟩
+    let (i, t) := s.knowledge.add key ⟨cs, vs, ls, k.separation.depth, ss⟩
     (i, { s with knowledge := t })
 
 @[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do
@@ -443,7 +470,7 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
     return (← b.functions.mapM internResponse, ← b.obligations.mapM (·.mapM internProof))
   let ((functions, obligations), s) := run.run {}
   let d : Document ι := ⟨s.types.entries.toList, s.contexts.entries.toList, s.links.entries.toList,
-    s.separations.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
+    s.separations.entries.toList, s.valueSets.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
   toJson d
 
 end

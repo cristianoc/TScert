@@ -172,6 +172,50 @@ theorem drop_holds {S ρ v} (h : Holds S (push v ρ)) : Holds (drop S) ρ := by
     have hpt : p.1 ≠ S.depth - 1 := by simpa using hp.2
     exact ⟨by omega, fun g hg => ⟨p, hp.1, e _ (by omega), hg⟩⟩
 
+/-- Each fact and partner on slot `x` also stated on slot `y`, which holds
+the same value. -/
+def restate (S : Separation) (x y : Nat) : Separation :=
+  if x < S.depth ∧ y < S.depth then
+    let lx := S.depth - 1 - x
+    let ly := S.depth - 1 - y
+    ⟨S.depth, S.facts.flatMap fun a =>
+      let a' : Fact := { a with partners := a.partners ++ (a.partners.filter (·.1 == lx)).map fun p => (ly, p.2) }
+      if a.slot == lx then [a', { a' with slot := ly }] else [a']⟩
+  else S
+
+theorem restate_holds {S ρ x y} (hxy : ρ y = ρ x) (h : Holds S ρ) : Holds (restate S x y) ρ := by
+  unfold restate
+  split
+  · rename_i hd
+    intro a' ha'
+    obtain ⟨a, ha, hm⟩ := List.mem_flatMap.mp ha'
+    have hh := h a ha
+    have hy : S.depth - 1 - (S.depth - 1 - y) = y := by omega
+    have hx : S.depth - 1 - (S.depth - 1 - x) = x := by omega
+    have hps : ∀ p' ∈ a.partners ++ (a.partners.filter (·.1 == S.depth - 1 - x)).map
+        (fun p => (S.depth - 1 - y, p.2)), p'.1 < S.depth ∧ ∀ g ∈ p'.2, ∃ p ∈ a.partners,
+          ρ (S.depth - 1 - p'.1) = ρ (S.depth - 1 - p.1) ∧ g ∈ p.2 := by
+      intro p' hp'
+      rcases List.mem_append.mp hp' with hp' | hp'
+      · exact ⟨(hh.2 p' hp').1, fun g hg => ⟨p', hp', rfl, hg⟩⟩
+      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hp'
+        have hp := List.mem_filter.mp hp
+        have hpl : p.1 = S.depth - 1 - x := by simpa using hp.2
+        refine ⟨by omega, fun g hg => ⟨p, hp.1, ?_, hg⟩⟩
+        simp only [hpl, hy, hx, hxy]
+    split at hm
+    · rename_i hs
+      have hs : a.slot = S.depth - 1 - x := by simpa using hs
+      rcases List.mem_cons.mp hm with rfl | hm
+      · exact Fact.rename hh hh.1 rfl rfl hps
+      · simp only [List.mem_singleton] at hm
+        subst hm
+        exact Fact.rename hh (by simp; omega) (by simp only [hs, hy, hx, hxy]) rfl hps
+    · simp only [List.mem_singleton] at hm
+      subst hm
+      exact Fact.rename hh hh.1 rfl rfl hps
+  · exact h
+
 /-- The same slots at a depth `D` at least the separation's. -/
 def rebase (S : Separation) (D : Nat) : Separation :=
   if S.depth ≤ D then
@@ -451,6 +495,95 @@ theorem check_sound {a b m ρ} (hc : check a b m = true) (h : Holds a ρ) :
         · exact (((src _ h3).2.2.single (f := g) rfl).symm).congr ex ey
         · exact ((src _ h4).2.2.symm).congr ex ey
 
+/-- The source's pairs, their levels renamed by `rn`, hashed. -/
+@[noinline] def renamedPairs (rn : Nat → Nat) (a : Separation) : Std.HashSet Pair :=
+  Std.HashSet.ofList ((pairs a).map fun q => (rn q.1, q.2.1, rn q.2.2.1, q.2.2.2))
+
+/-- Every target pair is one of the hashed source pairs `P`. -/
+@[noinline] def checkAgainst (P : Std.HashSet Pair) (rn : Nat → Nat) (a b : Separation)
+    (m : PointClaims.Mapping) : Bool :=
+  b.facts.all fun t => match level a b m t.slot with
+    | none => false
+    | some x => t.partners.all fun p => match level a b m p.1 with
+      | none => false
+      | some y => p.2.all fun g => justified P (rn x) t.fields (rn y) g
+
+/-- `check`, with the source's levels read through `rn` on both sides:
+each source pair and each target endpoint at the level `rn` gives, a level
+whose slot holds the same value. -/
+def checkBy (rn : Nat → Nat) (a b : Separation) (m : PointClaims.Mapping) : Bool :=
+  b.facts.isEmpty || (m.isNone && decide (a = b)) || checkAgainst (renamedPairs rn a) rn a b m
+
+/-- `checkBy`, each level's representative read from the table `t`. -/
+@[noinline] def checkWithTable (t : Array Nat) (a b : Separation) (m : PointClaims.Mapping) : Bool :=
+  checkBy (fun ℓ => t.getD ℓ ℓ) a b m
+
+theorem checkBy_sound {rn : Nat → Nat} {a b m ρ}
+    (hrn : ∀ ℓ, ℓ < a.depth → rn ℓ < a.depth ∧ ρ (a.depth - 1 - rn ℓ) = ρ (a.depth - 1 - ℓ))
+    (hc : checkBy rn a b m = true) (h : Holds a ρ) : Holds b (PointClaims.mapEnv m ρ) := by
+  -- A hashed pair, read back: a source pair at the renamed levels, apart.
+  unfold checkBy at hc
+  rcases Bool.or_eq_true_iff.mp hc with hc | hc
+  · rcases Bool.or_eq_true_iff.mp hc with he | he
+    · intro t ht; simp [List.isEmpty_iff.mp he] at ht
+    · simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, decide_eq_true_eq] at he
+      obtain ⟨rfl, rfl⟩ := he
+      exact h
+  unfold checkAgainst at hc
+  have src : ∀ q, (renamedPairs rn a).contains q = true →
+      Apart ρ (a.depth - 1 - q.1) (q.2.1.map ([·])) (a.depth - 1 - q.2.2.1) q.2.2.2 := by
+    intro q hq
+    simp only [renamedPairs, Std.HashSet.contains_ofList, List.contains_iff_mem, List.mem_map] at hq
+    obtain ⟨q', hq', rfl⟩ := hq
+    obtain ⟨h1, h2, hap⟩ := pairs_sound h hq'
+    exact hap.congr (hrn _ h1).2 (hrn _ h2).2
+  intro t ht
+  have hct := List.all_eq_true.mp hc t ht
+  split at hct
+  · cases hct
+  · rename_i x hx
+    obtain ⟨htd, hxd, hxs⟩ := level_some hx
+    refine ⟨htd, fun p hp => ?_⟩
+    have hcp := List.all_eq_true.mp hct p hp
+    split at hcp
+    · cases hcp
+    · rename_i y hy
+      obtain ⟨hpd, hyd, hys⟩ := level_some hy
+      refine ⟨hpd, fun g hg => ?_⟩
+      have hj := List.all_eq_true.mp hcp g hg
+      have ex : PointClaims.mapEnv m ρ (b.depth - 1 - t.slot) = ρ (a.depth - 1 - rn x) := by
+        simp [PointClaims.mapEnv, hxs, (hrn x hxd).2]
+      have ey : PointClaims.mapEnv m ρ (b.depth - 1 - p.1) = ρ (a.depth - 1 - rn y) := by
+        simp [PointClaims.mapEnv, hys, (hrn y hyd).2]
+      unfold justified at hj
+      cases hF : t.fields with
+      | none =>
+        rw [hF] at hj
+        exact (src _ hj).congr ex ey
+      | some fs =>
+        rw [hF] at hj
+        refine Apart.ofSingles fun f hf => ?_
+        have hjf := List.all_eq_true.mp hj f hf
+        simp only [Bool.or_eq_true] at hjf
+        rcases hjf with ((h1 | h2) | h3) | h4
+        · exact ((src _ h1).single (f := f) rfl).congr ex ey
+        · exact (src _ h2).congr ex ey
+        · exact (((src _ h3).single (f := g) rfl).symm).congr ex ey
+        · exact ((src _ h4).symm).congr ex ey
+
+/-- `apart`, asked of every pair of slots `M` gives as holding the two
+slots' values. -/
+def apartBy (M : Nat → List Nat) (S : Separation) (i : Nat) (f : PropKey) (s : Nat) (g : PropKey) : Bool :=
+  (M i).any fun i' => (M s).any fun s' => apart S i' f s' g
+
+theorem apartBy_sound {M : Nat → List Nat} {S ρ i f s g} (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x)
+    (ha : apartBy M S i f s g = true) (h : Holds S ρ)
+    {flds c oid l flds' c' oid' l'} (hi : ρ i = .objAt flds c oid) (hl : flds.lookup f = some l)
+    (hs : ρ s = .objAt flds' c' oid') (hl' : flds'.lookup g = some l') : l ≠ l' := by
+  obtain ⟨i', hi', ha⟩ := List.any_eq_true.mp ha
+  obtain ⟨s', hs', ha⟩ := List.any_eq_true.mp ha
+  exact apart_sound ha h (by rw [hM i i' hi', hi]) hl (by rw [hM s s' hs', hs]) hl'
+
 /-! ## The residual representation -/
 
 /-- Pairs of slots' fields, each one explicit fact at depth `d`. -/
@@ -512,11 +645,11 @@ theorem allocate_apart {S n fields s g f} (hm : (s, g) ∈ fields) (hs : s < n) 
 
 /-- Each fact at every target slot the mapping takes from its subject's slot,
 each partner at every target slot taken from its slot, at depth `count`. -/
-def project (S : Separation) (m : PointClaims.Mapping) (count : Nat) : Separation :=
+def project (M : Nat → List Nat) (S : Separation) (m : PointClaims.Mapping) (count : Nat) : Separation :=
   let preimages : Std.HashMap Nat (List Nat) := (List.range count).foldr
     (fun j acc => acc.alter (PointClaims.slot m j) fun js => some (j :: js.getD [])) ∅
   let levels := fun (ℓ : Nat) => if ℓ < S.depth then
-      (preimages.getD (S.depth - 1 - ℓ) []).map fun j => count - 1 - j else []
+      ((M (S.depth - 1 - ℓ)).flatMap fun x => preimages.getD x []).eraseDups.map fun j => count - 1 - j else []
   norm count (S.facts.flatMap fun a => (levels a.slot).map fun x =>
     (⟨x, a.fields, a.partners.flatMap fun p => (levels p.1).map fun y => (y, p.2)⟩ : Fact))
 

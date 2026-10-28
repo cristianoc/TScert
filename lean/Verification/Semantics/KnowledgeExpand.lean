@@ -12,20 +12,14 @@ open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower Heap
 
 /-- The context of each slot of an environment typed by `Γ`: the values its
 type admits, where the type is of finitely many primitive predicates. -/
-def ctxOf {ι : Type} (G : NormalGraph ι) (Γ : List (Ty ι)) : Ctx := fun i =>
-  match Γ[i]? with
-  | some A => (HeapKnowledge.atoms G A).map ofAtoms
-  | none => none
+@[inline] def ctxOf {ι : Type} (G : NormalGraph ι) (Γ : List (Ty ι)) : Ctx :=
+  HeapKnowledge.setsCtx (HeapKnowledge.typeSets G Γ) 0
 
 theorem ctxOf_ok {ι : Type} {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} (he : EnvOk G Γ ρ n W) :
     CtxOk (ctxOf G Γ) ρ := by
   intro i C hC
-  simp only [ctxOf] at hC
-  split at hC
-  · rename_i A hA
-    obtain ⟨R, hR, rfl⟩ := Option.map_eq_some_iff.mp hC
-    exact ofAtoms_holds ((atoms_sem hR n W (ρ i)).mp (he.2 i A hA))
-  · cases hC
+  simp only [ctxOf, HeapKnowledge.setsCtx, Nat.not_lt_zero, if_false, Nat.sub_zero] at hC
+  exact HeapKnowledge.typeSets_mem he hC
 
 section
 variable (ctx : Ctx) (k : Knowledge) (cs : Partitions.Partition)
@@ -58,8 +52,9 @@ def values : Facts :=
     | none => []
 
 def links : HeapLinks.Links :=
-  (LinkClasses.slots k.links).flatMap (fun x => (members cs x).filterMap fun y =>
-    if y = x then none else some ⟨x, y, true, valueField, false⟩) ++
+  (LinkClasses.slots k.links).filterMap (fun x =>
+    let r := LinkClasses.least x (members cs x)
+    if r = x then none else some ⟨r, x, true, valueField, false⟩) ++
   k.links.flatMap fun g => if g.alias then [] else
     (members cs g.cell).flatMap fun c => (members cs g.value).map fun v => ⟨c, v, false, g.field, g.optional⟩
 
@@ -149,13 +144,18 @@ theorem links_holds (hk : HeapKnowledge.Holds k ρ h) : HeapLinks.Holds (links k
   have hl := hk.2.2.1
   intro L hL
   rcases List.mem_append.mp hL with hL | hL
-  · obtain ⟨x, _, hL⟩ := List.mem_flatMap.mp hL
-    obtain ⟨y, hy, hL⟩ := List.mem_filterMap.mp hL
+  · obtain ⟨x, _, hL⟩ := List.mem_filterMap.mp hL
+    simp only at hL
     split at hL
     · cases hL
-    · cases hL
+    · rename_i hne
+      cases hL
       simp only [ite_true]
-      exact (members_eq hl hy).symm
+      have hr : LinkClasses.least x (members (LinkClasses.closure k.links) x) ∈
+          members (LinkClasses.closure k.links) x :=
+        (LinkClasses.least_mem (l := members (LinkClasses.closure k.links) x)).elim
+          (fun e => absurd e hne) id
+      exact members_eq hl hr
   · obtain ⟨g, hg, hL⟩ := List.mem_flatMap.mp hL
     split at hL
     · cases hL
@@ -227,8 +227,9 @@ theorem separation_holds (hk : HeapKnowledge.Holds k ρ h) :
 /-- What readers need of a knowledge whose facts are stored once per class:
 its value facts restricted to their classes' contexts, and each read's value
 class's context as a value fact; behind each stored read link
-the value facts of its value as cell facts, and its links and separation
-pairs restated on every slot of their classes. Facts are gathered by class
+the value facts of its value as cell facts; each class's slots linked to its
+least slot, and reads and separation pairs restated on every slot of their
+classes. Facts are gathered by class
 where they are read (`HeapKnowledge.valueBy`, `HeapKnowledge.cellBy`). -/
 def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let cs := LinkClasses.closure k.links
@@ -236,7 +237,7 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let vs := (k.values.map fun F => { F with contents := restrict (classCtxIn ctx cs F.slot) F.contents }) ++
     (k.links.filter fun g => !g.alias).filterMap fun g =>
       (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
-  ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}⟩ F.slot F.contents), vs, ls, separation k cs⟩
+  ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}⟩ F.slot F.contents), vs, ls, k.separation⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
     (hk : HeapKnowledge.Holds k ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ρ h := by
@@ -254,7 +255,7 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
       obtain ⟨C, hC, rfl⟩ := Option.map_eq_some_iff.mp hF
       exact classCtxIn_mem hc (hs g.value) hC
   have hl := links_holds hk
-  refine ⟨fun F hF => ?_, hv, hl, separation_holds hk⟩
+  refine ⟨fun F hF => ?_, hv, hl, hk.2.2.2⟩
   rcases List.mem_append.mp hF with hF | hF
   · exact hk.1 F hF
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
@@ -292,7 +293,8 @@ def checkIn (ctx : Ctx) (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   let cs := LinkClasses.closure a.links
   cellsCheck a cs b.cells m && (valuesCheck ctx a cs b m &&
   (HeapLinks.checkWith (LinkClasses.repIn cs) a.links b.links m &&
-    HeapSeparation.check (separation a cs) b.separation m))
+    HeapSeparation.checkWithTable (SeparationNormal.levelTable (LinkClasses.repIn cs) a.separation.depth)
+      a.separation b.separation m))
 
 theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     (hctx : CtxOk ctx (PointClaims.mapEnv m ρ)) (ha : HeapKnowledge.Holds a ρ h) :
@@ -301,7 +303,32 @@ theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
     fun _ _ hy => members_eq ha.2.2.1 hy
   simp only [checkIn, cellsCheck, valuesCheck, Bool.and_eq_true] at hc
   have hl := HeapLinks.checkWith_sound (fun x => (LinkClasses.gen_sound ha.2.2.1 (LinkClasses.rep_gen _ x)).symm) hc.2.2.1 ha.2.2.1
-  refine ⟨?_, ?_, hl, HeapSeparation.check_sound hc.2.2.2 (separation_holds ha)⟩
+  have hrn : ∀ ℓ, ℓ < a.separation.depth →
+      SeparationNormal.levelRep (LinkClasses.repIn (LinkClasses.closure a.links)) a.separation.depth ℓ <
+        a.separation.depth ∧
+      ρ (a.separation.depth - 1 -
+        SeparationNormal.levelRep (LinkClasses.repIn (LinkClasses.closure a.links)) a.separation.depth ℓ) =
+        ρ (a.separation.depth - 1 - ℓ) := by
+    intro ℓ hℓ
+    have hle := (LinkClasses.least_le (d := a.separation.depth - 1 - ℓ)
+      (l := Partitions.cls (LinkClasses.closure a.links) (a.separation.depth - 1 - ℓ))).1
+    simp only [SeparationNormal.levelRep, hℓ, if_true, LinkClasses.repIn]
+    refine ⟨by omega, ?_⟩
+    have e : a.separation.depth - 1 - (a.separation.depth - 1 -
+        LinkClasses.least (a.separation.depth - 1 - ℓ)
+          (Partitions.cls (LinkClasses.closure a.links) (a.separation.depth - 1 - ℓ))) =
+        LinkClasses.least (a.separation.depth - 1 - ℓ)
+          (Partitions.cls (LinkClasses.closure a.links) (a.separation.depth - 1 - ℓ)) := by omega
+    rw [e]
+    exact (LinkClasses.gen_sound ha.2.2.1 (LinkClasses.rep_gen a.links _)).symm
+  have hrn' : ∀ ℓ, ℓ < a.separation.depth →
+      (SeparationNormal.levelTable (LinkClasses.repIn (LinkClasses.closure a.links)) a.separation.depth).getD ℓ ℓ <
+        a.separation.depth ∧
+      ρ (a.separation.depth - 1 -
+        (SeparationNormal.levelTable (LinkClasses.repIn (LinkClasses.closure a.links)) a.separation.depth).getD ℓ ℓ) =
+        ρ (a.separation.depth - 1 - ℓ) := fun ℓ hℓ => by
+    rw [SeparationNormal.levelTable_eq]; exact hrn ℓ hℓ
+  refine ⟨?_, ?_, hl, HeapSeparation.checkBy_sound hrn' hc.2.2.2 ha.2.2.2⟩
   · intro f hf
     have hf := List.all_eq_true.mp hc.1 f hf
     split at hf

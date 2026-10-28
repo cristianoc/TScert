@@ -203,30 +203,66 @@ theorem stable_holds {ls ρ h h'} (hh : Holds ls ρ h) : Holds (stable ls) ρ h'
   simp only [ha, ite_true] at hh ⊢
   exact hh
 
-/-- Only witnessed equalities extend a write to another slot. -/
-def aliases (ls : Links) (i : Nat) : List Nat := i ::
+/-- The slots one alias link relates to `i`. -/
+def neighbors (ls : Links) (i : Nat) : List Nat :=
   ls.filterMap (fun g => if g.alias then
     if g.cell == i then some g.value else if g.value == i then some g.cell else none
     else none)
 
-theorem aliases_eq {ls i j ρ h} (hh : Holds ls ρ h) (hj : j ∈ aliases ls i) : ρ j = ρ i := by
-  rcases List.mem_cons.mp hj with rfl | hj
-  · rfl
-  · obtain ⟨g,hg,hj⟩ := List.mem_filterMap.mp hj
+/-- Only witnessed equalities extend a write to another slot: the slots one
+or two alias links relate to `i`, which reach a class's every slot where its
+links join each slot to one representative. -/
+def aliases (ls : Links) (i : Nat) : List Nat :=
+  let near := neighbors ls i
+  i :: near ++ near.flatMap (neighbors ls)
+
+theorem neighbors_eq {ls i j ρ h} (hh : Holds ls ρ h) (hj : j ∈ neighbors ls i) : ρ j = ρ i := by
+  obtain ⟨g,hg,hj⟩ := List.mem_filterMap.mp hj
+  split at hj
+  · rename_i ha
+    have he : ρ g.cell = ρ g.value := by simpa [ha] using hh g hg
     split at hj
-    · rename_i ha
-      have he : ρ g.cell = ρ g.value := by simpa [ha] using hh g hg
-      split at hj
-      · rename_i hc
-        simp only [beq_iff_eq] at hc
+    · rename_i hc
+      simp only [beq_iff_eq] at hc
+      cases hj
+      simpa [hc] using he.symm
+    · split at hj
+      · rename_i hv
+        simp only [beq_iff_eq] at hv
         cases hj
-        simpa [hc] using he.symm
-      · split at hj
-        · rename_i hv
-          simp only [beq_iff_eq] at hv
-          cases hj
-          simpa [hv] using he
-        · contradiction
-    · contradiction
+        simpa [hv] using he
+      · contradiction
+  · contradiction
+
+theorem aliases_eq {ls i j ρ h} (hh : Holds ls ρ h) (hj : j ∈ aliases ls i) : ρ j = ρ i := by
+  simp only [aliases, List.cons_append, List.mem_cons, List.mem_append, List.mem_flatMap] at hj
+  rcases hj with rfl | hj | ⟨k, hk, hj⟩
+  · rfl
+  · exact neighbors_eq hh hj
+  · exact (neighbors_eq hh hj).trans (neighbors_eq hh hk)
+
+/-- Before slots are dropped, each dropped slot's alias neighbours linked
+to one of them: a class keeps its equalities when the slot joining them
+goes. -/
+def bridge (ls : Links) (dropped : Nat → Bool) : Links :=
+  ls ++ ((ls.flatMap fun g => [g.cell, g.value]).eraseDups.filter dropped).flatMap fun d =>
+    match neighbors ls d with
+    | n :: rest => rest.map fun m => { cell := n, value := m, alias := true }
+    | [] => []
+
+theorem bridge_holds {ls : Links} {dropped : Nat → Bool} {ρ h} (hh : Holds ls ρ h) :
+    Holds (bridge ls dropped) ρ h := by
+  intro g hg
+  rcases List.mem_append.mp hg with hg | hg
+  · exact hh g hg
+  · obtain ⟨d, -, hg⟩ := List.mem_flatMap.mp hg
+    split at hg
+    · rename_i n rest hn
+      obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hg
+      have e₁ := neighbors_eq hh (hn ▸ List.mem_cons_self .. : n ∈ neighbors ls d)
+      have e₂ := neighbors_eq hh (hn ▸ List.mem_cons_of_mem n hm : m ∈ neighbors ls d)
+      simp only [ite_true]
+      exact e₁.trans e₂.symm
+    · cases hg
 
 end Verification.HeapLinks

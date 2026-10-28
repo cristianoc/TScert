@@ -152,7 +152,7 @@ checked by its compiler); the clause names are Dafny's.
 What a unit **exports** to its callers is a **knowledge contract**
 $`\models_K\{K_p\}\,f\,\{K_q\}[\Phi]`$: stored knowledge $`K_p`$ over
 $`r_0,\vec a`$ and $`K_q`$ over the result, $`r_0`$ and $`\vec a`$, in the
-language of [stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-its-expansion)
+language of [stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)
 with the atoms of §4. It states, for every budget $`n`$, world $`W`$, heap
 $`h`$ and environment $`\rho`$ with $`\mathrm{EnvOk}(\Gamma,\rho,n,W)`$,
 $`\mathrm{WorldAdm}(W)`$, $`\mathrm{HeapOk}(n,W,h)`$ and
