@@ -1,19 +1,20 @@
 <section id="priority" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, diagnostic census at aa7c768</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The ten causes that block the most code; none closed</h2>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, diagnostic census at b81675f</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The ten causes that block the most code</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:4%;text-align:left;font-weight:600">#</th><th style="width:46%;text-align:left;font-weight:600">Cause</th><th style="width:11%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:29%;text-align:left;font-weight:600">Cases</th></tr>
-<tr><td>1</td><td>A field holding an object, reread after a test of it</td><td>3,080</td><td>35</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-nullable-field</span></td></tr>
-<tr><td>2</td><td>An optional method read as a type, and bound with .bind</td><td>1,943</td><td>32</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-indexed-optional-method</span>, <span style="color:#2b5b9c">blocker-optional-method-bind</span></td></tr>
-<tr><td>3</td><td>A numeric key not proved an array index</td><td>1,470</td><td>17</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-callback-array-index</span></td></tr>
-<tr><td>4</td><td>A key test k in x on an operand typed unknown</td><td>1,282</td><td>51</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">in-primitive-refused</span>, <span style="color:#2b5b9c">blocker-in-name-object</span></td></tr>
-<tr><td>5</td><td>A dictionary read at a key that may name a member of Object.prototype</td><td>1,112</td><td>27</td><td><span style="color:#9a3a2a">refused, rightly</span> <span style="color:#2b5b9c">invalid-dictionary-inherited-key</span></td></tr>
-<tr><td>6</td><td>A callback parameter whose context is a library type</td><td>1,063</td><td>16</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-closure-map-context</span></td></tr>
-<tr><td>7</td><td>A member of a type alias read after isTypeAliasDeclaration</td><td>1,058</td><td>26</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-type-alias-guard-member</span></td></tr>
-<tr><td>8</td><td>An array's method read where its type joins a record</td><td>1,024</td><td>15</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-finally-view</span></td></tr>
-<tr><td>9</td><td>Array's declaration, read for an annotation Array&lt;T&gt;</td><td>868</td><td>10</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-generic-annotation</span></td></tr>
+<tr><td>1</td><td>A member of a node read after isTypeAliasDeclaration</td><td>2,052</td><td>37</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-type-alias-guard-member</span></td></tr>
+<tr><td>2</td><td>An optional chain the producer reports as an unbound name ?.</td><td>1,779</td><td>12</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>3</td><td>Number both called and read through its members</td><td>1,113</td><td>24</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">number-call-and-members</span></td></tr>
+<tr><td>4</td><td>A callback parameter whose context is a library type</td><td>1,082</td><td>16</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-closure-map-context</span></td></tr>
+<tr><td>5</td><td>Map and Set: no binding in the slice, or instanceof of them</td><td>1,059</td><td>9</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>6</td><td>An array's method read where its type joins a record</td><td>1,024</td><td>15</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-finally-view</span></td></tr>
+<tr><td>7</td><td>A member read after k in x, on an object of unknown type</td><td>1,016</td><td>24</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-in-name-object</span></td></tr>
+<tr><td>8</td><td>A generic function used where TScert cannot check its type parameters</td><td>1,005</td><td>20</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>9</td><td>Array&lt;T&gt;: Array's library declaration refused</td><td>887</td><td>10</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-generic-annotation</span></td></tr>
 <tr><td>10</td><td>Object.entries, whose overloads are generic and plain</td><td>860</td><td>28</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-entries-mixed-overloads</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>A function blocked by several causes counts under each, so the columns do not add up. The statements and functions are measured.</li>
+<li>A function blocked by several causes counts under each. Statements and functions are measured.</li>
+<li><b style="font-weight:600">Judgements:</b> cause 1 includes one site read in the source (findBlockTypes: 7 functions, 758 statements); cause 7 is 15 sites read in the source, each a read after a key test on a value typed unknown; cause 5 counts the loops over Map and Set in its 9 functions.</li>
 </ul>
 </section>
