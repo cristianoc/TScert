@@ -99,8 +99,8 @@ do. Proved: `BranchRefinement.sourceKinds_cover` (the kinds cover `source`)
 and `sourceSlice_sound`, part of `checkObservedSub_sound`. A key test
 `"k" in x` on $`J_{\mathrm{ref}}`$ is the [`in`](SOURCE-ELABORATION.md#in)
 test on a record clause, which establishes the Boolean alone: no field is
-stated for the key, so a read of `x.k` after it has no rule
-([a key found on an open object](../WORK.md#key-on-open-object)). The
+stated for the key, and a read of `x.k` after it is an
+[open read](SOURCE-CONTRACTS.md#open-reads), at `unknown`. The
 negative `Array.isArray` slice and a type parameter's meet with `unknown`
 are not sliced ([slices of the value universe](../WORK.md#universe-slices)).
 

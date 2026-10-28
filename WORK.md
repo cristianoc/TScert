@@ -28,7 +28,7 @@ each item's design and evidence, not its progress.
 | [The compiler API's full shape check](#compiler-api-shape-check) | open | C3 checks every member and child kind over the corpus it names, the absent required members exactly the corrections |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
-| [A key found on an open object](#key-on-open-object) | open: a design | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
+| [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review (`blocker-in-name-object`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [An assertion's promise on a field](#guard-promise-field) | open | `guard-field-assertion` verifies: an assertion function's call on a field narrows the field reread in the next statement |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
@@ -267,39 +267,24 @@ and on their own promises.
 <a id="key-on-open-object"></a>
 **A key found on an open object.** A value that `typeof v === "object"`,
 `v !== null` and `"k" in v` admit holds an object of an open record clause
-$`c`$ stating no key $`k`$ and no bound excluding it; the test
-$`\mathsf{hasKey}(k)`$ has no answer on $`c`$, and the read `v.k` TypeScript
-then admits has no rule: the producer stops at "field read on non-object"
-(5 slices of `tools/` in the census of 3a6d2c0). The proposed rule reads it
-at $`\top`$:
+$`c`$ stating no key $`k`$. The read `v.k` is an
+[open read](docs/SOURCE-CONTRACTS.md#open-reads), the intrinsic
+$`\%\mathsf{Read}{:}k\%:(\{\})\Rightarrow_{\emptyset}\mathtt{unknown}`$,
+whose signature rests on the open-read restriction. Reading it as the
+model's own read, a rule
 
 ```math
 \frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\ \text{a string key}\notin\mathrm{objectProtoKeys}\quad c\ \text{excludes host values}}
      {\Gamma\vdash v.k:\top}\ \textsf{read-unstated}
 ```
 
-It changes the model: it adds an invariant to what `checkJson_safe`'s
-premise says about inputs. Under the current premises it is unsound: the
-record meaning (`recT`) constrains the named fields only, so an unnamed key
-may hold a location outside the heap, an unconstrained `[[proto]]` can
-leave the lookup without a result, and a host object's property may be a
-getter. The rule needs:
-
-- a lookup invariant, part of the premise on inputs and preserved by every
-  step: every object's field locations are valid heap locations and its
-  prototype links lead through such objects, so a lookup of any key steps
-  to a value; its preservation and the read rule proved in Lean;
-- the plain-data caller assumption extended to the properties a value's
-  type leaves unstated and to the prototype chain a read traverses;
-- host values excluded (`excludesHost`) unless a reviewed contract grants
-  the read;
-- `objectProtoKeys` kept refused, and symbol keys outside the rule;
-- array own-key exclusions preserved: reading at $`\top`$ grants no
-  ownership and no write.
-
-Controls: the positive shape above and a decoder over `JSON.parse`'s
-result; a read at `toString` after `"toString" in v`, a host value and a
-symbol key stay refused; a write at the key is not admitted.
+needs a lookup invariant in the premise on inputs and preserved by every
+step: every object's field locations are valid heap locations and its
+prototype links lead through such objects, so a lookup of any key steps to
+a value. The record meaning (`recT`) constrains the named fields only, so
+under the current premises an unnamed key may hold a location outside the
+heap and an unconstrained `[[proto]]` can leave the lookup without a result,
+and a host object's property may be a getter its family does not state.
 
 <a id="guard-promise-field"></a>
 **An assertion's promise on a field.** A type guard's call on a field

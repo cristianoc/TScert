@@ -249,6 +249,11 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     const byteLength = gate.byteReads.get(gate.span(node).join(":"));
     if (byteLength !== undefined)
       return gate.intrinsic(byteLength, gate.span(node), gate.span(node.name), [gate.expr(node.expression)]);
+    // `o.k` of an object TypeScript types by `"k" in o` tests alone is
+    // `%Read:k%(o)` (`intrinsics.mts`).
+    const openRead = gate.openReads.get(gate.span(node).join(":"));
+    if (openRead !== undefined)
+      return gate.intrinsic(openRead, gate.span(node), gate.span(node.name), [gate.expr(node.expression)]);
     if (node.questionDotToken)
       gate.fail(node, "optional property access is outside the fragment");
     // `C.x` that TypeScript binds to a static field of class `C` reads the

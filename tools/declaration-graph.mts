@@ -14,6 +14,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // array-prototype.mts holds the reviewed contracts of the built-in prototypes, the only members of `Array.prototype` and the primitive prototypes this reader admits.
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
+import { auditedOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
@@ -22,7 +23,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTy
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
@@ -580,6 +581,13 @@ export function collectDeclarations(file: string, options: {
    * which joins the values. */
   lengthReads?: readonly Span[];
   byteRead?: (span: Span, intrinsic: string) => void;
+  /** The client's reads `e.k` at a key some `"k" in o` test writes: each
+   * whose object TypeScript types as `object` narrowed by such tests alone
+   * (every part of an intersection `object` or the standard library's
+   * `Record<"k'", unknown>`, `k` among the `k'`) is reported to `openRead`
+   * with its intrinsic, `%Read:k%`, which joins the values. */
+  openReads?: readonly Span[];
+  openRead?: (span: Span, intrinsic: string) => void;
   /** The client's regular expression literals: each is reported to
    * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
    * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
@@ -2908,6 +2916,40 @@ export function collectDeclarations(file: string, options: {
       if (!read || !ts.isPropertyAccessExpression(read)) throw new DeclarationError(span, "TypeScript length read missing");
       const object = checker.getTypeAtLocation(read.expression);
       if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) viewRead(span, byteLengthName);
+    }
+    // `o.k` of an object TypeScript types as `object` narrowed by `in`
+    // tests (or an annotation of that shape): the narrowing intersects
+    // `object` with the standard
+    // library's `Record<"k", unknown>` per test.
+    const recordOf = (t: Type): string | undefined => {
+      const alias = t.getAliasSymbol();
+      const args = t.getAliasTypeArguments();
+      const [key, value] = args;
+      if (!alias || alias.name !== "Record" || args.length !== 2 || !key || !value || !(value.flags & TypeFlags.Unknown) ||
+          !(key.flags & TypeFlags.StringLiteral) ||
+          !alias.declarations.every(d => { const node = d.resolve(); return !!node && libraryFile(node.getSourceFile()); }))
+        return undefined;
+      return "value" in key && typeof key.value === "string" ? key.value : undefined;
+    };
+    for (const span of options.openReads ?? []) {
+      const read = expressionAt(client, span);
+      if (!read || !ts.isPropertyAccessExpression(read) || !ts.isIdentifier(read.name))
+        throw new DeclarationError(span, "TypeScript member read missing");
+      const object = checker.getTypeAtLocation(read.expression);
+      const parts = object && object.isIntersectionType() ? object.getTypes() : [];
+      const keys = parts.map(recordOf);
+      if (!auditedOpenReadKeys.has(read.name.text) ||
+          !parts.some(t => !!(t.flags & TypeFlags.NonPrimitive)) ||
+          !parts.every((t, i) => !!(t.flags & TypeFlags.NonPrimitive) || keys[i] !== undefined) ||
+          !keys.includes(read.name.text)) continue;
+      const intrinsic = openReadIntrinsic(read.name.text);
+      if (!intrinsicsListed.has(intrinsic.name)) {
+        values.push({ binding: { local: intrinsic.name, imported: intrinsic.name, specifier: intrinsicModule, span },
+          declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
+          construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+        intrinsicsListed.add(intrinsic.name);
+      }
+      options.openRead?.(span, intrinsic.name);
     }
     // A regular expression literal is a call of the intrinsic of its shape,
     // listed once per shape at the first literal of it.

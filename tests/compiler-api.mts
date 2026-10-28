@@ -17,6 +17,11 @@
 // readonly array's, through throwing and re-entrant callbacks and iterators
 // left early or interleaved.
 //
+// C5, open reads: at each key the front end reads a compiler-provided object
+// at through an open read (`%Read:k%`), the lookup along the object's chain
+// finds a data property, or the audited `kind` getter of a node's base
+// prototype (SOURCE-CONTRACTS.md, "Open reads").
+//
 // C4, allocating members: each member the contract refuses as allocating is
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
@@ -30,6 +35,8 @@ import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, re
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
+import { openCompiler, releaseCompiler } from "../tools/compiler-channel.mts";
+import { fieldOf } from "../tools/thrown.mts";
 import { syntax } from "../tools/syntax.mts";
 
 // The package the front end resolves, from tools/.
@@ -784,4 +791,53 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     "the replaced node's name is undefined");
   closeParser();
   console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
+}
+
+// C5: the compiler-provided objects the front end reads through open reads
+// (`privateClient` and `abandon`, `isNode`, `copied`): the API's private
+// client at `close`, its process at `kill`, `once`, `exitCode` and
+// `signalCode`, and a node at `kind` and `getStart`. Each lookup finds a data
+// property, but a node's `kind`, the getter of the package's
+// `RemoteNodeBase.prototype`, which reads the node's bytes in the package's encoded tree
+// and writes nothing (the family's stable tag, HOST-FAMILIES.md, F2).
+{
+  type Found = { owner: object; descriptor: { readonly value?: unknown; readonly get?: unknown; readonly set?: unknown } };
+  const lookup = (o: object, key: string): Found | undefined => {
+    for (let p: unknown = o; typeof p === "object" && p !== null; p = Object.getPrototypeOf(p)) {
+      const descriptor = Object.getOwnPropertyDescriptor(p, key);
+      if (descriptor) return { owner: p, descriptor };
+    }
+    return undefined;
+  };
+  const data = (o: object, key: string, what: string): void => {
+    const found = lookup(o, key);
+    assert.ok(found && "value" in found.descriptor && !found.descriptor.get && !found.descriptor.set,
+      `${what}.${key} is a data property`);
+  };
+  const dir = runDirectory("tscert-open-read-");
+  const api = openCompiler({ cwd: dir });
+  try {
+    const client = fieldOf(api, "client");
+    assert.ok(typeof client === "object" && client !== null, "the API's private client");
+    data(client, "close", "API.client");
+    const child = fieldOf(fieldOf(client, "channel"), "child");
+    assert.ok(typeof child === "object" && child !== null, "the client's process");
+    for (const key of ["kill", "once", "exitCode", "signalCode"]) data(child, key, "API.client.channel.child");
+  } finally {
+    releaseCompiler(api, null);
+  }
+  const file = join(dir, "open-read.ts");
+  const source = "export const answer = 42;\n";
+  writeFileSync(file, source);
+  const tree = openText(file, source);
+  const [statement] = tree.statements;
+  assert.ok(statement, "a parsed statement");
+  for (const node of [tree, statement]) {
+    data(node, "getStart", "a node");
+    const kind = lookup(node, "kind");
+    assert.ok(kind && kind.descriptor.get && !kind.descriptor.set && !("value" in kind.descriptor) &&
+      kind.owner.constructor.name === "RemoteNodeBase", "a node's kind is RemoteNodeBase.prototype's getter");
+  }
+  closeParser();
+  console.log("C5: the open reads of the client, its process and a node find data properties, and a node's kind getter");
 }

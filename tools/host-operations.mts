@@ -22,6 +22,46 @@ import {
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName,
 } from "./intrinsics.mts";
 
+/** The key capability for an open read, independent of the receiver's
+ * apparent type: erasing a host value to unknown preserves this gate.
+ *
+ * Audit of all eight keys against every admitted family and overlay:
+ * - Compiler nodes: kind is RemoteNodeBase's byte-reading getter (or a
+ *   NodeObject data field); getStart is a prototype method; name reads the
+ *   encoded named child (RemoteNode.getNamedChild) or NodeObject._data.name.
+ *   The child is a family node or undefined; lazy wrappers/cache writes are
+ *   host bookkeeping, outside the modeled heap. The other keys are absent.
+ * - Node lists (RemoteNodeList and factory arrays): all eight absent,
+ *   including along Array.prototype and Object.prototype.
+ * - Sync API/client/channel: close is a prototype method; the other keys
+ *   are absent. Snapshot, Project, Program, Checker, Type and Signature
+ *   have none; Symbol.name is a string data field, NodeHandle.kind a
+ *   numeric data field. Other compiler response records carry ordinary
+ *   contract values. See dist/api/sync/{api,client}.js, syncChannel.js and
+ *   dist/{api/node/node.generated,api/node/node.infrastructure,ast/factory.generated}.js.
+ * - Channel ChildProcess: kill and inherited EventEmitter.once are data
+ *   methods; exitCode and signalCode are own data (number/string or null).
+ *   Node's process has kill/once data methods and an exitCode getter reading
+ *   internal exit fields only (number or undefined); the other keys absent.
+ * - Library overlays: Timeout.close and Hash's inherited once are data
+ *   methods; Dirent/DirentFromStats.name and Error's inherited name are
+ *   string data. Stats/BigIntStats, Uint8Array/Buffer, TextDecoder, Date,
+ *   Set/Map and their iterators, RegExp and its iterator, Promise and
+ *   ordinary arrays have none of these keys. Node's lib/internal/process/
+ *   per_thread.js, timers.js, events.js, internal/fs/utils.js and the
+ *   standard prototype contracts supply these descriptors.
+ *
+ * Every listed value meets unknown, including callable values: reading a
+ * method does not call it or grant its callable contract. Getter execution
+ * preserves the modeled heap. Standard prototypes and host implementations
+ * retain these audited descriptors; external ordinary objects obey the
+ * open-read restriction of SOURCE-CONTRACTS.md. Any new family, overlay or
+ * key requires this cross-family audit again. Absence includes inheritance.
+ * A data descriptor alone grants no permission to expose host internals. */
+export const auditedOpenReadKeys: ReadonlySet<string> = new Set([
+  "close", "kill", "once", "exitCode", "signalCode", "kind", "getStart", "name",
+]);
+
 export type HostClass =
   | { k: "transparent"; why: string }
   | { k: "obligated"; operands: string; why: string }
@@ -73,7 +113,7 @@ export const patternForms: { readonly [K in PatternAst["k"]]: HostClass } = {
 };
 
 /** The intrinsics the parser writes, by name; `%Spread:K%` and
- * `%RestFrom:k%` by their prefixes. */
+ * `%RestFrom:k%` and `%Read:k%` by their prefixes. */
 export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [awaitName]: transparent("a value at a Promise type: a realm promise by the await assumption"),
   [asyncReturnName]: value, [asyncCompleteName]: value,
@@ -94,6 +134,8 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [elementAtName]: store,
   "%Spread:": transparent("a string, Set, Map or iterator: no host value"),
   "%RestFrom:": store,
+  "%Read:": transparent("the value at a key in auditedOpenReadKeys, at unknown: absence, a data property or an audited transparent getter "
+    + "for every admitted host family, including through erasure; external objects obey the open-read restriction"),
 };
 
 /** The overlay tables of `array-prototype.mts`, each classified whole. */

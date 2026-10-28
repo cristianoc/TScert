@@ -2057,6 +2057,86 @@ object, its copy with an allocation at the key over it. A numeric property name 
 (`numericKey` in `type-term.mts`), and a number key of a receiver claimed only
 at records is the [named access](SOURCE-ELABORATION.md#keyed-access-at-a-singleton-key) of that key.
 
+## Open reads
+
+A member read `o.k` whose object TypeScript types as `object` narrowed by
+`"k" in o` tests (or an explicit annotation of the same shape), every part
+of the intersection `object` or the standard library's `Record<"k'", unknown>` with $`k`$ among the $`k'`$, at
+a key $`k\in\mathrm{auditedOpenReadKeys}`$ and
+$`k\notin\mathrm{objectProtoKeys}`$, is an **open read**: a call of
+the intrinsic $`\%\mathsf{Read}{:}k\%`$ (`openReadIntrinsic` in
+`intrinsics.mts`), which the parser writes where the declaration graph
+finds that type (`openReads`):
+
+```math
+o.k\;\equiv\;\%\mathsf{Read}{:}k\%(o)
+\qquad
+\%\mathsf{Read}{:}k\%:(\{\})\Rightarrow_{\emptyset}\mathtt{unknown}
+```
+
+```math
+\frac{\Gamma\vdash o:A\quad A\le\{\}\quad k\in\mathrm{auditedOpenReadKeys}\quad k\notin\mathrm{objectProtoKeys}\quad
+      \text{TypeScript types } o \text{ as } \mathtt{object}\mathbin{\&}\mathtt{Record}\langle k_1,\mathtt{unknown}\rangle\mathbin{\&}\cdots,\ k\in\{k_i\}}
+     {\Gamma\vdash o.k:\mathtt{unknown}}\ \textsf{open-read}
+```
+
+The parameter is the record of no field, so the argument's type is checked
+as any call's: an object without call code, which the slices of `unknown`
+that `typeof o === "object"` and `o !== null` leave
+([slices of the value universe](SOURCE-MODEL.md#slices-of-the-value-universe-by-tag-tests)) are. The result is
+`unknown`, so the read states no type of the key: no field, no ownership
+and no write follows from it, and a write at the key stays a
+[key-adding write](PROGRAM-TYPING.md#key-adding-writes)
+(`invalid-open-read-write`). The eligibility check recognizes the type shape,
+which an explicit annotation can also state; it proves no preceding test.
+A passed `in` test does not prove permanent presence: a later lookup can
+return `undefined`, which is within `unknown`.
+
+**The open-read restriction.** The signature is an assumption of every
+unit that reads one, as each intrinsic's is: for the admitted open-read
+keys, lookup on every admissible receiver finds absence, a data property or an
+audited transparent host getter, producing a value satisfying the model's
+`unknown` contract; external code preserves this condition. A data
+property's lookup runs no code; an audited getter executes code that
+preserves the modeled heap. The empty footprint rests on this audit and
+external restriction. Every result must meet `unknown`, the
+[array invariant](DESIGN.md#trust-surface) included; a data descriptor alone
+does not establish permission to expose host internals. The
+restriction is enforced where the program makes objects: the fragment
+admits no accessor, in a literal or a class (`invalid-open-read-getter`,
+run under Node: a getter at the key runs at each read), and no proxy
+(the [trust surface](DESIGN.md#trust-surface)); it is assumed of every
+object external code supplies.
+
+The keys of `Object.prototype` (`toString`, `constructor`, `__proto__`, …)
+are no open-read keys: `in` with one is refused
+(`invalid-open-read-inherited`), and a read at one stays the model's.
+
+**Audited key capability.** `auditedOpenReadKeys` in
+[`host-operations.mts`](../tools/host-operations.mts) owns the cross-family
+audit and allowlist: `close`, `kill`, `once`, `exitCode`, `signalCode`,
+`kind`, `getStart` and `name`. Each key is audited against every admitted
+host family, its own and inherited properties, and the library overlays:
+absence or transparent data/getters whose results meet `unknown` and whose
+reads preserve the modeled heap. The audit covers compiler nodes and node
+lists, sync API views and client/channel/child, and Node and standard
+library objects. Adding a key, family or overlay requires that audit again.
+The declaration graph checks this capability independently of the apparent
+receiver type, so erasure to `unknown` retains the gate. `view`, `parent`
+and `_byteIndex` are outside the allowlist; `invalid-compiler-api-open-read-erased`
+passes a Node to `expose(x: unknown)` and refuses its `x.view` read.
+
+`tests/compiler-api.mts` (C5) checks the compiler client/child data properties
+and the node's `kind` getter and `getStart` method along their chains.
+The source excludes custom inherited getters as well as literal getters
+(`invalid-open-read-inherited-getter`, run under Node). External code
+preserves the same restriction, including on prototype chains.
+An open read's `unknown` establishes no host family: a guard promising a
+node from a numeric `kind` is refused, which `{ kind: 1 }` passes
+(`invalid-compiler-api-open-read-kind`, run under Node). A receiver a
+family's type describes uses that family's stated keys
+(`invalid-compiler-api-open-read-internal`).
+
 ## Prototype contracts
 
 `ArrayProto`, `StringProto`, `NumberProto`, `BigIntProto` and `BooleanProto`

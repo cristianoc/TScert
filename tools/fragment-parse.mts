@@ -43,7 +43,7 @@ import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, 
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
-  throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
+  throwUninitializedName, objectProtoKeys, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement, callTarget } from "./fragment-support.mts";
@@ -260,6 +260,8 @@ export class Gate {
   /** The element reads at a number and the `length` reads of a view of
    * bytes, by span: the intrinsic reading each (`library-types.mts`). */
   readonly byteReads: Map<string, string> = new Map();
+  /** The open reads `%Read:k%` answers, by span: each its intrinsic. */
+  readonly openReads: Map<string, string> = new Map();
   /** Each regular expression literal's intrinsic, `%RegExp:Σ%`, by span. */
   readonly regexps: Map<string, string> = new Map();
   /** Each string method call dispatching to its object argument's
@@ -1707,6 +1709,19 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findLengthReads);
   };
   if (!carriesContext) findLengthReads(source);
+  // Reads `e.k` at a key some `"k" in o` test of the file writes, other than
+  // a write's target and a call's callee, at a key no member of
+  // `Object.prototype` names: TypeScript's type of the object decides
+  // whether `%Read:k%` reads it (an open read).
+  const inLiteralKeys = new Set(inKeyNodes.flatMap(key => ts.isStringLiteral(key) ? [key.text] : []));
+  const openReadNodes: Node[] = [];
+  const findOpenReads = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) && inLiteralKeys.has(node.name.text) &&
+        !objectProtoKeys.has(node.name.text) && !node.questionDotToken && !writtenElement(node) && !callTarget(node))
+      openReadNodes.push(node);
+    node.forEachChild(findOpenReads);
+  };
+  if (!carriesContext && inLiteralKeys.size) findOpenReads(source);
   // Regular expression literals: each is a call of the intrinsic its shape
   // names, which the declaration graph lists.
   const regexpNodes: Node[] = [];
@@ -1929,13 +1944,13 @@ function lowerFile(file: string, carriesContext: boolean,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || lengthReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || lengthReadNodes.length || openReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
     const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ?? lengthReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ?? lengthReadNodes[0] ?? openReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0] ?? blockNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named, default and namespace imports. A type import joins the
@@ -2043,6 +2058,8 @@ function lowerFile(file: string, carriesContext: boolean,
         lengthReads: lengthReadNodes.map(node => gate.span(node)),
         byteRead: ([start, end], intrinsic) => gate.byteReads.set(`${start}:${end}`, intrinsic),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
+        openReads: openReadNodes.map(node => gate.span(node)),
+        openRead: ([start, end], intrinsic) => gate.openReads.set(`${start}:${end}`, intrinsic),
         regexps: regexpNodes.map(node => gate.span(node)),
         regexp: ([start, end], intrinsic) => gate.regexps.set(`${start}:${end}`, intrinsic),
         dispatchCalls: dispatchNodes.map(node => gate.span(node)),

@@ -59,6 +59,13 @@
  *   holds a `T`, else `undefined`, since the built-in `Array.prototype` and
  *   `Object.prototype` own no numeric key. The read runs no code (no
  *   accessor or proxy, DESIGN.md "Trust surface").
+ * - `o.k` where TypeScript types `o` as `object` narrowed by `"k" in o`
+ *   tests (`object & Record<"k", unknown>`, also expressible by annotation),
+ *   at a key in `auditedOpenReadKeys`, is `%Read:k%(o)` (`openReadIntrinsic`):
+ *   the value the lookup of `k` on `o` finds, at `unknown`. It preserves the
+ *   modeled heap by the cross-family key audit and open-read restriction
+ *   (SOURCE-CONTRACTS.md, "Open reads"): along every receiver's chain the
+ *   key finds absence, a data property or an audited transparent host getter.
  *
  * The reviewed overlay of library globals (`library-globals.mts`) reads some
  * members as these: `Promise.resolve(v)` is `%PromiseResolve%(v)`, which
@@ -250,6 +257,25 @@ export function restFromIntrinsic(k: number):
   return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }],
     type: fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
       rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }) };
+}
+
+/** The string keys `Object.prototype` holds (Lean's `objectProtoKeys`): an
+ * open read at one of them stays the model's read, which refuses it. */
+export const objectProtoKeys: ReadonlySet<string> = new Set(["constructor", "__defineGetter__", "__defineSetter__",
+  "hasOwnProperty", "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString",
+  "valueOf", "__proto__", "toLocaleString"]);
+export const openReadPrefix = "%Read:";
+/** The intrinsic of an open read at `key`. */
+export const openReadName = (key: string): string => `${openReadPrefix}${key}%`;
+/** `%Read:k%(o: {}): unknown` within the empty footprint: the value the
+ * lookup of the string key `k` on an object without call code finds, its own
+ * or an inherited property's, or `undefined`. The open-read restriction
+ * (SOURCE-CONTRACTS.md, "Open reads") and the cross-family key audit justify
+ * its empty effect, including when an audited getter executes. */
+export function openReadIntrinsic(key: string):
+    { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
+  return { name: openReadName(key), typeParams: [],
+    type: { ...fn([{ k: "object", fields: [], stringIndex: null, calls: [], span }], atom("unknown")), effect: emptyEffect } };
 }
 
 /** A number's spelling as a literal: its `Number::toString`, which reads back

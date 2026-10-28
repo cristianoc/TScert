@@ -1619,6 +1619,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.throws(() => runExample("invalid-in-unknown-primitive", "probe(5)"), /Cannot use 'in' operator/);
   assert.throws(() => runExample("invalid-in-unknown-null", "probe(null)"), /Cannot use 'in' operator/);
   assert.equal(runExample("invalid-in-unknown-function-key", "probe(() => 0)"), true);
+  // An open read runs a getter at its key, giving a new value at each read,
+  // which the open-read restriction excludes; it finds a numeric `kind` on
+  // a record that is no compiler node.
+  assert.equal(JSON.stringify(runExample("invalid-open-read-getter",
+    `(() => { let n = 0; const o = { get name() { n = n + 1; return n; } }; return [nameOf(o), nameOf(o)]; })()`)), "[1,2]");
+  assert.equal(runExample("invalid-compiler-api-open-read-kind", "isNode({ kind: 1 })"), true);
   assert.equal(JSON.stringify(runExample("in-unknown-object", `[anything({ a: 1 }), anything(5), closable({ close() {} }),
     closable(""), named(() => { throw new Error("m"); }), named(() => { throw 5; }), kind(null), kind(() => 0),
     kind(1), kind({ code: 1 }), kind({})]`)), JSON.stringify([true, false, true, false, true, false, "nullish",
