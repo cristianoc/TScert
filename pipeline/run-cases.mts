@@ -41,6 +41,10 @@ export function runCase(test: Case): Promise<Outcome> {
           assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] === at && o.pos[1] <= at + site.length + 1),
             `${test.file}: diagnostic omitted ${site}`);
         }
+        // Verification meets no refusal in a verified source; a diagnostic
+        // run of it reports none.
+        if (test.status === "verified")
+          assert.deepEqual(report.occurrences.map(o => o.reason), [], `${test.file}: diagnostic refusal in a verified source`);
       }
       return consumed;
     })

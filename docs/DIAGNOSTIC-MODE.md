@@ -41,7 +41,9 @@ transactions belong exclusively to diagnostic planning.
 
 The producer recovers at expressions, statement transfers, binding-schedule
 operations, conditions and iterator steps. Each refusal restores candidate
-state and records the failed region as opaque. An expression assumes its
+state and records the failed region as opaque. A speculative typing query,
+whose failure its caller answers in a verification run too, runs without
+recovery and records no refusal. An expression assumes its
 expected type, or `unknown`. A failed declaration preserves its name and
 storage mode at its annotation, or `unknown`; existing storage contracts stay
 fixed. Failed binding reads supply `unknown` and continue through the remaining

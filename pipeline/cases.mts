@@ -20,7 +20,8 @@ export interface Case {
   /** Whether a failed search is named by TypeScript's errors
    * (`verify-source.mts --typescript-errors`). */
   typescriptErrors?: boolean;
-  /** Source fragments at which a diagnostic run must retain a refusal. */
+  /** Source fragments at which a diagnostic run must retain a refusal; a
+   * verified case lists none, and its diagnostic run reports no refusal. */
   diagnosticSites?: string[];
   diagnosticCompleted?: boolean;
   /** Source regions excluded from diagnostic coverage. */
@@ -53,6 +54,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  { ...positive("diagnostic-speculation", "A speculative typing query of a diagnostic run records no refusal."),
+    diagnosticSites: [] },
   { ...negative("diagnostic-closure-effects", "A closure footprint failure makes its enclosing expression opaque."),
     diagnosticSites: ["cell.value = 1"], diagnosticHoles: ["(): Within<{ value: \"keep\"; store: \"keep\" }, number> =>"], diagnosticCompleted: true },
   { ...gap("diagnostic-syntax-identity", "Synthetic expression operands have distinct nonempty claim identities.", "unsupported", "source", /global Uint8Array/),

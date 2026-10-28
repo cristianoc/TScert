@@ -167,8 +167,10 @@ type candidate_snapshot = {
 module Access (S : sig val state : t end) = struct
   let state = S.state
   let local = state.local
+  (* A speculation's failure is its caller's answer, as outside a diagnostic
+     run: recovery and its refusal apply outside speculation alone. *)
   let diagnostic_recover pos fallback action =
-    if not state.diagnostics.Proposal_diagnostics.diagnosing then action () else
+    if not state.diagnostics.Proposal_diagnostics.diagnosing || (!local).speculative_typing then action () else
     match recover state action with
     | Ok result -> result
     | Error reason ->

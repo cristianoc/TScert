@@ -14,7 +14,7 @@ let infer diagnostics flows offered declarations module_functions arities bounds
   let module T = Statement_analysis.Make(S) in
   let rec expr ?expected env e =
     let run () = E.infer expr bindings body ?expected env e in
-    if not diagnostics.Proposal_diagnostics.diagnosing then run () else
+    if not diagnostics.Proposal_diagnostics.diagnosing || Owner.speculative_typing () then run () else
     match Analysis_state.recover state run with
     | Ok t -> t
     | Error reason ->
