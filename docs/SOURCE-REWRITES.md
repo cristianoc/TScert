@@ -319,6 +319,27 @@ contract.
 - **Functions:** `mergeRefusal` (its local `canonical`).
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
 
+### A promise executor inheriting `any` from its context
+
+The top level of `tools/unchecked.mts` collects each worker's result
+through `new Promise<{ files: string[]; found: Found[] }>((done, fail) =>
+…)`. TypeScript types the unannotated executor parameters from
+`PromiseConstructor`: `done` as `(value: T | PromiseLike<T>) => void` and
+`fail` as `(reason?: any) => void`, so `fail` has no stated contract and
+its slices (`check`, `findIn`, `decodeResult` in the census of b81675f) are
+refused with the reason `blocker-contextual-any` shows.
+
+- **Rewrite:** the executor states its parameters,
+  `done: (result: { files: string[]; found: Found[] }) => void` and
+  `fail: (reason: unknown) => void`, as `library-new-promise` does. The
+  promise's resolving functions accept every argument these types admit,
+  so the executor's calls and the promise's settlement are unchanged.
+- **Pattern:** a callback whose context types a parameter `any` states the
+  weakest contract its body uses.
+- **Functions:** the module's top level, read by the slices of `check`,
+  `findIn` and `decodeResult`.
+- **Commit:** the introducing commit, `A promise executor of unchecked.mts states its resolving functions`.
+
 ### An import phase read through an undeclared host field
 
 `importedModules` (`tools/fragment-parse.mts`) tested `"isTypeOnly" in

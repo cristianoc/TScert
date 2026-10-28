@@ -532,7 +532,8 @@ if (workerAt >= 0) {
 }
 // The files are checked in parallel, each part by a compiler of its own.
 const parts = Math.max(1, Math.min(8, availableParallelism() - 1));
-const results = await Promise.all<Promise<{ files: string[]; found: Found[] }>[]>(Array.from({ length: parts }, (_, part) => new Promise<{ files: string[]; found: Found[] }>((done, fail) => {
+const results = await Promise.all<Promise<{ files: string[]; found: Found[] }>[]>(Array.from({ length: parts }, (_, part) => new Promise<{ files: string[]; found: Found[] }>((
+  done: (result: { files: string[]; found: Found[] }) => void, fail: (reason: unknown) => void) => {
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--project", projectDir, "--worker", `${part}/${parts}`],
     { stdio: ["ignore", "pipe", "inherit"] });
   let out = "";
