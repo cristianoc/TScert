@@ -393,7 +393,7 @@ export const hostNodeListMembers: readonly { name: string; owner: string; text: 
 /** The record of a node list's own members, each a required readonly field
  * at its contract, located at `span`: the model's node list is the dense
  * readonly array of its elements met with this record. */
-export function nodeListMembers(span: TypeTerm["span"]): TypeTerm {
+export function nodeListMembers(span: TypeTerm["span"]): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const atom = (name: "number" | "boolean" | "undefined"): TypeTerm => ({ k: "atom", name, span });
   return { k: "object", stringIndex: null, calls: [], span, fields: hostNodeListMembers.map(m => ({
     name: m.name, optional: false, readonly: true, span,

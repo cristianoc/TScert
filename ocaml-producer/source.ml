@@ -865,7 +865,7 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_
      constant holding a store the run allocated. *)
   | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
     let receiver_fresh = match o.node with Id name -> List.mem name fresh | _ -> false in
-    if dispatched o args then None else
+    if dispatched callee args then None else
     join_bound (all (o :: args)) (returning e (fun () -> calls ~receiver_fresh callee))
   (* A construction changes at most what every construct signature its
      callee may take states. *)

@@ -219,7 +219,10 @@ of every signature its callee may take, a call its own typing claims at
 in a function's or a closure's body, on an object whose claim has several
 alternatives once each declaration it names is unfolded, with actuals that
 are names or literals none: the lowering may read and invoke its member in one
-node dispatched on the object (`Lowering.dispatchesCall`), which no bounded node rule above admits; declarations are proposed at the least
+node dispatched on the object (`Lowering.dispatchesCall`), which no bounded node rule above admits.
+A method call on a union of arrays none of which owns the member, the member
+claimed at one type, is not dispatched (each alternative reads it from the
+array prototype) and is proposed as a call; declarations are proposed at the least
 fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
 every node.
 

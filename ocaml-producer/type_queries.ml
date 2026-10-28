@@ -784,12 +784,21 @@ let rec unfolded_arms declarations seen t = match t with
    the object's claim, its declarations unfolded (`unfolded_arms`), has
    several alternatives, and every actual is a name or a literal. Lean
    dispatches only where the callee's claim has several labels too, or the
-   object has no primitive arm and not every alternative is a host holding
-   the member, so a call this answers true for but Lean does not dispatch is
-   proposed unbounded, which Lean accepts. *)
-let dispatches_call declarations (object_claim:ty) args =
+   object has no primitive arm, not every alternative is a host holding the
+   member, and the alternatives do not all read the member at one row, so a
+   call this answers true for but Lean does not dispatch is proposed
+   unbounded, which Lean accepts. A union of arrays none of which owns the
+   member, the callee claimed at one atom, is not dispatched: each
+   alternative reads the member from the one array prototype, at one row
+   (Lean's `Lowering.sharedFieldRow`). *)
+let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty option) args =
+  let arms = List.sort_uniq compare (unfolded_arms declarations [] object_claim) in
+  let prototype_read = function
+    | Atoms [Shape {elements=Some _; fields; _}] -> not (List.exists (fun (f:field) -> f.name = k) fields)
+    | _ -> false in
   plain_actuals args
-  && List.length (List.sort_uniq compare (unfolded_arms declarations [] object_claim)) > 1
+  && List.length arms > 1
+  && not ((match member_claim with Some (Atoms [_]) -> true | _ -> false) && List.for_all prototype_read arms)
 (* `ToBoolean` of every value of an atom, through the declaration it names:
    a declaration all of whose arms settle it one way (a named union of
    records, always truthy) settles it so. *)

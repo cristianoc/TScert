@@ -30,6 +30,8 @@ export type ComputedContext = {
   /** The type alias a reference names, as TypeScript resolves it, if it
    * names one. */
   alias(reference: TypeReferenceNode): TypeAliasDeclaration | null;
+  /** The declaration named by the current projected reference. */
+  referenceAlias(reference: Extract<TypeTerm, { k: "reference" }>): TypeAliasDeclaration | null;
   /** The reader of type syntax inside `alias`'s declaration with its
    * parameters read as `args`, in the alias's own scope, a computed form
    * naming them evaluated by TypeScript at the application `use`. */
@@ -450,12 +452,15 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
     const [only] = parts;
     return parts.length === 1 && only ? only : { k: "union", parts, span };
   };
-  const project = (object: TypeTerm): TypeTerm => {
+  const projecting = new Set<TypeAliasDeclaration>();
+  const project = (object: TypeTerm, depth: number = 0): TypeTerm => {
+    if (depth >= 64)
+      throw Error(`the indexed access ${computed} exceeds the projection chain limit of 64`);
     switch (object.k) {
-      case "union": return union(object.parts.map(project));
+      case "union": return union(object.parts.map(part => project(part, depth + 1)));
       // An intersection's member at a key is the meet of its operands'
       // members there: `(A[] & B[])[number]` is `A & B`.
-      case "intersection": return { k: "intersection", parts: object.parts.map(project), span };
+      case "intersection": return { k: "intersection", parts: object.parts.map(part => project(part, depth + 1)), span };
       case "array":
         if (keyList.every(k => k.k === "atom" && k.name === "number")) return object.element;
         break;
@@ -488,25 +493,25 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
       case "reference": {
         // A type alias without parameters is its equation, read where it is
         // declared.
-        const alias = aliasOf(node.objectType);
-        if (alias && object.args.length === 0)
-          return project(context.annotation(alias.type, alias, []));
+        const alias = context.referenceAlias(object);
+        if (alias && !alias.typeParameters?.length && object.args.length === 0) {
+          if (projecting.has(alias))
+            throw Error(`the indexed access ${computed} has a cyclic alias projection through ${alias.name.text}`);
+          projecting.add(alias);
+          try {
+            return project(context.annotation(alias.type, alias, []), depth + 1);
+          } finally {
+            projecting.delete(alias);
+          }
+        }
         // A generic alias of an array, a tuple or another alias: its
         // equation at the reference's arguments.
         const equation = object.args.length ? context.equation(object) : null;
-        if (equation) return project(equation);
+        if (equation) return project(equation, depth + 1);
         return member();
       }
     }
     throw Error(`the indexed access ${computed} has no member, element or position at its key`);
-  };
-  // The type alias without parameters a type reference names.
-  const aliasOf = (reference: TypeNode): ts.TypeAliasDeclaration | null => {
-    if (!ts.isTypeReferenceNode(reference) || !ts.isIdentifier(reference.typeName)) return null;
-    const nodes = (checker.getSymbolAtLocation(reference.typeName)?.declarations ?? []).map(d => d.resolve());
-    const [only] = nodes;
-    return nodes.length === 1 && only && isTypeAlias(only) && !only.typeParameters?.length
-      ? only : null;
   };
   // A member of a named type: its declaration's annotation, when that is
   // exactly what TypeScript computes and names no type parameter.

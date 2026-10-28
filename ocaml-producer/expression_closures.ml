@@ -272,8 +272,12 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       (* A body, a block or an expression, the graph of its `return`,
          dispatches a method call on its object in one node
          (`Type_queries.dispatches_call`). *)
-      let dispatched (o:expr) args =
-        match latest_claim o.pos with Some t -> dispatches_call declarations t args | None -> false in
+      let dispatched (callee:expr) args = match callee.node with
+        | Read (o,k) ->
+          (match latest_claim o.pos with
+           | Some t -> dispatches_call declarations t k (latest_claim callee.pos) args
+           | None -> false)
+        | _ -> false in
       let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
         List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~no_return ~iteration ~readable d))
           (footprint_expr ~dispatched ~callable ~no_return ~iteration ~readable body) defaults in

@@ -1747,7 +1747,7 @@ $`⟦T⟧`$ at each key of $`\mathsf{lits}(\mathit{ts}(K))`$: a
 record's field (with `| undefined` where optional), an array's element at
 `number`, a tuple's position, a union's parts, an intersection's operands'
 members met, an alias through its equation (a generic one's at the
-reference's arguments), a named type's member through its annotation under
+reference's arguments; an imported one's, read where it is declared), a named type's member through its annotation under
 the same identity premise.
 
 A **computed alias** is a generic alias whose equation is a computed form or

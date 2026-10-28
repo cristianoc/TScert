@@ -2011,6 +2011,7 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
+      referenceAlias: reference => aliasNodes.get(aliasKey(reference.reference.target)) ?? null,
       // A block alias's captured arguments are the binders at the use.
       applied: (alias, args, use) => instantiateAt(alias, [...capturedOf(alias).map(capturedAt(use,
         `${idOf(alias.getSourceFile())}#${alias.name.text}`)), ...args], use),

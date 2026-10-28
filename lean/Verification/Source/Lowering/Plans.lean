@@ -569,17 +569,30 @@ number, a bigint or a boolean, whose members are its prototype's. -/
     | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ => true
     | _ => false
 
+/-- Whether every label of `O` reads `fld` at one row (`fieldRow`): its own
+field or view, or its prototype's where no own-key bound admits the key, as
+every array reads a method from the one array prototype. -/
+@[nospecialize] def Lowering.sharedFieldRow [BEq ι] (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) : Bool :=
+  match ProgramTyping.members G O with
+  | l :: ls => match fieldRow G [l] fld with
+    | some R => ls.all (fun l' => fieldRow G [l'] fld == some R)
+    | none => false
+  | [] => false
+
 /-- Whether a method call `x.k(a…)`, its object at `O` and its member at `B`,
 is read and called in one step dispatched on the object (`dispatchCallTerm`):
 `O` is a union whose alternatives read different members (`B` a union), or a
-union of objects (no primitive's shape) not all hosts holding `k`; its actuals
-are inert (each a name or a literal) and its callee takes no rest. A union of
-hosts each holding `k` gets the call one host gets, its member bound by
-splitting the slot (`memberHead`), so a closure body lowers to one program
-whether a signature claims its object at one host or at a union of them. -/
-@[nospecialize] def Lowering.dispatchesCall (G : PositiveGraphs.NormalGraph ι) (O B : Ty ι) (fld : PropKey)
+union of objects (no primitive's shape) not all hosts holding `k` and not all
+reading `k` at one row (`sharedFieldRow`); its actuals are inert (each a name
+or a literal) and its callee takes no rest. A union of hosts each holding `k`
+gets the call one host gets, its member bound by splitting the slot
+(`memberHead`), so a closure body lowers to one program whether a signature
+claims its object at one host or at a union of them; a union reading `k` at
+one row gets the call one alternative gets, the member read, then the call. -/
+@[nospecialize] def Lowering.dispatchesCall [BEq ι] (G : PositiveGraphs.NormalGraph ι) (O B : Ty ι) (fld : PropKey)
     (inert : Bool) : Bool :=
-  O.length > 1 && (B.length > 1 || (!hasPrimitiveShape G O && (unionMemberHosts G O fld).isEmpty)) &&
+  O.length > 1 && (B.length > 1 || (!hasPrimitiveShape G O && (unionMemberHosts G O fld).isEmpty
+      && !sharedFieldRow G O fld)) &&
     inert && (ProgramTyping.restSigs G B).isEmpty
 
 /-- The shapes a member read of `O` dispatches on: each primitive shape among

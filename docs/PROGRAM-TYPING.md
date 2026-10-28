@@ -1775,10 +1775,16 @@ mixed shapes; that representation needs additional decomposition rules.
 
 A method call on a union receiver is split on its receiver the same way
 where its alternatives read different members, or where every alternative
-is an object, holding one member each reads, and not every alternative is a
-host holding it as a member (`Lowering.dispatchesCall`). A union of such
+is an object, holding one member each reads, not every alternative is a
+host holding it as a member, and the alternatives do not all read it at one
+row (`Lowering.dispatchesCall`). A union of such
 hosts keeps the call one host gets: the member is read and bound before the
 actuals (`memberHead`), and `unionVar` splits the slot for `bindMember`. A
+union whose alternatives all read the key at one row (`sharedFieldRow`:
+each label's own field or view of the key, or its prototype's where no
+own-key bound admits it, the same row), as arrays read a method from the one
+array prototype, keeps the call one alternative gets: the member read, then
+the call. A
 closure's body lowers to one program for all its signatures, so a closure
 whose object is one host at one signature and a union of hosts at another
 is lowered alike at both. A union with a primitive's
