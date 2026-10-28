@@ -6723,6 +6723,19 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; a changed source executes\n");
 });
 
+// A callable type's methods cross the type graph's TypeScript decoder: a
+// graph holding them decodes to itself.
+control(async (): Promise<void> => {
+  const graph: Row[] = [["num"], ["bool"], [{ callable: {
+    first: [], rest: [],
+    arrows: [{ receiver: [0], arguments: [[0]], result: [0], effect: ordinaryEffect }],
+    methods: [{ key: "isFinite", calls: [{ receiver: {}, arguments: [[0]], result: [1], effect: ordinaryEffect }],
+      rests: [], schemes: [], receivers: [] }],
+  } }]];
+  assert.deepEqual(decodeGraph(jsonValue(JSON.parse(JSON.stringify(graph)))), graph);
+  process.stdout.write("type graph: a callable type's methods decode to themselves\n");
+});
+
 /** A control's result, as a control process reports it: its operations'
  * counts (`controlOperations`), and whether the process retires after it. */
 type Operations = { executed: number; replayed: number; elapsedMs: number };

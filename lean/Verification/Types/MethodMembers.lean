@@ -140,8 +140,7 @@ theorem memberT_adm (m : Member) : Adm (memberT Ξ m) := by
 
 /-- An object with code holds a member as a plain object does: at its own
 location for the key, whose contract implies the member's signatures invoked
-on it. A callable object with methods, `Number` with `isFinite`, is a member
-of its clause so. -/
+on it. -/
 theorem memberT_own {m : Member} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
     {code : CallCode} {oid l : Nat} {c : Ctr k}
     (hf : flds.lookup m.key = some l) (hl : lookup W l = some c)

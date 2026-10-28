@@ -202,6 +202,7 @@ export type Clause<L = number> =
         rest: Fields<L>[];
         arrows: Arrow<L>[];
         variadic?: RestArrow<L>[];
+        methods?: MethodSig<L>[];
       };
     };
 type RestArrow<L = number> = CallContract<Labels<L>, [Labels<L>[], Labels<L>], L>;
@@ -504,11 +505,12 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       if ("variadic" in r) variadic(r.variadic);
     },
     callable: (b) => {
-      const r = objOptional(b, ["first", "rest", "arrows"], ["variadic"]);
+      const r = objOptional(b, ["first", "rest", "arrows"], ["variadic", "methods"]);
       fields(r.first);
       array(r.rest).forEach(v => fields(v));
       arrows(r.arrows);
       if ("variadic" in r) variadic(r.variadic);
+      if ("methods" in r) methods(r.methods);
     },
   };
 
