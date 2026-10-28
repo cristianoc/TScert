@@ -232,7 +232,7 @@ type Listed<E> = { entries: E; answer: string | null };
 let attempt: AttemptAnswers | null = null;
 const attemptOf = (owner: Recording): AttemptAnswers =>
   ({ owner, kind: new Map(), real: new Map(), dirents: new Map(), entries: new Map() });
-function attemptAnswer<R extends { answer: string | null }>(answers: (a: AttemptAnswers) => Map<string, R>,
+function attemptAnswer<R extends { readonly answer: string | null }>(answers: (a: AttemptAnswers) => Map<string, R>,
     operation: Operation, path: string, node: boolean, read: () => R): R {
   // A read standing for Node's is made afresh and not kept: Node's agreement
   // and the process's first answers compare what the file system answers.

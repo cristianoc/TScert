@@ -574,6 +574,21 @@ where the guard and the kind test accept the same nodes
   refused read after `ts.isTypeAliasDeclaration`.
 - **Commit:** the introducing commit, `A type alias is recognised by its kind, excluding the JSDoc typedef`.
 
+### A binder bounded by a record with a writable field
+
+`attemptAnswer` in `tools/files.mts` bounds its binder by
+`{ answer: string | null }`, and `kindOf` calls it at
+`{ answer: Kind }`, a narrower field type. A writable field's contract is
+invariant, so the instance is outside the bound ("quantified call does not
+satisfy the closure's bound: cannot establish object ≤ object" in the twelve
+functions of `files.mts` that reach `kindOf`, census of b81675f).
+`attemptAnswer` only reads the field.
+
+- **Rewrite:** the bound is `{ readonly answer: string | null }`.
+- **Pattern:** a bound states the access the generic body makes: a field the
+  body only reads is readonly in the bound.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
