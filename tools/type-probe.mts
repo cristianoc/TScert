@@ -254,7 +254,9 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
         return name ? declarationsOf(original.checker.getSymbolAtLocation(name), false) : null;
       })();
       const parameterIndex = (symbol: Symbolic | undefined): number | null => {
-        const indexes = new Set<number>();
+        // The first declaration's position, and whether every one states it.
+        let index: number | undefined;
+        let one = true;
         for (const d of symbol?.declarations ?? []) {
           const node = d.resolve();
           if (!node || !ts.isTypeParameterDeclaration(node)) return null;
@@ -262,10 +264,11 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           const name = nameOf(owner);
           if (!name || declarationSymbol === null ||
               declarationsOf(original.checker.getSymbolAtLocation(name), false) !== declarationSymbol) return null;
-          indexes.add(childrenOf(owner, "typeParameters").indexOf(node));
+          const at = childrenOf(owner, "typeParameters").indexOf(node);
+          if (index === undefined) index = at;
+          else if (at !== index) one = false;
         }
-        const [index] = indexes;
-        return indexes.size === 1 && index !== undefined && index >= 0 ? index : null;
+        return one && index !== undefined && index >= 0 ? index : null;
       };
       // Each copied name resolves to what it resolves to where it is written.
       for (const p of placed) {

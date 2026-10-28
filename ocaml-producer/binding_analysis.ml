@@ -51,9 +51,13 @@ open S
             | Some (Local (contract,_)) -> Local (contract,contract)
             | _ -> Value top in
           run (extend (List.remove_assoc name env) name binding) values next
-        | Execution.Evaluate (value,_,next) | Execution.Input (_,_,value,next)
+        (* An input and a position read publish no expression claim when
+           they succeed, so their recovery publishes none either. *)
+        | Execution.Input (_,_,value,next) | Execution.ReadPosition (_,_,_,value,next) ->
+          run env (put values value top) next
+        | Execution.Evaluate (value,_,next)
         | Execution.DefaultValue (_,value,_,next)
-        | Execution.ReadField (_,_,_,value,next) | Execution.ReadPosition (_,_,_,value,next)
+        | Execution.ReadField (_,_,_,value,next)
         | Execution.ObjectRest (_,_,_,value,next) | Execution.ArrayRest (_,_,_,_,value,next) ->
           publish value.Execution.source top None;
           run env (put values value top) next)

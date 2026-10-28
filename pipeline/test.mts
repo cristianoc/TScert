@@ -187,6 +187,35 @@ control(async (): Promise<void> => {
   }
 });
 
+// A unit whose setup is refused (here a forged claim at a point that does not
+// execute its expression) retries its body at unknown for each quantified
+// module value it reads: `Set` and the iteration intrinsics stay bound, so the
+// retry reports no unbound name.
+control(async (): Promise<void> => {
+  const good = await run("for-of-host-iterables");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const proposal = readClaimsFile(join(good, "claims.json"));
+  const text = readFileSync(sourceKey(good), "utf8");
+  const at = text.indexOf("new Set<number>([1, 2])");
+  const literal = must(proposal.functions.find(f => f.name === "literal"), "literal's claims");
+  const construction = must(literal.expressions.find(e => e.pos[0] === at), "the construction's claim");
+  const elsewhere = must(literal.entries.find(e => e.point !== construction.point), "another point of literal");
+  const ast = join(good, "diagnostic-setup-generics.json");
+  const claims = join(good, "diagnostic-setup-generics-claims.json");
+  writeFileSync(ast, JSON.stringify({ diagnostic: source, occurrences: [], incomplete: null }));
+  writeFileSync(claims, JSON.stringify({ claims: { ...proposal, functions: proposal.functions.map(f => f !== literal ? f :
+    { ...f, expressions: [...f.expressions, { ...construction, point: elsewhere.point }] }) }, occurrences: [] }));
+  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
+  assert.equal(inventory.status, 0, inventory.stdout + inventory.stderr);
+  const report: unknown = JSON.parse(inventory.stdout);
+  assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
+  const reasons = report.occurrences.map((o: unknown) =>
+    o && typeof o === "object" && "reason" in o && typeof o.reason === "string" ? o.reason : "");
+  assert.ok(reasons.some(r => r.includes("is outside its execution point")), inventory.stdout);
+  assert.ok(!reasons.some(r => /unbound or uninitialized source variable|missing iteration intrinsic/.test(r)),
+    inventory.stdout);
+});
+
 // Every allowed compiler enum uses the same Node binding identity check as
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.

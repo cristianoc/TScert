@@ -81,7 +81,7 @@ function query(client: object, method: unknown, params: unknown, request: () => 
   const snapshot = fieldOf(params, "snapshot");
   if (typeof method !== "string" || snapshot === undefined) return request();
   let held = answers.get(client);
-  if (!held) answers.set(client, held = new Map());
+  if (!held) answers.set(client, held = new Map<unknown, Map<string, string>>());
   if (method === "release") {
     held.delete(snapshot);
     return request();
@@ -96,7 +96,7 @@ function query(client: object, method: unknown, params: unknown, request: () => 
   }
   const value = request();
   let byKey = held.get(snapshot);
-  if (!byKey) held.set(snapshot, byKey = new Map());
+  if (!byKey) held.set(snapshot, byKey = new Map<string, string>());
   byKey.set(key, JSON.stringify(value) ?? "");
   return value;
 }

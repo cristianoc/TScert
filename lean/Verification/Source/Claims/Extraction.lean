@@ -324,6 +324,19 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
             | some c => pure c
             | none => throw "missing unit claims during diagnostic setup"
         let module := moduleFunctions ++ (if initClaims.isSome then classSelves else moduleConstants)
+        -- A generic value the body reads keeps its name at `unknown`, as
+        -- a failed instance preparation leaves it, and its calls name no
+        -- instance.
+        let free := Fragment.stmtsFreeNames f.body
+        let callees := f.body.flatMap Fragment.Stmt.callees
+        let read := generics.filter fun g => !(initClaims.isSome && classNames.contains g.name) &&
+          (free.contains g.name || callees.any (·.2.2.1 == g.name))
+        let module := module ++ read.map fun g =>
+          (g.name, g.pos, .ok (.written (Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))])))
+        let calls := callees.filter fun call => read.any (·.name == call.2.2.1)
+        let unbound (e : Expression Tree) : Expression Tree :=
+          if calls.any (·.1 == e.pos) then { e with instantiate := none } else e
+        let c := { c with expressions := c.expressions.map unbound }
         diagnoseNormalizedFn T f c.normalized module (SourceExtraction.sourceClasses init)
       match fallback with
       | .ok (r, holes) => return (r.types, plans ++ [FunctionPlan.graph f.name f.namePos r],

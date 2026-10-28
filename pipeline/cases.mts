@@ -26,6 +26,8 @@ export interface Case {
   diagnosticCompleted?: boolean;
   /** Source regions excluded from diagnostic coverage. */
   diagnosticHoles?: string[];
+  /** A reason no occurrence of the diagnostic run may give. */
+  diagnosticAbsent?: RegExp;
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -83,6 +85,8 @@ export const cases: Case[] = [
     diagnosticSites: ["import { sep } from \"node:path\";", "value as string", "flag as number"] },
   { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
     diagnosticSites: ["first", "second", "value as string"] },
+  { ...gap("diagnostic-set-pattern", "An array pattern over a Set is refused at its element; the recovered binding claims no expression, so the unit keeps its setup and its reads of Set and of the iteration intrinsic.", "unsupported", "proposal", /missing field 0/),
+    diagnosticSites: ["first"], diagnosticAbsent: /outside its execution point|unbound or uninitialized source variable|missing iteration intrinsic/ },
   { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),
     diagnosticSites: ["x as string", "x as number"], diagnosticCompleted: true },
   { ...gap("diagnostic-syntax", "Diagnostic syntax recovery retains later refusals.", "unsupported", "source", /statement outside the fragment/),
@@ -3046,6 +3050,8 @@ export const cases: Case[] = [
   negative("invalid-for-of-record", "only an array is iterated: a record's iterator is unknown"),
   positive("for-of-host-iterables", "for...of over a string (code points), a `Set`, a `Map` (fresh entries) and `keys`, `values`, `entries` iterators: the iteration intrinsic of the iterable's kind, with break, continue and return"),
   negative("invalid-for-of-host-iterables", "a `Map`'s values keep their type"),
+  gap("for-of-map-or-array-refused", "a `for...of` over a `Map` or an empty array: the iteration intrinsic is picked by one host kind, and a union of two has none",
+    "unverified", "search", /a union of host kinds has no one intrinsic/),
   positive("for-of-tuple", "a tuple is an array: `for...of` over it yields the union of its positions"),
   negative("invalid-for-of-tuple", "an element of `[string, number]` may be a string", /source expression obligation at \[198,202\)/),
   positive("for-let-head", "a `let` in a `for...of` or `for...in` head that nothing assigns is a `const`"),

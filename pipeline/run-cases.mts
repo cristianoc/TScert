@@ -36,6 +36,9 @@ export function runCase(test: Case): Promise<Outcome> {
           assert.ok(at >= 0 && report.unexamined.some(o => o.pos[0] <= at && at + site.length <= o.pos[1]),
             `${test.file}: diagnostic coverage retained opaque region ${site}`);
         }
+        const absent = test.diagnosticAbsent;
+        if (absent) for (const o of report.occurrences)
+          assert.ok(!absent.test(o.reason), `${test.file}: diagnostic gave ${o.reason}`);
         for (const site of test.diagnosticSites) {
           const at = text.indexOf(site);
           assert.ok(at >= 0 && report.occurrences.some(o => o.pos[0] === at && o.pos[1] <= at + site.length + 1),

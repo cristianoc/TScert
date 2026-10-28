@@ -47,7 +47,8 @@ recovery and records no refusal. An expression assumes its
 expected type, or `unknown`. A failed declaration preserves its name and
 storage mode at its annotation, or `unknown`; existing storage contracts stay
 fixed. Failed binding reads supply `unknown` and continue through the remaining
-bindings. Statement and binding recovery forget field observations and widen
+bindings; a recovered binding operation claims an expression only where the
+operation claims one when it succeeds. Statement and binding recovery forget field observations and widen
 local slots to their contracts. Control-flow destinations remain those of the supplied
 graph; aggregate recovery can replace a failed edge's value mapping as described below. A function analysis that refuses outside these boundaries yields empty
 claims, allowing sibling functions to be analyzed. These approximations can
@@ -89,7 +90,9 @@ contract preparation have individual transactions. A refused contract becomes `u
 resolution uses the interpreted source contract. These setup recoveries mark
 the whole unit opaque. Module cells retain their storage preparation requirements.
 A unit setup refusal retries its original body at
-supplied ground interfaces and marks the whole unit opaque. A failed retry
+supplied ground interfaces and marks the whole unit opaque; each quantified
+module value the body reads is retained at `unknown` with its call
+instantiations removed, as its failed preparation leaves it. A failed retry
 leaves the unit unexamined and retains its siblings. Initialization-order
 refusals have document scope.
 

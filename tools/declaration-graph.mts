@@ -5256,8 +5256,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         // A listed node guard's promise, at the family's root: the arms
         // whose tags meet the guard's set (HOST-FAMILIES.md, "Guards as
         // values").
-        if (node.name.text === table.description.root.name)
-          for (const [name, values] of context.guardPromises.get(marker) ?? []) {
+        const promised = node.name.text === table.description.root.name ? context.guardPromises.get(marker) : undefined;
+        if (promised)
+          for (const [name, values] of promised) {
             const made = synthetic(name);
             if (!made.fresh) continue;
             const armValues = (a: FamilyArm): readonly TagValue[] =>

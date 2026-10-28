@@ -530,11 +530,59 @@ are the strings the text carries.
   `invalid-lone-surrogate-string` is the writer's refusal as a case.
 - **Commit:** the introducing commit, `A wire document's strings are checked at its JSON type`.
 
+### A `Map` constructed with no type arguments
+
+`query` in `tools/client-prototype.mts` stored `new Map()` into the memo of
+a client's snapshots and of a snapshot's answers. TypeScript reads a
+construction with no arguments by `MapConstructor`'s first signature,
+`new (): Map<any, any>`, so the value is a `Map<any, any>` assigned where a
+typed `Map` is held ("a call to the generic function 'Map' needs its type
+arguments" in `query` and `guardClientRequests`, census of b81675f).
+
+- **Rewrite:** state the type arguments the holding binding has:
+  `new Map<unknown, Map<string, string>>()` and `new Map<string, string>()`.
+- **Pattern:** a construction of a generic class whose type arguments
+  TypeScript would read as `any` states them.
+- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
+  traversal keeps their bindings, three sites rewritten`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
+
+### An array pattern over a `Set`
+
+`parameterIndex` in `makeProbe` (`tools/type-probe.mts`) collected each
+declaration's type parameter position into a `Set` and read its first
+element with `const [index] = indexes`. An array pattern over a host
+iterable other than an array is refused at its element read
+(`diagnostic-set-pattern`); support would step the host's iterator in a
+pattern's lowering, for this one site of the census of b81675f.
+
+- **Equivalent form:** the loop keeps the first position and whether every
+  later one equals it, and returns that position where they all do and it
+  is not negative, as the `Set` of one element did. The loop runs the same
+  calls in the same order; positions are integers, which `Set` compares as
+  `!==` does.
+- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
+  traversal keeps their bindings, three sites rewritten`.
+
+### A `for...of` over a `Map` or an empty array
+
+`collect` in `tools/declaration-graph.mts` iterated
+`context.guardPromises.get(marker) ?? []`, a `Map` or an array: the
+iteration intrinsic is picked by one host kind, so a union of two kinds has
+none (`for-of-map-or-array-refused`), for this one site of the census of
+b81675f.
+
+- **Equivalent form:** the loop runs over the `Map` where `get` finds one,
+  and is skipped otherwise; the array's loop runs no step, and the standard
+  array iterator runs no code ([host assumption](DESIGN.md#trust-surface)).
+  The condition and the `get` are evaluated as before.
+- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
+  traversal keeps their bindings, three sites rewritten`.
 
 ## Host boundaries
 
