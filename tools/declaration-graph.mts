@@ -1396,6 +1396,20 @@ export function collectDeclarations(file: string, options: {
       if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
           compilerApiFile(n.getSourceFile().fileName)))
         return { k: "array", readonly: true, dense: true };
+      // `Array<T>` and `ReadonlyArray<T>` are the types `T[]` and
+      // `readonly T[]` spell: the standard library's global interface,
+      // whichever other files merge into it (Node's types add the heritage
+      // `RelativeIndexable<T>`). They are read as arrays, as `T[]` is, and no
+      // member of any part is read.
+      const arrays = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
+      const [arrayPart] = arrays;
+      const arrayName = arrayPart?.name?.text;
+      if ((arrayName === "Array" || arrayName === "ReadonlyArray") &&
+          arrays.every(n => ts.isInterfaceDeclaration(n) && n.name.text === arrayName) &&
+          arrays.some(n => libraryFile(n.getSourceFile()))) {
+        arrays.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${arrayName}`));
+        return { k: "array", readonly: arrayName === "ReadonlyArray" };
+      }
       const types: TypeDeclaration[] = [];
       for (const node of nodes) {
         if (!node || !libraryFile(node.getSourceFile())) return null;
@@ -1405,10 +1419,6 @@ export function collectDeclarations(file: string, options: {
       const name = first?.name?.text;
       if (!first || !name || types.some(t => t.name?.text !== name)) return null;
       const cleanAll = () => types.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${name}`));
-      if ((name === "Array" || name === "ReadonlyArray") && types.every(ts.isInterfaceDeclaration)) {
-        cleanAll();
-        return { k: "array", readonly: name === "ReadonlyArray" };
-      }
       let body = types.length === 1 && isTypeAlias(first) ? first.type : undefined;
       while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
       if (!body || !ts.isMappedTypeNode(body)) return null;

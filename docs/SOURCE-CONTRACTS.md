@@ -2959,7 +2959,7 @@ nothing at run time, so a member the overlay does not review at that
 contract (a `toJSON` stating that every array or object holds a hook) would
 be erased from the annotations it changes: such a merge is refused
 (`invalid-merged-array-param`, `invalid-merged-readonly-array-callback`,
-`invalid-merged-object`, `invalid-merged-function`, `invalid-merged-iterator`,
+`invalid-merged-array-generic-param`, `invalid-merged-object`, `invalid-merged-function`, `invalid-merged-iterator`,
 `invalid-merged-iterator-set`, `invalid-merged-values-iterator`,
 `invalid-merged-string`; the `collections-*` cases, under Node's types).
 

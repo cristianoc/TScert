@@ -14,7 +14,9 @@
   "include": [
     "../examples/blocker-*.ts",
     "../examples/node-bytes-*.ts",
-    "../examples/invalid-node-bytes-*.ts"
+    "../examples/invalid-node-bytes-*.ts",
+    "../examples/node-array-*.ts",
+    "../examples/invalid-node-array-*.ts"
   ],
   "files": ["../../tools/resolvable.d.ts"]
 }
