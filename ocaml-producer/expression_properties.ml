@@ -86,11 +86,21 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
                 && (match receiver with
                     | Atoms atoms -> List.exists (function Shape {elements=Some _;_} -> true | _ -> false) atoms
+                                     && List.exists (function Shape {elements=None;_} -> true | _ -> false) atoms
                     | _ -> false) ->
            (* `Array.isArray` keeps a record arm on both outcomes: a value of
               the record's type may be an array carrying its keys. *)
            Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on a union of an array and a record that does not state it: \
              a test that the value is an array keeps the record, a value of which may be an array carrying its keys")
+           (* A member of an array the prototype's reviewed contract does not
+              list: an array's type is its elements and that contract. *)
+           | Json.Error (Json.Message m)
+               when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field "
+                    && (match receiver with
+                        | Atoms atoms -> List.for_all (function Shape {elements=Some _;_} -> true | _ -> false) atoms
+                        | _ -> false) ->
+             Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on an array: the array prototype's \
+               reviewed contract (ArrayProto) lists no member of that name, at " ^ Json.span_text site)
            (* A field holding an object or `null` (`undefined`), which a
               guard found an object: what a field is known to hold is a union
               of primitives, and an object's contents may change through an

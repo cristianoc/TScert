@@ -231,13 +231,13 @@ proved of each and what is audited, are
 stable set are `push` and `unshift` (`{value: any, store: grow}`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
 collections' and dates' mutators (each at most `{value: any, store: keep}`);
-outside it are `pop`, `shift`, `reverse` and every native stated
+outside it are `pop`, `shift`, `reverse`, `splice` and every native stated
 unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex` and
 `flatMap` have one signature per closed footprint, each within its callback's.
-`pop`, `shift` and `reverse` state `{value: any, store: keep}` with their
+`pop`, `shift`, `reverse` and `splice` state `{value: any, store: keep}` with their
 receiver's store excepted, so outside a fresh receiver they bound a call by
-the footprint letting everything change; `filter`, `map`, `flatMap`,
-`slice` and a string's `split` state a fresh result.
+the footprint letting everything change; `filter`, `map`, `flatMap`, `flat`,
+`slice`, `splice` and a string's `split` state a fresh result.
 `map` has five signatures: one per footprint `ε` of the stable
 set, which takes a dense receiver and a callback within `ε`, gives a dense
 result and states `ε` as its own; and an unrestricted one, which takes any
@@ -272,8 +272,8 @@ object's fields are fixed at its allocation.
   postcondition then states it (`effectChecked`, `codeChecked_sound`). A
   declaration states no fresh result.
 
-`pop`, `shift` and `reverse` change only their receiver's store and element
-contents, and `filter`, `map`, `flatMap`, `slice` and `split` allocate their
+`pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
+contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
 Controls (`map-stable-fresh-store`'s negatives and `pipeline/test.mts`): an
 alias of the mapped array, a join of a fresh and an old array, a reassigned

@@ -934,6 +934,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
     "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
+  assert.equal(runExample("invalid-array-flat-objects", "typeof flatObjects([[1]])[0]"), "number",
+    "invalid-array-flat-objects: the flattened element is a number at object[]");
+  assert.equal(runExample("invalid-array-splice-tuple", "emptied([1, 2])"), undefined,
+    "invalid-array-splice-tuple: the spliced tuple's second position is missing");
+  assert.equal(runExample("array-splice-flat", "JSON.stringify([removed([\"a\", \"b\", \"c\"], 1), total([[1, , 2], [3]]), levels([[[1]], [[2, 3]]])])"),
+    '[["b","c","end"],6,[[1],[2,3]]]', "array-splice-flat: the removed elements, a sum over a holey row, one level flattened");
   // An `env` value's `toString`, which the host runs before it reads `stdio`.
   assert.equal(runImporting("node-exec-restricted", `JSON.stringify(outputs(["process.stdout.write('a')", "process.exit(1)"]))`),
     '["a",""]', "node-exec-restricted: a failed command's throw caught as no output");

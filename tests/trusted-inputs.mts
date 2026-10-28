@@ -176,7 +176,10 @@ function fixtureProject(files: Record<string, string>): { graphOf: (text: string
     assert(field.readonly && field.type.k === "scheme" && field.type.binders.at(-1)?.name === "T");
     const first = field.type.signatures[0];
     const receiver = first?.k === "function" ? first.receiver : null;
-    assert(receiver?.k === "array" && receiver.element.k === "binder");
+    // An array of a binder, or for `flat`, an array of arrays of one.
+    const element = receiver?.k === "array" && receiver.element.k === "array" && entry?.name === "flat"
+      ? receiver.element.element : receiver?.k === "array" ? receiver.element : null;
+    assert(receiver?.k === "array" && element?.k === "binder");
     assert.equal(receiver.readonly, entry?.from === "ReadonlyArray", `${String(field.name)} receiver`);
   }
   const changed = arrayOverlay.map(e => e.name === "reduce"

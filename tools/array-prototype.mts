@@ -48,6 +48,10 @@ export type OverlayEntry = {
   /** The member's own binders a statement leaves out, each of which types
    * only what it drops (`flatMap`'s `This`, the type of `thisArg`). */
   unbound?: string[];
+  /** The member's own binders, as its reviewed replacement signatures state
+   * them, in place of the declaration's (`flat`'s `U`, the element type of
+   * the receiver's arrays, for its `A` and `D`). */
+  binders?: string[];
   /** The declared `this` result is the receiver. */
   resultIsReceiver?: boolean;
   /** The result stated as this standard library interface at the declared
@@ -218,6 +222,23 @@ export const overlay: readonly OverlayEntry[] = [
       { params: [callback(element, guarded, promiseEffect(false, 0))], result: arrayOf(guarded, false),
         effect: { ...ordinaryEffect, fresh: true } },
     ] },
+  // `flat()`, at its default depth 1, visits the receiver's present
+  // elements below the length it read first and, for each array, appends
+  // that array's present elements, as they are, to a fresh array (ordinary
+  // construction): the result holds no hole, and an element is flattened
+  // one level only, whatever its own type. Stated at a receiver of arrays,
+  // where each element of the result is an element of one of them; `depth`
+  // is not stated, so a call must omit it. The receiver's elements are read
+  // as `IsArray` and the arrays' own data properties; it runs no client code
+  // and writes no existing location.
+  { name: "flat", from: "ReadonlyArray",
+    signature: "flat<A, D extends number = 1>(\n" +
+      "        this: A,\n" +
+      "        depth?: D,\n" +
+      "    ): FlatArray<A, D>[];",
+    binders: ["U"],
+    stated: [{ receiver: arrayOf(arrayOf(mappedElement, true, "sparse"), true, "sparse"), params: [],
+      result: arrayOf(mappedElement, false, "dense"), effect: { ...emptyEffect, fresh: true } }] },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
@@ -276,6 +297,14 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
     effect: footprintEffect({ value: "any", store: "grow" }) },
   { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverStoreEffect },
+  // `splice` without items: it converts only numbers, copies the present
+  // elements of the deleted range to a fresh array (ordinary construction),
+  // holes where the receiver has them, so its result is read as the
+  // receiver's elements are, then moves or deletes each later index and sets
+  // the length: it changes the receiver's store arbitrarily and allocates its
+  // result. The overload with `items` is not listed.
+  { name: "splice", from: "Array", signature: "splice(start: number, deleteCount?: number): T[];",
+    effect: { ...receiverStoreEffect, fresh: true } },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
@@ -901,7 +930,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     if (entry.resultAs && library.libraryFile(source) && member.type && ts.isTypeReferenceNode(member.type))
       standard(interfacesOf(checker, member.type.typeName));
     const span: [number, number] = [0, 0];
-    const own = (member.typeParameters ?? []).map(p => p.name.text)
+    const own = entry.binders ?? (member.typeParameters ?? []).map(p => p.name.text)
       .filter(name => !entry.unbound?.includes(name));
     // The member's own binders lead, as its declaration lists them, so an
     // explicit type argument list instantiates them in order; the

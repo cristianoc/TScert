@@ -2060,7 +2060,7 @@ location the call did not allocate. Every primitive member listed meets this:
 its receiver is a primitive, it converts only primitives (a string search
 reads no `[Symbol.match]` of a primitive pattern, `split` and `replace` are
 stated at a string pattern), reads `locales` by index, and allocates only its
-result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
+result. Of `ArrayProto`, `slice`, `flat`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at`, `[Symbol.iterator]`, `values`, `keys` and
 `entries` state it: they read the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
@@ -2080,7 +2080,7 @@ closed footprint $`\varepsilon`$ (`array-preserving-callbacks`,
 with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
 `undefined`. `Boolean` read as a value is such a callback
 ([library globals](#library-globals)). The members that write their receiver (`sort`,
-`push`, `pop`, `shift`, `unshift`, `reverse`) and those that call an
+`push`, `pop`, `shift`, `unshift`, `reverse`, `splice`) and those that call an
 unrestricted callback do not.
 
 `filter` is stated at TypeScript's guard overload too,
@@ -2152,6 +2152,35 @@ binder `This` dropped:
 ```math
 \mathsf{flatMap}:\forall U.\ (\mathsf{this}:\mathsf{ReadonlyArray}(T),\ (T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow\mathsf{sparse\ ReadonlyArray}(U))\Rightarrow U[\,]
 ```
+
+`flat()`, at its default depth 1, appends the present elements of each
+present element that is an array (`IsArray`), as they are, and appends any
+other element as it is; the result holds no hole. TypeScript's
+`FlatArray<A, D>` result is unsound where an element's type admits an array
+it does not state as one: at `object[]` holding `[1]` the result holds `1`
+(`invalid-array-flat-objects`). The overlay states `flat` at a receiver of
+arrays, with its own binder $`U`$ in place of the declaration's `A` and `D`,
+and without `depth`, which a call must omit:
+
+```math
+\mathsf{flat}:\forall U.\ (\mathsf{this}:\mathsf{sparse\ ReadonlyArray}(\mathsf{sparse\ ReadonlyArray}(U)))\Rightarrow\mathsf{dense}\ U[\,]
+```
+
+Each element of the result is an element of one of the receiver's arrays,
+a $`U`$, flattened one level only (`array-splice-flat`). `flat` reads the
+receiver's and its arrays' lengths and own numeric data properties, runs no
+client code, writes no existing location, and allocates its result by
+ordinary construction.
+
+`splice(start, deleteCount?)`, the overload without items, converts only
+numbers, copies the present elements of the deleted range to a fresh array
+by ordinary construction, a hole where the receiver has one, so its result
+reads as the receiver's elements do, at $`T[\,]`$; it then moves or deletes
+each later index and sets the receiver's length. It is stated at the
+mutable receiver $`T[\,]`$, with the footprint of `pop`, `shift` and
+`reverse` and a fresh result. A tuple, whose positions a removal would
+lose, is no such receiver (`invalid-array-splice-tuple`). The overload with
+items is not listed.
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
@@ -2259,8 +2288,8 @@ where the native is modelled and audited otherwise:
 | Native | Footprint | Argument |
 | --- | --- | --- |
 | `push`, `unshift` | `{value: any, store: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its store and element contents is audited |
-| `pop`, `shift`, `reverse` | `{value: any, store: keep}` but for the receiver's store (`receiverStore`) | each changes only its receiver's store, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
-| `filter`, `map`, `flatMap`, `slice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a store no earlier heap held (audited) |
+| `pop`, `shift`, `reverse`, `splice` | `{value: any, store: keep}` but for the receiver's store (`receiverStore`) | each changes only its receiver's store, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
+| `filter`, `map`, `flatMap`, `flat`, `slice`, `splice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a store no earlier heap held (audited) |
 | `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
 | `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
 | a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
