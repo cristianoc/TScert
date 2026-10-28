@@ -2450,6 +2450,43 @@ control(async (): Promise<void> => {
   invoke(writeClaims(genericClosure, "forged-scheme", claims), join(genericClosure, "evidence.json"), genericClosure);
 });
 control(async (): Promise<void> => {
+  // A call of a generic closure is claimed at the instance its type arguments
+  // name, also where the scheme spells the binder inside a record, and also
+  // where the argument is inferred from a type predicate: an invented
+  // argument (`T := string` at `{ value: number }`, `N := Plain` at a
+  // predicate guarding `Named`) is refused, by search and by the check of
+  // the untampered evidence.
+  const rows = run("generic-closure-rows");
+  const types = readClaims(rows).types;
+  const string = types.findIndex((r) => Array.isArray(r) && r.length === 1 && r[0] === "str");
+  assert(string >= 0);
+  const plain = readFragmentFile(join(rows, "fragment.json")).declarations.definitions
+    .findIndex((d) => d.declaration.name === "Plain");
+  assert(plain >= 0);
+  for (const [unit, type] of [["boxed", [string]], ["marked", [{ decl: plain }]]] as const) {
+    const claims = readClaims(rows);
+    const fn = must(claims.functions.find((f) => f.name === unit), unit);
+    const site = must(fn.expressions.find((e) => e.instantiate?.length === 1)?.instantiate, `${unit}'s call`);
+    const argument = must(site[0], `${unit}'s type argument`);
+    assert.notDeepEqual(argument.type, type);
+    argument.type = [...type];
+    const forged = writeClaims(rows, `forged-instance-${unit}`, claims);
+    const searched = produceWith(rows, forged, `forged-instance-${unit}`);
+    assert.ifError(searched.error);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(rows, "evidence.json"), rows);
+  }
+  // Per-arrow claims name a ground closure: given for the generic closure,
+  // they are refused.
+  const claims = readClaims(rows);
+  const boxed = must(claims.functions.find((f) => f.name === "boxed"), "boxed");
+  const closure = must(boxed.expressions.find((e) => !Array.isArray(e.type) && "scheme" in e.type &&
+    e.type.scheme.typeParams.length > 0 && e.pos[1] - e.pos[0] > "read".length), "the generic closure");
+  boxed.arrows = [{ pos: closure.pos, rows: [{ contracts: [], expressions: [], entries: [] }] }];
+  assert.match(invoke(writeClaims(rows, "forged-generic-arrows", claims), join(rows, "evidence.json"), rows),
+    /per-arrow source claims are for ground closures, not quantified schemes/);
+});
+control(async (): Promise<void> => {
   // A nested closure's claim is checked at the scheme's binder: a ground
   // `() => boolean` claim fits every observed call and is still refused, since
   // the body returns a `T`. And a callable over the binder is meaningful only

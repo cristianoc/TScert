@@ -170,13 +170,15 @@ private def extractPlansCollect (recover : Bool) (ast claims : Json) (fileKey : 
                 a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
               !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
             throw "per-arrow claim site is outside its source closure"
-      if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
-        throw "per-arrow source claims are for ground closures, not quantified schemes"
       -- The unit's source tree, and the generic closures it creates, each
       -- graph code at its scheme row.
       let closures := match unitSource with
         | some j => Scheme.genericClosures ((j.getObjVal? "body").toOption.getD .null)
         | none => []
+      -- Per-arrow claims are a ground closure's, one set per signature it
+      -- advertises; a generic closure is checked at its scheme row.
+      if (c.arrows.getD []).any fun a => closures.any (·.span == a.pos) then
+        throw "per-arrow source claims are for ground closures, not quantified schemes"
       let graphClosures := !closures.isEmpty
       -- The calls a scheme-typed local makes: a generic module value's calls
       -- name instances its slot holds (`Scheme.moduleInstances`) instead.

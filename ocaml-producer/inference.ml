@@ -284,21 +284,25 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         | Some j -> constrain j.value i.value; if i.writable <> None then constrain i.value j.value
         | None -> ()) e.indexes
       | Atoms [Shape {calls=(_::_ as calls);fields=[];indexes=[];elements=None}],
-      Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
-        when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]
-          && List.length a.params<=List.length e.params
-          && a.call_effect.promise=e.call_effect.promise) calls ->
+      Atoms [Shape {calls=(_::_ as expected);fields=[];indexes=[];elements=None}]
+        when List.for_all (fun (e:signature) -> e.quantified=[]
+          && List.exists (fun (a:signature) -> a.quantified=[]
+            && List.length a.params<=List.length e.params
+            && a.call_effect.promise=e.call_effect.promise) calls) expected ->
       (* A callback may take fewer parameters than it is offered: the
          positions it has are compared, the rest it ignores. Of several
          signatures, the first that fits and states the same promise is
          compared: a promise signature's result is the promised type, a
-         plain one's the call's. *)
-      let a = List.find (fun (a:signature) -> a.quantified=[]
-        && List.length a.params<=List.length e.params
-        && a.call_effect.promise=e.call_effect.promise) calls in
-      constrain e.receiver a.receiver;
-      List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
-      constrain a.result e.result
+         plain one's the call's. Each expected signature is compared so, a
+         type predicate's two (`(n: Node) => n is N` at its plain call and
+         its guard, whose result is `N`). *)
+      List.iter (fun (e:signature) ->
+        let a = List.find (fun (a:signature) -> a.quantified=[]
+          && List.length a.params<=List.length e.params
+          && a.call_effect.promise=e.call_effect.promise) calls in
+        constrain e.receiver a.receiver;
+        List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
+        constrain a.result e.result) expected
       (* Two generic methods binding as many parameters, `then` of
          `Promise<number>` at `then` of `PromiseLike<T>`: compared with the
          source's binders renamed to the target's, parameters contravariant

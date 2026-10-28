@@ -2343,6 +2343,9 @@ export const cases: Case[] = [
     /source expression obligation at \[400,419\)/,
   ),
   positive("generic-closure-graph", "a generic closure is graph code at a scheme row, checked once at the scheme's signature: statements in its body, a bounded binder read as its meet with the bound, a generic closure inside a generic body, one no call instantiates"),
+  positive("generic-closure-rows", "a generic closure spelling its binder inside a record or an array, called at an inferred instance that reads the binder there too; a binder inferred from the type predicate the closure is passed"),
+  negative("invalid-generic-closure-rows", "a generic closure over `{ value: T }` returning a number: the one call's instance would meet it, the scheme does not",
+    /source expression obligation at \[302,313\): evidence search failed: no derivation of its return-contract claim/),
   negative("invalid-generic-closure-nested", "inside a generic body, a generic closure returning the body's binder at its own: the one call's instance would meet it, the scheme does not",
     /source expression obligation at \[258,263\): evidence search failed: no derivation of its return-contract claim/),
   negative(

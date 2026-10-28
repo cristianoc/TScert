@@ -692,7 +692,9 @@ name's placeholder until the unit or closure that binds it is extracted: a
 generic unit's binders are the owned parameters of its head
 (`EquationLowering.enterUnit`), a generic closure's those of the scheme its
 claim states (`Scheme.schemeRowOf`), and each annotation and claim inside
-reads the name as that parameter (`EquationStore.rebind`).
+reads the name as that parameter (`EquationStore.rebind`). A call of a
+generic closure reads the name, wherever its scheme's signature spells it,
+as the call's type argument (`Scheme.closureRows`).
 
 ### Generic function and constructor types
 

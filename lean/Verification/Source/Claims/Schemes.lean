@@ -576,56 +576,66 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
       let (_, rows) ← schemeRowOf t
       scopes := scopes ++ [(gc.span, rows ++ enclosing)]
     -- A call of a local whose claim is a scheme: its callee is claimed at the
-    -- instance the call names.
-    let mut instances : List ((String × Span) × (ClaimType Tree)) := []
-    let mut namedCalls : List (String × Span) := []
-    for (p, q, _, _) in calls do
-      for e in c.expressions.filter (·.pos == p) do
-        let some inst := e.instantiate | continue
-        if inst.any (·.resolution.isSome) then
-          throw "qualified type arguments require descriptor checking"
-        let some callee := c.expressions.find? (fun x => x.pos == q && x.point == e.point) | continue
-        let θ := asClaims (scopeAt scopes outer q)
-        let .scheme tps rc ps rest r effect := subst θ callee.type | continue
-        if tps.isEmpty then continue
-        let given := inst.map (·.name)
-        if given.eraseDups.length != given.length || given.length != tps.length ||
-            given.any (fun n => !(tps.map (·.name)).contains n) then
-          throw "type arguments do not instantiate exactly the scheme's binders"
-        let θp := asClaims (scopeAt scopes outer p)
-        -- A bounded binder is read as a meet row, so its instance is the meet
-        -- of the type arguments of the row's parameters with the row's
-        -- clauses: the clause row an instance table maps the meet row to
-        -- (`meetOk`), in the order it reads them.
-        let args := inst.map fun i => (i.name, subst θp i.type)
-        let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
-        let binders := match StoreView.row (← get).1 sl with
-          | .scheme bs .. => bs
-          | _ => []
-        let nameOf := binders.zip (tps.map (·.name))
-        let θi ← args.mapM fun (n, U) => do
-          let some l := rows.lookup n | pure (n, U)
-          let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
-          let st ← get
-          let meet : SchemeM (Option Tree) := do
-            let Us ← (b :: also).mapM fun q => do
-              let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
-              let some A := args.lookup m | throw s!"no type argument for '{m}'"
-              groundT A
-            let (T, reg) ← get
-            let G := SourceTypes.graph T
-            if !Us.all G.plainTy then return none
-            let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
-            if cs.isEmpty then return none
-            let (T, l) := EquationStore.intern T cs
-            set (T, reg)
-            return some l
-          match meet.run st with
-          | .ok (some l, st) => set st; pure (n, .labels [l])
-          | _ => pure (n, U)
-        instances := instances ++ [((e.point,q), .scheme [] (subst θi rc) (ps.map (subst θi))
-          (rest.map (subst θi)) (subst θi r) effect)]
-        namedCalls := namedCalls ++ [(e.point,p)]
+    -- instance the call names, among the claims of one set: the unit's, or
+    -- one signature's row of a closure's per-arrow claims.
+    let instancesIn (exprs : List (Expression Tree)) :
+        SchemeM (List ((String × Span) × (ClaimType Tree)) × List (String × Span)) := do
+      let mut instances : List ((String × Span) × (ClaimType Tree)) := []
+      let mut namedCalls : List (String × Span) := []
+      for (p, q, _, _) in calls do
+        for e in exprs.filter (·.pos == p) do
+          let some inst := e.instantiate | continue
+          if inst.any (·.resolution.isSome) then
+            throw "qualified type arguments require descriptor checking"
+          let some callee := exprs.find? (fun x => x.pos == q && x.point == e.point) | continue
+          let θ := asClaims (scopeAt scopes outer q)
+          let .scheme tps rc ps rest r effect := subst θ callee.type | continue
+          if tps.isEmpty then continue
+          let given := inst.map (·.name)
+          if given.eraseDups.length != given.length || given.length != tps.length ||
+              given.any (fun n => !(tps.map (·.name)).contains n) then
+            throw "type arguments do not instantiate exactly the scheme's binders"
+          let θp := asClaims (scopeAt scopes outer p)
+          -- A bounded binder is read as a meet row, so its instance is the meet
+          -- of the type arguments of the row's parameters with the row's
+          -- clauses: the clause row an instance table maps the meet row to
+          -- (`meetOk`), in the order it reads them.
+          let args := inst.map fun i => (i.name, subst θp i.type)
+          let (sl, rows) ← schemeRowOf (.scheme tps rc ps rest r effect)
+          let binders := match StoreView.row (← get).1 sl with
+            | .scheme bs .. => bs
+            | _ => []
+          let nameOf := binders.zip (tps.map (·.name))
+          let θi ← args.mapM fun (n, U) => do
+            let some l := rows.lookup n | pure (n, U)
+            let .meet b cs also := StoreView.row (← get).1 l | pure (n, U)
+            let st ← get
+            let meet : SchemeM (Option Tree) := do
+              let Us ← (b :: also).mapM fun q => do
+                let some m := nameOf.lookup q | throw "a meet row's parameter is no binder of its scheme"
+                let some A := args.lookup m | throw s!"no type argument for '{m}'"
+                groundT A
+              let (T, reg) ← get
+              let G := SourceTypes.graph T
+              if !Us.all G.plainTy then return none
+              let cs := PositiveRules.meetMany (Us.map (PositiveRules.clausesOf G) ++ [cs])
+              if cs.isEmpty then return none
+              let (T, l) := EquationStore.intern T cs
+              set (T, reg)
+              return some l
+            match meet.run st with
+            | .ok (some l, st) => set st; pure (n, .labels [l])
+            | _ => pure (n, U)
+          -- A label of the scheme may spell a binder (a row `{ value: T }`):
+          -- the instance reads it as that binder's type argument, as a claim
+          -- form `T` is substituted.
+          let θl ← θi.mapM fun (n, U) => do return (n, ← groundT U)
+          let inst (c : ClaimType Tree) : SchemeM (ClaimType Tree) := do
+            return subst θi (rebindClaim (← get).1 θl c)
+          instances := instances ++ [((e.point,q), .scheme [] (← inst rc) (← ps.mapM inst)
+            (← rest.mapM inst) (← inst r) effect)]
+          namedCalls := namedCalls ++ [(e.point,p)]
+      return (instances, namedCalls)
     let named (at_ : Span) : List (String × List Tree) :=
       (scopeAt scopes outer at_).map fun (n, l) => (n, [l])
     let go (at_ : Span) (t : ClaimType Tree) : SchemeM (ClaimType Tree) := do
@@ -643,12 +653,23 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
     let result ← go (0, 0) c.result
     let entries ← c.entries.mapM entry
     let contracts ← c.contracts.mapM fun b => do return { b with type := ← go b.pos b.type }
-    let expressions ← c.expressions.mapM fun e => do
-      let type ← go e.pos ((instances.lookup (e.point,e.pos)).getD e.type)
-      let instantiate ← if namedCalls.contains (e.point,e.pos) then pure none else
-        e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
-      return { e with type, instantiate, current := ← current e.pos e.current }
-    return ({ c with params, result, entries, expressions, contracts }, scopes)
+    let expressionsIn (exprs : List (Expression Tree)) : SchemeM (List (Expression Tree)) := do
+      let (instances, namedCalls) ← instancesIn exprs
+      exprs.mapM fun e => do
+        let type ← go e.pos ((instances.lookup (e.point,e.pos)).getD e.type)
+        let instantiate ← if namedCalls.contains (e.point,e.pos) then pure none else
+          e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
+        return { e with type, instantiate, current := ← current e.pos e.current }
+    let expressions ← expressionsIn c.expressions
+    -- A closure's per-arrow claims, one set per signature, are read so too.
+    let arrows ← c.arrows.mapM (·.mapM fun a => do
+      let rows ← a.rows.mapM fun r => do
+        let expressions ← expressionsIn r.expressions
+        let entries ← r.entries.mapM entry
+        let contracts ← r.contracts.mapM fun b => do return { b with type := ← go b.pos b.type }
+        return { r with expressions, entries, contracts }
+      return { a with rows })
+    return ({ c with params, result, entries, expressions, contracts, arrows }, scopes)
   let ((c, scopes), (T, _)) ← run.run (T, [])
   return (T, c, scopes)
 
