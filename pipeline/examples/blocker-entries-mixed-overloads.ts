@@ -1,6 +1,8 @@
-// Object.entries needs generic and plain reviewed overloads represented
-// together; its gate refusal precedes checking whether the operand can be a
-// compiler object.
+// `Object.entries` of an `object`: TypeScript selects the generic overload at
+// the array arm and the plain one at `{}` at the other, which are one callee.
+// An `object` admits a compiler object, whose own fields the plain overload
+// would hand to the program, and its array arm a node list: the call is
+// refused at the overload's non-host parameter (R8, COMPILER-API.md).
 // Census functions:
 // type-term.mts#classInstance, type-term.mts#constructorForms,
 // type-term.mts#expandMapped, type-term.mts#indexKinds,

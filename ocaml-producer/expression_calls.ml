@@ -641,7 +641,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           let at = Inference.substitute substitution in
           List.for_all Fun.id (List.mapi (fun i (arg,(t,_)) ->
             match List.nth_opt s.params i with
-            | Some p -> plausible_subtype t (at p) || offer_to arg (at p) <> None
+            | Some p -> plausible_subtype_declared declarations t (at p) || offer_to arg (at p) <> None
             | None -> false) (List.combine args actuals)) in
         (* A signature requiring an actual's member to state an effect is not
            the call's where that member, as the actual's type states it, has a

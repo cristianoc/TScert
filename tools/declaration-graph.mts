@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -2254,13 +2254,14 @@ export function collectDeclarations(file: string, options: {
           ? [plain, { ...plain, effect: { ...effect, promise: { asserts: { param: entry.promise.param } } }, result: entry.promise.type }]
           : [plain];
       };
-      // The value: the forms of each overload its calls resolve to; a generic
-      // statement's binders are the value's type parameters, as an imported
-      // generic function's are.
+      // The value: the forms of each overload its calls resolve to; the
+      // generic statements' binders are the value's type parameters, as an
+      // imported generic function's are. Each form names only its own
+      // binders, as the overloads of a global's member (`overloadTerm`).
       const entriesChosen = [...chosen];
       const binders = entriesChosen.flatMap(([entry]) => entry.stated.binders);
-      if (binders.length && entriesChosen.length > 1)
-        throw Error(`${binding.name} selects a generic statement beside other overloads`);
+      if (new Set(binders).size !== binders.length)
+        throw Error(`${binding.name} selects generic overloads binding the same type parameter name`);
       const signatures = entriesChosen.flatMap(([entry, at]) => forms(entry, null, at));
       const [first] = nodes;
       if (!first) throw Error(`TypeScript declares no ${what}`);
@@ -4598,15 +4599,11 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         });
       });
       if (!selected.length) continue;
-      const [only] = selected;
       const span = spanOf(accesses[0] ?? first);
-      // A generic member is a readonly scheme, and overloads none.
-      const scheme = selected.some(form => form.k === "scheme");
-      if (scheme && selected.length > 1) throw Error(`${what} selects a generic statement beside other overloads`);
       // A reviewed method is readonly: neither the global nor a value its
       // methods return as the receiver (`process.on(…)`) admits replacing it.
-      fields.push({ name: key, optional: false, readonly: true, span,
-        type: selected.length === 1 && only ? only : { k: "intersection", parts: selected, span } });
+      // Its overloads, generic ones among them, are one term.
+      fields.push({ name: key, optional: false, readonly: true, span, type: overloadTerm(selected, span, what) });
     } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
       const entry = reviewed(key, property, what);

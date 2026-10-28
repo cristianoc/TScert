@@ -4078,6 +4078,40 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // `Object.entries`'s generic and plain overloads are one callee, each call
+  // claimed at the overload its operand meets. The dictionary's call forged
+  // at the plain overload, whose values are unknown where the loop adds
+  // them, and the interface's call forged at the dictionary's instance, an
+  // index its object does not meet: each refused where evidence is produced
+  // and where the honest evidence is checked.
+  const artifacts = run("object-entries-mixed-overloads");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const callee = (claims: SourceClaims, operand: string): SourceClaims["functions"][number]["expressions"][number] => {
+    const at = source.indexOf(`Object.entries(${operand})`);
+    assert.ok(at >= 0, `the call of Object.entries at ${operand}`);
+    return must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + "Object.entries".length),
+      `the callee's claim at ${operand}`);
+  };
+  const forge = (name: string, onto: string, from: string): string => {
+    const forged = readClaims(artifacts);
+    callee(forged, onto).type = callee(forged, from).type;
+    return writeClaims(artifacts, name, forged);
+  };
+  const honest = readClaims(artifacts);
+  assert.notDeepEqual(callee(honest, "d").type, callee(honest, "r").type, "the two calls' overloads differ");
+  for (const [input, name] of [
+    [forge("forged-entries-dictionary-plain", "d", "r"), "forged-entries-dictionary-plain"],
+    [forge("forged-entries-interface-generic", "r", "d"), "forged-entries-interface-generic"],
+  ] as const) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+  }
+  process.stdout.write("Object.entries's mixed overloads: the dictionary's call at the plain overload and the interface's at the dictionary's instance refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never

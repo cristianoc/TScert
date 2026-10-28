@@ -1110,6 +1110,28 @@ export function oneTerm(terms: FunctionTerm[], span: Span): Within<{ value: "any
   return terms.length === 1 && terms[0] ? terms[0] : { k: "intersection", parts: terms, span };
 }
 
+type SchemeTerm = Extract<TypeTerm, { k: "scheme" }>;
+
+/** Overloads of one callee, some of them generic, as one term. Where none is
+ * generic, their intersection (`oneTerm`). Otherwise one scheme over every
+ * generic overload's binders, holding every overload's signatures: each
+ * names only its own binders, so quantifying the others over it states the
+ * same signature, and the scheme is the overloads' intersection. Two
+ * generic overloads binding the same name are refused: a signature's binder
+ * would be quantified at both. */
+export function overloadTerm(terms: (FunctionTerm | SchemeTerm)[], span: Span, what: string):
+    Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  const schemes = terms.filter((t): t is SchemeTerm => t.k === "scheme");
+  if (!schemes.length) return oneTerm(terms.filter((t): t is FunctionTerm => t.k === "function"), span);
+  const [only] = terms;
+  if (terms.length === 1 && only) return only;
+  const binders = schemes.flatMap(s => s.binders);
+  const names = binders.map(b => b.name);
+  if (new Set(names).size !== names.length)
+    throw Error(`${what} selects generic overloads binding the same type parameter name`);
+  return { k: "scheme", binders, signatures: terms.flatMap(t => t.k === "scheme" ? t.signatures : [t]), span };
+}
+
 /** A member's key: an identifier, a declaration's string literal, or a
  * computed `[x]` whose `x` the scope resolves to a `unique symbol` constant.
  * Anything else has no key here. */

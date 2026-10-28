@@ -222,7 +222,30 @@ whoever receives it may call at any of them:
 
 The inclusion is why the rule assumes no more than the declaration: a record
 says nothing of keys it does not name, a method's receiver is its host, and a
-`this` result is the host. A declaration's `any` is read as `unknown`. A
+`this` result is the host. A declaration's `any` is read as `unknown`.
+
+The overloads $`O_m`$ a method's calls select, generic ones among them, are
+one callee (`overloadTerm`): with $`\forall\vec p_i.\,S_i`$ the $`i`$-th
+(its binders $`\vec p_i`$ empty for a plain one), the scheme over every
+binder holding every signature,
+
+```math
+\frac{O_m=\{\forall\vec p_1.\,S_1,\ldots,\forall\vec p_n.\,S_n\}\qquad
+      \vec p_1,\ldots,\vec p_n\ \text{pairwise disjoint}\qquad
+      \mathrm{fv}(S_i)\cap\vec p_j=\emptyset\ (i\neq j)}
+     {⟦\mathsf{sel}(m)⟧=⟦\forall\vec p_1\cdots\vec p_n.\ S_1\wedge\cdots\wedge S_n⟧}\ \textsf{global-overloads}
+\qquad
+\textstyle\bigcap_i⟦\forall\vec p_i.\,S_i⟧\subseteq⟦\forall\vec p_1\cdots\vec p_n.\ \bigwedge_i S_i⟧ .
+```
+
+The inclusion holds because a reassignment of every binder within its bound
+reassigns each $`S_i`$ only at its own binders, so a value meeting each
+overload meets every signature there. Each call is checked at the instance
+its claim names, at any signature of it whose parameters admit its actuals
+(`object-entries-mixed-overloads`). A binding of the
+[library modules](#library-modules) reads the overloads its calls select
+the same way, their binders its type parameters. Two generic overloads
+binding the same name are refused. A
 global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
 members as intrinsics. A global both read as a value and constructed is
