@@ -555,7 +555,7 @@ bucket (`ClauseIndex.has_of`). -/
     r.foldl (fun h x => mixHash h (fields x)) (mixHash (fields a) (fields v))
   mixHash (hash c.ctorIdx) (match c with
     | .refs a r v _ _ _ _ | .dict a r v _ _ _ _ _ _ => operands a r v
-    | .callable a r _ _ => operands a r []
+    | .callable a r _ _ _ => operands a r []
     | .numLit b => hash b
     | .strLit v => hash v
     | .boolLit b => hash b
@@ -1194,11 +1194,11 @@ and the target's receivers, its signatures against the target's schemes'). -/
     recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
       ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
       (cy.flatMap fun y => os.map fun o => (y.2, o.type))
-  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
+  | .arrs L S, .arrs M T | .callable _ _ L S _, .arrs M T =>
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
-  | .callable a bs L S, .callable c ds M T =>
-    recordPairs G known self (a :: bs).flatten [] [] [] (c :: ds).flatten [] [] [] ++
+  | .callable a bs L S ms, .callable c ds M T ns =>
+    recordPairs G known self (a :: bs).flatten [] [] ms (c :: ds).flatten [] [] ns ++
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
   | .ctors L S a bs vs, .ctors M T c ds ws =>
@@ -1368,7 +1368,7 @@ once. Untrusted: `ArrowsCheckedWith` checks every arrow. -/
     -- `expand G Y` is `clausesOf G Y` or empty: it adds no target clause.
     let targets := ((clausesOf G Y).filter hasArrows).eraseDups
     (sources.flatMap fun a => targets.flatMap fun b => match a, b with
-      | .arrs L S, .arrs M _ | .callable _ _ L S, .arrs M _ | .callable _ _ L S, .callable _ _ M _ =>
+      | .arrs L S, .arrs M _ | .callable _ _ L S _, .arrs M _ | .callable _ _ L S _, .callable _ _ M _ _ =>
         arrows L S M
       | _, _ => []) ++
     ((schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with

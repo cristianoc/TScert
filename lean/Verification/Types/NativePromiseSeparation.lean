@@ -65,13 +65,13 @@ theorem witness_member (keys : List PropKey) (proto : CallArguments.protoField �
     (m : Member) : memberT Ξ m 1 witnessWorld (witness keys) := by
   cases hk : (fields keys).lookup m.key with
   | none =>
-    refine ⟨1, fields keys, 1, rfl, hk, ?_⟩
-    exact ⟨fields keys, 0, emptyCell, 1, rfl, fields_lookup keys _ proto, witness_cell,
+    refine ⟨1, fields keys, 1, .absent, rfl, hk, ?_⟩
+    exact ⟨fields keys, 0, emptyCell, 1, .absent, rfl, fields_lookup keys _ proto, witness_cell,
       fun _ _ _ _ _ h => h.elim⟩
   | some l =>
     have he := fields_location keys _ l hk
     subst l
-    exact ⟨0, fields keys, 0, emptyCell, 1, rfl, hk, witness_cell, fun _ _ _ _ _ h => h.elim⟩
+    exact ⟨0, fields keys, 0, emptyCell, 1, .absent, rfl, hk, witness_cell, fun _ _ _ _ _ h => h.elim⟩
 
 theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     (vs : List (PropKey × List ι)) (ms : List (Sig (List ι))) (ks : List KeyBound)

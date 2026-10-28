@@ -65,31 +65,32 @@ def onHost (Ξ : Fam) (v : Val) (m : Member) : Fam :=
       (boundOn v m.schemes))
 
 /-- `v` holds `key` at a location whose contract implies `A` below the level,
-in every world extending the current one. -/
+in every world extending the current one. `v` is an object, plain or with
+code: a callable object's own fields are read as a record's. -/
 def holdsAt (key : PropKey) (A : Fam) : Fam := fun k W v =>
-  ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
-    v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧ lookup W l = some c ∧
+  ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat) (code : CallCode),
+    v = .objAt flds code oid ∧ flds.lookup key = some l ∧ lookup W l = some c ∧
     ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ (u : Val), c j hj U u → A j U u
 
 theorem holdsAt_adm (key : PropKey) (A : Fam) : Adm (holdsAt key A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
-    obtain ⟨flds, l, c, oid, hv, hf, hl, hag⟩ := h
-    refine ⟨flds, l, _, oid, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
+    obtain ⟨flds, l, c, oid, code, hv, hf, hl, hag⟩ := h
+    refine ⟨flds, l, _, oid, code, hv, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
     intro j hj U hx u hu
     exact hag j (by omega) U (by rwa [trunc_trunc] at hx) u hu
   · intro n W W' hx v h
-    obtain ⟨flds, l, c, oid, hv, hf, hl, hag⟩ := h
-    exact ⟨flds, l, c, oid, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
+    obtain ⟨flds, l, c, oid, code, hv, hf, hl, hag⟩ := h
+    exact ⟨flds, l, c, oid, code, hv, hf, WExt_lookup hx hl, fun j hj U hU u hu =>
       hag j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hU) u hu⟩
 
 /-- A weaker family below the level is held wherever a stronger one is. -/
 theorem holdsAt_mono {key : PropKey} {A B : Fam} {k : Nat}
     (h : ∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) {W : WorldT k} {v : Val}
     (hv : holdsAt key A k W v) : holdsAt key B k W v := by
-  obtain ⟨flds, l, c, oid, hρ, hf, hl, hag⟩ := hv
-  exact ⟨flds, l, c, oid, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
+  obtain ⟨flds, l, c, oid, code, hρ, hf, hl, hag⟩ := hv
+  exact ⟨flds, l, c, oid, code, hρ, hf, hl, fun j hj U hU u hu => h j hj U u (hag j hj U hU u hu)⟩
 
 /-- `v` holds `key` along its prototype chain, `d` prototypes up: at `d = 0`
 its own location for the key, whose contract implies `A`; at `d + 1` it lacks
@@ -98,17 +99,18 @@ family `A` is fixed, so the host a member is read from stays the receiver
 however far up its key is found. -/
 def along (key : PropKey) (A : Fam) : Nat → Fam
   | 0 => holdsAt key A
-  | d + 1 => fun k W v => ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
+  | d + 1 => fun k W v => ∃ (flds : List (PropKey × Nat)) (oid : Nat) (code : CallCode),
+      v = .objAt flds code oid ∧
       flds.lookup key = none ∧ holdsAt CallArguments.protoField (along key A d) k W v
 
 theorem along_adm (key : PropKey) (A : Fam) : ∀ d, Adm (along key A d)
   | 0 => holdsAt_adm key A
   | d + 1 => by
     refine ⟨?_, ?_⟩
-    · rintro n W v ⟨flds, oid, hρ, hmiss, h⟩
-      exact ⟨flds, oid, hρ, hmiss, (holdsAt_adm _ (along key A d)).down n W v h⟩
-    · rintro n W W' hx v ⟨flds, oid, hρ, hmiss, h⟩
-      exact ⟨flds, oid, hρ, hmiss, (holdsAt_adm _ (along key A d)).mono n W W' hx v h⟩
+    · rintro n W v ⟨flds, oid, code, hρ, hmiss, h⟩
+      exact ⟨flds, oid, code, hρ, hmiss, (holdsAt_adm _ (along key A d)).down n W v h⟩
+    · rintro n W W' hx v ⟨flds, oid, code, hρ, hmiss, h⟩
+      exact ⟨flds, oid, code, hρ, hmiss, (holdsAt_adm _ (along key A d)).mono n W W' hx v h⟩
 
 /-- A weaker family below the level is found wherever a stronger one is, the
 same number of prototypes up. -/
@@ -116,8 +118,8 @@ theorem along_mono {key : PropKey} {A B : Fam} : ∀ (d : Nat) {k : Nat},
     (∀ j, j < k → ∀ (U : WorldT j) u, A j U u → B j U u) →
     ∀ {W : WorldT k} {v : Val}, along key A d k W v → along key B d k W v
   | 0, _, h, _, _, hv => holdsAt_mono h hv
-  | d + 1, _, h, _, _, ⟨flds, oid, hρ, hmiss, hv⟩ =>
-    ⟨flds, oid, hρ, hmiss, holdsAt_mono (fun j hj U u hu =>
+  | d + 1, _, h, _, _, ⟨flds, oid, code, hρ, hmiss, hv⟩ =>
+    ⟨flds, oid, code, hρ, hmiss, holdsAt_mono (fun j hj U u hu =>
       along_mono d (fun i hi U' u' => h i (by omega) U' u') hu) hv⟩
 
 /-- **Host-relative members.** A member of `v` is where JavaScript's lookup
@@ -135,6 +137,18 @@ theorem memberT_adm (m : Member) : Adm (memberT Ξ m) := by
     exact ⟨d, (along_adm _ _ d).down n W v h⟩
   · rintro n W W' hx v ⟨d, h⟩
     exact ⟨d, (along_adm _ _ d).mono n W W' hx v h⟩
+
+/-- An object with code holds a member as a plain object does: at its own
+location for the key, whose contract implies the member's signatures invoked
+on it. A callable object with methods, `Number` with `isFinite`, is a member
+of its clause so. -/
+theorem memberT_own {m : Member} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
+    {code : CallCode} {oid l : Nat} {c : Ctr k}
+    (hf : flds.lookup m.key = some l) (hl : lookup W l = some c)
+    (hag : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
+      ∀ (u : Val), c j hj U u → onHost Ξ (.objAt flds code oid) m j U u) :
+    memberT Ξ m k W (.objAt flds code oid) :=
+  ⟨0, flds, l, c, oid, code, rfl, hf, hl, hag⟩
 
 /-- A member whose signatures imply another's below the level, found by the
 same key, is that member. -/

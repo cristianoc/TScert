@@ -95,7 +95,7 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     subst hg
     have hsrc : sourceTy G El = true := (hall _ hmem).resolve_left (by simp)
   · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1⟩
+  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A write of a field of the object in a slot whose type gives it a type of
 source values: it changes one location, which holds a value, not a store. -/
@@ -1073,7 +1073,7 @@ theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx pres
     subst hg
     have hsrc : storeTy G El idx present = true := (hall _ hmem).resolve_left (by simp)
   · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1⟩
+  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A listed position of a store under a tuple contract has a location whose
 contract implies the position's family. -/

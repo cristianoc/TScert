@@ -190,16 +190,16 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
 
   $`u\in\mathsf{on}_v(m)_n(W)\iff u\in\mathsf{Calls}(m.\mathsf{calls}^{v})\cap \mathsf{Rests}(m.\mathsf{rests}^{v})\land \forall S\in m.\mathsf{schemes}.\;\mathsf{bound}(u,v)\in⟦S⟧_n(W),`$
 
-  and $`\mathsf{holds}_k(A)`$ the objects holding key $`k`$ at a location whose
-  contract implies $`A`$ below the level,
+  and $`\mathsf{holds}_k(A)`$ the objects, plain or with code, holding key
+  $`k`$ at a location whose contract implies $`A`$ below the level,
 
-  $`\mathsf{holds}_k(A)_n(W,v)\iff\exists l,c.\; v=\ell\land\mathit{flds}(k)=l\land W(l)=c\land \forall j<n,\ U\sqsupseteq W|_j,\ u.\;c_j(U,u)\Rightarrow u\in A_j(U),`$
+  $`\mathsf{holds}_k(A)_n(W,v)\iff\exists \mathit{code},l,c.\; v=\mathsf{obj}(\mathit{flds},\mathit{code})\land\mathit{flds}(k)=l\land W(l)=c\land \forall j<n,\ U\sqsupseteq W|_j,\ u.\;c_j(U,u)\Rightarrow u\in A_j(U),`$
 
   a member is where JavaScript's lookup finds its key: on the object, or,
   when the object lacks the key, along its prototype chain, $`d`$ prototypes
   up (`along`):
 
-  $`\begin{aligned} \mathsf{along}^0_k(A)&=\mathsf{holds}_k(A)\qquad \mathsf{along}^{d+1}_k(A)_n(W,v)\iff v=\ell\land k\notin\mathit{flds}\land \mathsf{holds}_{\mathsf{proto}}(\mathsf{along}^d_k(A))_n(W,v)\\ \mathsf{meth}(\mu)_n(W,v)&\iff\forall m\in\mu.\;\exists d.\; \mathsf{along}^d_{m.\mathsf{key}}(\mathsf{on}_v(m))_n(W,v). \end{aligned}`$
+  $`\begin{aligned} \mathsf{along}^0_k(A)&=\mathsf{holds}_k(A)\qquad \mathsf{along}^{d+1}_k(A)_n(W,v)\iff \exists\mathit{code}.\;v=\mathsf{obj}(\mathit{flds},\mathit{code})\land k\notin\mathit{flds}\land \mathsf{holds}_{\mathsf{proto}}(\mathsf{along}^d_k(A))_n(W,v)\\ \mathsf{meth}(\mu)_n(W,v)&\iff\forall m\in\mu.\;\exists d.\; \mathsf{along}^d_{m.\mathsf{key}}(\mathsf{on}_v(m))_n(W,v). \end{aligned}`$
 
   A prototype's member is invoked on $`v`$, the object the read began at. A
   quantified signature is host-relative through binding: a scheme meets its
@@ -389,8 +389,10 @@ as one [argument pack](#argument-packs) at $`P'`$.
 - `arrs L S` is a function meeting every fixed signature in $`L`$ and every
   variadic one in $`S`$. With both lists empty it is any function with closed
   invocation code.
-- `callable φ⃗ L S` is additionally a plain object under the invariant record
-  operands $`\vec\varphi`$. It has no views, optional fields or methods.
+- `callable φ⃗ L S M` is additionally under the invariant record operands
+  $`\vec\varphi`$ and holds each method of $`M`$ as a record does
+  (`methodT`): read from the object, the member meets its signatures invoked
+  on that object. It has no views or optional fields.
 - `ctors L S φ⃗ ψ` is a class, whose code is construct-only. A construct signature
   $`\vec A\Rightarrow^{\varepsilon} B`$ says that `new` with actuals in $`\vec A`$
   steps to a term safe at $`B`$ one level below, whose normal return meets the
@@ -636,8 +638,8 @@ So everything reduces to the conjunction of two clauses:
   record's (`{ readonly a: boolean } & { readonly b: number }` reads `b`).
   `refs` with `dict` gives a `dict` holding both; two `dict` clauses also
   concatenate their index contracts. `callable` with `callable` concatenates
-  record operands and signatures; `callable` with `arrs` adds the signatures
-  and keeps the record operands.
+  record operands, signatures and methods; `callable` with `arrs` adds the
+  signatures and keeps the record operands and methods.
 
 Nothing is distributed through an operand or a result. This is structural, not
 a choice: an operand is a type, already normal, so there is no formula below
@@ -1018,7 +1020,9 @@ So `[number, string]` is within `(number | string)[]` and `[number]` within
 ### Function and class coverage
 
 `arrs` is covered by `arrs`, and `callable` by `arrs` (forgetting its record
-operands) or by `callable` (covering the operands as invariant fields). The
+operands and methods) or by `callable` (covering the operands as invariant
+fields, and each target method by a source method of its key whose
+signatures cover it, `CoversSig`, as for a record's methods). The
 reverse, from `arrs` to `callable`, needs evidence of the record operands and
 has no rule.
 

@@ -275,7 +275,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
-  | .refs B _ _ _ _ _ _ | .callable B _ _ _ => some B
+  | .refs B _ _ _ _ _ _ | .callable B _ _ _ _ => some B
   | _ => none
 
 /-- Whether a clause states the field `fld` of a location: in its first
@@ -327,10 +327,10 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     · obtain ⟨flds,l,c',oid,hl,hfd,hlookup,himp⟩ :=
         viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
       exact ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp⟩
-  | callable a bs L S =>
+  | callable a bs L S ms =>
     simp only [clauseField, clauseBagOperand, Bool.or_false, List.any_eq_true, decide_eq_true_eq] at hb
     obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
-    exact ofBag hmem hc.1.1.1
+    exact ofBag hmem hc.1.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
 
 /-- A read a cell fact answers, of a field the receiver's type states: the

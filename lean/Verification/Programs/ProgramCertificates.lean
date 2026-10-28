@@ -1185,7 +1185,7 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L ∧ effect.plain = true
+      | [.callable _ _ L _ _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L ∧ effect.plain = true
       | _ => False
     | _, _ => False
   -- A field of a callable object's bag or of a class value's statics.

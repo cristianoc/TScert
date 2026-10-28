@@ -1356,13 +1356,16 @@ checks over the supplied subtype relation. -/
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧
       CoversBounds (!(a :: bs).flatten.isEmpty || !(ix ++ cx).isEmpty) ks ls ∧
       KeepsKeys G ks cy ∧ ∀ k ∈ su, k ∈ st
-  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
+  | .arrs L S, .arrs M T | .callable _ _ L S _, .arrs M T =>
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
-  | .callable a bs L S, .callable c ds M T =>
+  -- A method the target states is one the source states under its key, with
+  -- signatures covering the target's.
+  | .callable a bs L S ms, .callable c ds M T ns =>
       CoversFields R (a :: bs) (c :: ds) ∧
       arrows L S M ∧
-      ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
+      (∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t) ∧
+      ∀ q ∈ ns, ∃ p ∈ ms, p.key = q.key ∧ CoversSig (restElem G) R p q
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide, that supplies its
   -- effect. One with a `never` parameter admits no actual list, so any class
@@ -1400,6 +1403,7 @@ theorem CoversWith.mono [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Ren
     | exact h
     | exact ⟨ha _ _ _ h.1, h.2⟩
     | exact ⟨h.1, ha _ _ _ h.2.1, h.2.2⟩
+    | exact ⟨h.1, ha _ _ _ h.2.1, h.2.2.1, h.2.2.2⟩
 
 /-- Covering field by field is enough: the operands all constrain the same
 object, so a field the target names is found at the location the source already
@@ -2606,11 +2610,11 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       exact WExt_trans this hU'
     rcases hview with ⟨k, hk, hF, hby⟩ | ⟨F, hF, hby⟩
     · obtain ⟨pf, l, c, oid, rfl, hl1, hl2, hag⟩ := viewOf_at hF hp
-      exact ⟨pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+      exact ⟨pf, l, c, oid, .absent, rfl, hl1, hl2, fun i hi U' hU' u hu =>
         covers_arrows_sound hby hr hpa hself (Nat.lt_trans hi hj) (hx i hi U' hU')
           (hknown k hk i U' u (hag i hi U' u hu))⟩
     · obtain ⟨pf, l, c, oid, rfl, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hF) hp
-      exact ⟨pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu =>
+      exact ⟨pf, l, c, oid, .absent, rfl, hl1, hl2, fun i hi U' hU' u hu =>
         covers_by_function_sound hby hr hpa hre hself (Nat.lt_trans hi hj) (hx i hi U' hU')
           (hag i hi U' u hu)⟩
   intro d
@@ -2627,7 +2631,7 @@ theorem protoHolds_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       obtain ⟨pf, oid, rfl, hmiss⟩ := lacksKey_at hk hp
       obtain ⟨pf', l, c, oid', hρ, hl1, hl2, hag⟩ := viewOf_at (Option.mem_toList.mp hP') hp
       cases hρ
-      refine ⟨pf, oid, rfl, hmiss, pf, l, c, oid, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
+      refine ⟨pf, oid, .absent, rfl, hmiss, pf, l, c, oid, .absent, rfl, hl1, hl2, fun i hi U' hU' u hu => ?_⟩
       have hx : WExt (trunc i (Nat.le_of_lt (Nat.lt_trans hi hj)) W) U' := by
         have := WExt_trunc (Nat.le_of_lt hi) hU
         rw [trunc_trunc] at this
@@ -2663,12 +2667,12 @@ theorem covers_methods_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
         (fun i hi => hpa i (by omega)) (hr j hj) U w u hu)
       (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv)
   · obtain ⟨flds, l, c, oid, hρ, hfl, hl, hag⟩ := hfields f hf
-    exact ⟨0, flds, l, c, oid, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
+    exact ⟨0, flds, l, c, oid, .absent, hρ, by simpa [MethodMembers.Member.of, ← hkey] using hfl, hl,
       fun j hj U hU u hu => covers_by_function_sound hby hr hpa hre hself hj hU (hag j hj U u hu)⟩
   · obtain ⟨flds, lp, cp, oid, rfl, hfl, hlp, hpag⟩ := hfields f hf
     obtain ⟨e, he⟩ := protoHolds_sound hknown hr hpa hre hself protoChainDepth f.2 hview
-    exact ⟨e + 1, flds, oid, rfl, ownKeysT_lookup (hbounds K hK) hnot,
-      flds, lp, cp, oid, rfl, by rw [← hpk]; exact hfl, hlp,
+    exact ⟨e + 1, flds, oid, .absent, rfl, ownKeysT_lookup (hbounds K hK) hnot,
+      flds, lp, cp, oid, .absent, rfl, by rw [← hpk]; exact hfl, hlp,
       fun j hj U hU p hp => he j hj U hU p (hpag j hj U p hp)⟩
 
 /-- The same argument for a callable object's property bag, which forgets the
@@ -3213,6 +3217,7 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     cases hc; exact id
   · exact id
   · intro hv
+    have hv := hv.1
     refine ⟨⟨hv.1.2.1, fun p hp => ?_⟩, ⟨hv.1.2.1, fun t ht => ?_⟩⟩
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       exact CallArrow.sound (hc.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
@@ -3220,16 +3225,26 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
       · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
       · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2.2 _ (List.mem_map_of_mem hp))
-  · rename_i a bs L S c ds M T
+  · rename_i a bs L S ms c ds M T ns
     intro hv
-    refine ⟨⟨covers_bags_sound hc.1 n hr W v hv.1.1, hv.1.2.1, fun p hp => ?_⟩,
-      ⟨hv.1.2.1, fun t ht => ?_⟩⟩
+    have hm := hv.2
+    have hv := hv.1
+    refine ⟨⟨⟨covers_bags_sound hc.1 n hr W v hv.1.1, hv.1.2.1, fun p hp => ?_⟩,
+      ⟨hv.1.2.1, fun t ht => ?_⟩⟩, ?_⟩
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       exact CallArrow.sound (hc.2.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-      rcases hc.2.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
+      rcases hc.2.2.1 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
       · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
       · exact fixed_calls_pack_sound hfp n hr W v (hv.1.2.2 _ (List.mem_map_of_mem hp))
+    · -- Each target method, by the source's method of its key.
+      intro mq hmq
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmq
+      obtain ⟨p, hp, hkey, hpq⟩ := hc.2.2.2 q hq
+      exact MethodMembers.memberT_mono (by simpa [MethodMembers.Member.of] using hkey)
+        (fun w j hj U u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
+          (fun i hi => hpa i (by omega)) (hr j hj) U w u hu)
+        (MethodMembers.methodT_at (List.mem_map_of_mem hp) hm)
   · -- str ≤ str
     exact id
   · -- strLit ≤ str: the singleton inhabits the family

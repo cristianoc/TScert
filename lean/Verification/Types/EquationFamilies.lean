@@ -312,8 +312,9 @@ def clausePolar : Clause α → List (Variance × α)
       os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar ++
       cs.map (fun f => (.inv, f.2))
   | .arrs L S => L.flatMap arrowPolar ++ S.flatMap restPolar
-  | .callable a bs L S =>
-    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ L.flatMap arrowPolar ++ S.flatMap restPolar
+  | .callable a bs L S ms =>
+    (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ L.flatMap arrowPolar ++ S.flatMap restPolar ++
+      ms.flatMap sigPolar
   | .ctors L S a bs vs =>
       L.flatMap (fun q => q.arguments.map (.contra, ·) ++ [(.co, q.result)]) ++
       S.flatMap (fun q => q.arguments.1.map (.contra, ·) ++ [(.contra, q.arguments.2), (.co, q.result)]) ++

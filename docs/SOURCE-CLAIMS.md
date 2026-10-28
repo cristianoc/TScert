@@ -194,7 +194,7 @@ Ordinary table clauses use the native graph vocabulary:
 | `pack` | Argument-list tuple contracts |
 | `arrs` | Call signatures |
 | `ctors` | Construct signatures |
-| `callable` | Object fields and call signatures together |
+| `callable` | Object fields, call signatures and methods together; `methods`, as a record's, left out when empty |
 
 For example, an invariant field is
 `{"refs":{"first":[["value",[1,2]]],"rest":[],"views":[]}}`.

@@ -19,7 +19,7 @@ variable {ι : Type}
 alike; none for any other type. -/
 def restSigs (G : NormalGraph ι) (F : Ty ι) : List (RestArrow (Ty ι)) :=
   match expand G F with
-  | [.arrs _ S] | [.callable _ _ _ S] => S
+  | [.arrs _ S] | [.callable _ _ _ S _] => S
   | _ => []
 
 theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ restSigs G F) {n W v}
@@ -30,8 +30,8 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
   · rename_i L S hF
     have hv' := ((represents_raw hF n W v) hv).2
     exact CallEffects.restsT_select hv' (List.mem_map_of_mem hs)
-  · rename_i P Ps L S hF
-    have hv' := ((represents_raw hF n W v) hv).2
+  · rename_i P Ps L S ms hF
+    have hv' := ((represents_raw hF n W v) hv).1.2
     exact CallEffects.restsT_select hv' (List.mem_map_of_mem hs)
   · cases hs
 
@@ -39,7 +39,7 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
 method, whose contract holds when it is invoked on the object it is read from. -/
 def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
   match expand G O with
-  | [.refs _ _ _ _ ms _ _] | [.dict _ _ _ _ _ ms _ _ _] => ms.find? (·.key == k)
+  | [.refs _ _ _ _ ms _ _] | [.dict _ _ _ _ _ ms _ _ _] | [.callable _ _ _ _ ms] => ms.find? (·.key == k)
   | _ => none
 
 /-- The quantified signatures of the member of key `k` of `O`: the schemes a
@@ -108,7 +108,7 @@ theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMe
     have hkey : m.key = k := by simpa using List.find?_some hm
     have hs := represents_raw (show Represents G O _ from hO) n W v hv
     exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
-      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1)⟩
+      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1 | exact hs.2)⟩
 
 /-- **Reading along the chain.** A key held `d` prototypes up is read in `d`
 delegation steps, each one level down, then from its location, whose contract
@@ -116,9 +116,9 @@ implies `A`. -/
 theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
     ∀ (d : Nat) {n : Nat} {W : WorldT n} {h : Heap} {v : Val}, WorldAdm W → HeapOk n W h →
       MethodMembers.along key A d n W v → Safe Ξ A n W h (.readAt key v)
-  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
-  | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, rfl, hmiss, hp⟩ => by
-    obtain ⟨pf, lp, cp, oid', hρ, hpf, hlp, hpag⟩ := hp
+  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, code, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
+  | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, code, rfl, hmiss, hp⟩ => by
+    obtain ⟨pf, lp, cp, oid', code', hρ, hpf, hlp, hpag⟩ := hp
     cases hρ
     cases n with
     | zero => trivial
@@ -144,7 +144,7 @@ theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h 
 alike; none for any other type. -/
 def callSigs (G : NormalGraph ι) (F : Ty ι) : List (Arrow (Ty ι)) :=
   match expand G F with
-  | [.arrs L _] | [.callable _ _ L _] => L
+  | [.arrs L _] | [.callable _ _ L _ _] => L
   | _ => []
 
 theorem callsT_of_callSigs {G : NormalGraph ι} {F : Ty ι} {p} (hp : p ∈ callSigs G F) {n W v}
@@ -155,8 +155,8 @@ theorem callsT_of_callSigs {G : NormalGraph ι} {F : Ty ι} {p} (hp : p ∈ call
   · rename_i L S hF
     have hv' := ((represents_raw hF n W v) hv).1
     exact CallEffects.callsT_select hv' (List.mem_map_of_mem hp)
-  · rename_i P Ps L S hF
-    have hv' := ((represents_raw hF n W v) hv).1.2
+  · rename_i P Ps L S ms hF
+    have hv' := ((represents_raw hF n W v) hv).1.1.2
     exact CallEffects.callsT_select hv' (List.mem_map_of_mem hp)
   · cases hp
 

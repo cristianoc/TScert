@@ -334,7 +334,7 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
       ((sigs.find? fun sig => Rr.all sig.receiver.contains) <|> sigs.head?).map (·.receiver)
     else if spread then none
     else match PositiveRules.expand G B with
-      | [.arrs L _] | [.callable _ _ L _] =>
+      | [.arrs L _] | [.callable _ _ L _ _] =>
         match selectSignature G L actualTys Rr with
         | .ok sig => some sig.receiver
         | .error _ => none
@@ -878,7 +878,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         | none => throw ".apply target requires a rest signature"
       else do
         let L ← match PositiveRules.expand G B with
-          | [.arrs L _] | [.callable _ _ L _] => pure L
+          | [.arrs L _] | [.callable _ _ L _ _] => pure L
           | _ => throw ".apply target requires a single callable contract"
         let ⟨Rt,_,_,_⟩ ← selectSignature G L elements R₀
         pure Rt

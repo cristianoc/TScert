@@ -371,7 +371,7 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
       let P ← (fs ++ vs).lookup SourceTypes.protoField
       let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P | none
       (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
-  | [.callable fs _ _ _] => fs.lookup fld
+  | [.callable fs _ _ _ _] => fs.lookup fld
   | _ => none
 
 /-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
@@ -494,7 +494,7 @@ bag, or an explicit union of cell contracts each naming the field. -/
       let some (K, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
         | throw s!"read of a key '{fld}' no index of the object constrains"
       pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [Labels.undef]) (.readDict K B [Labels.undef]) [a])
-  | [.callable fs _ _ _] =>
+  | [.callable fs _ _ _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
   -- A class value's static field, or its readonly view.

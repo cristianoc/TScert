@@ -74,10 +74,14 @@ the parameters and the captured values, and `graph_invoke` and
 `graphRest_invoke` derive the call contract from checked code
 ([TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean),
 [VariadicTyping.lean](../lean/Verification/Programs/VariadicTyping.lean)).
-The graph clause `callable first rest arrows variadic` combines a nonempty
-conjunction of bag invariants with fixed and variadic call promises on one
-object; normalization merges the lists, and structural subtyping checks bag
-coverage and arrow coverage separately and can forget the bag to obtain `arrs`.
+The graph clause `callable first rest arrows variadic methods` combines a
+nonempty conjunction of bag invariants with fixed and variadic call promises
+and host-relative methods, as a record's (`methodT`), on one object;
+normalization merges the lists, and structural subtyping checks bag, arrow and
+method coverage separately and can forget the bag and the methods to obtain
+`arrs`. A method of a callable is found by its key as a record's is
+(`memberOf`), so `Number.isFinite(n)` beside `Number(text)` reads the method
+from `Number` and invokes it on `Number`.
 
 The calculus's properties are own data properties, read and written as cells;
 accessors, inherited lookups and proxies, whose property operations run code,

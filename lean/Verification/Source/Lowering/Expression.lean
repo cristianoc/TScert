@@ -522,7 +522,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let (Rt, prefixTys, own, rule) ← match PositiveRules.expand G A with
       | [.arrs (⟨Rb,Ds,_,_⟩ :: claimed) []] => do
         let L ← match PositiveRules.expand G callee.type with
-          | [.arrs L _] | [.callable _ _ L _] => pure L
+          | [.arrs L _] | [.callable _ _ L _ _] => pure L
           | _ => throw "bind target requires a single callable contract"
         let ⟨Rt,domains,result,effect⟩ ← selectSignature G L (boundTypes ++ Ds) receiverPlan.type
         if domains.length < n then throw "bind prefix exceeds the target's parameters"
@@ -576,7 +576,7 @@ slots are introduced only after the operand supplying their type is checked. -/
         pure ([lp], lp.type :: H, held ⟨"",some xs.span⟩ :: ds)
     let m := saved.length
     let L ← match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _] => pure L
+      | [.arrs L _] | [.callable _ _ L _ _] => pure L
       | _ => throw ".apply target requires a single callable contract"
     let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L [] receiverPlan.type
     let receiverCheck := DirectProof.cast J Rt (DirectProof.var J m receiverPlan.type)
@@ -595,7 +595,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let ds := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc ds H a
     let L ← match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _] => pure L
+      | [.arrs L _] | [.callable _ _ L _ _] => pure L
       | _ => throw ".call target requires a single callable contract"
     let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type)) receiverPlan.type
     let rule := match PositiveRules.expand G callee.type with
@@ -648,7 +648,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let dsH := held ⟨"",some callee.span⟩ :: ds
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc dsH H a
     let fixedFits := match PositiveRules.expand G M with
-      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.arguments.length
+      | [.arrs L _] | [.callable _ _ L _ _] => L.any fun p => args.length ≤ p.arguments.length
       | _ => false
     let term := Tm.invoke (.var 0) (.var (ri+1)) (actuals.map (·.term))
     let call ← match PositiveRules.expand G M, ProgramTyping.restSigs G M with
@@ -671,7 +671,7 @@ slots are introduced only after the operand supplying their type is checked. -/
           (DirectProof.var H 0 M :: receiver ::
             ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
             ++ omittedPremises H Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast H D a))
-      | [.arrs L _], [] | [.callable _ _ L _], [] =>
+      | [.arrs L _], [] | [.callable _ _ L _ _], [] =>
         let ⟨Rt,Ds,R,effect⟩ ← selectSignature G L (actuals.map (·.type)) r.type
         let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
         obligation o.span receiver.goal (some receiver) "method-receiver" dsH
@@ -693,7 +693,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- fixed parameters, trailing ones omitted as `undefined`, then every
     -- further actual at its position in the rest.
     let fixedFits := match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.arguments.length
+      | [.arrs L _] | [.callable _ _ L _ _] => L.any fun p => args.length ≤ p.arguments.length
       | _ => false
     match PositiveRules.expand G callee.type, ProgramTyping.restSigs G callee.type with
     | _, ⟨Rt, (Ps, E), R, effect⟩ :: _ =>
@@ -708,7 +708,7 @@ slots are introduced only after the operand supplying their type is checked. -/
         (.callRest effect k (Ps.length - k) (extra.map fun _ => false) E)
         (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
           ++ omittedPremises Γ Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast Γ D a))
-    | [.arrs L _], [] | [.callable _ _ L _], [] =>
+    | [.arrs L _], [] | [.callable _ _ L _ _], [] =>
       let rule := match PositiveRules.expand G callee.type with
         | [.callable ..] => ProgramCertificates.Rule.callCallable
         | _ => .app

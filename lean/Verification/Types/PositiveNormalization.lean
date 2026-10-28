@@ -75,8 +75,14 @@ inductive Clause (α : Type) where
   | numLit (bits : UInt64)
   /-- The value a body produces by completing rather than returning. -/
   | undef
+  /-- A callable object: its code meets every signature, as an `arrs`
+  clause's, its property bag is under the invariant record operands `first`
+  and `rest` (`CallableConjunctions.objectsT`), and each method is a
+  host-relative member (`methodT`), read from the object and invoked on it,
+  as a record's: `Number`, called and read through `Number.isFinite`. -/
   | callable (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (arrows : List (Arrow α)) (variadic : List (RestArrow α))
+      (methods : List (MethodMembers.Sig α) := [])
   /-- Semantic top: every value. Membership grants no operation, so nothing
   reads, calls or tests through it without a narrowing fact. `unknown`
   denotes it. Source `void` denotes the union of primitives and objects. -/
@@ -159,10 +165,11 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
         (∀ K ∈ ks, ownKeysT K n W v) ∧ stableKeysT st n W v
   | .arrs L S => interT (CallEffects.callsT Ξ (L.map (Arrow.map X)))
       (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
-  | .callable a bs L S =>
-      interT (CallableConjunctions.objectsT Ξ (famsOf X a) (bs.map (famsOf X))
+  | .callable a bs L S ms =>
+      interT (interT (CallableConjunctions.objectsT Ξ (famsOf X a) (bs.map (famsOf X))
         (L.map (Arrow.map X)))
-        (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
+        (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P))))
+        (methodT Ξ (ms.map (Member.of X P)))
   | .ctors L S a bs vs => interT (interT (ctorsT Ξ (L.map (MethodArrow.map X)))
       (ctorRestsT Ξ (S.map (MethodRestArrow.mapWith X P))))
       (interT (CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)))
@@ -402,9 +409,9 @@ def meet : Clause α → Clause α → List (Clause α)
   | .ctors L S [] [] [], .ctors M T [] [] [] => [.ctors (L ++ M) (S ++ T)]
   | .ctors L S a bs vs, .ctors M T c ds ws => [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
-  | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
-  | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
-  | .arrs L S, .callable a bs M T => [.callable a bs (M ++ L) (T ++ S)]
+  | .callable a bs L S ms, .callable c ds M T ns => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T) (ms ++ ns)]
+  | .callable a bs L S ms, .arrs M T => [.callable a bs (L ++ M) (S ++ T) ms]
+  | .arrs L S, .callable a bs M T ms => [.callable a bs (M ++ L) (T ++ S) ms]
   | _, _ => []
 
 /-- The primitive clause whose values a class's keys are the `ToPropertyKey`
@@ -510,7 +517,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | refs a rest => obtain ⟨flds, _, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | dict a rest vs ds os ms ks cs => obtain ⟨flds, _, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | arrs L S => exact ⟨h.1.1.val, h.1.1.scoped⟩
-  | callable a bs L S => exact ⟨h.1.2.1.val, h.1.2.1.scoped⟩
+  | callable a bs L S ms => exact ⟨h.1.1.2.1.val, h.1.1.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
   | str => obtain ⟨s, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strLit s => subst v; exact ⟨rfl, trivial⟩
@@ -544,8 +551,8 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
   | undef => cases h; rfl
-  | callable a bs L S =>
-    obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.2.1
+  | callable a bs L S ms =>
+    obtain ⟨fs, code, _, rfl, hc, -⟩ := h.1.1.2.1
     cases code
     case graph kind _ => cases kind <;> simp_all [valueShape, shape, CallCode.callable]
     all_goals simp_all [valueShape, shape, CallCode.callable]
@@ -578,7 +585,7 @@ theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} 
 /-- The property bag a clause states of a value with code: a callable
 object's fields, or a class value's static fields. -/
 def Clause.bag : Clause α → Option (List (PropKey × α) × List (List (PropKey × α)))
-  | .callable a bs _ _ | .ctors _ _ a bs _ => some (a, bs)
+  | .callable a bs _ _ _ | .ctors _ _ a bs _ => some (a, bs)
   | _ => none
 
 /-- The readonly fields a clause states of a value with code: a class
@@ -598,7 +605,7 @@ theorem bag_sem {X : α → Fam} {P : α → ArgFam} {c : Clause α} {a : List (
     (h : semWithArgs Ξ X P c n W v) :
     CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)) n W v := by
   cases c <;> simp only [Clause.bag, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hc
-  · obtain ⟨rfl, rfl⟩ := hc; exact h.1.1
+  · obtain ⟨rfl, rfl⟩ := hc; exact h.1.1.1
   · obtain ⟨rfl, rfl⟩ := hc; exact h.2.1
 
 theorem bagViews_sem {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
@@ -817,9 +824,10 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       exact ⟨fun ⟨⟨a, b⟩, c, d⟩ => ⟨⟨a, c⟩, b, d⟩, fun ⟨⟨a, c⟩, b, d⟩ => ⟨⟨a, b⟩, c, d⟩⟩
     · -- arrs ∩ callable
       simp only [singleton_sem, semWithArgs, List.map_append]
-      rw [interT, CallableConjunctions.calls_merge, CallEffects.restsT_append]
+      rw [interT, interT, CallableConjunctions.calls_merge, CallEffects.restsT_append]
       simp only [interT]
-      exact ⟨fun ⟨⟨o, c⟩, t, r⟩ => ⟨⟨c, r⟩, o, t⟩, fun ⟨⟨c, r⟩, o, t⟩ => ⟨⟨o, c⟩, t, r⟩⟩
+      exact ⟨fun ⟨⟨⟨o, c⟩, t, r⟩, m⟩ => ⟨⟨c, r⟩, ⟨o, t⟩, m⟩,
+        fun ⟨⟨c, r⟩, ⟨o, t⟩, m⟩ => ⟨⟨⟨o, c⟩, t, r⟩, m⟩⟩
     · rename_i b
       cases b <;> simp [singleton_sem, semWithArgs, interT, boolT]
       all_goals intro hv; subst v; simp
@@ -845,14 +853,16 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · simp [singleton_sem, semWithArgs, interT]
     · -- callable ∩ arrs
       simp only [singleton_sem, semWithArgs, List.map_append]
-      rw [interT, CallableConjunctions.calls_merge, CallEffects.restsT_append]
+      rw [interT, interT, CallableConjunctions.calls_merge, CallEffects.restsT_append]
       simp only [interT]
-      exact ⟨fun ⟨⟨o, c⟩, r, t⟩ => ⟨⟨o, r⟩, c, t⟩, fun ⟨⟨o, r⟩, c, t⟩ => ⟨⟨o, c⟩, r, t⟩⟩
+      exact ⟨fun ⟨⟨⟨o, c⟩, r, t⟩, m⟩ => ⟨⟨⟨o, r⟩, m⟩, c, t⟩,
+        fun ⟨⟨⟨o, r⟩, m⟩, c, t⟩ => ⟨⟨⟨o, c⟩, r, t⟩, m⟩⟩
     · -- callable ∩ callable
       simp only [singleton_sem, semWithArgs, List.map_append, List.map_cons]
-      rw [interT, CallableConjunctions.merge, CallEffects.restsT_append]
+      rw [interT, interT, CallableConjunctions.merge, CallEffects.restsT_append, methodT_append]
       simp only [interT]
-      exact ⟨fun ⟨⟨o, p⟩, r, t⟩ => ⟨⟨o, r⟩, p, t⟩, fun ⟨⟨o, r⟩, p, t⟩ => ⟨⟨o, p⟩, r, t⟩⟩
+      exact ⟨fun ⟨⟨⟨o, p⟩, r, t⟩, m1, m2⟩ => ⟨⟨⟨o, r⟩, m1⟩, ⟨p, t⟩, m2⟩,
+        fun ⟨⟨⟨o, r⟩, m1⟩, ⟨p, t⟩, m2⟩ => ⟨⟨⟨o, p⟩, r, t⟩, m1, m2⟩⟩
     · -- str ∩ str
       simp [singleton_sem, semWithArgs, interT, strT]
     · -- str ∩ strLit
@@ -1064,7 +1074,9 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2.1 K hK),
         (stableKeysT_adm _).mono n W U hx v h.2.2.2.2.2.2⟩
   | arrs L S => exact interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
-  | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (CallEffects.restsT_adm _)
+  | callable a bs L S ms =>
+    exact interT_adm _ _
+      (interT_adm _ _ (CallableConjunctions.adm _ _ _) (CallEffects.restsT_adm _)) (methodT_adm _)
   | ctors L S a bs vs =>
     exact interT_adm _ _ (interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _))
       (interT_adm _ _ (CallableConjunctions.props_adm _ _) (CallableConjunctions.views_adm _))
@@ -1220,14 +1232,15 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
       (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
       (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) hexc (fun _ _ => rfl)
         (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v)
-  | callable a bs L S =>
+  | callable a bs L S ms =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (CallableConjunctions.congr_below X Y a bs L n hexc h W v)
+    exact and_congr (and_congr (CallableConjunctions.congr_below X Y a bs L n hexc h W v)
       (CallEffects.restsT_congr S (RestArrow.mapWith X P) (RestArrow.mapWith Y Q) hexc (fun _ _ => rfl)
-        (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v)
+        (fun s _ => ⟨h s.receiver, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v))
+      (methodT_congr X Y P Q n hexc h hP ms W v)
   | ctors L S a bs vs =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
@@ -1277,9 +1290,9 @@ def Clause.map (f : α → β) : Clause α → Clause β
       (mapFields f ds) (os.map (·.map f)) (ms.map (Sig.map f)) ks (mapFields f cs) st
   | .arrs L S => .arrs (L.map (Arrow.map f))
       (S.map (RestArrow.map f))
-  | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
+  | .callable a bs L S ms => .callable (mapFields f a) (bs.map (mapFields f))
       (L.map (Arrow.map f))
-      (S.map (RestArrow.map f))
+      (S.map (RestArrow.map f)) (ms.map (Sig.map f))
   | .ctors L S a bs vs => .ctors (L.map (MethodArrow.map f))
       (S.map (MethodRestArrow.map f)) (mapFields f a) (bs.map (mapFields f))
       (mapFields f vs)
@@ -1333,9 +1346,9 @@ def Clause.operands : Clause α → List α
       ds.map (·.2) ++ ms.flatMap Sig.operands ++ cs.map (·.2)
   | .arrs L S => L.flatMap Arrow.operands ++
       S.flatMap RestArrow.operands
-  | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
+  | .callable a bs L S ms => (a ++ bs.flatten).map (·.2) ++
       L.flatMap Arrow.operands ++
-      S.flatMap RestArrow.operands
+      S.flatMap RestArrow.operands ++ ms.flatMap Sig.operands
   | .ctors L S a bs vs => L.flatMap MethodArrow.operands ++ S.flatMap MethodRestArrow.operands ++
       (a ++ bs.flatten ++ vs).map (·.2)
   | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
@@ -1448,13 +1461,14 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     simp only [Clause.map, Clause.arrs.injEq]
     exact ⟨map_self fun p hp => Arrow.map_of_operands fun x hx => h x (.inl ⟨p, hp, hx⟩),
       map_self fun p hp => RestArrow.map_of_operands fun x hx => h x (.inr ⟨p, hp, hx⟩)⟩
-  | callable a bs L S =>
+  | callable a bs L S ms =>
     simp only [Clause.operands, List.map_append, List.mem_append, List.mem_flatMap] at h
     simp only [Clause.map, Clause.callable.injEq]
-    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl hx))),
-      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inr ?_))),
-      map_self fun p hp => Arrow.map_of_operands fun x hx => h x (.inl (.inr ⟨p, hp, hx⟩)),
-      map_self fun p hp => RestArrow.map_of_operands fun x hx => h x (.inr ⟨p, hp, hx⟩)⟩
+    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl hx)))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inr ?_)))),
+      map_self fun p hp => Arrow.map_of_operands fun x hx => h x (.inl (.inl (.inr ⟨p, hp, hx⟩))),
+      map_self fun p hp => RestArrow.map_of_operands fun x hx => h x (.inl (.inr ⟨p, hp, hx⟩)),
+      map_self fun m hm => sig_self fun x hx => h x (.inr ⟨m, hm, hx⟩)⟩
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
     exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩

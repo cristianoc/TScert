@@ -927,7 +927,7 @@ came from a different context. No execution budget is inspected. -/
       let direct := fun (candidates : List (Ty ι)) => candidates.findSearch? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
-          | [.callable _ _ L _] => some (L,Rule.callCallable)
+          | [.callable _ _ L _ _] => some (L,Rule.callCallable)
           | _ => none
         L.findSearch? fun p => do
           -- Require every operand before searching the premises. A signature
@@ -999,7 +999,7 @@ came from a different context. No execution budget is inspected. -/
                     ((gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
                   | _ => none
               else none)
-          | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
+          | [.callable fs _ _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           | [.ctors _ _ fs _ vs] => (fs.lookup f).map (·,Rule.readCallable) <|> (vs.lookup f).map (·,Rule.readBagView)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
@@ -1026,7 +1026,7 @@ came from a different context. No execution budget is inspected. -/
       let direct := (synthesizedFirst G Γ a pool).findSearch? fun R => do
         let (fs,r) ← match expand G R with
           | [.refs fs [] _ _ _ _] => some (fs,Rule.write)
-          | [.callable fs _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
+          | [.callable fs _ _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f
         let ea ← recur Γ a R

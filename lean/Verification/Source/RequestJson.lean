@@ -65,13 +65,13 @@ deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
 variadic signatures, a class value's static fields, a record's optional
-fields, methods, key bounds and stable keys, and a dictionary's writable
-index contracts.
+fields, methods, key bounds and stable keys, a callable object's methods, and
+a dictionary's writable index contracts.
 Absence is the one spelling of none, so strict decoding, which re-encodes and
 compares, still refuses an explicit empty list, and a clause without them reads
 as it always has. -/
 private def omittedWhenEmpty : List (String × String) :=
-  [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("ctors", "first"),
+  [("arrs", "variadic"), ("callable", "variadic"), ("callable", "methods"), ("ctors", "variadic"), ("ctors", "first"),
    ("ctors", "rest"), ("ctors", "views"), ("refs", "optional"),
    ("dict", "optional"), ("refs", "methods"), ("dict", "methods"), ("refs", "bounds"),
    ("dict", "bounds"), ("dict", "cells"), ("refs", "stable"), ("dict", "stable")]

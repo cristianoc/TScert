@@ -357,12 +357,11 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
         return .refs writes [] (views ++ [(CallArguments.protoField, P)]) optional methods [⟨false, keys⟩]
       | none => return .refs writes [] views optional methods [] stable
     else return .dict writes [] views indexes optional methods [] cells
-  else if !methods.isEmpty then throw s!"{ctx.site}: a callable object with methods needs a combined clause"
   else if !optional.isEmpty then throw s!"{ctx.site}: a callable object with an optional field needs a combined clause"
   else if !indexes.isEmpty || !views.isEmpty then
     throw s!"{ctx.site}: callable object with index or readonly field needs a combined clause"
-  else if writes.isEmpty then return .arrs fixed variadic
-  else return .callable writes [] fixed variadic
+  else if writes.isEmpty && methods.isEmpty then return .arrs fixed variadic
+  else return .callable writes [] fixed variadic methods
 
 /-- A function type's clause. -/
 partial def functionClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := do

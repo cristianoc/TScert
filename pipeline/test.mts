@@ -2215,6 +2215,36 @@ control(async (): Promise<void> => {
     `source expression obligation at [${at},${at + 7})`);
 });
 control(async (): Promise<void> => {
+  // `Number`, a callable object with methods: a member read is the method
+  // its clause states, invoked on `Number`, and a call is its call
+  // signature. Claimed to return only `true`, the read of `Number.isFinite`
+  // is refused where it is; claimed to return `0`, the call `Number(text)` is.
+  const both = run("number-call-and-members");
+  const source = readFileSync(sourceKey(both), "utf8");
+  const expression = (claims: SourceClaims, text: string) => {
+    const at = source.indexOf(text);
+    return { at, end: at + text.length, claim: must(claims.functions.flatMap((f) => f.expressions)
+      .find((e) => e.pos[0] === at && e.pos[1] === at + text.length), `the claim of ${text}`) };
+  };
+  const member = readClaims(both);
+  const read = expression(member, "Number.isFinite");
+  assert.ok(Array.isArray(read.claim.type));
+  const [label] = read.claim.type;
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(member.types[label], "the member's row"));
+  for (const clause of row)
+    if (typeof clause === "object" && "arrs" in clause)
+      for (const arrow of clause.arrs.arrows) arrow.result = [rowOf(member, { boolLit: { value: true } })];
+  read.claim.type = [member.types.push(row) - 1];
+  refusedAt(both, writeClaims(both, "forged-number-member-true", member), "forged-number-member-true",
+    `source expression obligation at [${read.at},${read.end})`);
+  const call = readClaims(both);
+  const called = expression(call, "Number(text)");
+  called.claim.type = [rowOf(call, { numLit: { bits: "0" } })];
+  refusedAt(both, writeClaims(both, "forged-number-call-zero", call), "forged-number-call-zero",
+    `source expression obligation at [${called.at},${called.end})`);
+});
+control(async (): Promise<void> => {
   // A bound method's variadic signature is covered by the member's when the
   // claimed rest is within the member's (`CoveredRestUsing`): `merge`'s rest,
   // the producer's own row for `EagerCollection<string, number>[]`, admits the

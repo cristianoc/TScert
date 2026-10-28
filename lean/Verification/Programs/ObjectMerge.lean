@@ -544,7 +544,7 @@ class value's its static fields, of which its type states the bag's fields,
 if any, and no bound. -/
 @[nospecialize] def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
-  | .callable a bs _ _ =>
+  | .callable a bs _ _ _ =>
     some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | .ctors _ _ a bs vs =>
     some ⟨((a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
@@ -595,7 +595,7 @@ theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι
     exact ⟨fs, code, oid, rfl, ⟨fun p hp => by simp at hp, fun q hq => by simp at hq,
       fun x hx => by simp at hx, fun K hK => by simp at hK, fun hp => by simp at hp,
       fun S T hS => by simp at hS⟩⟩
-  · obtain ⟨⟨fs, code, oid, rfl, -, -⟩, -⟩ := bag_sem (P := argMeaning G) (c := .callable _ _ _ _) rfl hv
+  · obtain ⟨⟨fs, code, oid, rfl, -, -⟩, -⟩ := bag_sem (P := argMeaning G) (c := .callable _ _ _ _ _) rfl hv
     simpa using bagFacts_of_sem (vs := []) rfl hv CallableConjunctions.views_nil
   · exact bagFacts_of_sem rfl hv hv.2.2
 
@@ -662,7 +662,7 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
     obtain ⟨fs, code, oid', he, hcode, -⟩ := hv.1.1
     cases he
     cases hcode
-  | callable a bs L S =>
+  | callable a bs L S ms =>
     obtain ⟨fs, code, oid', he, hcode, -⟩ := hv.1.2.1
     cases he
     cases hcode
@@ -777,7 +777,7 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
     simp only [semWithArgs, ReferenceConjunctions.refsT, recT] at hs
     obtain ⟨⟨⟨_, _, h1, -⟩, -⟩, -⟩ := hs; cases h1
   | arrs L S => simp at hw
-  | callable a bs L S => simp at hw
+  | callable a bs L S ms => simp at hw
   | top | source => simp at hw
   | list a bs => simp at hw
   | ctors L S => simp at hw

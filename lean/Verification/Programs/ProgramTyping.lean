@@ -166,8 +166,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   the value the machine binds there. `Us = []` is the exact-arity call. -/
   | callCallable {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)}
       {Ps : List (List (PropKey × Ty ι))} {L : List (Arrow (Ty ι))}
-      {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
-      HasTyWith G images subtyping Γ f F → Represents G F (.callable P Ps L S) →
+      {S : List (RestArrow (Ty ι))} {ms : List (MethodMembers.Sig (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
+      HasTyWith G images subtyping Γ f F → Represents G F (.callable P Ps L S ms) →
       ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
       effect.plain = true → HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
@@ -733,7 +733,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
-      ⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩
+      ⟨⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩,
+        MethodMembers.methodT_nil _ _ _⟩
   | @construct Γ f F B L S xs Us a bs vs e hf hr hp hpl hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -865,7 +866,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
           · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
       · exact hparts.elim
-  | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
+  | @callCallable effect Γ f r F Rt B P Ps L S ms xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
@@ -882,7 +883,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro k hk U v hv
       simpa [Arrow.map, Contract.map, Arrow.plain, List.map_map, List.map_append, Function.comp_def] using
         CallEffects.callsT_erase (by simpa [Arrow.map, Contract.map] using hplain)
-          (CallEffects.callsT_select (((represents_raw hr k U v) hv).1.2) (List.mem_map_of_mem hp))
+          (CallEffects.callsT_select (((represents_raw hr k U v) hv).1.1.2) (List.mem_map_of_mem hp))
     · intro j hj U hx hu' heap hok
       exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
     · intro p hp'

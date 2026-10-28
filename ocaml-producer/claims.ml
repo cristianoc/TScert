@@ -404,12 +404,11 @@ let encode (proposal : Proposal_types.t) =
             @ (if cells = [] then [] else ["cells",Array cells]))]
         | _,_::_,_ -> unsupported "callable with an index signature needs a combined clause"
         | _,[],[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods @ hidden_bound)]
-        | _ when methods <> [] -> unsupported "a callable object with methods needs a combined clause"
-        | [],[],_ -> Object ["arrs",Object calls]
+        | [],[],_ when methods = [] -> Object ["arrs",Object calls]
         | _,_,_ ->
           if optional <> [] then unsupported "callable with optional fields";
           if reads <> [] then unsupported "callable with readonly fields";
-          Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
+          Object ["callable",Object (["first",fields;"rest",Array []] @ calls @ methods)] in
         [Row (intern (Array [clause]))]
 
   and pack_labels p = labels_json (pack_label_list p)

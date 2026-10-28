@@ -1426,18 +1426,21 @@ exact by `recT_append`.
 **Signatures.** A type literal or an interface whose members are call
 signatures only is the function type they state, and one of construct
 signatures only the constructor type, several signatures being overloads of
-the one value; call signatures beside writable fields are the callable
-carrying them ([callable-meet](#intersections-of-functions-and-records)).
+the one value; call signatures beside writable fields or methods are the
+callable carrying them
+([callable-meet](#intersections-of-functions-and-records)), each method a
+host-relative member, as a record's, read from the value and invoked on it
+(`NumberConstructor`'s call beside `isFinite`).
 With $`⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧`$ the signatures' fixed ones $`L`$ and
 variadic ones $`S`$, each receiver `top` unless a `this` parameter states it,
-and $`\varphi`$ writable fields:
+$`\varphi`$ writable fields and $`\mu`$ methods, at least one of the two:
 
 ```math
 \frac{⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧=L;S}
      {⟦\{\,\sigma_1;\ \ldots;\ \sigma_n\,\}⟧=\mathsf{arrs}(L;S)}\ \textsf{call-literal}
 \qquad
 \frac{⟦\sigma_1⟧,\ldots,⟦\sigma_n⟧=L;S}
-     {⟦\{\,\sigma_1;\ \ldots;\ \sigma_n;\ \varphi\,\}⟧=\mathsf{callable}(\varphi;L;S)}
+     {⟦\{\,\sigma_1;\ \ldots;\ \sigma_n;\ \varphi;\ \mu\,\}⟧=\mathsf{callable}(\varphi;L;S;\mu)}
 \qquad
 \frac{⟦\mathtt{new}\,\sigma_1⟧,\ldots,⟦\mathtt{new}\,\sigma_n⟧=L;S}
      {⟦\{\,\mathtt{new}\,\sigma_1;\ \ldots;\ \mathtt{new}\,\sigma_n\,\}⟧=\mathsf{ctors}(L;S)}\ \textsf{construct-literal}

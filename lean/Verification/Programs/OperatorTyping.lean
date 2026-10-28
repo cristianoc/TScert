@@ -181,7 +181,7 @@ theorem objectClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
     ∃ fs code oid, v = .objAt fs code oid := by
   cases c with
   | refs | dict => obtain ⟨fs, oid, h, _⟩ := hv.1.1; exact ⟨fs, .absent, oid, h⟩
-  | callable => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, code, oid, h⟩
+  | callable => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1.1.1; exact ⟨fs, code, oid, h⟩
   | arrs => obtain ⟨fs, code, oid, h, _⟩ := hv.1.1; exact ⟨fs, code, oid, h⟩
   | ctors => obtain ⟨fs, _, _, _, _, _, _, oid, h, _⟩ := hv.1.1.1; exact ⟨fs, _, oid, h⟩
   | _ => simp [objectClause] at hc
