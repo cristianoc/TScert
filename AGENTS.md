@@ -89,6 +89,9 @@ before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
 
 ### Choosing the gap cases to work on
 
+A round of this work runs in the order of the
+[gap-round skill](.claude/skills/gap-round/SKILL.md), its agents briefed by
+[its brief](.claude/skills/gap-round/brief.md).
 Work on coverage follows two steps, both from the diagnostic census
 (`make census DIAGNOSTIC=1`, [diagnostic traversal](docs/DIAGNOSTIC-MODE.md)),
 run on main with the verified census, which goes past each slice's first

@@ -1,0 +1,120 @@
+---
+name: gap-round
+description: One round of gap work on TScert's own code, run on main without stops - diagnostic census, reasons confirmed from its record, a case example for each reason no case shows, then the next 10 cases by priority, at most 5 agents at a time, merged locally, then the census and the deck rebuild. Use when the owner asks for a gap round, for "the next 10 cases", or to "follow the process" on gaps.
+---
+
+# A gap round
+
+The policy lives in CLAUDE.md, under
+[choosing the gap cases to work on](../../../CLAUDE.md#choosing-the-gap-cases-to-work-on),
+and in the routes of
+[deciding what a refusal calls for](../../../docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
+This skill is the order in which a round runs them. The owner's request
+starts the round, and the round runs to the end without asking.
+
+- Commits and local merges on main need no approval. A push needs the
+  owner's instruction for that push.
+- A case blocked by a library or host function TScert does not model yet
+  gets a model of that function, written and checked against the policy
+  by Astra. The owner reviews the model before the push. A question goes
+  to the owner only when no principle decides it. It then takes one or two
+  sentences, naming the missing principle.
+- Every case of the round is closed: verified, or answered by a recorded
+  route. Leaving a case refused is a route only when that route decides
+  it, with its reason recorded.
+- Heavy runs (`make suite`, `make test`, `make census`, `run-cases.mts`
+  with no pattern) take the lock `<scratch>/heavy.lock`, where `<scratch>`
+  is the session's scratchpad. One census runs at a time.
+
+## 1. The diagnostic census
+
+On main, after `df -h` shows room, run under the lock:
+
+```sh
+make census DIAGNOSTIC=1
+```
+
+It prints the record's path. Its `ranking` groups the refusals by reason,
+with the functions and statements each affects.
+
+## 2. The reasons, confirmed from the record
+
+Read the record, not a new run. For each of the top reasons by blocked
+statements:
+
+- Read the refusal at its site in the census slices
+  (`<census dir>/tools/tools/slice-<file>-<fn>.mts`).
+- Confirm that the reason names one construct.
+- Split a reason that stands for several causes (a failed search, an
+  expression with no claimed type) by the functions it meets.
+- Count a refusal caused only by an earlier refusal toward that earlier
+  reason.
+- Drop a reason that only the diagnostic traversal produces, with what
+  showed it.
+- Mark the sites where TScert's own code discards what it knew. Those are
+  repaired in the code.
+
+Write the confirmed ranking to `<scratch>/round/ranking.md`: the reason,
+statements, functions, sites, the case showing it, and repair sites.
+
+## 3. A case example for each reason no case shows
+
+For each confirmed reason with no pipeline case, add the case: the
+smallest source with that refusal. Its header names the census functions
+it stands for, and `pipeline/cases.mts` gets its entry as a gap. Check
+that the case reproduces the census refusal (`run-cases.mts <name>`).
+Commit the cases, one record, glossary-checked. These are the round's
+step-1 cases.
+
+## 4. The next 10 cases, at most 5 agents at a time
+
+Take the 10 open cases of the ranking, in order of the statements they
+block. For each, start a background agent in its own worktree
+(`isolation: "worktree"`) with [brief.md](brief.md), the case's name,
+its reason and its sites from `ranking.md`. When an agent finishes, start
+the next case, keeping at most 5 running.
+
+When an agent reports:
+
+1. Review the branch. For new nontrivial rules, models of external code,
+   or changes of trust, Astra reviews `git diff main...HEAD` with the goal
+   stated (see the memories on Astra). On blocking findings, Astra
+   implements its fixes and a fresh Astra reviews the result.
+2. Check that the change is general and principled, and that it does not
+   restrict TScert to fit the mechanism.
+3. Merge onto main (fast-forward or cherry-pick). Keep both sides of an
+   append conflict in SOURCE-REWRITES.md or WORK.md. Then build on main.
+
+## 5. Verify main, then the census
+
+After the last merge, run under the lock:
+
+- `make suite` and `make test` on main. Each must pass.
+- `make census`, the verified census.
+
+Compare with the previous census on main:
+
+```sh
+node dev/census.mts report <before> <after>
+```
+
+Report every lost function as a regression. Fix it before the round ends,
+or report it to the owner as a regression with its cause. Record the
+movement in WORK.md's status table and commit it.
+
+## 6. The deck
+
+Rebuild the
+[gap-priorities deep dive](../../../docs/deep-dives/gap-priorities/deck.mts)
+from the diagnostic census of the new main (steps 1 and 2 again). Mark it
+since the version last approved
+([a revised deck](../../../docs/STYLE.md#a-revised-deck)). It goes through
+its two independent reviews before it reaches the owner.
+
+## The report
+
+Lead with the number: verified functions before → after (total, and of
+the original 499), with the functions lost and gained. Then one line per
+case: verified, answered by a route (which one), or open with what it
+needs. Then any model of external code the owner reviews before the push,
+and the state of the push.
