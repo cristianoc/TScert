@@ -72,7 +72,12 @@ against `typescript` 7.0.2.
   `Symbol.species` returns `Array`, whose `length` is a writable own data
   property, and whose elements 0–15 are getters on its prototype and 16
   onward own getters, all returning `this.at(i)`. It overrides `at` (a
-  non-integer index gives `undefined`) and `Symbol.iterator`. On a source
+  non-integer index gives `undefined`) and `Symbol.iterator`. Its `pos` and
+  `end` are getters of its prototype, without setters, reading its buffer;
+  `transformFlags` and `hasTrailingComma` are own data fields the
+  constructor leaves at 0 and `undefined`, a trailing comma's list
+  included, and no other code of the package names them
+  (`node.generated.js`). On a source
   file's `statements`: index 0 is no own key; `for…in`, `Object.keys`,
   `Object.entries` and an object spread enumerate the class's fields
   (`parent`, `view`, `sourceFile`, `_cursorIndex`, …) and no index; `5 in
@@ -539,6 +544,8 @@ $`v_0,\ldots,v_{n-1}`$ its elements:
 | `l.some/every/find/findIndex/forEach/indexOf(…)`             | `Array.prototype`'s algorithm over $`v_0,\ldots,v_{n-1}`$, the callback called with $`(v_i, i, l)`$                            |
 | `l.map/filter/flatMap/slice(…)`                              | a fresh ordinary array (`Array` species), built as from a dense array of the $`v_i`$                                           |
 | `l.at(i)`                                                    | $`v_i`$ for an integer $`0\le i<n`$, else `undefined` (a non-integer index included), within the contract `T \| undefined`     |
+| `l.pos`, `l.end`                                             | the list's start and end in its file's text, numbers fixed for the list's life                                                 |
+| `l.transformFlags`, `l.hasTrailingComma`                     | `0` and `undefined`, within the contracts `number` and `boolean \| undefined`                                                  |
 
 Each row is audited against `Array.prototype`'s algorithm on this receiver
 ([ECMA-262](REFERENCES.md#ecma-262)): `length` is an own data property the
@@ -548,7 +555,8 @@ returning the memoized node; `ArraySpeciesCreate` reads `constructor`
 (`RemoteNodeList`) and its `Symbol.species` (`Array`); a callback can
 neither write the list (getters without setters) nor change $`n`$, so the
 algorithm visits the indices it read at entry; a callback's exception
-propagates out of the method; writes throw. `"k" in l` is admitted as for
+propagates out of the method; writes throw. The member rows read the
+list's getters and fields, which nothing changes after its constructor. `"k" in l` is admitted as for
 any object: the model answers it by `%HasProperty%`, a Boolean that narrows
 nothing. Every other operation on a node list has the classification of
 [the operation table](HOST-FAMILIES.md#operations-and-their-obligations),
@@ -569,8 +577,32 @@ among them, and
 restricted value ([restricted values](HOST-FAMILIES.md#restricted-values)): every operation
 on which its model would not hold of a node list is stuck on it and carries
 an obligation excluding host values, which no type a node list can be held
-at meets, `unknown`, readonly arrays and readonly records included. The node list's own members (`pos`, `end`,
-`hasTrailingComma`, `transformFlags`) are not read.
+at meets, `unknown`, readonly arrays and readonly records included.
+
+The node list's own members are those `hostNodeListMembers`
+(`tools/compiler-api.mts`) states, each with its reviewed declaration:
+`NodeArray<T>` is the meet of the dense readonly array of `T` and the
+record
+
+```math
+\{\mathsf{readonly}\ \mathit{pos}\colon \mathsf{number};\ \mathsf{readonly}\ \mathit{end}\colon \mathsf{number};\ \mathsf{readonly}\ \mathit{hasTrailingComma}\colon \mathsf{boolean} \mid \mathsf{undefined};\ \mathsf{readonly}\ \mathit{transformFlags}\colon \mathsf{number}\}
+```
+
+so the model's node list is the dense readonly array of the $`v_i`$ that
+also owns these four keys, each holding its value for the list's life.
+None is a key `Array.prototype` provides, so the array's own-key exclusions
+(`constructor`, `toString`, `join`, `Symbol.toPrimitive`) still hold, and
+every other member is `ArrayProto`'s; the members' record adds no element,
+so the list's presence stays dense. Each member is a readonly view, so a
+write to one is refused (R1), `transformFlags` included, which the package
+declares writable (`invalid-compiler-api-node-list-flags-write`, run under
+Node). `hasTrailingComma`, declared optional, is present on every list
+holding `undefined`, so it is read as a required member at
+`boolean | undefined`, and a node list is no value of the exact reading of
+`{ readonly hasTrailingComma?: boolean }`, absent or a Boolean
+(`invalid-compiler-api-node-list-trailing-comma`, run under Node). The
+members are read as `compiler-api-node-list-members` and
+`blocker-compiler-api-node-list-metadata` read them.
 
 Each row of the table holds of a node list for the reasons above, which T4
 states and C4 runs: lengths around 16 (where index getters move from the
@@ -829,7 +861,11 @@ as regression evidence.
   reads and `tokenCache` absent, then a `Map` after `getTokenAtPosition`.
   For node lists of lengths 0, 1, 15, 16, 17 and 32, each transparent
   operation of the operation table runs, with callbacks that record their
-  arguments and their `this`:
+  arguments and their `this`, and each member `hostNodeListMembers` states,
+  declared as reviewed by its owner, is backed as stated (a prototype getter
+  without setter, or an own data property at 0 or `undefined`) and gives
+  the value it gave at the start; no JavaScript file of the package names
+  `transformFlags` or `hasTrailingComma` outside `RemoteNodeList`:
   - each row of the node-list table, and `Set`, `f.apply`, argument
     spread, and array destructuring with and without a rest;
   - a callback throwing at each index, a `map` callback throwing at each
@@ -885,7 +921,8 @@ the corpus runs are regression evidence, not proofs.
   description states (`footprints`).
 - **T4 (restricted values).** A host object behaves as the record of its
   stated members and a node list as the dense readonly array of its
-  elements under every transparent operation of
+  elements owning its stated members (`hostNodeListMembers`) under every
+  transparent operation of
   [the operation table](HOST-FAMILIES.md#operations-and-their-obligations), and this
   relation is preserved by every sequence of them, interleaved with client
   code, through any number of aliases, inside callbacks the operations run
@@ -903,7 +940,10 @@ the corpus runs are regression evidence, not proofs.
   of any value of its parameter types. Host values are objects, not callable,
   `typeof` gives `"object"` for them, and `Array.isArray` gives `true`
   exactly for node lists. Node lists are the only array-like host values;
-  their length and elements never change. A node list's iterator is a
+  their length, elements and stated members never change: `pos` and `end`
+  are getters reading the list's buffer, and `transformFlags` and
+  `hasTrailingComma` own data properties holding 0 and `undefined`, which
+  no code writes. A node list's iterator is a
   generator, which keeps its position in its own state: closing it (its
   `return`, called by a `break`, a destructuring or a throwing callback)
   runs no observable cleanup and leaves the list's relation to its model
@@ -979,7 +1019,6 @@ JavaScript and could be admitted with more machinery:
 |     | Limit                                                                   | What it refuses                                                     |
 | --- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | L1  | A guard outside the accepted syntax is refused at its use               | `isLeftHandSideExpression`, `isUnaryExpression` as narrowings       |
-| L2  | A node list is its model's readonly array: its own members are not read | `nodes.pos`, `nodes.transformFlags`                                 |
 | L3  | A namespace import is used only through member reads and qualified type names, each member one binding; a member stating a `this` parameter is not called through it | `const m = ts`, `ts[name]`, passing `ts`, `ts.f()` for `f(this: X)` |
 | L4  | A member whose reads give no one value for a node's life is refused at its read; one that allocates could be stated as a host operation returning a fresh array | Reading `node.jsDoc`, `sourceFile.tokenCache`  |
 | L5  | A host parameter of a branded type is refused; an opaque primitive type would admit the package's own values | Passing a `Path` back to `getSourceFileMetadataByPath` |

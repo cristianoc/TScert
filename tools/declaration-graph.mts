@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
+import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
@@ -108,8 +108,9 @@ export interface SeenDiagnostic {
  * mapped type, such as `Record<K, V>`, is that mapped type at the
  * reference's arguments. */
 export type LibraryType =
-  /** `dense`: the host package's node list, which has no hole. */
-  | { k: "array"; readonly: boolean; dense?: true }
+  /** `nodeList`: the host package's node list, which has no hole and owns
+   * the members `hostNodeListMembers` states. */
+  | { k: "array"; readonly: boolean; nodeList?: true }
   | { k: "mapped"; parameters: number; template: Mapped }
   /** A type the overlay of library types states (`library-types.mts`): a
    * reference to its definition, which takes no arguments. */
@@ -126,7 +127,9 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
-    return { k: "array", presence: library.dense ? "dense" : "readable", readonly: library.readonly, element, span };
+    const array: TypeTerm = { k: "array", presence: library.nodeList ? "dense" : "readable", readonly: library.readonly, element, span };
+    // A node list is that array met with the record of its own members.
+    return library.nodeList ? { k: "intersection", span, parts: [array, nodeListMembers(span)] } : array;
   }
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
@@ -1398,10 +1401,12 @@ export function collectDeclarations(file: string, options: {
       }
       // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
       // host type of its own, a node list read as a dense readonly array of
-      // its elements. Its heritage and members are not read.
+      // its elements met with the record of its own members, as the contract
+      // states them (`hostNodeListMembers`). Its heritage and declared members
+      // are not read.
       if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
           compilerApiFile(n.getSourceFile().fileName)))
-        return { k: "array", readonly: true, dense: true };
+        return { k: "array", readonly: true, nodeList: true };
       // `Array<T>` and `ReadonlyArray<T>` are the types `T[]` and
       // `readonly T[]` spell: the standard library's global interface,
       // whichever other files merge into it (Node's types add the heritage

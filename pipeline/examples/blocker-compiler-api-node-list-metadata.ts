@@ -1,5 +1,5 @@
-// A compiler node list needs its own metadata members represented beside its
-// readonly array view.
+// A compiler node list's own member `pos`, read through a union of two
+// lists, beside its readonly array view (COMPILER-API.md, "Node lists").
 // Census functions:
 // shadow-contracts.mts#rewriteSignature.
 import type { FunctionDeclaration } from "typescript/unstable/ast";

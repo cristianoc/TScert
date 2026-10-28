@@ -336,8 +336,9 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         when List.length (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) ys) = 1 ->
       constrain left (Atoms (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) ys))
       (* An array's elements: a readonly target reads them, so covariantly; a
-         writable one also takes writes, so both ways. *)
-      | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],
+         writable one also takes writes, so both ways. An array's own fields
+         (a node list's `pos`) constrain nothing at an array target. *)
+      | Atoms [Shape {elements=Some l;calls=[];indexes=[];_}],
       Atoms [Shape {elements=Some r;fields=[];calls=[];indexes=[]}]
         when List.length l.required=List.length r.required
           && List.length l.optional_elements=List.length r.optional_elements ->
@@ -347,7 +348,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
       (match l.rest,r.rest with Some x,Some y -> pair x y | _ -> ())
       (* A tuple at an array of any length: each of its positions is an
          element (`[string, number]` at `readonly T[]` gives `T` both). *)
-      | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],
+      | Atoms [Shape {elements=Some l;calls=[];indexes=[];_}],
       Atoms [Shape {elements=Some ({required=[];optional_elements=[];rest=Some y;_} as r);
                     fields=[];calls=[];indexes=[]}] ->
       List.iter (fun x -> constrain x y; if not r.readonly then constrain y x)

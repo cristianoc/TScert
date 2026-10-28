@@ -369,6 +369,34 @@ export function requestReading(type: TypeTerm): TypeTerm {
 }
 
 /** The host package's node list interface, read as a dense readonly array of
- * its elements (COMPILER-API.md, "Node lists in the model"), never through
- * its declaration. */
+ * its elements with the members `hostNodeListMembers` states
+ * (COMPILER-API.md, "Node lists in the model"), never through its
+ * declaration. */
 export const hostNodeList = "NodeArray";
+
+/** A node list's own members (COMPILER-API.md, "Node lists"; T4): each with
+ * the declaration that states it, as reviewed (`owner` the interface
+ * declaring it, `text` its declaration), what backs it on a
+ * `RemoteNodeList` (a prototype getter reading the list's buffer, or an own
+ * data field the constructor initializes and nothing writes), and the
+ * contract the model reads it at, readonly. `hasTrailingComma`, declared
+ * optional, is an own data field holding `undefined` on every list: it is
+ * read as present, at `boolean | undefined`. */
+export const hostNodeListMembers: readonly { name: string; owner: string; text: string;
+    backing: "getter" | "field"; contract: "number" | "boolean | undefined" }[] = [
+  { name: "pos", owner: "ReadonlyTextRange", text: "readonly pos: number;", backing: "getter", contract: "number" },
+  { name: "end", owner: "ReadonlyTextRange", text: "readonly end: number;", backing: "getter", contract: "number" },
+  { name: "hasTrailingComma", owner: "NodeArray", text: "hasTrailingComma?: boolean;", backing: "field", contract: "boolean | undefined" },
+  { name: "transformFlags", owner: "NodeArray", text: "transformFlags: number;", backing: "field", contract: "number" },
+];
+
+/** The record of a node list's own members, each a required readonly field
+ * at its contract, located at `span`: the model's node list is the dense
+ * readonly array of its elements met with this record. */
+export function nodeListMembers(span: TypeTerm["span"]): TypeTerm {
+  const atom = (name: "number" | "boolean" | "undefined"): TypeTerm => ({ k: "atom", name, span });
+  return { k: "object", stringIndex: null, calls: [], span, fields: hostNodeListMembers.map(m => ({
+    name: m.name, optional: false, readonly: true, span,
+    type: m.contract === "number" ? atom("number")
+      : { k: "union", parts: [atom("boolean"), atom("undefined")], span } })) };
+}

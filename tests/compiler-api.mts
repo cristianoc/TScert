@@ -26,11 +26,11 @@
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
 import assert from "node:assert/strict";
-import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compilerApiFamily, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostNodeListMembers, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
 import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
@@ -191,6 +191,57 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 // each transparent row gives the dense readonly array's answer, with
 // callbacks recording their arguments, throwing, re-entering and iterators
 // interleaved or left early; afterwards every row answers as at the start.
+// Each own member the contract states (`hostNodeListMembers`) is declared
+// as reviewed by its owner, and under Node is backed as stated: `pos` and
+// `end` by getters of the list's prototype chain, without setters, each
+// giving one integer; `hasTrailingComma` and `transformFlags` by own data
+// properties holding `undefined` and 0, before and after every row runs; in
+// the package's JavaScript only `RemoteNodeList` names those two fields.
+{
+  const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8");
+  for (const { name, owner, text } of hostNodeListMembers) {
+    const start = declarations.indexOf(`export interface ${owner}`);
+    const body = start < 0 ? "" : declarations.slice(start, declarations.indexOf("\n}", start));
+    assert.equal(body.split("\n").filter(line => line.trim() === text).length, 1,
+      `the node list member ${name} is declared by ${owner} as reviewed: ${text}`);
+  }
+  const generated = readFileSync(join(root, "dist", "api", "node", "node.generated.js"), "utf8");
+  const classStart = generated.indexOf("export class RemoteNodeList extends Array {");
+  const classBody = generated.slice(classStart, generated.indexOf("\n}\n", classStart));
+  assert.ok(classStart >= 0 && /^ {4}hasTrailingComma;$/m.test(classBody) && /^ {4}transformFlags = 0;$/m.test(classBody),
+    "RemoteNodeList declares hasTrailingComma uninitialized and transformFlags at 0");
+  const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory() ? files(join(dir, entry.name)) : entry.name.endsWith(".js") ? [join(dir, entry.name)] : []);
+  for (const file of files(join(root, "dist"))) {
+    const text = readFileSync(file, "utf8");
+    const outside = file.endsWith(join("api", "node", "node.generated.js"))
+      ? text.slice(0, classStart) + text.slice(classStart + classBody.length) : text;
+    assert.ok(!/hasTrailingComma|transformFlags/.test(outside), `${file} names no node list field outside RemoteNodeList`);
+  }
+}
+const nodeListMembersHold = (list: object, what: string): void => {
+  for (const { name, backing, contract } of hostNodeListMembers) {
+    const own = Object.getOwnPropertyDescriptor(list, name);
+    if (backing === "getter") {
+      // The first link of the list's prototype chain owning the key holds a
+      // getter without a setter.
+      const getter = (proto: unknown): boolean => {
+        if (typeof proto !== "object" || proto === null) return false;
+        const found = Object.getOwnPropertyDescriptor(proto, name);
+        return found ? found.get !== undefined && found.set === undefined : getter(Object.getPrototypeOf(proto));
+      };
+      assert.ok(own === undefined && getter(Object.getPrototypeOf(list)),
+        `${what}: ${name} is a prototype getter without setter`);
+    } else
+      assert.ok(own !== undefined && "value" in own && own.get === undefined && own.set === undefined,
+        `${what}: ${name} is an own data property`);
+    const value: unknown = Reflect.get(list, name);
+    assert.equal(Reflect.get(list, name), value, `${what}: two reads of ${name} give one value`);
+    assert.ok(contract === "number" ? typeof value === "number" && Number.isInteger(value)
+      : value === undefined || typeof value === "boolean", `${what}: ${name} meets ${contract}: ${String(value)}`);
+    if (backing === "field") assert.equal(value, contract === "number" ? 0 : undefined, `${what}: ${name} as the constructor leaves it`);
+  }
+};
 {
   const dir = runDirectory("tscert-nodelist-");
   for (const n of [0, 1, 15, 16, 17, 32]) {
@@ -202,8 +253,11 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     // The elements as indexed reads give them, before anything else runs.
     const elements: unknown[] = [];
     for (let i = 0; i < list.length; i++) elements.push(list[i]);
+    const metadata = hostNodeListMembers.map(m => Reflect.get(list, m.name));
     const rows = (): void => {
       assert.equal(list.length, n, `${what}: length`);
+      nodeListMembersHold(list, what);
+      assert.deepEqual(hostNodeListMembers.map(m => Reflect.get(list, m.name)), metadata, `${what}: its members as at the start`);
       const isArray: boolean = Array.isArray(list);
       assert.ok(isArray && typeof list === "object", `${what}: an array object`);
       elements.forEach((e, i) => assert.equal(list[i], e, `${what}: index ${i}`));
@@ -301,7 +355,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     assert.equal(list[0], elements[0], `${what}: the index unchanged`);
     rows();
   }
-  console.log("C4: node lists of lengths 0, 1, 15, 16, 17 and 32 answer every transparent row as dense readonly arrays");
+  console.log(`C4: node lists of lengths 0, 1, 15, 16, 17 and 32 answer every transparent row as dense readonly arrays; their ${hostNodeListMembers.length} own members are backed as stated and keep their values`);
 }
 
 // Reading rule 2 under Node: the members declared `any` are the abstract
@@ -676,6 +730,15 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(nodeListLast.lastElement), "the fixture exports lastElement");
   const emptyPattern = first(join(dir, "empty-pattern.ts"), "const {} = o;\n", Number(syntaxKind.ObjectBindingPattern));
   assert.equal(nodeListLast.lastElement(emptyPattern), undefined, "lastElement returns undefined on an empty pattern");
+  // A node list owns `hasTrailingComma` at `undefined`, outside the exact
+  // reading of an optional Boolean; its `transformFlags` takes a write.
+  const trailingComma = await fixture("invalid-compiler-api-node-list-trailing-comma");
+  assert.ok(unary(trailingComma.trailingHeld), "the fixture exports trailingHeld");
+  const declared = (): AstNode => first(join(dir, "declared.ts"), "function f(a, b,) {}\n", Number(syntaxKind.FunctionDeclaration));
+  assert.equal(trailingComma.trailingHeld(declared()), true, "a node list owns hasTrailingComma holding undefined");
+  const flagsWrite = await fixture("invalid-compiler-api-node-list-flags-write");
+  assert.ok(unary(flagsWrite.mark), "the fixture exports mark");
+  assert.equal(flagsWrite.mark(declared()), 1, "a node list's transformFlags takes the write");
   // Node guards on a `parent` that may be absent (HOST-FAMILIES.md,
   // "Undefined arguments"): each returns where `parent` is present and the
   // guard throws a `TypeError` where it is absent, a source file's; a
@@ -790,7 +853,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(holdsUndefined(record.names([entry], () => { entry.node = spreadMember; })),
     "the replaced node's name is undefined");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
+  console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; a node list owns hasTrailingComma holding undefined and its transformFlags takes a write; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
 }
 
 // C5: the compiler-provided objects the front end reads through open reads

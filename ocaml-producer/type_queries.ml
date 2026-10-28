@@ -316,7 +316,11 @@ let index_for (shape:shape) name =
 let rec field_type bounds declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
-      (* Any other key of an array is read from its prototype. *)
+      (* An array's own field (a regex match's `index`, a node list's
+         `pos`); any other key of an array is read from its prototype. *)
+      | Shape {elements=Some _;fields;_} when List.exists (fun (f:Semantic.field) -> f.name=name) fields ->
+        let f = List.find (fun (f:Semantic.field) -> f.name=name) fields in
+        if f.optional then union f.read (Atoms [Undef]) else f.read
       | Shape {elements=Some _;_} ->
         field_type bounds declarations seen (Atoms [Named (array_prototype,[])]) name
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with

@@ -301,6 +301,12 @@ let encode (proposal : Proposal_types.t) =
         @ (if bounds = [] then [] else ["bounds",Array bounds])
         @ (if resolution = [] then [] else ["resolution",Array resolution])
         @ (if variadic = [] then [] else ["variadic",Array variadic]))]))]
+    (* An array owning fields of its own beside its store (a regex match's
+       `index`, a node list's `pos`) is the meet of the array and the record
+       of those fields, whose row Lean builds from the operands'. *)
+    | Shape ({elements=Some _;fields=_::_;indexes=[];calls=[]} as shape) ->
+      [Meet [label_list (Atoms [Shape {shape with fields=[]}]);
+             label_list (Atoms [Shape {shape with elements=None}])]]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a

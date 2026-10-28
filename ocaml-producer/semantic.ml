@@ -197,6 +197,12 @@ let meet_objects a b = match a,b with
     else Some (Atoms [Shape {x with fields=x.fields @ y.fields;
       indexes=(match x.indexes with [] -> y.indexes | own -> own);
       calls=x.calls @ y.calls}])
+  | Atoms [Shape ({elements=Some _;_} as x)],Atoms [Shape ({elements=None;_} as y)]
+  | Atoms [Shape ({elements=None;_} as y)],Atoms [Shape ({elements=Some _;_} as x)]
+    when x.calls=[] && y.calls=[] && x.indexes=[] && y.indexes=[] && y.fields <> [] ->
+    let names = List.map (fun (f:field) -> f.name) (x.fields @ y.fields) in
+    if List.length names <> List.length (List.sort_uniq compare names) then None
+    else Some (Atoms [Shape {x with fields=x.fields @ y.fields}])
   | _ -> None
 let top = Atoms [Top]
 (* The key the model reserves for a host object (COMPILER-API.md, "Restricted
@@ -270,9 +276,10 @@ let array elements = Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some e
    declared type, not a separate arity record. *)
 (* The positions a rest parameter stands for: the required elements of the
    tuple its arguments are collected into. A contract with optional or
-   unbounded positions is not a fixed number of further arguments. *)
+   unbounded positions is not a fixed number of further arguments. Own fields
+   are separate from the element sequence. *)
 let tuple_positions ?(readonly=false) = function
-  | Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some s}]
+  | Atoms [Shape {indexes=[];calls=[];elements=Some s;_}]
     when s.optional_elements=[] && s.rest=None && (readonly || not s.readonly) -> Some s.required
   | _ -> None
 
@@ -287,10 +294,13 @@ let array_element ?(readonly=false) = function
 
 (* The values a spread of such an array passes: its element, and `undefined`
    for a hole where its presence is sparse; a dense or readable store's holes
-   read at the element (Lean's `SpreadsInto`). *)
-let spread_element ?(readonly=false) t = match t, array_element ~readonly t with
-  | Atoms [Shape {elements=Some s;_}], Some element ->
-    Some (if s.presence = Sparse then union element (Atoms [Undef]) else element)
+   read at the element (Lean's `SpreadsInto`). Own fields are separate from
+   the element sequence. *)
+let spread_element ?(readonly=false) = function
+  | Atoms [Shape {indexes=[];calls=[];elements=Some s;_}]
+    when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) ->
+    Option.map (fun element ->
+      if s.presence = Sparse then union element (Atoms [Undef]) else element) s.rest
   | _ -> None
 
 let rec admits_undefined = function

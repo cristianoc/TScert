@@ -4327,7 +4327,7 @@ control(async (): Promise<void> => {
   const project = tsconfigOf(join(import.meta.dirname, "host-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/host-fixture-project",
-    digest: "9d2da7d1428fb185d589e2d72425e34dd96dacebafb443d2c8c37202424bb3da" },
+    digest: "1f729218dade5923e3787adb29cda54fc8b923d88f0b35892b11fa70d5ec42fe" },
     omitted: compilerApiFamily.omitted.filter(m => m.member === "jsDoc") }]);
   try {
     for (const [form, refusal] of [
@@ -4351,7 +4351,7 @@ control(async (): Promise<void> => {
       const kind = must(definition.expression.fields.find(f => f.name === "kind"), "Node's kind");
       definition.expression.fields.push({ ...kind, name: "jsDoc", optional: true, type: { k: "atom", name: "unknown", span: kind.span } });
     });
-    // Node lists: read as dense readonly arrays; their own members unread.
+    // Node lists: read as dense readonly arrays owning their stated members, each readonly.
     const rows = check(example("host-fixture-node-list"), project);
     assert.equal(rows.status, "verified", JSON.stringify(rows));
     const written = check(example("invalid-host-fixture-node-list-write"), project);
@@ -4393,7 +4393,7 @@ control(async (): Promise<void> => {
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, a write to its member refused; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional\n");
 });
 
 control(async (): Promise<void> => {
