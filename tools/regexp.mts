@@ -209,6 +209,7 @@ export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
  * `RegExpExecArray` and `RegExpMatchArray` the conservative match views, a
  * supertype of each declaration with its element type corrected (TypeScript
  * types every capture `string`). `null` for another name. */
+export const libraryRegExpNames: readonly string[] = ["RegExp", "RegExpExecArray", "RegExpMatchArray"];
 export function libraryRegExpTerm(name: string, keys: () => RegExpKeys): TypeTerm | null {
   return name === "RegExp" ? structuralRegExp(keys())
     : name === "RegExpExecArray" ? execResult(null)

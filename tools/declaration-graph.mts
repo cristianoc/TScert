@@ -31,7 +31,7 @@ import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, global
 import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
 import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
-import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
+import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
@@ -3448,6 +3448,28 @@ export function collectDeclarations(file: string, options: {
           defineOverlay(stated.definition);
           const id = stated.definition.declaration;
           return { k: "reference", reference: { name: id.name, span, arguments: [], target: id }, args: [], span };
+        }
+        // A standard library interface the overlay does not state
+        // (`ReadonlySet<string>`, `Map<K, V>`): its merged declarations, as
+        // a written reference to it reads them (`lookup`), at the arguments
+        // TypeScript instantiates, its defaults' included. The library's
+        // regex types are read below, as `regexp.mts` states them, and its
+        // arrays as arrays are, whatever reaches them here (a callable's rest).
+        // The name's value, a constructor's `declare var` (`Map`), is its
+        // other meaning, which the type does not denote.
+        const libraryInterfaces = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+        if (symbol && libraryInterfaces.length && !type.getAliasSymbol() &&
+            nodes.every(n => !!n && (ts.isInterfaceDeclaration(n) || ts.isVariableDeclaration(n)) &&
+              libraryFile(n.getSourceFile())) &&
+            !libraryRegExpNames.includes(symbol.name) && symbol.name !== "Array" && symbol.name !== "ReadonlyArray") {
+          const declared = declarationOf(libraryInterfaces, text());
+          const actuals = isTypeReference(type) ? checker.getTypeArguments(type) : [];
+          const args = actuals.map(argument => contextualTerm(argument, span));
+          if (args.length !== parametersOf(declared).length)
+            throw Error(`the contextual type ${text()} does not state every declaration argument`);
+          contextualStarts.push({ node: declared, span });
+          return { k: "reference", reference: { name: symbol.name, span, arguments: args.map(() => span),
+            target: identityOf(declared) }, args, span };
         }
         if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
           if (ts.isClassDeclaration(node) && !isInstanceReference(type))

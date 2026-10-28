@@ -2609,7 +2609,16 @@ the declaration read as written with each binder at its argument, so
 name of a program's declaration, an alias of a union included, is read as
 that reference, before its structure: a recursive alias such as `Json`
 closes at its name (`closure-contextual-recursive-alias`), and a type reached
-again within its own structure through no declaration's name is refused. A type literal or mapped type the
+again within its own structure through no declaration's name is refused. A
+standard library interface the overlay of library types does not state, such
+as `ReadonlySet<string>` or `Map<string, string>`, is read as a written
+reference to it is: its merged declarations, at every argument TypeScript
+instantiates, a defaulted one's included, so `Iterator<number>`, at
+`Iterator<number, any, any>`, is refused (`blocker-closure-map-context`,
+`closure-contextual-library-default-refused`). Its arguments are kept: a
+parameter at `Map<string, string>` passed where a `Map<string, string | number>`
+is expected is refused, though method bivariance lets TypeScript accept it
+(`invalid-closure-contextual-library-interface`, run under Node). A type literal or mapped type the
 program writes is read as written, by the annotation reader, where
 TypeScript gives it outside any generic declaration or at its declaration's
 own binders. Any other record (an object literal's type, a library mapped
