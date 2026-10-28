@@ -1,5 +1,5 @@
-// A tag value no declaration states, the JavaScript typedef's, has the base
-// declaration's shape (the table's `base` rule), which states no `name`.
+// The JavaScript typedef's kind, which no declaration states, has its
+// audited shape (COMPILER-API.md, "Audited shapes"), which states `name`.
 import * as ts from "typescript/unstable/ast";
 
 export function nameOf(n: ts.Node): ts.Node | undefined {

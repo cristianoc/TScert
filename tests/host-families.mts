@@ -5,6 +5,7 @@
 // different tags stay separate arms, where a generic whose tag alone varies
 // merges them into one arm at their tag set; a residual keeps the members
 // every replaced shape has, optional where one is; a refinement is no shape;
+// an audited shape is its tag's shape and a member of what its bases reach;
 // and a name two unrelated bases state is refused. A tag enum object with a
 // reverse key missing, inherited, an accessor, a number, naming a member of
 // another value, or beside an extra key, is no emitted enum object.
@@ -140,6 +141,30 @@ assert.throws(() => familyTable({ ...description,
 assert.throws(() => familyTable({ ...description,
   footprints: [{ owner: "Base", member: "note", text: "readonly note: string;", kind: "empty" }] }, graph(interfaces)),
   /the method Base\.note whose footprint the family states is not declared as reviewed/);
+// An audited shape (HOST-FAMILIES.md, "The family description") for a tag
+// no declaration states: its bases' members and its own, each read at its
+// owner as reviewed; a member of what its bases reach, not of its members'
+// owners. One for a tag a declaration states, or at another text, is
+// refused.
+const auditedF = { kind: "F", bases: ["Base"], members: [{ owner: "Lit", member: "x", text: "readonly x: number;" }] };
+const auditing = familyTable({ ...description,
+  table: [{ rule: "literal" }, { rule: "audited", shapes: [auditedF] }, { rule: "generic", declarations: ["Tok", "Tagged"] }, { rule: "base", declaration: "Base" }] },
+  graph(interfaces));
+const five = auditing.shapes.get(5);
+assert.ok(five?.rule === "audited", "the audited shape is the tag's shape");
+assert.deepEqual(auditing.sourceMembers(five).map(f => `${f.owner.name.text}.${f.name}`), ["Lit.x", "Base.note", "Node.kind", "Node.parent"]);
+assert.deepEqual(auditing.membersOf(lit), [4], "an audited shape is no member of its members' owners");
+const base = byName("Base");
+assert.ok(base, "the fixture's Base");
+assert.deepEqual(auditing.membersOf(base), [0, 1, 2, 3, 4, 5], "an audited shape is a member of what its bases reach");
+const [auditedArm] = auditing.arms(node, new Set([5]));
+assert.ok(auditedArm?.k === "synthetic" && auditedArm.values.join() === "5", "an audited shape's arm at its tag");
+assert.deepEqual(auditedArm.fields.map(f => `${f.name}${f.optional ? "?" : ""}`), ["x", "note?", "parent"]);
+assert.throws(() => familyTable({ ...description, table: [{ rule: "literal" }, { rule: "audited", shapes: [{ ...auditedF, kind: "E" }] }] }, graph(interfaces)),
+  /the tag E has an audited shape and a literal declaration/);
+assert.throws(() => familyTable({ ...description, table: [{ rule: "audited", shapes: [{ ...auditedF,
+  members: [{ owner: "Lit", member: "x", text: "readonly x: string;" }] }] }, { rule: "base", declaration: "Base" }] }, graph(interfaces)),
+  /the audited shape F states Lit\.x, which is not declared as reviewed/);
 closeParser();
 
 // A generic shape with a parameter beside its tag parameter, which the
@@ -193,7 +218,7 @@ export interface Both extends Left, Right { readonly kind: K.A; }
 }
 console.log("family interpreter: a tag-only generic merged at its tag set, a tag-dependent one kept per tag; " +
   "a residual's common members; a refinement no shape; a stable-member exclusion as reviewed, and one naming no member or another text refused; " +
-  "an omitted member no member, one at another text refused; " +
+  "an omitted member no member, one at another text refused; an audited shape at its tag, a member of what its bases reach, one for a declared tag or at another text refused; " +
   "a generic with a parameter beside its tag, and an unrelated inherited name, refused");
 
 // A tag enum's runtime object (`enumObjectMatches`, HOST-FAMILIES.md,

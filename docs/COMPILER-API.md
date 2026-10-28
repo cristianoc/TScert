@@ -438,8 +438,9 @@ in the syntax. `isLeftHandSideExpression` and `isUnaryExpression`
 
 A node guard's call refines its argument by the guard's kind set
 ([calls](HOST-FAMILIES.md#calls)): `isTypeAliasDeclaration(n)` refines `n`
-to `TypeAliasDeclaration`'s shape or `JSTypeAliasDeclaration`'s base shape,
-so reading `n.name` after it is refused, and `isExpression(n)` to the 46
+to `TypeAliasDeclaration`'s shape or `JSTypeAliasDeclaration`'s
+[audited shape](#audited-shapes), so `n.typeParameters` after it is read on
+both arms and `n.kind` is either kind, and `isExpression(n)` to the 46
 kinds the implementation accepts. A tag guard's call on a binding of a
 `SyntaxKind` (`isAdditiveOperator(op)`) is the membership test of the binding
 itself, which refines it on both edges.
@@ -468,6 +469,37 @@ field and narrows no type. Three are members a kind inherits
 (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
 `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
 only a member-complete shape states per kind.
+
+## Audited shapes
+
+A kind no declaration states as its literal gets an audited shape where the
+review states one ([the family description](HOST-FAMILIES.md#the-family-description)),
+and `NodeBase`'s otherwise. `JSTypeAliasDeclaration` (345) has one: in a
+JavaScript file the parser reparses each JSDoc `@typedef` and `@callback`
+into a node of that kind, a statement of its file's or its block's
+`statements`. Its shape extends `DeclarationBase`, `StatementBase` and
+`ModifiersBase` and states `TypeAliasDeclaration`'s `name: Identifier`,
+`typeParameters?: NodeArray<TypeParameterDeclaration>` and `type: TypeNode`,
+each read at that declaration; its `kind` is 345. So it is a member of
+`Node`, `Statement` and `Declaration`, and no value of type
+`TypeAliasDeclaration` has it.
+
+The audit of the runtime getters: a node of every kind is a `RemoteNode`,
+whose child getters (`name`, `typeParameters`, `type`, `modifiers`) each
+read through the kind's child list (`getNamedChild`,
+`dist/api/node/node.generated.js:293-304`), absent where the node's child
+mask lacks the child; the list of 345 is `TypeAliasDeclaration`'s,
+`modifiers`, `name`, `typeParameters`, `type`
+(`dist/api/node/protocol.generated.js:40-41`); `flags` reads the node's
+record and `modifierFlags` folds `modifiers`
+(`node.generated.js:821-833`), as for every kind. A present
+`typeParameters` is a node list, of the [node lists'](#node-lists)
+contract, whose elements are `TypeParameter` nodes. C3 checks the shape's members on every node of kind 345
+of its corpus, `tests/node-shapes-corpus/script.js` holding `@typedef` and
+`@callback` tags with and without `@template`, at the top level and in a
+function's block: each required member present, each member within its
+declared type, `typeParameters` a dense list of `TypeParameter` nodes where
+present, and each member held by some node.
 
 ## Node lists
 
@@ -766,7 +798,8 @@ as regression evidence.
   each node's JSDoc included: it fails on a property a kind's flattened
   shape states required, not admitting `undefined` (inherited and generic
   components included), that a node of that kind lacks and no correction
-  covers. It checks the presence of every checked required property, not
+  covers, and, for an [audited shape](#audited-shapes), on a member outside
+  its declared type or one no node holds. Beyond audited shapes, it checks the presence of every checked required property, not
   required methods, member types, children's kinds or stability: presence
   regression evidence, not a completeness proof, and its coverage is the
   corpus's, so a member absent only in a form the corpus does not contain
@@ -833,7 +866,13 @@ the corpus runs are regression evidence, not proofs.
   object whose prototype chain carries $`\kappa_{\mathit{RemoteNode}}`$ has a
   `kind` in $`\mathcal K`$, the members $`S_k`$ states for it, and the
   marker `"RemoteNode"` under `[[host]]` in its model value; its stable
-  members, required and optional, keep their values for its life.
+  members, required and optional, keep their values for its life. For
+  `JSTypeAliasDeclaration` (345), which no declaration states,
+  $`S_{345}`$ is its [audited shape](#audited-shapes): `TypeAliasDeclaration`'s
+  `name`, `typeParameters` (absent, or a dense readonly node list of
+  `TypeParameterDeclaration`) and `type` at kind 345, with the members of
+  `DeclarationBase`, `StatementBase` and `ModifiersBase`; the review of the
+  package's getters states it, and C3 is its regression evidence.
 - **T1′ (marker to invariant).** F1′ for the marker `"RemoteNode"`.
 - **T2 (guards).** F3 and F5 for the description's guard table.
 - **T3 (node methods).** The node methods make no server request, run no
@@ -927,7 +966,7 @@ Behaviours excluded because soundness needs it:
 | --- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1  | No client write to a member of a host type                                        | Mutating compiler objects: `list.transformFlags = 1`, `sourceFile.tokenCache = …`, `list.length = 0`, writes through any writable declared member or structural alias            |
 | R2  | No client value meets a host type; host values come only from the package, and no value of its node builders (`hostNodeBuilders`: the factory, the clones, the visitors) is read | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); a node the factory, a clone or a visitor builds, whose root lacks `parent` (`invalid-compiler-api-node-factory`, `invalid-compiler-api-node-clone`, `invalid-compiler-api-node-jsdoc-visitor`, `invalid-compiler-api-node-jsdoc-visitor-namespace`, `invalid-compiler-api-node-jsdoc-visitor-reexport`, run under Node; the handwritten visitors are refused through subpath imports, AST namespace imports and program re-exports) |
-| R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds; relying on `isExpression` matching the declarations' category       |
+| R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds (`invalid-compiler-api-js-alias`); relying on `isExpression` matching the declarations' category |
 | R4  | A host enum type at a package position is `number`                                | Exhaustive reasoning over flag values (`switch (node.flags)` with a case per member and no default)                                                                              |
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
@@ -947,8 +986,11 @@ JavaScript and could be admitted with more machinery:
 | L6  | A host class member outside its named view is refused at its use        | Calling a `Checker` method the view does not list                   |
 | L7  | A merge's accumulator needs a type excluding host values, which a fresh copy's type states only through a field, a closed bound or an index | A spread after a spread of a value whose copy states none (`{ ...c, n: 1 }` with `c` holding only private fields); a key-adding write on a local annotated by optional fields alone (`const o: { a?: number } = {}; o.a = 3`) |
 
-Under R3, a member the JavaScript kinds lack is refused after
-`isTypeAliasDeclaration` or `isImportDeclaration`, while the kind test
+Under R3, the true edge of `isTypeAliasDeclaration` holds both kinds, so it
+reads the members both shapes state (`blocker-type-alias-guard-member`) and
+does not establish `TypeAliasDeclaration` itself; a member
+`JSImportDeclaration`'s base shape lacks is refused after
+`isImportDeclaration`. The kind test
 (`n.kind === SyntaxKind.TypeAliasDeclaration`) narrows exactly; on a
 JavaScript file the guard accepts `JSTypeAliasDeclaration` and the kind test
 rejects it. The front end reads TypeScript files only: its parser refuses a

@@ -37,9 +37,9 @@ export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node
 
 /** Whether `node` is a type alias declaration of a TypeScript file, by its
  * kind. The compiler's `isTypeAliasDeclaration` also accepts a JavaScript
- * file's JSDoc `@typedef` (`JSTypeAliasDeclaration`, a kind of its own),
- * which the compiler-API contract describes by the members every node has
- * (COMPILER-API.md, "The node invariant"). It changes nothing, which its
+ * file's JSDoc `@typedef` (`JSTypeAliasDeclaration`, a kind of its own,
+ * COMPILER-API.md, "Audited shapes"), so its true edge gives no
+ * `TypeAliasDeclaration`; this test's does. It changes nothing, which its
  * promise's type states (SOURCE-ELABORATION.md, "Stated effects"). */
 export function isTypeAlias(node: Node): node is Within<{ value: "keep"; store: "keep" }, TypeAliasDeclaration> {
   return node.kind === ts.SyntaxKind.TypeAliasDeclaration;

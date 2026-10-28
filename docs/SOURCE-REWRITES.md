@@ -573,14 +573,14 @@ The front end recognised a type alias declaration with the compiler's
 `ts.isTypeAliasDeclaration(node)` and then read its members
 (`node.typeParameters`, `node.name`). The guard also accepts a JavaScript
 file's `@typedef` (`JSTypeAliasDeclaration`), and is read by what its code
-accepts ([guard recognition](HOST-FAMILIES.md#guard-recognition)); the
-compiler-API contract describes that kind by the members every node has, so
-each such read was refused ("missing field typeParameters", "missing field
-name"; the diagnostic census of b81675f reports it in 33 functions, among
-them `typeTerm`'s callers in `tools/type-term.mts`, `computedType`,
-`makeProbe` and `lowerFile`). The front end reads TypeScript files only,
-where the guard and the kind test accept the same nodes
-([restrictions](COMPILER-API.md#restrictions)).
+accepts ([guard recognition](HOST-FAMILIES.md#guard-recognition)), so its
+true edge holds both kinds: it reads the members both shapes state
+([audited shapes](COMPILER-API.md#audited-shapes)) and gives no
+`TypeAliasDeclaration` (the diagnostic census of b81675f reports the
+guard's reads in 33 functions, among them `typeTerm`'s callers in
+`tools/type-term.mts`, `computedType`, `makeProbe` and `lowerFile`). The
+front end reads TypeScript files only, where the guard and the kind test
+accept the same nodes ([restrictions](COMPILER-API.md#restrictions)).
 
 - **Rewrite:** `isTypeAlias(node): node is Within<{ value: "keep"; store:
   "keep" }, TypeAliasDeclaration>` of `tools/syntax.mts` tests
@@ -596,8 +596,8 @@ where the guard and the kind test accept the same nodes
   reads, where the compiler's guard accepts more kinds than that one.
 - **Functions:** `isTypeAlias`, and the 33 functions reading an alias's
   members after the guard; `compiler-api-alias-kind-guard` is the guard
-  and its reads as a case, and `blocker-type-alias-guard-member` the
-  refused read after `ts.isTypeAliasDeclaration`.
+  and its reads as a case, and `blocker-type-alias-guard-member` a read of
+  a member both kinds state after `ts.isTypeAliasDeclaration`.
 - **Commit:** the introducing commit, `A type alias is recognised by its kind, excluding the JSDoc typedef`.
 
 ### A binder bounded by a record with a writable field

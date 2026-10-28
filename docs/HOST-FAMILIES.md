@@ -55,6 +55,13 @@ It states:
     declarations that extend another candidate with the same tag;
   - `generic`: the meet of the named generic declarations whose tag
     parameter's bound admits $`t`$, instantiated at $`t`$;
+  - `audited`: for a tag value no declaration states as its literal, a
+    shape the review states: its bases, declarations of the family, and
+    its members, each a property a named declaration states, with the
+    text it was reviewed against. Its members are those of an interface
+    extending the bases and declaring the members, each read at the
+    declaration stating it, and its tag is $`t`$; it is a member of every
+    declaration its bases reach, and of no other;
   - `base`: a named declaration;
 - **corrections:** the audited members the declarations state required and
   the runtime leaves absent, each read as optional, with its text;
@@ -337,7 +344,10 @@ correction or flattening, by the root's form: for an **inheritance root**, the $
 $`I_t`$ reaches $`A`$ through `extends` clauses; for a **union root**, an
 alias of a union of declarations, the $`t`$ whose $`I_t`$ the union of $`A`$
 reaches through aliases. An alias of a family type is that type. A concrete
-union (`Identifier | PrivateIdentifier`) is read as declared.
+union (`Identifier | PrivateIdentifier`) is read as declared. Where the
+table's `audited` rule gives $`t`$'s shape, $`I_t`$ is the interface that
+shape describes, extending its bases and declaring its members, each read at
+the declaration stating it: it reaches what its bases reach.
 
 The members of a shape are read only as readonly views and optional readonly
 members, never as invariant fields: an invariant field's record admits no
@@ -1516,7 +1526,9 @@ The description of `typescript` 7.0.2's syntax trees
   `generic` over `Token<k>`, `KeywordTypeNode<k>` and `KeywordExpression<k>`,
   every generic node declaration (the last gives `null`, `true`, `false`,
   `this`, `super` and `import`, which the declarations make expressions);
-  `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
+  `audited` for `JSTypeAliasDeclaration`
+  ([audited shapes](COMPILER-API.md#audited-shapes));
+  `base` `NodeBase` (`JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
 - omitted members: `Node.jsDoc`, which builds a fresh array on each read,

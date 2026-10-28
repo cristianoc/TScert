@@ -72,6 +72,24 @@ export const compilerApiFamily: FamilyDescription = {
   tag: { field: "kind", primitive: "number", constants: { enum: "SyntaxKind" } },
   table: [
     { rule: "literal" },
+    // A JavaScript file's JSDoc `@typedef` or `@callback`, which the parser
+    // reparses into a statement of kind `JSTypeAliasDeclaration` (345), of
+    // its file's or its block's `statements`, and which no declaration
+    // states (COMPILER-API.md, "Audited shapes"). Its runtime object is a
+    // `RemoteNode`, whose child getters read through the kind's child list
+    // (`node.generated.js:293-304`); the list of 345 is
+    // `TypeAliasDeclaration`'s, `modifiers`, `name`, `typeParameters` and
+    // `type` (`protocol.generated.js:40-41`), and `modifierFlags` and `flags`
+    // are computed from them and the node's record (`node.generated.js:821-833`)
+    // as for every kind. So it has `TypeAliasDeclaration`'s members at its own
+    // kind, and is a statement and a declaration as that one is.
+    { rule: "audited", shapes: [
+      { kind: "JSTypeAliasDeclaration", bases: ["DeclarationBase", "StatementBase", "ModifiersBase"], members: [
+        { owner: "TypeAliasDeclaration", member: "name", text: "readonly name: Identifier;" },
+        { owner: "TypeAliasDeclaration", member: "typeParameters", text: "readonly typeParameters?: NodeArray<TypeParameterDeclaration>;" },
+        { owner: "TypeAliasDeclaration", member: "type", text: "readonly type: TypeNode;" },
+      ] },
+    ] },
     { rule: "generic", declarations: ["Token", "KeywordTypeNode", "KeywordExpression"] },
     { rule: "base", declaration: "NodeBase" },
   ],

@@ -633,6 +633,13 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(alias.aliasKind), "the fixture exports aliasKind");
   const typedef = first(join(dir, "typedef.js"), "/** @typedef {string} Name */\nexport {};\n", 345);
   assert.equal(alias.aliasKind(typedef), 345, "aliasKind returns 345 on a @typedef");
+  // `blocker-type-alias-guard-member` reads `typeParameters` on both arms
+  // of the guard: the audited shape of kind 345 states it.
+  const members = await fixture("blocker-type-alias-guard-member");
+  assert.ok(unary(members.arity), "the fixture exports arity");
+  assert.equal(members.arity(typedef), 0, "arity is 0 on a @typedef without @template");
+  const templated = first(join(dir, "templated.js"), "/**\n * @template T, U\n * @typedef {{ a: T, b: U }} Pair\n */\nexport {};\n", 345);
+  assert.equal(members.arity(templated), 2, "arity is 2 on a @typedef with two @template tags");
   const argument = await fixture("compiler-api-guard-argument");
   assert.ok(unary(argument.counted), "the fixture exports counted");
   const name = first(join(dir, "name.ts"), "export const x = y;\n", Number(syntaxKind.Identifier));
@@ -776,5 +783,5 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(holdsUndefined(record.names([entry], () => { entry.node = spreadMember; })),
     "the replaced node's name is undefined");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
+  console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
 }

@@ -1,6 +1,8 @@
 // A member of a type alias read after `isTypeAliasDeclaration`, which also
-// accepts a JSDoc `@typedef` (kind 345), whose node the compiler-API
-// contract states at the base node shape alone.
+// accepts a JSDoc `@typedef` (kind 345): the compiler-API description's
+// audited shape of `JSTypeAliasDeclaration` states its `typeParameters`, as
+// `TypeAliasDeclaration` does, so the read is of a member both arms state.
+// Under Node, on a `@typedef` with two `@template` tags, it returns 2.
 // Census functions:
 // type-term.mts#typeTerm, type-term.mts#mapped, type-term.mts#expandMapped,
 // type-term.mts#computedAlias, type-term.mts#members, type-term.mts#signatures,

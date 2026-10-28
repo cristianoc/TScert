@@ -8,7 +8,10 @@
 // optional, reads one value twice in a row and again after the entry point's
 // token functions have run over its file (absent stays absent); a member
 // no prototype getter backs is the own `parent` or one of a reviewed list.
-// Methods, member types and children's kinds are not checked here: this is
+// An audited shape's members (COMPILER-API.md, "Audited shapes") are checked
+// further: on every node of its kind each is within its declared type, and
+// each is held by some node. Methods, and other shapes' member types and
+// children's kinds, are not checked here: this is
 // regression evidence over the corpus, not a completeness proof. The shapes are the
 // family table's (`tools/host-families.mts`) over the installed package's
 // declarations, resolved by name; the corpus is the repository's own sources
@@ -110,7 +113,7 @@ const required = (k: TagValue): FlatMember[] => {
   const known = requiredAt.get(k);
   if (known) return known;
   const source = table.shapes.get(k);
-  const flat = !source ? [] : source.rule === "generic" ? source.declarations.flatMap(table.flatten) : table.flatten(source.declaration);
+  const flat = source ? table.sourceMembers(source) : [];
   const result = flat.filter((f) => f.name !== compilerApiFamily.tag.field && !table.optional(f, [k]) &&
     f.members.every((m) => ts.isPropertySignatureDeclaration(m) && !admitsUndefined(m.type)));
   requiredAt.set(k, result);
@@ -144,6 +147,34 @@ const getter = (node: object, name: string): boolean => {
   }
   return false;
 };
+// The audited shapes (COMPILER-API.md, "Audited shapes"), which no
+// declaration states: each member's value on every node of its kind is
+// absent where the member is optional, and otherwise within its declared
+// type: a reference to a node declaration by its tags, through aliases and
+// unions, and `NodeArray<X>` a dense array of values within `X`.
+const auditedMembers = new Map<TagValue, { name: string; member: ts.PropertySignatureDeclaration }[]>();
+for (const [k, source] of table.shapes)
+  if (source.rule === "audited")
+    auditedMembers.set(k, source.shape.members.flatMap((m) => {
+      const member = interfaces.get(m.owner)?.members.find((x) => memberName(x) === m.member);
+      return member && ts.isPropertySignatureDeclaration(member) ? [{ name: m.member, member }] : [];
+    }));
+const within = (type: ts.TypeNode, value: unknown, seen: ReadonlySet<string> = new Set()): boolean => {
+  if (ts.isUnionTypeNode(type)) return type.types.some((t) => within(t, value, seen));
+  if (ts.isParenthesizedTypeNode(type)) return within(type.type, value, seen);
+  if (!ts.isTypeReferenceNode(type) || !ts.isIdentifier(type.typeName) || seen.has(type.typeName.text)) return false;
+  const name = type.typeName.text;
+  const [element] = type.typeArguments ?? [];
+  if (name === "NodeArray")
+    return !!element && Array.isArray(value) &&
+      Array.from({ length: value.length }, (_, i) => i).every((i) => i in value && within(element, Reflect.get(value, i), seen));
+  const declaration = interfaces.get(name);
+  if (declaration) return isNode(value) && table.tagsOf(declaration).includes(value.kind);
+  const alias = aliases.get(name);
+  return !!alias && within(alias.type, value, new Set([...seen, name]));
+};
+const auditedOutside = new Map<string, number>();
+const auditedHeld = new Set<string>();
 const unstable = new Map<string, number>();
 const unbackedSeen = new Set<string>();
 let reads: number = 0;
@@ -159,7 +190,7 @@ for (const path of corpus) {
     nodes++;
     seenKinds.add(node.kind);
     const source = table.shapes.get(node.kind);
-    const flat = !source ? [] : source.rule === "generic" ? source.declarations.flatMap(table.flatten) : table.flatten(source.declaration);
+    const flat = source ? table.sourceMembers(source) : [];
     for (const f of flat) if (Reflect.get(node, f.name) !== undefined) held.add(`${node.kind}.${f.name}`);
     for (const f of flat) {
       if (!f.members.every(ts.isPropertySignatureDeclaration) || !table.stable(f)) continue;
@@ -169,6 +200,14 @@ for (const path of corpus) {
         unstable.set(`${graph.constantName(node.kind)}.${f.name}`, (unstable.get(`${graph.constantName(node.kind)}.${f.name}`) ?? 0) + 1);
       observed.push([node, f.name, first]);
       if (!getter(node, f.name) && !brand(f)) unbackedSeen.add(f.name);
+    }
+    for (const { name, member } of auditedMembers.get(node.kind) ?? []) {
+      const value: unknown = Reflect.get(node, name);
+      if (value !== undefined) auditedHeld.add(`${node.kind}.${name}`);
+      const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
+      if ((value === undefined && optional) || (member.type && within(member.type, value))) continue;
+      const key = `${graph.constantName(node.kind)}.${name}`;
+      auditedOutside.set(key, (auditedOutside.get(key) ?? 0) + 1);
     }
     for (const f of required(node.kind))
       if (Reflect.get(node, f.name) === undefined) {
@@ -208,7 +247,7 @@ const uncovered = unreachedKinds.filter((k) => ownRequired(k).length).map((k) =>
   `${graph.constantName(k)} (${ownRequired(k).map((f) => f.name).join(", ")})`);
 const unheld = [...seenKinds].flatMap((k) => {
   const source = table.shapes.get(k);
-  const flat = !source ? [] : source.rule === "generic" ? source.declarations.flatMap(table.flatten) : table.flatten(source.declaration);
+  const flat = source ? table.sourceMembers(source) : [];
   return flat.filter((f) => f.name !== compilerApiFamily.tag.field && !held.has(`${k}.${f.name}`) &&
     f.members.every((m) => !ts.isPropertySignatureDeclaration(m) || m.type?.kind !== ts.SyntaxKind.AnyKeyword))
     .map((f) => `${graph.constantName(k)}.${f.name}`);
@@ -219,6 +258,12 @@ console.log(`  kinds no node has, stating checked properties of its own (${uncov
 console.log(`  members of reached kinds no node holds (${unheld.length}): ${unheld.join(" ")}`);
 assert.deepEqual([...absent].map(([key, count]) => `${key} (${count} nodes)`), [],
   "a member a shape states required is absent at run time, and no correction covers it");
+assert.deepEqual([...auditedOutside].map(([key, count]) => `${key} (${count} nodes)`), [],
+  "an audited shape's member is outside its declared type at run time");
+const auditedUnheld = [...auditedMembers].flatMap(([k, members]) =>
+  members.filter(({ name }) => !auditedHeld.has(`${k}.${name}`)).map(({ name }) => `${graph.constantName(k)}.${name}`));
+assert.deepEqual(auditedUnheld, [], "an audited shape's member no node of the corpus holds");
+console.log(`C3: every audited shape's member (${[...auditedMembers.values()].flat().length}) is held by a node of the corpus and within its declared type on every node of its kind`);
 assert.deepEqual([...unstable].map(([key, count]) => `${key} (${count} nodes)`), [],
   "a stable member read two values");
 assert.deepEqual([...unbackedSeen].filter((name) => !unbacked.has(name)), [],
