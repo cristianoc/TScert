@@ -1,0 +1,13 @@
+<section id="results" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Where it stands</p><p style="font-size:24px;color:#5b6662"><span style="color:#2b5b9c">b59096f</span> (before the pass) → after it, measured on 2026-10-28 · <span style="color:#2b5b9c">measured</span></p></div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Evidence up to 100 times smaller; some searches longer</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:52%;text-align:left;font-weight:600"></th><th style="width:24%;text-align:left;font-weight:600">before the pass</th><th style="width:24%;text-align:left;font-weight:600">after it</th></tr>
+<tr><td><span style="color:#2b5b9c">node.kind === 0 || … || node.kind === 15</span>: evidence</td><td>319.3 MB</td><td>3.2 MB</td></tr>
+<tr><td><span style="color:#2b5b9c">node.kind === 0</span> repeated 16 times: evidence</td><td>93.2 MB</td><td>1.9 MB</td></tr>
+<tr><td><span style="color:#2b5b9c">node.kind === 0</span> repeated 32 times: search CPU, checker CPU</td><td>40.2 s, 18.8 s</td><td>47.5 s, 9.0 s</td></tr>
+<tr><td><span style="color:#2b5b9c">moduleFunction</span>: evidence</td><td>300.7 MB</td><td>3.8 MB</td></tr>
+<tr><td>six costly functions of <span style="color:#2b5b9c">tools/</span>: search CPU, checker CPU, peak memory of one run</td><td>269 s, 54 s, 5.3 GB</td><td>72 s, 11 s, 1.0 GB</td></tr>
+<tr><td>two of them, <span style="color:#2b5b9c">collect</span> and <span style="color:#2b5b9c">closeStatements</span>: search CPU</td><td>1.55 s, 1.13 s</td><td>1.89 s, 1.59 s</td></tr>
+</table><p style="font-size:25px;color:#1d2422;line-height:1.4">Every test case of TScert’s pipeline keeps its expected outcome: 2,357 of 2,357, 2,991 functions verified. Some searches take longer: 18% to 41% in the rows above. Profiles of <span style="color:#2b5b9c">collect</span> put the added time in reading by class, mostly in computing each slot’s set of values from its type again at every point (sampled, not proved). The owner accepted this cost on 2026-10-28; computing that set once per type is open.</p>
+</section>

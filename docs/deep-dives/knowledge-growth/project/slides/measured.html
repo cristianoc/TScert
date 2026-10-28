@@ -1,0 +1,17 @@
+<section id="measured" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:22px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">What the census showed</p><p style="font-size:24px;color:#5b6662">each stage of a run limited to 300 s · <span style="color:#2b5b9c">measured</span></p></div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">15 more functions verify, at 3.4 times the search CPU</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:40%;text-align:left;font-weight:600"></th><th style="width:30%;text-align:left;font-weight:600">census of 5dfb065 (before)</th><th style="width:30%;text-align:left;font-weight:600">census of d578dd8 (after the merges)</th></tr>
+<tr><td>functions of tools/ verified (the merged code added 6)</td><td>212 of 513</td><td>227 of 519</td></tr>
+<tr><td>search: CPU over the census, peak memory of one run</td><td>254.7 s, 1.5 GB</td><td>858.6 s, 8.8 GB</td></tr>
+<tr><td>checker: CPU over the census, peak memory of one run</td><td>62.5 s, 0.6 GB</td><td>248.0 s, 10.6 GB</td></tr>
+<tr><td>one function, <span style="color:#2b5b9c">moduleFunction</span>: its search</td><td>6.7 s</td><td>47.8 s</td></tr>
+<tr><td>one function, <span style="color:#2b5b9c">confined</span>: its search</td><td>27.1 s</td><td>177.0 s</td></tr>
+</table><p style="font-size:26px;color:#1d2422;line-height:1.4">The census runs each function alone, with what it calls. <span style="color:#2b5b9c">moduleFunction</span>, run on the two branches that differ in the rule (“What the branch changed”):</p><table style="font-size:24px;color:#1d2422">
+<tr><th style="width:40%;text-align:left;font-weight:600"><span style="color:#2b5b9c">moduleFunction</span></th><th style="width:30%;text-align:left;font-weight:600">without the rule (<span style="color:#2b5b9c">gap-in-unknown</span>)</th><th style="width:30%;text-align:left;font-weight:600">with the rule (<span style="color:#2b5b9c">gap-nullable-field</span>)</th></tr>
+<tr><td>evidence written</td><td>4.9 MB</td><td>300.7 MB</td></tr>
+<tr><td>values stored in its heap facts</td><td>2,149</td><td>7,031,005</td></tr>
+<tr><td>heap facts at the busiest point of a function it calls, <span style="color:#2b5b9c">resolve</span> (next slide)</td><td>0</td><td>132</td></tr>
+</table>
+</section>
