@@ -2650,6 +2650,70 @@ getter, code no type of `o` states: it is refused.
   nothing: an object gets `Error.prototype` without `Error` constructing it,
   its `message` any value (`invalid-instanceof-error-message`, run under
   Node; [source fragment](SOURCE-FRAGMENT.md)).
+- `e instanceof Map` and `e instanceof Set` walk `e`'s prototype chain for
+  `Map.prototype` or `Set.prototype` alike, neither owning a
+  `[Symbol.hasInstance]`: `%InstanceOf:Map%` and `%InstanceOf:Set%`, each a
+  guard of its operand within the empty footprint, promising the
+  collection's [reading view](#collections-passing-instanceof).
+
+#### Collections passing `instanceof`
+
+The reading view of a host collection states the members of the `Set<T>`
+and `Map<K, V>` overlays ([prototype contracts](#prototype-contracts)) that
+take no element, each as the overlay reads it:
+
+```math
+\begin{aligned}
+\mathsf{NativeSetView}(T) &= \{\texttt{[Symbol.toStringTag]}:\mathtt{string},\ \mathit{size}:\mathtt{number},\
+  \texttt{[Symbol.iterator]}:()\Rightarrow_\emptyset I(T),\\
+&\qquad \mathit{keys},\mathit{values}:()\Rightarrow_\emptyset I(T),\ \mathit{entries}:()\Rightarrow_\emptyset I([T,T])\}\\
+\mathsf{NativeMapView}(K,V) &= \{\texttt{[Symbol.toStringTag]}:\mathtt{string},\ \mathit{size}:\mathtt{number},\
+  \texttt{[Symbol.iterator]},\mathit{entries}:()\Rightarrow_\emptyset I([K,V]),\\
+&\qquad \mathit{keys}:()\Rightarrow_\emptyset I(K),\ \mathit{values}:()\Rightarrow_\emptyset I(V)\}
+\end{aligned}
+```
+
+with $`I(E)`$ the native collection iterator over $`E`$ and each member
+host-relative, within the empty footprint. A `Set<T>` is a
+$`\mathsf{NativeSetView}(T)`$ and a `Map<K, V>` a
+$`\mathsf{NativeMapView}(K,V)`$, by width; a view states no member taking an
+element, so it is covariant, and nothing is written through it. Only a host
+collection meets it, as only one meets the overlay: no source value is an
+$`I(E)`$, and no object the fragment builds writes `Symbol.toStringTag`.
+`%Iterate:Set%` and `%Iterate:Map%` take the collection at its view, and so
+do their spreads. The two tests are guards
+([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)):
+
+```math
+\frac{\Gamma\vdash e:A}
+     {e\ \mathtt{instanceof}\ \mathtt{Map}\;\equiv\;\texttt{\%InstanceOf:Map\%}(e)
+       :\ (\mathtt{unknown})\Rightarrow_\emptyset\mathtt{boolean}\ \land\
+         (\mathtt{unknown})\Rightarrow_\emptyset\mathsf{NativeMapView}(\mathtt{unknown},\mathtt{unknown})\,[\mathsf{guards}\ 0]}\ \textsf{instanceof-map}
+```
+
+and `instanceof Set` alike at $`\mathsf{NativeSetView}(\mathtt{unknown})`$
+(`blocker-instanceof-map-set`, run under Node). The test reads the contents
+at `unknown` and establishes no element contract to write by: a write
+through it would break a caller's `Map<string, number>`
+(`invalid-instanceof-map-write`, run under Node: a string in it).
+
+**What it assumes.** The promise is a host assumption, beyond the
+non-tampering of standard objects: a value passing the realm's
+`instanceof Map` (`instanceof Set`) is a host collection, with the internal
+slots its methods read and the standard, unshadowed `[Symbol.iterator]`,
+`keys`, `values`, `entries`, `size` and `[Symbol.toStringTag]` of
+`Map.prototype` (`Set.prototype`), and external code keeps it so
+([trust surface](DESIGN.md#trust-surface)). The prototype on a chain is no
+evidence of the slots: an object made by `Object.create(Map.prototype)`
+passes the test and the native `get` throws on it
+(`invalid-instanceof-map-counterfeit`, run under Node), and the Set
+analogue's `has` (`invalid-instanceof-set-counterfeit`); an instance of a
+class extending `Map` passes it with its own `[Symbol.iterator]`, which the
+loop calls (`invalid-instanceof-map-shadowed`, run under Node). The fragment
+makes neither: `Object.create` and a class extending a library class are
+refused ([source fragment](SOURCE-FRAGMENT.md)). Implementation:
+`nativeCollectionViewDefinition` (`tools/array-prototype.mts`),
+`instanceOfCollection` (`tools/intrinsics.mts`).
 
 #### Node's timers, `structuredClone` and `console`
 

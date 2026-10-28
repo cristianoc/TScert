@@ -509,6 +509,40 @@ control(async (): Promise<void> => {
   process.stdout.write("grouped array length claim: refused at the member access in search and check\n");
 });
 
+control(async (): Promise<void> => {
+  // `instanceof Map` promises the map's reading view, and `instanceof Set`
+  // the set's: the value of the Map branch claimed at the writable
+  // `Map<unknown, unknown>` the branch allocates, and the value of the Set
+  // branch at the Map branch's view, are each refused at the iterable.
+  const artifacts = run("blocker-instanceof-map-set");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const at = (text: string, from: number): number => {
+    const found = source.indexOf(text, from);
+    assert.ok(found >= 0, text);
+    return found;
+  };
+  const mapBranch = at("value instanceof Map", 0);
+  const setBranch = at("value instanceof Set", mapBranch);
+  const branches = [
+    { name: "writable-map", from: mapBranch, claimed: at("new Map<unknown, unknown>()", mapBranch) },
+    { name: "set-at-map-view", from: setBranch, claimed: at("of value", mapBranch) + 3 },
+  ];
+  for (const { name, from, claimed } of branches) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "copied"), "copied's claims");
+    const claimAt = (start: number, length: number) => must(fn.expressions.find(e =>
+      e.pos[0] === start && e.pos[1] === start + length), `the claim at ${start}`);
+    const type = name === "writable-map" ? claimAt(claimed, "new Map<unknown, unknown>()".length).type
+      : claimAt(claimed, "value".length).type;
+    const uses = [at("seen.set(value", from) + "seen.set(".length, at("of value", from) + 3];
+    for (const start of uses) claimAt(start, "value".length).type = type;
+    const iterable = must(uses[1], "the iterable");
+    refusedAt(artifacts, writeClaims(artifacts, `forged-${name}`, claims), `forged-${name}`,
+      `source expression obligation at [${iterable},${iterable + "value".length})`);
+  }
+  process.stdout.write("instanceof Map and Set claimed beyond their promised views: refused at the iterable\n");
+});
+
 // A mapped type the front end deferred at a named type (`deferredIdentity`)
 // names no declaration. The front end writes no document holding one
 // (`deferredIn`); a forged document holding one, at a parameter's type and at

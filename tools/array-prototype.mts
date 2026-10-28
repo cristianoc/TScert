@@ -28,7 +28,7 @@ import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
-import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
@@ -557,6 +557,55 @@ export function nativeCollectionIteratorDefinition(mark: number,
 export const nativeCollectionIterator = (element: TypeTerm): TypeTerm => ({ k: "reference", args: [element],
   span: [0, 0], reference: { name: nativeCollectionIteratorIdentity.name, span: [0, 0], arguments: [[0, 0]],
     target: nativeCollectionIteratorIdentity } });
+
+/** The reading view of a host collection, `NativeSetView<T>` and
+ * `NativeMapView<K, V>`: the members of the `Set<T>` and `Map<K, V>`
+ * overlays above that take no element, `[Symbol.toStringTag]`, `size`,
+ * `[Symbol.iterator]`, `keys`, `values` and `entries`, each as the overlay
+ * reads it. So a `Set<T>` is a `NativeSetView<T>` and a `Map<K, V>` a
+ * `NativeMapView<K, V>`, by width; the view is covariant in its parameters,
+ * since it states no member taking one, and a value of it is written
+ * nothing through it. Only a host collection meets it, as only one meets
+ * the overlay: its iterators are the marked native collection iterator,
+ * which no source value is, and its tag a well-known symbol key no object
+ * the fragment builds writes. It is the parameter of `%Iterate:Set%` and
+ * `%Iterate:Map%` and what `%InstanceOf:Set%` and `%InstanceOf:Map%`
+ * promise of an operand answering `true` (`intrinsics.mts`). */
+export type CollectionKind = "Set" | "Map";
+export const nativeCollectionViewIdentity = (kind: CollectionKind): DeclarationIdentity =>
+  ({ module: "tscert/collections", name: `Native${kind}View`, span: [0, 0] });
+/** The keys the view reads by, the well-known symbols `Symbol.iterator`
+ * and `Symbol.toStringTag`, by their indices among the listed symbols. */
+export type CollectionViewKeys = { iterator: number; toStringTag: number };
+export function nativeCollectionViewDefinition(kind: CollectionKind, keys: CollectionViewKeys,
+    iterator: (element: TypeTerm) => TypeTerm): TypeDefinition {
+  const span: [number, number] = [0, 0];
+  const parameter = (index: number): TypeTerm => ({ k: "parameter", index, span });
+  const pair = (first: TypeTerm, second: TypeTerm): TypeTerm =>
+    ({ k: "tuple", presence: "dense", readonly: false, required: [first, second], optional: [], rest: null, span });
+  // The elements each iterator steps through: a `Set`'s values, its entries
+  // `[v, v]`; a `Map`'s entries `[k, v]`, its keys and its values.
+  const [element, keyed, valued, entry]: [TypeTerm, TypeTerm, TypeTerm, TypeTerm] = kind === "Set"
+    ? [parameter(0), parameter(0), parameter(0), pair(parameter(0), parameter(0))]
+    : [pair(parameter(0), parameter(1)), parameter(0), parameter(1), pair(parameter(0), parameter(1))];
+  const method = (name: PropertyKey, result: TypeTerm) => ({ name, optional: false, readonly: false, span,
+    type: { k: "function", effect: emptyEffect, receiver: { k: "self", span }, params: [], rest: null,
+      result: iterator(result), span } satisfies TypeTerm });
+  const property = (name: PropertyKey, type: "string" | "number") =>
+    ({ name, optional: false, readonly: true, type: { k: "atom", name: type, span } satisfies TypeTerm, span });
+  return { declaration: nativeCollectionViewIdentity(kind), bases: [],
+    parameters: (kind === "Set" ? ["T"] : ["K", "V"]).map(name => ({ name, span, defaulted: false })),
+    expression: { k: "object", stringIndex: null, calls: [], span, fields: [
+      property({ symbol: keys.toStringTag }, "string"), property("size", "number"),
+      method({ symbol: keys.iterator }, element), method("keys", keyed), method("values", valued),
+      method("entries", entry)] } };
+}
+/** The view of a host collection at its arguments. */
+export const nativeCollectionView = (kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
+  const identity = nativeCollectionViewIdentity(kind);
+  return { k: "reference", args, span: [0, 0], reference: { name: identity.name, span: [0, 0],
+    arguments: args.map((): [number, number] => [0, 0]), target: identity } };
+};
 
 /** What the overlay reads through the declaration graph: the symbol a
  * computed key names, and a reference to a standard library interface, which

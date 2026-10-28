@@ -723,6 +723,24 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
+  // `instanceof Map` and `instanceof Set`: a copy of nested collections
+  // keeps their sharing; an object holding the prototype without the slots
+  // passes the test and the native members throw on it; a subclass's own
+  // iterator is the program's; a write through the test breaks the caller's
+  // element contract.
+  assert.equal(runExample("blocker-instanceof-map-set", `(() => {
+    const inner = new Set([1]); const outer = new Map([["a", inner], ["b", inner]]);
+    const copy = copied(outer, new Map());
+    return [copy !== outer, copy.get("a") !== inner, copy.get("a") === copy.get("b"), [...copy.get("a")].join()].join();
+  })()`), "true,true,true,1", "blocker-instanceof-map-set: the copy");
+  assert.throws(() => runExample("invalid-instanceof-map-counterfeit", "counterfeit()"), /incompatible receiver/,
+    "invalid-instanceof-map-counterfeit: get on an object holding Map.prototype");
+  assert.throws(() => runExample("invalid-instanceof-set-counterfeit", "counterfeit()"), /incompatible receiver/,
+    "invalid-instanceof-set-counterfeit: has on an object holding Set.prototype");
+  assert.equal(runExample("invalid-instanceof-map-shadowed", "shadowed()"), 1,
+    "invalid-instanceof-map-shadowed: the loop ran the subclass's iterator");
+  assert.equal(runExample("invalid-instanceof-map-write", "typeof caller()"), "string",
+    "invalid-instanceof-map-write: the caller's map holds a string");
   // An imported class's `instanceof` walks the chain for the prototype its
   // declaration creates; where it fails, a record with the class's members
   // is still returned, and a class binding its module writes tests another

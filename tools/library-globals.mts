@@ -26,7 +26,7 @@
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { asyncCompleteName, instanceOfErrorName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
+import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
@@ -644,6 +644,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // nothing (SOURCE-FRAGMENT.md), and is read as the intrinsic stating the
   // Boolean alone.
   { host: contract, global: "Error", signature: "Error: ErrorConstructor", intrinsic: instanceOfErrorName },
+  // `e instanceof Map` and `e instanceof Set`: neither owns a
+  // `[Symbol.hasInstance]`, so the operator walks `e`'s prototype chain for
+  // `Map.prototype` or `Set.prototype`, as for `Error`. The answer `true`
+  // promises `e` the collection's reading view, by the host assumption that
+  // a value passing the test is a host collection (`intrinsics.mts`).
+  { host: contract, global: "Map", signature: "Map: MapConstructor", intrinsic: instanceOfMapName },
+  { host: contract, global: "Set", signature: "Set: SetConstructor", intrinsic: instanceOfSetName },
   // PromiseResolve retains a native promise with the built-in standard
   // constructor, and freshly resolves stably non-thenable values. Without a
   // value, the promise settles to `undefined`, as an async completion does.

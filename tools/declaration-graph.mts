@@ -20,7 +20,7 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTy
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
-  primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
+  primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
@@ -2592,6 +2592,20 @@ export function collectDeclarations(file: string, options: {
         markOf(collectionIteratorMark), argument => libraryReference("Iterator", [argument])));
       return nativeCollectionIterator(element);
     };
+    // A host collection's reading view, its declaration listed with its
+    // first use, keyed by the well-known symbols its members are.
+    const viewsListed = new Set<CollectionKind>();
+    const collectionView = (kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
+      if (!viewsListed.has(kind)) {
+        const iterator = overlayLibrary.wellKnownSymbol("iterator");
+        const toStringTag = overlayLibrary.wellKnownSymbol("toStringTag");
+        if (iterator === null || toStringTag === null)
+          throw Error(`the standard library declares no Symbol.iterator or Symbol.toStringTag, which a ${kind} is read by`);
+        collectionDefinitions.push(nativeCollectionViewDefinition(kind, { iterator, toStringTag }, collectionIterator));
+        viewsListed.add(kind);
+      }
+      return nativeCollectionView(kind, args);
+    };
     // Read once; the native match iterator's declaration joins the
     // definitions with them.
     let keysRead: RegExpKeys | undefined;
@@ -2762,7 +2776,7 @@ export function collectDeclarations(file: string, options: {
       if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
-          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args),
+          const intrinsic = iterationIntrinsic(listed, collectionView,
             element => { nativeMatches(); return nativeIterator(element); }, collectionIterator);
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span },
@@ -2830,7 +2844,7 @@ export function collectDeclarations(file: string, options: {
       if (!needed.size) return;
       if ([...needed].some(name => resolutionIntrinsics.includes(name))) listStable(at);
       try {
-        for (const intrinsic of intrinsics(promiseType, needed))
+        for (const intrinsic of intrinsics(promiseType, needed, collectionView))
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span: at },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },

@@ -117,6 +117,13 @@ export const symbolKeyForName = "%SymbolKeyFor%";
 /** `e instanceof Error`: whether `Error.prototype` is on `e`'s prototype
  * chain, a Boolean that states nothing of `e`. */
 export const instanceOfErrorName = "%InstanceOf:Error%";
+/** `e instanceof Map` and `e instanceof Set`: whether the realm's
+ * `Map.prototype` or `Set.prototype` is on `e`'s prototype chain, a Boolean
+ * that, `true`, promises `e` the host collection's reading view, by the host
+ * assumption that a value passing the test is a host collection
+ * (`instanceOfCollection`). */
+export const instanceOfMapName = "%InstanceOf:Map%";
+export const instanceOfSetName = "%InstanceOf:Set%";
 /** A failing `assert(v, m)` of `node:assert/strict`, lowered as `if (!v)
  * throw %AssertionFailure%(m)`: the fresh `AssertionError`. */
 export const assertionFailureName = "%AssertionFailure%";
@@ -172,7 +179,11 @@ const step: Signature = stepOf(binder);
  *   code units (the model's strings hold no lone surrogate, and the result
  *   is claimed only at `string`).
  * - A `Set`'s yields its elements in insertion order, one added during the
- *   loop included; a `Map`'s a fresh `[key, value]` array per entry.
+ *   loop included; a `Map`'s a fresh `[key, value]` array per entry. Each
+ *   takes the collection at its reading view (`NativeSetView<T>`,
+ *   `NativeMapView<K, V>`, `array-prototype.mts`), which a `Set<T>` and a
+ *   `Map<K, V>` meet, and which states the native collection iterator its
+ *   `[Symbol.iterator]` returns.
  * - A collection iterator is its own iterator (`%IteratorPrototype%`'s
  *   `[Symbol.iterator]` returns it) and steps its collection.
  *
@@ -190,10 +201,10 @@ const step: Signature = stepOf(binder);
  * iterator's own position and, for a match iterator, its clone's
  * `lastIndex`, each a number, and allocate what they yield:
  * `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
- * `library` gives a reference to a standard library interface at arguments,
+ * `view` gives a host collection's reading view at arguments,
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
-export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" | "Iterator", args: TypeTerm[]) => TypeTerm,
+export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", args: TypeTerm[]) => TypeTerm,
     nativeMatches: (element: TypeTerm) => TypeTerm, nativeCollection: (element: TypeTerm) => TypeTerm):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   const spread = name.startsWith(spreadPrefix);
@@ -203,8 +214,8 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
   const t = [{ name: "T", bound: null, resolution: null }];
   const [typeParams, param, element]: [SourceTypeParameter<TypeTerm>[], TypeTerm, TypeTerm] =
     kind === iterateStringName ? [[], atom("string"), atom("string")]
-    : kind === iterateSetName ? [t, library("Set", [binder]), binder]
-    : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], library("Map", [key, value]),
+    : kind === iterateSetName ? [t, view("Set", [binder]), binder]
+    : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], view("Map", [key, value]),
       { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
     : kind === iterateIteratorName ? [t, nativeCollection(binder), binder]
     : kind === iterateRegExpStringName ? [t, nativeMatches(binder), binder]
@@ -316,10 +327,32 @@ export function enumIntrinsic(name: string, members: readonly EnumMemberValue[])
     type: fn([enumMembersTerm(members, span, "none")], enumMembersTerm(members, span, "stated")) };
 }
 
+/** `%InstanceOf:Map%` and `%InstanceOf:Set%`: OrdinaryHasInstance walks the
+ * operand's prototype chain for the realm's `Map.prototype` or
+ * `Set.prototype`, which runs no code, no object being a proxy, and writes
+ * nothing; `Map` and `Set` own no `[Symbol.hasInstance]`, and
+ * `Function.prototype`'s cannot be replaced. Two signatures: the Boolean,
+ * and the promise about the operand, the guard `(v: unknown) => v is
+ * NativeMapView<unknown, unknown>` (`NativeSetView<unknown>`). The promise
+ * is the host assumption DESIGN.md's trust surface states (collections
+ * passing `instanceof`): a value with `Map.prototype` (`Set.prototype`) on
+ * its chain is a host collection, with the internal slots its methods read
+ * and its standard, unshadowed `[Symbol.iterator]`, `keys`, `values`,
+ * `entries`, `size` and `[Symbol.toStringTag]`, and external code keeps it
+ * so. The view states no member taking an element, so the test establishes
+ * no element contract to write by, and reads the contents at `unknown`. */
+function instanceOfCollection(view: TypeTerm): TypeTerm {
+  const plain: Signature = { ...fn([atom("unknown")], atom("boolean")), effect: emptyEffect };
+  return { k: "intersection", span, parts: [plain,
+    { ...plain, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: view }] };
+}
+
 /** The intrinsics' binders and signatures, given the standard library's
- * `Promise` applied to an argument. */
-export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>):
-  { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }[] {
+ * `Promise` applied to an argument and a host collection's reading view at
+ * arguments. */
+export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: ReadonlySet<string>,
+    view: (kind: "Set" | "Map", args: TypeTerm[]) => TypeTerm):
+  { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }[] {
   // `X : Resolvable`: a binder owning its observation and result;
   // `X : Awaitable`: a binder owning its observation.
   const resolvableSlots = resolutionSlots("X", "resolvable");
@@ -329,7 +362,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
   const input: TypeTerm = { k: "binder", name: "X", span };
   const observed: TypeTerm = { k: "binder", name: awaitableSlots.observation, span };
   const result: TypeTerm = { k: "binder", name: resolvableSlots.result, span };
-  const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature }> = {
+  const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }> = {
     // `await` yields the input's observation.
     [awaitName]: () => ({ typeParams: [awaitable], type: fn([input], observed) }),
     // Fresh resolution settles to the input's result.
@@ -386,6 +419,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([either(atom("string"), atom("undefined"))], atom("unknown")) }),
     [instanceOfErrorName]: () => ({ typeParams: [],
       type: { ...fn([atom("unknown")], atom("boolean")), effect: emptyEffect } }),
+    [instanceOfMapName]: () => ({ typeParams: [],
+      type: instanceOfCollection(view("Map", [atom("unknown"), atom("unknown")])) }),
+    [instanceOfSetName]: () => ({ typeParams: [], type: instanceOfCollection(view("Set", [atom("unknown")])) }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an
     // array holds a data property (`numericOwn`), and neither

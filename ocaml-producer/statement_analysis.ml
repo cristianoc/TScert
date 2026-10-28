@@ -459,7 +459,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             | Atoms [Shape {calls=[s];_}] -> s
             | _ -> Proposal_diagnostics.unsupported ("a for...of loop needs the " ^ iterate ^ " intrinsic") in
           let result,substitution=if signature.quantified=[] then signature.result,[] else
-            let inferred=Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
+            let inferred=Inference.infer ~expand:(expand_named declarations) ~receiver:(Atoms [Undef]) signature [actual] in
             inferred.result,inferred.substitution in
           publish_expression span result (if substitution=[] then None else
               Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution));

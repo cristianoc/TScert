@@ -1706,13 +1706,16 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \begin{array}{ll}
 \mathtt{\%Iterate\%}:\forall T.\ (\mathsf{readonly}\ T[\,])\Rightarrow\mathit{Step}(T) & \text{an array or tuple}\\
 \mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
-\mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{Set}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
-\mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
+\mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{NativeSetView}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
+\mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{NativeMapView}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
 \mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
 \end{array}
 ```
 
-`Set` and `Map` are the [interface overlay](SOURCE-CONTRACTS.md#library-types)'s, whose
+`Set` and `Map` are the [interface overlay](SOURCE-CONTRACTS.md#library-types)'s, which
+meet their [reading views](SOURCE-CONTRACTS.md#collections-passing-instanceof)
+$`\mathsf{NativeSetView}\langle T\rangle`$ and
+$`\mathsf{NativeMapView}\langle K,V\rangle`$, the members taking no element; their
 `keys`, `values`, `entries` and `[Symbol.iterator]` give a `SetIterator` or
 `MapIterator` read as the native collection iterator
 $`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `Iterator<T>` with
