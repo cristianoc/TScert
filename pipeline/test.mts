@@ -2485,6 +2485,36 @@ control(async (): Promise<void> => {
   boxed.arrows = [{ pos: closure.pos, rows: [{ contracts: [], expressions: [], entries: [] }] }];
   assert.match(invoke(writeClaims(rows, "forged-generic-arrows", claims), join(rows, "evidence.json"), rows),
     /per-arrow source claims are for ground closures, not quantified schemes/);
+  // The type predicate `marked` passes is a ground closure with a claim set
+  // per signature, in a unit creating a generic closure. Each set is checked:
+  // its parameter read claimed at `Plain`, where it is an `Entry`, is refused
+  // by search and by the check; and a set naming a type argument is refused.
+  const rowClaims = (): { claims: SourceClaims; row: { expressions: { pos: [number, number]; type: unknown; instantiate?: unknown }[] } } => {
+    const claims = readClaims(rows);
+    const fn = must(claims.functions.find((f) => f.name === "marked"), "marked");
+    const arrow = must(fn.arrows?.[0], "the predicate's claim sets");
+    assert.equal(arrow.rows.length, 2);
+    return { claims, row: must(arrow.rows[1], "the guard signature's set") };
+  };
+  const source = readFileSync(sourceKey(rows), "utf8");
+  const read = source.indexOf("n.kind", source.indexOf("export function marked"));
+  {
+    const { claims, row } = rowClaims();
+    const site = must(row.expressions.find((e) => e.pos[0] === read && e.pos[1] === read + 1), "the read of n");
+    assert.notDeepEqual(site.type, [{ decl: plain }]);
+    site.type = [{ decl: plain }];
+    const forged = writeClaims(rows, "forged-arrow-row", claims);
+    const searched = produceWith(rows, forged, "forged-arrow-row");
+    assert.ifError(searched.error);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(rows, "evidence.json"), rows);
+  }
+  {
+    const { claims, row } = rowClaims();
+    must(row.expressions[0], "a site of the set").instantiate = [{ name: "N", type: [string], resolution: null }];
+    assert.match(invoke(writeClaims(rows, "forged-arrow-row-instance", claims), join(rows, "evidence.json"), rows),
+      /invalid source claims/);
+  }
 });
 control(async (): Promise<void> => {
   // A nested closure's claim is checked at the scheme's binder: a ground

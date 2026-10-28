@@ -576,8 +576,7 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
       let (_, rows) ← schemeRowOf t
       scopes := scopes ++ [(gc.span, rows ++ enclosing)]
     -- A call of a local whose claim is a scheme: its callee is claimed at the
-    -- instance the call names, among the claims of one set: the unit's, or
-    -- one signature's row of a closure's per-arrow claims.
+    -- instance the call names.
     let instancesIn (exprs : List (Expression Tree)) :
         SchemeM (List ((String × Span) × (ClaimType Tree)) × List (String × Span)) := do
       let mut instances : List ((String × Span) × (ClaimType Tree)) := []
@@ -653,18 +652,20 @@ def closureRows (T : EquationStore.State) (outer : List (String × Tree))
     let result ← go (0, 0) c.result
     let entries ← c.entries.mapM entry
     let contracts ← c.contracts.mapM fun b => do return { b with type := ← go b.pos b.type }
-    let expressionsIn (exprs : List (Expression Tree)) : SchemeM (List (Expression Tree)) := do
-      let (instances, namedCalls) ← instancesIn exprs
-      exprs.mapM fun e => do
-        let type ← go e.pos ((instances.lookup (e.point,e.pos)).getD e.type)
-        let instantiate ← if namedCalls.contains (e.point,e.pos) then pure none else
-          e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
-        return { e with type, instantiate, current := ← current e.pos e.current }
-    let expressions ← expressionsIn c.expressions
-    -- A closure's per-arrow claims, one set per signature, are read so too.
+    let (instances, namedCalls) ← instancesIn c.expressions
+    let expressions ← c.expressions.mapM fun e => do
+      let type ← go e.pos ((instances.lookup (e.point,e.pos)).getD e.type)
+      let instantiate ← if namedCalls.contains (e.point,e.pos) then pure none else
+        e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go e.pos i.type })
+      return { e with type, instantiate, current := ← current e.pos e.current }
+    -- A ground closure's per-arrow claims, one set per signature, read the
+    -- binders in scope as every other claim does. They name no type
+    -- arguments (`validFunction` refuses one), so no call in them is
+    -- claimed at an instance here.
     let arrows ← c.arrows.mapM (·.mapM fun a => do
       let rows ← a.rows.mapM fun r => do
-        let expressions ← expressionsIn r.expressions
+        let expressions ← r.expressions.mapM fun e => do
+          return { e with type := ← go e.pos e.type, current := ← current e.pos e.current }
         let entries ← r.entries.mapM entry
         let contracts ← r.contracts.mapM fun b => do return { b with type := ← go b.pos b.type }
         return { r with expressions, entries, contracts }
