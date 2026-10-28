@@ -141,14 +141,15 @@ Claim agreement is checked before this diagnostic is selected. -/
   if (r.program.zip c.certificate).any (fun (node, e) =>
       !((ProgramCertificates.claim e.expression).term == node.expression &&
         ProgramCertificates.checkScope (entry e).length node.expression &&
-        ((r.checker.run (ProgramCertificates.claim e.expression) e.knowledge
-          (e.effect.getD (.ordinary e.expression)) codes c.readSummaries).expect e.output).accepted &&
+        (r.checker.run (ProgramCertificates.claim e.expression) (entryFacts G e)
+          (e.effect.getD (.ordinary e.expression)) codes c.readSummaries).value.any (outputFits G e) &&
         checkYields G images e codes c.readSummaries)) then return none
   for ((node, e), label) in (r.program.zip c.certificate).zipIdx do
     if let (some target, some (T, proof)) := (node.handler, e.handler) then
       if let some destination := c.certificate[target.label]? then
         let typed := PointClaims.checkMappedUsing G images (T :: entry e) (entry destination) target.mapping proof
-        let linked := HeapKnowledge.check (handlerFacts e.knowledge) destination.knowledge target.mapping
+        let linked := KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry destination)) (handlerFacts (entryFacts G e))
+          destination.knowledge target.mapping
         if !typed || !linked then
           if let some m := (r.sourceMap[target.label]?).bind id then
             return some s!"source incoming edge obligation at [{m.pos.1},{m.pos.2}): evidence fails {if !typed then "type coverage" else "heap knowledge"} from node {label}, handler edge"
@@ -156,7 +157,7 @@ Claim agreement is checked before this diagnostic is selected. -/
       let some destination := c.certificate[target.label]? | continue
       let some proof := e.edges[index]? | continue
       let Γ := CertificateProducer.edgeContextOf G e node.continuation index
-      let facts := CertificateProducer.edgeImplicationsOf.edgeFactsOf e node.continuation
+      let facts := CertificateProducer.edgeImplicationsOf.edgeFactsOf G e node.continuation
       let observed := match node.continuation with
         | .branchBind .. => some (BranchRefinement.Observation.boolean (index == 0))
         | .tagBind tag .. => some (BranchRefinement.Observation.tag tag (index == 0))
@@ -164,11 +165,11 @@ Claim agreement is checked before this diagnostic is selected. -/
       let typed := match observed with
         | none => PointClaims.checkMappedUsing G images Γ (entry destination) target.mapping proof
         | some o => BranchRefinement.checkObservedUsing G images Γ (entry destination) 0 o target.mapping proof
-            (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells
+            (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o))
       let knowledge := match observed with
-        | none => facts
+        | none => HeapKnowledge.withTypedLinks G Γ facts
         | some o => HeapKnowledge.observeTyped G Γ facts 0 o
-      let linked := HeapKnowledge.check knowledge destination.knowledge target.mapping
+      let linked := KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry destination)) knowledge destination.knowledge target.mapping
       if !typed || !linked then
         if let some m := (r.sourceMap[target.label]?).bind id then
           return some s!"source incoming edge obligation at [{m.pos.1},{m.pos.2}): evidence fails {if !typed then "type coverage" else "heap knowledge"} from node {label}, edge {index}"

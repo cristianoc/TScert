@@ -60,12 +60,12 @@ inductive StepRef (ι : Type) where
   | reading (proof : Nat)
   | created (proof : Nat)
   | typedRead (slot : Nat) (proof : Nat)
-  | observedRead (slot : Nat) (contents : List HeapFacts.Atom)
+  | observedRead (slot : Nat) (contents : ValueSets.ValueSet)
   | slicedRead (tag : Tag) (answer : Bool) (slot : Nat) (proof : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
-  | knownValue (slot : Nat) (contents : List HeapFacts.Atom)
+  | knownValue (slot : Nat) (contents : ValueSets.ValueSet)
   | linkedRead (slot value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   | allocated (proof : Nat)
-  | written (receiver value : Nat) (contents : Option (List HeapFacts.Atom)) (proof : Nat)
+  | written (receiver value : Nat) (contents : Option ValueSets.ValueSet) (proof : Nat)
   deriving ToJson, FromJson
 
 /-- `NodeEvidence`, its sequent, derivations and knowledge named by

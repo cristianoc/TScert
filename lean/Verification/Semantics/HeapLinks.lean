@@ -111,43 +111,67 @@ theorem rep_eq {ρ cs} (hcs : OneValue ρ cs) (i : Nat) : ρ (rep cs i) = ρ i :
 
 /-- Each target link must hold of the source links under the mapping, up to
 the source's alias classes: a target alias relates two slots of one class,
-and a target read is a source read between the same classes. The source reads
-are hashed once. -/
-def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
-  let cs := classes a
+and a target read is a source read between the same classes, one that found
+the field also justifying one that may not. The source reads are hashed
+once. -/
+def checkWith (r : Nat → Nat) (a b : Links) (m : PointClaims.Mapping) : Bool :=
   let reads : Std.HashSet Link := Std.HashSet.ofList (a.filterMap fun g =>
-    if g.alias then none else some ⟨rep cs g.cell, rep cs g.value, false, g.field, g.optional⟩)
+    if g.alias then none else some ⟨r g.cell, r g.value, false, g.field, g.optional⟩)
   b.all fun g =>
-    let c := rep cs (PointClaims.slot m g.cell)
-    let v := rep cs (PointClaims.slot m g.value)
-    if g.alias then c == v else reads.contains ⟨c, v, false, g.field, g.optional⟩
+    let c := r (PointClaims.slot m g.cell)
+    let v := r (PointClaims.slot m g.value)
+    if g.alias then c == v
+    else reads.contains ⟨c, v, false, g.field, g.optional⟩ || (g.optional && reads.contains ⟨c, v, false, g.field, false⟩)
 
-theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
+def check (a b : Links) (m : PointClaims.Mapping) : Bool := checkWith (rep (classes a)) a b m
+
+/-- The check by any representatives of slots holding one value. -/
+theorem checkWith_sound {r a b m ρ h} (hr : ∀ x, ρ (r x) = ρ x) (hc : checkWith r a b m = true) (hh : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h := by
-  have hcs := classes_one hh
   intro g hg
   have hcg := List.all_eq_true.mp hc g hg
   by_cases hga : g.alias
   · simp only [hga, ite_true, beq_iff_eq] at hcg ⊢
     simp only [PointClaims.mapEnv]
-    rw [← rep_eq hcs (PointClaims.slot m g.cell), hcg, rep_eq hcs]
-  · simp only [hga, Bool.false_eq_true, ite_false, Std.HashSet.contains_ofList,
-      List.contains_iff_mem, List.mem_filterMap] at hcg ⊢
-    obtain ⟨s, hs, hse⟩ := hcg
-    by_cases hsa : s.alias
-    · simp [hsa] at hse
-    simp only [hsa, Bool.false_eq_true, ite_false, Option.some.injEq, Link.mk.injEq] at hse
-    obtain ⟨ec, ev, -, ef, eo⟩ := hse
-    have hsh := hh s hs
-    simp only [hsa, Bool.false_eq_true, ite_false] at hsh
-    have c' : PointClaims.mapEnv m ρ g.cell = ρ s.cell := by
-      simp only [PointClaims.mapEnv]
-      rw [← rep_eq hcs (PointClaims.slot m g.cell), ← ec, rep_eq hcs]
-    have v' : PointClaims.mapEnv m ρ g.value = ρ s.value := by
-      simp only [PointClaims.mapEnv]
-      rw [← rep_eq hcs (PointClaims.slot m g.value), ← ev, rep_eq hcs]
-    rw [c', v', ← ef, ← eo]
-    exact hsh
+    rw [← hr (PointClaims.slot m g.cell), hcg, hr]
+  · simp only [hga, Bool.false_eq_true, ite_false] at hcg ⊢
+    -- The source read justifying the target, as found in the hashed reads.
+    have found : ∀ {o : Bool}, (Std.HashSet.ofList (a.filterMap fun g =>
+        if g.alias then none else some (⟨r g.cell, r g.value, false, g.field,
+          g.optional⟩ : Link))).contains ⟨r (PointClaims.slot m g.cell),
+          r (PointClaims.slot m g.value), false, g.field, o⟩ = true →
+        ∃ s ∈ a, s.alias = false ∧ s.optional = o ∧ s.field = g.field ∧
+          PointClaims.mapEnv m ρ g.cell = ρ s.cell ∧ PointClaims.mapEnv m ρ g.value = ρ s.value := by
+      intro o hcon
+      simp only [Std.HashSet.contains_ofList, List.contains_iff_mem, List.mem_filterMap] at hcon
+      obtain ⟨s, hs, hse⟩ := hcon
+      by_cases hsa : s.alias
+      · simp [hsa] at hse
+      simp only [hsa, Bool.false_eq_true, ite_false, Option.some.injEq, Link.mk.injEq] at hse
+      obtain ⟨ec, ev, -, ef, eo⟩ := hse
+      refine ⟨s, hs, by simpa using hsa, eo, ef, ?_, ?_⟩
+      · simp only [PointClaims.mapEnv]
+        rw [← hr (PointClaims.slot m g.cell), ← ec, hr]
+      · simp only [PointClaims.mapEnv]
+        rw [← hr (PointClaims.slot m g.value), ← ev, hr]
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at hcg
+    rcases hcg with hcon | ⟨ho, hcon⟩
+    · obtain ⟨s, hs, hsa, eo, ef, c', v'⟩ := found hcon
+      have hsh := hh s hs
+      simp only [hsa, Bool.false_eq_true, ite_false] at hsh
+      rw [c', v', ← ef, ← eo]
+      exact hsh
+    · obtain ⟨s, hs, hsa, eo, ef, c', v'⟩ := found hcon
+      have hsh := hh s hs
+      simp only [hsa, eo, Bool.false_eq_true, ite_false] at hsh
+      obtain ⟨flds, c, oid, l, he, hl, hv⟩ := hsh
+      simp only [ho, ite_true]
+      rw [c', v', ← ef]
+      exact ⟨flds, c, oid, he, HeapFacts.ReadGave.present hl hv⟩
+
+theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
+    Holds b (PointClaims.mapEnv m ρ) h :=
+  checkWith_sound (rep_eq (classes_one hh)) hc hh
 
 /-- The links without repetitions, each at its first occurrence. -/
 def dedup (ls : Links) : Links :=

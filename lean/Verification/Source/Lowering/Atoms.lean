@@ -41,7 +41,7 @@ new observation of their source expression. -/
         let answer ← match HeapKnowledge.atoms (SourceTypes.graph T) R, invariant fld with
           | none, some C => answerAtoms C R
           | _, _ => pure none
-        return (⟨0,← answer.getDM (contents R),fld⟩ : HeapFacts.Fact)
+        return (⟨0,ValueSets.ofAtoms (← answer.getDM (contents R)),fld⟩ : HeapFacts.Fact)
       checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
 
 /-- The throw of a fresh object owning no key, emitted for `Δ`: the

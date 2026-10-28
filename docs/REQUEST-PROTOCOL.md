@@ -577,11 +577,15 @@ accepted certificate shape.
 
 - `cells` and `values` are lists of `{slot, contents, field}` facts: for a
   cell, about the named field of the object in the slot; for a value, about
-  the slot itself. `contents` is a nonempty disjunction of atoms: `"nul"`,
-  `"undef"`, `"tru"`, `"fls"`, `"num"`, `"str"`, `"defined"`, `"nonNull"`,
-  `"nonNullish"`, `{"numLit":{"bits":"…"}}`, `{"strLit":{"value":"…"}}`, and
-  `{"tag":{"test":k,"answer":b}}`, a test's observed answer. A singleton fact
-  can weaken to its family, never the reverse.
+  the slot itself. `contents` is a value set
+  ([ValueSets.lean](../lean/Verification/Semantics/ValueSets.lean)), one
+  component per kind of value: `nul`, `undef`, `tru`, `fls`, `sym` and `arr`
+  are Booleans; `num`, `str` and `big` are `{"these": {"xs": […]}}` or
+  `{"allBut": {"xs": […]}}`, the literals admitted or excluded (a number as
+  its 64-bit pattern in decimal); `obj` is `null`, admitting no object, or a
+  list of clauses, each a list of `{"tag": k, "answer": b}`, admitting an
+  object meeting every clause, a clause being met where one of its tags
+  answers so or reads a prototype for it.
 - `links` is a list of `{cell, value, alias, field, optional}` objects:
   `alias: true` means equal slot values; `alias: false` means the named
   field currently contains the other slot's value (a read link), or, with
@@ -600,9 +604,12 @@ These are finite state assertions, not extra type labels. Current-content
 predicates are checked on every incoming edge; a predicate the rules do not
 support still requires a proof that the storage contract implies the claim.
 
-The effect checker binds to the root expression sequent and must establish
-exactly `output`. Each outgoing edge checks fact entailment against the
-destination's `knowledge`, in addition to ordinary type coverage.
+The effect checker binds to the root expression sequent and runs on the
+[expansion](PROGRAM-TYPING.md#stored-knowledge-and-its-expansion) of the
+node's `knowledge`; the output it computes must establish `output`. Each
+outgoing edge reads `output` through its expansion and checks that its facts
+establish the destination's
+`knowledge` (`knowledge-edge`), in addition to ordinary type coverage.
 Effect-only continuations drop the result slot before transferring facts.
 External entry requires empty knowledge. Within a source statement, the
 producer derives checked facts along administrative paths, and the source
@@ -625,15 +632,15 @@ selects one of the checked `StepEvidence` constructors:
   plain records stating it as a readonly view other than `length`, at any
   type; empty expansions and non-bag alternatives are refused; its stored
   read links retain the receiver descriptor;
-- `observedRead`, with `slot` and `contents`: a read of a location a cell
-  fact states;
-- `slicedRead`, with `tag`, `answer`, `slot`, `proof` and `sub`: every atom
-  of one of the location's facts answers the tag so (a nullish exclusion
-  answers its test `false`; a tag atom is its answer), and `sub` proves that
+- `observedRead`, with `slot` and a value set `contents`: a read of a
+  location a cell fact states;
+- `slicedRead`, with `tag`, `answer`, `slot`, `proof` and `sub`: every value
+  of one of the location's facts answers the tag so, or reads a prototype for
+  it (`ValueSet.answers`), and `sub` proves that
   the ordinary read contract's slice by that answer fits the requested type,
   or the slice is `Array.isArray`'s, whose array the requested type holds;
-- `knownValue`, with `slot` and `contents`: a slot whose value facts state
-  its contents;
+- `knownValue`, with `slot` and a value set `contents`: a slot whose value
+  facts state its contents;
 - `linkedRead`, with `slot`, `value` and `sub`: a read of the slot's field
   where a read link says the field holds the value of slot `value`, at that
   value's type, below the claim by `sub`
@@ -643,7 +650,7 @@ selects one of the checked `StepEvidence` constructors:
   proof; the code descriptor is part of the requested term, so changing it
   invalidates the evidence;
 - `written`, with `receiver`, `value`, `contents` and `proof`: the written
-  value's predicate, or `null` where it is not a known primitive.
+  value's value set, or `null` where it is not a known primitive.
 
 ### Promise facts
 

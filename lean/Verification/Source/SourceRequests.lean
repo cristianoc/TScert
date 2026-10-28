@@ -131,7 +131,7 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
     | some n => n.knowledge == (assertions.lookup l).getD {}) &&
   (assertions.all fun (l,k) => match C[l]? with
     | none => false
-    | some n => HeapKnowledge.check n.knowledge k none)
+    | some n => HeapKnowledge.check (KnowledgeExpand.expand (fun _ => none) n.knowledge) k none)
 
 @[nospecialize] def checkAssertions (r : SourceRequest σ ι) (c : Response ι) : Bool :=
   checkGraphAssertions r.cuts r.assertions c.certificate &&

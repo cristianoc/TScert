@@ -229,6 +229,9 @@ deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for SummaryArm
 deriving instance ToJson, FromJson for ReadSummary
 deriving instance ToJson, FromJson for HeapFacts.Atom
+deriving instance ToJson, FromJson for ValueSets.Lit
+deriving instance ToJson, FromJson for ValueSets.Literal
+deriving instance ToJson, FromJson for ValueSets.ValueSet
 deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
 deriving instance ToJson, FromJson for HeapSeparation.Fact

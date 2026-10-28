@@ -15,7 +15,7 @@ structure Knowledge where
   deriving DecidableEq, Repr
 
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
-  ∀ f ∈ facts, ∃ a ∈ f.contents, a.holds (ρ f.slot)
+  ∀ f ∈ facts, f.contents.mem (ρ f.slot) = true
 
 def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧
@@ -28,22 +28,23 @@ theorem empty (ρ h) : Holds {} ρ h :=
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2⟩
   intro f hf
-  obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],a,ha,hv⟩
+  obtain ⟨flds,c,oid,u,he,hr,hm⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],hm⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2⟩
   intro f hf
-  obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨flds,c,oid,u,he,hr.alloc_frames vs,a,ha,hv⟩
+  obtain ⟨flds,c,oid,u,he,hr,hm⟩ := hk.1 f hf
+  exact ⟨flds,c,oid,u,he,hr.alloc_frames vs,hm⟩
 
 /-- What every one of several states establishes: a fact about a slot and
 field each of them states, holding what any of them says it holds; the first's
 links that appear verbatim in all the others; the separation pairs every
 state justifies (`HeapSeparation.meet`). Used by the producer at a merge
 that is not a cut, where no requirement is stated; every edge is still
-checked, and each state's fact covers the union. -/
+checked, and each state's fact covers the union. Each join is widened
+(`ValueSet.widen`), so a merge keeps at most 8 clauses per object. -/
 def meet : List Knowledge → Knowledge
   | [] => {}
   | k :: ks =>
@@ -51,7 +52,7 @@ def meet : List Knowledge → Knowledge
       (pick k).filterMap fun f =>
         let others := ks.map fun o => (pick o).filter fun g => g.slot == f.slot && g.field == f.field
         if others.all (!·.isEmpty) then
-          some { f with contents := (f.contents ++ others.flatten.flatMap (·.contents)).eraseDups }
+          some { f with contents := others.flatten.foldl (fun V g => (V.join g.contents).widen) f.contents }
         else none
     ⟨(joined (·.cells)).eraseDups, (joined (·.values)).eraseDups,
      let others := ks.map fun o => (Std.HashSet.ofList o.links : Std.HashSet HeapLinks.Link)
@@ -70,8 +71,7 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
   intro f hf
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2.1 f hf)
   simp only [Bool.and_eq_true,beq_iff_eq] at hc
-  obtain ⟨a,ham,he⟩ := ha.2.1 g hg
-  simpa [PointClaims.mapEnv,hc.1] using covers_sound hc.2 ⟨a,ham,he⟩
+  simpa [PointClaims.mapEnv,hc.1] using ValueSets.ValueSet.le_sound hc.2 (ha.2.1 g hg)
 
 def shift (k : Knowledge) : Knowledge :=
   ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1]),
@@ -92,9 +92,24 @@ be transferred into the old environment. -/
 def dropFacts (fs : Facts) : Facts :=
   (fs.filter fun f => 0 < f.slot).map fun f => {f with slot := f.slot - 1}
 
+/-- The facts on slot 0 restated on each of its aliases: what the facts of
+its class keep when the slot is dropped. -/
+def aliasZero (ls : HeapLinks.Links) (fs : Facts) : Facts :=
+  fs ++ (fs.filter (·.slot == 0)).flatMap fun f => (HeapLinks.aliases ls 0).map fun y => { f with slot := y }
+
 def dropResult (k : Knowledge) : Knowledge :=
-  ⟨dropFacts k.cells,dropFacts k.values,HeapLinks.pull k.links (fun i => if i = 0 then [] else [i-1]),
+  ⟨dropFacts (aliasZero k.links k.cells),dropFacts (aliasZero k.links k.values),
+    HeapLinks.pull k.links (fun i => if i = 0 then [] else [i-1]),
     HeapSeparation.drop k.separation⟩
+
+theorem aliasZero_mem {ls : HeapLinks.Links} {fs : Facts} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {g : Fact} (hg : g ∈ aliasZero ls fs) : ∃ f ∈ fs, ρ g.slot = ρ f.slot ∧ g.contents = f.contents ∧ g.field = f.field := by
+  rcases List.mem_append.mp hg with hg | hg
+  · exact ⟨g, hg, rfl, rfl, rfl⟩
+  · obtain ⟨f, hf, hg⟩ := List.mem_flatMap.mp hg
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hg
+    have h0 : f.slot = 0 := by simpa using (List.mem_filter.mp hf).2
+    exact ⟨f, (List.mem_filter.mp hf).1, by rw [h0]; exact HeapLinks.aliases_eq hl hy, rfl, rfl⟩
 
 theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
     Holds (dropResult k) ρ h := by
@@ -107,7 +122,9 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
       cases hs : g.slot with
       | zero => omega
       | succ i => rfl
-    simpa [he] using hk.1 g hg.1
+    obtain ⟨f, hf, hs, hc, hfl⟩ := aliasZero_mem hk.2.2.1 hg.1
+    obtain ⟨flds, c, oid, u, hl, hr, hm⟩ := hk.1 f hf
+    exact ⟨flds, c, oid, u, by rw [← he, hs]; exact hl, by rw [hfl]; exact hr, by rw [hc]; exact hm⟩
   · constructor
     · intro f hf
       obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -117,7 +134,10 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
         cases hs : g.slot with
         | zero => omega
         | succ i => rfl
-      simpa [he] using hk.2.1 g hg.1
+      obtain ⟨f, hf, hs, hc, -⟩ := aliasZero_mem hk.2.2.1 hg.1
+      have := hk.2.1 f hf
+      rw [← hs, ← hc, he] at this
+      exact this
     refine ⟨?_, HeapSeparation.drop_holds hk.2.2.2⟩
     · apply HeapLinks.pull_holds (pre := fun i => if i = 0 then [] else [i-1]) hk.2.2.1
       intro i j hj
@@ -131,11 +151,13 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
 
 /-- Project facts along an executable slot map. All runtime aliases selected by
 that map are retained, and target slots the map takes from one source slot
-are related by alias links (`mapped-alias`); facts about unselected slots
-are forgotten. -/
-def projectFacts (facts : Facts) (m : PointClaims.Mapping) (count : Nat) : Facts :=
+are related by alias links (`mapped-alias`); a target slot takes the facts
+of every alias of its source slot, so a class keeps its facts when the slot
+holding them is not selected. -/
+def projectFacts (ls : HeapLinks.Links) (facts : Facts) (m : PointClaims.Mapping) (count : Nat) : Facts :=
   (List.range count).flatMap fun i =>
-    (facts.filter fun f => f.slot == PointClaims.slot m i).map fun f => { f with slot := i }
+    let ms := HeapLinks.aliases ls (PointClaims.slot m i)
+    (facts.filter fun f => ms.contains f.slot).map fun f => { f with slot := i }
 
 def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge :=
   -- The target slots each source slot is mapped to, in increasing order.
@@ -147,17 +169,176 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
   let shared : HeapLinks.Links := preimages.fold (fun acc _ js => match js with
     | _ :: _ :: _ => pairs js ++ acc
     | _ => acc) []
-  ⟨projectFacts k.cells m count,projectFacts k.values m count,
+  ⟨projectFacts k.links k.cells m count,projectFacts k.links k.values m count,
     HeapLinks.pull k.links (fun i => preimages.getD i []) ++ shared,
     HeapSeparation.project k.separation m count⟩
 
+/-! ## Queries by class
+
+What a knowledge states of a slot's value, or of the read of a field from
+it, gathered from every slot `M` gives as holding the slot's value: the
+classes of a closure, or a slot's aliases in links that state every pair of
+a class. -/
+
+theorem any_some {α : Type} {o : Option α} {p : α → Bool} (h : o.any p = true) :
+    ∃ x, o = some x ∧ p x = true := by
+  cases o with
+  | none => cases h
+  | some x => exact ⟨x, rfl, h⟩
+
+/-- The meet of a nonempty list of value sets. -/
+def meetSome : List ValueSets.ValueSet → Option ValueSets.ValueSet
+  | [] => none
+  | V :: Vs => some (Vs.foldl ValueSets.ValueSet.meet V)
+
+theorem meetSome_mem {l : List ValueSets.ValueSet} {V : ValueSets.ValueSet} {v : Tm}
+    (h : meetSome l = some V) (hl : ∀ x ∈ l, x.mem v = true) : V.mem v = true := by
+  cases l with
+  | nil => cases h
+  | cons W Ws =>
+    cases h
+    have hw := hl W (List.mem_cons_self ..)
+    have hws : ∀ x ∈ Ws, x.mem v = true := fun x hx => hl x (List.mem_cons_of_mem _ hx)
+    clear hl
+    induction Ws generalizing W with
+    | nil => exact hw
+    | cons a Ws ih =>
+      simp only [List.foldl_cons]
+      exact ih _ (by rw [ValueSets.ValueSet.mem_meet, hw, hws a (List.mem_cons_self ..)]; rfl)
+        fun x hx => hws x (List.mem_cons_of_mem _ hx)
+
+/-- The parts of a meet each about the one read from one object: the meet
+holds of that read's value. -/
+theorem meetSome_read {l : List ValueSets.ValueSet} {V : ValueSets.ValueSet} {o : Tm} {f : PropKey} {h : Heap}
+    (hV : meetSome l = some V)
+    (hl : ∀ x ∈ l, ∃ flds c oid u, o = .objAt flds c oid ∧ ReadGave flds f h u ∧ x.mem u = true) :
+    ∃ flds c oid u, o = .objAt flds c oid ∧ ReadGave flds f h u ∧ V.mem u = true := by
+  cases l with
+  | nil => cases hV
+  | cons W Ws =>
+    obtain ⟨flds, c, oid, u, he, hr, -⟩ := hl W (List.mem_cons_self ..)
+    refine ⟨flds, c, oid, u, he, hr, meetSome_mem hV fun x hx => ?_⟩
+    obtain ⟨flds', c', oid', u', he', hr', hm'⟩ := hl x hx
+    rw [he] at he'
+    cases he'
+    rw [ReadGave.unique hr hr']
+    exact hm'
+
+/-- What a knowledge states of the value of slot `s`: the value facts on
+the slots `M s`, and the cell facts of each read into them from the slots
+of its receiver. -/
+def valueBy (a : Knowledge) (M : Nat → List Nat) (s : Nat) : Option ValueSets.ValueSet :=
+  let ms := M s
+  -- Each receiver and field once: reads restated on every pair of slots of
+  -- two classes give one cell.
+  let reads := ((a.links.filter fun g => !g.alias && ms.contains g.value).map fun g => (g.cell, g.field)).eraseDups
+  meetSome ((a.values.filter fun F => ms.contains F.slot).map (·.contents) ++
+    reads.flatMap fun (c, f) =>
+      let rs := M c
+      (a.cells.filter fun F => rs.contains F.slot && F.field == f).map (·.contents))
+
+/-- What a knowledge states of the read of field `f` from slot `s`'s object:
+the cell facts on the slots `M s`, and the value facts of each read of `f`
+from them. -/
+def cellBy (a : Knowledge) (M : Nat → List Nat) (s : Nat) (f : PropKey) : Option ValueSets.ValueSet :=
+  let ms := M s
+  meetSome ((a.cells.filter fun F => ms.contains F.slot && F.field == f).map (·.contents) ++
+    (a.links.filter fun g => !g.alias && g.field == f && ms.contains g.cell).flatMap fun g =>
+      let ds := M g.value
+      (a.values.filter fun F => ds.contains F.slot).map (·.contents))
+
+/-- The value a link reads, as a `ReadGave`. -/
+theorem link_readGave {g : HeapLinks.Link} {ρ : Env} {h : Heap} (ha : g.alias = false)
+    (hh : HeapLinks.Holds [g] ρ h) :
+    ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value) := by
+  have := hh g (List.mem_singleton_self g)
+  simp only [ha, Bool.false_eq_true, ite_false] at this
+  cases ho : g.optional
+  · simp only [ho, Bool.false_eq_true, ite_false] at this
+    obtain ⟨flds, c, oid, l, he, hl, hv⟩ := this
+    exact ⟨flds, c, oid, he, ReadGave.present hl hv⟩
+  · simpa [ho] using this
+
+section queries
+variable {a : Knowledge} {M : Nat → List Nat} {ρ : Env} {h : Heap}
+
+theorem valueBy_mem (ha : Holds a ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {V : ValueSets.ValueSet}
+    (hV : valueBy a M s = some V) : V.mem (ρ s) = true := by
+  refine meetSome_mem hV fun x hx => ?_
+  rcases List.mem_append.mp hx with hx | hx
+  · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨hF, hm⟩ := List.mem_filter.mp hF
+    rw [← hs s F.slot (List.contains_iff_mem.mp hm)]
+    exact ha.2.1 F hF
+  · obtain ⟨cf, hcf, hx⟩ := List.mem_flatMap.mp hx
+    obtain ⟨g, hg, hcf⟩ := List.mem_map.mp (List.mem_eraseDups.mp hcf)
+    subst hcf
+    obtain ⟨hg, hgs⟩ := List.mem_filter.mp hg
+    simp only [Bool.and_eq_true, Bool.not_eq_true', List.contains_iff_mem] at hgs
+    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
+    obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
+    obtain ⟨flds', c', oid', he', hr'⟩ := link_readGave hgs.1 fun x hx => by
+      rw [List.mem_singleton.mp hx]; exact ha.2.2.1 g hg
+    rw [hs g.cell F.slot hk.1, he'] at he
+    cases he
+    rw [hk.2] at hr
+    rw [← hs s g.value hgs.2, ← ReadGave.unique hr hr']
+    exact hm
+
+theorem cellBy_holds (ha : Holds a ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {f : PropKey}
+    {V : ValueSets.ValueSet} (hV : cellBy a M s f = some V) :
+    ∃ flds c oid u, ρ s = .objAt flds c oid ∧ ReadGave flds f h u ∧ V.mem u = true := by
+  refine meetSome_read hV fun x hx => ?_
+  rcases List.mem_append.mp hx with hx | hx
+  · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+    simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hk
+    obtain ⟨flds, c, oid, u, he, hr, hm⟩ := ha.1 F hF
+    rw [hs s F.slot hk.1] at he
+    rw [hk.2] at hr
+    exact ⟨flds, c, oid, u, he, hr, hm⟩
+  · obtain ⟨g, hg, hx⟩ := List.mem_flatMap.mp hx
+    obtain ⟨hg, hgs⟩ := List.mem_filter.mp hg
+    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.contains_iff_mem] at hgs
+    obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hx
+    obtain ⟨hF, hk⟩ := List.mem_filter.mp hF
+    simp only [List.contains_iff_mem] at hk
+    obtain ⟨flds, c, oid, he, hr⟩ := link_readGave hgs.1.1 fun x hx => by
+      rw [List.mem_singleton.mp hx]; exact ha.2.2.1 g hg
+    rw [hs s g.cell hgs.2] at he
+    rw [hgs.1.2] at hr
+    refine ⟨flds, c, oid, ρ g.value, he, hr, ?_⟩
+    rw [← hs g.value F.slot hk]
+    exact ha.2.1 F hF
+
+/-- A slot's aliases hold its value. -/
+theorem aliases_class (hl : HeapLinks.Holds a.links ρ h) :
+    ∀ x, ∀ y ∈ HeapLinks.aliases a.links x, ρ y = ρ x :=
+  fun _ _ hy => HeapLinks.aliases_eq hl hy
+
+end queries
+
+/-- Each cell fact on every alias of its slot: the cells a reader of cells by
+slot needs where facts are stored once per class. -/
+def aliasCells (k : Knowledge) : Facts :=
+  k.cells.flatMap fun F => (HeapLinks.aliases k.links F.slot).map fun y => { F with slot := y }
+
+theorem aliasCells_holds {k : Knowledge} {ρ h} (hk : Holds k ρ h) : HeapFacts.Holds (aliasCells k) ρ h := by
+  intro F hF
+  obtain ⟨G, hG, hF⟩ := List.mem_flatMap.mp hF
+  obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hF
+  obtain ⟨flds, c, oid, u, he, hr, hm⟩ := hk.1 G hG
+  exact ⟨flds, c, oid, u, by rw [HeapLinks.aliases_eq hk.2.2.1 hy]; exact he, hr, hm⟩
+
 /-- Every live property-read link transfers the observed result predicate,
 including observations admitting undefined. -/
-def linkFacts (k : Knowledge) (slot : Nat) (R : List Atom) : Facts :=
+def linkFacts (k : Knowledge) (slot : Nat) (R : ValueSets.ValueSet) : Facts :=
   (k.links.filter (fun g => !g.alias && g.value == slot)).map
     (fun g => ⟨g.cell,R,g.field⟩)
 
-theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a.holds (ρ slot)) :
+theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : R.mem (ρ slot) = true) :
     HeapFacts.Holds (linkFacts k slot R) ρ h := by
   intro f hf
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -177,13 +358,13 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
 /-- An observed Boolean outcome refines cells only through current read links.
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
-  let R := [if q then HeapFacts.Atom.tru else .fls]
+  let R : ValueSets.ValueSet := if q then { tru := true } else { fls := true }
   ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation⟩
 
 theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
     (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
-  have hv : ∃ a ∈ [if q then HeapFacts.Atom.tru else .fls], a.holds (ρ slot) :=
-    ⟨(if q then .tru else .fls), by simp, by cases q <;> simpa [HeapFacts.Atom.holds] using hq⟩
+  have hv : (if q then ({ tru := true } : ValueSets.ValueSet) else { fls := true }).mem (ρ slot) = true := by
+    cases q <;> simp only [Bool.false_eq_true, ite_false, ite_true] at hq ⊢ <;> rw [hq] <;> rfl
   refine ⟨?_,?_,hk.2.2⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
@@ -291,10 +472,10 @@ theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
 /-- A tag narrows a saved primitive predicate, and its still-live read links transfer
 that observation to the heap. No link means no assertion about a mutable cell. -/
 def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :=
-  match k.values.find? (fun f => f.slot == slot) with
+  match valueBy k (HeapLinks.aliases k.links) slot with
   | none => k
-  | some f =>
-    let R := f.contents.flatMap (observeAtom tag q)
+  | some V =>
+    let R := V.meet (ValueSets.ofTag tag q)
     ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation⟩
 
 theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
@@ -303,14 +484,10 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
   unfold observeTag
   split
   · exact hk
-  · rename_i f hf
-    have hm := List.mem_of_find?_eq_some hf
-    have hs : f.slot = slot := by simpa using List.find?_some hf
-    obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
-    have hv : a.holds (ρ slot) := by simpa [hs] using hv
-    obtain ⟨a',ha',hv'⟩ := observeAtom_holds hv hq'
-    have hR : ∃ b ∈ f.contents.flatMap (observeAtom tag q), b.holds (ρ slot) :=
-      ⟨a', List.mem_flatMap.mpr ⟨a,ha,ha'⟩, hv'⟩
+  · rename_i V hV
+    have hv : V.mem (ρ slot) = true := valueBy_mem hk (aliases_class hk.2.2.1) hV
+    have hR : (V.meet (ValueSets.ofTag tag q)).mem (ρ slot) = true := by
+      rw [ValueSets.ValueSet.mem_meet, hv, ValueSets.ofTag_holds (ValueSets.ValueSet.mem_isVal hv) hq']; rfl
     refine ⟨?_,?_,hk.2.2⟩
     · intro f' hf'
       rcases List.mem_append.mp hf' with hf' | hf'
@@ -430,7 +607,7 @@ value, so it meets one of them. -/
 def typedLinkFacts (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
   k.links.filterMap fun g => if g.alias then none else
     match Γ[g.value]? with
-    | some A => (atoms G A).map fun R => ⟨g.cell, R, g.field⟩
+    | some A => (atoms G A).map fun R => ⟨g.cell, ValueSets.ofAtoms R, g.field⟩
     | none => none
 
 /-- The knowledge with its read links' typed facts (`typedLinkFacts`). -/
@@ -448,7 +625,7 @@ theorem withTypedLinks_holds {G : NormalGraph ι} {Γ k ρ n W h}
       split at hf
       · rename_i A hA
         obtain ⟨R, hR, rfl⟩ := Option.map_eq_some_iff.mp hf
-        have hv := (atoms_sem hR n W (ρ g.value)).mp (he.2 g.value A hA)
+        have hv := ValueSets.ofAtoms_holds ((atoms_sem hR n W (ρ g.value)).mp (he.2 g.value A hA))
         exact linkFacts_holds hk hv _ (List.mem_map.mpr ⟨g, List.mem_filter.mpr ⟨hg, by simp [ha]⟩, rfl⟩)
       · cases hf
   · exact hk.1 f hf
@@ -462,17 +639,19 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   match o, Γ[slot]? with
   | .tag tag q, some A =>
     match observedAtoms G A tag q with
-    | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links, out.separation⟩
+    | some R => ⟨linkFacts k slot (ValueSets.ofAtoms R) ++ out.cells, ⟨slot,ValueSets.ofAtoms R,valueField⟩ :: out.values,
+        out.links, out.separation⟩
     -- Otherwise the answer itself is a fact of every cell the value was
     -- read from (a separate fact: all of a cell's facts hold). A slice of
     -- objects a test leaves, `x` truthy where `x` is an object or undefined,
     -- also has values neither null nor undefined.
     | none =>
-      let out : Knowledge := ⟨linkFacts k slot [.tag tag q] ++ out.cells, out.values, out.links, out.separation⟩
+      let out : Knowledge := ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ out.cells, out.values, out.links,
+        out.separation⟩
       if G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false) then
-        ⟨linkFacts k slot [.nonNullish] ++ out.cells, ⟨slot,[.nonNullish],valueField⟩ :: out.values, out.links,
-          out.separation⟩
+        ⟨linkFacts k slot (ValueSets.ofAtom .nonNullish) ++ out.cells,
+          ⟨slot,ValueSets.ofAtom .nonNullish,valueField⟩ :: out.values, out.links, out.separation⟩
       else out
   | _, _ => out
 
@@ -485,7 +664,7 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
   · rename_i tag q A hi
     split
     · rename_i R hr
-      have hv := observedAtoms_sound hr (he.2 slot A hi) ho
+      have hv := ValueSets.ofAtoms_holds (observedAtoms_sound hr (he.2 slot A hi) ho)
       refine ⟨?_, ?_, hout.2.2⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
@@ -495,9 +674,9 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         rcases List.mem_cons.mp hf with rfl | hf
         · exact hv
         · exact hout.2.1 f hf
-    · have htag : ∃ a ∈ [Atom.tag tag q], a.holds (ρ slot) :=
-        ⟨.tag tag q, by simp, (meaning_value (he.2 slot A hi)).1, ho⟩
-      have hout : Holds ⟨linkFacts k slot [.tag tag q] ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
+    · have htag : (ValueSets.ofTag tag q).mem (ρ slot) = true :=
+        ValueSets.ofTag_holds (meaning_value (he.2 slot A hi)).1 ho
+      have hout : Holds ⟨linkFacts k slot (ValueSets.ofTag tag q) ++ (observe (withTypedLinks G Γ k) slot (.tag tag q)).cells,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).values, (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).separation⟩ ρ h := by
         refine ⟨?_, hout.2.1, hout.2.2⟩
@@ -513,8 +692,8 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hn
         have hq := answers_sound (show Answers G _ .isNullish false from ⟨hn.1, hn.2⟩) hm
         have hval := (meaning_value hm).1
-        have hv : ∃ a ∈ [Atom.nonNullish], a.holds (ρ slot) := by
-          refine ⟨.nonNullish, by simp, hval, ?_, ?_⟩
+        have hv : (ValueSets.ofAtom .nonNullish).mem (ρ slot) = true := by
+          refine ValueSets.ofAtom_holds ⟨hval, ?_, ?_⟩
           · intro h; rw [h] at hq; simp [tagHolds] at hq
           · intro h; rw [h] at hq; simp [tagHolds] at hq
         refine ⟨?_, ?_, hout.2.2⟩
@@ -528,5 +707,28 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
           · exact hout.2.1 f hf
       · rw [if_neg hn]; exact hout
   · exact hout
+
+/-- A type's atoms answer no tag: they are primitive predicates. -/
+theorem primitive_noTag : ∀ {cs : List (Clause (Ty ι))} {R}, primitive cs = some R → R.all (!·.isTag) = true
+  | [], _, h => by simp [primitive] at h; subst h; rfl
+  | c :: cs, R, h => by
+    cases c <;> simp only [primitive] at h
+    all_goals try contradiction
+    all_goals
+      cases hr : primitive cs with
+      | none => simp [hr] at h
+      | some rs =>
+        simp only [hr, Option.map_some, Option.some.injEq] at h
+        subst h
+        have := primitive_noTag hr
+        simp only [List.all_append, this, Bool.and_true]
+        try (rename_i b; cases b)
+        all_goals simp [Atom.isTag]
+
+theorem atoms_noTag {G : NormalGraph ι} {A R} (h : atoms G A = some R) : R.all (!·.isTag) = true := by
+  unfold atoms at h
+  split at h
+  · exact primitive_noTag h
+  · cases h
 
 end Verification.HeapKnowledge

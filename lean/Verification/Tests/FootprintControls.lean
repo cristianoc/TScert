@@ -281,7 +281,7 @@ itself. -/
 
 private def noKnowledge : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
 private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .store else none }
-private def cellK : FactKind := .cell ⟨0, [.nul], "k"⟩
+private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
 #guard !stable noKnowledge cellK.support [(.cls .value, .any)]
 #guard stable storeK cellK.support [(.cls .value, .any)]

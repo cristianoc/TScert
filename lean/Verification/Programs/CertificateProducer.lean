@@ -1324,7 +1324,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- observed contents admit.
         cells.findSearch? fun fct =>
           if fct.slot == slot target.mapping i then
-            subtypeUsing G images (BranchRefinement.factSlice G A fct.field fct.contents) B
+            subtypeUsing G images (BranchRefinement.factSlice G A fct.field fct.contents.atomsView) B
           else none
     | none => subtypeUsing G images A B
 
@@ -1366,8 +1366,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     if let some R := HeapExpressionRules.valuesAt G j.context k i then
       choices := [.knownValue i R]
   | .readAt fld (.var i) =>
-    choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
-      fun f => .observedRead i f.contents
+    let cell := HeapKnowledge.cellBy k (HeapLinks.aliases k.links) i fld
+    choices := cell.toList.map fun C => .observedRead i C
     -- A read a live read link answers: the linked slot's value, at its type;
     -- first a slot read links leave from, so that a read of a longer path
     -- finds its next link (a path's witnesses, HOST-FAMILIES.md, "Entries").
@@ -1382,12 +1382,9 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     -- Read at the fixed contract once, then try each answer the location's
     -- facts give: a nullish exclusion's, and an observed tag's.
     if let some Ref := j.context[i]? then
-      let cells := k.cells.filter fun f => f.slot == i && f.field == fld
-      let observed := cells.flatMap fun f => f.contents.filterMap fun
-        | .tag t q => some (t, q)
-        | _ => none
-      let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ observed).eraseDups.filter
-        fun (t, q) => cells.any fun f => f.contents.all (·.answers t q)
+      let observed := cell.toList.flatMap (·.unitTags)
+      let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ [(Tag.truthy, true), (Tag.truthy, false)] ++
+        observed).eraseDups.filter fun (t, q) => cell.any (·.answers t q)
       -- The contract the read is typed at: the record's field, or a
       -- dictionary's index, with `undefined` where the key is absent.
       let contract : Option (Ty ι) := match expand G Ref with
@@ -1651,9 +1648,16 @@ for it: its edges, its handler and, at a return under a promise goal, the
 promise's evidence. -/
 @[nospecialize] private def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
+    (stored : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
     (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
     (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM G (NodeEvidence ι) := do
+  -- The output is stored in its normal form at the output's contexts where
+  -- the computed output establishes it, and the node's edges read it
+  -- expanded, as the checker does (`ControlFlow.outFacts`).
+  let outCtx : KnowledgeNormal.Ctx := fun | 0 => none | i + 1 => KnowledgeExpand.ctxOf G c.context i
+  let normal := KnowledgeNormal.normFast outCtx out
+  let storedOut := if KnowledgeExpand.checkIn outCtx out normal none then normal else out
+  let out := KnowledgeExpand.expandLinks outCtx storedOut
   let unconditional := PromiseCalls.yieldFacts ys false
   let conditional := PromiseCalls.yieldFacts ys true
   let refine := fun Γ facts shift => PromiseCalls.refineBy G Γ facts shift
@@ -1671,7 +1675,7 @@ promise's evidence. -/
       | none => Failure.edge l t.label index) : ProduceM G (EdgeEvidence ι))
   let branchTarget := fun (Γ : List (Ty ι)) o (t : Target) (index : Nat) => (do
     let searched ← searchIn (edgeUsing G images claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
-      (HeapKnowledge.observeTyped G Γ out 0 o).cells)
+      (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ out 0 o)))
     match searched.value with
     | some p => pure p
     | none => throw (match searched.exhaustion with
@@ -1725,19 +1729,22 @@ promise's evidence. -/
     | some e, none => (some (.proof e), none)
     | none, some _ => (none, none)
     | none, none => (none, some ⟨c.context, node.expression, c.type⟩)
-  let evidence : NodeEvidence ι := {ordinary, sequent, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
+  let evidence : NodeEvidence ι := {ordinary, sequent, edges := ps, knowledge := stored, effect := some effect, output := storedOut, handler := hd}
   return { evidence with implies := implies, yields := ys, arguments := arguments, promise := promise }
 
 
 @[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : KnownIndex ι)
+    (stored : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (implies : List (PromiseCalls.Implication ι) := []) (arguments : List Nat := [])
     (goal : ControlFlow.Goal ι := .plain []) :
     ProduceM G (NodeEvidence ι) := do
   let some c := claims[l]? | throw .claimCount
+  -- The node's rules read the stored knowledge expanded, as the checker does
+  -- (`ControlFlow.entryFacts`).
+  let k := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) stored
   let searched ← searchIn (expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions
     known codes aliases checker)
   let some (derivation,effect,out) := searched.value | throw (match searched.exhaustion with
@@ -1747,7 +1754,7 @@ promise's evidence. -/
   let found ← stateIn (nodeYields G images pool c.context implies e out k)
   -- Every candidate is checked against the node's edge obligations. Retry
   -- only a bounded number; label counts do not order semantic precision.
-  let attempt := produceNodeAt G images pool l node claims k c derivation effect out implies arguments goal
+  let attempt := produceNodeAt G images pool l node claims stored c derivation effect out implies arguments goal
   tryCatch (attempt found) fun err => do
     let sliced ← stateIn (sliceYields G images pool c.context e k)
     let same := fun (a b : PromiseCalls.Yield ι) =>
@@ -1784,21 +1791,21 @@ promise's evidence. -/
 
 /-- The implications a source node carries on its edge of `cont` numbered
 `index`, and the context, refined by its yields, they are checked in. -/
-def edgeImplicationsOf [DecidableEq ι] (previous : NodeEvidence ι) (cont : Continuation) : List (PromiseCalls.Implication ι) :=
-  PromiseCalls.aliasImplications (edgeFactsOf previous cont).links (match cont with
+def edgeImplicationsOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (cont : Continuation) : List (PromiseCalls.Implication ι) :=
+  PromiseCalls.aliasImplications (edgeFactsOf G previous cont).links (match cont with
     | .effect _ | .branch _ _ => previous.implies
     | _ => PromiseCalls.edgeImplications previous.implies previous.yields true)
 where
   /-- The knowledge an edge's implications and argument slots are carried by,
   as the checker reads it (`ControlFlow.carries`). -/
-  edgeFactsOf (previous : NodeEvidence ι) : Continuation → HeapKnowledge.Knowledge
-    | .effect _ | .branch _ _ => HeapKnowledge.dropResult previous.output
-    | _ => previous.output
+  edgeFactsOf (G : NormalGraph ι) (previous : NodeEvidence ι) : Continuation → HeapKnowledge.Knowledge
+    | .effect _ | .branch _ _ => HeapKnowledge.dropResult (ControlFlow.outFacts G previous)
+    | _ => ControlFlow.outFacts G previous
 
 /-- The slots of a node's edge holding the promised argument, in the source's
 slots, its knowledge's aliases included. -/
-def edgeArgumentsOf [DecidableEq ι] (previous : NodeEvidence ι) (node : Node) : List Nat :=
-  PromiseCalls.aliasSources (edgeImplicationsOf.edgeFactsOf previous node.continuation).links
+def edgeArgumentsOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (node : Node) : List Nat :=
+  PromiseCalls.aliasSources (edgeImplicationsOf.edgeFactsOf G previous node.continuation).links
     (match node.continuation with
      | .effect _ | .branch _ _ => previous.arguments
      | _ => ControlFlow.pushedSources previous.arguments (ControlFlow.aliasedRead previous.arguments node.expression))
@@ -1813,9 +1820,9 @@ def edgeContextOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence
   let Γ := (claim previous.expression).context
   let A := (claim previous.expression).type
   let facts := fun answered => PromiseCalls.yieldFacts previous.yields answered
-  let pushed := fun fs => PromiseCalls.refineBy G (A :: Γ) (PromiseCalls.aliasFacts previous.output.links fs 1) 0
+  let pushed := fun fs => PromiseCalls.refineBy G (A :: Γ) (PromiseCalls.aliasFacts (ControlFlow.outFacts G previous).links fs 1) 0
   let kept := fun fs => PromiseCalls.refineBy G Γ
-    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult previous.output).links fs 0) 0
+    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult (ControlFlow.outFacts G previous)).links fs 0) 0
   match cont with
   | .bind _ => pushed (facts false)
   | .tagBind t _ _ => pushed (facts (index == 0 && ControlFlow.truthyBoolean G t A))
@@ -1905,11 +1912,11 @@ Every edge is still checked by the independent consumer. -/
         | some [(pred,index,target)] =>
           let some previous := table.getD pred none | continue
           let some source := nodes[pred]? | throw .claimCount
-          k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index)
+          k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) (ControlFlow.outFacts G previous) source.continuation index)
             target.mapping c.context.length
-          implies := projectImplications (edgeImplicationsOf previous source.continuation) target.mapping
+          implies := projectImplications (edgeImplicationsOf G previous source.continuation) target.mapping
             c.context.length
-          held := projectArguments (edgeArgumentsOf previous source) target.mapping c.context.length
+          held := projectArguments (edgeArgumentsOf G previous source) target.mapping c.context.length
         | some preds =>
           -- A merge that is not a cut states no requirement of its own; it
           -- keeps what every predecessor establishes, once all are available.
@@ -1922,10 +1929,10 @@ Every edge is still checked by the independent consumer. -/
             match table.getD pred none, nodes[pred]? with
             | some previous, some source =>
               projections := projections ++ [HeapKnowledge.project
-                (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index) target.mapping c.context.length]
+                (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) (ControlFlow.outFacts G previous) source.continuation index) target.mapping c.context.length]
               carried := carried ++ [(edgeContextOf G previous source.continuation index,
-                edgeImplicationsOf previous source.continuation, target.mapping)]
-              holding := holding ++ [projectArguments (edgeArgumentsOf previous source) target.mapping
+                edgeImplicationsOf G previous source.continuation, target.mapping)]
+              holding := holding ++ [projectArguments (edgeArgumentsOf G previous source) target.mapping
                 c.context.length]
             | _, _ => ready := false
           if !ready && !force then continue
@@ -1944,6 +1951,10 @@ Every edge is still checked by the independent consumer. -/
       if handlerTargets.contains l then
         implies := []
         held := held.filter (arguments.getD l []).contains
+      -- A point other than a cut stores its knowledge's normal form at the
+      -- point's contexts; a cut stores exactly its requirement.
+      if l != start && !cuts.contains l then
+        k := KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k
       let evidence ← produceNode G images pool fuel l node claims k suggestions index codes aliases checker
         implies held goal
       table := table.set! l (some evidence)
@@ -2021,7 +2032,7 @@ result type and forgets all output heap facts. The result is a diagnostic attemp
           | none => edgeUsing G images claims context target
           | some o => edgeUsing G images claims context target (some (0, o))
               (readFields out 0) (optionalFields out 0)
-              (HeapKnowledge.observeTyped G context out 0 o).cells)
+              (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G context out 0 o)))
         let facts := edgeKnowledge G (c.type :: c.context) out node.continuation edge
         let heapOK := ControlFlow.unsatisfiable G (edgeContextOf G assumed node.continuation edge) ||
           HeapKnowledge.check facts ((requirements.lookup target.label).getD {}) target.mapping
@@ -2091,12 +2102,14 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
   for (node,l) in P.zipIdx do
     let some c := C[l]? | return some .claimCount
     for (target,index) in (successors node.continuation).zipIdx do
-      let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) c.output node.continuation index
+      let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) (ControlFlow.outFacts G c) node.continuation index
       let some destination := C[target.label]? | return some .claimCount
       -- An edge out of a context no environment meets establishes its
       -- target's knowledge too (`vacuous-edge`).
       if ControlFlow.unsatisfiable G (edgeContextOf G c node.continuation index) then continue
-      if !HeapKnowledge.check facts destination.knowledge target.mapping then
+      if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ControlFlow.entry destination))
+          (HeapKnowledge.withTypedLinks G (edgeContextOf G c node.continuation index) facts)
+          destination.knowledge target.mapping then
         return some (.edge l target.label index)
   return none
 

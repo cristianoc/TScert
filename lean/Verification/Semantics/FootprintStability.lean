@@ -31,7 +31,7 @@ inductive FactKind where
 def FactKind.Holds : FactKind → Env → Heap → Prop
   | .cell f, ρ, h => HeapFacts.Holds [f] ρ h
   | .link g, ρ, h => HeapLinks.Holds [g] ρ h
-  | .value f, ρ, _ => ∃ a ∈ f.contents, a.holds (ρ f.slot)
+  | .value f, ρ, _ => f.contents.mem (ρ f.slot) = true
   | .dense x n, ρ, h => Dense x n ρ h
 
 def FactKind.support : FactKind → Footprint
@@ -65,8 +65,8 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
     intro f' hf'
     simp only [List.mem_singleton] at hf'
     subst hf'
-    obtain ⟨flds, c, oid, v, hx, hr, a, ha, hv⟩ := hF f' (List.mem_singleton_self _)
-    exact ⟨flds, c, oid, v, hx, readGave_support (by simp [hx, fieldsOf]) hs hr, a, ha, hv⟩
+    obtain ⟨flds, c, oid, v, hx, hr, hv⟩ := hF f' (List.mem_singleton_self _)
+    exact ⟨flds, c, oid, v, hx, readGave_support (by simp [hx, fieldsOf]) hs hr, hv⟩
   | link g =>
     intro g' hg'
     simp only [List.mem_singleton] at hg'

@@ -66,7 +66,7 @@ export function mutationVerifier(): string {
   const clang = join(toolchain, "bin", "clang");
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks", "Semantics/HeapSeparation",
-    "Semantics/HeapKnowledge", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer",
+    "Semantics/HeapKnowledge", "Semantics/KnowledgeExpand", "Programs/HeapExpressionRules", "Programs/ControlFlow", "Programs/CertificateProducer",
     "Programs/ExpressionEffects", "Source/RequestJson", "Source/Lowering/ClosureSetup"];
   for (const module of modules) {
     const original = join(lean, ".lake/build/ir/Verification", `${module}.c`);
@@ -76,7 +76,8 @@ export function mutationVerifier(): string {
       text = inject(text, symbol, () => 'if (mutation("coverage")) return pair(some(lean_box(0)), lean_box(0));');
     }
     if (module === "Semantics/HeapLinks")
-      text = inject(text, "HeapLinks_check", () => 'if (mutation("links")) return 1;');
+      for (const symbol of ["HeapLinks_check", "HeapLinks_checkWith"])
+        text = inject(text, symbol, () => 'if (mutation("links")) return 1;');
     if (module === "Semantics/HeapSeparation")
       text = inject(text, "HeapSeparation_check", () => 'if (mutation("separation")) return 1;');
     if (module === "Semantics/HeapKnowledge") {
@@ -85,6 +86,9 @@ export function mutationVerifier(): string {
       assert.equal([...text.matchAll(pattern)].length, 1);
       text = text.replace(pattern, '$1 = mutation("cells") ? 1 : $2;');
     }
+    // The edge check against a stored normal form (`KnowledgeExpand.checkIn`).
+    if (module === "Semantics/KnowledgeExpand")
+      text = inject(text, "KnowledgeExpand_cellsCheck", () => 'if (mutation("cells")) return 1;');
     if (module === "Programs/HeapExpressionRules") {
       text = inject(text, "HeapExpressionRules_stableLinks___redArg", a => `if (mutation("stable")) { lean_object *r = lean_ctor_get(${a[2]}, 2); lean_inc(r); return r; }`);
       // A read a cell fact answers: its link optional whatever the receiver's

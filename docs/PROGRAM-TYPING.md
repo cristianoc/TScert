@@ -2072,8 +2072,8 @@ $`m`$ and checks both obligations:
 }\ \textsf{witness-edge}
 ```
 
-`checkTargetResult` checks mapped type coverage and `HeapKnowledge.check`;
-`HeapLinks.check` compares the mapped receiver, field and value slots.
+`checkTargetResult` checks mapped type coverage and the knowledge (`knowledge-edge`);
+`HeapLinks.checkWith` compares the mapped receiver, field and value slots by the source's classes.
 `ControlFlow.witness_edge_sound` proves that the mapped witness satisfies
 $`A`$ and is the value read from that receiver's field in the current heap,
 including an absent optional field's `undefined`. Branch edges apply their
@@ -3195,7 +3195,63 @@ the transitive closure**: with $`x=y`$ and $`y=z`$ in $`\Pi`$, the relation hold
 $`y`$ and not of $`z`$ (`HeapLinks.aliases`). A write therefore propagates to the
 directly recorded aliases only. That is sound — `aliases_eq` proves each one
 denotes the same value — and incomplete, and the rules below say $`\approx_\Pi`$
-rather than $`=`$ so as not to claim otherwise.
+rather than $`=`$ so as not to claim otherwise. A node's rules read the
+[expansion](#stored-knowledge-and-its-expansion) of its stored knowledge,
+which records an alias between every two slots of a class.
+
+#### Stored knowledge and its expansion
+
+A node's stored knowledge $`k`$ states each fact once, about its alias
+class (the [normal form](drafts/heap-knowledge-canonical.md)). The node's
+rules read its **expansion** $`\mathsf{expand}_\Gamma(k)`$, which restates on
+every slot what the stored form leaves implicit
+([KnowledgeExpand.lean](../lean/Verification/Semantics/KnowledgeExpand.lean)).
+Write $`[x]`$ for the class of slot $`x`$: the least equivalence containing
+each alias link and identifying the values of two reads of one field from
+one class (`LinkClasses.Gen`). Write $`C_{[x]}`$ for the class's context, the
+meet of the value sets its slots' types denote where a type is of finitely
+many primitive predicates (`ctxOf`, `classCtx`), and $`R\sqcap C`$ for $`R`$
+restricted to it ($`R`$ where there is no context). The expansion holds:
+
+- each value fact $`(i,R)`$ as $`(y,R\sqcap C_{[y]})`$ for every $`y\in[i]`$,
+  and $`(y,C_{[y]})`$ for every $`y`$ in the class of a read's value;
+- each cell fact $`(i,f,R)`$ as $`(y,f,R)`$ for every $`y\in[i]`$, and, behind
+  each read link $`c.f\mapsto y`$, every value fact $`(y,R)`$ as $`(c,f,R)`$;
+- an alias link between every two slots of a class, and each read link
+  $`c.f\mapsto v`$ as $`c'.f\mapsto v'`$ for every $`c'\in[c]`$ and $`v'\in[v]`$;
+- the separation's facts, and each of its atomic pairs on every two slots of
+  their classes.
+
+`expand_holds` proves $`\mathrm{Holds}(k,\rho,h)\Rightarrow\mathrm{Holds}(\mathsf{expand}_\Gamma(k),\rho,h)`$
+for every $`\rho`$ meeting the contexts. An edge from a state $`a`$ to a target
+storing $`b`$, under slot map $`m`$, reads the source through its expansion
+$`a^+=\mathsf{expand}(a)`$ (no contexts) and each target fact through the
+target class's context:
+
+```math
+\frac{
+  \forall(i,W)\in V_b.\ \mathsf{value}_{a^+}(m(i))\sqcap C^b_{[i]}\subseteq W\qquad
+  \forall(i,f,W)\in\Sigma_b.\ \mathsf{cell}_{a^+}(m(i),f)\subseteq W\qquad
+  L_b\preceq^m_{[\cdot]_a}L_a\qquad S_b\preceq^m S_{a^+}
+}{
+  \mathrm{Holds}(a,\rho,h)\Longrightarrow\mathrm{Holds}(b,\mathrm{mapEnv}(m,\rho),h)
+}\ \textsf{knowledge-edge}
+```
+
+$`\mathsf{value}_a(s)`$ is the meet of $`a`$'s value facts on $`s`$ and of its cell
+facts behind the reads giving $`s`$; $`\mathsf{cell}_a(s,f)`$ is the meet of its
+cell facts on $`s`$ and $`f`$; each is defined only where some fact contributes.
+The links compare by the source's classes, a target alias holding where its
+two mapped slots share a class and a target read where a source read joins
+the same classes (`HeapLinks.checkWith`). `checkIn_sound` proves the rule,
+given that the mapped environment meets the target's contexts, which the
+edge's type coverage establishes first.
+
+A node's stated `output` need not be the output its step computes from the
+expansion: the computed output $`o`$ must establish it, by the same rule with
+the identity map and the entry's contexts one slot further, the result's
+slot having none (`outputFits`, `outputFits_sound`). The node's edges read the stated
+output through its expansion at those contexts (`outFacts`).
 
 #### The reference operations
 
@@ -3413,7 +3469,7 @@ empties the heap part and leaves the equalities untouched:
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi\;;\;\emptyset}
 ```
 
-$`\Pi`$ and $`\Sigma`$ are finite lists of atoms, read as their conjunction and
+$`\Pi`$ and $`\Sigma`$ are finite lists of facts, read as their conjunction and
 extended with a comma, exactly as $`\Gamma`$ is. $`\emptyset`$ is the empty heap
 part: nothing is known about any cell. $`\Pi`$ carries over verbatim, because no
 equality mentions the heap. There is no separating conjunction here — these
@@ -3596,13 +3652,17 @@ branch edge checks (`checkObservedSub_sound`): the slice $`T_q^{\tau}(C)`$
 below $`A`$ by a subtype proof, or, for `Array.isArray`, the built-ins' array
 slice.
 
-The supported answers are the nullish exclusions and the tag atoms. A cell
-fact's atoms are alternatives: the value meets one of them. An observation
-that the value answers $`\tau`$ with $`q`$ is a conjunct, so it is a separate
-fact $`x.f\mapsto[\mathsf{tag}\,\tau\,q]`$, never an atom appended to a
-list: two failed tests are two facts, both of which hold. A string
-equality's `true` answer leaves the one string, whatever else the value's
-type holds: its fact is $`x.f\mapsto[\mathsf{strLit}\,s]`$ (`observedAtoms`;
+A cell fact's contents are a value set
+([ValueSets.lean](../lean/Verification/Semantics/ValueSets.lean)): the
+values the field may hold, one component per kind of value. The supported
+answers are those a value set states (`ValueSet.answers`): on a primitive
+kind, the answer of each literal it lists or an answer constant on the kind,
+and on objects a unit clause. An observation that the value answers
+$`\tau`$ with $`q`$ is a separate fact, the saved contents met with the
+values answering so, $`x.f\mapsto R\sqcap\mathsf{ofTag}(\tau,q)`$
+(`observeTag`): two failed tests are two facts, both of which hold. A
+string equality's `true` answer leaves the one string, whatever else the
+value's type holds: its fact is $`x.f\mapsto\{s\}`$ (`observedAtoms`;
 `field-equality-union`, `invalid-field-equality-call`). A dispatch on a
 value read from $`x.f`$ whose slice no primitive predicate states records it
 through the read's link (`observeTyped`), beside `nonNullish` where the slice
@@ -3624,16 +3684,18 @@ test, or past the write or the call, is refused (the forged field tag facts
 in `pipeline/test.mts`).
 
 The facts also exclude semantic type labels of the object they are about.
-A fact $`x.f\mapsto R`$ is a disjunction of atoms; each atom of a primitive
-family or singleton is a tag's passing answer (`atomTag`: `strLit s` is
-`strEq s`, `str` is `isStr`, and so on). A label of $`\Gamma(x)`$ is dropped
-(`factSlice`) when, for every atom of $`R`$, every clause of its expansion
-fixes $`f`$, as an invariant field or a readonly view, at a type answering
-that atom's tag `false`:
+A fact $`x.f\mapsto R`$ is covered by atoms $`\mathsf{cover}(R)`$ (`ValueSet.atomsView`): a
+literal for each string it lists, the family of each other primitive kind it
+admits, and `defined` for objects and the kinds no primitive atom names.
+Each atom of a primitive family or singleton is a tag's passing answer
+(`atomTag`: `strLit s` is `strEq s`, `str` is `isStr`, and so on). A label
+of $`\Gamma(x)`$ is dropped (`factSlice`) when, for every atom $`r`$ of the
+cover, every clause of its expansion fixes $`f`$, as an invariant field or a
+readonly view, at a type answering that atom's tag `false`:
 
 ```math
-F^{f}_{R}(A)=\{a\in A\mid \lnot(\mathsf{plain}(a)\wedge R\neq[\,]\wedge
-  \forall r\in R.\ \exists t.\ \mathsf{tag}(r)=t\wedge
+F^{f}_{R}(A)=\{a\in A\mid \lnot(\mathsf{plain}(a)\wedge \mathsf{cover}(R)\neq[\,]\wedge
+  \forall r\in \mathsf{cover}(R).\ \exists t.\ \mathsf{tag}(r)=t\wedge
   \forall c\in\mathsf{expand}([a]).\ \mathsf{fieldAnswers}(c,f,t,\mathsf{false}))\}
 ```
 
@@ -3641,7 +3703,7 @@ The proof is one step index down, as for the edge's field slice
 (`factSlice_sound`, through `fieldSlice_sound` at the atom the field's value
 meets, and `fieldSlice_absent` where the object lacks the key): the field's
 location holds a value of the field's type one level down (`field_value`),
-and that value meets one of the atoms. A clause whose field type cannot be
+and that value meets one of the cover's atoms. A clause whose field type cannot be
 decided against the atoms (one not plain, an unresolved reference) keeps its
 label, and a special field keeps its own exclusions, as `fieldAnswers`
 keeps an array's `length` out. A branch edge applies it to the facts its
@@ -3655,8 +3717,8 @@ combines them: after `k.kind` fails `"a"` and `"b"`, the label
 between the tests it is not (`invalid-field-contents-call`, run under
 Node), and an arm claimed excluded before every failed test rules it out is
 refused where evidence is produced and where it is checked (the forged field
-contents in `pipeline/test.mts`). A tag atom keeps every label, as an atom
-no primitive test answers does.
+contents in `pipeline/test.mts`). A cover holding `defined` keeps every
+label, as an atom no primitive test answers does.
 The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.

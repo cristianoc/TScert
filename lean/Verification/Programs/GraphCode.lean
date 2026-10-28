@@ -296,7 +296,7 @@ established. -/
 def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm)
     (F : List Nat) (out thr : Bool) : Prop :=
   ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-    EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
+    EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => Φ.HoldsOn (· < b) h h' ∧ (out = true → FreshAt b v))
@@ -375,7 +375,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     · exact (unreachableEntry_sound hu he).elim
     have hrun := ht n _ h _ initial.length (Footprints.Closed.holds_iff.mp hp.1).1 hp.2
       (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
-      (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
+      (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
     have hraises : (node.handler.isSome || exc) = true →
         RaisesPost (Φ.Holds initial) n h (instantiate 0 ρ node.expression) := by
@@ -513,7 +513,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
+      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
       WorldAdm W → HeapOk n W h →
       HeapObservations.SafePost (excOf G) (meaning G (result c))
         (fun h' v => Φ.HoldsOn (· < b) h h' ∧ ((varFresh F t || callFresh G images sums c t) = true → FreshAt b v))
@@ -603,7 +603,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (hthrows : throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
+      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
       WorldAdm W → HeapOk n W h →
       HeapObservations.SafePostExc (excOf G) (meaning G (result c)) (fun _ _ => True)
         (fun h' => Φ.HoldsOn (· < b) h h') n W h (instantiate 0 ρ t) := by

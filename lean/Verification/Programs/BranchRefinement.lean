@@ -1767,7 +1767,7 @@ contents admit (`factSlice`). -/
     CheckResult ι Unit :=
   CheckResult.any cells fun fct =>
     (CheckResult.ofBool (fct.slot == j)).bind fun _ =>
-      ProgramCertificates.checkSubtypeUsing G images (factSlice G A fct.field fct.contents) B p
+      ProgramCertificates.checkSubtypeUsing G images (factSlice G A fct.field fct.contents.atomsView) B p
 
 @[nospecialize] def cellRefinements [DecidableEq ι] (cells : HeapFacts.Facts) (A B : Ty ι) (j : Nat)
     (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
@@ -1777,7 +1777,7 @@ theorem cellRefinements_eq [DecidableEq ι] (cells : HeapFacts.Facts) (A B : Ty 
     (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) :
     cellRefinements cells A B j G images p =
       cells.any fun fct => fct.slot == j &&
-        PositiveCertificates.checkUsing G images (factSlice G A fct.field fct.contents) B p := by
+        PositiveCertificates.checkUsing G images (factSlice G A fct.field fct.contents.atomsView) B p := by
   simp only [cellRefinements, cellRefinementsResult, CheckResult.accepted_any,
     CheckResult.accepted_bind, CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted]
 
@@ -1918,7 +1918,7 @@ def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
          FamLe (meaning G (fieldSlice G A f t q)) (meaning G B)) ∨
        (∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true) ∨
        ∃ fct ∈ cells, fct.slot = slot mapping j ∧
-         FamLe (meaning G (factSlice G A fct.field fct.contents)) (meaning G B))
+         FamLe (meaning G (factSlice G A fct.field fct.contents.atomsView)) (meaning G B))
 
 theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Γ Δ i o mapping ps fields optionals cells}
@@ -2015,6 +2015,6 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
         cases hn
     · obtain ⟨flds, c, oid, u, hv, hr, hatom⟩ := hcells fct hm
       rw [hslot] at hv
-      exact hs (n+1) W _ (factSlice_sound (he.2 _ A ha) hh hv hr hatom)
+      exact hs (n+1) W _ (factSlice_sound (he.2 _ A ha) hh hv hr (ValueSets.ValueSet.atomsView_holds hatom))
 
 end Verification.BranchRefinement

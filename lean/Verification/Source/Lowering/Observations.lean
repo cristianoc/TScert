@@ -277,10 +277,10 @@ must follow from the stable storage contract; no claim is silently dropped. -/
         if !early then persistentObservation b.source (pos,pos+1) reference valueField A
       else
         match HeapKnowledge.atoms G A with
-        | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
+        | some atoms => facts := facts ++ [⟨i,ValueSets.ofAtoms atoms,valueField⟩]
         | none =>
           match HeapExpressionRules.nullishAtoms G A with
-          | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
+          | some atoms => facts := facts ++ [⟨i,ValueSets.ofAtoms atoms,valueField⟩]
           | none =>
             if early then throw s!"the claim for the early binding '{b.source.name}' at {pos} is no primitive fact of its contents"
             persistentObservation b.source (pos,pos+1) reference valueField A
@@ -325,7 +325,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             else if implied then
               persistentObservation b.source (pos,pos+1) reference fld A
             else match ← fieldAtoms (invariant fld) A with
-            | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
+            | some atoms => facts := facts ++ [⟨i,ValueSets.ofAtoms atoms,fld⟩]
             | none => persistentObservation b.source (pos,pos+1) reference fld A
         | _ =>
           -- A path of two members or more is read only as its witness's
