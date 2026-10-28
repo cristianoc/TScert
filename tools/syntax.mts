@@ -39,8 +39,9 @@ export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node
  * kind. The compiler's `isTypeAliasDeclaration` also accepts a JavaScript
  * file's JSDoc `@typedef` (`JSTypeAliasDeclaration`, a kind of its own),
  * which the compiler-API contract describes by the members every node has
- * (COMPILER-API.md, "The node invariant"). */
-export function isTypeAlias(node: Node): node is TypeAliasDeclaration {
+ * (COMPILER-API.md, "The node invariant"). It changes nothing, which its
+ * promise's type states (SOURCE-ELABORATION.md, "Stated effects"). */
+export function isTypeAlias(node: Node): node is Within<{ value: "keep"; store: "keep" }, TypeAliasDeclaration> {
   return node.kind === ts.SyntaxKind.TypeAliasDeclaration;
 }
 

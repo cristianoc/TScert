@@ -12,6 +12,22 @@ export function keep(
 // (`invalid-stated-external-alias-value-import`).
 export type Keeps = typeof keep;
 
+// A guard stating the empty footprint at its promise's type
+// (`stated-guard-value-import`).
+export interface Circle {
+  kind: "circle";
+  radius: number;
+}
+export interface Square {
+  kind: "square";
+  side: number;
+}
+export function isCircle(
+  s: Circle | Square,
+): s is Within<{ value: "keep"; store: "keep" }, Circle> {
+  return s.kind === "circle";
+}
+
 export function drain(
   xs: number[],
   x: number,

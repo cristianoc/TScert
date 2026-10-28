@@ -561,11 +561,16 @@ them `typeTerm`'s callers in `tools/type-term.mts`, `computedType`,
 where the guard and the kind test accept the same nodes
 ([restrictions](COMPILER-API.md#restrictions)).
 
-- **Rewrite:** `isTypeAlias(node): node is TypeAliasDeclaration` of
-  `tools/syntax.mts` tests `node.kind === SyntaxKind.TypeAliasDeclaration`,
-  and every recognition of a type alias in `tools/`, `dev/` and `tests/`
-  calls it. Its promise is what its test establishes, so its true edge reads
-  the declaration's members; on a JavaScript `@typedef` it answers `false`.
+- **Rewrite:** `isTypeAlias(node): node is Within<{ value: "keep"; store:
+  "keep" }, TypeAliasDeclaration>` of `tools/syntax.mts` tests
+  `node.kind === SyntaxKind.TypeAliasDeclaration`, and every recognition of
+  a type alias in `tools/`, `dev/` and `tests/` calls it. Its promise is what
+  its test establishes, so its true edge reads the declaration's members; on
+  a JavaScript `@typedef` it answers `false`. It states the empty footprint
+  ([stated effects](SOURCE-ELABORATION.md#stated-effects)), so a caller
+  stating its own effect (`resolve`, `moduleFunction` and `inertRead` of
+  `fragment-expressions.mts`, `typeStatement` of `fragment-statements.mts`)
+  reads it within that effect.
 - **Pattern:** a node is recognised by the kind whose members the code
   reads, where the compiler's guard accepts more kinds than that one.
 - **Functions:** `isTypeAlias`, and the 33 functions reading an alias's

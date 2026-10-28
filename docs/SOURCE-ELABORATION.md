@@ -3245,6 +3245,15 @@ fresh result and no receiver-store exception,
      {⟦(\vec x:\vec A)\Rightarrow\mathtt{Within}\langle F,T\rangle⟧=\mathcal F_{\epsilon(F)}(R,\vec P,B)}\ \textsf{stated-effect}
 ```
 
+A type guard or an assertion function states it at its promise's type,
+`x is Within<F, T>` (`asserts x is Within<F, T>`), which TypeScript reads as
+`x is T`: $`\epsilon(F)`$ is the effect of both signatures of a declared
+guard, the plain one and the promise signature, which run the same code
+(`stated-guard-value-import`; `invalid-stated-guard` is refused at its own
+unit). A guard written as a closure or a class method has $`\epsilon(F)`$ at
+its plain signature only; its promise signature may change every location, a
+weaker reading of the same code.
+
 The written signatures are a function declaration's, a class's instance or
 static method's, an object literal's method's, an arrow's, a function
 expression's, a function type's, and an interface's or a type literal's

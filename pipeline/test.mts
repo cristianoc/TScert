@@ -3463,6 +3463,26 @@ mutationControl(async (): Promise<void> => {
 });
 
 mutationControl(async (): Promise<void> => {
+  // A guard's statement at its predicate's type (`s is Within<F, T>`) is its
+  // unit's statement: `isUnit`, stating the empty footprint, which no code
+  // calls, claimed at `{value: any, store: grow}`, which its pure body
+  // meets, is refused in search and in checking at the definition, checked
+  // against the evidence search produces for the forged claims without the
+  // stated check.
+  const artifacts = run("stated-guard-value-import");
+  const claims = readClaims(artifacts);
+  must(claims.functions.find(f => f.name === "isUnit"), "isUnit's claims").footprint = { value: "any", store: "grow" };
+  const name = "forged-stated-guard";
+  const input = writeClaims(artifacts, name, claims);
+  const produce = produceWith(artifacts, input, name);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const generated = forgedEvidence(artifacts, input, name, "stated");
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+    assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'isUnit' is not within the effect its result annotation states/);
+  process.stdout.write("forged stated guard: a guard's claim wider than the statement at its predicate's type refused in search and in checking, certified only without the stated check\n");
+});
+
+mutationControl(async (): Promise<void> => {
   // A stated closure's code covers its statement over its annotation's
   // whole domain (L2, `lambdaSetup`). `bad`, a stated arrow popping the
   // array it is handed, which no code calls, claimed at the footprint

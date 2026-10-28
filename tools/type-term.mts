@@ -997,8 +997,10 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   const effect = statement.stated ? statedEffect(statement.stated) : ordinaryEffect;
   const forms = (alternatives ?? [[]]).map((positions): FunctionTerm =>
     ({ k: "function", effect, receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+  // A guard's statement bounds both signatures: they run the same code.
   return predicate
-    ? [...forms, ...forms.map((f): FunctionTerm => ({ ...f, effect: predicate.effect, result: predicate.type }))]
+    ? [...forms, ...forms.map((f): FunctionTerm =>
+        ({ ...f, effect: { ...effect, promise: predicate.effect.promise }, result: predicate.type }))]
     : forms;
 }
 
@@ -1023,7 +1025,11 @@ export const statedEffect = (stated: StatedEffect): Within<{ value: "any"; store
  * construction. */
 export function statedResult(scope: TermScope, result: TypeNode | undefined, at: Node | null):
     Within<{ value: "any"; store: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
-  const node = result && unwrap(result);
+  const unwrapped = result && unwrap(result);
+  // A guard states its effect at its promise's type, `x is Within<F, T>`,
+  // which TypeScript reads as `x is T`: the predicate stays the result.
+  const predicate = unwrapped && ts.isTypePredicateNode(unwrapped) ? unwrapped : null;
+  const node = predicate ? predicate.type && unwrap(predicate.type) : unwrapped;
   if (!node || !ts.isTypeReferenceNode(node) || !scope.stated?.(node)) return { stated: null, result };
   const [footprint, type, ...others] = node.typeArguments ?? [];
   if (!footprint || !type || others.length)
@@ -1036,7 +1042,14 @@ export function statedResult(scope: TermScope, result: TypeNode | undefined, at:
   const stated = statementOf(scope, footprint);
   if (stated.footprint.value === "any" && stated.footprint.store === "any")
     return scope.fail(footprint, "`Within` letting every location change states nothing: a throw's heap is as unconstrained by it as a normal return's");
-  return { stated, result: type };
+  return { stated, result: predicate ? result : type };
+}
+
+/** A guard's promised type as written, `T` of `x is T`, or of `x is
+ * Within<F, T>`, whose statement `statedResult` reads. */
+function promisedType(scope: TermScope, node: ts.TypePredicateNode): Within<{ value: "any"; store: "grow" }, TypeNode | undefined> {
+  const written = node.type && unwrap(node.type);
+  return written && ts.isTypeReferenceNode(written) && scope.stated?.(written) ? written.typeArguments?.[1] : node.type;
 }
 
 /** A statement's footprint, written in place as a type literal. */
@@ -1077,7 +1090,8 @@ export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary
   const name = node.parameterName;
   if (!ts.isIdentifier(name))
     return scope.fail(node, "a guard on `this` (`this is T`) is outside the fragment: its promise is about the receiver, which is no actual of the call");
-  if (!node.type)
+  const promised = promisedType(scope, node);
+  if (!promised)
     return scope.fail(node, "`asserts x` without a type is outside the fragment: it promises the argument truthy, which is no type of the fragment");
   const param = ordinary.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name.text);
   const declared = ordinary[param];
@@ -1087,7 +1101,7 @@ export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary
   return {
     plain: { k: "atom", name: node.assertsModifier ? "void" : "boolean", span },
     effect: promiseEffect(node.assertsModifier !== undefined, param),
-    type: typeTerm(scope, node.type, node),
+    type: typeTerm(scope, promised, node),
   };
 }
 
