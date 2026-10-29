@@ -2334,3 +2334,49 @@ for (const [file, call] of [
   assert.deepEqual([reassigned.stdout, reassigned.status], ["undefined", 0],
     "invalid-compiler-api-signature-declaration-call: another alias reassigns the shared signature's declaration during the call");
 }
+// A type predicate's kind and a symbol's tables under Node, on a project of
+// their own: `asserts x` states no type, so its predicate's `type` is
+// `undefined`; a predicate about `this` has the index 0 and no name; a class
+// member named `__x` is keyed `___x` in its owner's member table, so `get`
+// at the display name finds nothing.
+{
+  const sync = new URL("../tools/node_modules/typescript/dist/api/sync/api.js", import.meta.url).pathname;
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "tscert-symbol-tables-")));
+  try {
+    writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true }, files: ["subjects.ts"] }));
+    writeFileSync(join(directory, "subjects.ts"),
+      "export function asserted(x: unknown): asserts x {}\nexport class C { __x = 1; isC(): this is C { return true; } }\n");
+    const config = join(directory, "tsconfig.json");
+    const opened = [
+      `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+      `const api = new API({});`,
+      `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(config)} });`,
+      `const p = snapshot.getProject(${JSON.stringify(config)});`,
+      `const sf = p.program.getSourceFile(${JSON.stringify(join(directory, "subjects.ts"))});`,
+      `const [fn, cls] = sf.statements;`,
+    ];
+    const predicate = runNode("invalid-compiler-api-type-predicate-type", [...opened,
+      `const signature = p.checker.getSignaturesOfType(p.checker.getTypeAtLocation(fn.name), 0)[0];`,
+      `const r = wrong(p.checker, signature);`, `api.close();`,
+      `console.log(r === undefined ? "undefined" : "type");`].join("\n"), { "typescript/unstable/sync": sync });
+    assert.deepEqual([predicate.stdout, predicate.status], ["undefined", 0],
+      "invalid-compiler-api-type-predicate-type: `asserts x` states no type");
+    // The client copies the server's index of a predicate about `this`, 0,
+    // so the test of the index passes it and its name is `undefined`.
+    const self = runNode("invalid-compiler-api-type-predicate-this-index", [...opened,
+      `const signature = p.checker.getSignaturesOfType(p.checker.getTypeAtLocation(cls.members[1].name), 0)[0];`,
+      `const r = wrong(p.checker, signature);`, `api.close();`,
+      `console.log(r === undefined ? "undefined" : JSON.stringify(r));`].join("\n"));
+    assert.deepEqual([self.stdout, self.status], ["undefined", 0],
+      "invalid-compiler-api-type-predicate-this-index: a predicate about this has index 0 and no name");
+    const table = runNode("invalid-compiler-api-symbol-table-get", [...opened,
+      `const owner = p.checker.getSymbolAtLocation(cls.name);`,
+      `const member = p.checker.getSymbolAtLocation(cls.members[0].name);`,
+      `const r = wrong(owner, member);`, `api.close();`,
+      `console.log(member.name === "__x" && r === undefined ? "undefined" : "symbol");`].join("\n"));
+    assert.deepEqual([table.stdout, table.status], ["undefined", 0],
+      "invalid-compiler-api-symbol-table-get: the table is keyed by escaped names");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}

@@ -30,7 +30,7 @@ import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compilerApiFamily, hostNodeListMembers, hostViews, hostEnums, hostPackage, statedGuards } from "../tools/compiler-api.mts";
+import { auditedSyncMethods, compilerApiFamily, hostNodeListMembers, hostViews, hostEnums, hostPackage, statedGuards } from "../tools/compiler-api.mts";
 import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
@@ -1011,4 +1011,141 @@ const nodeListMembersHold = (list: object, what: string): void => {
   assert.deepEqual([...exercised].sort(), statedGuards.map(({ name }) => name).sort(),
     "every stated guard answers true on one of the program's types");
   console.log(`C6: ${statedGuards.length} stated guards declared and loaded as reviewed; each answers true and its promised members are at their declared types, on ${met} types`);
+}
+
+// C7, symbol tables and type predicates (COMPILER-API.md, "Audits of sync
+// members"): `Symbol.getMembers`, `getExports`, the table they build, the
+// registry request it makes and `Checker.getTypePredicateOfSignature` are,
+// under Node, the audited methods; on a program's class and functions each
+// table is a native `Map`, owning no key, shared by every call on its
+// symbol, keyed by each value's escaped name, its values the registry's
+// symbols, and empty for a symbol with none; a write through another holder
+// of the table, of the field caching it or of the registry's map of symbols
+// changes what a later call returns; each predicate's `kind` is the
+// `TypePredicateKind` member of its form, its name a string exactly for a
+// parameter, its index a number, 0 for a predicate about `this` (whose
+// declarations state `undefined`), and its type absent exactly for `asserts`
+// with no `is` (regression evidence).
+{
+  const dir = runDirectory("tscert-symbol-tables-");
+  const file = join(dir, "subjects.ts");
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, target: "es2022", types: [] }, files: ["subjects.ts"] }));
+  writeFileSync(file, [
+    "export class C {", "  __x = 1;", "  y = 2;", "  static s = 3;",
+    "  isC(): this is C { return true; }", "  assertC(): asserts this is C {}", "}",
+    "export function tested(x: unknown): x is string { return typeof x === \"string\"; }",
+    "export function assertedIs(x: unknown): asserts x is string { if (typeof x !== \"string\") throw Error(); }",
+    "export function asserted(x: unknown): asserts x { if (!x) throw Error(); }",
+    "export function plain(): void {}", ""].join("\n"));
+  const loaded = (owner: object, name: string): string => {
+    const method: unknown = Reflect.get(owner, name);
+    assert.equal(typeof method, "function", `${name} is a method`);
+    return String(method);
+  };
+  const api = openCompiler({ cwd: dir });
+  const kinds = new Set<number>();
+  try {
+    const project = api.updateSnapshot({ openProjects: [join(dir, "tsconfig.json")] }).getProject(join(dir, "tsconfig.json"));
+    const tree = project?.program.getSourceFile(file);
+    assert.ok(project && tree, "the symbol tables' program");
+    const checker = project.checker;
+    const [cls, ...functions] = tree.statements;
+    assert.ok(cls && syntax.isClassDeclaration(cls) && cls.name, "the class");
+    const owner = checker.getSymbolAtLocation(cls.name);
+    assert.ok(owner, "the class's symbol");
+    const registry: unknown = Reflect.get(owner, "objectRegistry");
+    assert.ok(typeof registry === "object" && registry !== null, "a symbol's registry");
+    const registryPrototype: unknown = Object.getPrototypeOf(registry);
+    assert.ok(typeof registryPrototype === "object" && registryPrototype !== null, "the registry's prototype");
+    const prototypes = { Symbol: syncApi.Symbol.prototype, Checker: syncApi.Checker.prototype,
+      SnapshotObjectRegistry: registryPrototype };
+    for (const { owner: at, name, implementation } of auditedSyncMethods)
+      assert.equal(loaded(prototypes[at], name), implementation, `${at}.${name} is the audited method under Node`);
+    const table = (map: ReadonlyMap<string, syncApi.Symbol>, keys: readonly string[]): void => {
+      assert.equal(Object.getPrototypeOf(map), Map.prototype, "a table is a native Map");
+      assert.equal(Reflect.ownKeys(map).length, 0, "a table owns no key");
+      for (const [key, value] of map) {
+        assert.equal(typeof key, "string", "a table's key is a string");
+        assert.ok(value instanceof syncApi.Symbol, "a table's value is a registry symbol");
+        assert.equal(Reflect.get(value, "escapedName"), key, "a table's key is its value's escaped name");
+      }
+      for (const key of keys) assert.ok(map.has(key), `the table holds ${key}`);
+    };
+    const members = owner.getMembers(), exports = owner.getExports();
+    assert.equal(owner.getMembers(), members, "a symbol's member table is shared by every call");
+    assert.equal(owner.getExports(), exports, "a symbol's export table is shared by every call");
+    table(members, ["___x", "y", "isC", "assertC"]);
+    table(exports, ["s", "prototype"]);
+    // Writes through another holder: the table, the field caching it and
+    // the registry's own map of symbols are ordinary writable objects, so
+    // code holding the symbol changes what a later call returns, a table
+    // read and a checker request alike (the assumption T8 states for code
+    // outside the verified program). Each write is undone.
+    const alias = checker.getSymbolAtLocation(cls.name);
+    assert.equal(alias, owner, "the registry gives one symbol per id");
+    // Map's own methods, called on the table as code outside the program
+    // would, whatever type it reads the table at.
+    const standard = new Map<unknown, unknown>();
+    const mapSet = standard.set, mapGet = standard.get, mapDelete = standard.delete;
+    assert.ok(mapSet === Map.prototype.set && mapGet === Map.prototype.get && mapDelete === Map.prototype.delete);
+    const mapCall = (method: "get" | "set" | "delete", map: unknown, key: unknown, value?: unknown): unknown =>
+      method === "set" ? mapSet.call(map, key, value) : method === "get" ? mapGet.call(map, key) : mapDelete.call(map, key);
+    mapCall("set", members, "forged", 17);
+    assert.equal(mapCall("get", owner.getMembers(), "forged"), 17, "a write through another holder of the table is seen");
+    mapCall("delete", members, "forged");
+    const replaced = new Map<string, number>();
+    Reflect.set(owner, "membersCache", replaced);
+    assert.equal(owner.getMembers(), replaced, "a replaced cache field is returned");
+    Reflect.set(owner, "membersCache", members);
+    const symbols: unknown = Reflect.get(registry, "symbols");
+    mapCall("set", symbols, owner.id, 17);
+    assert.equal(checker.getSymbolAtLocation(cls.name), 17, "a request returns what the registry's map holds");
+    mapCall("set", symbols, owner.id, owner);
+    const held = [...members.values(), ...exports.values()];
+    for (const member of cls.members) {
+      const name = syntax.isPropertyDeclaration(member) || syntax.isMethodDeclaration(member) ? member.name : undefined;
+      const symbol = name && checker.getSymbolAtLocation(name);
+      assert.ok(symbol && held.includes(symbol), "a table's value is the symbol the checker gives at the member");
+    }
+    const predicates: { at: syncApi.Signature; kind: number | null; named: boolean; type: boolean }[] = [];
+    const signatureOf = (node: syntax.Node): syncApi.Signature => {
+      const type = checker.getTypeAtLocation(node);
+      const [signature] = type ? checker.getSignaturesOfType(type, syncApi.SignatureKind.Call) : [];
+      assert.ok(signature, "a call signature");
+      return signature;
+    };
+    const [isC, assertC] = cls.members.filter(m => syntax.isMethodDeclaration(m));
+    assert.ok(isC && assertC, "the class's methods");
+    predicates.push({ at: signatureOf(isC.name), kind: syncApi.TypePredicateKind.This, named: false, type: true },
+      { at: signatureOf(assertC.name), kind: syncApi.TypePredicateKind.AssertsThis, named: false, type: true });
+    const expected: [number | null, boolean][] = [[syncApi.TypePredicateKind.Identifier, true],
+      [syncApi.TypePredicateKind.AssertsIdentifier, true], [syncApi.TypePredicateKind.AssertsIdentifier, false], [null, false]];
+    functions.forEach((statement, i) => {
+      const [kind, type] = expected[i] ?? [null, false];
+      assert.ok(syntax.isFunctionDeclaration(statement) && statement.name, "a function");
+      predicates.push({ at: signatureOf(statement.name), kind, named: kind !== null, type });
+      const plain = statement.name.text === "plain";
+      assert.equal(plain, kind === null, "only plain states no predicate");
+      const symbol = checker.getSymbolAtLocation(statement.name);
+      assert.ok(symbol, "a function's symbol");
+      if (plain) assert.equal(symbol.getMembers().size, 0, "a symbol with no members has an empty table");
+    });
+    for (const { at, kind, named, type } of predicates) {
+      const predicate = checker.getTypePredicateOfSignature(at);
+      if (kind === null) { assert.equal(predicate, undefined, "no predicate"); continue; }
+      assert.ok(predicate, "a predicate");
+      assert.equal(predicate.kind, kind, `the predicate's kind is ${kind}`);
+      kinds.add(predicate.kind);
+      // Every predicate has a numeric index, 0 for one about `this`, whose
+      // declaration states `undefined`: the views of those state none.
+      const index: unknown = Reflect.get(predicate, "parameterIndex");
+      assert.ok(typeof index === "number" && (named || index === 0), "an index, 0 for a predicate about this");
+      assert.equal(typeof predicate.parameterName === "string", named, "a parameter's name exactly for a parameter");
+      assert.equal(predicate.type !== undefined, type, "a type exactly where the predicate states one");
+    }
+  } finally {
+    releaseCompiler(api, null);
+  }
+  assert.equal(kinds.size, 4, "every TypePredicateKind member is met");
+  console.log(`C7: ${auditedSyncMethods.length} sync methods loaded as audited; symbol tables native, shared, keyed by escaped names, written through another holder as the registry is; predicates of ${kinds.size} kinds as declared but a this predicate's index, 0`);
 }

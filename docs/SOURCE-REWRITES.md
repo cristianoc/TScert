@@ -960,6 +960,30 @@ passed the `in` test.
   string naming an inherited member is refused with it.
 - **Pattern:** a key read from a document selects a table's entry by
   equality with the table's literal keys.
+
+### A predicate's index read before its kind is tested
+
+`contextualCallable` in `collectDeclarations` (`tools/declaration-graph.mts`)
+read a signature's type predicate's `parameterIndex` before testing its
+`kind`, and took `about === undefined` to exclude a predicate about
+`this`. The client holds the server's index, 0, for such a predicate,
+where its declaration states `undefined`, and the contract's views of the
+`this` predicates state no index
+([audits](COMPILER-API.md#audits-of-sync-members)), so the read on the
+whole union was refused.
+
+- **Rewrite:** the kind is tested first, refusing every predicate but one
+  about a parameter, tested or asserted, with the same reason; then the
+  index and the type are read, and a predicate with no type, a parameter
+  with no declaration or a rest is refused as before. On a predicate about
+  a parameter both forms read the same fields and give the same term. On
+  one about `this` both refuse with
+  the same reason; the original also resolved the declaration of the
+  parameter at the index where the signature has one, a request whose
+  result it discarded, which the rewrite makes no more.
+- **Pattern:** a member a union's arms state differently is read after the
+  test that selects the arms stating it.
+- **Functions:** `declaration-graph.mts#collectDeclarations`.
 - **Commit:** the introducing commit.
 
 ## Constructs avoided
@@ -1147,6 +1171,28 @@ a8cba50 introduced into a function the census of 6be11ce verified.
   under the same keys in the same order, and is fresh as the spread's was.
 - **Commit:** the introducing commit, `requestReading builds a request's
   effect field by field`.
+
+### A `for...of` over a `ReadonlyMap`'s values
+
+`exportsOf` in `collectDeclarations` (`tools/declaration-graph.mts`)
+iterated a class symbol's member table with `for (const e of
+symbol.getMembers().values())`. The overlay reads `values()` of a
+`ReadonlyMap` as an `Iterator`, which a program's object meeting the
+interface may return without `[Symbol.iterator]`, so the loop has no
+iteration intrinsic (`for-of-readonly-map-values-refused`). Support would
+read the result as iterable where the map is a native `Map`, for this one
+site of the census of 4d25222.
+
+- **Equivalent form:** `for (const [, e] of symbol.getMembers())` iterates
+  the table's entries and binds each value. The table is a native `Map`
+  ([audits](COMPILER-API.md#audits-of-sync-members)), whose default
+  iterator is `Map.prototype.entries`, under the
+  [host assumption](DESIGN.md#trust-surface) of standard prototypes: it
+  visits the entries in insertion order, as `values()` visits their
+  values, and the loop body sees the same values in the same order. Neither
+  iterator has a `return`, and the body throws nothing, so leaving the loop
+  runs no code in either form. `getMembers` is called once in both.
+- **Commit:** the introducing commit.
 
 ## Host boundaries
 

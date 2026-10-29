@@ -45,6 +45,7 @@ export const hostEnums: readonly { name: string; file: string }[] = [
   { name: "SignatureKind", file: "signatureKind" },
   { name: "ElementFlags", file: "elementFlags" },
   { name: "DiagnosticCategory", file: "diagnosticCategory" },
+  { name: "TypePredicateKind", file: "typePredicateKind" },
 ];
 
 /** The entry points whose enum exports C1 compares with the audited objects,
@@ -246,15 +247,15 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * declaration text states it; an overloaded member is the overloads listed.
  * An entry marked `fresh` returns an array its call allocates (audited,
  * COMPILER-API.md, "Audits of sync members"), which its request reading
- * states (`requestReading`).
+ * states (`requestReading`). An entry marked `table` returns a native `Map`
+ * whose keys are strings the package produced (audited, COMPILER-API.md,
+ * "Audits of sync members"), which `tableReading` reads at `string` keys.
  * A class the contract lists no view for has none: no member. The members
- * are the ones the front end reads (2026-10-18), but `Symbol.getExports` and
- * `getMembers`, whose `ReadonlyMap<__String, Symbol>` takes the branded key
- * from the client at `get` (reading rule 5), and `Type`'s `this is X`
+ * are the ones the front end reads (2026-10-29), but `Type`'s `this is X`
  * methods, whose promise is about the receiver, which is no actual of a call:
  * the stated guards of their names state them as functions (`statedGuards`).
  * `Type`, an interface, has a view of its own as a class does. */
-export const hostViews: readonly { owner: string; members: readonly { name: string; text: string; fresh?: true }[] }[] = [
+export const hostViews: readonly { owner: string; members: readonly { name: string; text: string; fresh?: true; table?: true }[] }[] = [
   { owner: "API", members: [
     { name: "parseConfigFile", text: "parseConfigFile(file: DocumentIdentifier): ConfigResponse;" },
     { name: "close", text: "close(): void;" },
@@ -323,6 +324,8 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "id", text: "readonly id: number;" },
     { name: "name", text: "readonly name: string;" },
     { name: "valueDeclaration", text: "readonly valueDeclaration: NodeHandle | undefined;" },
+    { name: "getMembers", text: "getMembers(): ReadonlyMap<__String, Symbol>;", table: true },
+    { name: "getExports", text: "getExports(): ReadonlyMap<__String, Symbol>;", table: true },
   ] },
   { owner: "Type", members: [
     { name: "flags", text: "readonly flags: TypeFlags;" },
@@ -331,6 +334,19 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "getAliasTypeArguments", text: "getAliasTypeArguments(): readonly Type[];" },
     { name: "getAliasSymbol", text: "getAliasSymbol(): Symbol | undefined;" },
     { name: "isErrorType", text: "isErrorType(): boolean;" },
+  ] },
+  // The predicates about `this` (COMPILER-API.md, "Audits of sync members"):
+  // the client copies the server's `parameterIndex`, 0 for them, where the
+  // declarations state `undefined`, so their views state no index.
+  { owner: "ThisTypePredicate", members: [
+    { name: "kind", text: "readonly kind: TypePredicateKind.This;" },
+    { name: "parameterName", text: "readonly parameterName: undefined;" },
+    { name: "type", text: "readonly type: Type;" },
+  ] },
+  { owner: "AssertsThisTypePredicate", members: [
+    { name: "kind", text: "readonly kind: TypePredicateKind.AssertsThis;" },
+    { name: "parameterName", text: "readonly parameterName: undefined;" },
+    { name: "type", text: "readonly type: Type | undefined;" },
   ] },
   { owner: "Signature", members: [
     { name: "declaration", text: "readonly declaration?: NodeHandle | undefined;" },
@@ -413,6 +429,41 @@ export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
     : t;
   return at(type);
 }
+
+/** A symbol table's reading (COMPILER-API.md, "Audits of sync members"):
+ * a `table` member's signature `(): ReadonlyMap<K, V>`, `K` a branded
+ * string, read with `string` at `K`. Its result is a native `Map` the
+ * package filled with strings it produced at its keys, so a key it gives is
+ * a string (reading rule 5), and `get` and `has`, the standard `Map`
+ * methods, take any key: a string the client produces reads the entry the
+ * map stores or nothing. Any other signature is refused. */
+export function tableReading(type: TypeTerm, isLibraryMap: (id: DeclarationIdentity) => boolean,
+    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): TypeTerm {
+  if (type.k !== "function" || type.params.length || type.rest || type.result.k !== "reference" ||
+      !isLibraryMap(type.result.reference.target) || type.result.args.length !== 2)
+    return fail("a symbol table's signature is not `(): ReadonlyMap<K, V>`");
+  const [key, value] = type.result.args;
+  if (!key || !value || key.k !== "reference" || !brand(key.reference.target))
+    return fail("a symbol table's key is no branded string of the package");
+  return { ...type, result: { ...type.result, args: [{ k: "atom", name: "string", span: key.span }, value] } };
+}
+
+/** The audited implementations of the symbol tables and the type predicate
+ * (COMPILER-API.md, "Audits of sync members"), each a method of the sync
+ * API's class `owner` (`SnapshotObjectRegistry`, the symbols' registry, is
+ * no export) as Node loads it, which C7 compares with the method's text. */
+export const auditedSyncMethods: readonly { owner: "Symbol" | "Checker" | "SnapshotObjectRegistry"; name: string; implementation: string }[] = [
+  { owner: "Symbol", name: "getMembers",
+    implementation: "getMembers() {\n        return this.membersCache ??= this.fetchSymbolTable(\"getMembersOfSymbol\");\n    }" },
+  { owner: "Symbol", name: "getExports",
+    implementation: "getExports() {\n        return this.exportsCache ??= this.fetchSymbolTable(\"getExportsOfSymbol\");\n    }" },
+  { owner: "Symbol", name: "fetchSymbolTable",
+    implementation: "fetchSymbolTable(method) {\n        const symbols = this.objectRegistry.fetchSymbols(this, method, undefined, this.canonicalProject.id);\n        const table = new Map();\n        for (const symbol of symbols) {\n            table.set(symbol.escapedName, symbol);\n        }\n        return table;\n    }" },
+  { owner: "SnapshotObjectRegistry", name: "fetchSymbols",
+    implementation: "fetchSymbols(source, method, handles, projectId) {\n        if (handles) {\n            const result = new Array(handles.length);\n            let allCached = true;\n            for (let i = 0; i < handles.length; i++) {\n                const cached = this.getSymbol(handles[i]);\n                if (!cached) {\n                    allCached = false;\n                    break;\n                }\n                result[i] = cached;\n            }\n            if (allCached)\n                return result;\n        }\n        const symbolData = this.client.apiRequest(method, {\n            snapshot: this.snapshotId,\n            project: projectId,\n            objectId: source.id,\n        });\n        if (symbolData == null)\n            return [];\n        else\n            return symbolData.map(data => this.getOrCreateSymbol(data));\n    }" },
+  { owner: "Checker", name: "getTypePredicateOfSignature",
+    implementation: "getTypePredicateOfSignature(signature) {\n        const data = this.client.apiRequest(\"getTypePredicateOfSignature\", {\n            snapshot: this.snapshotId,\n            project: this.project.id,\n            signature: signature.id,\n        });\n        if (!data)\n            return undefined;\n        return {\n            kind: data.kind,\n            parameterIndex: data.parameterIndex,\n            parameterName: data.parameterName,\n            type: data.type ? this.objectRegistry.getOrCreateType(data.type) : undefined,\n        };\n    }" },
+];
 
 /** The host package's node list interface, read as a dense readonly array of
  * its elements with the members `hostNodeListMembers` states

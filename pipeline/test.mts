@@ -221,6 +221,15 @@ control(async (): Promise<void> => {
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.
 // One control for each of a direct import and a re-export, audited and mismatched.
+// A member each enum is read at.
+const enumMembers = new Map<string, string>([["SyntaxKind", "Identifier"], ["NodeFlags", "Const"], ["TypeFlags", "Union"],
+  ["SymbolFlags", "Alias"], ["SignatureKind", "Call"], ["ElementFlags", "Required"], ["DiagnosticCategory", "Error"],
+  ["TypePredicateKind", "Identifier"]]);
+const enumMember = (name: string): string => {
+  const member = enumMembers.get(name);
+  assert.ok(member, `a member of ${name} the control reads`);
+  return member;
+};
 for (const reexport of [false, true]) for (const mismatched of [false, true]) control(async (): Promise<void> => {
   const audited = resolve(here, "../tools/node_modules/typescript");
   const dir = runDirectory("tscert-compiler-enum-binding-");
@@ -231,7 +240,7 @@ for (const reexport of [false, true]) for (const mismatched of [false, true]) co
     writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "typescript", type: "module",
       exports: { "./unstable/ast": "./enums.js", "./unstable/sync": "./enums.js" } }));
     writeFileSync(join(installed, "enums.js"), hostEnums.map(({ name }) =>
-      `export const ${name} = { ${name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" : name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" : name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error"}: -123 };`).join("\n"));
+      `export const ${name} = { ${enumMember(name)}: -123 };`).join("\n"));
   } else symlinkSync(audited, installed);
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
     module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
@@ -240,9 +249,7 @@ for (const reexport of [false, true]) for (const mismatched of [false, true]) co
       "typescript/unstable/sync": [join(audited, "dist/api/sync/api.d.ts")],
     } }, include: ["*.ts"] }));
   for (const { name } of hostEnums) {
-    const member = name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" :
-      name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" :
-      name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error";
+    const member = enumMember(name);
     const entry = name === "SyntaxKind" || name === "NodeFlags" ? "ast" : "sync";
     writeFileSync(join(dir, "barrel.ts"), `export { ${name} as Enum } from "typescript/unstable/${entry}";\n`);
     const file = join(dir, "value.ts");
@@ -258,7 +265,7 @@ for (const reexport of [false, true]) for (const mismatched of [false, true]) co
       assert.equal(ran.stdout.trim(), "-123", `${name}: Node returns the other installation's value`);
     }
   }
-  process.stdout.write(`compiler enum binding, ${reexport ? "re-exported" : "direct"}: all 7 enums, ${mismatched ? "mismatched bindings refused and counterexamples executed under Node" : "audited bindings verified"}\n`);
+  process.stdout.write(`compiler enum binding, ${reexport ? "re-exported" : "direct"}: all ${hostEnums.length} enums, ${mismatched ? "mismatched bindings refused and counterexamples executed under Node" : "audited bindings verified"}\n`);
 });
 
 
@@ -4463,6 +4470,28 @@ control(async (): Promise<void> => {
       result: { k: "reference", reference: { name: "IntrinsicType", span, arguments: [], target: intrinsic.declaration }, args: [], span } }] };
   });
   process.stdout.write("unlisted sync guard: forged narrowing claims refused against the parsed declaration in evidence production and consumption\n");
+});
+control(async (): Promise<void> => {
+  // Give the views of the `this` predicates back the declared
+  // `parameterIndex: undefined` the contract omits (COMPILER-API.md, "Audits
+  // of sync members"): the producer's refusal bypassed, the claims and
+  // evidence that narrow by the index are refused against the honest
+  // document, in evidence production and consumption.
+  const artifacts = run("invalid-compiler-api-type-predicate-this-index");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("predicate.parameterIndex");
+  assert.ok(start >= 0, "the index read");
+  bypassed(artifacts, "forged-this-predicate-index", [start, start + "predicate.parameterIndex".length], (fragment) => {
+    const declarations = must(fragment.declarations, "the parsed declarations");
+    for (const name of ["ThisTypePredicate", "AssertsThisTypePredicate"]) {
+      const definition = must(declarations.definitions.find(d => d.declaration.name === name), name);
+      assert(definition.expression?.k === "object", `${name} is a record`);
+      const named = must(definition.expression.fields.find(f => f.name === "parameterName"), `${name}'s parameterName`);
+      assert.ok(!definition.expression.fields.some(f => f.name === "parameterIndex"), `${name}'s view states no index`);
+      definition.expression.fields.push({ ...named, name: "parameterIndex" });
+    }
+  });
+  process.stdout.write("this predicates' index: forged claims narrowing by the omitted index refused against the parsed views in evidence production and consumption\n");
 });
 /** A verified case's operand claim at `operand`, of a record whose field `a`
  * is a number, weakened to `{ readonly a: number }`, which admits a host

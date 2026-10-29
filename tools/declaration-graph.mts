@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
+import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
@@ -3605,14 +3605,19 @@ export function collectDeclarations(file: string, options: {
         result: contextualTerm(returned, span), span };
       const predicate = checker.getTypePredicateOfSignature(signature);
       if (!predicate) return plain;
+      // A predicate's index is read where its kind states one: a predicate
+      // about `this` has the server's 0 (COMPILER-API.md, "Audits of sync
+      // members").
+      if (predicate.kind !== TypePredicateKind.Identifier && predicate.kind !== TypePredicateKind.AssertsIdentifier)
+        return refuse("a promise about the receiver, a rest or no type");
       const asserts = predicate.kind === TypePredicateKind.AssertsIdentifier;
       const about = predicate.parameterIndex;
-      const declared = about === undefined ? undefined : parameters[about]?.declarations[0]?.resolve();
-      if (!(asserts || predicate.kind === TypePredicateKind.Identifier) || about === undefined || !predicate.type ||
-          !declared || !ts.isParameterDeclaration(declared) || declared.dotDotDotToken)
+      const promised = predicate.type;
+      const declared = parameters[about]?.declarations[0]?.resolve();
+      if (!promised || !declared || !ts.isParameterDeclaration(declared) || declared.dotDotDotToken)
         return refuse("a promise about the receiver, a rest or no type");
       return oneTerm([plain, { ...plain, effect: promiseEffect(asserts, about),
-        result: contextualTerm(predicate.type, span) }], span);
+        result: contextualTerm(promised, span) }], span);
     };
     const typesRead = new Set<number>();
     const readContextualTerm = (type: Type, span: Span): TypeTerm => {
@@ -4038,7 +4043,7 @@ export function collectDeclarations(file: string, options: {
         for (const [key, e] of symbol.getExports()) if (key === "export=" || key === "default") found.set(e.id, e);
       }
       if (symbol.flags & SymbolFlags.Class) {
-        for (const e of symbol.getMembers().values()) found.set(e.id, e);
+        for (const [, e] of symbol.getMembers()) found.set(e.id, e);
         for (const [key, e] of symbol.getExports()) if (key !== "prototype") found.set(e.id, e);
       }
       return [...found.values()];
@@ -5676,11 +5681,19 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
       const fresh = (f: { name: PropertyKey }): boolean =>
         !!named && named.members.some(m => m.name === f.name && m.fresh === true);
+      // A symbol table's key is a string the package produced (`tableReading`).
+      const table = (f: { name: PropertyKey }): boolean =>
+        !!named && named.members.some(m => m.name === f.name && m.table === true);
+      const libraryMap = (id: DeclarationIdentity): boolean =>
+        id.module.startsWith("typescript/lib/") && id.name === "ReadonlyMap";
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
-        .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
-          type: hostBrands(request(f) ? requestReading(f.type, fresh(f)) : f.type, true, context.isBrand,
-            message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
+        .map(f => {
+          const fail = (message: string): never => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); };
+          const read = table(f) ? tableReading(f.type, libraryMap, context.isBrand, fail) : f.type;
+          return { ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
+            type: hostBrands(request(f) ? requestReading(read, fresh(f)) : read, true, context.isBrand, fail) };
+        }) };
     }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a

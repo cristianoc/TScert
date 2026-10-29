@@ -222,7 +222,9 @@ are ordinary types.
    by Node from each importing module through program re-exports, to bind
    the object C1 checks ([activation](HOST-FAMILIES.md#activation)).
 4. **Named views.** A host class (`Checker`, `Program`, `Snapshot`,
-   `Project`, `API`, `Symbol`, `NodeHandle`, `Type`) is read through a view
+   `Project`, `API`, `Symbol`, `NodeHandle`, `Signature`) and a host
+   interface the contract names (`Type`, `ThisTypePredicate`,
+   `AssertsThisTypePredicate`) are read through a view
    that `compiler-api.mts` names and lists: the members the front end uses,
    each with its reviewed declaration text. A view is a contract of its own,
    with the introduction obligation $`⟦H⟧\subseteq⟦\mathsf{view}(H)⟧`$,
@@ -260,6 +262,12 @@ are ordinary types.
    `__String` of the audited host files, each checked against its reviewed
    text; the branded parameters are those of `getSourceFileMetadataByPath`,
    the internal registry's `getProject` and `unescapeLeadingUnderscores`.
+   A symbol table, the result of `Symbol.getMembers` and `getExports`
+   (`ReadonlyMap<__String, Symbol>`), is read as
+   `ReadonlyMap<string, Symbol>` (`tableReading`): it is a native `Map`
+   whose keys the package produced, and the standard `get` and `has` take
+   any key, so a string the client produces reads the entry the map stores
+   or nothing ([audits](#audits-of-sync-members)).
 
 Overloaded methods of a declared class, several declarations of one name
 without a body, are one member: the conjunction of their signatures, by the
@@ -717,14 +725,15 @@ compiler instance per purpose and compares trees across instances by text
 and spans (`declaration-graph.mts`).
 
 **Views.** `API`, `Snapshot`, `Project`, `Program`, `Checker`, `Symbol`,
-`Type`, `Signature` and `NodeHandle` are host types read through their named
-views, under T6.
+`Type`, `Signature`, `NodeHandle`, `ThisTypePredicate` and
+`AssertsThisTypePredicate` are host types read through their named views,
+under T6.
 
 ### Audits of sync members
 
 Cited: TypeScript 7.0.2, `dist/api/sync/api.d.ts` and
 `dist/api/sync/api.js` of the installation bound by C0, audited 2026-10-25
-(the last six rows 2026-10-29).
+(the last ten rows 2026-10-29).
 Each declaration below is the exact text stored in `hostViews`; `tests/compiler-api.mts` checks
 it against the installed declaration. The implementation audit supports T6,
 an assumption about runtime behaviour, rather than a Lean proof.
@@ -742,6 +751,10 @@ an assumption about runtime behaviour, rather than a Lean proof.
 | `Checker.getSymbolAtLocation(nodes: readonly Node[]): (Symbol \| undefined)[];` | The method's second overload, beside `getSymbolAtLocation(node: Node)`. `Array.isArray` selects it, and `nodes.map(node => getNodeId(node))` reads the argument; the call runs no code of the program under the [trust surface](DESIGN.md#trust-surface)'s rows on arrays a program receives: a plain array, no proxy, owning no key `ArrayProto` declares (so `map` is the standard one) and no `constructor` (so `map` allocates an ordinary array), and holding data properties at its numeric keys (so `map` runs no getter). Outside those rows, a proxy, an array subclass or an indexed getter runs code during the call. `getNodeId` tests `instanceof RemoteNode` and reads the node's id, throwing on any other value; a hole, which `map` skips, is sent as `null`, and the server's answer, observed under Node, is an error (`invalid node handle`). It sends `getSymbolsAtLocations` with the ids and returns `data.map(…)` over the decoded response: a fresh dense array, one entry per node, each the client's shared `Symbol` for its id (the one the single form returns for that node) or `undefined` where the node has none (a statement, `invalid-compiler-api-array-query-entry`, run under Node). A request at the store-growth footprint on normal return (T6, T8), whose array result is fresh (`fresh` in `hostViews`). |
 | `Checker.getTypeAtLocation(nodes: readonly Node[]): (Type \| undefined)[];` | As the row above, with `getTypeAtLocations` and the client's shared `Type`s: a request at the store-growth footprint whose array result is fresh. |
 | `Signature.declaration` (declaration `readonly declaration?: NodeHandle \| undefined;`) | The `Signature` constructor assigns it, a new `NodeHandle` of the response's handle or `undefined`, and `api.js` assigns it nowhere else. It is an own writable, configurable data property, and the client shares one `Signature` per id (`getOrCreateSignature`), so code holding another alias may reassign it: each read is of `NodeHandle \| undefined`, and a test of it holds until the next call (`invalid-compiler-api-signature-declaration-call`, whose callback reassigns it through a signature fetched again, run under Node). The program writes it through no alias, the view's members being readonly; that what external code writes there is a `NodeHandle` or `undefined` is T8's. A signature with no declaration exists: the one TypeScript resolves at a binary expression (`invalid-compiler-api-signature-declaration`, run under Node). |
+| `Symbol.getMembers(): ReadonlyMap<__String, Symbol>;` | `getMembers` returns `this.membersCache ??= this.fetchSymbolTable("getMembersOfSymbol")`. `fetchSymbolTable` asks the symbols' registry for the symbols (`fetchSymbols`, which sends the snapshot id, the symbol's canonical project id and its own id, primitives alone, and returns `[]` where the response is `null`), then fills a `new Map()` with `table.set(symbol.escapedName, symbol)` for each: the escaped name, a string of the response, as the key, and the registry's shared `Symbol` for its id as the value. A symbol with no members gives an empty `Map`, never `undefined`. The first call makes the request; every later call on the symbol, and on every alias of it (the registry keeps one `Symbol` per id), returns the same `Map`, which the package writes no more. So the result is shared, not fresh: the `Map` and the private field holding it are writable at run time by code holding the symbol, as the registry's own `Map` of symbols by id is, from which every request returning a symbol takes its answer (`getOrCreateSymbol`); a value written there is what a later call or request returns (C7). No check of the program can establish that a value is the package's `Symbol`: `instanceof` is admitted only at a class of the file ([operations](HOST-FAMILIES.md#operations-and-their-obligations)), and at the package's class it would answer `true` of an object other code builds on the class's prototype. What such code writes there being a `Map` of strings to the registry's symbols, as what it writes into the registry being its symbols, is T8's. The view reads it at `ReadonlyMap<string, Symbol>` (reading rule 5), whose members are `Map.prototype`'s, a request at the store-growth footprint on normal return (T6, T8). The keys are escaped names, `___x` for a member `__x`: `get` at a display name may find nothing (`invalid-compiler-api-symbol-table-get`, run under Node). C7 checks the implementation and the table. |
+| `Symbol.getExports(): ReadonlyMap<__String, Symbol>;` | As the row above, with `exportsCache` and `getExportsOfSymbol`: a class's statics and its `prototype`, a module's exports. |
+| `TypePredicateKind` (`dist/enums/typePredicateKind.enum.d.ts`) | A host enum of four members, `This` 0, `Identifier` 1, `AssertsThis` 2 and `AssertsIdentifier` 3, whose runtime object is the emitted enum of those values (C1). `getTypePredicateOfSignature` sends the snapshot, project and signature ids and builds a fresh record from the response: `kind`, `parameterIndex` and `parameterName` copied from it, `type` the registry's `Type` or `undefined`. The server's `kind` is the checker's `TypePredicateKind`, whose values the enum file is generated from (`internal/checker/types.go`); C7 meets each member at a predicate of its form. |
+| `ThisTypePredicate`, `AssertsThisTypePredicate` | Their declarations state `parameterIndex: undefined`, but the client copies the server's index, 0 for a predicate about `this` (C7): a test of the index tells no predicate about a parameter from one about `this`, whose `parameterName` is `undefined` (`invalid-compiler-api-type-predicate-this-index`, run under Node). Their views list `kind`, `parameterName` and `type` and no index, so the index is read only where a test of `kind` has left the predicates about a parameter, as `collectDeclarations` reads it ([the repair](SOURCE-REWRITES.md#a-predicates-index-read-before-its-kind-is-tested)). An asserted predicate may state no type (`asserts x`; `invalid-compiler-api-type-predicate-type`, run under Node). |
 
 ### Stated type guards
 
@@ -940,6 +953,21 @@ as regression evidence.
   index, literal types have `value`, `getFreshType` and `getRegularType`
   (including the returned freshable types), and references have `objectFlags`
   and `getTarget` (regression evidence for T7).
+- **C7, symbol tables and type predicates.** The methods Node loads for
+  `Symbol.getMembers`, `getExports` and `fetchSymbolTable`, the registry's
+  `fetchSymbols` and `Checker.getTypePredicateOfSignature` are the texts
+  `auditedSyncMethods` states. On a small program's class and functions,
+  each table is a native `Map` owning no key, the same `Map` at every call
+  on its symbol, each key a string equal to its value's escaped name, each
+  value the registry's `Symbol` the checker gives at the member, and the
+  table of a symbol with no members empty; each predicate's `kind` is the
+  `TypePredicateKind` member of its form, all four met, its
+  `parameterName` a string exactly for a predicate about a parameter, its
+  `parameterIndex` a number, 0 for one about `this`, and its `type` absent
+  exactly for `asserts` with no `is`; and a write through another holder of
+  a table, of the field caching it or of the registry's map of symbols
+  changes what a later call or request returns (regression evidence for the
+  [audits](#audits-of-sync-members)).
 - **Declaration texts.** Each contract entry's reviewed text is compared
   with the installed declaration, as `library-globals.mts` does.
 
@@ -1045,7 +1073,12 @@ the corpus runs are regression evidence, not proofs.
   assumption of this clause needing its own review; and the front end's own
   functions not yet verified, which call verified ones, for each of which
   the clause is an assumption until it, its initialization and its
-  dependencies are in the linked certified closure. Inside that closure a
+  dependencies are in the linked certified closure. What such code writes
+  into the package's objects it holds keeps their views' types: a
+  `Signature`'s `declaration` a `NodeHandle` or `undefined`, a symbol's
+  member and export tables and the private fields caching them a `Map` of
+  strings to the registry's symbols, the registry's map of symbols by id
+  the symbols of those ids. Inside that closure a
   call or a return is an internal edge, whose classified values the checking
   of both sides gives; the clause stays on external callers and callbacks,
   uncertified imports, native results and the storage they reach, and the
@@ -1099,7 +1132,7 @@ sources importing the package from `pipeline/compiler-api-project/`, the
 negatives with their counterexample run under Node. The controls a source
 cannot make (forged claims and evidence, a family description of another
 digest, the string-tagged stand-in) are in
-[test.mts](../pipeline/test.mts); C0–C4 are `tests/compiler-api.mts`,
+[test.mts](../pipeline/test.mts); C0–C7 are `tests/compiler-api.mts`,
 `tests/compiler-api-guards.mts` and `tests/compiler-api-shapes.mts`.
 
 ## Where it lives
@@ -1122,5 +1155,6 @@ digest, the string-tagged stand-in) are in
   table's generator is a review aid, outside the front end; the table's
   activation, in `tools/family-activation.mts`, reads the package's modules with
   a compiler of its own.
-- `tests/compiler-api.mts`: C0, C1 and C4; `tests/compiler-api-guards.mts`:
+- `tests/compiler-api.mts`: C0, C1, C4, C6 and C7 (the symbol tables and
+  type predicates against `auditedSyncMethods`); `tests/compiler-api-guards.mts`:
   C2; `tests/compiler-api-shapes.mts`: C3.
