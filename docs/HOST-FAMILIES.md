@@ -695,8 +695,9 @@ Node. No guard of a family is read at its declared predicate: a guard the
 table lists narrows by its entry, and every other is read at its declared
 parameters and result without predicate, narrowing nothing. So is every
 other function of the host package declaring a predicate, the sync API's
-`isUnionType(type: Type)` among them (`invalid-compiler-api-sync-guard`):
-a predicate of the package narrows only by an audited entry.
+`isIntrinsicType(type: Type)` among them (`invalid-compiler-api-sync-guard`):
+a predicate of the package narrows only by an audited entry, a guard table's
+or a [stated type guard](COMPILER-API.md#stated-type-guards)'s.
 
 It is an instance of the effects vision: an operation
 proved stable for a structure makes the effect-free rule sound for code

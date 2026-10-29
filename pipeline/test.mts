@@ -4237,6 +4237,24 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   refusedAt(artifacts, claims, `${name}-honest`, `obligation at [${at[0]},${at[1]})`);
   invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
 };
+control(async (): Promise<void> => {
+  // Forge the narrowing an unlisted sync predicate cannot promise. The
+  // original parsed declaration remains the authority for both Lean paths.
+  const artifacts = run("invalid-compiler-api-sync-guard");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("isIntrinsicType(type)");
+  bypassed(artifacts, "forged-unlisted-sync-guard", [start, start + "isIntrinsicType".length], (fragment) => {
+    const declarations = must(fragment.declarations, "the parsed declarations");
+    const guard = must(declarations.values.find(v => v.binding.local === "isIntrinsicType"), "the unlisted predicate");
+    assert.ok(guard.type.k === "function" && guard.type.effect.promise === null);
+    const intrinsic = must(declarations.definitions.find(d => d.declaration.name === "IntrinsicType"), "the promised interface");
+    const span = guard.type.result.span;
+    guard.type = { k: "intersection", span: guard.type.span, parts: [guard.type, { ...guard.type,
+      effect: { ...guard.type.effect, promise: { guards: { param: 0 } } },
+      result: { k: "reference", reference: { name: "IntrinsicType", span, arguments: [], target: intrinsic.declaration }, args: [], span } }] };
+  });
+  process.stdout.write("unlisted sync guard: forged narrowing claims refused against the parsed declaration in evidence production and consumption\n");
+});
 /** A verified case's operand claim at `operand`, of a record whose field `a`
  * is a number, weakened to `{ readonly a: number }`, which admits a host
  * object. The entry contracts stay honest; search must refuse at the

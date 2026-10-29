@@ -10,6 +10,9 @@ import type { Node, TypeAliasDeclaration } from "typescript/unstable/ast";
 /** The compiler's syntax module as the front end resolves it, for the suites
  * outside tools/ that read trees (tests/host-families.mts). */
 export * as syntax from "typescript/unstable/ast";
+/** The compiler's sync API as the front end resolves it, for the suites
+ * outside tools/ that call it (tests/compiler-api.mts). */
+export * as sync from "typescript/unstable/sync";
 
 /** A child of the compiler's tree: an object with a syntax kind. */
 const isNode = (value: unknown): value is Node =>

@@ -9,7 +9,7 @@
  * syntax: a union of literals and primitives, and the record an object
  * literal's inferred type is. */
 import { childOf, childrenOf, isStatic, isTypeAlias } from "./syntax.mts";
-import { SignatureKind, SymbolFlags, TypeFlags, isTypeReference, type Checker, type Type } from "typescript/unstable/sync";
+import { SignatureKind, SymbolFlags, TypeFlags, isBigIntLiteralType, isBooleanLiteralType, isClassOrInterfaceType, isConditionalType, isIndexType, isIndexedAccessType, isNumberLiteralType, isStringLiteralType, isStringMappingType, isSubstitutionType, isTemplateLiteralType, isTypeParameter, isTypeReference, isUnionType, type Checker, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
@@ -55,7 +55,7 @@ export type ComputedContext = {
  * an instantiated generic reference. A class constructor shares the instance
  * symbol but has neither of these object kinds. */
 export function isInstanceReference(type: Type): boolean {
-  return isTypeReference(type) ? type.getTarget().isClassOrInterface() : type.isClassOrInterface();
+  return isTypeReference(type) ? isClassOrInterfaceType(type.getTarget()) : isClassOrInterfaceType(type);
 }
 
 /** The number's decimal spelling, as a literal type's text is written. */
@@ -78,22 +78,22 @@ function bigintValue(value: unknown): string | null {
  * object, a type parameter or a string pattern is not one, and the answer is
  * null. */
 export function literalUnion(type: Type, span: Span, unique?: (part: Type) => number): TypeTerm | null {
-  const parts = type.isUnionType() ? type.getTypes() : [type];
+  const parts = isUnionType(type) ? type.getTypes() : [type];
   const terms: TypeTerm[] = [];
   const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm => ({ k: "atom", name, span });
   for (const part of parts) {
     const f = part.flags;
     if (f & TypeFlags.EnumLiteral) return null;
-    if (part.isStringLiteralType()) terms.push({ k: "literal", name: "string", text: part.value, span });
-    else if (part.isNumberLiteralType()) {
+    if (isStringLiteralType(part)) terms.push({ k: "literal", name: "string", text: part.value, span });
+    else if (isNumberLiteralType(part)) {
       const text = numberText(part.value);
       if (text === null) return null;
       terms.push({ k: "literal", name: "number", text, span });
-    } else if (part.isBigIntLiteralType()) {
+    } else if (isBigIntLiteralType(part)) {
       const text = bigintValue(part.value);
       if (text === null) return null;
       terms.push({ k: "literal", name: "bigint", text, span });
-    } else if (part.isBooleanLiteralType())
+    } else if (isBooleanLiteralType(part))
       terms.push(part.value
         ? { k: "literal", name: "true", text: "true", span }
         : { k: "literal", name: "false", text: "false", span });
@@ -142,7 +142,7 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   if (ts.isTypeReferenceNode(node)) return aliasApplication(context, node, span, read, computed);
   if (ts.isTypeQueryNode(node)) return typeQuery(context, node, type, span);
   if (ts.isIndexedAccessTypeNode(node)) return indexedAccess(context, node, type, span, read);
-  if (ts.isTemplateLiteralTypeNode(node) || type.isTemplateLiteralType() || type.isStringMappingType())
+  if (ts.isTemplateLiteralTypeNode(node) || isTemplateLiteralType(type) || isStringMappingType(type))
     throw Error(`the template literal type ${computed} is a string pattern: it holds infinitely many ` +
       "strings, not a union of literals, and the fragment has no string-pattern type");
   if (generic(type))
@@ -240,13 +240,13 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
       `${computed}: it distributes over no union`);
   const argument = decided.node;
   const members = unionMembers(context, argument, decided.read, new Set(), decided.params);
-  const results = type.isUnionType() ? type.getTypes() : [type];
+  const results = isUnionType(type) ? type.getTypes() : [type];
   const ids = new Set(results.map(t => t.id));
   const covered = new Set<number>();
   const kept = members.filter(member => {
     const memberType = checker.getTypeFromTypeNode(member.node);
     if (!memberType) return false;
-    const parts = memberType.isUnionType() ? memberType.getTypes() : [memberType];
+    const parts = isUnionType(memberType) ? memberType.getTypes() : [memberType];
     if (!parts.every(p => ids.has(p.id))) return false;
     parts.forEach(p => covered.add(p.id));
     return true;
@@ -265,7 +265,7 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
 /** Why `type` is not a union of literals and primitives: its first part that
  * is not one. */
 function inexpressible(checker: Checker, type: Type): string {
-  const parts = type.isUnionType() ? type.getTypes() : [type];
+  const parts = isUnionType(type) ? type.getTypes() : [type];
   const part = parts.find(p => literalUnion(p, [0, 0]) === null) ?? type;
   const what = part.flags & TypeFlags.EnumLiteral ? "an enum member, outside the fragment"
     : "not a literal or a primitive";
@@ -274,9 +274,9 @@ function inexpressible(checker: Checker, type: Type): string {
 
 /** Whether `type` still names a type parameter: TypeScript defers it. */
 function generic(type: Type): boolean {
-  if (type.isTypeParameter() || type.isIndexType() || type.isIndexedAccessType() || type.isConditionalType() ||
-      type.isSubstitutionType()) return true;
-  return type.isUnionType() && type.getTypes().some(generic);
+  if (isTypeParameter(type) || isIndexType(type) || isIndexedAccessType(type) || isConditionalType(type) ||
+      isSubstitutionType(type)) return true;
+  return isUnionType(type) && type.getTypes().some(generic);
 }
 
 /** The declaration of the value or member a name denotes, with the type node
@@ -364,7 +364,7 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
   // `x?: T` is `T | undefined` where it is read.
   const orUndefined = optional && !same && stated !== undefined &&
     checker.getNonNullableType(type)?.id === checker.getNonNullableType(stated)?.id &&
-    type.isUnionType() && type.getTypes().some(t => (t.flags & TypeFlags.Undefined) !== 0);
+    isUnionType(type) && type.getTypes().some(t => (t.flags & TypeFlags.Undefined) !== 0);
   if (!same && !orUndefined)
     throw Error(`${what} is ${computed}, not the type its declaration states (a narrowed binding, or a ` +
       "member of a generic type's instance)");

@@ -99,7 +99,7 @@ import fs from "node:fs";
 import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TypeFlags, isTypeReference, type Checker, type Program, type Type } from "typescript/unstable/sync";
+import { TypeFlags, isIntersectionType, isTypeParameter, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { isHostFile } from "./family-activation.mts";
@@ -226,7 +226,7 @@ const LOGICAL_ASSIGNMENT: number[] = [
 function writtenContext(checker: Checker, node: Node): boolean {
   if (!ts.isExpression(node)) return false;
   const context = checker.getContextualType(node);
-  return context !== undefined && !(context.flags & TypeFlags.Any) && !context.isTypeParameter();
+  return context !== undefined && !(context.flags & TypeFlags.Any) && !isTypeParameter(context);
 }
 
 /** The function-like nodes `node` puts at a unit's boundary, each with what
@@ -276,7 +276,7 @@ function isAny(checker: Checker, type: Type, node: Node, panicked: Panicked,
   seen.add(type.id);
   let parts: readonly Type[];
   try {
-    parts = type.isUnionType() || type.isIntersectionType() ? type.getTypes() ?? []
+    parts = isUnionType(type) || isIntersectionType(type) ? type.getTypes() ?? []
       : isTypeReference(type) ? checker.getTypeArguments(type) : [];
   } catch (error) {
     // A panic the compiler replied leaves the channel readable, and the

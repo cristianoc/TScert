@@ -23,7 +23,6 @@ each item's design and evidence, not its progress.
 | [The type-decision procedure's remaining steps](docs/drafts/subtype-decision.md) | open: the draft's remaining steps, each measured on `moduleFunction`'s sampled time outside input preparation (2.17 s): interning labels 1.11 s, a checker memo 0.31 s, the final check reading search's proved inclusions 0.33 s, a candidate index, hashed kernel lookups and a request-wide demand memo at most 1–5% each; the `Clauses` rule, the completeness theorems of the selected search and discovery, deleting the check's rerun and coverage by assumption carry no measured cost (2026-10-24) | each remaining step lands with its measurement, or is closed as not worth its cost |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: in `calculus` 12 of 15 functions verify; `decodeTerm`, `decodeCode` and `termsOf` verify in 10.0 s of evidence search with candidate selection and the answered requests threaded through the document's search, 25.2 s without any reuse (user time, median of 3, 2026-10-19) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [The search of `protocolPattern`](#fragment-statements-search-meets) | done: in the census of 6a3a864 the slice `protocolPattern` and `patternStmt` share searches in 25.7 s of CPU, `abrupt`'s in 26.0 s (2026-10-24); 73 s of CPU alone on dca7c93's artifacts; in the census of both slices at a 600 s limit each search takes 73 s (2026-10-22); in the census of 4d29662 the search of `patternStmt`'s and `abrupt`'s slices takes 247 s of CPU each and of `forOfPattern`'s 123 s, together 52% of the census's executed search CPU, each ending in the refusal of a source expression obligation (2026-10-23) | `fragment-statements.mts#protocolPattern` and `#patternStmt` finish their search within 30 s alone |
-| [Stated type guards of the sync API](#stated-type-guards) | open | a unit calling `isUnionType` and the `this is X` methods of `Type` it uses verifies at the contract's stated promises |
 | [The sync API's checking wrapper](#sync-api-checking-wrapper) | open | `make suite` runs the front end's sync-API calls through the wrapper C5 describes |
 | [The compiler API's full shape check](#compiler-api-shape-check) | open | C3 checks every member and child kind over the corpus it names, the absent required members exactly the corrections |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
@@ -103,7 +102,7 @@ the producer and 126 in search.
   written application `Buffer<ImplicitArrayBuffer<…>>`, a conditional type
   over a signature's own binder (25); members of the sync API's `Type`,
   `Checker` and `Symbol` outside their named views, `isUnionType` among
-  them ([stated type guards](#stated-type-guards); 16); a mapped type over
+  them ([stated type guards](docs/COMPILER-API.md#stated-type-guards); 16); a mapped type over
   `Readonly` naming its key (13); `process.platform`, outside the reviewed
   globals (6); an annotated destructuring pattern (6); the sync API's `API`
   class, whose type parameter has a default, and a conditional type over a
@@ -175,25 +174,8 @@ that cite it.
 ### The compiler API's contract
 
 [COMPILER-API](docs/COMPILER-API.md) states the contract the front end's
-calls of TypeScript's compiler API are verified under. Three of its pieces
+calls of TypeScript's compiler API are verified under. Two of its pieces
 are designs no code implements.
-
-<a id="stated-type-guards"></a>
-**Stated type guards of the sync API.** The `this is X` methods of `Type`
-and the sync functions `isTupleType`, `isTypeReference` and `isUnionType`
-test bits of `flags` and `objectFlags`, so they are no kind tests; the
-contract states, for each one a unit uses, the promise and the members of
-`X` it covers, with the declaration text reviewed
-([views and stated type guards](docs/COMPILER-API.md#the-sync-api), T7).
-Consuming them needs, of guard signatures: an imported guard function whose
-promise a contract states, carried in the function type through the import
-and through a namespace member read, narrowing an immutable binding
-argument at the call; a `this is X` method, a member promise about the
-receiver, consumed at `t.isUnionType()` with `t` an immutable binding; a
-promise over an object type `X`, the refinement a meet with `X`; and the
-provenance of a stated promise in the evidence, so that a promise from
-`compiler-api.mts` appears in the trust report. `hostViews` reads the
-`this is X` methods as members outside `Type`'s view until then.
 
 <a id="sync-api-checking-wrapper"></a>
 **The sync API's checking wrapper (C5).** During `make suite`, the front

@@ -34,7 +34,7 @@
 // files.mts makes every file-system failure a tool failure.
 import { present } from "./files.mts";
 
-import { TypeFlags, isTypeReference, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
+import { TypeFlags, isTypeReference, isUnionType, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable/ast";
 import { isInstanceReference, literalUnion } from "./computed-types.mts";
@@ -312,7 +312,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           return unique(mapped);
         });
         if (!term && readReference) {
-          if (type.isUnionType()) return { k: "union", parts: type.getTypes().map(read), span };
+          if (isUnionType(type)) return { k: "union", parts: type.getTypes().map(read), span };
           const nodes = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
           const [node] = nodes;
           if (node && nodes.length === 1 && (ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.name) {
@@ -328,7 +328,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           }
         }
         if (!term) {
-          const parts = type.isUnionType() ? type.getTypes() : [type];
+          const parts = isUnionType(type) ? type.getTypes() : [type];
           return refuse(`TypeScript computes ${checker.typeToString(type)}, ` +
             (parts.some(t => t.flags & TypeFlags.EnumLiteral) ? "whose part is an enum member, outside the fragment"
               : "which is not a union of literals and primitives"));

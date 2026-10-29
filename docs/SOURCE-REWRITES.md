@@ -821,6 +821,33 @@ this one site of the census of 6be11ce.
 - **Commit:** the introducing commit, `familyTable gathers a name's members
   without a write at a computed index`.
 
+### A `this is X` method of the compiler's `Type`
+
+`literalUnion`, `generic`, `distributed` and the other readers of checker
+types in `tools/computed-types.mts`, `makeProbe` (`tools/type-probe.mts`),
+`isAny`, `writtenContext` (`tools/unchecked.mts`) and the declaration
+reader (`tools/declaration-graph.mts`) tested a type by its
+method, `type.isUnionType()`, and read the promised member, `getTypes()`. A
+`this is X` predicate's promise is about the receiver, which is no actual of
+a call, and `Type`'s view lists no such method
+(`invalid-compiler-api-type-method`); support would add a receiver promise
+to the calculus's promise signatures and their theorems, for sites the
+predicate functions of the same names serve
+([stated type guards](COMPILER-API.md#stated-type-guards)), which block 667
+statements of 17 functions in the census of 6be11ce.
+
+- **Equivalent form:** each call `t.isX()` becomes `isX(t)`, the sync API's
+  function of that name (`isClassOrInterface` becomes
+  `isClassOrInterfaceType`). `TypeObject`'s method is
+  `isX() { return isX(this); }`, calling the module's function, which the
+  import binds (`dist/api/sync/api.js`, audited 2026-10-29); with the
+  prototype unchanged, which no verified code reaches
+  ([host provenance](COMPILER-API.md#host-provenance)) and external code
+  leaves as T8 states, the call computes the same answer from the same reads
+  of the same object, and `t` is evaluated once in both forms.
+- **Commit:** the introducing commit, `The sync API's type predicates are
+  stated guards`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

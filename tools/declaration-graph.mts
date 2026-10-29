@@ -5,7 +5,7 @@
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isIntersectionType, isNumberLiteralType, isStringLiteralType, isTupleType, isTypeParameter, isTypeReference, isUnionType, type Checker, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
+import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
@@ -1508,8 +1508,8 @@ export function collectDeclarations(file: string, options: {
     const literalKeyOf = (name: Identifier | ts.PropertyAccessExpression): string | null => {
       const type = checker.getTypeAtLocation(name);
       if (!type) return null;
-      if (type.isStringLiteralType()) return type.value;
-      if (type.isNumberLiteralType() && Number.isFinite(type.value)) return numericKey(String(type.value));
+      if (isStringLiteralType(type)) return type.value;
+      if (isNumberLiteralType(type) && Number.isFinite(type.value)) return numericKey(String(type.value));
       return null;
     };
     // Whether a name denotes a standard library value, such as `Symbol`.
@@ -1770,6 +1770,20 @@ export function collectDeclarations(file: string, options: {
       const [one] = plain;
       if (!one || plain.length !== 1) throw Error(`the guard ${node.name.text} has no one plain signature`);
       const entry = guard;
+      // A stated guard of the sync API (T7, `statedGuards`): its declared
+      // promise, both signatures changing no value and no store.
+      const stated = compilerApiFile(node.getSourceFile().fileName) &&
+          installationPath(node.getSourceFile().fileName) === "dist/api/sync/api.d.ts"
+        ? statedGuards.find(g => g.name === node.name?.text) : undefined;
+      if (stated) {
+        if (node.getText(node.getSourceFile()).trim() !== stated.text)
+          throw Error(`the stated guard ${stated.name} is not declared as reviewed: ${stated.text}`);
+        const promises = forms.filter((f): f is Extract<TypeTerm, { k: "function" }> => f.k === "function" && f.effect.promise !== null);
+        const [promise] = promises;
+        if (!promise || promises.length !== 1) throw Error(`the stated guard ${stated.name} has no one promise signature`);
+        return { k: "intersection", span: one.span, parts: [{ ...one, effect: emptyEffect },
+          { ...promise, effect: { ...emptyEffect, promise: promise.effect.promise } }] };
+      }
       if (!entry || entry.name !== node.name.text) return one;
       const constants = guardConstants(node, entry);
       const values = entry.tags.map(name => {
@@ -2942,7 +2956,7 @@ export function collectDeclarations(file: string, options: {
       if (!read || !ts.isPropertyAccessExpression(read) || !ts.isIdentifier(read.name))
         throw new DeclarationError(span, "TypeScript member read missing");
       const object = checker.getTypeAtLocation(read.expression);
-      const parts = object && object.isIntersectionType() ? object.getTypes() : [];
+      const parts = object && isIntersectionType(object) ? object.getTypes() : [];
       const keys = parts.map(recordOf);
       if (!auditedOpenReadKeys.has(read.name.text) ||
           !parts.some(t => !!(t.flags & TypeFlags.NonPrimitive)) ||
@@ -3305,7 +3319,7 @@ export function collectDeclarations(file: string, options: {
     // value as the enum's interpretation computes it (`enumMembersOf`), a
     // host enum only where the compiler-API contract lists it.
     const contextualEnumMember = (type: Type, span: Span): TypeTerm | null => {
-      if (!(type.flags & TypeFlags.EnumLiteral) || type.isUnionType()) return null;
+      if (!(type.flags & TypeFlags.EnumLiteral) || isUnionType(type)) return null;
       const member = type.getSymbol()?.declarations[0]?.resolve();
       const owner = member?.parent;
       if (!member || !ts.isEnumMember(member) || !owner || !ts.isEnumDeclaration(owner))
@@ -3383,7 +3397,7 @@ export function collectDeclarations(file: string, options: {
         const literalMember = !!declaration && (ts.isPropertyAssignment(declaration) ||
           ts.isShorthandPropertyAssignment(declaration));
         if (optional && !writtenType &&
-            !(literalMember && member.flags & TypeFlags.Undefined && !member.isUnionType()))
+            !(literalMember && member.flags & TypeFlags.Undefined && !isUnionType(member)))
           throw Error(`the contextual record ${text} is an instance of an anonymous record, whose instantiation the compiler's API does not give, and its optional member ${p.name} is at a type with the \`undefined\` optionality adds, from which its written contract is not recovered; an annotation states it`);
         const memberType = writtenType && node && declaration
           ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
@@ -3561,12 +3575,12 @@ export function collectDeclarations(file: string, options: {
           return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
             args, span };
         }
-        if (type.isUnionType() || type.isIntersectionType()) {
+        if (isUnionType(type) || isIntersectionType(type)) {
           const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
           const [only] = parts;
-          return parts.length === 1 && only ? only : { k: type.isUnionType() ? "union" : "intersection", parts, span };
+          return parts.length === 1 && only ? only : { k: isUnionType(type) ? "union" : "intersection", parts, span };
         }
-        if (type.isTypeParameter()) {
+        if (isTypeParameter(type)) {
           const name = type.getSymbol()?.name;
           if (name) return { k: "binder", name, span };
         }
@@ -3784,7 +3798,7 @@ export function collectDeclarations(file: string, options: {
       try {
         const literal = literalKeyOf(node);
         const type = checker.getTypeAtLocation(node);
-        const value = type?.isStringLiteralType() || type?.isNumberLiteralType() ? type.value : null;
+        const value = type && (isStringLiteralType(type) || isNumberLiteralType(type)) ? type.value : null;
         options.symbolName?.(span, { ok: true, value: literal !== null && value !== null ? { literal, value } : symbolOf(node) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
@@ -3998,9 +4012,9 @@ export function collectDeclarations(file: string, options: {
           const type = checker.getTypeFromTypeNode(object);
           if (!type) return [];
           const keyType = key ? checker.getTypeFromTypeNode(key) : null;
-          const parts = keyType ? (keyType.isUnionType() ? keyType.getTypes() : [keyType]) : [];
-          const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
-            ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
+          const parts = keyType ? (isUnionType(keyType) ? keyType.getTypes() : [keyType]) : [];
+          const literals = parts.length && parts.every(p => isStringLiteralType(p) || isNumberLiteralType(p))
+            ? parts.map(p => isStringLiteralType(p) ? p.value : isNumberLiteralType(p) ? String(p.value) : "") : null;
           const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
           // A member the checker synthesises without a declaration is
           // refused by the sweep (an entity without declarations).

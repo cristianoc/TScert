@@ -248,8 +248,9 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * are the ones the front end reads (2026-10-18), but `Symbol.getExports` and
  * `getMembers`, whose `ReadonlyMap<__String, Symbol>` takes the branded key
  * from the client at `get` (reading rule 5), and `Type`'s `this is X`
- * methods, which wait for stated type guards. `Type`, an interface, has a
- * view of its own as a class does. */
+ * methods, whose promise is about the receiver, which is no actual of a call:
+ * the stated guards of their names state them as functions (`statedGuards`).
+ * `Type`, an interface, has a view of its own as a class does. */
 export const hostViews: readonly { owner: string; members: readonly { name: string; text: string }[] }[] = [
   { owner: "API", members: [
     { name: "parseConfigFile", text: "parseConfigFile(file: DocumentIdentifier): ConfigResponse;" },
@@ -267,8 +268,11 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "compilerOptions", text: "readonly compilerOptions: CompilerOptions;" },
     { name: "configFileName", text: "readonly configFileName: string;" },
     { name: "program", text: "readonly program: Program;" },
+    { name: "rootFiles", text: "readonly rootFiles: readonly string[];" },
   ] },
   { owner: "Program", members: [
+    { name: "getDeclarationDiagnostics", text: "getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
+    { name: "getGlobalDiagnostics", text: "getGlobalDiagnostics(): readonly Diagnostic[];" },
     { name: "getProgramDiagnostics", text: "getProgramDiagnostics(): readonly Diagnostic[];" },
     { name: "getSemanticDiagnostics", text: "getSemanticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
     { name: "getSourceFile", text: "getSourceFile(file: DocumentIdentifier): SourceFile | undefined;" },
@@ -331,6 +335,37 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
   ] },
 ];
 
+/** The stated type guards (T7, COMPILER-API.md, "Stated type guards"): the
+ * sync API's predicates over `Type` a unit narrows by, each read at its
+ * reviewed declaration (`dist/api/sync/api.d.ts`), its plain signature and
+ * its promise about its argument, both changing no value and no store. Its
+ * implementation (`dist/api/sync/api.js`), which `tests/compiler-api.mts`
+ * compares with the function Node loads, reads its argument's own data
+ * field `flags` (`isTypeReference`, through the module's `isObjectType`,
+ * also `objectFlags`) and the enum objects C1 checks, and nothing else: on a
+ * host `Type`, a `TypeObject` whose prototype defines no accessor, it runs
+ * no code of the program, makes no request, writes nothing and throws
+ * nothing. Its promise is T7: on a value of a host type
+ * it returns `true` for, the members the promised interface adds over `Type`
+ * return values of their declared types. The `this is X` methods of `Type`
+ * calling them are outside the fragment (`invalid-compiler-api-type-method`). */
+export const statedGuards: readonly { name: string; text: string; implementation: string }[] = [
+  { name: "isUnionType", text: "export declare function isUnionType(type: Type): type is UnionType;",
+    implementation: "function isUnionType(type) {\n    return (type.flags & TypeFlags.Union) !== 0;\n}" },
+  { name: "isIntersectionType", text: "export declare function isIntersectionType(type: Type): type is IntersectionType;",
+    implementation: "function isIntersectionType(type) {\n    return (type.flags & TypeFlags.Intersection) !== 0;\n}" },
+  { name: "isStringLiteralType", text: "export declare function isStringLiteralType(type: Type): type is StringLiteralType;",
+    implementation: "function isStringLiteralType(type) {\n    return (type.flags & TypeFlags.StringLiteral) !== 0;\n}" },
+  { name: "isNumberLiteralType", text: "export declare function isNumberLiteralType(type: Type): type is NumberLiteralType;",
+    implementation: "function isNumberLiteralType(type) {\n    return (type.flags & TypeFlags.NumberLiteral) !== 0;\n}" },
+  { name: "isBigIntLiteralType", text: "export declare function isBigIntLiteralType(type: Type): type is BigIntLiteralType;",
+    implementation: "function isBigIntLiteralType(type) {\n    return (type.flags & TypeFlags.BigIntLiteral) !== 0;\n}" },
+  { name: "isBooleanLiteralType", text: "export declare function isBooleanLiteralType(type: Type): type is BooleanLiteralType;",
+    implementation: "function isBooleanLiteralType(type) {\n    return (type.flags & TypeFlags.BooleanLiteral) !== 0;\n}" },
+  { name: "isTypeReference", text: "export declare function isTypeReference(type: Type): type is TypeReference;",
+    implementation: "function isTypeReference(type) {\n    return isObjectType(type) && (type.objectFlags & ObjectFlags.Reference) !== 0;\n}" },
+];
+
 /** The listed methods whose arguments may hold an object of the program:
  * a `DocumentIdentifier` object, a `DocumentPosition` or the snapshot's
  * parameters, which the client puts into its payload and serializes with
@@ -339,7 +374,8 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
  * read at its declared signature, which states no effect. */
 export const serializingRequests: readonly string[] = [
   "API.parseConfigFile", "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
-  "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics", "Checker.resolveName",
+  "Program.getDeclarationDiagnostics", "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics",
+  "Checker.resolveName",
 ];
 
 /** A stated request of the sync API (T6, COMPILER-API.md, "The sync

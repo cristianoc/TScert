@@ -30,14 +30,14 @@ import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, symlinkSync
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compilerApiFamily, hostNodeListMembers, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostNodeListMembers, hostViews, hostEnums, hostPackage, statedGuards } from "../tools/compiler-api.mts";
 import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { openCompiler, releaseCompiler } from "../tools/compiler-channel.mts";
 import { fieldOf } from "../tools/thrown.mts";
-import { syntax } from "../tools/syntax.mts";
+import { sync as syncApi, syntax } from "../tools/syntax.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
@@ -903,4 +903,103 @@ const nodeListMembersHold = (list: object, what: string): void => {
   }
   closeParser();
   console.log("C5: the open reads of the client, its process and a node find data properties, and a node's kind getter");
+}
+
+// C6, stated guards: each stated guard of the sync API is declared as
+// reviewed and is, under Node, the reviewed function, `isTypeReference`'s
+// helper `isObjectType` among them; `TypeObject`'s prototype defines no
+// getter; flags and objectFlags are own data properties; and on a
+// program's literal, union, intersection and reference
+// types each guard answering `true` leaves the members its promise covers at
+// their declared types (T7, regression evidence).
+{
+  const declarations = readFileSync(join(root, "dist", "api", "sync", "api.d.ts"), "utf8");
+  const exported = new Map<string, unknown>(Object.entries(sync));
+  for (const { name, text, implementation } of statedGuards) {
+    assert.equal(declarations.split(text).length, 2, `${name} is declared as reviewed: ${text}`);
+    assert.equal(String(exported.get(name)), implementation, `${name} is the reviewed function under Node`);
+  }
+  assert.equal(String(exported.get("isObjectType")), "function isObjectType(type) {\n    return (type.flags & TypeFlags.Object) !== 0;\n}",
+    "isTypeReference's helper isObjectType is the reviewed function under Node");
+  const dir = runDirectory("tscert-stated-guards-");
+  const file = join(dir, "types.ts");
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, target: "es2022", types: [] }, files: ["types.ts"] }));
+  writeFileSync(file, [
+    `export const s: "s" = "s";`, "export const t: true = true;", "export const f: false = false;",
+    "export const n: 1.5 = 1.5;", "export const b: -12n = -12n;", "export const r: Array<string> = [];",
+    "export const u: string | undefined = undefined;", "export const i: { a: 1 } & { b: 2 } = { a: 1, b: 2 };",
+    "export const m: Map<string, number> = new Map();", ""].join("\n"));
+  const api = openCompiler({ cwd: dir });
+  let met = 0;
+  try {
+    const project = api.updateSnapshot({ openProjects: [join(dir, "tsconfig.json")] }).getProject(join(dir, "tsconfig.json"));
+    const tree = project?.program.getSourceFile(file);
+    assert.ok(project && tree, "the stated guards' program");
+    for (const statement of tree.statements) {
+      const [declaration] = syntax.isVariableStatement(statement) ? statement.declarationList.declarations : [];
+      const type: syncApi.Type | undefined = declaration && project.checker.getTypeAtLocation(declaration.name);
+      assert.ok(type, "a declared constant's type");
+      const prototype: unknown = Object.getPrototypeOf(type);
+      assert.ok(typeof prototype === "object" && prototype !== null && prototype.constructor.name === "TypeObject" &&
+        Object.values(Object.getOwnPropertyDescriptors(prototype)).every(d => !d.get && !d.set),
+        "a checker type is a TypeObject, whose prototype defines no accessor");
+      const ownData = (object: object, key: string): unknown => {
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        assert.ok(descriptor && "value" in descriptor && !descriptor.get && !descriptor.set,
+          `${key} is an own data property`);
+        return descriptor.value;
+      };
+      const checkType = (value: syncApi.Type): void => {
+        assert.equal(Object.getPrototypeOf(value), prototype, "a registry TypeObject");
+        assert.equal(typeof ownData(value, "flags"), "number");
+        const objectFlags = ownData(value, "objectFlags");
+        assert.ok(typeof objectFlags === "number" || objectFlags === undefined);
+        if (syncApi.isObjectType(value)) assert.equal(typeof objectFlags, "number");
+      };
+      checkType(type);
+      const types = (parts: readonly syncApi.Type[]): void => {
+        assert.ok(Array.isArray(parts), "getTypes gives an array");
+        for (let index = 0; index < parts.length; index++) {
+          assert.ok(Object.hasOwn(parts, index), `getTypes has own index ${index}`);
+          const part = parts[index];
+          assert.ok(part);
+          checkType(part);
+        }
+      };
+      if (syncApi.isUnionType(type) || syncApi.isIntersectionType(type)) {
+        met++;
+        const first = type.getTypes(), second = type.getTypes();
+        types(first);
+        types(second);
+        assert.notEqual(first, second, "getTypes gives a fresh array of types");
+      }
+      const literal: string | null = syncApi.isStringLiteralType(type) ? "string" : syncApi.isNumberLiteralType(type) ? "number"
+        : syncApi.isBigIntLiteralType(type) ? "bigint" : syncApi.isBooleanLiteralType(type) ? "boolean" : null;
+      if (literal !== null) {
+        met++;
+        assert.equal(typeof ownData(type, "value"), literal, `a ${literal} literal type's value is a ${literal}`);
+        assert.ok(syncApi.isLiteralType(type));
+        const seen = new Set<syncApi.FreshableType>();
+        const freshable = (value: syncApi.FreshableType | undefined): void => {
+          if (value === undefined || seen.has(value)) return;
+          seen.add(value);
+          checkType(value);
+          assert.equal(typeof value.getFreshType, "function");
+          assert.equal(typeof value.getRegularType, "function");
+          freshable(value.getFreshType());
+          freshable(value.getRegularType());
+        };
+        freshable(type);
+      }
+      if (syncApi.isTypeReference(type)) {
+        met++;
+        assert.equal(typeof ownData(type, "objectFlags"), "number");
+        checkType(type.getTarget());
+      }
+    }
+  } finally {
+    releaseCompiler(api, null);
+  }
+  assert.equal(met, 9, "every guarded constant meets its guard");
+  console.log(`C6: ${statedGuards.length} stated guards declared and loaded as reviewed; their promised members at their declared types on ${met} types`);
 }

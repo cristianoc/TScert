@@ -14,10 +14,10 @@ prerequisites are the reading of declarations in
 [Source contracts](SOURCE-CONTRACTS.md), the record clauses of
 [Positive types](POSITIVE-TYPES.md#records), the array invariant of
 [Semantics](SEMANTICS.md#the-array-invariant) and the source model's
-[arrays](SOURCE-MODEL.md#arrays). Three pieces are proposed and unbuilt,
-each marked where it is stated: the [stated type guards](#the-sync-api) of
-the sync API (T7), the sync API's checking wrapper (C5), and the rest of the
-[shape check](#binding-the-contract-to-the-implementation) (C3).
+[arrays](SOURCE-MODEL.md#arrays). Two pieces are proposed and unbuilt,
+each marked where it is stated: the sync API's checking wrapper (C5), and
+the rest of the [shape check](#binding-the-contract-to-the-implementation)
+(C3).
 
 ## The contract in brief
 
@@ -238,7 +238,9 @@ are ordinary types.
    host class without a view has no member. Node shapes are read member-complete. Read
    member-complete, `Checker` alone brings 50 methods whose types reach
    `CompletionInfo`, `Uint8Array` and `ReadonlyMap<__String, …>`, and 38
-   `this is X` methods (counted on 2026-10-16).
+   `this is X` methods (counted on 2026-10-16). `Type`'s view lists none of its `this is X`
+   methods, whose predicates the [stated type guards](#stated-type-guards)
+   state as functions.
 5. **Branded strings.** `Path` (`string & { __pathBrand: any }`) and
    `__String` are opaque host-introduced types whose values are strings:
    reading one gives a string, and a host parameter of such a type admits a
@@ -695,8 +697,9 @@ footprint are an assumption of T8. A `map` callback calling a request gives
 a dense result (`compiler-api-request-effect`). No bound holds on a throw.
 The methods whose arguments may hold an object of the program
 (`API.parseConfigFile`, `API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
-`Program.getSourceFile`, `Program.getSemanticDiagnostics`,
-`Program.getSyntacticDiagnostics`, `Checker.resolveName`:
+`Program.getSourceFile`, `Program.getDeclarationDiagnostics`,
+`Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics`,
+`Checker.resolveName`:
 `serializingRequests`) put it into the payload, whose serialization runs
 its `toJSON`; each is read at its declared signature, which states no
 effect (`invalid-compiler-api-request-tojson`, whose `toJSON` pops the
@@ -714,10 +717,11 @@ and spans (`declaration-graph.mts`).
 `Type`, `Signature` and `NodeHandle` are host types read through their named
 views, under T6.
 
-### Audits of five sync members
+### Audits of eight sync members
 
 Cited: TypeScript 7.0.2, `dist/api/sync/api.d.ts` and
-`dist/api/sync/api.js` of the installation bound by C0, audited 2026-10-25.
+`dist/api/sync/api.js` of the installation bound by C0, audited 2026-10-25
+(the last three rows 2026-10-29).
 Each declaration below is the exact text stored in `hostViews`; `tests/compiler-api.mts` checks
 it against the installed declaration. The implementation audit supports T6,
 an assumption about runtime behaviour, rather than a Lean proof.
@@ -729,31 +733,61 @@ an assumption about runtime behaviour, rather than a Lean proof.
 | `Snapshot.getProjects(): readonly Project[];` | `getProjects` checks disposal and returns `[...this.projectMap.values()]`, a fresh dense array of the snapshot's projects. It invokes no client callback and changes no existing model location. A disposed snapshot throws. |
 | `Snapshot.dispose(): void;` | `dispose` marks the snapshot disposed, disposes its projects, clears its maps and registry, calls the internal `onDispose` closure created by `API.updateSnapshot`, then requests `release` with the snapshot id. The closure removes the snapshot and releases cache references; it is not supplied by the client. Retained filesystem callbacks, if requested by the channel, remain subject to T6 and T8. Repeated disposal returns immediately; subsequent operations may throw. The normal-return footprint permits growth and preserves existing stable members. |
 | `Symbol.checkFlags: number` (declaration `readonly checkFlags: number;`) | The `Symbol` constructor assigns `data.checkFlags` once. No other assignment to `checkFlags` occurs in `api.js`. The member is a stable readonly number, with its value supplied by the server under T6. |
+| `Project.rootFiles` (declaration `readonly rootFiles: readonly string[];`) | The `Project` constructor assigns `data.rootFiles`, the channel's JSON-decoded array, once; no other assignment occurs in `api.js`, and the package writes no element of it. The member is a stable readonly view of a dense array of strings under T6; a write through another alias is T8's. |
+| `Program.getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];` | Sends snapshot and project ids and `file`, as `getSemanticDiagnostics` does, and returns the decoded array or a fresh empty one. An object identifier is serialized with `JSON.stringify`, so `serializingRequests` keeps the declared signature. |
+| `Program.getGlobalDiagnostics(): readonly Diagnostic[];` | Sends snapshot and project ids alone and returns the decoded array or a fresh empty one: a request, at the store-growth footprint on normal return (T6, T8). |
 
-**Stated type guards (proposed, unbuilt).** The `this is X` methods of `Type`
-and the sync functions `isTupleType`, `isTypeReference` and `isUnionType`
-test bits of `flags` and `objectFlags`, so they are no kind tests. The
-contract states, for each one a unit uses, the promise and the members of
-$`X`$ it covers, with the declaration text reviewed (T7): `isUnionType`,
-`isIntersectionType`, `isTypeParameter`, `isTemplateLiteralType`,
-`isSubstitutionType`, `isStringMappingType`, `isIndexedAccessType`,
-`isIndexType`, `isConditionalType`, `isTupleType`, `isTypeReference`. A
-stated promise is an implication, so it refines its argument on the true
-edge only, and the false edge keeps the argument's type. A parameter typed
-by a sub-interface (`getTypeArguments(type: TypeReference)`) is read as
-declared; the client meets it after the stated guard.
+### Stated type guards
 
-Consuming the stated guards needs these of guard signatures:
+The sync API's predicates over `Type` test bits of `flags` and
+`objectFlags`, so they are no kind tests. A **stated type guard** is one
+whose promise the contract states (`statedGuards`, T7), for each predicate a
+unit narrows by: `isUnionType`, `isIntersectionType`, `isStringLiteralType`,
+`isNumberLiteralType`, `isBigIntLiteralType`, `isBooleanLiteralType` and
+`isTypeReference`. Each is read at its declaration in
+`dist/api/sync/api.d.ts`, whose text the entry states,
+`isUnionType(type: Type): type is UnionType` among them, as a
+[user-defined guard](SOURCE-ELABORATION.md#user-defined-guards) is: its plain
+signature and its promise signature about its argument, both at the empty
+footprint. A call's `true` edge narrows an immutable binding argument to the
+promised interface, read as declared: `UnionType` is `Type`'s view with
+`getTypes(): readonly Type[]`, `StringLiteralType` the view with
+`getFreshType`, `getRegularType` and `value: string`. The `false` edge keeps
+the argument's type. Every other predicate of the package is read without its
+promise ([guard recognition](HOST-FAMILIES.md#guard-recognition),
+`invalid-compiler-api-sync-guard`).
 
-- an imported guard function whose promise a contract states, carried in
-  the function type through the import and through a namespace member read,
-  and narrowing an immutable binding argument at the call;
-- a `this is X` method, a member promise about the receiver, consumed at
-  `t.isUnionType()` with `t` an immutable binding;
-- a promise over an object type $`X`$, the refinement being a meet with
-  $`X`$;
-- the provenance of a stated promise in the evidence, so that a promise
-  from `compiler-api.mts` appears in the trust report.
+Cited: TypeScript 7.0.2, `dist/api/sync/api.js`, audited 2026-10-29. Each
+stated guard's implementation is the entry's text, which
+`tests/compiler-api.mts` compares with the function Node loads: it reads
+`type.flags`, and `isTypeReference` through `isObjectType` also
+`type.objectFlags`, and the enum objects C1 checks. On a `TypeObject`, the
+only class whose values have a host type reaching `Type`
+([host provenance](#host-provenance)), these are own data fields its
+constructor assigns, and its prototype defines no getter, so a call runs no
+code of the program, makes no request, writes nothing and throws nothing.
+The promised members are `TypeObject`'s prototype methods and own data
+fields: `getTypes` calls `fetchTypes` without handles, requesting the
+constituents on every call and returning a fresh dense array of
+registry-shared type objects. `getTarget` calls `fetchType` with the target
+handle, returning its registered object when cached and requesting it when
+uncached. `getFreshType` and `getRegularType` likewise use `fetchType` with
+their respective handles, returning a freshable type or `undefined` when
+there is no handle. `value` is the decoded literal, and `objectFlags` is an
+own numeric data field. These methods may make requests; the empty footprint
+stated above belongs to the predicates. That each holds
+its declared type where the guard answers `true` is T7, observed by
+`tests/compiler-api.mts` on literal, union, intersection and reference
+types.
+
+`Type`'s `this is X` methods (`type.isUnionType()`) are no members of its
+view: their promise is about the receiver, which is no actual of a call.
+Each calls the predicate of its name on its receiver (`api.js`), so the front
+end calls the predicate instead
+([constructs avoided](SOURCE-REWRITES.md#a-this-is-x-method-of-the-compilers-type),
+`invalid-compiler-api-type-method`). A parameter typed by a sub-interface
+(`getTypeArguments(type: TypeReference)`) is read as declared; the client
+meets it after the stated guard.
 
 ## Namespace imports and bitwise operators
 
@@ -888,6 +922,18 @@ as regression evidence.
   each result with its declared type and, after each stated type guard
   returns `true`, calls the members its promise covers; the lifetime
   controls run under Node.
+- **C6, stated guards.** Each [stated guard](#stated-type-guards) is
+  declared as its entry states, and the function Node loads for it, and
+  for `isTypeReference`'s helper `isObjectType`, is the entry's reviewed
+  text; a checker type has own data descriptors for `flags` and
+  `objectFlags` (`flags` numeric, `objectFlags` numeric on object types),
+  and its prototype defines no accessor; and on
+  literal, union, intersection and reference types of a small program each
+  guard answering `true` leaves the members its promise covers at their
+  declared types: `getTypes` gives fresh arrays with an own element at every
+  index, literal types have `value`, `getFreshType` and `getRegularType`
+  (including the returned freshable types), and references have `objectFlags`
+  and `getTarget` (regression evidence for T7).
 - **Declaration texts.** Each contract entry's reviewed text is compared
   with the installed declaration, as `library-globals.mts` does.
 
@@ -968,9 +1014,10 @@ the corpus runs are regression evidence, not proofs.
   a call of a member whose arguments are primitives and host objects is
   within that footprint on normal return. A result need not describe the handles passed when they
   come from another snapshot, project or instance.
-- **T7 (stated type guards; proposed with them).** For each stated guard
-  $`g`$ promising $`X`$: when $`g`$ returns `true` on a value of a host type, the members $`X`$
-  adds over `Type` return values of their declared types.
+- **T7 (stated type guards).** For each stated guard $`g`$ promising
+  $`X`$ ([stated type guards](#stated-type-guards)): when $`g`$ returns
+  `true` on a value of a host type, the members $`X`$ adds over `Type` return
+  values of their declared types.
 - **T8 (external code).** Every value code outside the linked certified closure
   gives a certified function or closure meets the classified
   interpretation recursively, and every sync API instance it gives was
