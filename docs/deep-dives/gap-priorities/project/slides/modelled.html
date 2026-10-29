@@ -1,0 +1,18 @@
+<section id="modelled" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · this round, external code described</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Causes closed by a contract or a host boundary</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:44%;text-align:left;font-weight:600">Cause at 6be11ce (statements · functions)</th><th style="width:56%;text-align:left;font-weight:600">Closed by (route 1, or 5 for a boundary)</th></tr>
+<tr><td>A node list filtered by a compiler guard (387 · 2)</td><td>035fe74: a guard passed by name to filter or find narrows the result</td></tr>
+<tr><td>Signature.declaration (351 · 2); checker queries at an array (197 · 4)</td><td>a8cba50: compiler-API contract entries</td></tr>
+<tr><td>import.meta (319 · 28)</td><td>6338776: its members are unknown values stating no effect</td></tr>
+<tr><td>new Set of a Set, new Map of a Map (193 · 7)</td><td>c797d9a: a copy through the built-in iterator</td></tr>
+<tr><td>A default import of node:path, node:fs (187 · 3, 106 · 2)</td><td>d59d4cc: each member is the module's named export</td></tr>
+<tr><td>A replacement callback with captures (167 · 3)</td><td>a1e3657: each capture is a string or undefined</td></tr>
+<tr><td>Reflect (221 · 6), Object.getPrototypeOf (111 · 5)</td><td>8987151: Reflect.ownKeys, a comparison with Object.prototype; 4 · 2, 31 · 2 left</td></tr>
+<tr><td>node:module's hooks (69 · 5)</td><td>1c35793: a host boundary, module-hooks.mts; its 4 functions stay refused</td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li>Each but 8987151 adds a contract or a boundary, a <span style="color:#8b2f4b">trust change</span> its commit states; each has a verified case. What is left is measured at 4d25222.</li>
+<li>The narrowed numeric key (1 of the table of 6be11ce): 325f99c rewrites familyTable without a write at the index indexOf finds (route 4).</li>
+</ul>
+</section>

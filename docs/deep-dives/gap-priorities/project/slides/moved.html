@@ -1,16 +1,19 @@
 <section id="moved" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · since the last version</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Two causes closed, four narrowed</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The ten causes of the last version: seven closed, one dropped, two narrowed</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:46%;text-align:left;font-weight:600">Cause at aa7c768</th><th style="width:14%;text-align:left;font-weight:600">At aa7c768</th><th style="width:12%;text-align:left;font-weight:600">At b81675f</th><th style="width:28%;text-align:left;font-weight:600">Status, by</th></tr>
-<tr><td>An optional method read as a type, and bound (record hook)</td><td>1,188 · 25</td><td>none</td><td><span style="color:#2e7d4f">closed</span> c6e7119, a repair</td></tr>
-<tr><td>A dictionary read at a key that may name a member of Object.prototype</td><td>1,112 · 27</td><td>none</td><td><span style="color:#2e7d4f">closed</span> a03f12a, a repair</td></tr>
-<tr><td>A key test k in x on an operand typed unknown</td><td>1,282 · 51</td><td>none</td><td><span style="color:#2e7d4f">narrowed</span> d578dd8, a rule: the test is admitted, the read after it is cause 7</td></tr>
-<tr><td>A spread of a value that may not be a plain object</td><td>695 · 17</td><td>3 · 1</td><td><span style="color:#2e7d4f">narrowed</span> d578dd8, the same rule</td></tr>
-<tr><td>A numeric key not proved an array index</td><td>1,470 · 17</td><td>779 · 9</td><td><span style="color:#2e7d4f">narrowed</span> b276cd5, a rule</td></tr>
-<tr><td>A field holding an object, reread after a test of it</td><td>828 · 17</td><td>300 · 8</td><td><span style="color:#2e7d4f">narrowed</span> 05041cf, a rule</td></tr>
+<tr><th style="width:46%;text-align:left;font-weight:600">Cause at b81675f, the last version</th><th style="width:14%;text-align:left;font-weight:600">At b81675f</th><th style="width:40%;text-align:left;font-weight:600">Status, by</th></tr>
+<tr><td>A member of a node read after isTypeAliasDeclaration</td><td>2,052 · 37</td><td><span style="color:#2e7d4f">closed</span> 0fc7839, 8ec35f5, a repair and a stated contract</td></tr>
+<tr><td>An optional chain reported as an unbound name ?.</td><td>1,779 · 12</td><td><span style="color:#2e7d4f">dropped</span> df521bc: an artifact of diagnostic runs alone</td></tr>
+<tr><td>Number both called and read through its members</td><td>1,113 · 24</td><td><span style="color:#2e7d4f">closed</span> 1da3887, c105173, a rule</td></tr>
+<tr><td>A callback parameter whose context is a library type</td><td>1,082 · 16</td><td><span style="color:#2e7d4f">closed</span> 25493e6, a rule; a new site, runChild (38 · 1)</td></tr>
+<tr><td>Map and Set with no binding in the slice, or instanceof of them</td><td>1,059 · 9</td><td><span style="color:#2e7d4f">closed</span> 467af18, dfbefbd, a repair and a rule</td></tr>
+<tr><td>An array's method read where its type joins a record</td><td>1,024 · 15</td><td><span style="color:#2e7d4f">closed</span> 83afafc, 6be11ce, contract entries and a rule</td></tr>
+<tr><td>A member read after k in x, on an object of unknown type</td><td>1,016 · 24</td><td><span style="color:#2e7d4f">closed</span> e276727, a rule</td></tr>
+<tr><td>A generic function used where its type parameters must be checked</td><td>1,005 · 20</td><td><span style="color:#2e7d4f">narrowed</span> 82baee4, a rule; left only in runChild (38 · 1)</td></tr>
+<tr><td>Array&lt;T&gt;: Array's library declaration refused</td><td>887 · 10</td><td><span style="color:#2e7d4f">closed</span> 2df5f8d, a rule</td></tr>
+<tr><td>Object.entries, whose overloads are generic and plain</td><td>860 · 28</td><td><span style="color:#2e7d4f">narrowed</span> 317ff8f, a rule; 80 · 3 left</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Statements · functions, measured in both diagnostic censuses by the same counting. That counting puts a field reread at 828 · 17 at aa7c768, where the last version, which did not count a read after a failed inner read under the inner one, gave 3,080 · 35; it puts the record hook at 1,188 · 25, where that version's reading by hand gave 1,943 · 32.</li>
-<li>Not in the last version and measured in both censuses alike: causes 2, 5 and 8 of the table (1,772, 1,059 and 1,005 statements at aa7c768).</li>
+<li>Statements · functions, measured at b81675f; what is left, at 4d25222. The commits lie between b81675f and 6be11ce.</li>
 </ul>
 </section>

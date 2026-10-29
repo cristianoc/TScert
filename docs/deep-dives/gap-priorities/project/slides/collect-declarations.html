@@ -1,0 +1,17 @@
+<section id="collect-declarations" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Causes 1–7 · 2,704 statements, 1 function, and Omit in 3 more</p><p style="font-size:24px;color:#5b6662"><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-omit-interface</span>, <span style="color:#2b5b9c">optional-method-call-object-refused</span>; <span style="color:#9a3a2a">refused, rightly</span> <span style="color:#2b5b9c">invalid-compiler-api-unlisted-enum</span>; four <span style="color:#5e6870">no case</span></p></div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">collectDeclarations: seven gate refusals</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:58%;text-align:left;font-weight:600">Construct</th><th style="width:42%;text-align:left;font-weight:600">Site</th></tr>
+<tr><td>Omit of an interface, keyof over a type parameter (also selectGlobal and library-modules.mts)</td><td>l.1784 Omit&lt;…&gt;</td></tr>
+<tr><td>A method of the compiler's Symbol not reviewed: getExports, getMembers</td><td>l.4038–4042</td></tr>
+<tr><td>A compiler enum the contract does not read: TypePredicateKind</td><td>l.8, the import</td></tr>
+<tr><td>ReturnType of a local function's type</td><td>l.4031 ReturnType&lt;typeof targetOf&gt;</td></tr>
+<tr><td>An optional call of a method whose object is a call</td><td>l.2075 valueScope(…).equation?.(reference)</td></tr>
+<tr><td>A callback parameter TypeScript types at a type parameter not in scope</td><td>l.2657, the parameter read</td></tr>
+<tr><td>A declaration list of two destructuring patterns</td><td>l.3282 const [member] = members, [owner] = owners</td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li>collectDeclarations reads the declarations of a library: 2,704 census statements. Its diagnostic run stops after the gate at the 300 s limit, so what lies after these seven is not examined (measured).</li>
+<li><b style="font-weight:600">What closing needs:</b> for the enum and Symbol's methods, contract entries audited against the compiler (route 1, a trust change each); for the other five, a rule each or a rewrite (route 4). Several are one site, so a rewrite is the likely route (a judgement).</li>
+</ul>
+</section>

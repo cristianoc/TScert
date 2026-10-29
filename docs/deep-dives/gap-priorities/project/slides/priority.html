@@ -1,20 +1,15 @@
 <section id="priority" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, diagnostic census at b81675f</p>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, diagnostic census at 4d25222</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The ten causes that block the most code</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:4%;text-align:left;font-weight:600">#</th><th style="width:46%;text-align:left;font-weight:600">Cause</th><th style="width:11%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:29%;text-align:left;font-weight:600">Cases</th></tr>
-<tr><td>1</td><td>A member of a node read after isTypeAliasDeclaration</td><td>2,052</td><td>37</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-type-alias-guard-member</span></td></tr>
-<tr><td>2</td><td>An optional chain the producer reports as an unbound name ?.</td><td>1,779</td><td>12</td><td><span style="color:#5e6870">no case</span></td></tr>
-<tr><td>3</td><td>Number both called and read through its members</td><td>1,113</td><td>24</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">number-call-and-members</span></td></tr>
-<tr><td>4</td><td>A callback parameter whose context is a library type</td><td>1,082</td><td>16</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-closure-map-context</span></td></tr>
-<tr><td>5</td><td>Map and Set: no binding in the slice, or instanceof of them</td><td>1,059</td><td>9</td><td><span style="color:#5e6870">no case</span></td></tr>
-<tr><td>6</td><td>An array's method read where its type joins a record</td><td>1,024</td><td>15</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-finally-view</span></td></tr>
-<tr><td>7</td><td>A member read after k in x, on an object of unknown type</td><td>1,016</td><td>24</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-in-name-object</span></td></tr>
-<tr><td>8</td><td>A generic function used where TScert cannot check its type parameters</td><td>1,005</td><td>20</td><td><span style="color:#5e6870">no case</span></td></tr>
-<tr><td>9</td><td>Array&lt;T&gt;: Array's library declaration refused</td><td>887</td><td>10</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-generic-annotation</span></td></tr>
-<tr><td>10</td><td>Object.entries, whose overloads are generic and plain</td><td>860</td><td>28</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-entries-mixed-overloads</span></td></tr>
+<tr><th style="width:5%;text-align:left;font-weight:600">#</th><th style="width:49%;text-align:left;font-weight:600">Cause</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:24%;text-align:left;font-weight:600">Cases</th></tr>
+<tr><td>1</td><td>Omit&lt;I, K&gt; of an interface: keyof over a type parameter</td><td>3,051</td><td>4</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-omit-interface</span></td></tr>
+<tr><td>2–7</td><td>Six more gate refusals met only in collectDeclarations (slide “collectDeclarations”)</td><td>2,704 each</td><td>1</td><td>one negative and one gap among them; four no case</td></tr>
+<tr><td>8</td><td>A union's arm read after a test through an optional chain, x?.ok ? x.value : …</td><td>1,168</td><td>9</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>9</td><td>A spread of a compiler node list or an empty array, ...(xs ?? [])</td><td>781</td><td>7</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>10</td><td>A map callback returning a record literal of a discriminated union</td><td>780</td><td>31</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-callback-literal-context</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>A function blocked by several causes counts under each. Statements and functions are measured.</li>
-<li><b style="font-weight:600">Judgements:</b> cause 1 includes one site read in the source (findBlockTypes: 7 functions, 758 statements); cause 7 is 15 sites read in the source, each a read after a key test on a value typed unknown; cause 5 counts the loops over Map and Set in its 9 functions.</li>
+<li>A function blocked by several causes counts under each. Statements and functions are measured. Causes 1–7 are all met in collectDeclarations (2,704 statements), the largest function of tools/: all seven must be closed before it can verify, and what its run meets after the gate is not examined.</li>
+<li><b style="font-weight:600">Judgements:</b> causes 8–10 are sites read in the source, each behind a reason that names no construct (a missing member, a failed search); cause 10 counts the 31 copies of type-term.mts that reach emptyObject, where the verified census stops 29 of them.</li>
 </ul>
 </section>

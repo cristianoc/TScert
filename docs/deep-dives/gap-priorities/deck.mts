@@ -12,7 +12,10 @@ import { SYNTAX } from "../../../dev/style-tokens.mts";
 const c = (name: string): string => color(SYNTAX.t, name);
 const trust = status("trust", "trust change");
 const gap = (...names: string[]): string => `${status("gap", "gap")} ${names.map(c).join(", ")}`;
+const neg = (...names: string[]): string => `${status("neg", "refused, rightly")} ${names.map(c).join(", ")}`;
 const noCase = status("gap", "no case");
+const closedBy = (commit: string, route: string): string => `${status("ok", "closed")} ${commit}, ${route}`;
+const narrowedBy = (commit: string, route: string): string => `${status("ok", "narrowed")} ${commit}, ${route}`;
 
 /** A cause's slide: its case's code, then why it is refused, what proving
  * it needs and what that would trust, or, for a closed one, how it was
@@ -32,43 +35,66 @@ function cause(id: string, label: string, title: string, o: {
 }
 
 const prio: [string, string, string, string, string][] = [
-  ["1", "A member of a node read after isTypeAliasDeclaration", "2,052", "37", gap("blocker-type-alias-guard-member")],
-  ["2", "An optional chain the producer reports as an unbound name ?.", "1,779", "12", noCase],
-  ["3", "Number both called and read through its members", "1,113", "24", gap("number-call-and-members")],
-  ["4", "A callback parameter whose context is a library type", "1,082", "16", gap("blocker-closure-map-context")],
-  ["5", "Map and Set: no binding in the slice, or instanceof of them", "1,059", "9", noCase],
-  ["6", "An array's method read where its type joins a record", "1,024", "15", gap("blocker-array-finally-view")],
-  ["7", "A member read after k in x, on an object of unknown type", "1,016", "24", gap("blocker-in-name-object")],
-  ["8", "A generic function used where TScert cannot check its type parameters", "1,005", "20", noCase],
-  ["9", "Array&lt;T&gt;: Array's library declaration refused", "887", "10", gap("blocker-array-generic-annotation")],
-  ["10", "Object.entries, whose overloads are generic and plain", "860", "28", gap("blocker-entries-mixed-overloads")],
+  ["1", "Omit&lt;I, K&gt; of an interface: keyof over a type parameter", "3,051", "4", gap("blocker-omit-interface")],
+  ["2–7", "Six more gate refusals met only in collectDeclarations (slide “collectDeclarations”)", "2,704 each", "1", "one negative and one gap among them; four no case"],
+  ["8", "A union's arm read after a test through an optional chain, x?.ok ? x.value : …", "1,168", "9", noCase],
+  ["9", "A spread of a compiler node list or an empty array, ...(xs ?? [])", "781", "7", noCase],
+  ["10", "A map callback returning a record literal of a discriminated union", "780", "31", gap("blocker-callback-literal-context")],
 ];
 
 const more: [string, string, string, string][] = [
-  ["A for statement's condition, not found after ts.isForStatement on a union of loops", "663", "22", noCase],
-  ["A method of the compiler's Type TScert has not reviewed (isUnionType …)", "660", "17", `${status("neg", "refused until reviewed")} ${c("invalid-compiler-api-sync-guard")}`],
-  ["A write that may add a key to an object others hold", "630", "25", gap("blocker-loop-key-adding-write")],
-  ["ArrayBufferLike, reached through a global's declaration", "473", "20", noCase],
-  ["node:url's functions: their declarations reach a type the type reader refuses", "456", "19", gap("blocker-node-url-import")],
-  ["An assignment to a module's let, or its increment (each refused increment is of one)", "387", "42", gap("blocker-module-assignment")],
-  ["An imported class whose type parameter has a default (API)", "245", "13", gap("blocker-compiler-api-value-default")],
-  ["import.meta", "190", "25", gap("blocker-import-meta")],
+  ["A numeric key not proved an array index", "490", "5", gap("blocker-array-index-of-write")],
+  ["An array pattern over a value with no array contract", "431", "3", "cases in cases.mts"],
+  ["An assignment to a module's let, or its increment", "378", "42", gap("blocker-module-assignment")],
+  ["A member read from Number.prototype after an earlier refusal (a judgement)", "340", "1", noCase],
+  ["An object pattern's key spelled as a later local's name", "340", "1", gap("blocker-pattern-key-early-binding")],
+  ["A test of an optional never field as a union's discriminant", "320", "1", gap("blocker-optional-never-discriminant")],
+  ["A function declaration inside a function", "305", "2", gap("function-declaration-in-body-refused")],
+  ["A field holding an object or null, reread after a test", "299", "8", gap("guard-field-assertion")],
 ];
 
-const moved: [string, string, string, string][] = [
-  ["An optional method read as a type, and bound (record hook)", "1,188 · 25", "none", `${status("ok", "closed")} c6e7119, a repair`],
-  ["A dictionary read at a key that may name a member of Object.prototype", "1,112 · 27", "none", `${status("ok", "closed")} a03f12a, a repair`],
-  ["A key test k in x on an operand typed unknown", "1,282 · 51", "none", `${status("ok", "narrowed")} d578dd8, a rule: the test is admitted, the read after it is cause 7`],
-  ["A spread of a value that may not be a plain object", "695 · 17", "3 · 1", `${status("ok", "narrowed")} d578dd8, the same rule`],
-  ["A numeric key not proved an array index", "1,470 · 17", "779 · 9", `${status("ok", "narrowed")} b276cd5, a rule`],
-  ["A field holding an object, reread after a test of it", "828 · 17", "300 · 8", `${status("ok", "narrowed")} 05041cf, a rule`],
+const lastVersion: [string, string, string][] = [
+  ["A member of a node read after isTypeAliasDeclaration", "2,052 · 37", closedBy("0fc7839, 8ec35f5", "a repair and a stated contract")],
+  ["An optional chain reported as an unbound name ?.", "1,779 · 12", `${status("ok", "dropped")} df521bc: an artifact of diagnostic runs alone`],
+  ["Number both called and read through its members", "1,113 · 24", closedBy("1da3887, c105173", "a rule")],
+  ["A callback parameter whose context is a library type", "1,082 · 16", closedBy("25493e6", "a rule; a new site, runChild (38 · 1)")],
+  ["Map and Set with no binding in the slice, or instanceof of them", "1,059 · 9", closedBy("467af18, dfbefbd", "a repair and a rule")],
+  ["An array's method read where its type joins a record", "1,024 · 15", closedBy("83afafc, 6be11ce", "contract entries and a rule")],
+  ["A member read after k in x, on an object of unknown type", "1,016 · 24", closedBy("e276727", "a rule")],
+  ["A generic function used where its type parameters must be checked", "1,005 · 20", narrowedBy("82baee4", "a rule; left only in runChild (38 · 1)")],
+  ["Array&lt;T&gt;: Array's library declaration refused", "887 · 10", closedBy("2df5f8d", "a rule")],
+  ["Object.entries, whose overloads are generic and plain", "860 · 28", narrowedBy("317ff8f", "a rule; 80 · 3 left")],
+];
+
+const thisRound: [string, string, string, string][] = [
+  ["1. A numeric key not proved an array index", "823 · 9", "490 · 5", narrowedBy("325f99c", "avoidance")],
+  ["2. x instanceof C on a caught error typed unknown", "823 · 9", "none", closedBy("a802c04", "a repair")],
+  ["3. An effect (what a function may change) stated on an overload", "804 · 8", "none", closedBy("aa84da6", "avoidance")],
+  ["4. A constructor assignment reading this (class Gate)", "769 · 7", "none", closedBy("5d192c2", "avoidance")],
+  ["5. A spread of an iterable in a conditional's branch", "757 · 30", "none", closedBy("747fd39", "avoidance")],
+  ["6. A compiler Type method not reviewed (isUnionType …)", "667 · 17", "none", closedBy("6013121", "support")],
+  ["7. A write adding a key to an object others hold", "630 · 25", "139 · 12", narrowedBy("f2d07f1", "a rule")],
+  ["8. JSON.stringify with a replacer function", "489 · 4", "none", closedBy("0108092", "a repair")],
+  ["9. Node's declarations reach ArrayBufferLike", "473 · 20", "none", `${status("ok", "gone")} with 10 (a judgement)`],
+  ["10. node:url's functions and the global URL", "456 · 19", "none", closedBy("07c082b", "contracts and host boundaries")],
+];
+
+const modelled: [string, string][] = [
+  ["A node list filtered by a compiler guard (387 · 2)", "035fe74: a guard passed by name to filter or find narrows the result"],
+  ["Signature.declaration (351 · 2); checker queries at an array (197 · 4)", "a8cba50: compiler-API contract entries"],
+  ["import.meta (319 · 28)", "6338776: its members are unknown values stating no effect"],
+  ["new Set of a Set, new Map of a Map (193 · 7)", "c797d9a: a copy through the built-in iterator"],
+  ["A default import of node:path, node:fs (187 · 3, 106 · 2)", "d59d4cc: each member is the module's named export"],
+  ["A replacement callback with captures (167 · 3)", "a1e3657: each capture is a string or undefined"],
+  ["Reflect (221 · 6), Object.getPrototypeOf (111 · 5)", "8987151: Reflect.ownKeys, a comparison with Object.prototype; 4 · 2, 31 · 2 left"],
+  ["node:module's hooks (69 · 5)", "1c35793: a host boundary, module-hooks.mts; its 4 functions stay refused"],
 ];
 
 const slides: Slide[] = [
   cover("cover", {
     label: "TScert · its own front end",
     title: "Where TScert's proofs of its own code fail, and which cases to close first",
-    text: "TScert is run on its own front end (the code that reads TypeScript sources, in the folder tools/), function by function, and most functions are refused. Part 1 finds where the proofs fail, with a census that goes past each function's first refusal, and turns each cause into a small case example. Part 2 ranks those cases by how much code they block, and shows for each case closed since the last version how and why it was closed, and for each of the heaviest open ones what closing it needs.",
+    text: "TScert is run on its own front end (the code that reads TypeScript sources, in the folder tools/), function by function, and many functions are refused. Part 1 finds where the proofs fail, with a census that goes past each function's first refusal, and turns each cause into a small case example. Part 2 ranks those cases by how much code they block, shows for each cause closed since the last version how and why it was closed, and for the heaviest open ones what closing them needs.",
   }),
   slide("terms", {
     label: "Words used in this deck", title: "How TScert works, in three cards", gap: 28,
@@ -79,46 +105,52 @@ const slides: Slide[] = [
     ]),
   }),
   slide("find", {
-    label: "Part 1 · where proofs fail", title: "Two censuses of main at b81675f (2026-10-28)", gap: 22,
+    label: "Part 1 · where proofs fail", title: "Two censuses of main, at 1c35793 and 4d25222 (2026-10-29)", gap: 22,
     body: cards([
-      stat("227 of 519", `functions of tools/ ${status("ok", "verified")} by the census, 1,728 of 13,562 statements (12.7%, measured); 204 of 510 at the census of a0ffcd7, whose tools/ is aa7c768's, the one the last version of this deck used`, "ok"),
-      stat("436", "functions the diagnostic census takes to their end (below); 14 stop at regions it cannot examine, 68 at the 300 s limit of a stage, 1 at a failure of the compiler interface (measured)"),
-      stat("27.8%", "coverage with holes: 3,774 statements outside the regions the diagnostic census had to assume, in copies that pass its checks under those assumptions; not verified (measured)"),
+      stat("281 of 586", `functions of tools/ ${status("ok", "verified")} by the census at 1c35793, 2,265 of 14,220 statements (15.9%, measured); 227 of 519 at b81675f, the census the last version of this deck used`, "ok"),
+      stat("488 of 549", "copies the diagnostic census at 4d25222 takes to their end (below); 42 stop at the 300 s limit of a stage, 18 at regions it cannot examine, 1 at a failure of a stage (measured)"),
+      stat("30.9%", "coverage with holes: 4,403 of 14,228 statements outside the regions the diagnostic census had to assume, in copies that pass its checks under those assumptions; not verified (measured)"),
     ]) + bullets([
-      point("The census", "each top-level function of tools/ is copied, with what it uses, into a file of its own (a slice) and run through TScert (make census). A refused function stops at its first reason. The verified census ran at 8092044, whose tools/ is b81675f's."),
-      point("The diagnostic census", "make census DIAGNOSTIC=1 runs each copy past every refusal: it replaces what it cannot check by an opaque region of assumed type and goes on, so it reports every refusal a function meets. It never reports a function verified."),
+      point("The census", "each top-level function of tools/ is copied, with what it uses, into a file of its own (a copy, also called a slice) and run through TScert (make census). A refused function stops at its first reason. A copy may hold several functions."),
+      point("The diagnostic census", "make census DIAGNOSTIC=1 runs each copy past every refusal: it replaces what it cannot check by an opaque region of assumed type and goes on, so it reports every refusal a function meets. It never reports a function verified. It ran at 4d25222, two commits after 1c35793."),
       point("Causes", "every refusal naming one construct counts, at whatever stage. Each cause is weighted by the statements (an if, a return, an assignment …) of the functions it blocks, and by their number. A refused read whose own object an inner read already failed on (x.a.b after x.a) counts under the inner one."),
     ]),
   }),
   slide("cases", {
     label: "Part 1 · from a failure to a case", title: "Each heavy cause has a small case example, where one is found", gap: 20,
-    body: code(["// blocker-node-url-import.ts. Census functions: family-activation.mts#activeGuards, …",
-      `import { fileURLToPath } from "node:url";`,
-      "export function pathOf(url: string): string {", "  return fileURLToPath(url);", "}"]) + bullets([
+    body: code(["// a five-line source that the census site at fragment-parse.mts l.605 reduces to",
+      "type Answered<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refused: string };",
+      "export function pick(m: Map<string, Answered<number>>, k: string): number | null {",
+      "  const found = m.get(k);", "  return found?.ok ? found.value : null;   // refused: missing field value", "}"]) + bullets([
       point("A case example", "is the smallest source with the cause's refusal; one made from a census names in its header the census functions it stands for. The test suite (make suite) checks its expected outcome on every run."),
       point("A gap case", "is a safe program TScert refuses for want of a rule or a contract. A <b>negative case</b> is a refusal that is right: the program could produce a wrong value."),
-      point("Which causes get one", "every cause among the ten heaviest or meeting at least 10 functions. Five such causes have none (marked no case). For four (causes 2 and 8, the for statement and ArrayBufferLike), the smallest forms of their census sites written so far verify, so what the census meets there depends on more of the function than the site (a judgement); for Map and Set (cause 5) none is written yet. No new case example comes from this census."),
-      point("Closing a case", "a fix makes it verify, and the census copies of its functions then pass that refusal and stop at the next."),
+      point("This census", "six of the ten heaviest causes have no case: causes 8 and 9, whose refusals the source above and a 3-line spread of a node list reproduce (measured), and four of the gate refusals of collectDeclarations (slide “collectDeclarations”). Writing their cases is the next step."),
     ]),
   }),
   slide("priority", {
-    label: "Part 2 · cases by priority, diagnostic census at b81675f", title: "The ten causes that block the most code", gap: 16,
-    body: table(["#", "Cause", "Statements", "Functions", "Cases"], prio, [4, 46, 11, 10, 29]) + bullets([
-      "A function blocked by several causes counts under each. Statements and functions are measured.",
-      point("Judgements", "cause 1 includes one site read in the source (findBlockTypes: 7 functions, 758 statements); cause 7 is 15 sites read in the source, each a read after a key test on a value typed unknown; cause 5 counts the loops over Map and Set in its 9 functions."),
+    label: "Part 2 · cases by priority, diagnostic census at 4d25222", title: "The ten causes that block the most code", gap: 16,
+    body: table(["#", "Cause", "Statements", "Functions", "Cases"], prio, [5, 49, 12, 10, 24]) + bullets([
+      "A function blocked by several causes counts under each. Statements and functions are measured. Causes 1–7 are all met in collectDeclarations (2,704 statements), the largest function of tools/: all seven must be closed before it can verify, and what its run meets after the gate is not examined.",
+      point("Judgements", "causes 8–10 are sites read in the source, each behind a reason that names no construct (a missing member, a failed search); cause 10 counts the 31 copies of type-term.mts that reach emptyObject, where the verified census stops 29 of them."),
     ]),
   }),
   slide("priority-more", {
-    label: "Part 2 · cases by priority, continued", title: "Eight more causes meet at least 10 functions", gap: 16,
+    label: "Part 2 · cases by priority, continued", title: "Causes 11–18, by statements", gap: 16,
     body: table(["Cause", "Statements", "Functions", "Cases"], more, [54, 12, 10, 24]) + bullets([
-      point("Refusals naming no construct", "a failed search, a missing member or an expression with no proposed type often follows an earlier refusal that left a value of unknown type, and counts under the construct refusal its function meets (a judgement). 76 functions, 1,449 statements, meet none (measured)."),
+      point("Refusals naming no construct", "a failed search or a missing member counts under the construct refusal its function meets (a judgement); 90 functions, 2,031 statements, meet none (measured), the largest collect (387)."),
+      point("Further causes meeting at least 10 functions", "an imported class's type parameter default (245 · 13), JSON.stringify of a record (213 · 16, refused rightly), a key-adding write (139 · 12), a record field's function passed to map (138 · 14)."),
     ]),
   }),
   slide("moved", {
-    label: "Part 2 · since the last version", title: "Two causes closed, four narrowed", gap: 16,
-    body: table(["Cause at aa7c768", "At aa7c768", "At b81675f", "Status, by"], moved, [46, 14, 12, 28]) + bullets([
-      "Statements · functions, measured in both diagnostic censuses by the same counting. That counting puts a field reread at 828 · 17 at aa7c768, where the last version, which did not count a read after a failed inner read under the inner one, gave 3,080 · 35; it puts the record hook at 1,188 · 25, where that version's reading by hand gave 1,943 · 32.",
-      "Not in the last version and measured in both censuses alike: causes 2, 5 and 8 of the table (1,772, 1,059 and 1,005 statements at aa7c768).",
+    label: "Part 2 · since the last version", title: "The ten causes of the last version: seven closed, one dropped, two narrowed", gap: 16,
+    body: table(["Cause at b81675f, the last version", "At b81675f", "Status, by"], lastVersion, [46, 14, 40]) + bullets([
+      "Statements · functions, measured at b81675f; what is left, at 4d25222. The commits lie between b81675f and 6be11ce.",
+    ]),
+  }),
+  slide("moved-round", {
+    label: "Part 2 · this round", title: "The ten heaviest causes at 6be11ce: seven closed, two narrowed, one gone", gap: 16,
+    body: table(["Cause at 6be11ce", "At 6be11ce", "At 4d25222", "Status, by"], thisRound, [42, 12, 12, 34]) + bullets([
+      "The diagnostic census of 6be11ce ranked these causes; no version of this deck showed it. Measured in both by the same counting.",
     ]),
   }),
   slide("routes", {
@@ -132,124 +164,146 @@ const slides: Slide[] = [
       ["6. A trusted unit", "the project's owner approves exempting a narrow unit of TScert's code from checking, reported with its contract; never a fallback"],
       ["7. A proof", "a proof in Lean, the proof assistant TScert's checker is proved in, where the model of JavaScript it needs exists or has wider value"],
       ["8. The refusal stays", "no route works at acceptable cost; the census reports it"],
-    ], [22, 78]) + bullets(["Stated in SOURCE-REWRITES.md, “Deciding what a refusal of TScert's code calls for”. Of the causes closed or narrowed since the last version, the two closed took route 3 and the four narrowed route 1. Before a route is chosen, sites where TScert's code types a value it parsed as unknown are repaired."]),
+    ], [22, 78]) + bullets(["Stated in SOURCE-REWRITES.md, “Deciding what a refusal of TScert's code calls for”, which also records each repair, avoidance and host boundary. Of this round's ten causes, two took route 3, four route 4 (the familyTable site of 1 among them), and three route 1, one of them with route 5."]),
   }),
-  cause("record-hook", "Closed by c6e7119 · 1,188 statements, 25 functions at aa7c768", "Closed: an optional method read as a type, and bound with .bind", {
-    cases: "", source: ["// blocker-indexed-optional-method: a gap, kept",
-      "type Scope = { size: number; record?(key: string): number };",
-      `export function apply(get: Scope["record"], key: string): number {`, "  return get?.(key) ?? 0;", "}"],
-    why: "TScert's own code typed a scope's hook as TermScope[\"record\"], an optional method of a type literal read as a type, and passed scope.record?.bind(scope). An optional method's function takes its object as receiver, which the indexed access does not name, so the type reader refused the type, and the producer refused .bind on the method.",
+  cause("instanceof-unknown", "Closed by a802c04 · 823 statements, 9 functions at 6be11ce", "Closed: the fields of a caught error, read after instanceof", {
+    cases: "", source: ["// instanceof-unknown-refused: refused, rightly (the suite files it as a gap)", "class Point { x: number = 0; }", "export function px(p: unknown): number {",
+      "  if (p instanceof Point) return p.x;", "  return 0;", "}"],
+    why: "a catch binds unknown, and x instanceof C holds of any object with C's prototype on its chain, whether C's constructor made it or not (Object.create(C.prototype)), so the test establishes no field. TScert's handlers read error.pos, error.message and error.at after such a test: lowerFile, recoverGate and diagnosticFragment among the 9.",
+    todo: "",
+    trust: `${trust}: WeakMap's constructor and its get, has, set and delete are a contract.`,
+    closed: {
+      status: `${status("ok", "verified")} native-weakmap, blocker-weakmap; ${neg("instanceof-unknown-refused")}`,
+      how: "route 3, a repair: the code had the fields where it threw and lost them at the catch. Each maker records an error's fields in a WeakMap keyed by the error object, and a handler finds them there. The case's refusal is right, though the suite keeps it as a gap; no site of TScert's code reaches it.",
+    },
+  }),
+  cause("within-overload", "Closed by aa84da6 · 804 statements, 8 functions at 6be11ce", "Closed: an effect stated on an overloaded declaration", {
+    cases: "", source: ["// invalid-stated-overload-value-import: refused, rightly", `import { pick } from "@fixture/stated-overload";`,
+      "export function picked(xs: number[]): number {", "  return pick(xs, true);", "}"],
+    why: "TScert certifies a function's body at one signature, its implementation's, so it has no check for an effect statement (a result type Within&lt;F, T&gt;: the result T, with F what the function may change) on an overload or on an implementation beside overloads, and refuses it wherever the declaration is read, rightly: no body is checked against it. resolutionSlots in type-term.mts stated its effect beside two overloads; lowerFile (703 statements) and intrinsics read it.",
     todo: "",
     trust: "nothing: no rule and no contract changes.",
-    closed: {
-      status: `${status("ok", "verified")} libraryTerm in the census; ${status("gap", "gap")} blocker-indexed-optional-method, blocker-optional-method-bind`,
-      how: "route 3, a repair of type-term.mts: each hook is a field of a written function type (RecordHook and five others), passed as scope.record. Every implementation of a hook is an arrow, which uses no receiver, so each call returns, throws and writes as before. The two cases keep the refused form; the diagnostic census at b81675f meets neither refusal (measured).",
+    closed: { status: `${status("ok", "closed")}; ${neg("invalid-stated-overload-value-import", "invalid-stated-one-overload-value-import")}`,
+      how: "route 4, avoidance: resolutionSlots states its effect at one signature, and a second function, resolvableSlots, states the result the other overload gave. Each call returns what it returned before.",
     },
   }),
-  cause("inherited-key", "Closed by a03f12a · 1,112 statements, 27 functions at aa7c768", "Closed: a dictionary read at a key that may name a member of Object.prototype", {
-    cases: "", note: `${status("neg", "refused, rightly")} invalid-dictionary-inherited-key; the code no longer reads so`,
-    labels: ["Why it was refused", "How it was closed, and why so", "What it trusts"],
-    source: ["// invalid-dictionary-inherited-key: refused, rightly", "export function inherited(k: string): number {", "  const d: { [k: string]: number } = {};", "  return d[k] ?? 0;", "}"],
-    why: "a read at a string key known only at run time may find a member every object inherits from Object.prototype: under Node, inherited(\"toString\") returns a function, where the type says a number or nothing. Two such reads in tools/ were defects: an import of the name constructor took Object.prototype.constructor for a module's export, and a diagnostic's reader took variants[\"toString\"] for a list of fields.",
+  cause("gate-class", "Closed by 5d192c2 · 769 statements, 7 functions at 6be11ce", "Closed: a constructor assignment reading this", {
+    cases: "", source: ["// blocker-constructor-assignment-this: a gap, kept", "export class Counter {", "  readonly start: number; readonly next: number;",
+      "  constructor(start: number) { this.start = start; this.next = this.after(); }", "  after(): number { return this.start + 1; }", "}"],
+    why: "the gate refuses a constructor statement that reads this: TScert allocates the instance at the constructor's end from one value per field, so no instance exists while the constructor runs. TScert's class Gate assigned its field scope from this.termScope(), a call whose closures read the other fields.",
+    todo: "",
+    trust: "nothing: no rule and no contract changes.",
+    closed: { status: `${status("ok", "closed")}; ${gap("blocker-constructor-assignment-this")}`,
+      how: "route 4, avoidance: the gate's term scope is computed where it is read. Admitting the call would allocate the instance before it and add the remaining fields after it, to an object the call's closures already reference, which no rule covers; this was the construct's one site.",
+    },
+  }),
+  cause("iterable-spread-gate", "Closed by 747fd39 · 757 statements, 30 functions at 6be11ce", "Closed: a spread of a program's iterable in a conditional's branch", {
+    cases: "", source: ["// blocker-spread-in-conditional: a gap, kept", "export function names(term: Term, bound: ReadonlySet<string>): ReadonlySet<string> {",
+      `  return term.k !== "scheme" ? bound : new Set([...bound, ...term.binders]);`, "}"],
+    why: "a ReadonlySet is an interface any object may implement, so its iterator may run the program's code. TScert steps such an iterator before the statement holding the spread; JavaScript steps it after the test, and only in the branch the test selects. visitType in type-term.mts, reached by 30 copies, was the census's one site.",
+    todo: "",
+    trust: "nothing: no rule and no contract changes.",
+    closed: { status: `${status("ok", "closed")}; ${gap("blocker-spread-in-conditional")}`,
+      how: "route 4, avoidance: visitType builds a scheme's scope in an if, so the spread runs first in its statement. 28 of the 30 copies then stop at cause 10 of the priority table, the map callback (slide “callback-literal-context”; measured in the census at 1c35793).",
+    },
+  }),
+  cause("compiler-type", "Closed by 6013121 · 667 statements, 17 functions at 6be11ce", "Closed: the compiler's type predicates, read with their promise", {
+    cases: "", source: ["// invalid-compiler-api-sync-guard: refused, rightly", `import { isIntrinsicType, type Type } from "typescript/unstable/sync";`,
+      "export function name(type: Type): string | undefined {", "  return isIntrinsicType(type) ? type.intrinsicName : undefined;", "}"],
+    why: "TScert's readers of compiler types wrote type.isUnionType() ? type.getTypes() : [type]. A predicate's promise is the type it guarantees where it answers true (x is X). The compiler-API contract read every predicate without its promise, so the test narrowed nothing and getTypes was no member of Type; the method isUnionType was no listed member of Type at all. makeProbe and indexedAccess were the heaviest of the 17.",
+    todo: "",
+    trust: `${trust}: on a compiler object a stated guard answers true for, the members its promise names exist (the contract's assumption T7).`,
+    closed: { status: `${status("ok", "verified")} compiler-api-stated-guards; ${neg("invalid-compiler-api-sync-guard", "invalid-compiler-api-type-method")}`,
+      how: "route 1, support: the predicates the code uses are stated guards; route 4 at the method form, rewritten as the guard function (its promise is about the receiver, which no rule narrows). A predicate with no stated promise stays read without one (the case).",
+    },
+  }),
+  cause("json-replacer", "Closed by 0108092 · 489 statements, 4 functions at 6be11ce", "Closed: JSON.stringify with a replacer function", {
+    cases: "", source: ["// invalid-json-stringify-replacer: refused, rightly", "export function wrong(xs: number[], replacer: (key: string, value: unknown) => unknown): number[] {",
+      "  return xs.map((x) => { JSON.stringify(x, replacer); return x; });", "}"],
+    why: "a replacer is the program's code that JSON.stringify calls on every member, with the holder as this, and what it returns is serialized in turn, so it may change the array map visits. TScert's code keyed type terms by JSON.stringify(t, (key, v) => key === \"span\" ? undefined : v) in collect (387 statements) and named-record.mts.",
     todo: "",
     trust: "nothing: the refusal stays, and the code changes.",
-    closed: { status: "",
-      how: "route 3, a repair of tools/: a table the code builds and looks up at a run-time string is a Map, whose get and has find only the entries it was given; a decoder reading fixed keys reads them at a union of their literals. At a key the tables hold, every lookup answers as before. The diagnostic census at b81675f meets the refusal in no function (measured).",
+    closed: { status: `${status("ok", "verified")} typed-tree-text; ${neg("invalid-json-stringify-replacer")}`,
+      how: "route 3, a repair: a type term's text is written kind by kind from its type, without a replacer. collect then stops at other refusals (among the functions no cause is established for, slide “Causes 11–18”).",
     },
   }),
-  cause("in-unknown", "Narrowed by d578dd8 · 1,282 statements, 51 functions at aa7c768", "Narrowed: k in x on unknown is admitted; the read after it stays", {
-    cases: "", source: ["// blocker-in-name-object: a gap, refused at the read",
-      "export function nameOf(manifest: unknown): unknown {",
-      `  return typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;`, "}"],
-    why: "k in x throws on a primitive, and after typeof x === \"object\" and x !== null an unknown stayed unknown, so the gate refused the test.",
+  cause("node-url", "Closed by 07c082b · 456 statements, 19 functions at 6be11ce", "Closed: node:url's functions and the global URL", {
+    cases: "", source: ["// blocker-node-url-import: verified", `import { fileURLToPath } from "node:url";`, `import { resolveHref, pathToFileHref } from "../../tools/url-strings.mts";`,
+      "export function target(specifier: string, parent: string): string | null {",
+      "  try { return fileURLToPath(resolveHref(specifier, pathToFileHref(parent))); } catch { return null; }", "}"],
+    why: "Node's declarations of node:url reach URLSearchParams and iterator types the type reader refuses, so fileURLToPath, pathToFileURL and new URL were refused in family-activation.mts, files.mts and unchecked.mts.",
     todo: "",
-    trust: "nothing for the rule: it is proved in Lean. Closing the read would add one of two assumptions, which the owner chooses: a host read that may run any code and gives a JavaScript value, or a property of every object received at unknown.",
-    closed: { narrowed: true,
-      status: `${status("ok", "verified")} in-unknown-object, json-parse-manifest; ${status("gap", "gap")} blocker-in-name-object`,
-      how: "route 1: each test on unknown keeps the kinds of JavaScript value it does not rule out (null, a number, an object without call code, a function …), so the test of k in x is admitted where no primitive remains. Before it, 5dfb065 repaired the code that typed a parsed package.json unknown (route 3). Open, cause 7: the read x.k after the test, since no type states the key and the read may run a getter; 24 functions, 1,016 statements.",
+    trust: `${trust}: new URL of strings, fileURLToPath of a string and pathToFileURL are overlay contracts; two host boundaries, tools/url-strings.mts and tools/child-output.mts, give their values the stated types.`,
+    closed: { status: `${status("ok", "verified")} blocker-node-url-import`,
+      how: "route 1, support, for the three functions; route 5 for the rest: the program holds URLs only as strings, made and resolved in url-strings.mts, and a child process's output is read in child-output.mts. ArrayBufferLike (9 of the table) is met in no function since (a judgement: 19 of its 20 functions met node:url).",
     },
   }),
-  cause("nullable-field", "Narrowed by 05041cf · 828 statements, 17 functions at aa7c768", "Narrowed: a field reread after a guard on it", {
-    cases: "", source: ["// blocker-nullable-field: verified",
-      "function isList(value: Json | undefined): value is readonly Json[] {", "  return Array.isArray(value);", "}",
-      "export function use(x: Dict): number {", "  if (isList(x.args)) return x.args.length;", "  return 0;", "}"],
-    why: "a type guard (a function declared value is …) narrowed only an argument that is a name, and every call, the guard's own included, dropped what was known of the heap, so a second read of x.args said nothing of the first.",
+  cause("key-adding-write", "Narrowed by f2d07f1 · 630 statements, 25 functions at 6be11ce", "Narrowed: a key-adding write in a loop", {
+    cases: "", source: ["// blocker-loop-key-adding-write: verified", "export function lengths(names: readonly string[]): { [key: string]: number } {",
+      "  const metadata: { [key: string]: number } = {};", "  for (const key of names) metadata[key] = key.length;", "  return metadata;", "}"],
+    why: "a write at a key an object may not hold adds the key, and another reference to the object, typed before the write, would not see it in its type. In a loop TScert could not show that no other reference exists.",
     todo: "",
-    trust: "nothing: both rules are proved in Lean.",
-    closed: { narrowed: true,
-      status: `${status("ok", "verified")} blocker-nullable-field, blocker-nullable-field-argument; ${status("gap", "gap")} guard-field-assertion`,
-      how: "route 1: a call at a signature that writes no existing location keeps every heap fact, and a guard narrows a member path it tests. Open, 8 functions and 300 statements, at three sites: t.optional.map after guards negated in an || before a return (claim-text.mts, 6 functions), claim.context.forEach after Array.isArray(claim.context) (diagnostic.mts), and target.name.text after ts.isIdentifier(target.name) (fragment-statements.mts). Open outside the census: an assertion function's statement (guard-field-assertion).",
+    trust: `${trust}: that no other reference escapes is a syntactic analysis, unproved; the copy itself is checked. Four negative cases.`,
+    closed: { narrowed: true, status: `${status("ok", "verified")} blocker-loop-key-adding-write; 4 negative cases`,
+      how: "route 1, a rule: in a loop, a write that adds a key is read as building a copy of the object, where no statement of the loop lets another reference to it escape. Open, 12 functions and 139 statements: writes to an object a parameter or another binding holds (copied, openCompiler, guardClientRequests …).",
     },
   }),
-  cause("array-index", "Narrowed by b276cd5 · 1,470 statements, 17 functions at aa7c768", "Narrowed: an element read in an optional chain at a number key", {
-    cases: "", source: ["// blocker-callback-array-index: verified",
-      "export function use(node: TypeReferenceNode, parameters: readonly TypeParameterDeclaration[]): void {",
-      "  parameters.forEach((parameter, index) => {", "    const written = node.typeArguments?.[index];", "  });", "}"],
-    why: "outside an optional chain, a read xs[i] at a key that is no literal index is typed as JavaScript's element read, which gives an element or undefined; inside a chain TScert's translation of the source wrote a plain member read instead, which is typed only at a literal index.",
-    todo: "",
-    trust: "nothing: the element read is already modelled.",
-    closed: { narrowed: true,
-      status: `${status("ok", "verified")} blocker-callback-array-index, optional-chain-dynamic-index`,
-      how: "route 1: xs?.[i] and o?.a[i] read through the element read on the chain's present value. Open, 9 functions and 779 statements, in three forms: a write own[own.indexOf(x)], where indexOf may return −1; reads and writes of a record at keys Object.keys or Object.entries gives; literal indexes such as declarations[0] on values that, as read in the source, an earlier refusal left of unknown type (a judgement).",
-    },
+  slide("modelled", {
+    label: "Part 2 · this round, external code described", title: "Causes closed by a contract or a host boundary", gap: 16,
+    body: table(["Cause at 6be11ce (statements · functions)", "Closed by (route 1, or 5 for a boundary)"], modelled, [44, 56]) + bullets([
+      `Each but 8987151 adds a contract or a boundary, a ${trust} its commit states; each has a verified case. What is left is measured at 4d25222.`,
+      "The narrowed numeric key (1 of the table of 6be11ce): 325f99c rewrites familyTable without a write at the index indexOf finds (route 4).",
+    ]),
   }),
-  cause("alias-guard", "Cause 1 · 2,052 statements, 37 functions", "A member of a node read after isTypeAliasDeclaration", {
-    cases: "blocker-type-alias-guard-member",
-    source: [`import * as ts from "typescript/unstable/ast";`, "export function arity(node: ts.Node): number {",
-      "  return ts.isTypeAliasDeclaration(node) ? (node.typeParameters?.length ?? 0) : 0;", "}"],
-    why: "the compiler's guard isTypeAliasDeclaration also accepts a JSDoc @typedef, a node of another kind (345), and TScert reads the guard by what its code accepts. Its description of the compiler's nodes gives that kind only the members every node has, so node.typeParameters is refused, as node.name is. In tools/, the reading of mapped types in type-term.mts, and (read in the source) findBlockTypes in fragment-parse.mts, which lowerFile (692 statements) reaches.",
-    todo: "describe the @typedef node's members as the compiler makes them (route 1, describing external code); or a repair of tools/: a test of node.kind that excludes kind 345.",
-    trust: "for the description, the @typedef node's members, audited against the compiler's code.",
+  slide("collect-declarations", {
+    label: "Causes 1–7 · 2,704 statements, 1 function, and Omit in 3 more", title: "collectDeclarations: seven gate refusals", gap: 18,
+    note: `${gap("blocker-omit-interface", "optional-method-call-object-refused")}; ${neg("invalid-compiler-api-unlisted-enum")}; four ${noCase}`,
+    body: table(["Construct", "Site"], [
+      ["Omit of an interface, keyof over a type parameter (also selectGlobal and library-modules.mts)", "l.1784 Omit&lt;…&gt;"],
+      ["A method of the compiler's Symbol not reviewed: getExports, getMembers", "l.4038–4042"],
+      ["A compiler enum the contract does not read: TypePredicateKind", "l.8, the import"],
+      ["ReturnType of a local function's type", "l.4031 ReturnType&lt;typeof targetOf&gt;"],
+      ["An optional call of a method whose object is a call", "l.2075 valueScope(…).equation?.(reference)"],
+      ["A callback parameter TypeScript types at a type parameter not in scope", "l.2657, the parameter read"],
+      ["A declaration list of two destructuring patterns", "l.3282 const [member] = members, [owner] = owners"],
+    ], [58, 42]) + bullets([
+      "collectDeclarations reads the declarations of a library: 2,704 census statements. Its diagnostic run stops after the gate at the 300 s limit, so what lies after these seven is not examined (measured).",
+      point("What closing needs", "for the enum and Symbol's methods, contract entries audited against the compiler (route 1, a trust change each); for the other five, a rule each or a rewrite (route 4). Several are one site, so a rewrite is the likely route (a judgement)."),
+    ]),
   }),
-  cause("optional-unbound", "Cause 2 · 1,779 statements, 12 functions", "An optional chain the producer reports as an unbound name ?.", {
-    cases: "", note: `${noCase}: a cause to establish`,
-    labels: ["What the census shows", "What is known", "What closing it would trust"],
-    source: ["// fragment-expressions.mts, in expr: one of the 9 sites", "return {", "  k: \"new\", pos: gate.span(node), callee, args,",
-      "  ...(node.typeArguments?.length ? { typeArgs: node.typeArguments.map((t) => gate.typeOf(t, t)) } : {}),", "};"],
-    why: "the producer refuses the chain's test with \"unbound name ?.\": the name it gives the value a ?. tested is not in scope. Each of the 9 sites is a chain such as node.typeArguments?.length or forms?.[0], the test of a conditional inside an object spread, or under ??. The 12 functions include collect (386 statements), classBody (350), selectGlobal (306) and expr (292).",
-    todo: "the forms written alone verify outside the census, the chain as a conditional's test inside a spread included, so the cause at these sites is not established (an investigation, not yet a rule). It was already in the census of aa7c768, 1,772 statements, and in no table of the last version.",
-    trust: "not known before the cause is.",
+  cause("optional-discriminant", "Cause 8 · 1,168 statements, 9 functions", "A union's arm read after a test through an optional chain", {
+    cases: "", note: `${noCase}: reproduced by the five-line source of Part 1`,
+    source: ["// fragment-parse.mts l.605 (lowerFile and 6 more), fragment-classes.mts l.547 (classBody, classStmt)",
+      "const found = this.symbolNames.get(this.span(name.expression).join(\":\"));", "const symbol = found?.ok ? found.value : null;"],
+    why: "found is Answered&lt;T&gt; | undefined, a union of { ok: true; value } and { ok: false; refused }. The test found?.ok is true only where found is the first arm, yet after it the producer reports found.value a missing member (measured): the test does not narrow found to that arm. lowerFile (714 statements) meets it at two sites, classBody (350) at one.",
+    todo: "narrow a value by a discriminant test through an optional chain, as by the plain test after found !== undefined (route 1, a rule).",
+    trust: "nothing: the rule follows from the semantics of ?. and of the plain test.",
   }),
-  cause("number", "Cause 3 · 1,113 statements, 24 functions", "Number both called and read through its members", {
-    cases: "number-call-and-members",
-    source: ["// number-call-and-members: a gap", "function parse(text: string): number {", "  const n = Number(text);", "  return Number.isFinite(n) ? n : 0;", "}"],
-    why: "each use alone is admitted: Number(x) through Number's call signature, Number.isFinite through its reviewed members. A function using both needs the global as a callable object with methods, a type the producer's proposals have no form for, so the library declarations that function needs are refused. In tools/, Number(atom.v) beside Number.isFinite in claim-text.mts.",
-    todo: "a form for a callable object with methods, checked by the existing rules for calls and for member reads (route 1).",
-    trust: "nothing new: the call signature and the members already have their contracts.",
+  cause("nodelist-spread", "Cause 9 · 781 statements, 7 functions", "A spread of a compiler node list or an empty array", {
+    cases: "", note: `${noCase}: reproduced by a 3-line source`,
+    source: [`import * as ts from "typescript/unstable/ast";`, "export function keys(out: ts.TypeNode[], node: ts.TypeReferenceNode): void {",
+      "  out.push(...(node.typeArguments ?? []));   // refused", "}"],
+    why: "the operand is a node list (an array met with a record of its own members, pos and end among them) or an empty array literal. The producer spreads an array or a tuple of required positions, and refuses this union: “generic spread requires an array or a tuple of required positions”. The same spread of readonly string[] | undefined verifies (measured). In tools/, keyTypeNodes.push(…) in lowerFile.",
+    todo: "spread a union whose every member has an array view by its element type (route 1, a rule); or a repair at the one site, a loop over the node list.",
+    trust: "nothing: a node list's iteration is already its array view's.",
   }),
-  cause("closure-context", "Cause 4 · 1,082 statements, 16 functions", "A callback parameter whose context is a library type", {
-    cases: "blocker-closure-map-context",
-    source: ["export function bound(scopes: readonly ReadonlySet<string>[], name: string): boolean {",
-      "  return scopes.some((scope) => scope.has(name));", "}"],
-    why: "an unannotated callback parameter takes the type TypeScript gives it from its context only when that type is built from primitives, literals, unions, intersections, arrays, tuples, type parameters and declarations by name; a library interface such as ReadonlySet&lt;string&gt;, Map&lt;string, string&gt; or PromiseLike is refused. lowerFile (692 statements) meets it.",
-    todo: "read a context type that names a library interface as an annotation naming it would be read, with the same refusals where that reading has none.",
-    trust: "nothing new: an annotation of the same type already rests on the same library declarations.",
-  }),
-  cause("set-map", "Cause 5 · 1,059 statements, 9 functions", "Map and Set: no binding in the slice, or instanceof of them", {
-    cases: "", note: `${noCase}`,
-    labels: ["Why it is not proven", "What is known", "What closing it would trust"],
-    source: ["// diagnostic-gate.mts, in copied", "if (value instanceof Map) {", "  const result = new Map<unknown, unknown>();", "  for (const [key, item] of value) result.set(key, copied(item, seen));", "}"],
-    why: "in diagnostic-gate.mts the gate refuses value instanceof Map and instanceof Set: no reviewed entry admits either class as the right operand of instanceof (3 functions). In the other 6 (collect, 386 statements, selectGlobal, 306, makeProbe, 193, and three more) the slice holds no binding of Map or Set where it writes new Map&lt;…&gt;() or new Set(…), and the loops over them then miss their iteration.",
-    todo: "for instanceof, an entry naming the class's prototype, audited as for an imported class (route 1). For the missing binding the cause is not established: existing cases that construct and iterate both classes verify, and no small form of these census sites is written yet.",
-    trust: `${trust} for instanceof: Map's and Set's constructors give their instances the standard prototype, and no code replaces Symbol.hasInstance.`,
-  }),
-  cause("array-view", "Cause 6 · 1,024 statements, 15 functions", "An array's method read where its type joins a record", {
-    cases: "blocker-array-finally-view",
-    source: ["declare const values: { value: number }[];", "export function use<T>(run: () => T): T {",
-      "  try { return run(); }", "  finally { values.splice(0, 1); }", "}"],
-    why: "a read of splice or flat on a value whose type TScert holds as a union of an array and a record that does not state the member is refused: a test that the value is an array keeps the record, a value of which may be an array carrying its keys. In the case, the declared array read in the finally block of a generic function is held at such a union, for a cause not yet established; in tools/, recordings.splice in files.mts.",
-    todo: "keep the declared array's own type through the finally block, where nothing makes it a record.",
+  cause("callback-literal-context", "Cause 10 · 780 statements, 31 functions", "A map callback returning a record literal of a discriminated union", {
+    cases: "blocker-callback-literal-context",
+    source: ["// type-term.mts, emptyObject", `function emptyObject(span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {`,
+      `  return { k: "union", span, parts: (["boolean", "number", "string", …] as const)`, `    .map(name => ({ k: "atom", name, span })) };`, "}"],
+    why: "the callback's result has no annotation, and the result emptyObject states, a TypeTerm (a union of records discriminated by k), is not carried into it, so the search finds no proof that the returned literal { k: \"atom\", name, span } is a TypeTerm. Every copy of type-term.mts that reaches emptyObject meets it; in 29 of them it is the first refusal once the spread of this round's cause 5 is avoided (measured in the census at 1c35793).",
+    todo: "carry map's expected result type into the callback's returned literal, as an annotation of the callback's result would (route 1, a rule); or a repair at the one site, an annotated callback.",
     trust: "nothing.",
   }),
   slide("next", {
-    label: "Part 2 · order of work", title: "What stays open: causes to establish, then external code, then rules", gap: 20,
+    label: "Part 2 · order of work", title: "What comes next: cases first, then rules and rewrites, then external code", gap: 20,
     body: table(["Step", "Cases", "Trust"], [
-      ["1. Causes to establish: the chain reported as ?. (cause 2), Map and Set with no binding (5), the generic function (8), the array in a finally block (6), and the two of the second table marked no case", `${c("blocker-array-finally-view")} for 6; the others none yet, each needs its smallest refused source first`, status("gap", "not known")],
-      ["2. External code described: the @typedef node's members (cause 1, or a repair testing node.kind), instanceof Map and Set (5), Array's declaration (9), node:url's two functions, the compiler's unreviewed Type methods (second table, refused until reviewed)", `${c("blocker-type-alias-guard-member")}, ${c("blocker-array-generic-annotation")}, ${c("blocker-node-url-import")}`, status("trust", "an audited description each")],
-      ["3. Rules: Number's form (3), a library context type (4), the read after k in x (7), Object.entries (10)", `${c("number-call-and-members")}, ${c("blocker-closure-map-context")}, ${c("blocker-in-name-object")}, ${c("blocker-entries-mixed-overloads")}`, `${status("ok", "none")}; the read after k in x, an assumption the owner chooses`],
+      ["1. Case examples for causes 8 and 9 and for collectDeclarations's four without one", "the sources of Part 1 and of cause 9; four to write", status("gap", "none")],
+      ["2. Rules or rewrites: the optional-chain test (8), the node-list spread (9), map's expected result (10), collectDeclarations's five refusals that need no contract, Omit (1) among them", `${c("blocker-callback-literal-context")}, ${c("blocker-omit-interface")}, ${c("optional-method-call-object-refused")}`, `${status("ok", "none")}`],
+      ["3. External code described: the compiler's Symbol methods and TypePredicateKind (collectDeclarations)", c("invalid-compiler-api-unlisted-enum"), status("trust", "an audited entry each")],
     ], [50, 34, 16]) + bullets([
-      "The order follows the census process: sites where TScert's own code discards what it knew are repaired first (none is left among the heaviest causes), so the causes not yet established come first, and external code no contract describes is described, its trust reviewed by the owner before the merge. Within a step, by the statements blocked.",
-      "The census and the diagnostic census, run once on main after the merges of these steps, measure what each gained.",
+      "The order follows the census process: sites where TScert's own code discards what it knew are repaired first (none among the heaviest causes); then the gap cases in the order of the code they block. collectDeclarations can verify only once causes 1–7 are all closed (beyond them its run is not examined), so it is worked as one case.",
+      "The census and the diagnostic census, run once on main after these merges, measure what each gained.",
     ]),
   }),
 ];
