@@ -382,7 +382,6 @@ export class Gate {
 
   constructor(file: SourceFile) {
     this.file = file;
-    this.scope = this.termScope();
   }
 
   /** The binding a namespace member read or qualified type name reads, or
@@ -641,15 +640,15 @@ export class Gate {
 
   /* ------------------------------------------------------------- types -- */
 
-  /** Type syntax reads through the one source-term reader. A name is a
-   * binder of an enclosing function or a declaration root; every declaration
-   * root was resolved by TypeScript's checker. */
-  readonly scope: TermScope;
   /** The type declared in a block TypeScript binds a reference to, if any:
    * it shadows every other meaning of its spelling. */
   blockTypeAt(node: Node): Within<{ value: "any"; store: "grow" }, Answered<BlockType> | undefined> {
     return this.blockTypes.get(this.span(node).join(":"));
   }
+  /** Type syntax reads through the one source-term reader, at this record
+   * of the gate's hooks. A name is a binder of an enclosing function or a
+   * declaration root; every declaration root was resolved by TypeScript's
+   * checker. */
   termScope(): TermScope {
     return {
       source: this.file,
@@ -785,7 +784,7 @@ export class Gate {
         if (library !== undefined && !this.hasTypeParam(name))
           return libraryTerm(library, libraryArguments(library, node.typeArguments ?? [], read,
             part => this.keyType(part)), span,
-            message => this.fail(node, message), this.scope.record);
+            message => this.fail(node, message), this.termScope().record);
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name))
           return this.declaredReference(node, name, span, declared, [], read);
@@ -845,14 +844,14 @@ export class Gate {
   }
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-    return typeTerm(this.scope, node, at);
+    return typeTerm(this.termScope(), node, at);
   }
 
   /** A definition's written result: its statement of the definition's
    * effect, `Within<F, T>`, and the result annotation it states it of
    * (`statedResult`); no statement where it writes none. */
   statedResult(node: TypeNode | undefined, at: Node): Within<{ value: "any"; store: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
-    return statedResult(this.scope, node, at);
+    return statedResult(this.termScope(), node, at);
   }
 
   /** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
@@ -893,7 +892,7 @@ export class Gate {
    * through its equation, as TypeScript reads one: the parameter's type is
    * that equation. */
   restType(p: ParameterDeclaration): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-    const type = restTerm(this.scope, this.typeOf(p.type, p));
+    const type = restTerm(this.termScope(), this.typeOf(p.type, p));
     if (!restPositions(type)) this.fail(p, restRefusal(type));
     return type;
   }

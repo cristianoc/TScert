@@ -22,7 +22,7 @@ export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | 
   if (!p || !ts.isTypePredicateNode(p)) return null;
   const head = node.parameters[0];
   const ordinary = head && ts.isIdentifier(head.name) && head.name.text === "this" ? node.parameters.slice(1) : [...node.parameters];
-  const { effect, type } = promiseOf(gate.scope, p, ordinary);
+  const { effect, type } = promiseOf(gate.termScope(), p, ordinary);
   const promise = effect.promise;
   if (promise === null) throw Error("internal: a type predicate without a promise");
   return promise.guards !== undefined ? { param: promise.guards.param, asserts: false, type, span: gate.span(p) }

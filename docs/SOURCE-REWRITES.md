@@ -732,6 +732,26 @@ b81675f.
 - **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
   traversal keeps their bindings, three sites rewritten`.
 
+### A method call on the instance under construction
+
+The `Gate` constructor (`tools/fragment-parse.mts`) assigned its field
+`scope` from `this.termScope()`, a record of hooks closing over the gate.
+A constructor's statement or field assignment reading `this` is refused
+(`blocker-constructor-assignment-this`): the instance is allocated at the
+constructor's end from one value per field
+([model limits](SOURCE-FRAGMENT.md#model-limits)). Support would allocate the
+instance before the call and add its remaining fields afterwards, writes
+adding keys to an object the method's closures already hold, for this one
+site of the census of 6be11ce, which blocks 769 statements of 7 functions.
+
+- **Equivalent form:** each reader of the term scope calls `termScope()`
+  where it read the field. The record holds the gate's `readonly` `file`
+  and hooks that read the gate's fields when they run, so each call's
+  record answers every hook as the field's record did. No reader compares
+  records by identity or keeps one, and no code reads the gate's own keys.
+- **Commit:** the introducing commit, `A gate's term scope is computed
+  where it is read`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

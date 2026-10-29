@@ -510,7 +510,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
             gate.fail(member, "a static method that reads `this` is outside the fragment");
           if (member.body && readsSuper(member.body)) gate.fail(member, STATIC_SUPER);
           const annot = member.type && !member.typeParameters?.length
-            ? oneTerm(signature(gate.scope, member.parameters, member.type, member, gate.span(member), true), gate.span(member))
+            ? oneTerm(signature(gate.termScope(), member.parameters, member.type, member, gate.span(member), true), gate.span(member))
             : null;
           staticMethods.push({ early: false, name: binding, namePos: gate.span(member.name), annot, init: gate.lambda(member) });
           // A static method keyed by a symbol is also an own property of
