@@ -162,6 +162,8 @@ execution of a replay-eligible invocation retains its complete stage key.
 | lower | the exact Fragment document |
 | propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
 | assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
+| plan | the exact Fragment and assembled claims |
+| search of a run | the exact run the plan printed; its file key; search depth and subtype rounds |
 | search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds |
 | check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
 | explain | the Fragment and flow passed to the producer's `--explain` mode |
@@ -303,7 +305,11 @@ everything the stage reads.
 
 Each imported module uses the same lower and propose stages. Each
 withdrawal recomputes the eligible reads and transitive claims assembly.
-A replayed search refusal drives the same withdrawal decision as a fresh
+A document with qualified reads is searched run by run, each run an
+invocation of its own, so a withdrawal leaves unchanged runs to replay. The
+plan and the runs of one search share one step limit, each given what the
+earlier ones left.
+A replayed plan or search refusal drives the same withdrawal decision as a fresh
 refusal. The orchestration and diagnostic presentation run under their
 current implementation; a stored raw refusal is not a stored final Outcome.
 

@@ -22,6 +22,8 @@ Build from `lean` with `lake build`; the executable is
 ```sh
 verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>
 verifier --check-source-claims   <ast.json> <source-claims.json> <file-key> <evidence.json>
+verifier --plan-imports          <ast.json> <source-claims.json>
+verifier --produce-run           <run.json> <file-key> <evidence.json> <depth>
 verifier --lower-program         <ast.json> <source-claims.json> <file-key>
 verifier --lower-control-flow    <ast.json>
 ```
@@ -36,6 +38,18 @@ verifier --lower-control-flow    <ast.json>
 - `--check-source-claims` never invokes the producer: success means the
   submitted evidence passed for the requests reconstructed from the
   submitted source and claims. It prints `accept: stateful source <file-key>`.
+- `--plan-imports` plans the
+  [certified imports](SOURCE-CONTRACTS.md#certified-imports) of a source
+  and its claims (`SourceClaimJson.planJson`) and prints the runs
+  `--produce-source-claims` searches, in its order, one per line: the
+  importer's `{"ast","claims","qualified"}`, then each module run's with its
+  `location`, `qualified` listing each read's `local`, `footprint` and
+  `onThrow`. A plan it refuses is that mode's refusal.
+- `--produce-run` searches one such run under `<file-key>` (the importer's,
+  or a module run's location) as `--produce-source-claims` searches that
+  run, and writes its evidence: the importer's run's as that mode's `main`,
+  a module run's as an entry of its `modules`, `{"evidence","location"}`.
+  Neither mode accepts anything.
 - `--lower-program` prints the program graph each unit lowers to, with the
   graph code it creates (`SourceClaimJson.lowerJson`), for inspection;
   `make lowering` runs it.

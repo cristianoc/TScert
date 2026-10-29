@@ -7548,7 +7548,7 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "proposal.log", "search.log", "check.log", "typescript-diagnostics.json"];
   const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
     present(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
-  const replayed = new Set(["parse", "lower", "propose", "assemble", "search", "check", "explain", "diagnostics"]);
+  const replayed = new Set(["parse", "lower", "propose", "assemble", "plan", "search", "check", "explain", "diagnostics"]);
   const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
     ["invalid-closure-contextual-result", null]];
   for (const [name, project] of runs) {

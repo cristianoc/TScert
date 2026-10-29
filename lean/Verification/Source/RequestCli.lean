@@ -229,6 +229,29 @@ def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
   | .ok j => IO.println j.compress; return 0
   | .error e => refuse e
 
+/-- The runs a document's search consists of (`SourceClaimJson.planJson`),
+one per line; a plan refused is a refusal. Plan output is never a source
+acceptance or an evidence file. -/
+def planFile (astPath claimsPath : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.planJson (← ast) (← claims) with
+  | .ok runs => runs.forM (IO.println ·.compress); return 0
+  | .error e => refuse e
+
+/-- Search evidence for one planned run (`SourceClaimJson.produceRunJson`),
+written to `evidencePath`. -/
+def runFile (runPath fileKey evidencePath : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  if evidencePath == runPath then return ← refuse "evidence output must differ from the input files"
+  let run ← readJson runPath
+  match do SourceClaimJson.produceRunJson (← run) fileKey fuel budget with
+  | .ok evidence =>
+    IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
+    IO.println s!"checked source evidence written: {evidencePath}"
+    return 0
+  | .error e => refuse e
+
 /-- Inventory output is never a source acceptance or an evidence file. -/
 def diagnosticFile (astPath claimsPath fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) (complete : Bool := true) : IO UInt32 := do

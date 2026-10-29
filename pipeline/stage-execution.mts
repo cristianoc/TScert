@@ -21,9 +21,9 @@ import type { Cpu } from "./stage-store.mts";
 const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
-export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" |
+export type StageName = "parse" | "module" | "lower" | "propose" | "assemble" | "plan" | "search" | "check" | "explain" |
   "diagnostics" | "diagnostic-parse" | "diagnostic-lower" | "diagnostic-propose" | "diagnostic-search" | "diagnostic-complete";
-export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "search", "check",
+export const stageNames: readonly StageName[] = ["parse", "module", "lower", "propose", "assemble", "plan", "search", "check",
   "explain", "diagnostics", "diagnostic-parse", "diagnostic-lower", "diagnostic-propose", "diagnostic-search", "diagnostic-complete"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
@@ -478,6 +478,11 @@ export function verifierCall(program: string, args: readonly string[],
     return call("diagnostic-lower", [{ input: "diagnostic-fragment.json", path: rest[0] }]);
   if (mode === "--lower-control-flow" && rest.length === 1)
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
+  if (mode === "--plan-imports" && rest.length === 2)
+    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
+  if (mode === "--produce-run" && rest.length === 4)
+    return call("search", [{ input: "run.json", path: rest[0] }, { text: rest[1] }, { output: "evidence.json", path: rest[2] },
+      { text: rest[3] }]);
   if (mode === "--produce-source-claims" && rest.length === 5)
     return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
       { text: rest[2] }, { output: "evidence.json", path: rest[3] }, { text: rest[4] }]);

@@ -529,8 +529,15 @@ claims at them. No effect
 follows from a comment, a name or a module's role. The pipeline lists
 qualified each eligible read whose unit has claims. Where the search over the
 whole document refuses a read or a module run, its footprint refuted or its
-initialisation unchecked, the pipeline withdraws those reads, proposes the
-importer again, and the import is read at its ordinary signature. The final check is one
+initialisation unchecked, the pipeline withdraws the first read or module
+run it refuses, proposes the importer again, and the import is read at its
+ordinary signature. The search runs as the plan's runs one by one, the
+importer's first (`--plan-imports`, `--produce-run`), with the outcome of
+the search over the whole document. Before proposing the importer at its
+reads, the pipeline plans them (`--plan-imports` over the reads and the
+modules' claims) and withdraws the first read the plan refuses, one per
+round: the plan reads of the importer's claims only the list of its
+qualified reads, so its answer is the search's at those reads. The final check is one
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
