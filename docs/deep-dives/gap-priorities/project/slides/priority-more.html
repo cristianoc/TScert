@@ -2,17 +2,17 @@
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · cases by priority, continued</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Causes 11–18, by statements</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:54%;text-align:left;font-weight:600">Cause</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:24%;text-align:left;font-weight:600">Cases</th></tr>
-<tr><td>A numeric key not proved an array index</td><td>490</td><td>5</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-array-index-of-write</span></td></tr>
-<tr><td>An array pattern over a value with no array contract</td><td>431</td><td>3</td><td>cases in cases.mts</td></tr>
-<tr><td>An assignment to a module's let, or its increment</td><td>378</td><td>42</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-module-assignment</span></td></tr>
-<tr><td>A member read from Number.prototype after an earlier refusal (a judgement)</td><td>340</td><td>1</td><td><span style="color:#5e6870">no case</span></td></tr>
-<tr><td>An object pattern's key spelled as a later local's name</td><td>340</td><td>1</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-pattern-key-early-binding</span></td></tr>
-<tr><td>A test of an optional never field as a union's discriminant</td><td>320</td><td>1</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-optional-never-discriminant</span></td></tr>
-<tr><td>A function declaration inside a function</td><td>305</td><td>2</td><td><span style="color:#2e7d4f">verifies</span> <span style="color:#2b5b9c">function-declaration-before-initialization</span></td></tr>
-<tr><td>A field holding an object or null, reread after a test</td><td>299</td><td>8</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">guard-field-assertion</span></td></tr>
+<tr><th style="width:52%;text-align:left;font-weight:600">Cause</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:10%;text-align:left;font-weight:600">Functions</th><th style="width:26%;text-align:left;font-weight:600">Cases</th></tr>
+<tr><td>An annotated binding pattern</td><td>218</td><td>9</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-annotated-pattern</span></td></tr>
+<tr><td>JSON.stringify of a record type (it may own toJSON)</td><td>213</td><td>16</td><td><span style="color:#9a3a2a">refused, rightly</span> <span style="color:#2b5b9c">invalid-json-stringify-record</span></td></tr>
+<tr><td>A callback relying on the narrowing an earlier every(guard) gives</td><td>175</td><td>5</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-every-promise</span></td></tr>
+<tr><td>A function a record field holds, passed to map</td><td>139</td><td>14</td><td><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-callable-field-callback</span></td></tr>
+<tr><td>A write that may add a key to an object another reference holds</td><td>139</td><td>12</td><td><span style="color:#2e7d4f">verifies</span> <span style="color:#2b5b9c">blocker-loop-key-adding-write</span> (a local's own object); none of these</td></tr>
+<tr><td>A contextual type no declaration states</td><td>130</td><td>2</td><td>cases in cases.mts</td></tr>
+<tr><td>An async arrow's awaited result, its resolution not established</td><td>129</td><td>3</td><td><span style="color:#5e6870">no case</span></td></tr>
+<tr><td>Node's spawn, and a checker query on a namespace</td><td>124</td><td>2</td><td><span style="color:#5e6870">no case</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Refusals naming no construct:</b> a failed search or a missing member counts under the construct refusal its function meets (a judgement); 90 functions, 2,031 statements, meet none (measured), the largest collect (387).</li>
-<li><b style="font-weight:600">Further causes meeting at least 10 functions:</b> an imported class's type parameter default (245 · 13), JSON.stringify of a record (213 · 16, refused rightly), a key-adding write (139 · 12), a record field's function passed to map (138 · 14).</li>
+<li><b style="font-weight:600">Refusals naming no construct:</b> 99 functions, 2,187 statements, meet no cause (measured), the largest collect (394) and selectGlobal (346); in selectGlobal, only.binders is a read the producer and TypeScript type differently.</li>
+<li><b style="font-weight:600">Further causes meeting at least 10 functions:</b> none beyond these; 298 refused functions, 12,180 statements, in all (measured).</li>
 </ul>
 </section>

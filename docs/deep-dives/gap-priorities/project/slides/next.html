@@ -1,13 +1,15 @@
 <section id="next" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · order of work</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">What comes next: cases first, then rules and rewrites, then external code</h2>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">What comes next: cases first, then rules and repairs</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:50%;text-align:left;font-weight:600">Step</th><th style="width:34%;text-align:left;font-weight:600">Cases</th><th style="width:16%;text-align:left;font-weight:600">Trust</th></tr>
-<tr><td>1. Case examples for causes 8 and 9 and for collectDeclarations's four without one</td><td>the sources of Part 1 and of cause 9; four to write</td><td><span style="color:#5e6870">none</span></td></tr>
-<tr><td>2. Rules or rewrites: the optional-chain test (8), the node-list spread (9), map's expected result (10), collectDeclarations's five refusals that need no contract, Omit (1) among them</td><td><span style="color:#2b5b9c">blocker-callback-literal-context</span>, <span style="color:#2b5b9c">blocker-omit-interface</span>, <span style="color:#2b5b9c">optional-method-call-object</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
-<tr><td>3. External code described: the compiler's Symbol methods and TypePredicateKind (collectDeclarations)</td><td><span style="color:#2b5b9c">invalid-compiler-api-unlisted-enum</span></td><td><span style="color:#8b2f4b">an audited entry each</span></td></tr>
+<tr><th style="width:52%;text-align:left;font-weight:600">Step</th><th style="width:30%;text-align:left;font-weight:600">Cases</th><th style="width:18%;text-align:left;font-weight:600">Trust</th></tr>
+<tr><td>1. Case examples for causes 1, 2 and 5–9, each from its census site</td><td>the source of Part 1 for cause 5; six to write</td><td><span style="color:#5e6870">none</span></td></tr>
+<tr><td>2. Repairs of the code added since the last version (cause 6, and 26 of cause 3's functions)</td><td><span style="color:#2b5b9c">for-let-capture-refused</span></td><td><span style="color:#2e7d4f">none</span></td></tr>
+<tr><td>3. Rules or repairs: grouped case labels (4), the discriminant intersection (5), the in test (7), the let's expected type (8)</td><td><span style="color:#2b5b9c">blocker-recursive-union-join</span></td><td><span style="color:#2e7d4f">none expected</span></td></tr>
+<tr><td>4. Causes 1 and 2, once their cases show the cause</td><td></td><td><span style="color:#5e6870">not known</span></td></tr>
+<tr><td>5. The decoders' closing assertions (9): the decoders take parsed JSON, read through a contract of JSON.parse</td><td></td><td><span style="color:#8b2f4b">that contract</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>The order follows the census process: sites where TScert's own code discards what it knew are repaired first (none among the heaviest causes); then the gap cases in the order of the code they block. collectDeclarations can verify only once causes 1–7 are all closed (beyond them its run is not examined), so it is worked as one case.</li>
+<li>The order follows the census process: first the case examples, then the repair in place of the code added since the last version, then the gap cases in the order of the code they block.</li>
 <li>The census and the diagnostic census, run once on main after these merges, measure what each gained.</li>
 </ul>
 </section>

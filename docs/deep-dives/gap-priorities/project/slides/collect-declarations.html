@@ -1,17 +1,16 @@
 <section id="collect-declarations" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
-<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Causes 1–7 · 2,704 statements, 1 function, and Omit in 3 more</p><p style="font-size:24px;color:#5b6662"><span style="color:#5e6870">gap</span> <span style="color:#2b5b9c">blocker-omit-interface</span>; <span style="color:#2b5b9c">optional-method-call-object</span> <span style="color:#2e7d4f">closed</span> ba56fa4, support; <span style="color:#9a3a2a">refused, rightly</span> <span style="color:#2b5b9c">invalid-compiler-api-unlisted-enum</span>; four <span style="color:#5e6870">no case</span></p></div>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">collectDeclarations: seven gate refusals</h2>
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Causes 2–7 of the last version · 2,704 statements, 1 function</p><p style="font-size:24px;color:#5b6662"><span style="color:#2e7d4f">closed</span> all six; <span style="color:#2e7d4f">verifies</span> <span style="color:#2b5b9c">blocker-returntype-typeof</span>, <span style="color:#2b5b9c">compiler-api-symbol-tables</span>, <span style="color:#2b5b9c">optional-method-call-object</span>, <span style="color:#2b5b9c">declaration-list-patterns</span></p></div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">collectDeclarations: six gate refusals closed</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:58%;text-align:left;font-weight:600">Construct</th><th style="width:42%;text-align:left;font-weight:600">Site</th></tr>
-<tr><td>Omit of an interface, keyof over a type parameter (also selectGlobal and library-modules.mts)</td><td>l.1784 Omit&lt;…&gt;</td></tr>
-<tr><td>A method of the compiler's Symbol not reviewed: getExports, getMembers</td><td>l.4038–4042</td></tr>
-<tr><td>A compiler enum the contract does not read: TypePredicateKind</td><td>l.8, the import</td></tr>
-<tr><td>ReturnType of a local function's type</td><td>l.4031 ReturnType&lt;typeof targetOf&gt;</td></tr>
-<tr><td>An optional call of a method whose object is a call</td><td>l.2075 valueScope(…).equation?.(reference)</td></tr>
-<tr><td>A callback parameter TypeScript types at a type parameter not in scope</td><td>l.2657, the parameter read</td></tr>
-<tr><td>A declaration list of two destructuring patterns</td><td>l.3282 const [member] = members, [owner] = owners</td></tr>
+<tr><th style="width:52%;text-align:left;font-weight:600">Construct</th><th style="width:48%;text-align:left;font-weight:600">Closed by</th></tr>
+<tr><td>A callback parameter TypeScript types at a type parameter not in scope</td><td>99224c2: a closure at a generic signature takes its type parameters</td></tr>
+<tr><td>The compiler enum TypePredicateKind</td><td>cdbef56: a contract entry, <span style="color:#8b2f4b">trust change</span></td></tr>
+<tr><td>An optional call of a method whose object is a call, f(x).m?.(y)</td><td>ba56fa4: the call saves its object, then tests the method</td></tr>
+<tr><td>A declaration list of two destructuring patterns</td><td>faeefe4: lowered declarator by declarator</td></tr>
+<tr><td>ReturnType of a local function's typeof</td><td>3911301: the result of the function's last signature</td></tr>
+<tr><td>Symbol's getExports and getMembers</td><td>cdbef56: contract entries, <span style="color:#8b2f4b">trust change</span></td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>collectDeclarations reads the declarations of a library: 2,704 census statements. Its diagnostic run stops after the gate at the 300 s limit, so what lies after these seven is not examined (measured).</li>
-<li><b style="font-weight:600">What closing needs:</b> for the enum and Symbol's methods, contract entries audited against the compiler (route 1, a trust change each); for the other five, a rule each or a rewrite (route 4). Several are one site, so a rewrite is the likely route (a judgement).</li>
+<li>collectDeclarations reads the declarations of a library: 2,774 census statements at acd7436. Each closure is route 1; cdbef56 adds a repair (route 3), a predicate's kind tested before its index. It passes the gate now, and its first refusal is at a read of node.moduleSpecifier (cause 1 of the table). Its diagnostic run reaches the 300 s limit in the producer before reporting any refusal, so what lies past the first refusal is not examined (measured).</li>
+<li><b style="font-weight:600">What cdbef56 trusts:</b> TypePredicateKind's runtime object holds its declared values; getMembers and getExports return the symbol's own table, a Map keyed by the compiler's escaped names; code outside the program writes only such Maps into a symbol's tables.</li>
 </ul>
 </section>
