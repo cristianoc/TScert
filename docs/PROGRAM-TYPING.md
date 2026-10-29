@@ -3532,6 +3532,63 @@ path's witness, the slot holding the value the field's read gave, by a
 claim the edges check; a predicate never reads the field again in its
 place.
 
+##### A call allocating its result
+
+A call keeping the heap whose evidence selects a signature stating
+`freshObject` returns an object every own location of which lies past the
+heap the call started in, while every contract field $`s.g`$ of a slot of
+its context $`\Gamma`$ (`contractFields`: its invariant fields and readonly
+views) lies in it. So it keeps $`\Sigma`$
+and adds the allocation's separation fact for its result, as an object
+literal's allocation does (`PromiseCalls.freshCall_sound`, from
+`freshObject_apart` and `HeapSeparation.allocate_holds`):
+
+```math
+\frac{\Gamma\vdash_G \mathrm{invoke}(f,v,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
+      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\neg\,\epsilon.\mathsf{receiverStore}\qquad\neg\,\epsilon.\mathsf{receiverOwn}\qquad\epsilon.\mathsf{freshObject}}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,v,\vec u):A\dashv \Pi\;;\;\Sigma,\ \mathrm{apart}(r.\star,\ \mathrm{contractFields}(\Gamma))}\ \textsf{call-fresh}
+```
+
+where $`r.\star`$ stands for every own location of $`r`$. A code
+definition never states `freshObject`: only an intrinsic's declaration does
+(`effectChecked`).
+
+##### A call changing only its receiver
+
+A call whose evidence selects a signature with footprint within the empty
+one on every old location but its receiver's own ones (`receiverOwn`), its
+receiver the slot $`x`$, keeps each cell fact and read link about a field
+$`z.g`$ that a separation fact keeps apart from every own location of $`x`$,
+every alias link and value fact, and the separation:
+
+```math
+\frac{\Gamma\vdash_G \mathrm{invoke}(f,x,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
+      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\epsilon.\mathsf{receiverOwn}\qquad\neg\,\epsilon.\mathsf{receiverStore}}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,x,\vec u):A\dashv \Pi\;;\;\{a\in\Sigma\mid a\ \text{about}\ z.g\Rightarrow\mathrm{apart}(x.\star,z.g)\}}\ \textsf{call-own}
+```
+
+The signature's postcondition leaves every other old location's contents
+unchanged on a normal return, and every atom kept is about one
+(`PromiseCalls.ownCall_sound`); a throw keeps nothing. Such a signature
+lets its receiver's own locations change as $`\{value: any, store: S\}`$
+allow, $`S`$ its footprint's stores (`Effect.ownChange`), so a body calling
+it is within a bound admitting that change (`selectedCallWithin`).
+
+The array iterator meets both: `%Iterate%` states `freshObject`, and its
+step, called with the iterator as its receiver, `receiverOwn`
+([native footprints](SOURCE-CONTRACTS.md#native-footprints)). The loop's
+cuts restate the iterator's separation from the fields the records of the
+older slots name, as they restate a cell's
+([source model](SOURCE-MODEL.md#current-content-assertions)), and the edge
+from the intrinsic's call justifies it. So a test of a field before a
+`for...of` loop over an array narrows its reread after the loop
+(`blocker-field-narrowing-for-of`); a write of the field in the body, by
+an alias, a closure created before the loop or a native call's callback,
+discards the link (`invalid-field-narrowing-for-of-write`,
+`invalid-field-narrowing-for-of-closure`,
+`invalid-field-narrowing-for-of-callback`, run under Node). A readonly field
+and a writable one alike keep their narrowing.
+
 ##### Every other expression
 
 Every other expression, calls at a signature not keeping the heap included,

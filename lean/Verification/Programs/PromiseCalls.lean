@@ -817,8 +817,9 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
 
 /-- Whether a signature's effect keeps the contents of every location a
 call starts with on a normal return: the empty footprint, on the receiver's
-array store as well (PROGRAM-TYPING.md, "A call that keeps the heap"). -/
-def keepsHeap (e : Effect) : Bool := e.footprint.le .empty && !e.receiverStore
+array store and own locations as well (PROGRAM-TYPING.md, "A call that keeps
+the heap"). -/
+def keepsHeap (e : Effect) : Bool := e.footprint.le .empty && !e.receiverStore && !e.receiverOwn
 
 /-- The heap facts of a call's entry kept on a normal return of a call at a
 promise signature: every one where its effect keeps the heap (`call-keep`),
@@ -831,7 +832,7 @@ the heap the call started in. -/
 theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {before after : Heap} {v}
     (hp : e.post r before after v) : before.IsPrefix after := by
   simp only [keepsHeap, Bool.and_eq_true, Bool.not_eq_true'] at hk
-  exact Footprints.Closed.holds_empty.mp ((CallEffects.Effect.within_holds hp.1 hk.2).mono hk.1)
+  exact Footprints.Closed.holds_empty.mp ((CallEffects.Effect.within_holds hp.1 hk.1.2 hk.2).mono hk.1.1)
 
 theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
     {r : Tm} {v} (hk : HeapKnowledge.Holds k ρ h) (hp : effect.post r h h' v) :
@@ -1058,6 +1059,204 @@ theorem keepsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
   · contradiction
 
+/-! ### A call allocating its result (PROGRAM-TYPING.md, "A call allocating its result")
+
+A call keeping the heap whose signature states `freshObject` returns an object
+every own location of which lies past the heap the call started in, while
+every contract field of a slot of the call's context lies in it: its result
+is separated from those fields, as an allocation's is (`call-fresh`). -/
+
+/-- Whether an ordinary step's evidence is a call `call-fresh` applies to: at
+the sequent `j`, its operands values, at a selected signature keeping the heap
+and stating a fresh object, its derivation checked. -/
+@[nospecialize] def freshCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
+  match e with
+  | .ordinary p =>
+    decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+      (match ExpressionEffects.selectedEffect p with
+        | some eff => keepsHeap eff && eff.freshObject
+        | none => false) &&
+      checkTreeUsing G images p codes sums
+  | _ => false
+
+/-- The knowledge after a call allocating its result: every fact of the entry,
+and the result's separation from the context's contract fields. -/
+def freshOutput (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  HeapExpressionRules.allocOutput k [] Γ.length (HeapExpressionRules.contractFields G Γ)
+
+/-- A fresh object's own locations lie past the old heap's end; a contract
+field of a slot holds a heap value, so it lies below it. -/
+theorem freshObject_apart {G : NormalGraph ι} {Γ ρ n W h} {v : Tm}
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h) (hv : Footprints.FreshObjectAt h.length v) :
+    ∀ s g, (s, g) ∈ HeapExpressionRules.contractFields G Γ →
+      HeapSeparation.Apart (push v ρ) 0 none (s + 1) g := by
+  intro s g hm l l' hl hl'
+  obtain ⟨Ref,hidx,hfo⟩ := HeapExpressionRules.contractFields_mem hm
+  obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ :=
+    HeapExpressionRules.fieldOperand_sound hfo (he.2 s Ref hidx)
+  obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+  have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
+  obtain ⟨⟨fs, c, oid, rfl⟩, hown⟩ := hv
+  have hge : h.length ≤ l := hown l (by simpa [push, HeapSeparation.At, Footprints.ownOf, Footprints.fieldsOf] using hl)
+  simp only [push, hl0, HeapSeparation.At, List.mem_singleton, exists_eq_left] at hl'
+  have : l' = l1 := Option.some.inj (hl'.symm.trans hfd1)
+  omega
+
+theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : freshCall G images j e codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds (freshOutput G j.context k) (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold freshCall at hc
+  split at hc
+  · rename_i p
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨⟨⟨rfl, hops⟩, hsel⟩, ht⟩ := hc
+    split at hsel
+    · rename_i eff heff
+      simp only [Bool.and_eq_true] at hsel
+      obtain ⟨hkeep, hfo⟩ := hsel
+      refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
+        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
+      have hfresh := hq.2.2 hfo
+      obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
+      have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
+      refine ⟨?_, hshift.2.1, hshift.2.2.1,
+        HeapSeparation.allocate_holds hk.2.2.2 (freshObject_apart he hh hfresh)⟩
+      simpa [freshOutput, HeapExpressionRules.allocOutput, HeapKnowledge.shift] using hshift.1
+    · cases hsel
+  · contradiction
+
+/-! ### A call changing only its receiver's own locations (PROGRAM-TYPING.md, "A call changing only its receiver")
+
+A call at a signature whose footprint is within the empty one on every old
+location but its receiver's own ones changes no location a fact names that a
+separation fact keeps apart from every own location of the receiver
+(`call-own`). -/
+
+/-- The receiver slot of an ordinary step's evidence that `call-own` applies
+to: at the sequent `j`, its operands values, at a selected signature within
+the empty footprint but on its receiver's own locations, its derivation
+checked, its receiver a slot. -/
+@[nospecialize] def ownCallChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
+  match e with
+  | .ordinary p =>
+    decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+      (match ExpressionEffects.selectedEffect p with
+        | some eff => eff.footprint.le .empty && eff.receiverOwn && !eff.receiverStore
+        | none => false) &&
+      checkTreeUsing G images p codes sums
+  | _ => false
+
+/-- The slot a call's receiver is, where it is one. -/
+def receiverSlot : Tm → Option Nat
+  | .invoke _ (.var i) _ => some i
+  | _ => none
+
+@[nospecialize] def ownCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Option Nat :=
+  if ownCallChecked G images j e codes sums then receiverSlot j.term else none
+
+/-- The facts a call changing only the own locations of the slot `i` keeps:
+each cell fact and read link about a field separated from every own location
+of `i`, every alias link, every value fact and the separation. -/
+def ownKept (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
+  ⟨k.cells.filter (fun f => HeapSeparation.apartAll k.separation i f.slot f.field), k.values,
+    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation⟩
+
+def ownOutput (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
+  HeapKnowledge.shift (ownKept k i)
+
+/-- A field read gives what it gave before where its location keeps its
+contents. -/
+theorem readGave_kept {flds field h h' u} (hr : HeapFacts.ReadGave flds field h u)
+    (hkeep : ∀ l, flds.lookup field = some l → ∀ v, h[l]? = some v → h'[l]? = some v) :
+    HeapFacts.ReadGave flds field h' u := by
+  unfold HeapFacts.ReadGave at hr ⊢
+  cases hl : flds.lookup field with
+  | none => simpa [hl] using hr
+  | some l => simp only [hl] at hr ⊢; exact hkeep l hl u hr
+
+theorem ownKept_holds {k : HeapKnowledge.Knowledge} {i : Nat} {ρ : Env} {h h' : Heap}
+    (hk : HeapKnowledge.Holds k ρ h)
+    (hkeep : ∀ l, l ∉ Footprints.ownOf (ρ i) → ∀ v, h[l]? = some v → h'[l]? = some v) :
+    HeapKnowledge.Holds (ownKept k i) ρ h' := by
+  have away : ∀ {s g flds c oid l}, HeapSeparation.apartAll k.separation i s g = true →
+      ρ s = .objAt flds c oid → flds.lookup g = some l → l ∉ Footprints.ownOf (ρ i) := by
+    intro s g flds c oid l ha hs hl hm
+    have hat : HeapSeparation.At none (ρ i) l := by
+      unfold Footprints.ownOf Footprints.fieldsOf at hm
+      unfold HeapSeparation.At
+      split at hm <;> simp_all
+    exact HeapSeparation.apartAll_sound ha hk.2.2.2 hat hs hl rfl
+  refine ⟨?_, hk.2.1, ?_, hk.2.2.2⟩
+  · intro f hf
+    obtain ⟨hf, ha⟩ := List.mem_filter.mp hf
+    obtain ⟨flds,c,oid,u,hs,hr,hm⟩ := hk.1 f hf
+    exact ⟨flds,c,oid,u,hs,readGave_kept hr (fun l hl v hv => hkeep l (away ha hs hl) v hv),hm⟩
+  · intro g hg
+    obtain ⟨hg, ha⟩ := List.mem_filter.mp hg
+    have hh := hk.2.2.1 g hg
+    cases hal : g.alias
+    · simp only [hal, Bool.false_or] at ha
+      cases ho : g.optional
+      · simp only [hal, ho, Bool.false_eq_true, if_false] at hh ⊢
+        obtain ⟨flds,c,oid,l,hs,hl,hv⟩ := hh
+        exact ⟨flds,c,oid,l,hs,hl,hkeep l (away ha hs hl) _ hv⟩
+      · simp only [hal, ho, Bool.false_eq_true, if_false, if_true] at hh ⊢
+        obtain ⟨flds,c,oid,hs,hr⟩ := hh
+        exact ⟨flds,c,oid,hs,readGave_kept hr (fun l hl v hv => hkeep l (away ha hs hl) v hv)⟩
+    · simp only [hal, if_true] at hh ⊢
+      exact hh
+
+theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {i : Nat}
+    (hc : ownCall G images j e codes sums = some i) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds (ownOutput k i) (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold ownCall at hc
+  split at hc
+  · rename_i hcond
+    unfold ownCallChecked at hcond
+    split at hcond
+    · rename_i p
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨hj, hops⟩, hsel⟩, ht⟩ := hcond
+      subst hj
+      have hterm : ∃ f args, (claim p).term = .invoke f (.var i) args := by
+        revert hc
+        cases hT : (claim p).term <;> simp only [receiverSlot] <;> intro hc <;> try cases hc
+        rename_i f r args
+        cases r <;> first | (cases hc; exact ⟨f, args, rfl⟩) | cases hc
+      obtain ⟨f, args, hterm⟩ := hterm
+      split at hsel
+      · rename_i eff heff
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hsel
+        obtain ⟨⟨hle, hown⟩, -⟩ := hsel
+        refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
+          (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
+        have hw' := hq.1
+        unfold CallEffects.Effect.within at hw'
+        simp only [hown, if_true] at hw'
+        rw [hterm] at hw'
+        simp only [ExpressionEffects.receiverOf, instantiate] at hw'
+        have hon := hw'.1.mono hle
+        refine HeapKnowledge.shift_holds (ownKept_holds hk fun l hl u hu => ?_)
+        obtain ⟨u', hu', hc⟩ := hon.2 l u hl hu
+        have : u' = u := by
+          simp only [Footprints.Closed.at, Footprints.Closed.empty] at hc
+          split at hc <;> simpa [Footprints.Change.Holds] using hc
+        rw [← this]; exact hu'
+      · cases hsel
+    · cases hcond
+  · cases hc
+
 end
 end Verification.PromiseCalls
 
@@ -1082,10 +1281,53 @@ heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
       exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh
     · exact base.sound hc hcodes hsums he hk hw hh
 
-/-- The steps' rules, a call keeping the heap keeping every heap fact, each
-keeping its input's stable links. -/
+/-- A checker whose ordinary steps that are calls keeping the heap and
+allocating their result keep every heap fact of their entry and separate the
+result from the context's contract fields (`PromiseCalls.freshCall`); every
+other step is `base`'s. -/
+@[nospecialize] def Checker.allocatingCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    if PromiseCalls.freshCall G images j e codes sums then pure (PromiseCalls.freshOutput G j.context k)
+    else base.run j k e codes sums
+  select := fun j k e codes sums =>
+    if PromiseCalls.freshCall G images j e codes sums then pure (PromiseCalls.freshOutput G j.context k)
+    else base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i hfresh
+      cases hc
+      exact PromiseCalls.freshCall_sound hfresh hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh
+
+/-- A checker whose ordinary steps that are calls changing only their
+receiver's own locations keep the heap facts separated from them
+(`PromiseCalls.ownCall`); every other step is `base`'s. -/
+@[nospecialize] def Checker.keepingOwnCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    match PromiseCalls.ownCall G images j e codes sums with
+    | some i => pure (PromiseCalls.ownOutput k i)
+    | none => base.run j k e codes sums
+  select := fun j k e codes sums =>
+    match PromiseCalls.ownCall G images j e codes sums with
+    | some i => pure (PromiseCalls.ownOutput k i)
+    | none => base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i i hown
+      cases hc
+      exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh
+
+/-- The steps' rules, a call keeping the heap keeping every heap fact, a call
+allocating its result separating it, a call changing only its receiver's own
+locations keeping the facts separated from them, each keeping its input's
+stable links. -/
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images :=
-  (Checker.steps G images).keepingCalls.keepingStable
+  (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.keepingStable
 
 end Verification.HeapExpressionRules

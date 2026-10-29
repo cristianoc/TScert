@@ -354,6 +354,9 @@ Language Specification* as of this writing). Sections relied on by name:
   and the promise resolve functions, which older editions title *Promise
   Resolve Functions* and the 2027 draft defines in
   [CreateResolvingFunctions](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-promise-resolve-functions);
+- [Array iterator objects](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array-iterator-objects)
+  (CreateArrayIterator and `%ArrayIteratorPrototype%.next`), for the
+  [native footprint](SOURCE-CONTRACTS.md#native-footprints) of `%Iterate%`;
 - [ArraySpeciesCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arrayspeciescreate),
   used by [Array.prototype.map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map),
   [filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter)

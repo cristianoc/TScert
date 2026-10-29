@@ -24,8 +24,10 @@ type promise = Guards of int | Asserts of int
    normal return's value has an array store the call allocated, and whether
    the footprint excepts the receiver's array store, which the call may
    change arbitrarily. *)
-type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool }
-let footprint_effect footprint = {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false}
+type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
+  receiver_own: bool; fresh_object: bool }
+let footprint_effect footprint =
+  {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -35,7 +37,8 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
 (* A bound function's effect (Lean's `Effect.drop`): the receiver it saved is
    not the receiver of a call of it, so an exception of the receiver's store
    is an exception of every location. *)
-let bound_effect e = if e.receiver_store then {e with footprint=top_footprint; receiver_store=false} else e
+let bound_effect e = if e.receiver_store || e.receiver_own then
+    {e with footprint=top_footprint; receiver_store=false; receiver_own=false} else e
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
@@ -43,8 +46,10 @@ let plain_effect e = e.promise = None
    it or lets everything change, and a footprint on a throw where the other
    states one (Lean's `Effect.covers`). *)
 let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise &&
-  (not b.fresh || a.fresh) && (not a.receiver_store || b.receiver_store || b.footprint = top_footprint) &&
-  (not b.on_throw || a.on_throw)
+  (not b.fresh || a.fresh) &&
+  (not a.receiver_store || (b.receiver_store && not b.receiver_own) || b.footprint = top_footprint) &&
+  (not b.on_throw || a.on_throw) &&
+  (not a.receiver_own || b.receiver_own || b.footprint = top_footprint) && (not b.fresh_object || a.fresh_object)
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"

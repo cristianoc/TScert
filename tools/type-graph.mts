@@ -46,7 +46,7 @@ export const closedFootprints: readonly ClosedFootprint[] = [
 ];
 /** A signature with a footprint and no promise. */
 export const footprintEffect = (footprint: ClosedFootprint): Within<{ value: "any"; store: "grow" }, CallEffect> =>
-  ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false });
+  ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -55,7 +55,7 @@ export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
  * whose code may change every location. */
 export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "any"; store: "grow" }, CallEffect> =>
   ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
-    receiverStore: false, onThrow: false });
+    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
 const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
@@ -64,7 +64,8 @@ const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
     : b.asserts !== undefined && a.asserts.param === b.asserts.param;
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
   sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
-    a.receiverStore === b.receiverStore && a.onThrow === b.onThrow;
+    a.receiverStore === b.receiverStore && a.onThrow === b.onThrow && a.receiverOwn === b.receiverOwn &&
+    a.freshObject === b.freshObject;
 const isObject = (v: JsonRead): v is JsonObject =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 /** Whether a value is a closed footprint, as the wire states one. */
@@ -75,9 +76,10 @@ export function isClosedFootprint(value: JsonRead): value is ClosedFootprint {
 }
 /** Whether a value is a call effect, as the wire states one. */
 export function isCallEffect(value: JsonRead): value is CallEffect {
-  if (!isObject(value) || Object.keys(value).length !== 5 || !isClosedFootprint(value.footprint) ||
+  if (!isObject(value) || Object.keys(value).length !== 7 || !isClosedFootprint(value.footprint) ||
       typeof value.fresh !== "boolean" || typeof value.receiverStore !== "boolean" ||
-      typeof value.onThrow !== "boolean") return false;
+      typeof value.onThrow !== "boolean" || typeof value.receiverOwn !== "boolean" ||
+      typeof value.freshObject !== "boolean") return false;
   const promise = value.promise;
   if (promise === null) return true;
   if (!isObject(promise) || Object.keys(promise).length !== 1) return false;

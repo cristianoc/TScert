@@ -33,17 +33,22 @@ return's value has an array store allocated by the call; `receiverStore` that
 the footprint bounds every old location but the receiver's array store, which
 the call may change arbitrarily. `onThrow` states that the footprint also
 bounds the change to the heap a throw leaves; a promise and `fresh` concern a
-normal return alone. -/
+normal return alone. `receiverOwn` states that the footprint bounds every old
+location but the receiver's own ones, its store's among them, which the call
+may change arbitrarily; `freshObject` that a normal return's value is an
+object every own location of which the call allocated. -/
 structure Effect where
   footprint : Footprints.Closed
   promise : Option TypePromise
   fresh : Bool
   receiverStore : Bool
   onThrow : Bool
+  receiverOwn : Bool
+  freshObject : Bool
   deriving Repr, DecidableEq
 
 /-- A signature with a footprint and no promise. -/
-def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false⟩
+def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false⟩
 
 /-- An ordinary arrow's guarantee: none beyond its contract. -/
 def Effect.ordinary : Effect := .ofFootprint .top
@@ -142,17 +147,30 @@ theorem MethodRestArrow.map_of_operands {f : α → α} {s : MethodRestArrow α}
 /-- Deliberate forgetting, for ordinary call elimination. -/
 def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments, s.result)
 
+/-- How a signature stating `receiverOwn` may change its receiver's own
+locations: a value arbitrarily, a store as its footprint's stores. -/
+def Effect.ownChange (e : Effect) : Footprints.Closed := ⟨.any, e.footprint.store⟩
+
+theorem Effect.le_ownChange (e : Effect) : e.footprint.le e.ownChange = true := by
+  rcases e with ⟨⟨v, s⟩, _, _, _, _, _, _⟩
+  cases v <;> cases s <;> rfl
+
 /-- What a signature's footprint states of a call with receiver `r`: on every
-old location, or, with `receiverStore`, on every one but `r`'s store. -/
+old location; or, with `receiverOwn`, on every one but `r`'s own, which may
+change as `ownChange` allows; or, with `receiverStore`, on every one but `r`'s
+store. -/
 def Effect.within (e : Effect) (r : Tm) (before after : Heap) : Prop :=
-  if e.receiverStore then e.footprint.HoldsOn (fun l => Footprints.storeOf r ≠ some l) before after
+  if e.receiverOwn then e.footprint.HoldsOn (fun l => l ∉ Footprints.ownOf r) before after ∧
+    e.ownChange.HoldsOn (fun l => l ∈ Footprints.ownOf r) before after
+  else if e.receiverStore then e.footprint.HoldsOn (fun l => Footprints.storeOf r ≠ some l) before after
   else e.footprint.Holds before after
 
 /-- A signature's normal-return postcondition for a call with receiver `r`,
 from the heap the call starts in: its footprint, and, where it states one, a
 fresh store for the result. -/
 def Effect.post (e : Effect) (r : Tm) : Heap → Post := fun before after v =>
-  e.within r before after ∧ (e.fresh = true → Footprints.FreshAt before.length v)
+  e.within r before after ∧ (e.fresh = true → Footprints.FreshAt before.length v) ∧
+    (e.freshObject = true → Footprints.FreshObjectAt before.length v)
 
 /-- A signature's postcondition on a throw, from the heap the call starts in:
 its footprint where it states `onThrow`, and nothing otherwise. -/
@@ -163,30 +181,52 @@ theorem Effect.within_of_holds {e : Effect} {r : Tm} {before after : Heap}
     (h : e.footprint.Holds before after) : e.within r before after := by
   unfold Effect.within
   split
-  · exact h.on _
-  · exact h
+  · exact ⟨h.on _, (h.on _).mono e.le_ownChange⟩
+  · split
+    · exact h.on _
+    · exact h
+
+/-- A signature stating `receiverOwn` changes every old location as its
+`ownChange` allows. -/
+theorem Effect.within_own {e : Effect} {r : Tm} {before after : Heap}
+    (h : e.within r before after) (ho : e.receiverOwn = true) : e.ownChange.Holds before after := by
+  simp only [Effect.within, ho, if_true] at h
+  obtain ⟨hout, hin⟩ := h
+  have hout := hout.mono e.le_ownChange
+  refine Footprints.Closed.holds_of_on ⟨hout.1, fun l v _ hv => ?_⟩
+  by_cases hm : l ∈ Footprints.ownOf r
+  · exact hin.2 l v hm hv
+  · exact hout.2 l v hm hv
 
 /-- What a footprint on the locations below `b` follows from: the footprint
-anywhere, or on every location but a store allocated after `b`. -/
+anywhere, or on every location but a store, or every own location of an
+object, allocated after `b`. -/
 theorem Effect.within_below {e : Effect} {r : Tm} {b : Nat} {before after : Heap}
-    (h : e.within r before after) (hr : e.receiverStore = true → Footprints.FreshAt b r) :
+    (h : e.within r before after) (hr : e.receiverStore = true → Footprints.FreshAt b r)
+    (ho : e.receiverOwn = true → Footprints.FreshObjectAt b r) :
     e.footprint.HoldsOn (· < b) before after := by
   unfold Effect.within at h
   split at h
   · rename_i hs
-    exact h.below_fresh (hr hs)
-  · exact h.on _
+    exact h.1.below_fresh_object (ho hs)
+  · split at h
+    · rename_i hs
+      exact h.below_fresh (hr hs)
+    · exact h.on _
 
 theorem Effect.within_holds {e : Effect} {r : Tm} {before after : Heap}
-    (h : e.within r before after) (hr : e.receiverStore = false) : e.footprint.Holds before after := by
-  simpa [Effect.within, hr] using h
+    (h : e.within r before after) (hr : e.receiverStore = false) (ho : e.receiverOwn = false) :
+    e.footprint.Holds before after := by
+  simpa [Effect.within, hr, ho] using h
 
 theorem Effect.within_top {e : Effect} {r : Tm} {before after : Heap}
     (h : e.within r before after) : Footprints.Closed.top.Holds before after := by
   unfold Effect.within at h
   split at h
-  · exact h.top
-  · exact Footprints.Closed.holds_top.mpr (Footprints.Closed.holds_iff.mp h).1
+  · exact h.1.top
+  · split at h
+    · exact h.top
+    · exact Footprints.Closed.holds_top.mpr (Footprints.Closed.holds_iff.mp h).1
 
 @[simp] theorem Effect.post_ofFootprint (c : Footprints.Closed) (r : Tm) (before after : Heap) (v : Val) :
     (Effect.ofFootprint c).post r before after v ↔ c.Holds before after := by
@@ -251,7 +291,8 @@ def TypePromise.drop (n : Nat) : TypePromise → TypePromise
   | .asserts p => .asserts (p - n)
 
 def Effect.drop (n : Nat) (e : Effect) : Effect :=
-  ⟨if e.receiverStore then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false, e.onThrow⟩
+  ⟨if e.receiverStore || e.receiverOwn then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false,
+    e.onThrow, false, e.freshObject⟩
 
 /-- Whether binding `n` actuals keeps the promise about an actual of the
 bound call. -/
@@ -260,8 +301,9 @@ def Effect.keeps (n : Nat) (e : Effect) : Bool :=
   | some p => n ≤ p.param
   | none => true
 
-theorem Effect.drop_zero {e : Effect} (h : e.receiverStore = false) : e.drop 0 = e := by
-  rcases e with ⟨c, _ | (_ | _), f, s, o⟩ <;> simp_all [Effect.drop, TypePromise.drop]
+theorem Effect.drop_zero {e : Effect} (h : e.receiverStore = false) (ho : e.receiverOwn = false) :
+    e.drop 0 = e := by
+  rcases e with ⟨c, _ | (_ | _), f, s, o, w, fo⟩ <;> simp_all [Effect.drop, TypePromise.drop]
 
 @[simp] theorem Effect.keeps_zero (e : Effect) : e.keeps 0 = true := by
   simp [Effect.keeps]
@@ -269,7 +311,7 @@ theorem Effect.drop_zero {e : Effect} (h : e.receiverStore = false) : e.drop 0 =
 
 theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
     (e.drop pre.length).promised args = e.promised (pre ++ args) := by
-  rcases e with ⟨c, _ | (p | p), f, s, o⟩ <;>
+  rcases e with ⟨c, _ | (p | p), f, s, o, w, fo⟩ <;>
     simp only [Effect.keeps, Effect.drop, Effect.promised, TypePromise.drop, TypePromise.param,
       Option.map] at h ⊢
   all_goals
@@ -326,23 +368,23 @@ theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
     (e.drop n).result R a = e.result R a := by
-  rcases e with ⟨c, _ | (_ | _), f, s, o⟩ <;> rfl
+  rcases e with ⟨c, _ | (_ | _), f, s, o, w, fo⟩ <;> rfl
 
 /-- A bound call forwards to its target with the receiver it saved: the
 target's postcondition at that receiver is the bound signature's at any. -/
 theorem Effect.within_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : Heap}
     (h : e.within rv before after) : (e.drop n).within r before after := by
   unfold Effect.drop Effect.within
-  by_cases hs : e.receiverStore = true
+  by_cases hs : (e.receiverStore || e.receiverOwn) = true
   · simp only [hs, if_true, Bool.false_eq_true, if_false]
     exact Effect.within_top h
-  · simp only [Bool.not_eq_true] at hs
-    simp only [hs, Bool.false_eq_true, if_false]
-    exact Effect.within_holds h hs
+  · simp only [Bool.not_eq_true, Bool.or_eq_false_iff] at hs
+    simp only [hs.1, hs.2, Bool.or_self, Bool.false_eq_true, if_false]
+    exact Effect.within_holds h hs.1 hs.2
 
 theorem Effect.post_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : Heap} {v : Val}
     (h : e.post rv before after v) : (e.drop n).post r before after v :=
-  ⟨Effect.within_drop n h.1, h.2⟩
+  ⟨Effect.within_drop n h.1, h.2.1, h.2.2⟩
 
 theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : Heap}
     (h : e.excPost rv before after) : (e.drop n).excPost r before after :=
@@ -351,12 +393,15 @@ theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : H
 /-- Fresh entry allocation composes with the body's footprint. -/
 theorem Effect.post_prefix (effect : Effect) {r : Tm} {before middle after : Heap} {v : Val}
     (hprefix : before.IsPrefix middle) : effect.post r middle after v → effect.post r before after v := by
-  rintro ⟨hw, hf⟩
-  refine ⟨?_, fun h => (hf h).lower hprefix.length_le⟩
+  rintro ⟨hw, hf, ho⟩
+  refine ⟨?_, fun h => (hf h).lower hprefix.length_le, fun h => (ho h).lower hprefix.length_le⟩
   unfold Effect.within at hw ⊢
   split
-  · rename_i hs; simp only [hs, if_true] at hw; exact hw.prefix_left hprefix
-  · rename_i hs; simp only [hs, Bool.false_eq_true, if_false] at hw; exact hw.prefix_left hprefix
+  · rename_i hs; simp only [hs, if_true] at hw; exact ⟨hw.1.prefix_left hprefix, hw.2.prefix_left hprefix⟩
+  · rename_i hs; simp only [hs, Bool.false_eq_true, if_false] at hw
+    split
+    · rename_i hs'; simp only [hs', if_true] at hw; exact hw.prefix_left hprefix
+    · rename_i hs'; simp only [hs', Bool.false_eq_true, if_false] at hw; exact hw.prefix_left hprefix
 
 /-- Fresh entry allocation composes with the footprint on a throw too. -/
 theorem Effect.excPost_prefix (effect : Effect) {r : Tm} {before middle after : Heap}
@@ -365,36 +410,52 @@ theorem Effect.excPost_prefix (effect : Effect) {r : Tm} {before middle after : 
   have hw := hw ho
   unfold Effect.within at hw ⊢
   split
-  · rename_i hs; simp only [hs, if_true] at hw; exact hw.prefix_left hprefix
-  · rename_i hs; simp only [hs, Bool.false_eq_true, if_false] at hw; exact hw.prefix_left hprefix
+  · rename_i hs; simp only [hs, if_true] at hw; exact ⟨hw.1.prefix_left hprefix, hw.2.prefix_left hprefix⟩
+  · rename_i hs; simp only [hs, Bool.false_eq_true, if_false] at hw
+    split
+    · rename_i hs'; simp only [hs', if_true] at hw; exact hw.prefix_left hprefix
+    · rename_i hs'; simp only [hs', Bool.false_eq_true, if_false] at hw; exact hw.prefix_left hprefix
 
 /-- Conjoining two guarantees for the same call retains both: the meet of
 their footprints, with the promise they share, a fresh result where either
 states one. -/
 def Effect.meet (a b : Effect) : Effect :=
-  ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow⟩
+  ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
+    a.receiverOwn, a.freshObject || b.freshObject⟩
 
 /-- Two guarantees whose results mean the same: the same promise, or none,
 and footprints over the same locations. Only these combine. -/
-def Effect.sameResult (a b : Effect) : Bool := a.promise == b.promise && a.receiverStore == b.receiverStore
+def Effect.sameResult (a b : Effect) : Bool :=
+  a.promise == b.promise && a.receiverStore == b.receiverStore && a.receiverOwn == b.receiverOwn
+
+theorem Effect.within_meet {a b : Effect} (hs : a.sameResult b = true) {r : Tm} {before after : Heap} :
+    (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
+  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
+  unfold Effect.within Effect.meet
+  simp only
+  rw [← hs.1.2, ← hs.2]
+  split
+  · have hc : Effect.ownChange ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore,
+        a.onThrow && b.onThrow, a.receiverOwn, a.freshObject || b.freshObject⟩ = a.ownChange.meet b.ownChange := by
+      rfl
+    rw [hc, Footprints.Closed.holdsOn_meet, Footprints.Closed.holdsOn_meet]
+    exact ⟨fun ⟨⟨a1, b1⟩, a2, b2⟩ => ⟨⟨a1, a2⟩, b1, b2⟩, fun ⟨⟨a1, a2⟩, b1, b2⟩ => ⟨⟨a1, b1⟩, a2, b2⟩⟩
+  · split
+    · exact Footprints.Closed.holdsOn_meet
+    · exact Footprints.Closed.holds_meet
 
 theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (before after : Heap) (value : Val) :
     (a.meet b).post r before after value ↔ a.post r before after value ∧ b.post r before after value := by
-  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-  have hw : (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
-    unfold Effect.within Effect.meet
-    rw [← hs.2]
-    split
-    · exact Footprints.Closed.holdsOn_meet
-    · exact Footprints.Closed.holds_meet
+  have hw := Effect.within_meet hs (r := r) (before := before) (after := after)
   have hf : (a.meet b).fresh = (a.fresh || b.fresh) := rfl
+  have ho : (a.meet b).freshObject = (a.freshObject || b.freshObject) := rfl
   unfold Effect.post
-  rw [hw, hf, Bool.or_eq_true]
+  rw [hw, hf, ho, Bool.or_eq_true, Bool.or_eq_true]
   constructor
-  · rintro ⟨⟨ha, hb⟩, hf⟩
-    exact ⟨⟨ha, fun h => hf (.inl h)⟩, ⟨hb, fun h => hf (.inr h)⟩⟩
-  · rintro ⟨⟨ha, hfa⟩, ⟨hb, hfb⟩⟩
-    exact ⟨⟨ha, hb⟩, fun h => h.elim hfa hfb⟩
+  · rintro ⟨⟨ha, hb⟩, hf, ho⟩
+    exact ⟨⟨ha, fun h => hf (.inl h), fun h => ho (.inl h)⟩, ⟨hb, fun h => hf (.inr h), fun h => ho (.inr h)⟩⟩
+  · rintro ⟨⟨ha, hfa, hoa⟩, ⟨hb, hfb, hob⟩⟩
+    exact ⟨⟨ha, hb⟩, fun h => h.elim hfa hfb, fun h => h.elim hoa hob⟩
 
 /-- Both guarantees' throw postconditions give the meet's: it states
 `onThrow` only where both do. -/
@@ -402,20 +463,13 @@ theorem Effect.excPost_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm)
     (ha : a.excPost r before after) (hb : b.excPost r before after) : (a.meet b).excPost r before after := by
   intro ho
   have ho' : a.onThrow = true ∧ b.onThrow = true := by simpa [Effect.meet] using ho
-  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-  have hw : (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
-    unfold Effect.within Effect.meet
-    rw [← hs.2]
-    split
-    · exact Footprints.Closed.holdsOn_meet
-    · exact Footprints.Closed.holds_meet
-  exact hw.mpr ⟨ha ho'.1, hb ho'.2⟩
+  exact (Effect.within_meet hs).mpr ⟨ha ho'.1, hb ho'.2⟩
 
 theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
     (a.meet b).result = a.result ∧ (a.meet b).promised = a.promised ∧
       b.result = a.result ∧ b.promised = a.promised := by
   simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-  replace hs := hs.1
+  replace hs := hs.1.1
   refine ⟨rfl, rfl, ?_, ?_⟩
   · funext R x; simp [Effect.result, hs]
   · funext args; simp [Effect.promised, hs]
@@ -463,38 +517,56 @@ def Effect.Covers (source target : Effect) : Prop :=
   (∀ R args k W u, source.result R (source.promised args) k W u → target.result R (target.promised args) k W u) ∧
   ∀ r before after, source.excPost r before after → target.excPost r before after
 
-/-- A smaller footprint and the same promise; a fresh result where the other
-states one; and the receiver's store excepted only where the other excepts
-it or lets everything change. -/
+/-- A smaller footprint and the same promise; a fresh result, or a fresh
+object, where the other states one; the receiver's store excepted only where
+the other excepts it and not the receiver's own locations, or lets
+everything change; and the receiver's own locations excepted only where the
+other excepts them or lets everything change. -/
 def Effect.covers (a b : Effect) : Bool :=
   a.footprint.le b.footprint && a.promise == b.promise && (!b.fresh || a.fresh) &&
-    (!a.receiverStore || b.receiverStore || b.footprint == .top) && (!b.onThrow || a.onThrow)
+    (!a.receiverStore || (b.receiverStore && !b.receiverOwn) || b.footprint == .top) && (!b.onThrow || a.onThrow) &&
+    (!a.receiverOwn || b.receiverOwn || b.footprint == .top) && (!b.freshObject || a.freshObject)
+
+private theorem Effect.within_top_of {e : Effect} {r : Tm} {before after : Heap}
+    (ht : e.footprint = .top) (h : Footprints.Closed.top.Holds before after) : e.within r before after := by
+  apply Effect.within_of_holds
+  rw [ht]; exact h
 
 theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b := by
   simp only [Effect.covers, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨hle, hp⟩, hf⟩, hs⟩, ho⟩, hw⟩, hfo⟩ := h
   simp only [beq_iff_eq] at hp
+  have hown : a.ownChange.le b.ownChange = true := by
+    simp only [Footprints.Closed.le, Bool.and_eq_true] at hle
+    simp only [Effect.ownChange, Footprints.Closed.le, Bool.and_eq_true]
+    exact ⟨rfl, hle.2⟩
   have within : ∀ r before after, a.within r before after → b.within r before after := by
-    intro r before after hw
-    unfold Effect.within at hw ⊢
-    by_cases ha : a.receiverStore = true
-    · simp only [ha, if_true] at hw
-      by_cases hbs : b.receiverStore = true
-      · simp only [hbs, if_true]; exact hw.mono hle
-      · simp only [Bool.not_eq_true] at hbs
-        have htop : b.footprint = .top := by
-          rw [ha, hbs] at hs
-          simpa using hs
-        simp only [hbs, Bool.false_eq_true, if_false]
-        rw [htop]; exact hw.top
-    · simp only [Bool.not_eq_true] at ha
-      simp only [ha, Bool.false_eq_true, if_false] at hw
-      split
-      · exact (hw.mono hle).on _
-      · exact hw.mono hle
-  refine ⟨fun r before after v ⟨hw, hfr⟩ => ⟨within r before after hw, fun hb => hfr ?_⟩,
+    intro r before after hwa
+    by_cases hao : a.receiverOwn = true
+    · simp only [hao, Bool.not_true, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at hw
+      rcases hw with hbo | htop
+      · have hwa' := hwa
+        simp only [Effect.within, hao, if_true] at hwa'
+        simp only [Effect.within, hbo, if_true]
+        exact ⟨hwa'.1.mono hle, hwa'.2.mono hown⟩
+      · exact Effect.within_top_of htop (Effect.within_top hwa)
+    · simp only [Bool.not_eq_true] at hao
+      by_cases has : a.receiverStore = true
+      · simp only [has, Bool.not_true, Bool.false_or, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true,
+          Bool.not_eq_true'] at hs
+        rcases hs with ⟨hbs, hbo⟩ | htop
+        · have hwa' := hwa
+          simp only [Effect.within, hao, has, Bool.false_eq_true, if_false, if_true] at hwa'
+          simp only [Effect.within, hbo, hbs, Bool.false_eq_true, if_false, if_true]
+          exact hwa'.mono hle
+        · exact Effect.within_top_of htop (Effect.within_top hwa)
+      · simp only [Bool.not_eq_true] at has
+        exact Effect.within_of_holds ((Effect.within_holds hwa has hao).mono hle)
+  refine ⟨fun r before after v ⟨hw, hfr, hfro⟩ => ⟨within r before after hw, fun hb => hfr ?_,
+      fun hb => hfro ?_⟩,
     fun R args k W u hu => ?_, fun r before after he hb => within r before after (he ?_)⟩
   · rw [hb] at hf; simpa using hf
+  · rw [hb] at hfo; simpa using hfo
   · simpa [Effect.result, Effect.promised, hp] using hu
   · rw [hb] at ho; simpa using ho
 

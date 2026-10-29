@@ -69,6 +69,10 @@ structure ScopeBinding (ι : Type) where
   captured : Bool := false
   /-- An administrative value saved from a named member path. -/
   witness : Option (String × List PropKey) := none
+  /-- A `for...of` loop's iterator: a fresh object, every own location of
+  which differs from the fields the records of the slots below it named
+  when it was created (`apart`). -/
+  iterator : Bool := false
   deriving Repr
 
 @[nospecialize] def held (d : Descriptor) : ScopeBinding ι := { source := d }

@@ -987,7 +987,7 @@ control(async (): Promise<void> => {
     const fields: unknown[] = prototype.fields;
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
     prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
-      receiverStore: false, onThrow: false }, receiver: null, params: [], rest: null,
+      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false }, receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");
   };
@@ -2288,6 +2288,60 @@ control(async (): Promise<void> => {
   const reread = source.indexOf("return claim.context.length");
   refusedAt(real, forged, "guard-disjunction-twin", `source incoming edge obligation at [${reread},`);
   process.stdout.write("a guard's narrowing claimed past a conjunction inside a disjunction: refused\n");
+});
+
+control(async (): Promise<void> => {
+  // A signature excepting its receiver's own locations keeps a heap fact
+  // only where a separation fact keeps the fact's location apart from every
+  // own location of a receiver slot: `count` claimed at the empty footprint
+  // with `receiverOwn`, called with no receiver, keeps no read link, and the
+  // field reread after the call is refused, in search and in checking.
+  const artifacts = run("guard-field-keeping-call");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  forgeCallee(claims, "size", source.indexOf("count(x.args)"), "count", (arrows) => {
+    assert.equal(arrows.length, 1);
+    for (const arrow of arrows) arrow.effect = { ...arrow.effect, receiverOwn: true };
+  });
+  const forged = writeClaims(artifacts, "keeping-call-receiver-own", claims);
+  const reread = source.indexOf("return n + x.args.length");
+  refusedAt(artifacts, forged, "keeping-call-receiver-own", `source incoming edge obligation at [${reread},`);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  process.stdout.write("a call excepting its receiver's own locations, with no receiver slot: the field reread refused\n");
+});
+
+control(async (): Promise<void> => {
+  // A field's narrowing survives a `for...of` loop over an array only by
+  // the array iterator's contract: `%Iterate%` returns a fresh object
+  // (`freshObject`), whose steps change no old location but its own
+  // (`receiverOwn`). Bypassing the producer, the positive case's claims are
+  // refused where the declarations state the iterator is not fresh, or its
+  // step at the footprint changing every value, and where the claims give
+  // the step that footprint.
+  const artifacts = run("blocker-field-narrowing-for-of");
+  const fragmentText = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const claimsText = readFileSync(join(artifacts, "claims.json"), "utf8");
+  const ownStep = '"footprint":{"value":"keep","store":"keep"},"promise":null,"fresh":false,"receiverStore":false,' +
+    '"onThrow":false,"receiverOwn":true,"freshObject":false';
+  const anyStep = '"footprint":{"value":"any","store":"keep"},"promise":null,"fresh":false,"receiverStore":false,' +
+    '"onThrow":false,"receiverOwn":false,"freshObject":false';
+  const forgeries: [string, string, string, "fragment" | "claims"][] = [
+    ["iterator-not-fresh", '"receiverOwn":false,"freshObject":true', '"receiverOwn":false,"freshObject":false', "fragment"],
+    ["step-changing-values", ownStep, anyStep, "fragment"],
+    ["step-claimed-changing-values", ownStep, anyStep, "claims"]];
+  for (const [name, from, to, file] of forgeries) {
+    const text = file === "fragment" ? fragmentText : claimsText;
+    assert.equal(text.split(from).length, 2, `${name}: one occurrence`);
+    const forged = join(artifacts, `for-of-${name}-${file}.json`);
+    writeFileSync(forged, text.replace(from, to));
+    const searched = file === "fragment"
+      ? produceWith(artifacts, join(artifacts, "claims.json"), `for-of-${name}`, forged)
+      : produceWith(artifacts, forged, `for-of-${name}`);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, `${name}: ${detail}`);
+    assert.match(detail, /obligation/, name);
+  }
+  process.stdout.write("a field's narrowing across a for...of loop: refused without the iterator's fresh object or own-state step\n");
 });
 
 control(async (): Promise<void> => {

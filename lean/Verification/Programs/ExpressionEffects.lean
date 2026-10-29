@@ -200,11 +200,14 @@ def selectedOperands : Evidence ι → Bool
   | _ => false
 
 /-- Invocation and construction consume the selected signature's effect:
-within the bound when the signature's footprint is, and, for a signature
-excepting its receiver's store, when the bound lets everything change. -/
+within the bound when the signature's footprint is; for a signature
+excepting its receiver's own locations, when the bound admits their change;
+and for one excepting its receiver's store, when the bound lets everything
+change. -/
 def selectedCallWithin (Φ : Footprints.Closed) (e : Evidence ι) : Bool :=
   selectedOperands e && match selectedEffect e with
-    | some eff => eff.footprint.le Φ && (!eff.receiverStore || Φ == .top)
+    | some eff => eff.footprint.le Φ &&
+        (if eff.receiverOwn then eff.ownChange.le Φ else (!eff.receiverStore || Φ == .top))
     | none => false
 
 theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
@@ -896,11 +899,17 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   obtain ⟨hops, hp⟩ := hp
   split at hp
   · rename_i eff hsel
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hp
+    simp only [Bool.and_eq_true] at hp
     obtain ⟨hle, hr⟩ := hp
     apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh)
+    split at hr
+    · rename_i ho
+      exact (CallEffects.Effect.within_own hq.1 ho).mono hr
+    rename_i ho
+    simp only [Bool.not_eq_true] at ho
+    simp only [Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hr
     rcases hr with hr | hr
-    · exact (CallEffects.Effect.within_holds hq.1 hr).mono hle
+    · exact (CallEffects.Effect.within_holds hq.1 hr ho).mono hle
     · rw [hr]; exact CallEffects.Effect.within_top hq.1
   · cases hp
 

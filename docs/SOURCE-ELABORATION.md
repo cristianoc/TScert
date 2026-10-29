@@ -1784,13 +1784,13 @@ intrinsic:
 ```math
 ⟦\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S⟧=
 n\leftarrow\mathit{it}(⟦e⟧);\
-\mathit{head}:\ r\leftarrow n();\
+\mathit{head}:\ r\leftarrow \mathrm{invoke}(n,n,[\,]);\
 \mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
 \mathsf{else}\ x\leftarrow r.\mathit{value};\ ⟦S⟧;\ \mathsf{goto}\ \mathit{head}
 ```
 
-`n` is a slot at the call's claimed type, the head a cut stated by the loop's
-entry claims, `continue` and the body's end go to the head and `break` to the
+`n` is a slot at the call's claimed type, its step called with `n` as its
+receiver, the head a cut stated by the loop's entry claims, `continue` and the body's end go to the head and `break` to the
 exit; the tag dispatch refines `r` on each arm (`tagBind isNul`). The derived
 rule, with $`\mathit{it}:\forall\vec\alpha.\ (P)\Rightarrow\mathit{Step}(E)`$ and
 $`\sigma`$ the call's instance:

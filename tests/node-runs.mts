@@ -1245,6 +1245,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-own-property-descriptor-key-object", `const seen = { value: 0 };
     wrong({}, { toString() { seen.value = 1; return "a"; } }, seen)`), 1,
     "invalid-own-property-descriptor-key-object: the actual source returns 1 despite its 0 contract");
+  for (const file of ["invalid-field-narrowing-for-of-closure", "invalid-field-narrowing-for-of-callback"])
+    assert.throws(() => runExample(file,
+      `(() => { const h = { statement: { k: "block", statements: [1] } }; return count(h, h); })()`), /length/,
+      `${file}: the reread after the loop reads \`length\` of undefined`);
   assert.throws(() => runExample("invalid-field-narrowing-for-of-write",
     `(() => { const h = { statement: { k: "block", statements: [1] } }; return count(h, h); })()`), /length/,
     "invalid-field-narrowing-for-of-write: the reread after the loop reads `length` of undefined");

@@ -26,6 +26,11 @@ export type CallPromise = ({ readonly guards: { readonly param: number }; readon
 export type CallEffect = {
   readonly footprint: ClosedFootprint; readonly promise: CallPromise | null; readonly fresh: boolean;
   readonly receiverStore: boolean; readonly onThrow: boolean;
+  /** The footprint bounds every old location but the receiver's own ones. */
+  readonly receiverOwn: boolean;
+  /** A normal return's value is an object every own location of which the
+   * call allocated. */
+  readonly freshObject: boolean;
 };
 /** The effect a written signature states at its result (`Within<F, T>`,
  * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether

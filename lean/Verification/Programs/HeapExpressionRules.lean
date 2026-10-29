@@ -289,6 +289,16 @@ def clauseField (c : PositiveNormalization.Clause α) (fld : PropKey) : Bool :=
     | .refs _ _ vs _ _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
     | _ => false)
 
+/-- The keys a clause states as locations: its first invariant operand's,
+and, for a record, its readonly views'. -/
+def clauseKeys (c : PositiveNormalization.Clause α) : List PropKey :=
+  (match clauseBagOperand c with
+    | some B => B.map Prod.fst
+    | none => []) ++
+  (match c with
+    | .refs _ _ vs _ _ _ _ => vs.map Prod.fst
+    | _ => [])
+
 /-- Whether every alternative is a record stating the field `fld`, an
 invariant field or a readonly view, whatever its type in each: a read of it
 is then of a location of the object. -/
@@ -619,12 +629,13 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
     (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
 
-/-- The named fields of every record-typed slot: the locations a fresh
-allocation is known to differ from, read off the context's contracts. A slot
-of a union of records has the fields every one of them names. -/
+/-- The named fields, invariant fields and readonly views, of every
+record-typed slot: the locations a fresh allocation is known to differ from,
+read off the context's contracts. A slot of a union of records has the fields
+every one of them names. -/
 def contractFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × PropKey) :=
-  Γ.zipIdx.flatMap fun (A, s) => match (expand G A).head? >>= clauseBagOperand with
-    | some B => (B.map Prod.fst).eraseDups.filterMap fun f =>
+  Γ.zipIdx.flatMap fun (A, s) => match (expand G A).head? with
+    | some c => (clauseKeys c).eraseDups.filterMap fun f =>
         if fieldOperand (expand G A) f then some (s, f) else none
     | none => []
 

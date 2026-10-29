@@ -28,7 +28,6 @@ each item's design and evidence, not its progress.
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review (`blocker-in-name-object`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
-| [A field's narrowing across a `for...of` loop](#field-narrowing-for-of) | open | `blocker-field-narrowing-for-of` verifies: a field's test narrows its reread after a loop over an array |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`); open: `every`'s, and a guard closure's at `find` | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
@@ -268,16 +267,6 @@ under the current premises an unnamed key may hold a location outside the
 heap and an unconstrained `[[proto]]` can leave the lookup without a result,
 and a host object's property may be a getter its family does not state.
 
-<a id="field-narrowing-for-of"></a>
-**A field's narrowing across a `for...of` loop.** A loop over an array
-calls its iterator's step at each iteration, and the step writes the
-iterator's position: its footprint is not the empty one, so
-[a call that keeps the heap](docs/PROGRAM-TYPING.md#a-call-that-keeps-the-heap)
-does not apply and no heap fact survives the loop. A field tested before the
-loop is read after it at its declared type
-(`blocker-field-narrowing-for-of`). The narrowing needs the step's write
-stated as one of a location the iterator allocated, apart from every field
-the facts name, and the loop head's entry claims carrying the facts.
 
 <a id="guard-answer-constant"></a>
 **A guard's answer held in a constant.** `const ok = isRecord(v)` keeps the

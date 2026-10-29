@@ -387,6 +387,23 @@ theorem apart_sound {S ρ i f s g} (ha : apart S i f s g = true) (h : Holds S ρ
     rw [hs', hi'] at hap
     exact ((hap.single hc).symm) l l' (by rw [hi]; exact at_lookup hl) (by rw [hs]; exact at_lookup hl')
 
+/-- Every own location of slot `i` and field `g` of slot `s` are separated: a
+fact about all of `i`'s own locations states it. -/
+def apartAll (S : Separation) (i : Nat) (s : Nat) (g : PropKey) : Bool :=
+  i < S.depth && s < S.depth &&
+    S.facts.any fun a => a.slot == S.depth - 1 - i && a.fields == none && keyed a.partners (S.depth - 1 - s) g
+
+theorem apartAll_sound {S ρ i s g} (ha : apartAll S i s g = true) (h : Holds S ρ)
+    {l : Nat} (hl : At none (ρ i) l) {flds c oid l'} (hs : ρ s = .objAt flds c oid)
+    (hl' : flds.lookup g = some l') : l ≠ l' := by
+  simp only [apartAll, Bool.and_eq_true, decide_eq_true_eq, List.any_eq_true, beq_iff_eq] at ha
+  obtain ⟨⟨hid, hsd⟩, a, ham, ⟨hsl, hf⟩, hk⟩ := ha
+  obtain ⟨_, hap⟩ := keyed_sound (h a ham) hk
+  have hi' : S.depth - 1 - a.slot = i := by omega
+  have hs' : S.depth - 1 - (S.depth - 1 - s) = s := by omega
+  rw [hi', hs', hf] at hap
+  exact hap l l' hl (by rw [hs]; exact at_lookup hl')
+
 /-! ## Edges -/
 
 /-- A separation as its pairs: subject level, subject field (`none`: every

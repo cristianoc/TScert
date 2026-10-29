@@ -394,6 +394,25 @@ theorem FreshAt.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshAt b' v) :
   obtain ⟨s, hs, hle⟩ := h
   exact ⟨s, hs, Nat.le_trans hb hle⟩
 
+/-- A value's own locations: one per field it was allocated with, its store's
+among them. -/
+def ownOf (v : Tm) : List Nat := (fieldsOf v).map Prod.snd
+
+/-- An object every own location of which was allocated after a heap of
+length `b`. It reads no heap. -/
+def FreshObjectAt (b : Nat) (v : Tm) : Prop :=
+  (∃ fs c oid, v = .objAt fs c oid) ∧ ∀ l ∈ ownOf v, b ≤ l
+
+theorem FreshObjectAt.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshObjectAt b' v) :
+    FreshObjectAt b v :=
+  ⟨h.1, fun l hl => Nat.le_trans hb (h.2 l hl)⟩
+
+/-- A change on every old location but a fresh object's own ones is a change
+on every location below where it was allocated. -/
+theorem Closed.HoldsOn.below_fresh_object {c : Closed} {b : Nat} {r : Tm} {h h' : Heap}
+    (hf : FreshObjectAt b r) (hp : c.HoldsOn (fun l => l ∉ ownOf r) h h') : c.HoldsOn (· < b) h h' :=
+  hp.weaken fun l hl hm => by have := hf.2 l hm; omega
+
 /-- A change on every old location but a fresh value's store is a change on
 every location below where it was allocated. -/
 theorem Closed.HoldsOn.below_fresh {c : Closed} {b : Nat} {r : Tm} {h h' : Heap} (hf : FreshAt b r)

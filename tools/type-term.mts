@@ -1463,6 +1463,7 @@ function sameSlots(a: ResolutionSlots | null, b: ResolutionSlots | null): Within
 function sameEffect(a: CallEffect, b: CallEffect): Within<{ value: "keep"; store: "keep" }, boolean> {
   return a.footprint.value === b.footprint.value && a.footprint.store === b.footprint.store &&
     a.fresh === b.fresh && a.receiverStore === b.receiverStore && a.onThrow === b.onThrow &&
+    a.receiverOwn === b.receiverOwn && a.freshObject === b.freshObject &&
     (a.promise === null || b.promise === null ? a.promise === b.promise
       : JSON.stringify(a.promise) === JSON.stringify(b.promise));
 }

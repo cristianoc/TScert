@@ -20,11 +20,13 @@ let promise_of = function
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
   | _ -> unsupported "unknown callable promise"
 let effect_of j = match j with
-  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"onThrow";"promise";"receiverStore"] ->
+  | Object fields when List.sort String.compare (List.map fst fields) =
+      ["footprint";"fresh";"freshObject";"onThrow";"promise";"receiverOwn";"receiverStore"] ->
     {footprint=footprint_of (field "footprint" j);
      promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
      fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j);
-     on_throw=boolean (field "onThrow" j)}
+     on_throw=boolean (field "onThrow" j); receiver_own=boolean (field "receiverOwn" j);
+     fresh_object=boolean (field "freshObject" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -791,7 +793,9 @@ let element_write = Some {on_value=Any;on_store=Grow}
    iteration intrinsic's type: its call, which creates the iterator, then
    each call of the step the iterator is. *)
 let iteration_footprint (t:ty) : footprint option =
-  let join_calls calls = List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
+  (* A step changing its receiver's own locations changes their values. *)
+  let step_footprint (e:call_effect) = if e.receiver_own then {e.footprint with on_value=Any} else e.footprint in
+  let join_calls calls = List.fold_left (fun acc (s:signature) -> join_footprint acc (step_footprint s.call_effect))
     empty_footprint calls in
   match t with
   | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
@@ -804,7 +808,8 @@ let iteration_footprint (t:ty) : footprint option =
    store is not one the run allocated, the one letting everything change. *)
 let effects_footprint ~receiver_fresh (effects:call_effect list) =
   List.fold_left (fun acc (e:call_effect) -> join_footprint acc
-    (if e.receiver_store && not receiver_fresh then top_footprint else e.footprint)) empty_footprint effects
+    (if e.receiver_own then {e.footprint with on_value=Any}
+     else if e.receiver_store && not receiver_fresh then top_footprint else e.footprint)) empty_footprint effects
 (* A value whose array store the run allocated: a constant holding one, or a
    call every signature of whose callee states a fresh result. Lean's facts
    follow slots of the graph, which a constant's binding is. *)

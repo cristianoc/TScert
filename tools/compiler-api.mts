@@ -419,11 +419,12 @@ export const isRequest = (owner: string, entry: { name: string; text: string }):
  * the result's store. */
 export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
   const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
-    receiverStore: false, onThrow: false };
+    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false };
   const at = (t: TypeTerm): TypeTerm =>
     t.k === "function" && t.effect.promise === null
       ? { ...t, effect: { footprint: effect.footprint, promise: effect.promise, fresh: fresh && t.result.k === "array",
-        receiverStore: effect.receiverStore, onThrow: effect.onThrow } }
+        receiverStore: effect.receiverStore, onThrow: effect.onThrow, receiverOwn: effect.receiverOwn,
+        freshObject: effect.freshObject } }
     : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
     : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
     : t;

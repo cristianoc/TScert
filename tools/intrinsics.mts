@@ -188,10 +188,11 @@ export const stableDefinition: TypeDefinition = {
   parameters: [], bases: [], expression: nonThenable };
 
 /** `() => { readonly value: E } | null`: an iterator step, `null` at the end. */
-const stepOf = (element: TypeTerm): Signature => fn([], { k: "union", span, parts: [
+/** A step of an iterator, called with the iterator as its receiver. */
+const stepOf = (element: TypeTerm): Signature => ({ ...fn([], { k: "union", span, parts: [
   { k: "object", span, stringIndex: null, calls: [],
     fields: [{ name: "value", optional: false, readonly: true, type: element, span }] },
-  atom("null")] });
+  atom("null")] }), receiver: atom("unknown") });
 const step: Signature = stepOf(binder);
 
 /** An iteration intrinsic beyond arrays, which a `for...of` steps where
@@ -416,13 +417,15 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // a fresh promise: a promise of the input's observation.
     [promiseResolveName]: () => ({ typeParams: [awaitable], type: fn([input], promise(observed)) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
-    // The array's iterator, fresh: creating it changes nothing, and its
-    // state is its own position, a number. Each step reads the array's
-    // current length and an element, and writes only that position:
-    // `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
+    // The array's iterator, a fresh object: creating it changes nothing
+    // that existed, and its state (its position and whether it is done) is
+    // held at its own locations. Each step, called with the iterator as its
+    // receiver, reads the array's current length and an element, and
+    // changes no old location but the iterator's own: the empty footprint
+    // with `receiverOwn` (SOURCE-CONTRACTS.md, "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }],
-        { ...step, effect: footprintEffect({ value: "any", store: "keep" }) }), effect: emptyEffect } }),
+        { ...step, effect: { ...emptyEffect, receiverOwn: true } }), effect: { ...emptyEffect, freshObject: true } } }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),

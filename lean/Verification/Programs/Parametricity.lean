@@ -421,12 +421,54 @@ theorem keepingCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledg
   · rfl
   · exact checkStepResult_value_reassign G η images j k e codes sums
 
+theorem freshCall_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    PromiseCalls.freshCall (reassign G η) (images.reassign η) j e codes sums =
+      PromiseCalls.freshCall G images j e codes sums := by
+  unfold PromiseCalls.freshCall
+  split
+  · rename_i p
+    rw [checkTree_reassign G η images p codes sums]
+  · rfl
+
+theorem ownCallChecked_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) :
+    PromiseCalls.ownCallChecked (reassign G η) (images.reassign η) j e codes sums =
+      PromiseCalls.ownCallChecked G images j e codes sums := by
+  unfold PromiseCalls.ownCallChecked
+  split
+  · rename_i p
+    rw [checkTree_reassign G η images p codes sums]
+  · rfl
+
+theorem ownCall_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    PromiseCalls.ownCall (reassign G η) (images.reassign η) j e codes sums =
+      PromiseCalls.ownCall G images j e codes sums := by
+  simp only [PromiseCalls.ownCall, ownCallChecked_reassign]
+
+theorem keepingOwnCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.run j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.run j k e codes sums).value := by
+  simp only [Checker.keepingOwnCalls, ownCall_reassign]
+  split
+  · rfl
+  · exact keepingCalls_value_reassign G η images j k e codes sums
+
+theorem allocatingCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.run j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.run j k e codes sums).value := by
+  simp only [Checker.allocatingCalls, freshCall_reassign]
+  split
+  · rfl
+  · exact keepingOwnCalls_value_reassign G η images j k e codes sums
+
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
     checkNodeUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing (sums := sums) G images Rty P C node c codes := by
   simp only [checkNodeUsing_eq, Checker.ordinary, Checker.keepingStable, CheckResult.map,
-    withStable_reassign, checkHandler_reassign, keepingCalls_value_reassign, checkTarget_reassign,
+    withStable_reassign, checkHandler_reassign, allocatingCalls_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 

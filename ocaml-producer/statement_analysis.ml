@@ -411,6 +411,9 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
        | None -> Json.fail "an early binding names no binding of its statement")
     | _ -> Json.fail "an early binding names another statement" in
   let forget_unstable env = forget ~keep:(Refinement.stable_path declarations env) env in
+  (* What the producer knew at each loop's iterator start, after its
+     iterable's evaluation, by the loop statement's span. *)
+  let at_start = Hashtbl.create 4 in
   let flow_callbacks = {
     early=(fun env (s:Source.stmt) name -> diagnostic_recover s.span
       (fun () ->
@@ -441,8 +444,13 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     return_expression=(fun env e -> expr ?expected:(expected_result ()) env e);
     returned=record_return;
     entry;
-    (* The iterator's start and each step keep the paths through stable
-       members, as every step keeps Lean's stable links. *)
+    (* The iterator's start keeps what the iterable's evaluation leaves:
+       its intrinsic's call keeps the heap (Lean's `call-keep`, or
+       `call-fresh`, which separates the fresh iterator from the context's
+       contract fields). A step keeps the paths through stable members, as
+       every step keeps Lean's stable links, and, where it changes only its
+       receiver's own locations (`call-own`), the paths known at the start
+       and unchanged since, which the iterator's separation keeps. *)
     iterator_start=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) ->
       diagnostic_recover s.span (fun () ->
         publish_expression s.span top None;
@@ -466,7 +474,9 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             inferred.result,inferred.substitution in
           publish_expression span result (if substitution=[] then None else
               Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution));
-          extend (forget_unstable env) b.Flow.name (Value result)));
+          let env=forget ~keep:(fun _ -> true) (after iterable env) in
+          Hashtbl.replace at_start s.span env;
+          extend env b.Flow.name (Value result)));
     iterator_step=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
           diagnostic_recover s.span (fun () ->
             let pos = match s.statement with ForOf (_,p,_,_,_) -> p | _ -> s.span in
@@ -488,7 +498,18 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             | _ -> Proposal_diagnostics.unsupported "an iterator gives no step" in
           ignore name;
           publish_expression name_pos t None;
-          extend (forget_unstable env) element.Flow.name (Value t),forget_unstable env));
+          let own=match declared_head declarations [] (binding_type (lookup ~at:b.Flow.source env b.Flow.name)) with
+            | Atoms [Shape {calls=[{call_effect;_}];_}] ->
+              call_effect.receiver_own && not call_effect.receiver_store &&
+              footprint_le call_effect.footprint empty_footprint
+            | _ -> false in
+          let kept=match own,Hashtbl.find_opt at_start s.span with
+            | true,Some start ->
+              forget ~keep:(fun n -> Refinement.stable_path declarations env n ||
+                (match List.assoc_opt n env,List.assoc_opt n start with
+                 | Some b,Some b' -> b = b' | _ -> false)) env
+            | _ -> forget_unstable env in
+          extend kept element.Flow.name (Value t),kept));
   } in
   let statements = Proposal_flow.statements flow_callbacks flow_graph register_following in
   statements owner_span env ss

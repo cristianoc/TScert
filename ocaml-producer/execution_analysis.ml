@@ -155,7 +155,8 @@ open S
          (match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
           | Some (Atoms [Shape {calls=(_ :: _ as calls);_}]) ->
             List.for_all (fun (s:Semantic.signature) ->
-              footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store) calls
+              footprint_le s.call_effect.footprint empty_footprint && not s.call_effect.receiver_store &&
+              not s.call_effect.receiver_own) calls
           | _ -> false)
        | None -> false)
     | _ -> false

@@ -271,7 +271,15 @@ reference representation. Every such action is recorded as an opaque region. -/
         | throw "internal flow error: missing iteration intrinsic"
       let A ← exprType fc iterable
       let N ← exprType fc (.var pos iterate)
-      let binding : ScopeBinding Tree := { source := descriptor, fixed := some N }
+      -- An iterator whose step changes only its own locations is a fresh
+      -- object, separated from the fields of the slots below it, which its
+      -- own locations differ from; the edge from the intrinsic's call
+      -- establishes that separation where its effect states a fresh object.
+      let fresh := match PositiveRules.expand (SourceTypes.graph (← table)) N with
+        | [.arrs [⟨_, _, _, effect⟩] _] => effect.receiverOwn
+        | _ => false
+      let apart : Option (List (Ty Tree)) := if fresh then some Γ else none
+      let binding : ScopeBinding Tree := { source := descriptor, fixed := some N, iterator := fresh, apart }
       let head ← successor next (binding :: scope)
       let mapping := (head.mapping.getD (List.range (scope.length+1))).map
         (fun i => if i == 0 then 0 else i+1)
@@ -298,7 +306,8 @@ reference representation. Every such action is recorded as an opaque region. -/
       let toExit : Target := ⟨exit.label, some ((exit.mapping.getD (List.range scope.length)).map (·+2))⟩
       let dispatch ← emitAt pos (.var 0) (.tagBind .isNul toExit toElement) (S::Γ) S
         "for-of-dispatch" (scope := held ⟨"",some pos⟩ :: scope)
-      emitAt pos (Tm.call (.var i) []) (.bind dispatch) Γ S "for-of-step" (scope := scope)
+      -- The step is called with the iterator as its receiver.
+      emitAt pos (.invoke (.var i) (.var i) []) (.bind dispatch) Γ S "for-of-step" (scope := scope)
     | _ => throw "internal flow error: malformed action")
     (recoverAction graph base R scope Γ node (fun next bindings =>
       flowNode recursive graph ambient base R bindings next))

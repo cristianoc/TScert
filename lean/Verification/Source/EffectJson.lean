@@ -46,10 +46,13 @@ instance : FromJson TypePromise := ⟨fun j => do
 
 /-- An effect is its footprint, its promise, `null` when there is none,
 whether its result's array store is fresh, whether its footprint excepts its
-receiver's store, and whether the footprint also holds on a throw. -/
+receiver's store, whether the footprint also holds on a throw, whether it
+excepts its receiver's own locations, and whether its result is an object
+every own location of which is fresh. -/
 instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footprint),
   ("promise", match e.promise with | some p => toJson p | none => Json.null),
-  ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow)]⟩
+  ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
+  ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject)]⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
@@ -57,9 +60,9 @@ instance : FromJson Effect := ⟨fun j => do
     | .null => pure none
     | p => some <$> fromJson? p
   let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
-    ← j.getObjValAs? Bool "onThrow"⟩
+    ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject"⟩
   if toJson e != j then
-    throw "an effect has exactly the fields footprint, promise, fresh, receiverStore and onThrow"
+    throw "an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn and freshObject"
   pure e⟩
 
 end Verification.EffectJson

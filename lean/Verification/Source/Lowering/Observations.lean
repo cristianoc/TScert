@@ -59,8 +59,8 @@ so it fails here rather than reaching a message. -/
 record naming them, the locations of an object of the type. -/
 @[nospecialize] private def commonFields (G : Verification.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
   match PositiveRules.expand G A with
-  | .refs fs _ _ _ _ _ _ :: _ =>
-    (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
+  | (.refs fs _ vs _ _ _ _) :: _ =>
+    (fs.map Prod.fst ++ vs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
   | _ => []
 
 /-- A node whose derivation the lowering knows: its plan, cast to the node's
@@ -106,7 +106,21 @@ listed slot's fields, addressed by level at the context's depth. -/
           else if isCell || other.any (·.fresh) then commonFields G A
           else []
         if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
-    | .value | .slot _ => []
+    | .value | .slot _ =>
+      -- An iterator's own locations differ from the fields older slots'
+      -- records named when it was created. A constant holding an object it
+      -- allocated is left out: the edge from a key-adding write to it does
+      -- not carry that separation (`blocker-loop-key-adding-write`).
+      if !b.iterator || Γ.length ≤ i then [] else
+      match b.apart with
+      | none => []
+      | some older =>
+        [⟨Γ.length - 1 - i, none, Γ.zipIdx.filterMap fun (A,j) =>
+          if j ≤ i || (scope[j]?.any (·.fresh)) then none else
+          let fields := match older[j - i - 1]? with
+            | some B => (commonFields G A).filter (commonFields G B).contains
+            | none => []
+          if fields.isEmpty then none else some (Γ.length - 1 - j, fields)⟩]
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/

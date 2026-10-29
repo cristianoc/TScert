@@ -122,7 +122,8 @@ function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): W
 function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, string> {
   return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
     `"promise":${e.promise === null ? "null" : JSON.stringify(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
-    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)}}`;
+    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
+    `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)}}`;
 }
 
 const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, string> =>
