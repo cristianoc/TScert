@@ -527,7 +527,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            else match Semantic.tuple_positions ~readonly:true actual, Semantic.spread_element ~readonly:true actual with
              | Some positions,_ -> positions
              | None,Some element -> [element]
-             | _ -> Proposal_diagnostics.unsupported "generic spread requires an array or a tuple of required positions") args) in
+             | _ -> Proposal_diagnostics.unsupported "generic spread requires an array, a union of arrays, or a tuple of required positions") args) in
          let missing = max 0 (List.length signature.params - List.length actuals) in
          let substitution,result = infer_explicit ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in

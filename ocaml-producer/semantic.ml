@@ -292,15 +292,21 @@ let array_element ?(readonly=false) = function
     when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) -> s.rest
   | _ -> None
 
-(* The values a spread of such an array passes: its element, and `undefined`
-   for a hole where its presence is sparse; a dense or readable store's holes
-   read at the element (Lean's `SpreadsInto`). Own fields are separate from
-   the element sequence. *)
+(* The values a spread of such an array passes: every position's contract,
+   and `undefined` for a hole where its presence is sparse; a dense or
+   readable store's holes read at a position's contract (Lean's
+   `SpreadsInto`). A union of arrays passes the values of each arm, an empty
+   tuple's none. Own fields are separate from the element sequence. *)
 let spread_element ?(readonly=false) = function
-  | Atoms [Shape {indexes=[];calls=[];elements=Some s;_}]
-    when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) ->
-    Option.map (fun element ->
-      if s.presence = Sparse then union element (Atoms [Undef]) else element) s.rest
+  | Atoms (_ :: _ as arms) ->
+    let arm = function
+      | Shape {indexes=[];calls=[];elements=Some s;_} when readonly || not s.readonly ->
+        let positions = s.required @ s.optional_elements @ Option.to_list s.rest in
+        Some (List.fold_left union (if s.presence = Sparse then Atoms [Undef] else Atoms [])
+          positions)
+      | _ -> None in
+    List.fold_left (fun acc a -> match acc,arm a with
+      | Some t,Some u -> Some (union t u) | _ -> None) (Some (Atoms [])) arms
   | _ -> None
 
 let rec admits_undefined = function
