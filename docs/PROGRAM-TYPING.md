@@ -3508,7 +3508,12 @@ reread, primitive and object contents alike: `isList(x.args)` saves the read
 $`s\leftarrow x.\mathit{args}`$ with its link, `call-keep` keeps the link,
 the promise types $`s`$ where the guard answered `true`, and the reread is
 `read-linked` to $`s`$ (an object's contents) or `read-sliced` by the
-`link-fact` atom (a primitive's). A call keeping the heap between them
+`link-fact` atom (a primitive's). An assertion function's call statement,
+`assertList(x.args)`, types $`s`$ from its return on, and the next
+statement's entry carries $`s`$ with its link (`guard-field-assertion`); a
+second read of the path within the statement is the one $`s`$ holds, so a
+promise about the first read narrows nothing there
+(`invalid-guard-field-assertion-reread`, run under Node). A call keeping the heap between them
 keeps the link (`guard-field-keeping-call`), a native's call at the
 signature of a closed footprint its callback is within among them: `map`
 or `forEach` at a callback keeping the heap

@@ -502,9 +502,16 @@ one for an increment), and the slot of the old value. -/
     (fun i => if i == 0 || copied == some (i-1) then 0 else i+1)
   -- An assertion function's call leaves its actual at the promise's type
   -- from its return on.
-  let returned := match promiseNarrowing (SourceTypes.graph (← table)) scope Γ true original with
+  -- An actual read from a member path is the path's witness where that
+  -- read is the witness's newest: a later read of the path rebinds it.
+  let witnesses ← executionWitnesses
+  let newest := fun (n : String) => (newestWitness witnesses n).getD n
+  let G := SourceTypes.graph (← table)
+  let returned := match promiseNarrowing G scope Γ true original with
     | some (j, T) => Γ.set j T
-    | none => Γ
+    | none => match promiseNarrowing G scope Γ true prepared newest with
+      | some (j, T) => Γ.set j T
+      | none => Γ
   withPreparedAtom original do
     let prepared ← comparisonsExpr fc prepared
     -- A completed member read narrows its receiver (`readNarrowing`).
@@ -814,7 +821,7 @@ prepared predicate without replaying an effectful source operand. -/
       let witnesses ← executionWitnesses
       let original := fun (n : String) => match saved.lookup n with
         | some (.var _ o) => o
-        | _ => (witnesses.lookup n).getD n
+        | _ => (newestWitness witnesses n).getD n
       let called := match operation with
         | .invokeSaved source _ _ _ => source
         | _ => origin
@@ -912,7 +919,7 @@ prepared predicate without replaying an effectful source operand. -/
         -- the same value (HOST-FAMILIES.md, "Entries").
         let original := fun (n : String) => match previous.origins.lookup n with
           | some (.var _ o) => o
-          | _ => (witnesses.lookup n).getD n
+          | _ => (newestWitness witnesses n).getD n
         let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds else
           match alias with
           | some i => Δ.set i T

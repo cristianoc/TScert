@@ -787,7 +787,15 @@ arm where `a` answered `true` is the arm a guard call narrows on, so
 `if (!isRecord(v) || n > 3) throw …; return v` reads `v` at the promised
 type, a closure in the right operand included
 (`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
-nothing (`invalid-guard-negated-and`).
+nothing (`invalid-guard-negated-and`). A left operand `a op b` stays grouped
+where both its operands are tests, `a` judged as a left operand is: `!a`
+is a test where `a` is one. So `(!g(v) || b) || c` regroups as
+`!g(v) || (b || c)`, and `v` is at the promised type where the whole is
+false (`guard-disjunction-middle-test`); a conjunction inside a
+disjunction, `!g(v) && b || c`, is no application of the same operator and
+promises nothing where it is false
+(`invalid-guard-disjunction-mixed-prettier-ignore`, checked with its
+twin's claims).
 
 <a id="a-negation-of-tests"></a>
 A negation of tests, `!(a || b)` or `!(a && b)`, is evaluated as a value:
