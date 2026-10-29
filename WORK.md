@@ -655,7 +655,11 @@ callee, a closure, a `let` bound to it) needs the heap to map an object's
 identity to its keys, which it does not. A key added to a class instance
 whose prototype holds methods is copied with the prototype, but the copy is
 typed as the record `mergeResult` gives, which states no method: it needs a
-merge result at the instance's row.
+merge result at the instance's row. A write to an array at a key typed
+`number` (`blocker-array-index-of-write`) needs the key related to the
+array's length: a write at a key that is no array index (`indexOf`'s -1)
+adds a property outside the array's store, and one past the length leaves
+holes below it.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,

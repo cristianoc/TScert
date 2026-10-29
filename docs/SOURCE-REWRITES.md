@@ -798,6 +798,29 @@ blocks 757 statements of 30 functions.
 - **Commit:** the introducing commit, `visitType builds a scheme's scope in
   an if, so the spread of bound runs first in its statement`.
 
+### A write at the index `indexOf` finds
+
+`flatten` in `familyTable` (`tools/host-families.mts`) gathered the members
+an interface states under one name: it found the entry for the name with
+`find`, and replaced it with a copy holding one more member by
+`own[own.indexOf(existing)] = …`. The key is typed `number`, and a write at
+a key no contract names has no rule
+([arrays](PROGRAM-TYPING.md#arrays)): `indexOf`
+gives -1 for an element it does not find, and a write at or past the
+length extends the array, leaving holes (`blocker-array-index-of-write`).
+Support would relate the index to the array's elements and length, for
+this one site of the census of 6be11ce.
+
+- **Equivalent form:** the entry's members are a writable array, and the
+  found entry gets the member by `existing.members.push(m)`
+  (`array-found-element-update`). Each entry is created in this loop and
+  read only by `find`'s test of its name before the loop ends, so keeping
+  the first entry and extending its array leaves `own` holding the same
+  names, owners and members in the same order as replacing it with a copy;
+  the calls of `graph.name` and `graph.fail` run as before.
+- **Commit:** the introducing commit, `familyTable gathers a name's members
+  without a write at a computed index`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

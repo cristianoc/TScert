@@ -311,11 +311,11 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   const flatten = (d: InterfaceDeclaration): FlatMember[] => {
     const known = flatCache.get(d);
     if (known) return known;
-    const own: FlatMember[] = [];
+    const own: { name: string; owner: InterfaceDeclaration; members: TypeElement[] }[] = [];
     for (const m of d.members) {
       const name = graph.name(m) ?? graph.fail(`${d.name.text} has a member without a plain name: ${graph.text(m)}`);
       const existing = own.find(f => f.name === name);
-      if (existing) own[own.indexOf(existing)] = { ...existing, members: [...existing.members, m] };
+      if (existing) existing.members.push(m);
       else own.push({ name, owner: d, members: [m] });
     }
     const result = combine(d.name.text, own, graph.bases(d));
