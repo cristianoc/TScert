@@ -2154,12 +2154,16 @@ export function lambda(this: Gate,
     // pattern or with a default binds a hidden name, which the caller's
     // argument initializes, and a `destructure` over it, first in the body
     // in parameter order, binds the source's names, the default replacing
-    // an undefined argument, as JavaScript initializes parameters.
+    // an undefined argument, as JavaScript initializes parameters; where
+    // the closure writes one of the names, they are cells
+    // (`parameterBinding`).
     // A guard arrow's expression body with a defaulted parameter is a block
     // too, its return the one `booleanReturn` rewrites.
     if (ts.isBlock(body) || patterns.some((t) => t !== null) ||
         (guard !== null && parameters.some((p) => p.initializer))) {
       const bindings: Stmt[] = [];
+      // Each hidden name's pattern and default, as the source writes them.
+      const bound = new Map<string, [PatternAst, Expr | null]>();
       const params = parameters.map((p, i) => {
         if (ts.isIdentifier(p.name) && !p.initializer)
           return {
@@ -2169,13 +2173,11 @@ export function lambda(this: Gate,
           };
         const hidden = parameterName(i);
         const at = gate.span(p.name);
-        bindings.push({
-          k: "destructure",
-          pos: gate.span(p),
-          target: patterns[i] ?? { k: "name", name: gate.local(identifierOf(p)), pos: at },
-          default_: p.initializer ? gate.expr(p.initializer) : null,
-          init: { k: "id", pos: at, name: hidden },
-        });
+        const target = patterns[i] ?? { k: "name", name: gate.local(identifierOf(p)), pos: at };
+        const default_ = p.initializer ? gate.expr(p.initializer) : null;
+        bound.set(hidden, [target, default_]);
+        bindings.push(...gate.parameterBinding(p, node, gate.span(p), target, default_, hidden,
+          ts.isIdentifier(p.name) && p.type ? gate.typeOf(p.type, p) : null));
         // A caller may pass `undefined` where there is a default.
         return {
           name: hidden,
@@ -2183,10 +2185,8 @@ export function lambda(this: Gate,
             : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p) : gate.typeOf(p.type, p),
         };
       });
-      gate.initializedBefore(node, params.map((q): [PatternAst, Expr | null] => {
-        const b = bindings.find((st) => st.k === "destructure" && st.init.k === "id" && st.init.name === q.name);
-        return b?.k === "destructure" ? [b.target, b.default_] : [{ k: "name", name: q.name, pos: gate.span(node) }, null];
-      }));
+      gate.initializedBefore(node, params.map((q): [PatternAst, Expr | null] =>
+        bound.get(q.name) ?? [{ k: "name", name: q.name, pos: gate.span(node) }, null]));
       let statements: Stmt[];
       if (ts.isBlock(body)) {
         const stmts = gate.statements(body.statements.filter((s) => !prologue.skip.has(s)));

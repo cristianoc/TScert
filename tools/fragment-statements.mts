@@ -9,6 +9,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
+import type { TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
@@ -878,12 +879,23 @@ export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): 
     return null;
   const target = gate.pattern(d.name, new Set(), ts.isArrayLiteralExpression(skipParentheses(d.initializer)));
   gate.initializedBefore(d, [[target, null]]);
+  return writtenPattern(pos, gate.span(d.name), target, null, gate.expr(d.initializer), null);
+}
+
+/** A pattern whose bindings are written, destructured at `pos`: the
+ * pattern binds names no source spells, as a `const` pattern binds, then a
+ * `let` at `letPos` binds each of the source's names to its value, a cell
+ * of its own. `annot` is a lone name's contract; absent, a binding's
+ * contract is as an unannotated `let`'s. */
+export function writtenPattern(pos: Span, letPos: Span, target: PatternAst, default_: Expr | null, init: Expr,
+    annot: TypeTerm | null): Stmt[] {
   const cells: BindingAst[] = [];
   const hide = (t: PatternAst): PatternAst => {
     switch (t.k) {
       case "name": {
         const hidden = `%let-pattern ${t.name}`;
-        cells.push({ early: false, name: t.name, namePos: t.pos, annot: null, init: { k: "id", pos: t.pos, name: hidden } });
+        cells.push({ early: false, name: t.name, namePos: t.pos, annot: target.k === "name" ? annot : null,
+          init: { k: "id", pos: t.pos, name: hidden } });
         return { ...t, name: hidden };
       }
       case "object": return { ...t, props: t.props.map((q) => ({ ...q, target: hide(q.target) })),
@@ -894,9 +906,33 @@ export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): 
   };
   const hidden = hide(target);
   return [
-    { k: "destructure", pos, target: hidden, default_: null, init: gate.expr(d.initializer) },
-    { k: "let", pos: gate.span(d.name), bindings: cells },
+    { k: "destructure", pos, target: hidden, default_, init },
+    { k: "let", pos: letPos, bindings: cells },
   ];
+}
+
+/** A parameter `at`, written as a pattern or with a default: a
+ * `destructure` at `pos` over its hidden name, binding the source's names,
+ * the default replacing an undefined argument. A parameter is a mutable
+ * binding: where a write within `scope`, the function, names one of its
+ * bindings, a lone name is a cell as a written `let` pattern's binding
+ * (`writtenPattern`), its contract its annotation `annot`. A pattern's
+ * bindings written, or a lone name without an annotation, are refused:
+ * neither the contract of each binding the annotation implies nor the
+ * binding of each name before the pattern's later defaults read it is
+ * lowered. */
+export function parameterBinding(this: Gate, at: Node, scope: Node, pos: Span, target: PatternAst,
+    default_: Expr | null, hidden: string, annot: TypeTerm | null): Within<{ value: "any"; store: "grow" }, Stmt[]> {
+  const gate: Gate = this;
+  if (!writesName(gate, scope, new Set(patternNames(target))))
+    return [{ k: "destructure", pos, target, default_, init: { k: "id", pos: target.pos, name: hidden } }];
+  if (target.k !== "name")
+    gate.fail(at, "a parameter pattern whose bindings are assigned is outside the fragment: each binding's contract is the part of the parameter's annotation it reads, and each is bound where the pattern reaches it, before a later default reads it, neither of which is lowered");
+  if (annot === null)
+    gate.fail(at, "an assigned parameter with a default and no annotation is outside the fragment: its contract is the type its context gives, which is not lowered");
+  // The hidden name is read at the whole parameter, a site apart from the
+  // name, which the `let` reads the pattern's hidden name at.
+  return writtenPattern(pos, target.pos, target, default_, { k: "id", pos, name: hidden }, annot);
 }
 
 /** The offset of `token` at or after `from`, past whitespace and comments:
@@ -1734,9 +1770,12 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     // name, which the caller's argument initializes; a `destructure` over
     // it, first in the body in parameter order, binds the source's names,
     // the default replacing an undefined argument. JavaScript evaluates
-    // them there too, in order, before the body.
+    // them there too, in order, before the body. Where the function writes
+    // one of the names, they are cells (`parameterBinding`).
     const names = new Set<string>();
     const bindings: Stmt[] = [];
+    // Each hidden name's pattern and default, as the source writes them.
+    const bound = new Map<string, [PatternAst, Expr | null]>();
     const params = node.parameters.map((p, i) => {
       if (ts.isIdentifier(p.name) && p.name.text === "undefined")
         gate.fail(p, "shadowing undefined is outside the fragment");
@@ -1765,13 +1804,11 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       }
       const hidden = parameterName(i);
       const at = gate.span(p.name);
-      bindings.push({
-        k: "destructure",
-        pos: gate.span(p),
-        target: gate.pattern(p.name, names),
-        default_: p.initializer ? gate.expr(p.initializer) : null,
-        init: { k: "id", pos: at, name: hidden },
-      });
+      const target = gate.pattern(p.name, names);
+      const default_ = p.initializer ? gate.expr(p.initializer) : null;
+      bound.set(hidden, [target, default_]);
+      bindings.push(...gate.parameterBinding(p, node, gate.span(p), target, default_, hidden,
+        ts.isIdentifier(p.name) && p.type ? gate.typeOf(p.type, p) : null));
       return {
         name: hidden,
         pos: at,
@@ -1779,10 +1816,8 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
         type: parameterTypes[i] ?? gate.fail(p, "missing parameter contract"),
       };
     });
-    gate.initializedBefore(node, params.map((p): [PatternAst, Expr | null] => {
-      const b = bindings.find((st) => st.k === "destructure" && st.init.k === "id" && st.init.name === p.name);
-      return b?.k === "destructure" ? [b.target, b.default_] : [{ k: "name", name: p.name, pos: p.pos }, null];
-    }));
+    gate.initializedBefore(node, params.map((p): [PatternAst, Expr | null] =>
+      bound.get(p.name) ?? [{ k: "name", name: p.name, pos: p.pos }, null]));
     const body = [...bindings,
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
     return {

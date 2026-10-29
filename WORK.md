@@ -43,9 +43,9 @@ each item's design and evidence, not its progress.
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
-| [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Investigation of a recursive visitor on a node's arms](#for-each-child-union-visitor) | done: on fea595c, with the producer proposing a dispatched call in an expression as the lowering makes it (8ae33c5) (2026-10-24) | `compiler-api-visitor-union` verifies |
 | [Investigation of `forEachChild`'s list visitor](#for-each-child-list-visitor) | open: an investigation, cause unknown | `compiler-api-visitor-list-gap` verifies |
+| [Assigned parameter patterns](#assigned-parameter-patterns) | open | `invalid-parameter-pattern-assigned` and `invalid-parameter-pattern-default-order` become positive cases verifying their Node results |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
@@ -120,9 +120,8 @@ the producer and 126 in search.
   an expression's node-typing claim (20) or return-contract claim (8); a
   closure lowered differently under one of its signatures (8); a closure's
   expression claim (7) or signature claim outside its annotation (6); an
-  assignment to a binding that is no mutable local
-  ([assigned parameters with defaults](#assigned-parameters-with-defaults);
-  6); a guard's promise not met at a return (5); `Number`, a callable with
+  assignment to a binding that is no mutable local (an assigned parameter
+  with a default; 6); a guard's promise not met at a return (5); `Number`, a callable with
   members (4).
 
 Of `pipeline/*.mts` and `tests/` (2026-10-19, 60 s step limit), the first
@@ -501,25 +500,16 @@ the operands' meet, the search found no derivation of the condition's read
 at that type, though Lean's row states `bound` at both (observed
 2026-10-22).
 
-<a id="assigned-parameters-with-defaults"></a>
-**Assigned parameters with defaults.** The producer refuses
-assignment to a parameter with a default with "assignment to immutable
-binding", for function declarations and closures alike. A concrete example
-is the following function and its equivalent arrow closure:
-
-```typescript
-type Shape =
-  | { kind: "circle"; radius: number }
-  | { kind: "square"; side: number };
-function f(s: Shape = { kind: "square", side: 1 }): number {
-  if (s.kind === "circle") return 0;
-  s = { kind: "square", side: 2 };
-  return s.side;
-}
-```
-
-The investigation concerns the producer's treatment of the parameter's
-binding through default evaluation and subsequent assignment.
+<a id="assigned-parameter-patterns"></a>
+**Assigned parameter patterns.** A parameter pattern one of whose bindings
+the function assigns is refused at the gate, as is an assigned parameter
+with a default and no annotation
+([patterns](docs/SOURCE-ELABORATION.md#patterns)). Supporting them needs
+each binding's contract derived from the parameter's annotation (or
+context) at the position it reads, and each name bound where the pattern
+reaches it, before a later default of the same pattern reads it: in
+`function f({ a = 1, b = a }: { a?: number; b?: number }) { a = 2; return b; }`,
+`f({})` is 1.
 
 ### Callables, classes and effects
 

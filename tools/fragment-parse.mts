@@ -1072,6 +1072,7 @@ export class Gate {
 
   letPattern: typeof statements.letPattern = statements.letPattern;
   letPatternOf: typeof statements.letPatternOf = statements.letPatternOf;
+  parameterBinding: typeof statements.parameterBinding = statements.parameterBinding;
   declarator: typeof statements.declarator = statements.declarator;
   mutableList: typeof statements.mutableList = statements.mutableList;
   lexicalList: typeof statements.lexicalList = statements.lexicalList;

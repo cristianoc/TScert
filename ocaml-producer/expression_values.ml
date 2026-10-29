@@ -219,13 +219,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       let right = match rhs with Some r -> expr env r | None -> contract in
       if post then contract else operation_result declarations op contract right
     (* The kept value is the target's, where the test keeps it: present for
-       `??=`, `true` for `||=`, `false` for `&&=`; the other arm's is the right
+       `??=`, truthy for `||=`, falsy for `&&=`; the other arm's is the right
        side's, written at the contract. *)
     | LogicalAssign (op,target,rhs) ->
       let contract = target_contract env target in
       let right = expr ~expected:contract env rhs in
       union (match op with
-        | Nullish -> without_nullish contract | OrElse -> Atoms [True] | AndAlso -> Atoms [False]) right
+        | Nullish -> without_nullish contract | OrElse -> truthy_slice true contract
+        | AndAlso -> truthy_slice false contract) right
     | NullishAssign (n,name_pos,rhs) ->
       let current = resolve ~at:name_pos env n in
       publish_expression name_pos current None;

@@ -30,3 +30,14 @@ export function retire(why: string): string {
   reason ??= why;
   return reason;
 }
+
+// A logical assignment's value: the target's where the test keeps it,
+// truthy for `||=`, falsy for `&&=`, the right side's otherwise.
+let label: string = "";
+export function name(why: string): string {
+  return (label ||= why);
+}
+let open: boolean = true;
+export function close(still: boolean): boolean {
+  return (open &&= still);
+}

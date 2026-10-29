@@ -1690,6 +1690,7 @@ control(async (): Promise<void> => {
       invoke(path, join(updates, "evidence.json"), updates);
     };
     forged("retire", "reason ??= why", 0, "reason".length, "module-cell-nullish-read", "str");
+    forged("name", "label ||= why", 0, "label".length, "module-cell-or-read", "num");
     forged("next", "++generation", 0, "++generation".length, "module-cell-update-result",
       { numLit: { bits: "4607182418800017408" } });
     // The value `??=` writes, claimed wider than the cell's contract
@@ -2135,6 +2136,7 @@ control(async (): Promise<void> => {
   assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
   process.stdout.write("evolving use contract: a forged contract refused at the write\n");
 });
+
 
 control(async (): Promise<void> => {
   // The protocol's `next` bound to a union of hosts returns the union of

@@ -2166,7 +2166,26 @@ in parameter order:
 ```
 
 where $`h_i`$'s type admits $`\mathsf{Undef}`$ when there is a default, so a
-caller may omit it. A closure parameter's default stays the closure's own
+caller may omit it. A parameter is a mutable binding: where a write in the
+function (closures included) names $`x`$, a lone name with a default and an
+annotation $`T`$, the default binds a hidden name, then a `let` of contract
+$`T`$ binds $`x`$ at its value, as a written `let` pattern does:
+
+```math
+x\in\mathrm{written}(f)\ \Longrightarrow\
+\mathsf{const}\ x=h_i\ (\mathsf{default}\ d_i)\;\equiv\;
+\mathsf{const}\ x^{\circ}=h_i\ (\mathsf{default}\ d_i)\,;\ \mathsf{let}\ x{:}\,T=x^{\circ}
+```
+
+JavaScript binds a function's parameters, which its body and its later
+defaults' closures read and write, before its body runs; the `let` of
+$`x`$ comes before $`p_{i+1}`$'s pattern, so a later default's closure holds
+the same cell the body writes. A parameter pattern one of whose bindings is
+written, and a written parameter with a default and no annotation (a
+closure's whose body is a block, typed by its context), are refused: a pattern binding's contract
+is the part of the annotation it reads, and JavaScript binds each name
+where the pattern reaches it, before a later default of the same pattern
+reads it, neither of which this rule lowers. A closure parameter's default stays the closure's own
 (`parameterOrder`), and its pattern is a `destructure` first in the body.
 
 ## Mutable bindings and module constants
