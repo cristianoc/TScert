@@ -699,8 +699,12 @@ function give(worker: ChildProcess, job: Job): void {
   let timedOut = false;
   const fail = (reason: string): void => job.fail(failedRun(artifacts, reason));
   logs.set(worker, "");
+  // A check in flight keeps the caller alive until its worker's `close`:
+  // the worker's exit can precede it, while a process of the worker's group
+  // still holds its standard error.
   worker.ref();
   worker.channel?.ref();
+  if (worker.stderr instanceof Socket) worker.stderr.ref();
   const settle = (finish: () => void) => {
     clearTimeout(timer);
     worker.off("message", answered);
@@ -718,6 +722,7 @@ function give(worker: ChildProcess, job: Job): void {
   const finished = (message: unknown) => settle(() => {
     worker.unref();
     worker.channel?.unref();
+    if (worker.stderr instanceof Socket) worker.stderr.unref();
     if (!retiring.has(worker)) idle.push(worker);
     try {
       job.done(readOutcome(message));
@@ -735,7 +740,9 @@ function give(worker: ChildProcess, job: Job): void {
   }, checkTimeoutMs);
   worker.on("message", answered);
   worker.on("close", died);
-  worker.send({ ...job.request, artifacts });
+  // A worker that ended before the request reaches it fails the write; its
+  // `close` reports the check.
+  worker.send({ ...job.request, artifacts }, () => {});
 }
 /** The same check in one of a pool of worker processes, one per core, each
  * keeping its compiler between checks: for a caller that must stay responsive

@@ -7152,7 +7152,11 @@ control(async (): Promise<void> => {
   assert.equal(existsSync(path), false);
   const module = pathToFileURL(join(here, "run-directory.mts")).href;
   const driver = pathToFileURL(join(here, "verify-source.mts")).href;
-  const failures = spawnSync(process.execPath, ["--input-type=module", "-e", `
+  // The driver is a file: a worker `checkApart` forks inherits the driver's
+  // `execArgv`, where `--input-type` without `-e` stops it at its start.
+  const failing = runDirectory("cleanup-control-");
+  const failingDriver = join(failing, "driver.mts");
+  writeFileSync(failingDriver, `
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -7173,10 +7177,11 @@ assert.throws(() => check(${JSON.stringify(source)}), RunFailure);
 assert.deepEqual(fs.readdirSync(root).sort(), before);
 fs.writeFileSync = write;
 syncBuiltinESMExports();
-await assert.rejects(checkApart(${JSON.stringify(source)}), RunFailure);
+await assert.rejects(checkApart(${JSON.stringify(source)}), (e) => e instanceof RunFailure && e.message.startsWith("timeout: "));
 assert.deepEqual(fs.readdirSync(root).sort(), before);
-`], { encoding: "utf8", timeout: 30_000,
-    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001", TSCERT_RUN_ROOT: runDirectory("cleanup-control-") } });
+`);
+  const failures = spawnSync(process.execPath, [failingDriver], { encoding: "utf8", timeout: 30_000,
+    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001", TSCERT_RUN_ROOT: failing } });
   assert.equal(failures.status, 0, failures.stderr);
   const tree = runDirectory("cleanup-tree-control-");
   const preload = join(tree, "preload.mjs");
@@ -7203,12 +7208,19 @@ syncBuiltinESMExports();
 import assert from "node:assert/strict";
 import { existsSync, readdirSync } from "node:fs";
 import { checkApart, RunFailure } from ${JSON.stringify(driver)};
-await assert.rejects(checkApart(${JSON.stringify(source)}), RunFailure);
+const checked = checkApart(${JSON.stringify(source)});
+// The check's timer cannot fire while this thread waits: the worker is
+// stopped by it only once blocked, its child started.
+const pause = new Int32Array(new SharedArrayBuffer(4));
+while (!existsSync(${JSON.stringify(armed)})) Atomics.wait(pause, 0, 0, 10);
+// The check settles at the worker's close, once every process holding its
+// standard error, the child included, has ended.
+await assert.rejects(checked, (e) => e instanceof RunFailure && e.message.startsWith("timeout: "));
 assert.ok(existsSync(${JSON.stringify(armed)}));
 assert.deepEqual(readdirSync(${JSON.stringify(tree)}).sort(), ["armed", "driver.mts", "preload.mjs"]);
 `);
   const killedTree = spawnSync(process.execPath, ["--import", preload, driverFile], {
-    encoding: "utf8", timeout: 10_000,
+    encoding: "utf8", timeout: 60_000,
     env: { ...process.env, TSCERT_RUN_ROOT: tree, TSCERT_STEP_LIMIT: "0.5" },
   });
   assert.equal(killedTree.status, 0, killedTree.stderr);
