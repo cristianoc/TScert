@@ -1292,6 +1292,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-module-cell-stale: the call's write reaches the read TypeScript narrowed to number");
   assert.equal(runExample("module-cell-saved-value", "saved()"), 0,
     "module-cell-saved-value: the constant keeps the value read before the write");
+  assert.equal(runExample("blocker-module-assignment",
+    `JSON.stringify([(use(), use(), next()), (release(), next()), (kept("a"), kept("b"), retire("x")), retire("y")])`),
+    `[{"generation":3},{"generation":3},"x","x"]`,
+    "blocker-module-assignment: the updates and logical assignments read and write the module's cells");
+  assert.equal(runExample("early-cell-update-order", "JSON.stringify([compound(), logical(), postfix(), local()])"),
+    `[6,"vvvfalse3",607,21]`,
+    "early-cell-update-order: each update reads before its right side, each logical assignment runs its right side only where it writes");
+  for (const name of ["invalid-early-const-update", "invalid-early-const-assign"])
+    assert.throws(() => runExample(name, "test()"), /TypeError|Assignment to constant/,
+      `${name}: the write of the constant throws`);
+  assert.throws(() => runExample("module-cell-update-before-initialization", "total()"), /ReferenceError|before initialization/,
+    "module-cell-update-before-initialization: the initialization's update reads the cell before its declaration");
+  assert.equal(runExample("invalid-module-cell-update-stale", "retire('x')"), null,
+    "invalid-module-cell-update-stale: the call's write reaches the read TypeScript narrowed to string");
   assert.throws(() => runImporting("certified-cell-cycle-value-import", "total()"), /ReferenceError|before initialization/,
     "certified-cell-cycle-value-import: `left` runs before `right`'s cell is initialized");
   for (const name of ["invalid-object-growth-early-alias", "invalid-loop-object-growth-early-alias"]) {

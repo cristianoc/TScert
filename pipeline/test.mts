@@ -1567,7 +1567,62 @@ control(async (): Promise<void> => {
     refusedAt(cells, spath, "module-cell-stale-read", `at [${at},${at + "count".length})`);
     invoke(spath, join(cells, "evidence.json"), cells);
   }
-  process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
+  // An update's or a logical assignment's read of a module cell is its
+  // checked access, at the cell's contract: `??=`'s read claimed without
+  // `null`, or an increment's result claimed at the literal `1`, is
+  // refused.
+  {
+    const updates = run("blocker-module-assignment");
+    const src = readFileSync(sourceKey(updates), "utf8");
+    const forged = (fn: string, text: string, offset: number, length: number, name: string,
+        clause: Row[number]): void => {
+      const claims = readClaims(updates);
+      const f = must(claims.functions.find(g => g.name === fn), fn);
+      const at = src.indexOf(text, src.indexOf(`function ${fn}`)) + offset;
+      const claim = must(f.expressions.find(x => x.pos[0] === at && x.pos[1] === at + length), `${fn}'s claim at ${at}`);
+      claim.type = [rowOf(claims, clause)];
+      const path = writeClaims(updates, name, claims);
+      refusedAt(updates, path, name, `at [${at},${at + length})`);
+      invoke(path, join(updates, "evidence.json"), updates);
+    };
+    forged("retire", "reason ??= why", 0, "reason".length, "module-cell-nullish-read", "str");
+    forged("next", "++generation", 0, "++generation".length, "module-cell-update-result",
+      { numLit: { bits: "4607182418800017408" } });
+    // The value `??=` writes, claimed wider than the cell's contract
+    // (`number | string` for a `string | null` cell): refused at the write.
+    {
+      const claims = readClaims(updates);
+      const f = must(claims.functions.find(g => g.name === "retire"), "retire");
+      const at = src.indexOf("reason ??= why", src.indexOf("function retire")) + "reason ??= ".length;
+      const claim = must(f.expressions.find(x => x.pos[0] === at && x.pos[1] === at + "why".length), "retire's `why`");
+      claim.type = [claims.types.push(["num", "str"]) - 1];
+      const path = writeClaims(updates, "module-cell-wider-write", claims);
+      refusedAt(updates, path, "module-cell-wider-write", "storage-contract");
+      invoke(path, join(updates, "evidence.json"), updates);
+    }
+  }
+  // A `const` an early closure writes: the parser's document with a `let`
+  // declaring the cell read as a `const`, under the producer's claims for
+  // the `let`, is refused at the write where evidence is produced and where
+  // it is checked.
+  {
+    const order = run("early-cell-update-order");
+    const text = readFileSync(join(order, "fragment.json"), "utf8");
+    const src = readFileSync(sourceKey(order), "utf8");
+    const at = src.indexOf("let k: number");
+    const declaration = `{"k":"let","pos":[${at},`;
+    assert.ok(text.includes(declaration), "early-cell-update-order: the declaration of `k`");
+    const path = join(order, "early-const-write.fragment.json");
+    writeFileSync(path, text.replace(declaration, `{"k":"const","pos":[${at},`));
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = tested(verifierCall(verifier, [mode, path, join(order, "claims.json"), sourceKey(order),
+        join(order, mode === "--produce-source-claims" ? "early-const-write-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, /a write of the constant 'k'/);
+    }
+  }
+  process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access, an update's or a logical assignment's included, refused; the intrinsic listed exactly\n");
 });
 control(async (): Promise<void> => {
   // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a

@@ -40,8 +40,9 @@ inductive Storage (ι : Type) where
   writes it, at the contract `contract ∪ U`; `reference` is the cell's own
   type. Every mention is a checked access: the contents are tested for the
   marker's key, a throw where it is held, the contents at `contract`
-  otherwise. -/
-  | early (contract : Ty ι) (reference : Ty ι)
+  otherwise. `mutable` is false for a `const`, which only its declaration
+  writes. -/
+  | early (contract : Ty ι) (reference : Ty ι) (mutable : Bool)
   deriving Repr, Inhabited
 
 /-- A scope slot: how the source names it, and what it holds. `Descriptor` is
@@ -294,6 +295,13 @@ the answers at the store while it is still that generation's. -/
 key, at `undefined`. -/
 @[nospecialize] def uninitializedTy : Compiler (Ty Tree) :=
   lower (do return [← CellClaims.reference [(uninitializedKey, [Labels.undef])]])
+
+/-- A write of a `const` early binding outside its declaration: JavaScript
+throws a `TypeError` there (SetMutableBinding of an immutable binding), a
+throw the model does not state, so the write is refused at its location. -/
+def constantWriteRefusal (pos : Span) (name : String) : Compiler String := do
+  return locatedRefusal (← table) pos .expressionClaim
+    s!"a write of the constant '{name}': JavaScript throws a TypeError where a `const` is assigned"
 
 /-- An early binding's contract without the marker: what a checked access
 yields and what a write is checked at. -/

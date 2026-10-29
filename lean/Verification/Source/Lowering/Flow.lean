@@ -40,11 +40,13 @@ reference representation. Every such action is recorded as an opaque region. -/
           | throw s!"no diagnostic contract for '{d.name}'"
         SourceClaims.resolve (← table) claim) (pure [top])
       let early := match node.action with
-        | .early bs _ => bs.any fun (p, _, b) => d == ⟨b.name, some p⟩
-        | _ => false
-      if early || graph.cells.contains d then
+        | .early bs _ => (bs.find? fun (p, _, b) => d == ⟨b.name, some p⟩).map (·.2.1)
+        | _ => none
+      if early.isSome || graph.cells.contains d then
         let reference ← lower (do return [← CellClaims.reference [(valueField, C)]])
-        return (({ source := d, storage := if early then .early C reference else .cell C reference } : ScopeBinding Tree), reference)
+        return (({ source := d, storage := match early with
+          | some m => .early C reference m
+          | none => .cell C reference } : ScopeBinding Tree), reference)
       let mutable := match node.action with
         | .declaration _ m b _ => m && b.name == d.name
         | _ => false
@@ -174,8 +176,8 @@ reference representation. Every such action is recorded as an opaque region. -/
         pure (stored, reference)
       let n := bindings.length
       let cells : List (ScopeBinding Tree) := (bindings.zip contracts).zipIdx.map
-        fun (((pos, _, b), (stored, reference)), idx) =>
-          { source := ⟨b.name, some pos⟩, storage := .early stored reference,
+        fun (((pos, mutable, b), (stored, reference)), idx) =>
+          { source := ⟨b.name, some pos⟩, storage := .early stored reference mutable,
             apart := some ((contracts.take idx).reverse.map (·.2) ++ Γ) }
       let inner := cells.reverse ++ scope
       let target ← successor next inner
@@ -196,7 +198,7 @@ reference representation. Every such action is recorded as an opaque region. -/
       if binding.early then
         -- The declaration initializes its cell: the initializer's value,
         -- checked at the contract, written in place of the marker.
-        let some (i, .early stored _) := resolve scope binding.name
+        let some (i, .early stored _ _) := resolve scope binding.name
           | throw s!"internal flow error: the early binding '{binding.name}' has no cell"
         if binding.init.freeNames.contains binding.name then
           throw (locatedRefusal (← table) binding.init.span .bindingAnnotation

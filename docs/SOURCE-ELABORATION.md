@@ -2478,8 +2478,16 @@ Only checked accesses read the cell, so the marker never reaches a value
 position: a return, an argument, a spread, a copy or a serialization. The
 operators keep ECMAScript's order: `x = e` evaluates `e`, then checks, then
 writes; `x += e`, an update and a logical assignment begin with a checked
-read; `typeof x` is a checked read followed by the test. Assigning a `const`
-is refused by TypeScript and is outside the fragment.
+read and write their value, checked at $`T`$, to the cell that read found
+initialized; `typeof x` is a checked read followed by the test. An early binding keeps whether its declaration is a `const`:
+a write of a `const` outside its declaration, an assignment, an update or a
+logical assignment's writing arm, throws a `TypeError` in JavaScript, which
+the model does not state, and is refused at its location
+(`invalid-early-const-update`, `invalid-early-const-assign`, run under
+Node; a control of `pipeline/test.mts` reads a `let`'s cell as a `const`'s
+under the claims for the `let`). An update's and a logical assignment's
+order, a right side writing the same cell included, is
+`early-cell-update-order`'s (run under Node).
 
 #### Initialization
 
@@ -2685,13 +2693,18 @@ exported `let`, a live binding importers read, are outside the fragment. A
 module `let` stays a cell whatever writes it; a certified module's run checks the initialization that
 allocates and initializes its cells with the module's units
 (`module-cells`, `module-cell-before-initialization`,
-`module-cell-saved-value`, `invalid-module-cell-stale`, run under Node;
+`module-cell-saved-value`, `invalid-module-cell-stale`; an update and a
+logical assignment of a cell, `blocker-module-assignment`,
+`module-cell-update-before-initialization` and
+`invalid-module-cell-update-stale`; run under Node;
 `certified-module-cell-value-import`; a cycle of modules whose
 initialization reads a cell of a module not yet evaluated throws at the
 checked access, `certified-cell-cycle-value-import`, run under Node; the
 forged claims of `pipeline/test.mts`: a dropped or narrowed contract, a
 narrowed entry claim, a read after a writing call claimed at the earlier
-value).
+value, a logical assignment's read claimed without `null`, an increment's
+result claimed at the literal `1`, the value a logical assignment writes
+claimed wider than the contract).
 
 ### Module functions
 

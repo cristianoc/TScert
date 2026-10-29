@@ -264,7 +264,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       -- An early binding's claim describes its contents once initialized:
       -- a claim narrower than the contract is a fact, which excludes the
       -- marker, and every incoming edge proves it.
-      | .early stored reference => pure (some (← initializedContract stored, reference))
+      | .early stored reference _ => pure (some (← initializedContract stored, reference))
       | _ => pure none
     if let some (contract, reference) := cellOf then
       let some candidate := vars.lookup b.source.name
@@ -296,7 +296,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
           let some candidate := vars.lookup b.source.name
             | throw s!"missing claimed binding '{b.source.name}' at {pos}"
           SourceClaims.resolve T candidate
-        | .cell contract _ | .early contract _ => pure contract
+        | .cell contract _ | .early contract _ _ => pure contract
       -- What every record the binding may hold stores at `fld`: an
       -- observation within it follows from the contract alone, as at a
       -- closure's entry, which knows nothing of the heap.

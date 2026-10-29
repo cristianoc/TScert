@@ -145,7 +145,7 @@ did not mention grow it, and the request carries the result. -/
             s!"module cell '{value.1}': {msg}"
           let stored := (contract ++ (← uninitializedTy)).eraseDups
           let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
-          pure (some (Storage.early stored reference, reference))
+          pure (some (Storage.early stored reference true, reference))
         | _ => pure none
     let siblingTypes ← (siblings.zip siblingStorage).mapM fun (value, storage) => do
       let (_, pos, ty) := value
@@ -242,7 +242,7 @@ did not mention grow it, and the request carries the result. -/
         let Γ := (bodyScope.zip slotTypes).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
           let ((binding,A),j) := entry
           if j < i then match binding.storage with
-            | .cell _ ref | .early _ ref => ref | .value | .slot _ => A
+            | .cell _ ref | .early _ ref _ => ref | .value | .slot _ => A
           else A
         let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
         first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])

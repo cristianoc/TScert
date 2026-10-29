@@ -81,12 +81,16 @@ before the member is read. -/
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (reference : SourceExecution.Reference) : Compiler Location := do
   match reference with
-  | .local name _ =>
+  | .local name source =>
     match resolve scope name with
     | some (i, .cell contract _) => return .field (.var i) valueField contract
     -- A slot is read at what it holds now; `localSlot` keeps it from being
     -- read or written as a cell.
     | some (i, .slot _) => return .field (.var i) valueField (Γ[i]?.getD [])
+    -- An early binding's cell holds the marker until its declaration
+    -- writes it; the reference names its contents at the contract.
+    | some (i, .early stored _ true) => return .field (.var i) valueField (← initializedContract stored)
+    | some (_, .early _ _ false) => throw (← constantWriteRefusal source name)
     | _ => throw s!"assignment to '{name}', which is not a mutable local"
   | .field original receiver key =>
     let (i, B) ← executionSaved scope Γ receiver
@@ -124,6 +128,14 @@ held in a slot. -/
     SourceExecution.Reference → Option (Nat × Ty Tree)
   | .local name _ => match resolve scope name with
     | some (i, .slot contract) => some (i, contract)
+    | _ => none
+  | .field .. => none
+
+/-- The name of a local reference held in an early binding's cell. -/
+@[nospecialize] private def earlyLocal (scope : List (ScopeBinding Tree)) :
+    SourceExecution.Reference → Option String
+  | .local name _ => match resolve scope name with
+    | some (_, .early ..) => some name
     | _ => none
   | .field .. => none
 
@@ -512,6 +524,11 @@ one for an increment), and the slot of the old value. -/
   | .referenceRead _ reference =>
     if let some (i, _) := localSlot scope reference then
       return ← emitAt source (.var i) (.bind next) Γ A (scope := scope)
+    -- An early binding's read is its checked access: a throw where the
+    -- cell holds the marker. A write through the reference follows the
+    -- read, so it meets an initialized cell.
+    if let some name := earlyLocal scope reference then
+      return ← LoweringAtoms.compileAtom recursive fc scope Γ (.var source name) next
     -- A nullish receiver throws before its member is read.
     let receiver ← referenceReceiver scope Γ reference
     let Δ := refinedReceiver Γ receiver
@@ -529,12 +546,17 @@ one for an increment), and the slot of the old value. -/
       let result ← emitAt source (.var i) (.bind ⟨next.label, some mapping⟩) Γ A "expression-claim" (scope := scope)
       return ← emitAt source (.var i) (.effect result) Γ contract "storage-contract" (scope := scope)
     let location ← executionReference fc scope Γ reference
-    let .field object fld _ := location
+    let .field object fld contract := location
       | throw "only field and local assignments are supported"
     let (i, _) ← executionSaved scope Γ value
     let result ← emitAt source (.var i) (.bind next) Γ A "expression-claim" (scope := scope)
-    emitAt source (.writeAt fld object (.var i)) (.effect result) Γ [Labels.nul]
+    let write ← emitAt source (.writeAt fld object (.var i)) (.effect result) Γ [Labels.nul]
       "storage-contract" (scope := scope)
+    -- An early binding's cell also holds the marker: the value is checked
+    -- at the binding's contract before it is written.
+    if (earlyLocal scope reference).isSome then
+      return ← emitAt source (.var i) (.effect write) Γ contract "storage-contract" (scope := scope)
+    return write
   | .updateSaved original reference previous rhs =>
     let .update _ op _ _ post := original | throw "internal execution plan: expected an update"
     let (N, delta, old) ← updateType scope Γ original reference previous rhs
@@ -560,6 +582,9 @@ one for an increment), and the slot of the old value. -/
       (N::Γ) A "expression-claim" (scope := scope')
     let write ← emitAt source (← location.write 1 (.var 0)) (.effect result)
       (N::Δ) [Labels.nul] "storage-contract" (scope := scope')
+    let write ← if (earlyLocal scope reference).isSome then
+        emitAt source (.var 0) (.effect write) (N::Δ) location.contract "storage-contract" (scope := scope')
+      else pure write
     let write ← match receiver with
       | some (i, split) => LoweringAtoms.guarded source (N::Γ) (i+1) split scope' write
       | none => pure write

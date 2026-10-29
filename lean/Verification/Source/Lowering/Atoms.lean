@@ -526,7 +526,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- initialization"): the contents, read once, then a dispatch on the
     -- marker's key: owned, the throw; otherwise the contents, without the
     -- marker's label, continue.
-    | some (i, .early _ _) =>
+    | some (i, .early _ _ _) =>
       let G := SourceTypes.graph (← table)
       let some (t, _) := resolve scope throwUninitializedName
         | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
@@ -555,7 +555,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       let checked ← emitAt e.span (.var 0) (.effect next) (C::Γ) contract "storage-contract"
         (scope := held ⟨"",some rhs.span⟩ :: scope)
       return ← compileAtom recursive fc scope Γ rhs checked
-    if let some (i, .early stored _) := resolve scope name then
+    if let some (i, .early stored _ mutable) := resolve scope name then
+      if !mutable then throw (← constantWriteRefusal e.span name)
       -- An early `let`'s assignment: the right side, then the checked access
       -- JavaScript's binding write makes (a throw where it is uninitialized),
       -- then the value, checked at the contract, written; the value is the

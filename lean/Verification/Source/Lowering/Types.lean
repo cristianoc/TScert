@@ -161,7 +161,7 @@ declared contracts retain their own entry checks. -/
       else msg : Except String (Ty Tree))
     match b.storage with
     | .value | .slot _ => return A
-    | .cell _ reference | .early _ reference => return reference
+    | .cell _ reference | .early _ reference _ => return reference
 
 @[nospecialize] def env (fc : SourceClaims.Function Tree) (source : Span) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do
@@ -172,7 +172,7 @@ declared contracts retain their own entry checks. -/
     scope.mapM fun b => do
       if let some A := b.fixed then return A
       match b.storage with
-      | .cell _ reference | .early _ reference => return reference
+      | .cell _ reference | .early _ reference _ => return reference
       | .slot contract => return contract
       | .value => return [← lower (SourceTypes.use .source)]
 
