@@ -783,6 +783,47 @@ again. The callers hold `TypeTerm`s, whose grammar the parameter type
   `invalid-json-stringify-replacer` the refused call.
 - **Commit:** the introducing commit, `A type term's text is written kind by kind from its type`.
 
+### A result declared before the block that allocates it
+
+`readDiagnostic` (`tools/diagnostic.mts`) declared `let result` before its
+`try`, assigned it `{ ...d }` inside, wrote the decoded parts at keys the
+copy may lack (`result.source = …`), and returned it after the `try`. A
+write adding a key is typed only on a local's own fresh object, whose
+holders are the binding that allocated it and the constants bound to it
+since ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)); an
+assignment allocates for no holder, so the five writes are refused (the
+diagnostic census of 6be11ce, 107 statements of `readDiagnostic`). The
+result is used only inside the `try`, whose `catch` returns `undefined`.
+
+- **Rewrite:** `const result = { ...d }` is declared where it is allocated,
+  in the `try`, and returned at the `try`'s end.
+- **Pattern:** a local is declared at its allocation, in the block that uses
+  it.
+- **Functions:** `readDiagnostic`.
+- **Commit:** the introducing commit.
+
+### Optional fields added to an annotated local
+
+`inferredTerm` (`tools/computed-types.mts`) collected an object type's index
+signatures into `const indexes: { stringIndex: … | null; numberIndex?: …;
+symbolIndex?: … } = { stringIndex: null }`, writing `numberIndex` and
+`symbolIndex` in a loop, and spread `indexes` into its result. A key-adding
+write's copy keeps an optional field of the accumulator only where its type
+excludes a prototype, which a record of optional fields does not state
+([restriction L7](COMPILER-API.md#restrictions)): the copy after `indexes.numberIndex = index`
+is typed without `symbolIndex`, which the annotation requires where the
+loop's paths join.
+
+- **Rewrite:** each index is a `let` local, `null` until its signature is
+  read, and the result states each present one by a conditional spread,
+  `...(numberIndex ? { numberIndex } : {})`. Field values and omission are
+  preserved. The number and symbol fields occur in a fixed order; their
+  enumeration and JSON serialization order can differ from discovery order.
+- **Pattern:** an object whose optional fields are found one at a time is
+  built whole once they are known.
+- **Functions:** `inferredTerm`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

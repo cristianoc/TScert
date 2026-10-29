@@ -967,6 +967,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "module-cell-saved-value: the constant keeps the value read before the write");
   assert.throws(() => runImporting("certified-cell-cycle-value-import", "total()"), /ReferenceError|before initialization/,
     "certified-cell-cycle-value-import: `left` runs before `right`'s cell is initialized");
+  for (const name of ["invalid-object-growth-early-alias", "invalid-loop-object-growth-early-alias"]) {
+    assert.equal(runExample(name, `(() => { try { stale(); return "none"; } catch (e) { return e instanceof TypeError; } })()`),
+      true, `${name}: the retained alias reads a number as a string`);
+  }
   assert.equal(runExample("invalid-early-binding-stale", "stale()"), "s",
     "invalid-early-binding-stale: the closure's write reaches the read TypeScript narrowed to number");
   assert.equal(runImporting("invalid-node-path-join-callback",

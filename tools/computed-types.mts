@@ -412,20 +412,21 @@ export function inferredTerm(checker: Checker, type: Type, span: Span, depth: nu
     if (!term) return null;
     fields.push({ name: property.name, optional: false, readonly: false, type: term, span });
   }
-  const indexes: { stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
-    numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
-    symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span } } = { stringIndex: null };
+  let stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null = null;
+  let numberIndex: { readonly: boolean; value: TypeTerm; span: Span } | null = null;
+  let symbolIndex: { readonly: boolean; value: TypeTerm; span: Span } | null = null;
   for (const info of checker.getIndexInfosOfType(type)) {
     const value = inferredTerm(checker, info.valueType, span, depth + 1);
     if (!value) return null;
     const index = { readonly: info.isReadonly, value, span };
     const key = info.keyType.flags;
-    if (key & TypeFlags.String && !indexes.stringIndex) indexes.stringIndex = index;
-    else if (key & TypeFlags.Number && !indexes.numberIndex) indexes.numberIndex = index;
-    else if (key & TypeFlags.ESSymbol && !indexes.symbolIndex) indexes.symbolIndex = index;
+    if (key & TypeFlags.String && !stringIndex) stringIndex = index;
+    else if (key & TypeFlags.Number && !numberIndex) numberIndex = index;
+    else if (key & TypeFlags.ESSymbol && !symbolIndex) symbolIndex = index;
     else return null;
   }
-  return { k: "object", fields, ...indexes, calls: [], span };
+  return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
+    ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
 }
 
 /** `T[K]`: the member, element or position of `T` at each key `K` denotes,

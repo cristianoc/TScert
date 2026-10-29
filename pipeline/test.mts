@@ -1376,6 +1376,23 @@ control(async (): Promise<void> => {
   process.stdout.write("forged contextual records: a closure claimed outside its record (`Box<never>` at `Box<undefined>` included) refused at the closure, within it refused where map takes it (search) or at its closure's evidence (check)\n");
 });
 control(async (): Promise<void> => {
+  // Exercise extraction through the evidence consumer, with no evidence
+  // search. Empty evidence must reach the source write's ownership refusal,
+  // not an evidence-decoding failure or an unrelated typing obligation.
+  for (const name of ["invalid-object-growth-early-alias", "invalid-loop-object-growth-early-alias"]) {
+    const artifacts = run(name);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const start = source.indexOf("w.x = 1");
+    assert.ok(start >= 0);
+    const evidence = join(artifacts, "empty-growth-evidence.json");
+    writeFileSync(evidence, "{}");
+    const refused = invoke(join(artifacts, "claims.json"), evidence, artifacts);
+    assert.ok(refused.includes(`at [${start},${start + "w.x = 1".length})`), refused);
+    assert.match(refused, /a write of 'x'.*another reference holds/);
+  }
+  process.stdout.write("early captured aliases: extraction refuses growth before consuming evidence, in and outside loops\n");
+});
+control(async (): Promise<void> => {
   // An early binding's cell, its marker and its checked accesses are the
   // lowering's, from the source: claims can neither drop the binding's
   // contract, nor narrow it below its annotation, nor claim a checked

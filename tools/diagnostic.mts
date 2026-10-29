@@ -328,8 +328,6 @@ export function readDiagnostic(
 ): ObligationDiagnostic | undefined {
   const lines = detail.split(/\r?\n/).filter((line) => line.startsWith(PREFIX));
   if (lines.length !== 1) return undefined;
-  // The decoded parts replace their wire forms in the result.
-  let result: { [key: string]: unknown };
   try {
     const parsed: Json = JSON.parse(lines[0].slice(PREFIX.length));
     if (!isRecord(parsed) || illFormedString(parsed)) return undefined;
@@ -363,7 +361,8 @@ export function readDiagnostic(
         previous = row;
       }
     }
-    result = { ...d };
+    // The decoded parts replace their wire forms in the result.
+    const result: { [key: string]: unknown } = { ...d };
     if (d.source !== undefined) result.source = diagnosticNode(d.source,types.length);
     if (d.destination !== undefined) result.destination = diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
@@ -426,10 +425,10 @@ export function readDiagnostic(
       return undefined;
     if ((kind === "node-typing" || kind === "expression-claim") && !d.sequent)
       return undefined;
+    // asserted: the decoder's result, checked field by field and variant by variant above
+    return result as unknown as ObligationDiagnostic;
   } catch (error) {
     passToolFailure(error);
     return undefined;
   }
-  // asserted: the decoder's result, checked field by field and variant by variant above
-  return result as unknown as ObligationDiagnostic;
 }

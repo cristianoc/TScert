@@ -2335,8 +2335,9 @@ each constant bound to a holder since:
   \begin{cases}
   x_0\in H\ \text{is declared}\ \mathtt{const}\ x_0 = a\ \text{or}\ \mathtt{let}\ x_0 = a,\ \text{not at module level, with}\ a\ \text{a fresh allocation;}\\
   \text{every other}\ y\in H\ \text{is declared}\ \mathtt{const}\ y = z\ \text{with}\ z\in H\ \text{declared before it;}\\
-  s\ \text{is at the loop depth of}\ x_0\text{'s declaration, in the same body;}\\
-  \text{no statement from}\ x_0\text{'s declaration through}\ s\ \text{lets any}\ y\in H\ \text{escape.}
+  s\ \text{is in the same body as}\ x_0\text{'s declaration;}\\
+  \text{no statement from}\ x_0\text{'s declaration through}\ s\ \text{lets any}\ y\in H\ \text{escape;}\\
+  \text{no statement of a loop enclosing}\ s\ \text{and not}\ x_0\text{'s declaration lets any}\ y\in H\ \text{escape.}
   \end{cases}
 ```
 
@@ -2354,9 +2355,11 @@ occurs in it other than as the receiver of a member read, index read, write,
 index write, `in` test, compound or logical assignment: in a call's arguments
 or as a method call's receiver, in a binding's or field's value, an
 assignment, a result, a spread, a comparison, and anywhere in a closure,
-which holds the object. In textual order every path from the allocation to
-$`s`$ passes only earlier statements, since $`s`$ is in no loop the
-allocation is outside; a module constant is read by the module's functions.
+which holds the object. A loop's statements are its condition, body and
+update, nested loops included. Every path from the allocation to $`s`$ passes
+only statements before $`s`$ in textual order and statements of the loops
+enclosing $`s`$ and not the allocation, which an earlier iteration runs before
+$`s`$ runs again; a module constant is read by the module's functions.
 With $`\mathrm{Own}(H,s)`$ no reference but the holders' slots and cells
 holds the object, so JavaScript's write in place, which every reference sees,
 and the copy, which every holder holds from then on, agree. Any other write

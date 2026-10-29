@@ -304,10 +304,12 @@ structure GrowSite where
   holders : List Holder
   deriving Inhabited, Repr
 
-/-- An owned object: the loop depth of its allocation and the bindings that
-hold it, the allocating local and the constants bound to it since. -/
+/-- An owned object: the loop depth at which its writes may add keys, the
+allocating local, and the bindings that hold it, the allocating local and the
+constants bound to it since. -/
 private structure OwnedObject where
   depth : Nat
+  origin : Holder
   holders : List Holder
 
 /-- The analysis state: the owned objects, and the key-adding writes found so
@@ -337,41 +339,47 @@ private def heldBy (s : Owned) (n : String) : Option OwnedObject :=
 
 mutual
 /-- An expression runs: every owned object a holder of which it may let
-escape stops being owned, and the closures it creates are analysed as bodies
-of their own. -/
-private partial def ownedExpr (classes : List String) (e : Fragment.Expr) (s : Owned) : Owned :=
+escape stops being owned. Site collection (`collect`) also analyses the
+closures it creates as bodies of their own; an escape summary skips them. -/
+private partial def ownedExpr (classes : List String) (collect : Bool) (e : Fragment.Expr) (s : Owned) : Owned :=
   let s := { s with objects := s.objects.filter fun o => !o.holders.any fun (n, _) => escapesExpr n e }
-  (closureBodies e).foldl (fun s ss => { s with sites := (ownedStmts classes 0 ss {}).sites ++ s.sites }) s
+  if !collect then s else
+  (closureBodies e).foldl (fun s ss => { s with sites := (ownedStmts classes collect 0 ss {}).sites ++ s.sites }) s
 
 /-- The statements in order at loop depth `d`. An `o.k = e` statement on a
-holder `o` of an owned object allocated at the same depth is a key-adding
-site when `e` (and a computed key) lets no holder escape: no reference but
-the holders exists before the write, and outside a loop the allocation does
-not enclose, the write runs once per allocation. Later escapes are after the
-write in every run. -/
-private partial def ownedStmts (classes : List String) (d : Nat) : List Fragment.Stmt → Owned → Owned
+holder `o` of an owned object at depth `d` is a key-adding site when `e` (and
+a computed key) lets no holder escape: no reference but the holders exists
+before the write. An object is at the depth of its allocation, and at the
+depth of a loop inside it whose whole run, every iteration's statements, lets
+none of its holders escape (`ownedLoop`): every path from the allocation to
+the write then passes only statements before it in textual order or
+statements of that loop, so later escapes are after the write in every run. -/
+private partial def ownedStmts (classes : List String) (collect : Bool) (d : Nat) : List Fragment.Stmt → Owned → Owned
   | [], s => s
-  | st :: rest, s => ownedStmts classes d rest (ownedStmt classes d st s)
+  | st :: rest, s => ownedStmts classes collect d rest (ownedStmt classes collect d st s)
 
-private partial def ownedStmt (classes : List String) (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned :=
+private partial def ownedStmt (classes : List String) (collect : Bool) (d : Nat) (st : Fragment.Stmt) (s : Owned) : Owned :=
   let declare := fun (pos : Span) (s : Owned) (b : Fragment.Binding) =>
-    let s := ownedExpr classes b.init s
+    let s := ownedExpr classes collect b.init s
     let s := forget b.name s
-    if freshAllocation classes b.init then
-      { s with objects := { depth := d, holders := [(b.name, pos)] } :: s.objects }
+    if !b.early && freshAllocation classes b.init then
+      { s with objects := { depth := d, origin := (b.name, pos), holders := [(b.name, pos)] } :: s.objects }
     else s
   let escapesAny := fun (o : OwnedObject) (es : List Fragment.Expr) =>
     o.holders.any fun (n, _) => es.any (escapesExpr n)
   let site := fun (n : String) (span : Span) (es : List Fragment.Expr) =>
     match heldBy s n with
-    | some o => if o.depth == d && !escapesAny o es then some ({ span, holders := o.holders } : GrowSite)
+    | some o => if collect && o.depth == d && !escapesAny o es then some ({ span, holders := o.holders } : GrowSite)
       else none
     | none => none
   match st with
   | .constants pos bs => bs.foldl (fun s b =>
       match b.init with
-      -- A constant bound to a holder is one more holder of its object.
+      -- An early binding may already be captured by a closure. Its
+      -- initialization lets the object escape through that cell. Other
+      -- constants bound to holders are additional holders.
       | .var _ m =>
+        if b.early then declare pos s b else
         match heldBy s m with
         | some o =>
           let s := forget b.name s
@@ -387,24 +395,44 @@ private partial def ownedStmt (classes : List String) (d : Nat) (st : Fragment.S
       | .objectAssign _ (.var _ n) ss => site n e.span ss
       | _ => none
     let s := { s with sites := found.toList ++ s.sites }
-    ownedExpr classes e s
-  | .ret _ e | .throw _ e => ownedExpr classes e s
+    ownedExpr classes collect e s
+  | .ret _ e | .throw _ e => ownedExpr classes collect e s
   | .destructure _ t dflt init =>
-    let s := (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr classes e s) s
+    let s := (init :: dflt.toList ++ t.defaults).foldl (fun s e => ownedExpr classes collect e s) s
     t.names.foldl (fun s n => forget n s) s
-  | .ite _ c t e => ownedStmts classes d (e.getD []) (ownedStmts classes d t (ownedExpr classes c s))
-  | .loop _ c b u => ownedStmts classes (d + 1) u (ownedStmts classes (d + 1) b (ownedExpr classes c s))
-  | .forOf _ n _ _ i b => ownedStmts classes (d + 1) b (forget n (ownedExpr classes i s))
+  | .ite _ c t e => ownedStmts classes collect d (e.getD []) (ownedStmts classes collect d t (ownedExpr classes collect c s))
+  | .loop _ c b u => ownedLoop collect d s fun collect d s => ownedStmts classes collect d u (ownedStmts classes collect d b (ownedExpr classes collect c s))
+  | .forOf _ n _ _ i b => ownedLoop collect d (forget n (ownedExpr classes collect i s)) fun collect d s => ownedStmts classes collect d b s
   -- The iterator's `close` runs where the body is left, after what of it ran.
-  | .closing _ c b => ownedStmts classes d c (ownedStmts classes d b s)
-  | .block _ _ b => ownedStmts classes d b s
+  | .closing _ c b => ownedStmts classes collect d c (ownedStmts classes collect d b s)
+  | .block _ _ b => ownedStmts classes collect d b s
   | .tryStmt _ b h f =>
-    let s := ownedStmts classes d b s
+    let s := ownedStmts classes collect d b s
     let s := match h with
-      | some (param, hs) => ownedStmts classes d hs ((param.map fun (n, _) => forget n s).getD s)
+      | some (param, hs) => ownedStmts classes collect d hs ((param.map fun (n, _) => forget n s).getD s)
       | none => s
-    ownedStmts classes d (f.getD []) s
+    ownedStmts classes collect d (f.getD []) s
   | .brk .. | .cont .. => s
+
+/-- A loop at depth `d`, `run` analysing one run of its statements (its
+condition, body and update) at a depth. An object at the depth `d` outside
+the loop that a run lets no holder escape is at the loop's depth while it runs: a run
+is every iteration's statements, so no iteration lets it escape before
+another's write. The escape summary visits nested loops once and collects no
+sites or closure bodies. Site collection then runs with the stable objects at the loop's depth,
+which they leave after it. Nested summaries do not start further summary passes. -/
+private partial def ownedLoop (collect : Bool) (d : Nat) (s : Owned) (run : Bool → Nat → Owned → Owned) : Owned :=
+  if !collect then run false (d + 1) s else
+  let first := run false (d + 1) s
+  let stable : List Holder := (s.objects.filter fun o =>
+    o.depth == d && first.objects.any (·.origin == o.origin)).map (·.origin)
+  let lift := fun (o : OwnedObject) => if stable.contains o.origin then { o with depth := d + 1 } else o
+  let lifted : Owned := { s with objects := s.objects.map lift }
+  let after := run true (d + 1) lifted
+  { after with objects := after.objects.map fun o =>
+      match s.objects.find? (·.origin == o.origin) with
+      | some before => { o with depth := before.depth }
+      | none => o }
 end
 
 /-- The classes a module declares at its top level: each constant bound to a
@@ -424,10 +452,10 @@ is never a holder. -/
 def growSites (classes : List String) (ss : List Fragment.Stmt) (module : Bool := false) : List GrowSite :=
   if module then
     (ss.foldl (fun s st =>
-      let s := ownedStmt classes 0 st s
+      let s := ownedStmt classes true 0 st s
       match st with
       | .constants _ bs | .mutables _ bs => bs.foldl (fun s b => forget b.name s) s
       | _ => s) {}).sites
-  else (ownedStmts classes 0 ss {}).sites
+  else (ownedStmts classes true 0 ss {}).sites
 
 end Verification.SourceExtraction

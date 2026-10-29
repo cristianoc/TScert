@@ -634,7 +634,13 @@ where the key is `__proto__`, as the setter does; a key-adding write at a key
 that may be a string or a symbol, a dispatch on the key's kind. A write adding
 a key to an object a reference other than its holding locals may hold (a
 callee, a closure, a `let` bound to it) needs the heap to map an object's
-identity to its keys, which it does not. A key added to a class instance
+identity to its keys, which it does not. The design for it is a stable
+location per object holding its extensible shape: the fields fixed at
+allocation as a prefix, and a tail of added keys in the heap. Every
+reference shares one invariant on the keys the tail may gain and the values
+they may hold, and a write or a call invalidates each observation that a key
+is absent. A constructor that calls a method on its instance before adding
+its remaining fields needs the same. A key added to a class instance
 whose prototype holds methods is copied with the prototype, but the copy is
 typed as the record `mergeResult` gives, which states no method: it needs a
 merge result at the instance's row. A write to an array at a key typed
