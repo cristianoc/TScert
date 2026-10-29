@@ -2432,7 +2432,11 @@ evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
 declaration list at a time. A function literal that is a constant's whole
 initializer is the exception: creating it runs nothing, so its reads of the
 constant are the [recursive constant](#recursive-constants)'s self entry,
-not checked accesses. Every other binding is a slot or a cell ([slot or cell](#slot-or-cell)). A
+not checked accesses. Every other binding is a slot or a cell ([slot or cell](#slot-or-cell)).
+A mention is an identifier that resolves to the binding; a name that
+resolves to no binding, a property or member name and an object pattern's
+key (`stated` in `const { stated: written } = entry`) among them, mentions
+none, while a pattern default (`{ k: x = stated }`) does. A
 closure of a [function declaration in a body](#function-declarations-in-a-body)
 is created where the lowering binds it, before the first statement that may
 read it (`f(); let x = 1; function f() { return x; }` throws).

@@ -10,7 +10,7 @@ import type { Expression, FunctionDeclaration, Node, Statement } from "typescrip
 import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
-import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
+import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { isTypeAlias } from "./syntax.mts";
@@ -779,9 +779,7 @@ export function markEarly(this: Gate, live: readonly Statement[], placed: Readon
     if (ts.isTypeNode(n)) return;
     if (ts.isIdentifier(n)) {
       const parent = n.parent;
-      const key = !!parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
-        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
-          ts.isPropertySignatureDeclaration(parent)) && parent.name === n)));
+      const key = nameSlot(n) || (!!parent && ts.isPropertySignatureDeclaration(parent) && parent.name === n);
       const name = key ? undefined : gate.local(n);
       const at = created ?? n.getStart(gate.file);
       const d = name === undefined ? undefined : declared.get(name);
