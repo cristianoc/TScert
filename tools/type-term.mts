@@ -1456,7 +1456,9 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   const names = new Set<string>();
   const ambient = node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
   // The field of an ambient class's bodyless method, by name: a later
-  // overload of the name joins it.
+  // overload of the name joins it, and the joined field takes the first's
+  // place in the instance's fields. Member names are distinct (`named`), so
+  // the name finds the one field it replaces.
   const overloads = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
   const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
     const name = member.name;
@@ -1528,7 +1530,6 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
           ? overload.type.parts.filter((p): p is FunctionTerm => p.k === "function")
           : overload.type.k === "function" ? [overload.type] : [];
         const joined = { ...overload, type: oneTerm([...earlier, ...added], overload.span) };
-        fields[fields.indexOf(overload)] = joined;
         overloads.set(overloadName ?? "", joined);
         continue;
       }
@@ -1591,5 +1592,6 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       scope.fail(member, classMemberRefusal(member));
     }
   }
-  return { k: "object", fields, stringIndex: null, calls: [], span };
+  const joined = fields.map((f) => typeof f.name === "string" ? overloads.get(f.name) ?? f : f);
+  return { k: "object", fields: joined, stringIndex: null, calls: [], span };
 }

@@ -223,15 +223,24 @@ type MeetRow = { meet: number; clauses: Row };
 type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
 
-/** The clause kinds, split so that every consumer can be made to cover them.
- * `keyof` over a union intersects, so the key extraction distributes. */
+/** The clause kinds, split so that every consumer can be made to cover them. */
 export type StringClause = Extract<Clause, string>;
-type ObjectClause = Exclude<Clause, string>;
+/** The object clauses' keys, each once. */
+const CLAUSE_KEYS = [
+  "boolLit", "numLit", "strLit", "numIn", "strIn", "bigintLit", "symbolLit",
+  "refs", "dict", "ctors", "list", "pack", "arrs", "callable",
+] as const;
+export type ClauseKey = (typeof CLAUSE_KEYS)[number];
+/** `ClauseKey` is exactly the keys of `Clause`'s object members: a key missing
+ * from `CLAUSE_KEYS`, or one no member has, does not compile. `keyof` over a
+ * union intersects, so the key extraction distributes. */
 type KeysOf<T> = T extends unknown ? keyof T : never;
-export type ClauseKey = KeysOf<ObjectClause>;
+type Covers<Missing extends never> = Missing;
+type EveryClauseKey = Covers<Exclude<KeysOf<Exclude<Clause, string>>, ClauseKey>>;
+type OnlyClauseKeys = Covers<Exclude<ClauseKey, KeysOf<Exclude<Clause, string>>>>;
 
 /** Adding a clause to `Clause` without adding it here is a compile error, and
- * these are the only two places a clause kind is enumerated. */
+ * these are the only places a clause kind is enumerated. */
 const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
   nul: "null",
   bool: "boolean",
@@ -400,10 +409,10 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
   // One validator per clause kind. A missing key does not compile, so a new
   // clause cannot reach the decoder as a silent "unknown graph clause".
   // Keyed by the language's own union, so a clause added there and not here is
-  // a type error; read by a key that may be none of them, so a clause this does
-  // not know is a refusal rather than a silent pass.
-  const check: Record<ClauseKey, (body: JsonRead) => void> &
-    Record<string, ((body: JsonRead) => void) | undefined> = {
+  // a type error; read only at the key of `CLAUSE_KEYS` equal to the
+  // document's, so a clause this does not know, `toString` among them, is a
+  // refusal rather than a silent pass.
+  const check: Record<ClauseKey, (body: JsonRead) => void> = {
     boolLit: (b) => {
       if (typeof obj(b, ["value"]).value !== "boolean")
         throw Error("invalid Boolean literal");
@@ -517,14 +526,18 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
   const clauses = (row: JsonRead) =>
     array(row).forEach((c) => {
       if (typeof c === "string") {
-        if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
+        if (!Object.hasOwn(STRING_CLAUSE_TEXT, c)) throw Error("unknown graph clause");
         return;
       }
       if (!isRecord(c)) throw Error("unknown graph clause");
-      const key = Object.keys(c)[0];
-      const validate = check[key];
-      if (!validate) throw Error("unknown graph clause");
-      validate(obj(c, [key])[key]);
+      // The clause's one key and its body, read from its own entries.
+      const entries = Object.entries(c);
+      const entry = entries[0];
+      const kind = entry === undefined ? undefined : CLAUSE_KEYS.find((k) => k === entry[0]);
+      if (entry === undefined || kind === undefined) throw Error("unknown graph clause");
+      if (entries.length !== 1) throw Error("unexpected type graph fields");
+      const validate = check[kind];
+      validate(entry[1]);
     });
   rows.forEach((row, index) => {
     if (isRecord(row) && "meet" in row) {

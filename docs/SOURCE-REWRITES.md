@@ -933,6 +933,35 @@ is whatever the module's wrapper holds, which other code reaches through
   `useInstallationForTests` and `unchecked.mts`'s worker spawn.
 - **Commit:** the introducing commit.
 
+### A validator table read at a document's key
+
+`decodeGraph` (`tools/type-graph.mts`) checked an object clause by reading
+its table of validators at the clause's first key,
+`check[Object.keys(c)[0]]`, the table typed as a record at every string, and
+a string clause by `c in STRING_CLAUSE_TEXT`. An empty clause has no first
+key, and a read past the end is `undefined`, which no record index admits
+("record index requires a string key"); both lookups also find
+`Object.prototype`'s members: a clause `{ "toString": … }` passed, checked
+by `Object.prototype.toString`, and the string clause `"constructor"`
+passed the `in` test.
+
+- **Rewrite:** the clause's key and body are its first own entry
+  (`Object.entries`); its kind is the element of `CLAUSE_KEYS`, the list of
+  `ClauseKey`'s literals, that `find` finds equal to the key, and the table,
+  a record at `ClauseKey` alone, is read at that kind; a string clause is
+  tested by `Object.hasOwn`. A type alias, `EveryClauseKey`, fails to
+  compile where `CLAUSE_KEYS` lacks a key of `ClauseKey`. For a clause
+  whose key is one of the table's kinds, the same validator runs on the
+  same body, and the same error is thrown in the same order: "unknown graph
+  clause" for an unknown key before "unexpected type graph fields" for a
+  second key. The values are the document's own data properties, which
+  `Object.entries` and an index read give alike, in the order `Object.keys`
+  gives. An empty clause throws "unknown graph clause" as before; a key or
+  string naming an inherited member is refused with it.
+- **Pattern:** a key read from a document selects a table's entry by
+  equality with the table's literal keys.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
@@ -1048,7 +1077,10 @@ a key no contract names has no rule
 gives -1 for an element it does not find, and a write at or past the
 length extends the array, leaving holes (`blocker-array-index-of-write`).
 Support would relate the index to the array's elements and length, for
-this one site of the census of 6be11ce.
+this site and one more of the census of 4d25222: `classInstance`
+(`tools/type-term.mts`) replaced the field of an ambient class's first
+overload of a method by the field joining a later overload's signatures,
+`fields[fields.indexOf(overload)] = joined`.
 
 - **Equivalent form:** the entry's members are a writable array, and the
   found entry gets the member by `existing.members.push(m)`
@@ -1057,8 +1089,18 @@ this one site of the census of 6be11ce.
   the first entry and extending its array leaves `own` holding the same
   names, owners and members in the same order as replacing it with a copy;
   the calls of `graph.name` and `graph.fail` run as before.
+- **Equivalent form in `classInstance`:** the map of overloads by name
+  keeps the joined field, and the instance's fields are the collected ones
+  with each field replaced by the map's entry for its name, read once the
+  members are collected. The map holds an entry only for a field it was
+  given, under that field's name, and its entry for a name is the latest
+  join; member names are distinct (`named` refuses a second), so each
+  replaced field is the one the index write replaced, at its position. The
+  collected array is local and read by nothing else, so returning the
+  mapped copy gives the same fields in the same order.
 - **Commit:** the introducing commit, `familyTable gathers a name's members
-  without a write at a computed index`.
+  without a write at a computed index`; for `classInstance`, the introducing
+  commit.
 
 ### A `this is X` method of the compiler's `Type`
 
