@@ -3513,11 +3513,14 @@ keeps the link (`guard-field-keeping-call`), a native's call at the
 signature of a closed footprint its callback is within among them: `map`
 or `forEach` at a callback keeping the heap
 ([callback contracts](SOURCE-CONTRACTS.md#prototype-contracts),
-`guard-field-native-callback`); a write, or a call at a
+`guard-field-native-callback`, and a callback calling an import its
+module's run certifies at the empty footprint,
+`guard-field-certified-callback-value-import`); a write, or a call at a
 signature not keeping the heap, discards it (`invalid-guard-field-write`,
 `invalid-guard-field-call`, `invalid-guard-field-saved`, and a native's
 call at a callback writing the field, `invalid-guard-field-native-callback`,
-run under Node; a
+run under Node; a callback calling an import read at its declaration,
+which states no effect, `invalid-guard-field-unstated-callback-value-import`; a
 guard known by its declaration alone states no effect,
 `invalid-guard-field-declared`). The lowering gives a guard's type to the
 path's witness, the slot holding the value the field's read gave, by a
