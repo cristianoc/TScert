@@ -2290,6 +2290,67 @@ control(async (): Promise<void> => {
   process.stdout.write("a guard's narrowing claimed past a conjunction inside a disjunction: refused\n");
 });
 
+/** A twin's claims given to a negative of the same spans but for `reset`'s
+ * body, which writes a field where the twin's reads it: `reset` and every
+ * claim of its value state the footprint letting everything change, and its
+ * write (`write`, the field read then ` = 1`) is claimed at the literal it
+ * writes. Search must refuse the claims at the statement `reread`. */
+const refusedWithWritingReset = (negative: string, positive: string, write: string, reread: string): void => {
+  const real = run(negative);
+  const twin = run(positive);
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  const at = source.indexOf(write);
+  const end = at + write.length;
+  const changes = { value: "any", store: "any" } as const;
+  const reset = must(claims.functions.find(f => f.name === "reset"), "reset");
+  const point = must(reset.expressions.find(e => e.pos[0] === at), "the twin's read").point;
+  const x = must(reset.params.find(p => p.name === "x"), "x").type;
+  const one = rowOf(claims, { numLit: { bits: "4607182418800017408" } });
+  reset.footprint = changes;
+  reset.onThrow = false;
+  reset.expressions = reset.expressions.filter(e => e.pos[0] !== at);
+  reset.expressions.push(
+    { point, pos: [at, at + 1], type: x, current: null },
+    { point, pos: [end - 1, end], type: [one], current: null },
+    { point, pos: [at, end], type: [one], current: null });
+  for (const fn of claims.functions)
+    for (const e of fn.expressions)
+      if (source.slice(e.pos[0], e.pos[1]) === "reset" && Array.isArray(e.type))
+        e.type = e.type.map((l) => {
+          if (typeof l !== "number") return l;
+          const row = structuredClone(must(claims.types[l], "the callee's row"));
+          for (const clause of row)
+            if (typeof clause === "object" && "arrs" in clause)
+              for (const arrow of clause.arrs.arrows) arrow.effect = { ...arrow.effect, footprint: changes, onThrow: false };
+          return claims.types.push(row) - 1;
+        });
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const forged = writeClaims(real, `${positive}-claims`, claims);
+  refusedAt(real, forged, `${positive}-claims`, `source incoming edge obligation at [${source.indexOf(reread)},`);
+};
+
+control(async (): Promise<void> => {
+  // The producer refuses `invalid-guard-field-assertion-call`: given its
+  // twin's claims, a call between the assertion and the reread claimed to
+  // change everything keeps no read link, and search refuses the reread.
+  refusedWithWritingReset("invalid-guard-field-assertion-call", "guard-field-assertion-call-twin-prettier-ignore",
+    "x.args = 1", "return x.args.length");
+  process.stdout.write("an assertion on a field, then a call claimed to change everything: the reread refused\n");
+});
+
+control(async (): Promise<void> => {
+  // The producer refuses `invalid-guard-disjunction-middle-write`: given its
+  // twin's claims, a call in the middle disjunct claimed to change
+  // everything keeps no read link of the guarded field, and search refuses
+  // the reread after the condition.
+  refusedWithWritingReset("invalid-guard-disjunction-middle-write", "guard-disjunction-middle-write-twin-prettier-ignore",
+    "x.f = 1", "return x.f.context.length");
+  process.stdout.write("a guard on a field, then a middle disjunct claimed to change everything: the reread refused\n");
+});
+
 control(async (): Promise<void> => {
   // A call between a guard and the field's reread keeps the guard's
   // finding only at a signature keeping the heap: `count` claimed at the
