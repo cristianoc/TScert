@@ -10,10 +10,14 @@ import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeT
 import { footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
+/** The projections a resolvable parameter owns: its observation and its
+ * result. */
+export function resolvableSlots(name: string): Within<{ value: "any"; store: "grow" }, { observation: string; result: string }> {
+  return { observation: `#observe:${name}`, result: `#resolve:${name}` };
+}
+
 /** The projections a qualified parameter owns: an awaitable one its
  * observation, a resolvable one also its result. */
-export function resolutionSlots(name: string, qualification: "resolvable"): ResolutionSlots & { result: string };
-export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): ResolutionSlots;
 export function resolutionSlots(name: string, qualification: "awaitable" | "resolvable"): Within<{ value: "any"; store: "grow" }, ResolutionSlots> {
   return { observation: `#observe:${name}`, result: qualification === "resolvable" ? `#resolve:${name}` : null };
 }

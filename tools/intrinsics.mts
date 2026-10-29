@@ -86,7 +86,7 @@
  * converts without running code. */
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { resolutionSlots } from "./type-term.mts";
+import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import { bytes } from "./library-types.mts";
 
@@ -381,13 +381,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
   { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }[] {
   // `X : Resolvable`: a binder owning its observation and result;
   // `X : Awaitable`: a binder owning its observation.
-  const resolvableSlots = resolutionSlots("X", "resolvable");
+  const resolvedSlots = resolvableSlots("X");
   const awaitableSlots = resolutionSlots("X", "awaitable");
-  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: resolvableSlots };
+  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: resolvedSlots };
   const awaitable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: awaitableSlots };
   const input: TypeTerm = { k: "binder", name: "X", span };
   const observed: TypeTerm = { k: "binder", name: awaitableSlots.observation, span };
-  const result: TypeTerm = { k: "binder", name: resolvableSlots.result, span };
+  const result: TypeTerm = { k: "binder", name: resolvedSlots.result, span };
   const definitions: Record<string, () => { typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }> = {
     // `await` yields the input's observation.
     [awaitName]: () => ({ typeParams: [awaitable], type: fn([input], observed) }),

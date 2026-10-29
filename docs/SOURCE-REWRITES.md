@@ -752,6 +752,31 @@ site of the census of 6be11ce, which blocks 769 statements of 7 functions.
 - **Commit:** the introducing commit, `A gate's term scope is computed
   where it is read`.
 
+### Overloads of a function stating an effect
+
+`resolutionSlots` in `tools/type-term.mts` stated its effect on an
+implementation beside two overloads, the first giving the call at
+`"resolvable"` a result of type `string`. A statement on an overloaded
+declaration is refused where the declaration is read
+([fragment boundary](SOURCE-FRAGMENT.md),
+`invalid-stated-overload-value-import`,
+`invalid-stated-one-overload-value-import`), and an overloaded declaration
+in the checked file is refused at its overloads
+(`invalid-method-effect-overload`). The diagnostic census of 6be11ce
+reports the refusal in 8 functions of `tools/`, 804 statements, each
+importing `resolutionSlots`; it is the one overloaded function declaration
+of `tools/`. Support would certify one body at each overload's signature
+and effect, for this one site.
+
+- **Equivalent form:** `resolvableSlots(name)` returns the record
+  `resolutionSlots(name, "resolvable")` returns, at the type the first
+  overload stated, and `intrinsics` (`tools/intrinsics.mts`), the one
+  caller reading its result as a `string`, calls it; `resolutionSlots`
+  keeps its implementation's signature. Overloads run no code, and each
+  call builds a fresh record of the same two strings.
+- **Commit:** the introducing commit, `resolutionSlots states its effect
+  at one signature; resolvableSlots states the resolvable result`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,
