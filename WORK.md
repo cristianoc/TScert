@@ -37,6 +37,7 @@ each item's design and evidence, not its progress.
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
+| [Investigation of a guard's narrowing past a computed middle disjunct](#guard-past-computed-disjunct) | open: an investigation, cause unknown | `guard-disjunction-middle-test` verifies |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [Investigation of an early binding read in an operator's arm](#early-read-in-arm) | open: an investigation, cause unknown | the two functions of its section verify |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
@@ -402,6 +403,21 @@ It is the first refusal of the slices of `fragment-expressions.mts`'s
 `parent` that may be absent pass
 ([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
 edge the claim mismatches, and why, is unknown.
+
+<a id="guard-past-computed-disjunct"></a>
+**A guard's narrowing past a computed middle disjunct.** With
+`isRow(v: Row | number): v is Row`,
+`if (!isRow(claim) || typeof other === "number" || a) return 0;` is refused
+at the next statement's incoming edge, whose claim of `claim` is `Row`
+(`guard-disjunction-middle-test`, 2026-10-29). The same condition with two
+operands, with a plain binding in the middle (`!isRow(claim) || a || b`),
+or with `typeof claim === "number"` in place of the guard verifies, and so
+does `!isRow(claim) || (typeof other === "number" || a)`; `!a` in the middle
+is refused as `typeof` is. It is the refusal of
+`diagnostic.mts#readDiagnostic`'s
+`!isRecord(claim) || !Array.isArray(available) || !Array.isArray(claim.context)`
+in a source whose callbacks keep the heap. Which edge of the lowered
+disjunction loses the guard's answer, and why, is unknown.
 
 <a id="early-read-in-arm"></a>
 **An early binding read in an operator's arm.** Lean's search refuses both
