@@ -4,13 +4,15 @@
  * definitions they reach were complete. Both readers use it: the
  * declaration graph once its collection ends, and the gate for the file's
  * annotations, read after the declaration document is complete. */
-import type { DeclarationDocument, DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { CallEffect, DeclarationDocument, DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import type { Ast, ModuleAst } from "./fragment.mts";
+import type { Span } from "./span.mts";
 import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
 import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
 type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
+type Index = { readonly: boolean; value: TypeTerm; span: Span };
 type Fail = (message: string) => never;
 
 /** A definition's key: its full declaration identity. */
@@ -30,20 +32,98 @@ export type NamedRecords = {
 
 const PREFIX = "a mapped type's value names its key, over a named type";
 
-/** A term's data as text, its spans aside: equal texts are the same type. */
-export const termText = (t: unknown): Within<{ value: "any"; store: "grow" }, string> =>
-  JSON.stringify(t, function (this: unknown, key: string, value: unknown) {
-    // A declaration identity's span is the declaration's; any other span,
-    // and a reference's argument spans, only locate the term.
-    const identity = typeof this === "object" && this !== null && "module" in this;
-    return (key === "span" && !identity) || (key === "arguments" && typeof this === "object" && this !== null && "target" in this)
-      ? undefined : value;
-  }) ?? "";
+/** A term's data as text, its spans aside: equal texts are the same type.
+ * A declaration identity's span is the declaration's and is written; any
+ * other span, and a reference's argument spans, only locate the term. The
+ * text is JSON, each kind's fields in the order `TypeTerm` declares them, an
+ * absent optional field left out: a kind added to `TypeTerm` fails the
+ * compilation of the `switch`, and a field added to a kind is written only
+ * once `termText` names it. */
+export function termText(t: TypeTerm): Within<{ value: "keep"; store: "keep" }, string> {
+  const k = `{"k":${JSON.stringify(t.k)}`;
+  switch (t.k) {
+    case "atom": return `${k},"name":${JSON.stringify(t.name)}}`;
+    case "literal": return `${k},"name":${JSON.stringify(t.name)},"text":${JSON.stringify(t.text)}}`;
+    case "unique": return `${k},"symbol":${JSON.stringify(t.symbol)}}`;
+    case "union":
+    case "intersection": return `${k},"parts":${termsText(t.parts)}}`;
+    case "array":
+      return `${k},"presence":${JSON.stringify(t.presence)},"readonly":${JSON.stringify(t.readonly)},"element":${termText(t.element)}}`;
+    case "tuple":
+      return `${k},"presence":${JSON.stringify(t.presence)},"readonly":${JSON.stringify(t.readonly)},` +
+        `"required":${termsText(t.required)},"optional":${termsText(t.optional)},"rest":${optionalTermText(t.rest)}}`;
+    case "object":
+      return `${k},"fields":[${t.fields.map(fieldText).join(",")}],` +
+        `"stringIndex":${t.stringIndex === null ? "null" : indexText(t.stringIndex)}` +
+        (t.numberIndex ? `,"numberIndex":${indexText(t.numberIndex)}` : "") +
+        (t.symbolIndex ? `,"symbolIndex":${indexText(t.symbolIndex)}` : "") +
+        `,"calls":${termsText(t.calls)}` +
+        (t.prototype ? `,"prototype":${termText(t.prototype)}` : "") +
+        (t.host !== undefined ? `,"host":${JSON.stringify(t.host)}` : "") +
+        (t.stable ? `,"stable":[${t.stable.map(s => JSON.stringify(s)).join(",")}]` : "") + "}";
+    case "function":
+      return `${k},"effect":${effectText(t.effect)},"receiver":${optionalTermText(t.receiver)},` +
+        `"params":${termsText(t.params)},"rest":${optionalTermText(t.rest)},"result":${termText(t.result)}}`;
+    case "constructor":
+      return `${k},"effect":${effectText(t.effect)},"params":${termsText(t.params)},"rest":${optionalTermText(t.rest)},` +
+        `"result":${termText(t.result)}` +
+        (t.statics ? `,"statics":[${t.statics.map(staticText).join(",")}]` : "") + "}";
+    case "pack": return `${k},"of":${termText(t.of)}}`;
+    case "scheme": return `${k},"binders":[${t.binders.map(binderText).join(",")}],"signatures":${termsText(t.signatures)}}`;
+    case "callable":
+    case "self": return `${k}}`;
+    case "parameter": return `${k},"index":${JSON.stringify(t.index)}}`;
+    case "binder": return `${k},"name":${JSON.stringify(t.name)}}`;
+    case "reference":
+      return `${k},"reference":{"name":${JSON.stringify(t.reference.name)},"target":${identityText(t.reference.target)}},` +
+        `"args":${termsText(t.args)}}`;
+  }
+}
 
-/** Whether two terms are the same type, their spans aside. */
-const sameTerm = (a: unknown, b: unknown): Within<{ value: "any"; store: "grow" }, boolean> => {
-  return termText(a) === termText(b);
-};
+/** A list of terms as text, each by `termText`. */
+export function termsText(ts: readonly TypeTerm[]): Within<{ value: "keep"; store: "keep" }, string> {
+  return `[${ts.map(termText).join(",")}]`;
+}
+
+/** A declaration identity as text, its span included. */
+export function identityText(id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, string> {
+  return `{"module":${JSON.stringify(id.module)},"name":${JSON.stringify(id.name)},"span":[${JSON.stringify(id.span[0])},${JSON.stringify(id.span[1])}]}`;
+}
+
+function optionalTermText(t: TypeTerm | null): Within<{ value: "keep"; store: "keep" }, string> {
+  return t === null ? "null" : termText(t);
+}
+
+function propertyKeyText(name: PropertyKey): Within<{ value: "keep"; store: "keep" }, string> {
+  return typeof name === "string" ? JSON.stringify(name) : `{"symbol":${JSON.stringify(name.symbol)}}`;
+}
+
+/** An object type's field as text, its span aside. */
+function fieldText(f: ObjectTerm["fields"][number]): Within<{ value: "keep"; store: "keep" }, string> {
+  return `{"name":${propertyKeyText(f.name)},"optional":${JSON.stringify(f.optional)},"readonly":${JSON.stringify(f.readonly)},"type":${termText(f.type)}}`;
+}
+
+/** An index signature as text, its span aside. */
+function indexText(i: Index): Within<{ value: "keep"; store: "keep" }, string> {
+  return `{"readonly":${JSON.stringify(i.readonly)},"value":${termText(i.value)}}`;
+}
+
+function staticText(s: { name: PropertyKey; type: TypeTerm; readonly?: true }): Within<{ value: "keep"; store: "keep" }, string> {
+  return `{"name":${propertyKeyText(s.name)},"type":${termText(s.type)}${s.readonly ? `,"readonly":true` : ""}}`;
+}
+
+function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): Within<{ value: "keep"; store: "keep" }, string> {
+  const resolution = b.resolution === null ? "null"
+    : `{"observation":${JSON.stringify(b.resolution.observation)},"result":${b.resolution.result === null ? "null" : JSON.stringify(b.resolution.result)}}`;
+  return `{"name":${JSON.stringify(b.name)},"bound":${optionalTermText(b.bound)},"resolution":${resolution},"default":${optionalTermText(b.default)}}`;
+}
+
+/** A call effect as text; its promise, data of one key, by its JSON text. */
+function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, string> {
+  return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
+    `"promise":${e.promise === null ? "null" : JSON.stringify(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
+    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)}}`;
+}
 
 const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, string> =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
@@ -88,13 +168,13 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
     for (const field of base.fields) {
       const declared = fields.find(f => keyText(f.name) === keyText(field.name));
       if (!declared) fields.push(field);
-      else if (!sameTerm({ ...declared, span: null }, { ...field, span: null }))
+      else if (fieldText(declared) !== fieldText(field))
         fail(`${PREFIX} that redeclares its base's member ${keyText(field.name)} at another type or modifier: ${name}`);
     }
-    const index = <I,>(mine: I | null | undefined, theirs: I | null | undefined, what: string): I | null => {
+    const index = (mine: Index | null | undefined, theirs: Index | null | undefined, what: string): Index | null => {
       if (!theirs) return mine ?? null;
       if (!mine) return theirs;
-      if (!sameTerm(mine, theirs)) fail(`${PREFIX} that redeclares its base's ${what} index at another type or modifier: ${name}`);
+      if (indexText(mine) !== indexText(theirs)) fail(`${PREFIX} that redeclares its base's ${what} index at another type or modifier: ${name}`);
       return mine;
     };
     const numberIndex = index(own.numberIndex, base.numberIndex, "number");

@@ -732,6 +732,57 @@ having run its constructor (`instanceof-unknown-refused`).
   table its maker fills, rather than read off the caught value.
 - **Commit:** the introducing commit, `Caught errors' fields are found in their maker's weak table; WeakMap gets a contract`.
 
+### A type term's text made by a replacer
+
+Three keys of type terms, a term's text with its spans aside, were made by
+`JSON.stringify` with a replacer function dropping the `span` keys:
+`termText` (`tools/named-record.mts`, the key of a computed declaration's
+instance and the comparison of a member or an index an interface and its
+base both declare), `written` (the overlay's stated arguments against a
+contextual type's, `collectDeclarations` of `tools/declaration-graph.mts`)
+and `unspanned` (the readings of a family's member, `collect`). A replacer
+is client code `JSON.stringify` calls on every member, with the holder as
+`this` and the value after its `toJSON`, and its result is serialized in
+turn: the call is refused (`invalid-json-stringify-replacer`), and so is
+`JSON.stringify` of a type term without one, a record type no `JsonValue`
+admits. The diagnostic census of 6be11ce reports the refusal in 4
+functions, 489 statements: `collect` (387), `recordShape`, `settleDocument`
+and `settleTerm`. Supporting a replacer would take the serialization of
+the arbitrary value it returns, which is the refusal of a record type
+again. The callers hold `TypeTerm`s, whose grammar the parameter type
+`unknown` discarded.
+
+- **Rewrite:** `termText(t: TypeTerm)` writes a term's text kind by kind,
+  each kind's fields in the order `TypeTerm` declares them, as JSON:
+  `JSON.stringify` serializes only its strings and numbers. A declaration
+  identity's span is written (`identityText`); any other span, and a
+  reference's argument spans, are left out. `termsText`, `fieldText` and
+  `indexText` write a list of terms, an object type's field and an index
+  signature. All three keys are `termText`'s, so `written` and `unspanned`
+  read a declaration identity's span, and `written` no reference's
+  argument spans. Over every term of the 2,110 declaration documents the
+  pipeline cases make (1,171,836 terms, 104,404 fields, 271 index
+  signatures), the replacer's `termText` and the new one partition the
+  terms, the fields and the indexes alike, but for classes that differ
+  only in the order their fields were made in (73 of terms, 21 of
+  fields); `unspanned`'s classes split once, at two declarations of
+  `Date` in `lib.es5.d.ts`, and `written`'s merge where only a
+  reference's argument spans differ. Run side by side in every pipeline
+  case, the 542 texts the sites made (262 by `unspanned`, 276 instance
+  keys, 4 fields) are the replacer's texts, character for character, and
+  every case keeps its outcome. A kind added to `TypeTerm` fails the
+  compilation of `termText`'s `switch`; a field added to a kind is written
+  only once `termText` names it. Two terms the replacer's texts called
+  different only for the order their fields were made in have one text.
+- **Pattern:** a key of data the caller has typed is written from that
+  type, field by field.
+- **Functions:** `termText` and its helpers, `recordShape`'s `inherit`,
+  `instanceOf` and `collect`'s member readings
+  (`tools/declaration-graph.mts`), and `collectDeclarations`'s check of
+  stated arguments; `typed-tree-text` is the pattern as a case, and
+  `invalid-json-stringify-replacer` the refused call.
+- **Commit:** the introducing commit, `A type term's text is written kind by kind from its type`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

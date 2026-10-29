@@ -42,7 +42,7 @@ import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe
 import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
-import { definitionKey, deferredInDocument, settleDocument, termText } from "./named-record.mts";
+import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
 // files.mts makes every file-system failure a tool failure.
 import { manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
@@ -1639,7 +1639,7 @@ export function collectDeclarations(file: string, options: {
       const original = identityOf(node);
       // An instance is its declaration at its arguments' data: the spans of
       // an occurrence are its provenance, which the reference keeps.
-      const key = termText([original, args]);
+      const key = `[${identityText(original)},${termsText(args)}]`;
       let instance = instances.get(key);
       if (!instance) {
         if (instances.size >= 256) throw Error("computed declaration instances exceed the graph budget of 256");
@@ -3535,10 +3535,8 @@ export function collectDeclarations(file: string, options: {
         const stated = statedType(nodes);
         if (stated) {
           const actuals = isTypeReference(type) ? checker.getTypeArguments(type) : [];
-          const written = (t: TypeTerm): string =>
-            JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
           if (stated.arguments && actuals.length && (actuals.length !== stated.arguments.length ||
-              actuals.some((a, i) => written(contextualTerm(a, span)) !== written(stated.arguments?.[i] ?? { k: "atom", name: "never", span }))))
+              actuals.some((a, i) => termText(contextualTerm(a, span)) !== termText(stated.arguments?.[i] ?? { k: "atom", name: "never", span }))))
             throw Error(`the contextual type ${text()} is read at the type the overlay of library types states, which holds at ${stated.name}'s default arguments alone`);
           defineOverlay(stated.definition);
           const id = stated.definition.declaration;
@@ -5311,9 +5309,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         return made.term;
       };
       const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => methods.map(methodBase);
-      // A term without its spans, which two readings of one member share.
-      const unspanned = (t: TypeTerm): string =>
-        JSON.stringify(t, (key: string, v: unknown): unknown => key === "span" || key === "arguments" ? undefined : v) ?? "";
       const arm = (a: FamilyArm): TypeTerm => {
         if (a.k === "declaration") return reference(a.declaration, []);
         if (a.k === "generic") {
@@ -5346,7 +5341,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             }
             const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
             const types: TypeTerm[] = [];
-            for (const r of read) if (!types.some(t => unspanned(t) === unspanned(r.type))) types.push(r.type);
+            for (const r of read) if (!types.some(t => termText(t) === termText(r.type))) types.push(r.type);
             const [one] = types;
             if (!one) continue;
             fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),

@@ -535,6 +535,7 @@ export const cases: Case[] = [
   positive("json-parse-stringify-tojson-member", "`JSON.stringify` of `JSON.parse`'s result, also inside a fresh literal with a member named `toJSON`: a parsed member is an own data property holding JSON data, never callable, so a nested \"toJSON\" member is read and not called (run under Node: the text round-trips)"),
   positive("json-parse-data", "`JSON.parse` without a reviver is parsed data: `Array.isArray` of it leaves its array arm, whose `map` stays dense, and a dictionary is read by key"),
   positive("json-parse-manifest", "a manifest `JSON.parse` returns keeps its JSON type: a member is read after the tests that leave the dictionary arm, and a member's text is computed by its arms"),
+  positive("typed-tree-text", "a tree's canonical text written kind by kind through an exhaustive switch, `JSON.stringify` serializing only its strings, numbers and booleans: the recursion is the program's own code, so `map` calling it stays dense"),
   positive("typed-tree-fold", "a fold over a tree through one children function, an exhaustive switch on each node's kind: every member it reads is of a known record"),
   gap("blocker-in-unknown-walk", "a walk of a tree at `unknown`, by key name: the read after `\"k\" in e` is no open read, `k` being no audited open-read key, and `Object.values` of an object of unknown type, which may be a host object, is refused", "unsupported", "proposal",
     /^unsupported: missing field k at \[621,624\)/),
