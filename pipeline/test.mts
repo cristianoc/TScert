@@ -1211,6 +1211,25 @@ control(async (): Promise<void> => {
   process.stdout.write("forged reserved writes: each write form renamed to `stack`, refused at the write in search and check\n");
 });
 control(async (): Promise<void> => {
+  // Inside an arrow, whose body is lowered as one term: the saved object's
+  // read as the call's receiver, at its `(`, claimed at `undefined`, is
+  // refused there where evidence is produced, and checking refuses the
+  // evidence of the original claim for it.
+  const nested = run("optional-method-call-nested");
+  const source = readFileSync(sourceKey(nested), "utf8");
+  const paren = source.indexOf("equation?.(x);", source.indexOf("function later")) + "equation?.".length;
+  const claims = readClaims(nested);
+  const read = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === paren && e.pos[1] === paren + 1),
+    "the arrow's saved receiver read");
+  read.type = [rowOf(claims, "undef")];
+  const forged = writeClaims(nested, "forged-arrow-optional-receiver", claims);
+  const searched = produceWith(nested, forged, "forged-arrow-optional-receiver");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.ok((searched.stdout + searched.stderr).includes(`[${paren},${paren + 1})`), searched.stdout + searched.stderr);
+  invoke(forged, join(nested, "evidence.json"), nested);
+  process.stdout.write("forged optional method call in an arrow: the saved receiver claimed at undefined refused\n");
+});
+control(async (): Promise<void> => {
   // An optional call of a method saves its object and reads it twice, the
   // method's object at the method's name and the call's receiver at its
   // `(`: either claimed at `undefined` is refused there where evidence is

@@ -439,8 +439,12 @@ object is evaluated once and saved under the variable $`\mathsf{object}`$
 the member read and the call both read:
 
 ```math
-e.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{object}=e\ \mathsf{in}\ \mathsf{let}\ \mathsf{chain}=\mathsf{object}.m\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ \mathsf{chain}.\mathtt{call}(\mathsf{object},\vec a)
+e.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{object}=e\ \mathsf{in}\ \mathsf{let}\ \mathsf{chain}=\mathsf{object}.m\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ \mathsf{invoke}(\mathsf{chain},\mathsf{object},\vec a)
 ```
+
+with $`\mathsf{invoke}(f,r,\vec a)`$ the calculus's call of $`f`$ with
+receiver $`r`$ ([functions, calls and receivers](PROGRAM-TYPING.md#functions-calls-and-receivers)),
+which reads no member of $`f`$: an own `call` of the method is not run.
 
 The object is any expression (`optional-method-call`,
 `optional-method-call-object`, each run under Node: a call as the object

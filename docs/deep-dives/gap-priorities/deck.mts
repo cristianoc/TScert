@@ -257,7 +257,7 @@ const slides: Slide[] = [
   }),
   slide("collect-declarations", {
     label: "Causes 1–7 · 2,704 statements, 1 function, and Omit in 3 more", title: "collectDeclarations: seven gate refusals", gap: 18,
-    note: `${gap("blocker-omit-interface", "optional-method-call-object-refused")}; ${neg("invalid-compiler-api-unlisted-enum")}; four ${noCase}`,
+    note: `${gap("blocker-omit-interface")}; ${c("optional-method-call-object")} ${closedBy("ba56fa4", "support")}; ${neg("invalid-compiler-api-unlisted-enum")}; four ${noCase}`,
     body: table(["Construct", "Site"], [
       ["Omit of an interface, keyof over a type parameter (also selectGlobal and library-modules.mts)", "l.1784 Omit&lt;…&gt;"],
       ["A method of the compiler's Symbol not reviewed: getExports, getMembers", "l.4038–4042"],
@@ -299,7 +299,7 @@ const slides: Slide[] = [
     label: "Part 2 · order of work", title: "What comes next: cases first, then rules and rewrites, then external code", gap: 20,
     body: table(["Step", "Cases", "Trust"], [
       ["1. Case examples for causes 8 and 9 and for collectDeclarations's four without one", "the sources of Part 1 and of cause 9; four to write", status("gap", "none")],
-      ["2. Rules or rewrites: the optional-chain test (8), the node-list spread (9), map's expected result (10), collectDeclarations's five refusals that need no contract, Omit (1) among them", `${c("blocker-callback-literal-context")}, ${c("blocker-omit-interface")}, ${c("optional-method-call-object-refused")}`, `${status("ok", "none")}`],
+      ["2. Rules or rewrites: the optional-chain test (8), the node-list spread (9), map's expected result (10), collectDeclarations's five refusals that need no contract, Omit (1) among them", `${c("blocker-callback-literal-context")}, ${c("blocker-omit-interface")}, ${c("optional-method-call-object")}`, `${status("ok", "none")}`],
       ["3. External code described: the compiler's Symbol methods and TypePredicateKind (collectDeclarations)", c("invalid-compiler-api-unlisted-enum"), status("trust", "an audited entry each")],
     ], [50, 34, 16]) + bullets([
       "The order follows the census process: sites where TScert's own code discards what it knew are repaired first (none among the heaviest causes); then the gap cases in the order of the code they block. collectDeclarations can verify only once causes 1–7 are all closed (beyond them its run is not examined), so it is worked as one case.",

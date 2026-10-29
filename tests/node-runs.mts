@@ -2228,6 +2228,24 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     [`after({ make(k) { return { n: k + (this.make ? 100 : 0) }; } }, 1)`, 101],
   ] as const)
     assert.equal(runExample("optional-method-call-object", call), expected, `optional-method-call-object: ${call}`);
+  // Nested in an argument, each call has its own object as `this`, the
+  // outer one evaluated first; in an arrow, the object's call runs at each
+  // call of the arrow, and `this` in the arrow is the method's.
+  const outer = "{ base: 100, equation(x) { return this.base + x; } }";
+  const inner = "{ base: 10, equation(x) { return this.base + x; } }";
+  for (const [call, expected] of [
+    [`(() => { const log = []; return JSON.stringify([nested(${outer}, ${inner}, 1, log), log]); })()`,
+      '[111,["outer","inner"]]'],
+    [`(() => { const log = []; return JSON.stringify([nested(${outer}, { base: 0 }, 1, log), log]); })()`,
+      '[101,["outer","inner"]]'],
+    [`(() => { const log = []; return JSON.stringify([nested({ base: 0 }, ${inner}, 1, log), log]); })()`,
+      '[null,["outer"]]'],
+    [`(() => { const log = []; const f = later(${inner}, log); return JSON.stringify([f(1), f(2), log]); })()`,
+      '[11,12,["arrow","arrow"]]'],
+    [`new Box(${inner}).bound(5)()`, 15],
+    [`new Box({ base: 0 }).bound(5)()`, undefined],
+  ] as const)
+    assert.equal(runExample("optional-method-call-nested", call), expected, `optional-method-call-nested: ${call}`);
   // The receiver is the saved object, which meets no `this: Keyed`; an
   // absent method gives `undefined`.
   assert.equal(runExample("invalid-optional-method-call-receiver", "wrong({ read() { return this.k; } })"), undefined,

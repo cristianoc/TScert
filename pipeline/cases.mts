@@ -2945,6 +2945,7 @@ export const cases: Case[] = [
   gap("wrapped-member-chain-call-refused", "a call of a member read in an optional chain through `!`, refused as outside a chain", "unsupported", "source",
     /^gate: a call of a member read through `!`, `as` or `satisfies` passes the member's object as its receiver/),
   positive("optional-method-call-object", "an optional call of a method on any object, `e.m?.(a)`: the object once, saved, the member read off it once and tested, then called with the saved object as its receiver; a call, an assigned `let`, a link of a chain, a link after the call (each run under Node: the object's call runs once)"),
+  positive("optional-method-call-nested", "optional method calls nested in an argument, each with its own saved object as `this`, the outer object evaluated first; one in an arrow, its object's call run at each call of the arrow; one in an arrow reading its method's `this` (each run under Node); forged in the arrow with the saved receiver at `undefined`, refused there (`pipeline/test.mts`)"),
   negative("invalid-optional-method-call-receiver", "the saved object is the call's receiver, which must meet the method's `this` parameter (run under Node)",
     /The available claim for \( is \{  \}\. This obligation requires \{ k: never = \(number\) \}/),
   negative("invalid-optional-method-call-absent", "an absent method gives `undefined` (run under Node)",
