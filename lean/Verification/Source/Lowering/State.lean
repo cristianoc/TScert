@@ -174,6 +174,11 @@ private structure GraphFrame where
   /-- While a constant's function-literal initializer is compiled: the
   constant, which the literal's body may read as its self entry. -/
   selfConstant : Option String := none
+  /-- The graph's constants holding a condition's value, by name (the
+  fragment admits no shadowing), with the condition: where one is `true`,
+  the lowering proposes what the condition narrows, which the checker
+  establishes through the constant's implications. -/
+  conditionConstants : List (String × Fragment.Expr) := []
 
 /-- Inclusion for source contracts through the common subtype operation,
 retaining the execution outcome. -/
@@ -407,6 +412,11 @@ def withSelfConstant (name : Option String) (action : Compiler α) : Compiler α
     (fun before after => { after with selfConstant := before.selfConstant }) action
 
 def currentSelfConstant : Compiler (Option String) := readBuilt (·.selfConstant)
+
+def recordConditionConstant (name : String) (init : Fragment.Expr) : Compiler Unit :=
+  updateBuilt fun s => { s with conditionConstants := (name, init) :: s.conditionConstants }
+
+def conditionConstants : Compiler (List (String × Fragment.Expr)) := readBuilt (·.conditionConstants)
 
 /-- The claim of a return of a value of type `A` in a body returning `R`. -/
 def returnClaim (A R : Ty ι) : Compiler (Ty ι) := do

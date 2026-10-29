@@ -129,15 +129,15 @@ alone, which `tagMember` checks on the edge. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
     (single : Tag → Option ι := fun _ => none) (original : String → String := id)
-    (kinds : List ι := []) : List (Ty ι) :=
+    (kinds : List ι := []) (implied : String → List (Nat × Ty ι) := fun _ => []) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original kinds
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original kinds implied
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer arrays single original kinds) right answer arrays single original kinds
+      conditionContext G scope (conditionContext G scope Γ left answer arrays single original kinds implied) right answer arrays single original kinds implied
     else
-      joinContexts Γ (conditionContext G scope Γ left answer arrays single original kinds)
-        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original kinds) right answer arrays single original kinds)
+      joinContexts Γ (conditionContext G scope Γ left answer arrays single original kinds implied)
+        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original kinds implied) right answer arrays single original kinds implied)
   | .tagMember _ _ field tags onUndefined (.var _ saved) =>
     -- A family guard's test leaves the name's type, or its object's arms, as
     -- its answer's yields state them (`PromiseCalls.memberYield`); a saved
@@ -171,7 +171,13 @@ alone, which `tagMember` checks on the edge. -/
       -- A tested Boolean is the outcome; any other tested value is of the
       -- labels its truthiness admits.
       if BranchRefinement.onlyBoolean G (Γ[i]?.getD []) then
-        Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+        let Γ := Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+        -- A constant holding a condition's value, `true`: what the condition
+        -- narrows (`constantImplications`), established on the edge by the
+        -- constant's implications.
+        match answer, cond with
+        | true, .var _ name => (implied name).foldl (fun Γ (j, T) => Γ.set j T) Γ
+        | _, _ => Γ
       else Γ.set i (BranchRefinement.sourceRefine G kinds (Γ[i]?.getD []) .truthy answer)
     else Γ
 where
@@ -183,6 +189,34 @@ where
       let l := L[j]?.getD g
       let r := R[j]?.getD g
       if l == g || r == g then g else l ++ r.filter fun a => !l.contains a
+
+/-- The conditions a constant's implications are found for: a call (a
+guard's), a test, and a conjunction of them. The producer finds the same
+(`Refinement.implication_form`). -/
+def implicationForm : Fragment.Expr → Bool
+  | .call .. | .invoke .. | .tagMember .. | .shapeTest .. | .equality .. | .singletonTest .. | .inKeys .. => true
+  | .arith _ op _ _ => op == .lt || op == .le || op == .gt || op == .ge || op == .eq
+  | .logical _ true a b => implicationForm a && implicationForm b
+  | _ => false
+
+/-- What a constant holding a condition's value implies where it is `true`:
+each slot holding a value (an immutable binding) the condition narrows
+where it holds, at that narrowing. A proposal: the checker establishes it
+through the constant's implications (`PromiseCalls.Implication`). -/
+@[nospecialize] def constantImplications (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) (constants : List (String × Fragment.Expr)) (arrays : Option (Ty ι) := none)
+    (single : Tag → Option ι := fun _ => none) (kinds : List ι := []) (name : String) : List (Nat × Ty ι) :=
+  match constants.lookup name with
+  | none => []
+  | some init =>
+    if !implicationForm init then [] else
+    let narrowed := conditionContext G scope Γ init true arrays single id kinds
+    (List.range Γ.length).filterMap fun j => do
+      let b ← scope[j]?
+      let .value := b.storage | none
+      if b.source.name == name || b.witness.isSome then none
+      let T ← narrowed[j]?
+      if Γ[j]? == some T then none else some (j, T)
 
 /-- The singleton label of each strict equality a condition's leaves test
 whose passing leaves the operand that one value (`familyMember`): a string,

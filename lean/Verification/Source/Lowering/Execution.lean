@@ -920,7 +920,9 @@ prepared predicate without replaying an effectful source operand. -/
         let original := fun (n : String) => match previous.origins.lookup n with
           | some (.var _ o) => o
           | _ => (newestWitness witnesses n).getD n
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds else
+        let constants ← conditionConstants
+        let implied := constantImplications G scope' Δ constants arrays (singletonOf singles) kinds
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original kinds implied else
           match alias with
           | some i => Δ.set i T
           | none => Δ
@@ -1002,6 +1004,18 @@ The final pure predicate uses the retained operands to justify refinements. -/
     return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else offset+i-1))⟩
 
+/-- `compileExprThen` whose `tail` also receives the type of the value on
+    that path, which a branching expression's arm may state more precisely
+    than the expression's claim (a `false` arm of `a && b`). -/
+@[nospecialize] partial def compileExprThenAt (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (e : Fragment.Expr) (tail : List (Ty Tree) → Option (Ty Tree) → Compiler Target) : Compiler Target :=
+  executePlanTail recursive fc scope Γ (SourceExecution.build e) fun _ Δ _ => do
+    let offset := Δ.length - Γ.length
+    let next ← tail (Δ.drop offset) Δ.head?
+    return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else offset+i-1))⟩
+
 /-- `compileExpr` with the nodes after the value built for the frame the
     expression leaves: `tail` receives each path's frame, a slot narrowed
     where the expression narrowed it (`readNarrowing`), and builds what
@@ -1009,11 +1023,7 @@ The final pure predicate uses the retained operands to justify refinements. -/
 @[nospecialize] partial def compileExprThen (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (e : Fragment.Expr) (tail : List (Ty Tree) → Compiler Target) : Compiler Target :=
-  executePlanTail recursive fc scope Γ (SourceExecution.build e) fun _ Δ _ => do
-    let offset := Δ.length - Γ.length
-    let next ← tail (Δ.drop offset)
-    return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else offset+i-1))⟩
+  compileExprThenAt recursive fc scope Γ e fun Δ _ => tail Δ
 
 
 end LoweringExecution

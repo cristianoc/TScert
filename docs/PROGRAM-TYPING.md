@@ -2920,6 +2920,28 @@ Each candidate must meet all edge obligations; each yield is checked by
 the rules above. A disjunction's right operand exercises these choices
 where a saved read from its left operand holds the node at the left
 guard's arm (`compiler-api-guard-disjunction`).
+
+A constant holding a condition's value keeps what the condition narrows
+as an implication of its slot, $`b = \mathsf{true} \Rightarrow x : T`$, which
+an edge establishes by one of `impliesFollows`'s three alternatives: the
+source states it, the source holds $`x`$ within $`T`$, or the source's $`b`$
+never holds `true` (`impliesCheck_sound`). A branch on $`b`$ then yields
+$`x : T`$ where it answers `true`. A constant's binding holds the value at
+the type its path through the initializer states where that is a Boolean
+within the claim, so the `false` arm of `g(x) && e` binds `false`. The search
+proposes, at a merge or a cut every edge of which it has produced, the
+implications the edges establish, those on a slot the target claims at both
+Booleans included, where one edge's slot never holds `true` and the union of
+the others' types of the target slot is narrower than the target's claim
+(`meetImplications`). A cut's implications come from a further round of the
+search, run where a round fails at some node and the cuts it produced meet
+new implications; a round succeeding keeps its evidence
+(`guard-answer-constant`, `blocker-aliased-guard`). A `let` holding the
+answer, or a guarded `let` reassigned between the test and the use, carries
+no implication: the edge's mapping binds the new value to the slot
+(`invalid-guard-answer-let-prettier-ignore`,
+`invalid-guard-answer-reassigned-prettier-ignore`, checked with their twins'
+claims).
 Numbers are compared by `numberEqual`, JavaScript's equality, under which
 `0` and `-0` are one value and `NaN` equals none: a slice drops a label only
 where the tag's test answers so for every value of it (`tagClause_sound`),

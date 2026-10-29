@@ -364,6 +364,21 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
        | Some a -> refine_path env a (claimed a.pos) (fun _ -> s.result)
        | None -> env)
      | [] -> env)
+(* A constant holding a condition's value, newest first: its name, the
+   condition and the environment the condition was evaluated in. A
+   proposal: Lean checks the implication it stands for on every edge. *)
+let condition_constants : (string * expr * (string * binding) list) list ref = ref []
+(* The conditions a constant's implications are found for: a call (a
+   guard's), a test, and a conjunction of them. Lean finds the same
+   (`LoweringControl.implicationForm`). *)
+let rec implication_form (e:expr) = match e.node with
+  | Call _ | Invoke _ | TagMember _ | TypeofTest _ | Equality _ | HasKey _ | InstanceTest _
+  | Arith ((Lt | Le | Gt | Ge),_,_) -> true
+  | Logical (true,a,b) -> implication_form a && implication_form b
+  | _ -> false
+let record_condition_constant name (init:expr) env =
+  if implication_form init then condition_constants := (name,init,env) :: !condition_constants
+
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
   let refine_field ?answer = refine_field ?answer bounds declarations in
@@ -382,7 +397,22 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     let refine = match List.assoc_opt name env with
       | Some (Storage _ | Local _) -> truthy_slice truth
       | _ -> truthy_refine declarations truth in
-    refine_value env name refine
+    (* A constant holding a condition's value, where it is `true`: each
+       constant the condition narrows where it holds, still the binding the
+       condition read, is at that narrowing (Lean's implication of the
+       constant's slot, `PromiseCalls.Implication`). *)
+    let implied = match truth,List.assoc_opt name env with
+      | true,Some (Value _) ->
+        (match List.find_opt (fun (c,_,_) -> c = name) !condition_constants with
+         | Some (_,init,before) ->
+           let after = branch before init true in
+           List.filter_map (fun (n,b) -> match b,List.assoc_opt n before,List.assoc_opt n env with
+             | Value _,Some (Value _ as was),Some now when not (is_field n) && n <> name && was <> b && now = was -> Some (n,b)
+             | _ -> None) after
+         | None -> [])
+      | _ -> [] in
+    let env = refine_value env name refine in
+    List.map (fun (n,b) -> match List.assoc_opt n implied with Some b' -> n,b' | None -> n,b) env
   (* Where some arm leaves the field optional or unnamed, so that nothing is
      known of what it holds, the test keeps the arms whose field may answer
      so (Lean's `fieldSlice` through the read's link): `IteratorResult` by

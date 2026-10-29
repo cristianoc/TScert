@@ -791,7 +791,10 @@ nothing (`invalid-guard-negated-and`). A left operand `a op b` stays grouped
 where both its operands are tests, `a` judged as a left operand is: `!a`
 is a test where `a` is one. So `(!g(v) || b) || c` regroups as
 `!g(v) || (b || c)`, and `v` is at the promised type where the whole is
-false (`guard-disjunction-middle-test`); a conjunction inside a
+false (`guard-disjunction-middle-test`), and a field the guard tested is at
+the promised type past a middle disjunct whose call keeps the heap, but not
+past one whose call may write it (`invalid-guard-disjunction-middle-write`,
+checked with its twin's claims); a conjunction inside a
 disjunction, `!g(v) && b || c`, is no application of the same operator and
 promises nothing where it is false
 (`invalid-guard-disjunction-mixed-prettier-ignore`, checked with its

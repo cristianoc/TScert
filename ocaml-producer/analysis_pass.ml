@@ -27,7 +27,11 @@ let infer diagnostics flows offered declarations module_functions arities bounds
       (fun () -> T.statements expr bindings owner_span env ss) in
   let run () =
   let owner_span = if f.name_pos=Json.Null then Json.Array [Json.int 0;Json.int 0] else f.name_pos in
-  ignore (T.statements expr bindings owner_span Owner.initial_environment f.body);
+  (* A function's constants holding a condition's value are its own. *)
+  let enclosing = !Refinement.condition_constants in
+  Refinement.condition_constants := [];
+  Fun.protect ~finally:(fun () -> Refinement.condition_constants := enclosing) (fun () ->
+    ignore (T.statements expr bindings owner_span Owner.initial_environment f.body));
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;
      two different claims at one span stay, and Lean refuses them. *)
