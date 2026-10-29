@@ -1787,7 +1787,9 @@ arguments: `Omit<Entry, "stated">` is `Pick<Entry, U>` with $`U`$ the
 literals of `Exclude<keyof Entry, "stated">` by $`\textsf{computed}`$, the
 [library mapped type](#library-types) at `Entry`'s other members, each with
 its modifiers (`blocker-omit-interface`, `invalid-omit-omitted-member`,
-`invalid-omit-readonly`). At a type parameter its keys are known only at an
+`invalid-omit-readonly`); with `type KeyBox<T> = Box<keyof T>`, `KeyBox<{ a: number }>` is
+`Box<"a">` (`computed-argument-alias`,
+`invalid-computed-argument-alias`). At a type parameter its keys are known only at an
 instance, and the reference is refused (`omit-type-parameter-refused`). A `typeof` of a constant without an
 annotation is the type TypeScript infers for its initializer where that is a
 union of literals and primitives or an object literal's record of such

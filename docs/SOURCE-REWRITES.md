@@ -986,6 +986,36 @@ whole union was refused.
 - **Functions:** `declaration-graph.mts#collectDeclarations`.
 - **Commit:** the introducing commit.
 
+### An open record spread over the fields written before it
+
+`assertEntry` (`tools/library-modules.mts`) built each `node:assert/strict`
+entry as `{ module, name, signature, ...(member === undefined ? {} : { member }), ...entry }`,
+with `entry` at `Omit<ModuleEntry, "module" | "name" | "signature" | "member">`.
+That type is an open record: a value meeting it may own `module`, `name`,
+`signature` or `member`, of any type, and the spread, written last, copies
+them over the fields before it. The result is not established at
+`ModuleEntry` ("no derivation of its return-contract claim").
+
+- **Rewrite:** `entry` is at `Pick<ModuleEntry, "stated" | "effect" |
+  "promise" | "lowering">`, and `assertMember`, annotated to return a
+  `ModuleEntry`, builds one entry, copying each of those four fields by
+  name, an optional one by a conditional spread where it is defined;
+  `assertEntry` pushes one entry per member, in order, onto a fresh
+  `ModuleEntry[]`. (`members.map(…)` infers its element type from the
+  callback, and the writable array it returns is refused at
+  `ModuleEntry[]`.)
+- **Observable contract:** every caller passes an object literal stating
+  only some of those four fields, none of them `undefined`, and an array
+  `members` with no hole, so the result holds the same entries in the same
+  order, each with the same fields at the same values. The fields' order changes:
+  `stated`, `effect`, `promise` and `lowering` follow `member` in that
+  order; nothing reads the entries' key order.
+- **Pattern:** a record built from a partial one copies the fields it
+  needs by name.
+- **Functions:** `library-modules.mts#assertEntry` and `assertMember`, through them
+  `moduleEntries` and `moduleObjectDefault`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

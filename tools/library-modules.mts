@@ -114,10 +114,19 @@ const block: TypeTerm = { k: "function", effect: ordinaryEffect, receiver: null,
  * ones included, accessors among them; `match` runs the regex's `exec`,
  * reading `lastIndex` by ToLength; `throws` calls its block and converts a
  * thrown value by `String` to test a regex: these state no effect. */
-const assertEntry = (members: (string | undefined)[], signature: string, entry: Omit<ModuleEntry, "module" | "name" | "signature" | "member">):
-    ModuleEntry[] => members.map(member => ({ module: "assert/strict", name: "default", signature,
-      ...(member === undefined ? {} : { member }), ...entry }));
-const asserted: Omit<ModuleEntry, "module" | "name" | "signature" | "member"> = { lowering: "test", effect: emptyEffect,
+type AssertFields = Pick<ModuleEntry, "stated" | "effect" | "promise" | "lowering">;
+const assertMember = (member: string | undefined, signature: string, entry: AssertFields): ModuleEntry =>
+  ({ module: "assert/strict", name: "default", signature,
+    ...(member === undefined ? {} : { member }), stated: entry.stated,
+    ...(entry.effect === undefined ? {} : { effect: entry.effect }),
+    ...(entry.promise === undefined ? {} : { promise: entry.promise }),
+    ...(entry.lowering === undefined ? {} : { lowering: entry.lowering }) });
+const assertEntry = (members: (string | undefined)[], signature: string, entry: AssertFields): ModuleEntry[] => {
+  const entries: ModuleEntry[] = [];
+  for (const member of members) entries.push(assertMember(member, signature, entry));
+  return entries;
+};
+const asserted: AssertFields = { lowering: "test", effect: emptyEffect,
   stated: { binders: [], params: [atom("unknown"), message], result: atom("void") } };
 const assertEntries: ModuleEntry[] = [
   // The call of the module's function itself, as each pinned installation
