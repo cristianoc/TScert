@@ -824,6 +824,17 @@ export function collectDeclarations(file: string, options: {
     // refused where it is written, naming the view (COMPILER-API.md, reading
     // rule 4, L6).
     const outsideViews = (node: Node): void => {
+      // A view lists no constructor: `new` of a compiler-API class is a
+      // member outside it.
+      if (ts.isNewExpression(node)) {
+        const symbol = checker.getSymbolAtLocation(node.expression);
+        const target = symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+        const classes = (target?.declarations ?? []).map(d => d.resolve())
+          .filter((d): d is ts.ClassDeclaration => !!d && ts.isClassDeclaration(d) && compilerApiFile(d.getSourceFile().fileName));
+        for (const d of classes)
+          recover([node.expression.getStart(client), node.expression.end], Error(
+            `the constructor of ${d.name?.text ?? "a class"} is outside the named view ${d.name?.text ?? ""} of the compiler-API contract (compiler-api.mts, reading rule 4)`));
+      }
       if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
         const declarations = (checker.getTypeAtLocation(node.expression)?.getSymbol()?.declarations ?? [])
           .map(d => d.resolve()).filter((d): d is TypeDeclaration => !!d && isTypeDeclaration(d));
@@ -1968,6 +1979,14 @@ export function collectDeclarations(file: string, options: {
           typeParams: [], type: symbol === null ? typeTerm(valueScope(node, what), type, node)
             : { k: "unique", symbol, span: [type.getStart(source), type.end] } };
       }
+      // A class of the compiler API is read through its named view (reading
+      // rule 4), which lists instance members alone: its value has no
+      // construct signature and no member, so its type parameters, which
+      // only those would name, are not read. `new` of it is refused where
+      // it is written (`outsideViews`).
+      if (ts.isClassDeclaration(node) && node.name && compilerApiFile(source.fileName))
+        return { declaration: identityOf(node), construct: false, typeParams: [],
+          type: { k: "object", fields: [], stringIndex: null, calls: [], span } };
       if (ts.isClassDeclaration(node) && node.name) {
         clean(node, `${idOf(source)}#${node.name.text}`);
         const { names, typeParams } = bindersOf(node.typeParameters, node, what);

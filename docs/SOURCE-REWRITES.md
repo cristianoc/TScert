@@ -1243,6 +1243,33 @@ principle states, for this one site of the census of 4d25222.
 - **Commit:** the introducing commit, `A closure at a generic signature
   takes its type parameters; ReturnType of a typeof avoided`.
 
+### A parameter type computed from a compiler-API method
+
+`tools/declaration-session.mts` and `tools/compiler-channel.mts` named a
+snapshot request's type `NonNullable<Parameters<API["updateSnapshot"]>[0]>`,
+and `openCompiler`'s parameter `ConstructorParameters<typeof API>[0]`. An
+indexed access reads a member's declared annotation, which a method has
+none of, and `Parameters`' bound `(...args: any) => any` has no reading,
+as [`ReturnType`'s](#returntype-of-a-functions-typeof) has none
+(`blocker-api-indexed-method`). Support would read a method member of a
+generic host class at its instance's arguments through the class's view,
+and the bounds of `Parameters`, `ConstructorParameters` and `ReturnType`, for
+these three sites of the census of 4d25222, which block 245 statements of
+13 functions.
+
+- **Equivalent form:** the request's type is `UpdateSnapshotParams` of
+  `typescript/unstable/proto`, the declaration the view's
+  `updateSnapshot(params?: FromLSP extends true ? LSPUpdateSnapshotParams :
+  UpdateSnapshotParams)` names, and `openCompiler`'s parameter is
+  `APIOptions | LSPConnectionOptions | undefined`, the constructor's
+  `options?: APIOptions | LSPConnectionOptions`. TypeScript evaluates `API`
+  at its default `FromLSP = false`, so the conditional is its false arm, and
+  `NonNullable` drops the `undefined` the optional parameter adds: the
+  types are identical, which a mutual-inclusion check of both pairs under
+  `tools/tsconfig.json` confirms. Types are erased, and the imports are
+  type-only, so the code runs as before.
+- **Commit:** the introducing commit.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

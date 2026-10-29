@@ -22,8 +22,8 @@
  * again at an attempt's end, before its publication. */
 import { dirname, resolve } from "node:path";
 import type { API, Project, Snapshot } from "typescript/unstable/sync";
-/** What a snapshot request asks. */
-type UpdateSnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
+/** What a snapshot request asks: the parameter of `API.updateSnapshot`. */
+import type { UpdateSnapshotParams } from "typescript/unstable/proto";
 import { abandonCompiler, compilerChoice, openDocuments, openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { activeFamilies } from "./family-activation.mts";
 import { importLedger, ledgerAnswers, ledgerState, newLedger, processInconsistency, processRetirement, unobservable, validateLedger,

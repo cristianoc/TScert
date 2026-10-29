@@ -237,7 +237,10 @@ are ordinary types.
    nothing, and a declaration merged into a host type from outside the
    audited installation (a project's module augmentation) is refused where
    the type is reached. An overloaded member is the overloads its view lists; a
-   host class without a view has no member. Node shapes are read member-complete. Read
+   host class without a view has no member. A view lists no constructor or
+   static member: a host class's value is read as a record of no member,
+   whose type parameters it does not name, and `new` of it is a located
+   refusal naming the view. Node shapes are read member-complete. Read
    member-complete, `Checker` alone brings 50 methods whose types reach
    `CompletionInfo`, `Uint8Array` and `ReadonlyMap<__String, …>`, and 38
    `this is X` methods (counted on 2026-10-16). `Type`'s view lists none of its `this is X`
@@ -695,8 +698,8 @@ their results' serialization included
 (`invalid-compiler-api-callback-tojson`, whose callback's result pops an
 array under Node). A
 verified program opens none: `new API(…)` is outside the admitted language
-(its declaration's type parameter default is refused, and no view lists
-the constructor; `invalid-compiler-api-retained-fs`, whose retained
+(no view lists the constructor, reading rule 4;
+`invalid-compiler-api-retained-fs`, whose retained
 callback pops an array under Node). The front end's instances are opened by
 `openCompiler` (`tools/compiler-channel.mts`), with `compilerFileSystem`'s
 callbacks (`tools/files.mts`) or `tools/unchecked.mts`'s, which read files,

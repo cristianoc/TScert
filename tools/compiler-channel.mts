@@ -14,7 +14,8 @@
  * that query's `IoFailure`. */
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { API } from "typescript/unstable/sync";
+import { API, type APIOptions, type LSPConnectionOptions } from "typescript/unstable/sync";
+import type { UpdateSnapshotParams } from "typescript/unstable/proto";
 import { compilerFileSystem, findPackage, importLedger, installed, moduleLocation, newLedger, privateLauncher, takeQueryFailure, treeDigest, unobservable,
   withLedger, type Ledger } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
@@ -95,12 +96,11 @@ function guard(api: API): void {
 const documents = new WeakMap<API, Map<string, number>>();
 /** The documents `api` holds open. */
 export const openDocuments = (api: API): string[] => [...(documents.get(api)?.keys() ?? [])];
-type SnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
 const documentKey = (document: unknown): string => typeof document === "string" ? document : String(JSON.stringify(document));
 
 /** A compiler process opened through the API, its requests guarded and the
  * documents it holds open counted. */
-export function openCompiler(options: ConstructorParameters<typeof API>[0]): API {
+export function openCompiler(options: APIOptions | LSPConnectionOptions | undefined): API {
   let api: API;
   try {
     api = new API(options);
@@ -112,7 +112,7 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   const open = new Map<string, number>();
   documents.set(api, open);
   const request = api.updateSnapshot.bind(api);
-  Object.assign(api, { updateSnapshot: (params?: SnapshotParams) => {
+  Object.assign(api, { updateSnapshot: (params?: UpdateSnapshotParams) => {
     const snapshot = request(params);
     for (const document of params?.openFiles ?? []) open.set(documentKey(document), (open.get(documentKey(document)) ?? 0) + 1);
     for (const document of params?.closeFiles ?? []) {
