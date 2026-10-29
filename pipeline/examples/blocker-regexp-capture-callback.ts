@@ -1,5 +1,5 @@
-// A replacement callback needs the regex capture arguments admitted by its
-// callable contract.
+// A replacement callback taking the regex's captures as `unknown` is claimed
+// at the callback `[Symbol.replace]` calls.
 // Census functions:
 // regexp-shape.mts#decodeName, regexp-shape.mts#groupsOf,
 // regexp-shape.mts#regexpShape.

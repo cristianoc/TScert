@@ -2468,6 +2468,7 @@ where the native is modelled and audited otherwise:
 | `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
 | a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
 | a native regex's other members, a regex neither global nor sticky | the empty footprint | they write nothing (audited) |
+| a native regex's `[Symbol.replace]` at a replacement callback, the regex a literal written at the call | none stated | it calls the callback, client code (`invalid-regexp-replace-callback-effect`) |
 | `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |
 | an iteration intrinsic, `%Iterate%` over an array and those over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
@@ -3806,7 +3807,39 @@ N(\Sigma)=P(\Sigma)\ \&\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarr
 where $`\mu`$ is the synthetic symbol `RegExpMatcher` (`tscert/regexp`), the
 model's reading of the native `[[RegExpMatcher]]` slot, and
 $`I_N(T)=\mathtt{Iterator}\langle T\rangle\ \&\ \{\mathtt{readonly}\ [\mu_I]\colon\mathtt{undefined}\}`$
-the native match iterator, $`\mu_I`$ the synthetic `RegExpStringIterator`. No
+the native match iterator, $`\mu_I`$ the synthetic `RegExpStringIterator`.
+Where $`\Sigma\ne\Sigma_\top`$, the regex a literal written as the first
+argument of a string's `replace` or `replaceAll` evaluates to, $`N^R(\Sigma)`$
+(the intrinsic `%RegExp:Σ:replacer%`), also takes a replacement callback at
+its `[@@replace]`, an overload of its own:
+
+```math
+N^R(\Sigma)=N(\Sigma)\ \&\ \{[@@\mathrm{replace}]\colon(\mathtt{string},\ \mathsf{Rep}(\Sigma))\Rightarrow_\top\mathtt{string}\}
+\qquad
+\mathsf{Rep}(\Sigma)=(\mathtt{string},G_1,\ldots,G_n,\mathtt{number},\mathtt{string}\,[,\Gamma])\Rightarrow_\top\mathtt{string}
+```
+
+with the last parameter $`\Gamma`$ present exactly where a group is named
+($`\nu`$). ECMA-262 (`RegExp.prototype[@@replace]`) and V8 collect every
+match before the first call, then call the callback once per match with
+`undefined` as `this`, the whole match, each capture (`undefined` where its
+group did not take part), the match's clamped position, the input string
+and, where the match's `groups` is not `undefined`, that object (a fresh
+object with a `null` prototype per match); the result is converted by
+`ToString`, which runs no code on a string, so the callback's result is
+`string`. The callback is client code, so this overload states no effect
+(`invalid-regexp-replace-callback-effect`, run under Node); its arguments
+follow the shape (`regexp-replace-callback`, `invalid-regexp-replace-capture`,
+`invalid-regexp-replace-groups`, run under Node). The arguments follow the
+shape only while the regex keeps its pattern: `RegExpBuiltinExec` converts
+`lastIndex` first, and a `lastIndex` holding an object runs its `valueOf`,
+which may `compile` another pattern. A literal at the call is a regex no
+other code holds, its `lastIndex` the number 0; a regex held in a binding
+may reach code that sets it (`invalid-regexp-replace-shared`, run under
+Node: the offset arrives where the capture was), so its `[@@replace]` takes
+a string alone. A callback binding fewer
+parameters is claimed at $`\mathsf{Rep}(\Sigma)`$, the further actuals
+discarded at binding, and its body is checked there. No
 source declaration has a synthetic symbol's identity, so no source type,
 literal or class states $`\mu`$ or $`\mu_I`$; a source `unique symbol` of the
 same name is a key of its own (`invalid-regexp-forged-mark`).
@@ -3818,8 +3851,9 @@ array pattern or loop over one steps it as an array. `RegExp`'s stated
 members are pinned to their declaration texts (`reviewedRegExpMembers`).
 
 **Effects.** A member of $`⟦\mathtt{RegExp}⟧`$, any value's, states no
-effect. A native regex's members run no client code, read its pattern and
-flags, and allocate only their result; what they write is `lastIndex`. With
+effect. A native regex's members at string arguments run no client code,
+read its pattern and flags, and allocate only their result; what they write
+is `lastIndex`; the cases below are at string arguments. With
 $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 
 ```math
@@ -3894,8 +3928,8 @@ no view stating one (a copy would lack the non-enumerable `lastIndex`,
 inherits from `RegExp.prototype` is refused whatever the operand
 (`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
 regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
-library class is no base (`invalid-regexp-subclass`). A replacement callback
-is not stated. `new RegExp` of strings is the structural regex
+library class is no base (`invalid-regexp-subclass`). A structural regex's
+`[@@replace]` takes no replacement callback. `new RegExp` of strings is the structural regex
 $`⟦\mathtt{RegExp}⟧`$ ([library globals](#library-globals); `regexp-dynamic`).
 Match results are readonly views.
 

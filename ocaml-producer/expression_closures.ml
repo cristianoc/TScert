@@ -338,16 +338,23 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             | _ -> {s with call_effect} in
           let calls = call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare (List.map at_own extra)) in
-          (* A signature a named closure's uses offer whose parameters are
-             narrower than the closure's own (an element of one arm of the
-             parameter's union) is checked from an entry at those
-             parameters, at which the body's interior claims may differ (a
-             test deciding a branch the narrower entry never takes): its
-             claims are stated per signature, as an implemented contract's
-             are. A literal is claimed at the one signature its context
-             offers (`Calls`), from the claims at its own. *)
-          if guard = None && not rest && List.mem_assoc e.pos offered
-             && List.exists (fun (s:Semantic.signature) -> leading s <> leading call) calls then
+          (* A signature a named closure's uses or a literal's context offer
+             whose parameters are narrower than the closure's own (an
+             element of one arm of the parameter's union, a replacement
+             callback's `string | undefined` capture at an `unknown`
+             parameter) is checked from an entry at those parameters, at
+             which the body's interior claims may differ (a test deciding a
+             branch the narrower entry never takes): its claims are stated
+             per signature, as an implemented contract's are. A literal's
+             are where an offered parameter is not its own up to
+             representation (subtypes both ways); one whose context offers
+             its own parameters is claimed there from its own claims. *)
+          let same a b = plausible_subtype_declared declarations a b && plausible_subtype_declared declarations b a in
+          let narrower (s:Semantic.signature) = not (List.for_all2 same (leading s) (leading call)) in
+          if guard = None && not rest
+             && (if List.mem_assoc e.pos offered
+                 then List.exists (fun (s:Semantic.signature) -> leading s <> leading call) calls
+                 else from_context <> [] && List.exists narrower calls) then
             publish_arrow e.pos (List.map (fun (s:Semantic.signature) ->
               collect_overload_row_claims (fun () ->
                 with_rigid_bounds closure_bounds (fun () ->

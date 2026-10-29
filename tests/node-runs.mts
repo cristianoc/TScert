@@ -1645,6 +1645,16 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-regexp-structural-capture", `key(/(a)|b/, "b")`), undefined);
   // A split splices an unmatched capture in as `undefined`, typed `string`.
   assert.equal(runExample("invalid-regexp-split-captures", `parts("a1b")[2]`), undefined);
+  // A replacement callback is handed an unmatched capture as `undefined`,
+  // and no `groups` where no group is named; one shrinking the array `map`
+  // steps leaves a hole.
+  assert.equal(runExample("invalid-regexp-replace-capture", `last("b")`), undefined);
+  assert.equal(runExample("invalid-regexp-replace-groups", `groups("a")`), undefined);
+  assert.equal(runExample("invalid-regexp-replace-callback-effect", `1 in wrong(["a", "a"])`), false);
+  // A regex shared before the call: a `lastIndex` whose `valueOf` compiles
+  // another pattern hands the callback the offset where the capture was.
+  assert.equal(runExample("invalid-regexp-replace-shared",
+    `typeof first("b", (r) => { r.lastIndex = { valueOf() { r.compile("b"); return 0; } }; })`), "number");
   // `lastIndex` is a regex's own property, not enumerable: `in` finds it, a
   // copy lacks it.
   assert.equal(runExample("invalid-regexp-lastindex-in", "hasState(/a/)"), true);

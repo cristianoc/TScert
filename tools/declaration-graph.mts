@@ -2989,7 +2989,22 @@ export function collectDeclarations(file: string, options: {
         throw declarationError(span, "TypeScript regular expression literal missing");
       const { pattern, flags } = literalParts(literal.getText(client));
       const shape = regexpShape(pattern, flags);
-      const name = regexpIntrinsicName(shape);
+      // A literal written as the first argument of a string's `replace` or
+      // `replaceAll` is a regex no other code holds while the call runs, so
+      // its `[Symbol.replace]` also takes a replacement callback, whose
+      // arguments follow the shape (`nativeRegExp`).
+      let at: Node = literal;
+      while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
+      const call = at.parent;
+      const callback = !!call && ts.isCallExpression(call) && call.arguments[0] === at &&
+        ts.isPropertyAccessExpression(call.expression) && !call.questionDotToken && !call.expression.questionDotToken &&
+        (call.expression.name.text === "replace" || call.expression.name.text === "replaceAll") &&
+        (() => {
+          const receiver = checker.getTypeAtLocation(call.expression.expression);
+          const parts = !receiver ? [] : isUnionType(receiver) ? receiver.getTypes() : [receiver];
+          return parts.length > 0 && parts.every(t => !!(t.flags & TypeFlags.StringLike));
+        })();
+      const name = regexpIntrinsicName(shape, callback);
       if (!intrinsicsListed.has(name)) {
         try {
           values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
@@ -2999,7 +3014,7 @@ export function collectDeclarations(file: string, options: {
             // the regex, `lastIndex` its only mutable one, is allocated by
             // this evaluation (SOURCE-CONTRACTS.md, "Native footprints").
             type: { k: "function", effect: emptyEffect, receiver: null, params: [], rest: null,
-              result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
+              result: nativeRegExp(shape, nativeMatches(), callback), span: [0, 0] } });
         } catch (error) {
           recover(span, error);
           continue;

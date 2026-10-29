@@ -295,9 +295,45 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               when c.call_effect.promise = own.call_effect.promise ->
             bind c.result own.result
           | _ -> []) args) in
+        (* A closure literal at a parameter that is a binder, which an
+           earlier parameter's method takes at one of its positions: the
+           binder is the callback type the earlier actual's method takes
+           there, where exactly one of its signatures of that arity takes a
+           callable, as TypeScript infers it from the earlier argument
+           (`String.prototype.replace` dispatching to a native regex's
+           `[Symbol.replace]`, whose replacer overload takes the callback). *)
+        let from_actuals (s:Semantic.signature) =
+          let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
+          let binders = List.concat (List.mapi (fun i (arg:expr) ->
+            match arg.node,param_at s i with
+            | Lambda _,Some (Rigid r) when List.mem r own -> [r]
+            | _ -> []) args) in
+          if binders = [] then [] else
+          List.concat (List.mapi (fun i (arg:expr) -> match arg.node,param_at s i with
+            | Lambda _,_ -> []
+            | _,Some (Atoms [Shape {fields=(_::_ as fields);_}]) ->
+              (match Option.bind (quietly (fun () -> expr env arg))
+                       (fun t -> try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+               | Some (Atoms [Shape {fields=actuals;_}]) ->
+                 List.concat_map (fun (f:Semantic.field) ->
+                   match f.read,List.find_opt (fun (g:Semantic.field) -> g.name = f.name) actuals with
+                   | Atoms [Shape {calls=[c];_}],Some {read=Atoms [Shape {calls;_}];_} ->
+                     List.concat (List.mapi (fun j p -> match p with
+                       | Rigid r when List.mem r binders ->
+                         (match List.filter_map (fun (a:Semantic.signature) ->
+                            match List.nth_opt a.params j with
+                            | Some (Atoms [Shape {calls=_::_;_}] as t)
+                                when List.length a.params = List.length c.params -> Some t
+                            | _ -> None) calls with
+                          | [t] -> [r,t]
+                          | _ -> [])
+                       | _ -> []) c.params)
+                   | _ -> []) fields
+               | _ -> [])
+            | _ -> []) args) in
         let seed (s:Semantic.signature) =
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
-          let found = bind s.receiver receiver_type @ promised s @ (match expected with
+          let found = bind s.receiver receiver_type @ promised s @ from_actuals s @ (match expected with
             | Some t -> bind s.result t
             | None -> []) in
           let seeds = List.filter_map (fun (r,t) ->
@@ -713,8 +749,17 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
                    List.for_all (fun (c:Semantic.signature) ->
                      match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
-                     | Some a -> List.for_all (fun (d:Semantic.signature) ->
-                         Semantic.effect_covers d.call_effect c.call_effect) (calls_of a.read)
+                     | Some a ->
+                       (* Of an overloaded member, the signatures taking
+                          what the wanted one passes are those a call may
+                          meet it by (a regex's `[Symbol.replace]` at a
+                          string, not its callback overload). *)
+                       let covers (d:Semantic.signature) = Semantic.effect_covers d.call_effect c.call_effect in
+                       let takes (d:Semantic.signature) = List.length d.params = List.length c.params
+                         && List.for_all2 (plausible_subtype_declared declarations) c.params d.params in
+                       (match List.filter takes (calls_of a.read) with
+                        | [] -> List.for_all covers (calls_of a.read)
+                        | relevant -> List.exists covers relevant)
                      | None -> true) (calls_of w.read)) wanted.fields
                | _ -> true)
             | _ -> true) (List.combine args actuals)) in

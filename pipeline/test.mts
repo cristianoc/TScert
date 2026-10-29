@@ -3348,6 +3348,49 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A replacement callback's overload states no effect, and passes each
+  // capture under an alternative as `string | undefined`. Claims stating
+  // `doubled`, whose callback writes nothing, preserving across its
+  // `replace` with that callback, or `decode`'s callback taking such a
+  // capture as a string at the signature the regex calls it with, are
+  // refused whatever the producer proposes; checking the honest evidence
+  // against the forged claims refuses too.
+  const artifacts = run("regexp-replace-callback");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const callback = source.indexOf("(_: string, point");
+  type Claims = ReturnType<typeof readClaims>;
+  const arrowAt = (claims: Claims, start: number, arity: number) => {
+    const claim = must(claims.functions.flatMap(f => f.expressions)
+      .find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1), `the claim at ${start}`);
+    const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
+    assert.ok(typeof label === "number");
+    const row = must(claims.types[label], `the type row at ${start}`);
+    return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
+      .find(s => s.arguments.length === arity), `the contract at ${start}`);
+  };
+  const forgeries: [string, (claims: Claims) => void][] = [
+    ["forged-replacer-effect", (claims) => {
+      must(claims.functions.find(f => f.name === "doubled"), "doubled's claims").footprint = { value: "keep", store: "keep" };
+    }],
+    ["forged-replacer-capture", (claims) => {
+      const offered = arrowAt(claims, callback, 5);
+      offered.arguments[1] = must(offered.arguments[0], "the match parameter");
+    }],
+  ];
+  for (const [name, forge] of forgeries) {
+    const claims = readClaims(artifacts);
+    forge(claims);
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, `${name}: ${produce.stdout}${produce.stderr}`);
+    assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/, name);
+  }
+  process.stdout.write("forged replacement callback: a preserving dispatch and a string capture refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // A declaration's claimed footprint is established by its own unit's
   // graph. `collect` steps an array iterator, which writes its position,
   // and pushes onto its parameter: it is within `{value: any, store: grow}`

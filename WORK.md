@@ -57,7 +57,7 @@ each item's design and evidence, not its progress.
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
-| [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, a native regex from `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
+| [Regular expressions left](#regular-expressions-left) | open | replacement callbacks of a regex of the conservative shape, a native regex from `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [Precision](#precision) | open | the facts listed there are derivable |
@@ -699,9 +699,10 @@ prototypes' keys in the model.
 **Regular expressions left.** A
 literal, `exec`, `test` and the string methods dispatching to a regex are
 admitted ([regular expressions](docs/SOURCE-CONTRACTS.md#regular-expressions)).
-Left: a replacement callback, whose argument list follows the shape
-(`(match, p₁ … pₙ, offset, input[, groups])`, every match collected before
-the first call, its result a string); a native regex of the conservative
+Left: a replacement callback of a regex of the conservative shape or of a
+`RegExp` annotation, whose argument count the shape does not fix, and of a
+literal held in a binding, which needs the binding shown unshared until the
+call (code holding the regex may change its pattern through `lastIndex`); a native regex of the conservative
 shape for `new RegExp(p, f)` of strings, which is read as the structural
 regex a `RegExp` annotation states (`regexp-dynamic`); a regex's properties, `lastIndex`
 (own, not enumerable, a number) and the accessors `source` and `flags`,
