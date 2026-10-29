@@ -681,6 +681,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     stated: library => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) }] },
+  // Only empty construction: no iterator, entry access or overridden adder runs.
+  ...["new <K extends WeakKey = WeakKey, V = any>(entries?: readonly (readonly [K, V])[] | null): WeakMap<K, V>;",
+    "new <K extends WeakKey = WeakKey, V = any>(iterable?: Iterable<readonly [K, V]> | null): WeakMap<K, V>;"]
+    .map((signature): GlobalEntry => ({ host: transparent("empty native collection allocation"), global: "WeakMap", signature,
+      effect: emptyEffect, stated: library => ({ binders: ["K", "V"], params: [],
+        result: library("WeakMap", [binder("K"), binder("V")]) }) })),
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",

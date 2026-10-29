@@ -694,6 +694,44 @@ b81675f reports the gate's refusal of the two overloads together
   of `tools/type-term.mts` reaching them.
 - **Commit:** the introducing commit, `Index contracts are compared as type terms, kind by kind`.
 
+### A caught error's fields read after `instanceof`
+
+The front end recovers the payload of its own errors through private weak
+identity tables. A catch binds `unknown`; `instanceof C` alone establishes
+no field initialized by `C`, since an object can share its prototype without
+having run its constructor (`instanceof-unknown-refused`).
+
+- **Rewrite:** `refusal`, `declarationError` and `ioFailure` register each
+  error in a module-private `WeakMap<object, Payload>`. `refusalOf`,
+  `declarationSpanOf` and `ioFailureOf` first test for a non-null object,
+  then return its registered payload or `undefined`. Lookup preserves the
+  entry, so the same error can be handled repeatedly. The tables do not
+  keep an otherwise unreachable error alive; collection timing is unspecified.
+- **Observable contract:** a gate refusal is an `Error` with the supplied
+  message; its registered payload holds the supplied span and message.
+  A declaration refusal is an `Error` with the supplied message and optional
+  cause, and its registered payload is the supplied span. These errors have
+  no public `pos` or `at` field. Spans and causes retain their supplied
+  identities; registration is not a deep snapshot. An I/O failure carries
+  its operation, path, message and cause, and its registered payload holds
+  that cause. `orAbsent` returns `null` whenever the same registered failure's
+  cause denotes absence, including repeated calls; other errors propagate
+  by identity. `toolFailureOf` attributes an I/O failure to the operation
+  site, skipping the maker's frame. A foreign value, including a structurally
+  matching error or a proxy, has no registration. Lookup invokes no property
+  access or user callback on that value.
+- **Trust:** these lookups use the audited standard
+  [WeakMap contract](SOURCE-CONTRACTS.md#weak-tables), including the assumption
+  that standard objects and their methods are not tampered with.
+- **Functions:** `lowerFile`, `diagnosticFragment`, `recoverGate`,
+  `collectDeclarations`, `orAbsent` and `io` use these payloads.
+  `tests/caught-errors.mts` exercises the real gate and I/O helpers, repeated
+  handling and caller attribution; `tests/trusted-inputs.mts` checks repeated
+  lookup of a declaration refusal from the actual declaration collector.
+- **Pattern:** what a thrown value carries is found by its identity in a
+  table its maker fills, rather than read off the caught value.
+- **Commit:** the introducing commit, `Caught errors' fields are found in their maker's weak table; WeakMap gets a contract`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

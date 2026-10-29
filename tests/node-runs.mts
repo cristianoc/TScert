@@ -672,6 +672,33 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("error-subclass",
     `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
     'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  // A native weak table: an entry set through the table and read twice, its
+  // deletion of another key through the alias `set` returns.
+  assert.equal(runExample("native-weakmap", "lookup({}, {})"), 14);
+  assert.equal(runExample("invalid-native-weakmap-key", `(() => {
+    try { wrong(); } catch (error) { return error instanceof TypeError; }
+    return false;
+  })()`), true, "a primitive key makes set throw TypeError");
+  assert.equal(runExample("native-weakmap", `(() => {
+    const table = new WeakMap();
+    for (const key of [undefined, null, false, 1, 1n, "key", Symbol.for("key")]) {
+      if (table.get(key) !== undefined || table.has(key) || table.delete(key)) return false;
+      try { table.set(key, 1); return false; } catch (error) {
+        if (!(error instanceof TypeError)) return false;
+      }
+    }
+    for (const key of [{}, () => {}, Symbol("key")]) {
+      if (table.set(key, 1) !== table || table.get(key) !== 1 || !table.has(key) || !table.delete(key)) return false;
+    }
+    return true;
+  })()`), true, "native weak keys: objects and unregistered symbols; invalid keys are absent on reads");
+  assert.equal(runExample("invalid-native-weakmap-iterable", `(() => {
+    let calls = 0;
+    wrong({ [Symbol.iterator]() { calls++; return [][Symbol.iterator](); } });
+    return calls;
+  })()`), 1, "iterable construction executes client code");
+  assert.equal(runExample("invalid-native-weakmap-missing", "wrong({})"), undefined);
+
   assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
     "error-subclass-methods: the methods through the chain");
   // `Error`'s options at a stated `cause`: each construction gives the

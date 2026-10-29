@@ -73,19 +73,29 @@ const nodeListType = (type: Type): boolean => {
 
 /** A refusal located at a root of the client: an import declaration or one of
  * its own type declarations. One made of a caught error carries it as its
- * `cause`, so a tool failure stays one (`toolFailureOf`), located. */
-export class DeclarationError extends Error {
-  readonly at: Span;
-  constructor(at: Span, message: string, cause?: unknown) {
-    super(message, cause === undefined ? undefined : { cause });
-    this.at = at;
-  }
+ * `cause`, so a tool failure stays one (`toolFailureOf`), located. Only
+ * `declarationError` constructs one. */
+class DeclarationError extends Error {}
+
+/** Payloads registered by the maker, weakly keyed by the error identity. */
+const declarationSpans = new WeakMap<object, Span>();
+
+/** The refusal at `at`, entered in the table. */
+function declarationError(at: Span, message: string, cause?: unknown): DeclarationError {
+  const error = new DeclarationError(message, cause === undefined ? undefined : { cause });
+  declarationSpans.set(error, at);
+  return error;
+}
+
+/** The registered payload, or undefined for any other value. Lookup preserves the entry. */
+export function declarationSpanOf(thrown: unknown): Span | undefined {
+  return thrown !== null && typeof thrown === "object" ? declarationSpans.get(thrown) : undefined;
 }
 
 /** A caught error as the refusal of a declaration read at `span`. A tool
  * failure is no refusal: it is thrown on, located at `span`. */
 const refusalAt = (span: Span, thrown: unknown): string => {
-  if (toolFailureOf(thrown)) throw new DeclarationError(span, messageOf(thrown), thrown);
+  if (toolFailureOf(thrown)) throw declarationError(span, messageOf(thrown), thrown);
   return messageOf(thrown);
 };
 
@@ -181,14 +191,14 @@ function useProject<T>(file: string, project: Project | undefined, check: (proje
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T,
   probe: ProbeProgram): T {
   if (!project?.configFileName || !project.compilerOptions.strict)
-    throw new DeclarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
+    throw declarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
   check(project);
   const client = project.program.getSourceFile(file);
-  if (!client) throw new DeclarationError([0, 0], `TypeScript did not load ${file}`);
+  if (!client) throw declarationError([0, 0], `TypeScript did not load ${file}`);
   // The project itself must load: a type package it names, such as
   // `types: ["node"]`, that is not installed leaves its globals undeclared.
   const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
-  if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
+  if (broken) throw declarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
   return use(project.checker, client, dirname(project.configFileName), project.program, probe);
 }
 
@@ -394,7 +404,7 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
     if (!clause || (!clause.name && !clause.namedBindings) || !ts.isStringLiteral(node.moduleSpecifier))
-      throw new DeclarationError(span, "only named, default and namespace imports are resolved");
+      throw declarationError(span, "only named, default and namespace imports are resolved");
     const specifier = node.moduleSpecifier.text;
     const clauseTypeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
     // A default import binds the module's `default` export.
@@ -408,7 +418,7 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
   const namespaced = members.map(member => {
     const [first] = member.uses;
     const at = first ? identifierAt(client, first.name) : null;
-    if (!first || !at) throw new DeclarationError(first?.span ?? [0, 0], `TypeScript namespace member ${member.local} missing`);
+    if (!first || !at) throw declarationError(first?.span ?? [0, 0], `TypeScript namespace member ${member.local} missing`);
     return { name: member.local, at, imported: member.imported, specifier: member.specifier, span: first.span,
       typeOnly: !member.uses.some(u => u.value) };
   });
@@ -711,15 +721,15 @@ export function collectDeclarations(file: string, options: {
   const recover = (pos: Span, error: unknown): void => {
     if (!options.diagnostic) {
       if (error instanceof DeclarationError) throw error;
-      throw new DeclarationError(pos, messageOf(error), error);
+      throw declarationError(pos, messageOf(error), error);
     }
     passToolFailure(error);
-    options.diagnostic(error instanceof DeclarationError ? error.at : pos, messageOf(error));
+    options.diagnostic(declarationSpanOf(error) ?? pos, messageOf(error));
   };
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
-      throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
+      throw declarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // A module of the program: a source file outside the standard library,
     // the host packages and any installed package.
@@ -2441,9 +2451,9 @@ export function collectDeclarations(file: string, options: {
       for (const use of member.uses.filter(u => u.callee)) {
         const name = identifierAt(client, use.name);
         const type = name ? checker.getTypeAtLocation(name) : undefined;
-        if (!name || !type) throw new DeclarationError(use.span, "TypeScript types no namespace member here");
+        if (!name || !type) throw declarationError(use.span, "TypeScript types no namespace member here");
         if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
-          throw new DeclarationError(use.span, `the call of ${member.local} passes the namespace object as \`this\`, which its declared \`this\` parameter constrains`);
+          throw declarationError(use.span, `the call of ${member.local} passes the namespace object as \`this\`, which its declared \`this\` parameter constrains`);
       }
     // The client's ambient declarations (SOURCE-CONTRACTS.md,
     // "Imported, ambient and global values"):
@@ -2451,7 +2461,7 @@ export function collectDeclarations(file: string, options: {
     // declaration, at the type it states. Nothing runs them.
     for (const span of options.ambient ?? []) {
       const identifier = identifierAt(client, span);
-      if (!identifier) throw new DeclarationError(span, "TypeScript ambient declaration missing");
+      if (!identifier) throw declarationError(span, "TypeScript ambient declaration missing");
       const statement = client.statements.find(s => s.pos <= identifier.pos && identifier.end <= s.end);
       const at: Span = statement ? [statement.getStart(client), statement.end] : span;
       try {
@@ -2468,7 +2478,7 @@ export function collectDeclarations(file: string, options: {
         isTypeDeclaration(statement) &&
         statement.getStart(client) === span[0] && statement.end === span[1]);
       if (!declaration || !isTypeDeclaration(declaration) || !declaration.name)
-        throw new DeclarationError(span, "TypeScript local declaration missing");
+        throw declarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
         if (isTypeAlias(node) && associatedAlias(node)) {
@@ -2489,7 +2499,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.globals ?? []) {
       const identifier = identifierAt(client, span);
-      if (!identifier) throw new DeclarationError(span, "TypeScript global reference missing");
+      if (!identifier) throw declarationError(span, "TypeScript global reference missing");
       if (roots.some(r => r.root.binding.local === identifier.text)) continue;
       const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
       if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
@@ -2667,7 +2677,7 @@ export function collectDeclarations(file: string, options: {
     let stringSplit: Span | undefined;
     for (const span of options.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
-      if (!receiver) throw new DeclarationError(span, "TypeScript member receiver missing");
+      if (!receiver) throw declarationError(span, "TypeScript member receiver missing");
       const type = checker.getTypeAtLocation(receiver);
       const kinds = type ? primitivesOf(type) : [];
       for (const kind of kinds)
@@ -2685,7 +2695,7 @@ export function collectDeclarations(file: string, options: {
       const parts = (checker.resolveName(name, SymbolFlags.Interface, client, false)?.declarations ?? [])
         .map(d => d.resolve()).filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       const { refusal } = mergeRefusal(checker, libraryFile, parts, overlayLibrary.reviewed);
-      if (refusal) throw new DeclarationError(options.root ?? [0, 0], mergeMessage(name, refusal));
+      if (refusal) throw declarationError(options.root ?? [0, 0], mergeMessage(name, refusal));
     }
     let arrayProto: TypeDefinition[] = [];
     const arraysAt = options.arrays ?? stringSplit;
@@ -2693,7 +2703,7 @@ export function collectDeclarations(file: string, options: {
       try {
         arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
       } catch (error) {
-        throw new DeclarationError(arraysAt, messageOf(error), error);
+        throw declarationError(arraysAt, messageOf(error), error);
       }
     }
     for (const [kind, at] of primitives) {
@@ -2779,7 +2789,7 @@ export function collectDeclarations(file: string, options: {
       ...(options.spreads ?? []).map(span => ({ span, spread: true }))];
     for (const { span, spread } of iterated) {
       const iterable = expressionAt(client, span);
-      if (!iterable) throw new DeclarationError(span, "TypeScript iterable missing");
+      if (!iterable) throw declarationError(span, "TypeScript iterable missing");
       // The iterable's type, read part by part: a failure of the compiler's
       // API there is located at the iterable.
       const kindsOf = (): string[] => {
@@ -2823,7 +2833,7 @@ export function collectDeclarations(file: string, options: {
     const listedRests = new Set<number>();
     for (const { span, index } of options.restTargets ?? []) {
       const target = expressionAt(client, span);
-      if (!target) throw new DeclarationError(span, "TypeScript rest source missing");
+      if (!target) throw declarationError(span, "TypeScript rest source missing");
       const type = checker.getTypeAtLocation(target);
       const tuple = type && !isUnionType(type) && checker.isTupleType(type) && isTypeReference(type)
         ? type.getTarget() : undefined;
@@ -2864,7 +2874,7 @@ export function collectDeclarations(file: string, options: {
     const listStable = (at: Span): void => {
       if (stableListed) return;
       try { promiseType({ k: "atom", name: "unknown", span: [0, 0] }); }
-      catch (error) { throw new DeclarationError(at, messageOf(error), error); }
+      catch (error) { throw declarationError(at, messageOf(error), error); }
       stableListed = true;
     };
     const listIntrinsics = (at: Span, names: string[]): void => {
@@ -2890,7 +2900,7 @@ export function collectDeclarations(file: string, options: {
     // or a string known only at run time, is the host's `%HasProperty%`.
     for (const span of options.inKeys ?? []) {
       const key = expressionAt(client, span);
-      if (!key) throw new DeclarationError(span, "TypeScript `in` key missing");
+      if (!key) throw declarationError(span, "TypeScript `in` key missing");
       const type = checker.getTypeAtLocation(key);
       const parts = type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
       if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
@@ -2908,7 +2918,7 @@ export function collectDeclarations(file: string, options: {
     };
     for (const span of options.elementReads ?? []) {
       const read = expressionAt(client, span);
-      if (!read || !ts.isElementAccessExpression(read)) throw new DeclarationError(span, "TypeScript element read missing");
+      if (!read || !ts.isElementAccessExpression(read)) throw declarationError(span, "TypeScript element read missing");
       const object = checker.getTypeAtLocation(read.expression);
       const key = checker.getTypeAtLocation(read.argumentExpression);
       // A link of an optional chain reads the chain's present value: the
@@ -2933,7 +2943,7 @@ export function collectDeclarations(file: string, options: {
     // `b.length` of a view of bytes.
     for (const span of options.lengthReads ?? []) {
       const read = expressionAt(client, span);
-      if (!read || !ts.isPropertyAccessExpression(read)) throw new DeclarationError(span, "TypeScript length read missing");
+      if (!read || !ts.isPropertyAccessExpression(read)) throw declarationError(span, "TypeScript length read missing");
       const object = checker.getTypeAtLocation(read.expression);
       if (bytesOnly(object && isUnionType(object) ? object.getTypes() : object ? [object] : [])) viewRead(span, byteLengthName);
     }
@@ -2954,7 +2964,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.openReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isPropertyAccessExpression(read) || !ts.isIdentifier(read.name))
-        throw new DeclarationError(span, "TypeScript member read missing");
+        throw declarationError(span, "TypeScript member read missing");
       const object = checker.getTypeAtLocation(read.expression);
       const parts = object && isIntersectionType(object) ? object.getTypes() : [];
       const keys = parts.map(recordOf);
@@ -2976,7 +2986,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.regexps ?? []) {
       const literal = expressionAt(client, span);
       if (!literal || literal.kind !== ts.SyntaxKind.RegularExpressionLiteral)
-        throw new DeclarationError(span, "TypeScript regular expression literal missing");
+        throw declarationError(span, "TypeScript regular expression literal missing");
       const { pattern, flags } = literalParts(literal.getText(client));
       const shape = regexpShape(pattern, flags);
       const name = regexpIntrinsicName(shape);
@@ -3001,7 +3011,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.dispatchCalls ?? []) {
       const call = expressionAt(client, span);
       if (!call || !ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression))
-        throw new DeclarationError(span, "TypeScript string method call missing");
+        throw declarationError(span, "TypeScript string method call missing");
       const method = call.expression.name.text;
       const [argument] = call.arguments;
       if (!isDispatchMethod(method) || !argument) continue;
@@ -3070,7 +3080,7 @@ export function collectDeclarations(file: string, options: {
     const groups = new Map<number, Identifier[]>();
     for (const span of options.globalValues ?? []) {
       const identifier = identifierAt(client, span);
-      if (!identifier) throw new DeclarationError(span, "TypeScript global value reference missing");
+      if (!identifier) throw declarationError(span, "TypeScript global value reference missing");
       const symbol = checker.getSymbolAtLocation(identifier);
       if (!symbol || symbol.flags & SymbolFlags.Alias || checker.isUnknownSymbol(symbol) ||
           checker.isUndefinedSymbol(symbol) || !symbol.declarations.length) continue;
@@ -3115,7 +3125,7 @@ export function collectDeclarations(file: string, options: {
     // A private name reads the key of the member TypeScript binds it to.
     for (const span of options.privateNames ?? []) {
       const name = expressionAt(client, span);
-      if (!name || !ts.isPrivateIdentifier(name)) throw new DeclarationError(span, "TypeScript private name missing");
+      if (!name || !ts.isPrivateIdentifier(name)) throw declarationError(span, "TypeScript private name missing");
       try {
         options.privateName?.(span, privateNameOf(name));
       } catch (error) {
@@ -3144,7 +3154,7 @@ export function collectDeclarations(file: string, options: {
         continue;
       }
       const identifier = identifierAt(client, span);
-      if (!identifier) throw new DeclarationError(span, "TypeScript element key missing");
+      if (!identifier) throw declarationError(span, "TypeScript element key missing");
       const nodes = targetOf(checker, identifier)?.declarations.map(d => d.resolve()) ?? [];
       const [node] = nodes;
       if (nodes.length !== 1 || !node || !ts.isVariableDeclaration(node) || !node.type ||
@@ -3161,7 +3171,7 @@ export function collectDeclarations(file: string, options: {
       const name = identifierAt(client, span);
       const access = name?.parent;
       if (!name || !access || !ts.isPropertyAccessExpression(access) || !ts.isIdentifier(access.expression))
-        throw new DeclarationError(span, "TypeScript member read missing");
+        throw declarationError(span, "TypeScript member read missing");
       const members = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
       const owners = targetOf(checker, access.expression)?.declarations.map(d => d.resolve()) ?? [];
       const [member] = members, [owner] = owners;
@@ -3178,7 +3188,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.classTests ?? []) {
       const name = identifierAt(client, span);
-      if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
+      if (!name) throw declarationError(span, "TypeScript `instanceof` operand missing");
       const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
       const [owner] = owners;
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
@@ -3279,7 +3289,7 @@ export function collectDeclarations(file: string, options: {
     };
     for (const span of options.hookTests ?? []) {
       const name = identifierAt(client, span);
-      if (!name) throw new DeclarationError(span, "TypeScript `instanceof` operand missing");
+      if (!name) throw declarationError(span, "TypeScript `instanceof` operand missing");
       const type = checker.getTypeAtLocation(name);
       const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
       if (!hook && importedClass(name)) options.importedClassTest?.(span);
@@ -3295,7 +3305,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.bindingReads ?? []) {
       const name = identifierAt(client, span);
-      if (!name) throw new DeclarationError(span, "TypeScript binding reference missing");
+      if (!name) throw declarationError(span, "TypeScript binding reference missing");
       const parent = name.parent;
       const symbol = parent && ts.isShorthandPropertyAssignment(parent) && parent.name === name
         ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(name);
@@ -3635,7 +3645,7 @@ export function collectDeclarations(file: string, options: {
     };
     for (const span of options.staticTypes ?? []) {
       const name = identifierAt(client, span);
-      if (!name) throw new DeclarationError(span, "TypeScript static field missing");
+      if (!name) throw declarationError(span, "TypeScript static field missing");
       const symbol = checker.getSymbolAtLocation(name);
       const type = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
       try {
@@ -3647,7 +3657,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.contextualParams ?? []) {
       const parameter = parameterAt(span);
-      if (!parameter) throw new DeclarationError(span, "TypeScript parameter missing");
+      if (!parameter) throw declarationError(span, "TypeScript parameter missing");
       const type = checker.getTypeAtLocation(parameter.name);
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
@@ -3663,7 +3673,7 @@ export function collectDeclarations(file: string, options: {
     // literal at.
     for (const span of options.assignCalls ?? []) {
       const call = expressionAt(client, span);
-      if (!call || !ts.isCallExpression(call)) throw new DeclarationError(span, "TypeScript Object.assign call missing");
+      if (!call || !ts.isCallExpression(call)) throw declarationError(span, "TypeScript Object.assign call missing");
       try {
         const resolved = checker.getResolvedSignature(call);
         const target = resolved && checker.getParameterType(resolved, 0);
@@ -3697,7 +3707,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.enums ?? []) {
       const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);
       if (!statement || !ts.isEnumDeclaration(statement))
-        throw new DeclarationError(span, "TypeScript enum declaration missing");
+        throw declarationError(span, "TypeScript enum declaration missing");
       try {
         clean(statement, `enum ${statement.name.text}`);
       } catch (error) {
@@ -3763,7 +3773,7 @@ export function collectDeclarations(file: string, options: {
       const access = expressionAt(client, span);
       if (!access || !(ts.isPropertyAccessExpression(access) || ts.isElementAccessExpression(access)) ||
           !ts.isIdentifier(access.expression))
-        throw new DeclarationError(span, "TypeScript enum member read missing");
+        throw declarationError(span, "TypeScript enum member read missing");
       const owners = targetOf(checker, access.expression)?.declarations.map(d => d.resolve()) ?? [];
       const [owner] = owners;
       const value = checker.getConstantValue(access);
@@ -3809,7 +3819,7 @@ export function collectDeclarations(file: string, options: {
     // the binders of the functions around it, or refused with the reason.
     for (const span of options.computed ?? []) {
       const node = computedAt(client, span);
-      if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
+      if (!node) throw declarationError(span, "TypeScript computed type missing");
       // A global or an imported type's application is computed when the alias it names is.
       const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
       const aggregate = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
@@ -3833,7 +3843,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.blockTypes ?? []) {
       const node = typeNodeAt(client, span);
       if (!node || !ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName))
-        throw new DeclarationError(span, "TypeScript type reference missing");
+        throw declarationError(span, "TypeScript type reference missing");
       const name = node.typeName;
       const declared = typeDeclarationsOf(name);
       if (!declared.some(d => (isTypeAlias(d) || ts.isInterfaceDeclaration(d)) &&
@@ -4056,7 +4066,7 @@ export function collectDeclarations(file: string, options: {
                 programClasses.add(key);
             } }, instance);
         } catch (error) {
-          throw new DeclarationError(span, messageOf(error), error);
+          throw declarationError(span, messageOf(error), error);
         } finally {
           collecting = null;
         }
@@ -4095,7 +4105,7 @@ export function collectDeclarations(file: string, options: {
       try {
         arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
       } catch (error) {
-        throw new DeclarationError(at, messageOf(error), error);
+        throw declarationError(at, messageOf(error), error);
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
@@ -4129,7 +4139,7 @@ export function collectDeclarations(file: string, options: {
     if (options.familySelected) options.familySelected(scan());
     const document: DeclarationDocument = { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
     if (deferredInDocument(document))
-      throw new DeclarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
+      throw declarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
     return document;
   });
 }

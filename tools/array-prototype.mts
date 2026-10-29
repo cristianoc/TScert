@@ -471,6 +471,17 @@ export const interfaceOverlay: ReadonlyMap<string, readonly OverlayEntry[]> = ne
     { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
     { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "NativeIterator", effect: emptyEffect },
   ]],
+  // Results describe normal returns. Native set throws TypeError for keys
+  // other than objects and non-registered symbols; get/has/delete return
+  // undefined/false for those keys. The declared K limits admitted calls.
+  ["WeakMap", [
+    { name: "get", from: "WeakMap", signature: "get(key: K): V | undefined;", effect: emptyEffect },
+    { name: "has", from: "WeakMap", signature: "has(key: K): boolean;", effect: emptyEffect },
+    { name: "set", from: "WeakMap", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
+      effect: changesValues },
+    { name: "delete", from: "WeakMap", signature: "delete(key: K): boolean;", effect: changesValues },
+    { name: "[Symbol.toStringTag]", from: "WeakMap", signature: "readonly [Symbol.toStringTag]: string;" },
+  ]],
   ["Map", [
     { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
     { name: "delete", from: "Map", signature: "delete(key: K): boolean;", effect: changesValues },

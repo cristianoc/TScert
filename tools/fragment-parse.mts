@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { GateRefusal, recoverGate, type GateOccurrence } from "./diagnostic-gate.mts";
+import { recoverGate, refusal, refusalOf, type GateOccurrence } from "./diagnostic-gate.mts";
 /*
  * Trusted front end for the verification experiment (see DESIGN.md).
  *
@@ -37,7 +37,7 @@ import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
 import { definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type Answered,
+import { collectDeclarations, expressionAt, libraryArguments, libraryTerm, declarationSpanOf, tsconfigOf, type Answered,
   type BlockType, type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
@@ -538,7 +538,7 @@ export class Gate {
   }
 
   fail(node: Node | null, message: string): never {
-    throw new GateRefusal(this.refusal(node, message), node ? this.span(node) : [0, this.file.end]);
+    throw refusal(this.refusal(node, message), node ? this.span(node) : [0, this.file.end]);
   }
 
   /** The gate's refusal `message`, located at `node`. */
@@ -1135,10 +1135,11 @@ export function diagnosticFragment(file: string, tsconfigPath: string | undefine
       return { diagnostic: ast, occurrences, incomplete: null };
     } catch (error) {
       passToolFailure(error);
-      if (!(error instanceof GateRefusal)) throw error;
-      occurrences.push({ pos: error.pos, region: [0, readText(file).length], reason: error.message,
+      const refused = refusalOf(error);
+      if (!refused) throw error;
+      occurrences.push({ pos: refused.pos, region: [0, readText(file).length], reason: refused.message,
         recovery: "shared source preparation unavailable" });
-      return { diagnostic: null, occurrences, incomplete: error.message };
+      return { diagnostic: null, occurrences, incomplete: refused.message };
     }
   });
 }
@@ -2112,13 +2113,14 @@ function lowerFile(file: string, carriesContext: boolean,
         ...(seen ? { seen } : {}) });
       gate.symbolIdentities = declarations.symbols;
     } catch (error) {
-      const at = error instanceof DeclarationError
+      const declared = declarationSpanOf(error);
+      const at = declared
         ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes, ...blockNodes].find(node =>
-            node.getStart(source) === error.at[0] && node.end === error.at[1]) ?? expressionAt(source, error.at) ?? first
+            node.getStart(source) === declared[0] && node.end === declared[1]) ?? expressionAt(source, declared) ?? first
         : first;
       const failure = toolFailureOf(error);
       if (failure) gate.toolFailure(at, failure, error);

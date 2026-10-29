@@ -114,6 +114,7 @@ run_test "unchecked.mts refuses a broken external declaration" refuses_broken_ex
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.
+run_test "Caught error helpers" node tests/caught-errors.mts
 run_test "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts

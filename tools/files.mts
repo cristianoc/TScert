@@ -22,14 +22,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Json } from "./calculus.mts";
-import { fieldOf, IoFailure } from "./thrown.mts";
+import { fieldOf, ioFailure, ioFailureOf } from "./thrown.mts";
 
 /** `run`, its failure an `IoFailure` of `operation` at `path`. */
 function io<T>(operation: string, path: string, run: () => T): T {
   try {
     return run();
   } catch (error) {
-    throw error instanceof IoFailure ? error : new IoFailure(operation, path, error);
+    throw ioFailureOf(error) ? error : ioFailure(operation, path, error);
   }
 }
 
@@ -386,7 +386,7 @@ function readAnswer(path: string, node: boolean): { bytes: Buffer | null; answer
       note("read", path, "directory", node);
       return { bytes: null, answer: "directory" };
     }
-    if (!absence(error)) throw new IoFailure("read", path, error);
+    if (!absence(error)) throw ioFailure("read", path, error);
     note("read", path, null, node);
     return { bytes: null, answer: null };
   }
@@ -398,7 +398,7 @@ function kindOf(path: string, node: boolean): Kind {
     try {
       return { answer: statSync(path).isDirectory() ? "directory" : "file" };
     } catch (error) {
-      if (!absence(error)) throw new IoFailure("stat", path, error);
+      if (!absence(error)) throw ioFailure("stat", path, error);
       return { answer: null };
     }
   }).answer;
@@ -409,7 +409,7 @@ function realOf(path: string, node: boolean): string | null {
     try {
       return { answer: realpathSync(path) };
     } catch (error) {
-      if (!absence(error)) throw new IoFailure("resolve", path, error);
+      if (!absence(error)) throw ioFailure("resolve", path, error);
       return { answer: null };
     }
   }).answer;
@@ -423,7 +423,7 @@ function direntsRead(path: string): Listed<Dirent[] | null> {
   try {
     entries = readdirSync(path, { withFileTypes: true }).sort((a, b) => byBytes(a.name, b.name));
   } catch (error) {
-    if (!absence(error)) throw new IoFailure("list", path, error);
+    if (!absence(error)) throw ioFailure("list", path, error);
     entries = null;
   }
   const kind = (e: Dirent): string => e.isSymbolicLink() ? "l" : e.isDirectory() ? "d" : e.isFile() ? "f" : "o";
@@ -442,7 +442,7 @@ function entriesRead(path: string): Listed<Entries> {
   try {
     listed = readdirSync(path, { withFileTypes: true }).sort((a, b) => byBytes(a.name, b.name));
   } catch (error) {
-    if (!absence(error)) throw new IoFailure("list", path, error);
+    if (!absence(error)) throw ioFailure("list", path, error);
     return { entries: { files: [], directories: [] }, answer: null };
   }
   const files: string[] = [], directories: string[] = [];
@@ -502,9 +502,9 @@ export function orAbsent<T>(operation: (path: string) => T, path: string): T | n
   try {
     return operation(path);
   } catch (error) {
-    const cause = error instanceof IoFailure ? error.cause : error;
-    if (absence(cause)) return null;
-    throw error;
+    const failed = ioFailureOf(error);
+    if (!absence(failed ? failed.cause : error)) throw error;
+    return null;
   }
 }
 /** Whether a path names a file or directory: false only where it names

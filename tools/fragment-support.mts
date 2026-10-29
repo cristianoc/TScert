@@ -19,7 +19,7 @@ import { errorOptions } from "./library-globals.mts";
 /** The standard library's `Symbol.toStringTag`, by its declaration identity. */
 export const isTagSymbol = (s: { module: string; name: string }): boolean =>
   s.module === "typescript/lib/lib.es2015.symbol.wellknown.d.ts" && s.name === "toStringTag";
-export const TAG_WRITE = "a write at `Symbol.toStringTag` is outside the fragment: no object the program makes holds the tag the native `Promise`, `Set` and `Map` contracts require";
+export const TAG_WRITE = "a write at `Symbol.toStringTag` is outside the fragment: no object the program makes holds the tag the native `Promise`, `Set`, `Map` and `WeakMap` contracts require";
 /** An expression inside its parentheses. */
 export const skipParentheses = (e: Node): Within<{ value: "any"; store: "grow" }, Node> => ts.isParenthesizedExpression(e) ? skipParentheses(e.expression) : e;
 

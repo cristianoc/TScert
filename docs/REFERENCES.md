@@ -345,6 +345,9 @@ The development reads the current draft,
 [tc39.es/ecma262](https://tc39.es/ecma262/) (titled *ECMAScript® 2027
 Language Specification* as of this writing). Sections relied on by name:
 
+- [WeakMap objects](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-objects),
+  including construction and `get`, `set`, `has`, `delete`, for the
+  [weak-table native contract](SOURCE-CONTRACTS.md#weak-tables);
 - [PromiseResolve](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-promise-resolve),
   [Await](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#await),
   [NewPromiseResolveThenableJob](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-newpromiseresolvethenablejob),

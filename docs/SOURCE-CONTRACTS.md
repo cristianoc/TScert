@@ -2343,7 +2343,7 @@ ordinary scheme instantiation and arrow application; the result is the same
 mutable array contract throughout. Selecting one signature never erases the
 other signature or its receiver condition from the declared scheme.
 
-`Set<T>`, `Map<K, V>` and `Date` are read through the same mechanism
+`Set<T>`, `Map<K, V>`, `WeakMap<K, V>` and `Date` are read through the same mechanism
 (`interfaceOverlay`), as an interface with only its listed members:
 
 ```math
@@ -2372,6 +2372,45 @@ collection iterator, `Iterator<T>` marked as the built-in one
 ([loops and spreads](SOURCE-ELABORATION.md#loops-and-spreads-over-iterables)). A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
+
+#### Weak tables
+
+`WeakMap<K, V>` uses the collection interface overlay, with `get(K): V |
+undefined`, `has(K): boolean`, `set(K, V): this`, `delete(K): boolean` and
+its readonly standard tag. The declared key bound is retained. `get` and
+`has` state the empty footprint; `set` and `delete` state
+`{value: any, store: keep}`. A lookup may be absent regardless of an earlier
+`has`, particularly after alias mutation. `set` returns the receiver.
+Only zero-argument `new WeakMap<K, V>()` is admitted, with the empty
+footprint; an iterable argument is refused.
+
+The native contract is audited against [ECMA-262](REFERENCES.md#ecma-262):
+empty construction allocates the weak table without reading an iterator or
+an adder. The four methods check the receiver's internal slots and compare
+keys by identity; they perform no key conversion, property read, iteration,
+callback, thenable assimilation, constructor lookup or species operation.
+Their only mutations affect the table's internal entries. Invalid receivers
+throw `TypeError`. A weak key is an object (including a function) or a
+non-registered symbol. `set` throws `TypeError` for every other key;
+`get` returns `undefined`, and `has` and `delete` return `false` for such
+keys. The overlay retains TypeScript's key parameter, so calls outside
+that parameter are refused even where native reads return absence. Its
+result types describe normal returns; they do not assert that a call
+cannot throw. The ES2022 declaration's key bound admits objects; a
+`WeakKey` bound computed over multiple registry members is outside the
+indexed-access fragment and is refused.
+Weak reachability imposes no collection deadline. A reachable key's entry
+persists until explicit deletion or replacement.
+
+These are assumptions about the standard constructor and prototype methods:
+no code, including external code, replaces them or wraps them in getters.
+The ordinary native receiver's methods obey these contracts; structural
+client implementations must establish the stated signatures and effects.
+The source boundary excludes forging the standard tag. Lean checks uses of
+these assumed signatures; it does not prove the JavaScript implementation
+or garbage collection. Declaration collection follows only the constructor
+and members used by the source and their type dependencies; the WeakMap
+contract introduces no iteration intrinsic or unrelated collection contract.
 
 `ReadonlySet<T>` and `ReadonlyMap<K, V>`, the readers' views of a `Set` and a
 `Map`, are read through the same mechanism at the restriction of the

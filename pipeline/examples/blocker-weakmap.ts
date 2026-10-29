@@ -1,5 +1,4 @@
-// A global from an unreviewed declaration origin needs a reviewed contract
-// (WeakMap, Buffer and TextDecoder).
+// Empty WeakMap construction through the audited native contract.
 // Census functions:
 // compiler-channel.mts#query, files.mts#answerOf,
 // files.mts#compilerFileSystem, files.mts#compilerText, files.mts#direntsOf,

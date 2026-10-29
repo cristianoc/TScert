@@ -5,12 +5,21 @@ import { abrupt } from "./fragment-statements.mts";
 import { passToolFailure } from "./thrown.mts";
 
 /** A refusal carries its source identity independently of its wording. */
-export class GateRefusal extends Error {
-  readonly pos: Span;
-  constructor(message: string, pos: Span) {
-    super(message);
-    this.pos = pos;
-  }
+export type GateRefusal = { readonly pos: Span; readonly message: string };
+
+/** Payloads registered by the maker, weakly keyed by the error identity. */
+const refusals = new WeakMap<object, GateRefusal>();
+
+/** The error a refusal at `pos` throws, entered in the table. */
+export function refusal(message: string, pos: Span): Error {
+  const error = new Error(message);
+  refusals.set(error, { pos, message });
+  return error;
+}
+
+/** The registered payload, or undefined for any other value. Lookup preserves the entry. */
+export function refusalOf(thrown: unknown): GateRefusal | undefined {
+  return thrown !== null && typeof thrown === "object" ? refusals.get(thrown) : undefined;
 }
 
 export type GateOccurrence = { pos: Span; region: Span; reason: string; recovery: string };
@@ -65,10 +74,11 @@ export function recoverGate(gate: Gate, occurrences: GateOccurrence[]): void {
       return run();
     } catch (error) {
       passToolFailure(error);
-      if (!(error instanceof GateRefusal)) throw error;
+      const refused = refusalOf(error);
+      if (!refused) throw error;
       Object.defineProperties(gate, snapshot);
-      occurrences.push({ pos: error.pos, region: region ?? (node ? gate.span(node) : [0, gate.file.end]),
-        reason: error.message, recovery });
+      occurrences.push({ pos: refused.pos, region: region ?? (node ? gate.span(node) : [0, gate.file.end]),
+        reason: refused.message, recovery });
       return fallback();
     }
   };

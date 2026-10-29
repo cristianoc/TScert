@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
-import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
+import { collectDeclarations, declarationSpanOf, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import type { DeclarationDocument } from "../tools/declaration-types.mts";
@@ -21,12 +21,12 @@ function must<T>(value: T | null | undefined, message: string): T {
 /** A TypeScript project of `files`, strict, with `@fixture/NAME` mapped to
  * `NAME.ts`; `graphOf` collects the declaration graph of a client importing
  * from it, `parse` parses such a client. */
-function fixtureProject(files: Record<string, string>): { graphOf: (text: string) => DeclarationDocument; parse: (text: string) => Ast } {
+function fixtureProject(files: Record<string, string>, lib?: string[]): { graphOf: (text: string) => DeclarationDocument; parse: (text: string) => Ast } {
   const dir = runDirectory("tscert-fixture-project-");
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   const config = join(dir, "tsconfig.json");
   writeFileSync(config, JSON.stringify({
-    compilerOptions: { strict: true, noEmit: true, module: "Node16", moduleResolution: "Node16",
+    compilerOptions: { strict: true, noEmit: true, module: "Node16", moduleResolution: "Node16", lib,
       paths: Object.fromEntries(Object.keys(files).filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
         .map((f) => [`@fixture/${f.replace(/\.ts$/, "")}`, [`./${f}`]])) },
     include: ["*.ts"],
@@ -119,6 +119,19 @@ function fixtureProject(files: Record<string, string>): { graphOf: (text: string
 }
 
 {
+  // Selecting an empty weak table needs only its own native contract.
+  // ES2022 matches the admitted object-key contract; ES2023 adds symbol
+  // to WeakKeyTypes, whose multi-key indexed access is outside the fragment.
+  const project = fixtureProject({ "base.ts": "export {};" }, ["es2022"]);
+  const doc = project.parse("export function table(): WeakMap<object, number> { return new WeakMap<object, number>(); }\n").declarations;
+  assert.ok(doc.definitions.some(d => d.declaration.name === "WeakMap"));
+  for (const name of ["Map", "Set", "NativeCollectionIterator", "ArrayProto"])
+    assert.equal(doc.definitions.some(d => d.declaration.name === name), false, `unneeded ${name}`);
+  const plain = project.parse("export function plain(): number { return 1; }\n").declarations;
+  assert.equal(plain.definitions.some(d => d.declaration.name === "WeakMap"), false);
+}
+
+{
   // An import the overlay of library modules lists is read through it only
   // where TypeScript binds it to Node's declarations: a module the project
   // maps to its own file under Node's name is refused.
@@ -129,7 +142,16 @@ function fixtureProject(files: Record<string, string>): { graphOf: (text: string
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
     module: "Node16", moduleResolution: "Node16", types: [], paths: { fs: ["./fake.ts"] } }, include: ["*.ts"] }));
   assert.throws(() => collectDeclarations(join(dir, "client.ts"), { tsconfigPath: join(dir, "tsconfig.json") }),
-    /writeFileSync is not a function Node's declarations declare/);
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /writeFileSync is not a function Node's declarations declare/);
+      const span = declarationSpanOf(error);
+      assert.ok(span);
+      assert.strictEqual(declarationSpanOf(error), span);
+      assert.equal("at" in error, false);
+      assert.equal(declarationSpanOf(new Error(error.message)), undefined);
+      return true;
+    });
   process.stdout.write("library modules: an import read through the overlay only from Node's declarations\n");
 }
 
