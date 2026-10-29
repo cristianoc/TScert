@@ -777,6 +777,27 @@ and effect, for this one site.
 - **Commit:** the introducing commit, `resolutionSlots states its effect
   at one signature; resolvableSlots states the resolvable result`.
 
+### A spread of a program's iterable in a conditional's branch
+
+`visitType` in `tools/type-term.mts` bound its scope with
+`term.k !== "scheme" ? bound : new Set([...bound, ...binders])`, a spread of
+a `ReadonlySet` in a conditional's branch. JavaScript evaluates the test
+once, then steps the iterator in the branch the test selects; the lowering
+collects a spread before its statement, a place the test, a member read,
+does not reach (`blocker-spread-in-conditional`). Support would lower a
+declaration whose value is a conditional into one branch per test outcome,
+with the narrowing of each, for this one site of the census of 6be11ce, which
+blocks 757 statements of 30 functions.
+
+- **Equivalent form:** `inner` starts as `bound`, and where `term.k ===
+  "scheme"` a `const` collects the new `Set`, its statement's first
+  evaluation, which `inner` then holds. `term.k` is read once and compared
+  strictly, as before; the `Set` is built from the same operands in the same
+  order; `inner` is a local no closure reads, holding the same value at each
+  later read.
+- **Commit:** the introducing commit, `visitType builds a scheme's scope in
+  an if, so the spread of bound runs first in its statement`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

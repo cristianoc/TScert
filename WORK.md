@@ -636,7 +636,10 @@ non-array iterable needs the pattern's reads as steps of `%Iterate:K%`, or of
 the protocol. A spread of a program's iterable where the statement evaluates
 code before it, and a default or nested pattern in an array pattern over one,
 need the protocol's steps interleaved with that code, in the expression, not
-before the statement. A generator needs a state-machine lowering, as
+before the statement. One in a conditional's branch needs the steps after
+the test, in that branch alone (`blocker-spread-in-conditional`): a
+declaration whose value is the conditional lowered into one branch per
+outcome of its test, each with the test's narrowing. A generator needs a state-machine lowering, as
 TypeScript's downlevel emit writes one: a closure over the suspension
 point's number and the live locals, whose `next` resumes at a `switch` on
 it. An element read past a readonly tuple arm's length needs a rule

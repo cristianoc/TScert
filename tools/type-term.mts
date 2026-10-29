@@ -65,8 +65,11 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
     bound: ReadonlySet<string> = new Set()): Within<{ value: "any"; store: "grow" }, void> {
   visit(term, bound);
   // A scheme's binders are in scope in its bounds, defaults and signatures.
-  const inner = term.k !== "scheme" ? bound : new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
-    ...ownedSlots(binder.resolution)])]);
+  let inner = bound;
+  if (term.k === "scheme") {
+    const scoped = new Set([...bound, ...term.binders.flatMap(binder => [binder.name, ...ownedSlots(binder.resolution)])]);
+    inner = scoped;
+  }
   for (const part of typeParts(term)) visitType(part, visit, inner);
 }
 

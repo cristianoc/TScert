@@ -1,6 +1,8 @@
-// A spread of a program's iterable in a conditional's branch needs its
-// iterator placed after the test, which runs no code.
-// Census functions:
+// A spread of a program's iterable in a conditional's branch, after a test
+// reading a member: JavaScript runs the test once, then the iterator's code
+// in the branch the test selects, which no placement of the collection
+// before the statement reproduces. The construct `visitType`
+// (`tools/type-term.mts`) avoids, for these census functions:
 // type-term.mts#classInstance, type-term.mts#constructorForms,
 // type-term.mts#expandIdentity, type-term.mts#expandMapped,
 // type-term.mts#indexKinds, type-term.mts#intersection, type-term.mts#mapped,
@@ -13,11 +15,15 @@
 // type-term.mts#statementOf, type-term.mts#substitute, type-term.mts#tuple,
 // type-term.mts#typeParts, type-term.mts#typeTerm,
 // type-term.mts#validateAnnotation, type-term.mts#visitType.
+type Term =
+  | { readonly k: "scheme"; readonly binders: readonly string[] }
+  | { readonly k: "atom" };
+
 export function names(
-  k: string,
+  term: Term,
   bound: ReadonlySet<string>,
-  more: readonly string[],
 ): ReadonlySet<string> {
-  const inner = k !== "scheme" ? bound : new Set([...bound, ...more]);
+  const inner =
+    term.k !== "scheme" ? bound : new Set([...bound, ...term.binders]);
   return inner;
 }
