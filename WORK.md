@@ -28,7 +28,6 @@ each item's design and evidence, not its progress.
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review (`blocker-in-name-object`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
-| [An assertion's promise on a field](#guard-promise-field) | open | `guard-field-assertion` verifies: an assertion function's call on a field narrows the field reread in the next statement |
 | [A field's narrowing across a `for...of` loop](#field-narrowing-for-of) | open | `blocker-field-narrowing-for-of` verifies: a field's test narrows its reread after a loop over an array |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`); open: `every`'s, and a guard closure's at `find` | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
@@ -37,7 +36,6 @@ each item's design and evidence, not its progress.
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
-| [Investigation of a guard's narrowing past a computed middle disjunct](#guard-past-computed-disjunct) | open: an investigation, cause unknown | `guard-disjunction-middle-test` verifies |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [Investigation of an early binding read in an operator's arm](#early-read-in-arm) | open: an investigation, cause unknown | the two functions of its section verify |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
@@ -271,16 +269,6 @@ under the current premises an unnamed key may hold a location outside the
 heap and an unconstrained `[[proto]]` can leave the lookup without a result,
 and a host object's property may be a getter its family does not state.
 
-<a id="guard-promise-field"></a>
-**An assertion's promise on a field.** A type guard's call on a field
-narrows the field reread through the read's link, where the call keeps the
-heap ([a call that keeps the heap](docs/PROGRAM-TYPING.md#a-call-that-keeps-the-heap)).
-An assertion function's call on a field, a statement of its own, narrows the
-call's saved operand, which no witness of the next statement's entry holds:
-`assertList(x.args); return x.args.length` reads `x.args` at its contract
-(`guard-field-assertion`). The narrowing needs the statement's read of the
-field carried into a witness of the next statement's entry.
-
 <a id="field-narrowing-for-of"></a>
 **A field's narrowing across a `for...of` loop.** A loop over an array
 calls its iterator's step at each iteration, and the step writes the
@@ -403,21 +391,6 @@ It is the first refusal of the slices of `fragment-expressions.mts`'s
 `parent` that may be absent pass
 ([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
 edge the claim mismatches, and why, is unknown.
-
-<a id="guard-past-computed-disjunct"></a>
-**A guard's narrowing past a computed middle disjunct.** With
-`isRow(v: Row | number): v is Row`,
-`if (!isRow(claim) || typeof other === "number" || a) return 0;` is refused
-at the next statement's incoming edge, whose claim of `claim` is `Row`
-(`guard-disjunction-middle-test`, 2026-10-29). The same condition with two
-operands, with a plain binding in the middle (`!isRow(claim) || a || b`),
-or with `typeof claim === "number"` in place of the guard verifies, and so
-does `!isRow(claim) || (typeof other === "number" || a)`; `!a` in the middle
-is refused as `typeof` is. It is the refusal of
-`diagnostic.mts#readDiagnostic`'s
-`!isRecord(claim) || !Array.isArray(available) || !Array.isArray(claim.context)`
-in a source whose callbacks keep the heap. Which edge of the lowered
-disjunction loses the guard's answer, and why, is unknown.
 
 <a id="early-read-in-arm"></a>
 **An early binding read in an operator's arm.** Lean's search refuses both

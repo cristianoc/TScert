@@ -1131,7 +1131,11 @@ the path's witness holding the value the call was passed.
 #### Entries
 
 Branch scopes hold an administrative **witness** for each member path read
-by their condition. A read maps its result into the witness slot; a branch
+by their condition, and for each member path an expression statement's call
+passes as an actual: an assertion function's call narrows that read, the
+witness's newest, from its return on
+([a call that keeps the heap](PROGRAM-TYPING.md#a-call-that-keeps-the-heap)).
+A read maps its result into the witness slot; a branch
 edge checks the refined type of that slot and projects its read links.
 A path not read on an incoming short-circuit edge has the top type and no
 read link on that edge. Witness names cannot occur in source identifiers.

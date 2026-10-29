@@ -2268,6 +2268,27 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // TypeScript and the producer refuse
+  // `invalid-guard-disjunction-mixed-prettier-ignore`, so the verifier is
+  // given its twin's claims, whose spans are the same: they state `claim` a
+  // `Row` where `!isRow(claim) && t || a` is false, which holds only where
+  // `!isRow(claim) || t || a` is. The lowering regroups a disjunction's
+  // left disjunction alone, never a conjunction, so search refuses the
+  // claims at the return's incoming edge.
+  const real = run("invalid-guard-disjunction-mixed-prettier-ignore");
+  const twin = run("guard-disjunction-middle-test");
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const forged = writeClaims(real, "guard-disjunction-twin", claims);
+  const reread = source.indexOf("return claim.context.length");
+  refusedAt(real, forged, "guard-disjunction-twin", `source incoming edge obligation at [${reread},`);
+  process.stdout.write("a guard's narrowing claimed past a conjunction inside a disjunction: refused\n");
+});
+
+control(async (): Promise<void> => {
   // A call between a guard and the field's reread keeps the guard's
   // finding only at a signature keeping the heap: `count` claimed at the
   // ordinary effect, which lets it change every location, is refused at the

@@ -86,6 +86,13 @@ def testForm : Expr → Bool
   | .logical _ _ a b => testForm a && testForm b
   | _ => false
 
+/-- Whether a condition's left operand is dispatched as a test: a negation
+is one where its operand is, and `logicalTruth` dispatches on the truthiness
+of any other left operand. -/
+def leftTestForm : Expr → Bool
+  | .not _ e => testForm e
+  | e => testForm e
+
 private def effect : Expr → Effect
   | .assign _ name _ rhs => .cellWrite name rhs.span
   | .construct .. | .call .. | .invoke .. | .callWithReceiver .. | .applyWithReceiver ..
@@ -310,8 +317,11 @@ private partial def truthOf (root : Span) (cond : Expr) (observed : Bool := true
   -- in turn, the same operator's right operand its new right one's. The
   -- regrouped whole computes the whole's value where it starts and keeps
   -- its span; `b || c`, evaluated where `a` answered, is a residual.
+  -- A left operand stays grouped where both its operands are tests, its
+  -- first judged as a left operand (`leftTestForm`): `(!g(x) || b) || c`,
+  -- `g(x)` a guard's call, regroups as `!g(x) || (b || c)`.
   | .logical p andOp (.logical _ andOp' l1 l2) right =>
-    if andOp == andOp' && !testForm (.logical p andOp' l1 l2) then
+    if andOp == andOp' && !(leftTestForm l1 && testForm l2) then
       truthOf root (.logical p andOp l1 (.logical (residual l2) andOp l2 right)) observed
     else logicalTruth root cond observed
   | _ => logicalTruth root cond observed
@@ -326,7 +336,7 @@ where
   -- `b`'s. `a` is evaluated once, then `b` exactly where `!a` does not
   -- decide, as the operator evaluates them.
   | .logical _ andOp (.not negation left) right =>
-    if testForm left then expression root cond observed
+    if leftTestForm (.not negation left) then expression root cond observed
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"
@@ -338,7 +348,7 @@ where
       return .choose truth left.span .truthy binding lhs
         (if andOp then keep else rhs) (if andOp then rhs else keep)
   | .logical _ andOp left right =>
-    if testForm left then expression root cond observed
+    if leftTestForm left then expression root cond observed
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"

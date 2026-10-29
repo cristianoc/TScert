@@ -319,8 +319,16 @@ private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) 
     | .iteratorStart (.forOf _ _ _ _ e _) _ _ => [e]
     | .declaration _ _ b _ => [b.init]
     | _ => []
+  -- A call statement's member-path actuals: an assertion function's call
+  -- narrows the actual's read, the path's witness, from its return on
+  -- (`promiseNarrowing`), which the next statement's entry carries.
+  let actuals : Fragment.Expr → List (String × List PropKey)
+    | .call _ _ args _ _ | .invoke _ _ args _ _ => args.filterMap fun arg =>
+        (memberPath arg).bind fun p => if p.2.isEmpty then none else some p
+    | _ => []
   expressions.flatMap fun e => match a with
     | .branch .. => planPaths (SourceExecution.buildCondition e)
+    | .statement (.effect _ _) _ => testedPaths (SourceExecution.build e) ++ actuals e
     | _ => testedPaths (SourceExecution.build e)
 
 /-- Typed lowering consumes the same claim-independent graph exported to the

@@ -324,6 +324,14 @@ def executionOrigins : Compiler (List (String × Fragment.Expr)) := readBuilt (�
 
 def executionWitnesses : Compiler (List (String × String)) := readBuilt (·.executionWitnesses)
 
+/-- The witness a saved value read from a member path names, where that read
+is the witness's newest (`executionWitnesses` lists the newest first): a
+later read of the path rebinds the witness, which then holds that read's
+value. -/
+def newestWitness (witnesses : List (String × String)) (name : String) : Option String := do
+  let w ← witnesses.lookup name
+  if (witnesses.find? (fun (p : String × String) => p.2 == w)).map Prod.fst == some name then some w else none
+
 /-- A saved value read from a member path names the path's witness for its
 continuation (`executionWitnesses`). -/
 def withExecutionWitness (name witness : String) (action : Compiler α) : Compiler α :=
