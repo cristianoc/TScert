@@ -136,7 +136,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
              inferred.substitution,
              Inference.substitute_signature inferred.substitution {signature with quantified=[]} in
          let admits (instance:Semantic.signature) =
-           types <> [] || List.for_all2 plausible_subtype actuals (written instance) in
+           types <> [] || List.for_all2 (plausible_subtype_declared declarations) actuals (written instance) in
          let chosen = match List.find_map (fun s -> match quietly (fun () -> instance_at s) with
              | Some (substitution,instance) when admits instance -> Some (substitution,instance)
              | _ -> None) fitting with

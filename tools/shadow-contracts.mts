@@ -46,6 +46,7 @@ import { globalsOverlay, type GlobalEntry, type Stated } from "./library-globals
 import type { TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { readsAsOptionalUnknown } from "./compiler-api.mts";
 import { childOf, childrenOf } from "./syntax.mts";
+import { nativeCollectionView } from "./array-prototype.mts";
 
 /** The opaque type every value-level `any` of a declaration is read as. */
 export const OPAQUE = "TScertAny";
@@ -207,7 +208,7 @@ function statedSignatures(entry: GlobalEntry): string[] | null | undefined {
   if (entry.stated === undefined) return undefined;
   const library = (name: string, args: TypeTerm[]): TypeTerm => ({ k: "reference", args, span: [0, 0],
     reference: { name, span: [0, 0], arguments: args.map(() => [0, 0]), target: { module: "typescript/lib", name, span: [0, 0] } } });
-  const stated = typeof entry.stated === "function" ? entry.stated(library) : entry.stated;
+  const stated = typeof entry.stated === "function" ? entry.stated(library, nativeCollectionView) : entry.stated;
   const printed = (Array.isArray(stated) ? stated : [stated]).map(printSignature);
   return printed.every((p): p is string => p !== null) ? printed : null;
 }

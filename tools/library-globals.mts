@@ -39,6 +39,9 @@ type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 export type Stated = { binders: string[]; params: TypeTerm[]; rest?: TypeTerm; result: TypeTerm };
 /** A standard library interface applied to arguments, such as `Set<T>`. */
 type LibraryReference = (name: string, args: TypeTerm[]) => TypeTerm;
+/** A host collection's reading view applied to arguments, `NativeSetView<T>`
+ * (`array-prototype.mts`). */
+type CollectionViewReference = (kind: "Set" | "Map", args: TypeTerm[]) => TypeTerm;
 
 export type GlobalEntry = {
   /** The global variable, `declare var BigInt: BigIntConstructor`. */
@@ -79,7 +82,7 @@ export type GlobalEntry = {
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
    * the result. */
-  stated?: Stated | Stated[] | ((library: LibraryReference) => Stated | Stated[]);
+  stated?: Stated | Stated[] | ((library: LibraryReference, view: CollectionViewReference) => Stated | Stated[]);
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
   definitions?: TypeDefinition[];
@@ -674,13 +677,22 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `new Set(s)` is a fresh set of the string's code points, a
   // `Set<string>`. One form at `readonly T[] | string` would be false at
   // `T := number`.
+  //
+  // The iterable overload is stated, third, at a host `Set`'s reading view
+  // (`NativeSetView<T>`, which a `Set<T>` meets): `new Set(s)` gets
+  // `s[Symbol.iterator]`, the host's `Set` iterator by the assumption
+  // `%Iterate:Set%` makes of a value at the view, steps it with the host's
+  // `next`, which runs no client code, and adds each element by
+  // `Set.prototype.add`, which it gets from the fresh set, whose prototype
+  // is the untampered `Set.prototype`. It reads `s` and allocates.
   { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
   { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
-    stated: library => [
+    stated: (library, view) => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
-      { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) }] },
+      { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) },
+      { binders: ["T"], params: [view("Set", [binder("T")])], result: library("Set", [binder("T")]) }] },
   // Only empty construction: no iterator, entry access or overridden adder runs.
   ...["new <K extends WeakKey = WeakKey, V = any>(entries?: readonly (readonly [K, V])[] | null): WeakMap<K, V>;",
     "new <K extends WeakKey = WeakKey, V = any>(iterable?: Iterable<readonly [K, V]> | null): WeakMap<K, V>;"]
@@ -689,13 +701,26 @@ export const globalsOverlay: readonly GlobalEntry[] = [
         result: library("WeakMap", [binder("K"), binder("V")]) }) })),
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
+  //
+  // The iterable overload is stated, second, at a host `Map`'s reading view
+  // (`NativeMapView<K, V>`, which a `Map<K, V>` meets): `new Map(m)` steps
+  // the host's `Map` iterator, by the assumption `%Iterate:Map%` makes of a
+  // value at the view, which yields a fresh `[key, value]` array per entry;
+  // it reads each entry's `0` and `1`, own data elements of that fresh
+  // array, so no getter runs, and sets them by `Map.prototype.set`, which
+  // it gets from the fresh map, whose prototype is the untampered
+  // `Map.prototype`. It reads `m` and allocates.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
     .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), global: "Map", signature, effect: emptyEffect,
-      stated: library => ({ binders: ["K", "V"],
-        params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
-          optional: [], rest: null, span: at }))],
-        result: library("Map", [binder("K"), binder("V")]) }) })),
+      stated: (library, view) => {
+        const pairs: Stated = { binders: ["K", "V"],
+          params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
+            optional: [], rest: null, span: at }))],
+          result: library("Map", [binder("K"), binder("V")]) };
+        return signature.includes("Iterable") ? [pairs, { binders: ["K", "V"], params: [view("Map", [binder("K"), binder("V")])],
+          result: library("Map", [binder("K"), binder("V")]) }] : pairs;
+      } })),
   // `new Date()` is now; `new Date(v)` converts a number or a string without
   // client code, but a `Date` argument, which any object meeting the
   // interface is, is converted by its own `valueOf` or `toString`: it is

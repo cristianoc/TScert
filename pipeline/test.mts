@@ -3240,6 +3240,27 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A construction at a host collection's reading view forged to another
+  // instance: `new Set(seen)` of a `Set<number>` claimed at the `Set<string>`
+  // `new Set<string>(functions)` has. The view form's binder is fixed by the
+  // argument's premise, so search refuses the forged claim, and so does
+  // checking the honest evidence against it.
+  const artifacts = run("blocker-collection-from-iterable");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const at = (text: string) => must(expressions.find(e => e.pos[0] === source.indexOf(text) &&
+    e.pos[1] === source.indexOf(text) + text.length), `the claim of ${text}`);
+  at("new Set(seen)").type = at("new Set<string>(functions)").type;
+  const input = writeClaims(artifacts, "forged-set-copy-element-type", claims);
+  const produce = produceWith(artifacts, input, "forged-set-copy-element-type");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  process.stdout.write("forged view form: a Set<number>'s copy claimed at Set<string> refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // An optional call's body is claimed at no value only where its receiver
   // is only nullish. The loop's receiver holds the array from the second
   // iteration on: the body's member read and call forged to no value are

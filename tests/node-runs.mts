@@ -816,6 +816,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "set-string-construction: three letters, an \"a\" and a 1");
   assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
     "invalid-set-string-at-number: the set at number holds strings");
+  assert.equal(runExample("invalid-set-from-readonly-set",
+    `(() => { let ran = 0; const names = { [Symbol.iterator]() { ran++; return [1][Symbol.iterator](); } }; return [ran, typeof [...copy(names)][0], ran].join(); })()`),
+    "0,number,1", "invalid-set-from-readonly-set: new Set runs the object's iterator, and the set at string holds a number");
+  assert.equal(runExample("invalid-map-from-readonly-map",
+    `(() => { let ran = 0; const entry = { get 0() { ran++; return 5; }, 1: 2 }; const names = { [Symbol.iterator]() { return [entry][Symbol.iterator](); } }; return [ran, typeof [...copy(names).keys()][0], ran].join(); })()`),
+    "0,number,1", "invalid-map-from-readonly-map: new Map runs an entry's getter, and the map at string keys holds a number");
   assert.equal(runExample("conditional-empty-array", `lineCount("a\\nb", true) + lineCount("a", false)`), 2);
   assert.equal(runExample("invalid-conditional-empty-array", `typeof lengths("a")[0]`), "string",
     "invalid-conditional-empty-array: the elements are strings");

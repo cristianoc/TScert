@@ -2388,9 +2388,10 @@ entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 that change the collection or the date, `add`, `set`, `delete`, `clear` and
 `setTime`, which compare by SameValueZero or take a number, run no code and
 write only the receiver's internal slots, which hold no array store; none for
-`forEach`, which calls a callback. `new Set` and `new Map` of an array or of
-nothing state the empty footprint on their construct signatures: they read the
-array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
+`forEach`, which calls a callback. `new Set` and `new Map` of an array, of a
+host collection or of nothing state the empty footprint on their construct
+signatures: they read the array or the collection through the host's iterator
+and allocate. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends, or, for `Set`'s and
 `Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`, as the native
@@ -2471,7 +2472,7 @@ where the native is modelled and audited otherwise:
 | an iteration intrinsic, `%Iterate%` over an array and those over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
 | `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap` at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
-| `new Set`, `new Map` of an array or nothing | the empty footprint | they read the array through the host's iterator and allocate (audited) |
+| `new Set`, `new Map` of an array, a host collection or nothing | the empty footprint | they read the array or the collection through the host's iterator and allocate (audited) |
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 
 
@@ -2604,11 +2605,26 @@ member of the callee's with each argument's premise checked
 `Set`'s iterable overload states `new <T>(values?: readonly T[] | null):
 Set<T>` and `new (values: string): Set<string>`, both at the empty footprint:
 the host iterates a string by its own iterator, which runs no client code
-(the assumption `%Iterate:String%` makes). Every form keeps its parameters,
+(the assumption `%Iterate:String%` makes). It states a third form, `new
+<T>(values: NativeSetView<T>): Set<T>`, and `Map`'s iterable overload, beside
+its array of pairs, `new <K, V>(entries: NativeMapView<K, V>): Map<K, V>`, each
+at a host collection's reading view, which a `Set<T>` and a `Map<K, V>` meet,
+at the empty footprint. The construction gets the argument's
+`[Symbol.iterator]`, the host's collection iterator by the assumption
+`%Iterate:Set%` and `%Iterate:Map%` make of a value at the view, and steps it
+with the host's `next`, which runs no client code; a `Map`'s iterator yields a
+fresh `[key, value]` array per entry, whose `0` and `1` are own data elements,
+so reading them runs no getter. It adds each element by `Set.prototype.add`, or
+sets each entry by `Map.prototype.set`, which it gets from the fresh
+collection, whose prototype is the untampered standard one, and which writes
+only that collection. A `ReadonlySet` or `ReadonlyMap` meets no view: any
+object with the readers meets it, and its iterator, and a `Map` entry's
+getters, are client code (`invalid-set-from-readonly-set`,
+`invalid-map-from-readonly-map`, run under Node). Every form keeps its parameters,
 result, effect and binder substitution. The declaration's text matches the
 reviewed one exactly; every form is decoded, and an empty or malformed list,
 or an unsupported combination of binders, is refused, never an arm dropped
-(`set-string-construction`; `invalid-set-string-at-number`,
+(`set-string-construction`, `blocker-collection-from-iterable`; `invalid-set-string-at-number`,
 `invalid-set-iterator-construction`, `invalid-set-excess-arguments`).
 
 An entry may read a call signature as the global's construct (`construct`),

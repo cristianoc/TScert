@@ -240,29 +240,46 @@ let excludes_undefined_declared declarations t =
    written or with its declared atoms unfolded, through unions, to what they
    name (the compiler API's `Statement`, which TypeScript reads as
    `StatementBase`; `type T = A | F`, which holds `F` written inline). A
-   proposal heuristic; Lean decides inclusion. *)
+   proposal heuristic; Lean decides inclusion. Where both sides are
+   unfolded, a host method whose receiver is the declaration it unfolds
+   (`Set<T>`'s members, `NativeSetView<T>`'s) is compared at one receiver
+   for both, as the declaration's own `this`. *)
 let plausible_subtype_declared declarations actual expected =
-  let unfold t =
+  let unfold ~own t =
     (* Each declared atom contributes once to the union; the path retains
        the named atom at a cycle. Equations are read only as needed. *)
     let expanded = Hashtbl.create 32 in
+    let own_receivers self = function
+      | Atoms atoms when own -> Atoms (List.map (function
+          | Shape sh ->
+            let method_ t = match t with
+              | Atoms [Shape ({calls;_} as m)] -> Atoms [Shape { m with calls = List.map (fun (c:Semantic.signature) ->
+                  match c.receiver with
+                  | Atoms [Named (r,_)] when r = self -> { c with receiver = Atoms [Top] }
+                  | _ -> c) calls }]
+              | t -> t in
+            Shape { sh with fields = List.map (fun (f:Semantic.field) ->
+              if f.host then { f with read = method_ f.read; write = Option.map method_ f.write } else f) sh.fields }
+          | a -> a) atoms)
+      | t -> t in
     let rec walk seen = function
       | Atoms atoms -> combine (List.map (function
           | Named (id,args) as a when not (List.mem id seen) ->
             if Hashtbl.mem expanded (id,args) then Atoms [] else begin
               Hashtbl.add expanded (id,args) ();
-              try walk (id::seen) (definition declarations id args) with Json.Error _ -> Atoms [a]
+              try walk (id::seen) (own_receivers id (definition declarations id args)) with Json.Error _ -> Atoms [a]
             end
           | a -> Atoms [a]) atoms)
       | Union ts -> combine (List.map (walk seen) ts)
       | t -> t in
     walk [] t in
-  let unfolded_actual = lazy (unfold actual) in
-  let unfolded_expected = lazy (unfold expected) in
+  let unfolded_actual = lazy (unfold ~own:false actual) in
+  let unfolded_expected = lazy (unfold ~own:false expected) in
   plausible_subtype actual expected ||
   plausible_subtype actual (Lazy.force unfolded_expected) ||
   plausible_subtype (Lazy.force unfolded_actual) expected ||
-  plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected)
+  plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected) ||
+  plausible_subtype (unfold ~own:true actual) (unfold ~own:true expected)
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

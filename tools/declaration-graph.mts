@@ -3102,7 +3102,7 @@ export function collectDeclarations(file: string, options: {
             options.globalIntrinsic?.(span, name);
           },
           construct: span => options.globalConstruct?.(span),
-          library: libraryReference,
+          library: libraryReference, view: collectionView,
           define: defineOverlay });
         if (!selection) continue;
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
@@ -4269,6 +4269,9 @@ type SelectionContext = {
   /** A standard library interface applied to `args`, for a statement that
    * names one (`new Set<T>()` gives a `Set<T>`). */
   library: (name: string, args: TypeTerm[]) => TypeTerm;
+  /** A host collection's reading view at `args`, for a statement that
+   * takes one (`new Set<T>(s)` of a `Set`). */
+  view: (kind: CollectionKind, args: TypeTerm[]) => TypeTerm;
 };
 
 /** Whether a reference is written: an assignment's target or an update's
@@ -4402,7 +4405,7 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
       throw Error(`${what} is reviewed in a form a global function does not take`);
     const written = entry?.stated;
-    const stated = typeof written === "function" ? written(context.library) : written;
+    const stated = typeof written === "function" ? written(context.library, context.view) : written;
     if (Array.isArray(stated)) throw Error(`${what} states several forms`);
     if (stated) {
       if (stated.binders.length) throw Error(`${what} is stated with binders`);
@@ -4499,7 +4502,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
     const { stated: written, ...rest } = entry;
-    const stated = typeof written === "function" ? written(context.library) : written;
+    const stated = typeof written === "function" ? written(context.library, context.view) : written;
     if (stated === undefined) return rest;
     const forms = Array.isArray(stated) ? stated : [stated];
     const [first] = forms;
@@ -4523,7 +4526,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const constructed = variables.length === 1 ? globalEntry(context.overlay, name, undefined,
     signature => signature === declaredText, declarationOrigin(declaration.getSourceFile(), context.libraryFile)) : undefined;
   if (constructed?.constructs) {
-    const written = typeof constructed.stated === "function" ? constructed.stated(context.library) : constructed.stated;
+    const written = typeof constructed.stated === "function" ? constructed.stated(context.library, context.view) : constructed.stated;
     const forms = written === undefined ? [] : Array.isArray(written) ? written : [written];
     const [form] = forms;
     if (!form || forms.length !== 1 || form.binders.length || form.rest)
