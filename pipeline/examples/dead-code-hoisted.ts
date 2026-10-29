@@ -1,5 +1,5 @@
 // A function declaration after a return is hoisted: the live code calls it.
-// Dropping it would change what `helper` names, so the gate refuses.
+// It is bound before the call.
 function hoisted(): number {
   return helper();
   function helper(): number {

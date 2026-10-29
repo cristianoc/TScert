@@ -566,10 +566,11 @@ export function block(this: Gate, node: Statement): Within<{ value: "any"; store
 /** A statement list, without its dead tail: the statements after one that
  * always completes abruptly (`abrupt`) are never reached, since nothing can
  * jump into the middle of a list. They are dropped unread when dropping them
- * changes no binding the live statements see: a `var` or function
- * declaration there is hoisted, and a `let`, `const` or `class` there binds
- * its name in the whole block, so a live reference to it would be to that
- * binding, forever uninitialized. */
+ * changes no binding the live statements see: a `var` there is hoisted, and
+ * a `let`, `const` or `class` there binds its name in the whole block, so a
+ * live reference to it would be to that binding, forever uninitialized. A
+ * function declaration of the list there is bound at the block's entry, as
+ * one before it is (`functionPlacement`). */
 export function statements(this: Gate, list: readonly Statement[]): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const end = list.findIndex((s) => abrupt(s));
@@ -586,8 +587,9 @@ export function statements(this: Gate, list: readonly Statement[]): Within<{ val
     if (ts.isIdentifier(n)) lexical.add(n.text);
     else n.forEachChild(names);
   };
+  const tail = list.slice(live.length).filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s));
   for (const s of list.slice(live.length)) {
-    if (typeStatement(s)) continue;
+    if (typeStatement(s) || ts.isFunctionDeclaration(s)) continue;
     const at = hoisted(s);
     if (at) gate.fail(at, "a hoisted declaration after a statement that always jumps is outside the fragment");
     if (ts.isVariableStatement(s))
@@ -598,13 +600,116 @@ export function statements(this: Gate, list: readonly Statement[]): Within<{ val
   }
   const refers = (n: Node): Node | undefined =>
     ts.isIdentifier(n) && lexical.has(n.text) ? n : n.forEachChild(refers);
-  for (const s of live) {
+  // The list's statements that may run: the live ones and the function
+  // declarations of the tail.
+  const scope = [...live, ...tail];
+  for (const s of scope) {
     const at = lexical.size ? refers(s) : undefined;
     if (at) gate.fail(at, "a name declared only in dead code is outside the fragment");
   }
-  gate.markEarly(live);
+  const placed = functionPlacement(gate, scope);
+  gate.markEarly(scope, placed);
+  // A function declaration is a constant holding its closure, bound before
+  // the statement `functionPlacement` places it at (`functionDeclarations`);
+  // one placed in the tail is never read, and never bound.
+  const functions = gate.functionDeclarations(scope, live.length, placed);
   // An empty statement, `;`, does nothing; nor does a type declaration.
-  return live.filter((s) => !ts.isEmptyStatement(s) && !typeStatement(s)).flatMap((s) => gate.hoisting(s));
+  return live.flatMap((s, i) => [...(functions.get(i) ?? []),
+    ...(ts.isEmptyStatement(s) || typeStatement(s) || ts.isFunctionDeclaration(s) ? [] : gate.hoisting(s))]);
+}
+
+/** Where each function declaration of a statement list is bound: before
+ * the list's statement of that index. JavaScript creates a function
+ * declaration's closure, and initializes its binding, when the list's
+ * block is entered. Creating a closure runs nothing, and the new object is
+ * reached only through its binding, so creating it later, before the first
+ * statement that may read the binding, is the same execution: its place is
+ * the first statement of the list mentioning it, or holding a closure that
+ * does, or the place of another function declaration mentioning it,
+ * whichever comes first, and at most its own. A mention of a declaration
+ * is the identifier the fragment names it by (`local`), outside types and
+ * property keys. */
+export function functionPlacement(gate: Gate, live: readonly Statement[]): Within<{ value: "any"; store: "grow" }, Map<FunctionDeclaration, number>> {
+  const placed = new Map<FunctionDeclaration, number>();
+  const byName = new Map<string, FunctionDeclaration>();
+  live.forEach((s, i) => {
+    if (!ts.isFunctionDeclaration(s) || !s.name) return;
+    placed.set(s, i);
+    byName.set(gate.local(s.name), s);
+  });
+  if (!placed.size) return placed;
+  const mentioned = (n: Node, own: Node | null, found: Set<FunctionDeclaration>): void => {
+    if (ts.isTypeNode(n)) return;
+    if (ts.isIdentifier(n)) {
+      const parent = n.parent;
+      const key = !!parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+          ts.isPropertySignatureDeclaration(parent)) && parent.name === n)));
+      const f = key || n === own ? undefined : byName.get(gate.local(n));
+      if (f) found.add(f);
+      return;
+    }
+    n.forEachChild((c) => mentioned(c, own, found));
+  };
+  const mentions = live.map((s) => {
+    const found = new Set<FunctionDeclaration>();
+    mentioned(s, ts.isFunctionDeclaration(s) ? s.name ?? null : null, found);
+    return found;
+  });
+  for (let changed = true; changed;) {
+    changed = false;
+    live.forEach((s, i) => {
+      const at = ts.isFunctionDeclaration(s) ? placed.get(s) ?? i : i;
+      for (const f of mentions[i] ?? []) {
+        const now = placed.get(f) ?? 0;
+        if (at < now) {
+          placed.set(f, at);
+          changed = true;
+        }
+      }
+    });
+  }
+  return placed;
+}
+
+/** The function declarations of a statement list, a function body's or a
+ * block's (SOURCE-ELABORATION.md, "Function declarations in a body"), by
+ * the index of the statement each is bound before (`functionPlacement`),
+ * in source order there: each a constant bound to its closure; the first
+ * `live` statements of `scope` may run, and a declaration placed past them
+ * is never bound. A closure
+ * mentioning one bound after it at the same place reads it as an early
+ * binding (`markEarly`). Refused: a declaration of a `case` clause, whose
+ * binding is the whole `switch` block's; one in a block of sloppy code,
+ * which Annex B also assigns to a binding of the enclosing function when
+ * the declaration is evaluated; an overloaded or repeated one; and one
+ * naming a parameter of the function whose body holds it, which it
+ * replaces there. */
+export function functionDeclarations(this: Gate, scope: readonly Statement[], live: number, placed: ReadonlyMap<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, Map<number, Stmt[]>> {
+  const gate: Gate = this;
+  const declared = scope.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s));
+  const bound = new Map<number, Stmt[]>();
+  for (const s of declared) {
+    const at = placed.get(s) ?? gate.fail(s, "a function declaration with no place");
+    if (at >= live) continue;
+    const holder = s.parent;
+    if (!s.name) return gate.fail(s, "anonymous function");
+    if (!holder || ts.isCaseClause(holder) || ts.isDefaultClause(holder))
+      return gate.fail(s, "a function declaration in a `case` clause is outside the fragment: its binding is the whole `switch` block's");
+    const owner = ts.isBlock(holder) && holder.parent && ts.isFunctionLikeDeclaration(holder.parent) &&
+      holder.parent.body === holder ? holder.parent : null;
+    if (!owner && !gate.strict)
+      return gate.fail(s, "a function declaration in a block of sloppy code is outside the fragment: Annex B also binds it in the enclosing function");
+    if (!s.body || declared.some((o) => o !== s && o.name?.text === s.name?.text))
+      return gate.fail(s, "an overloaded or repeated function declaration in a body is outside the fragment");
+    if (owner?.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === s.name?.text))
+      return gate.fail(s.name, "a function declaration naming a parameter of its function is outside the fragment");
+    if (s.name.text === "undefined")
+      return gate.fail(s, "shadowing undefined is outside the fragment");
+    bound.set(at, [...(bound.get(at) ?? []), { k: "const", pos: gate.span(s), bindings: [{ name: gate.local(s.name),
+      namePos: gate.span(s.name), annot: null, init: gate.lambda(s), early: gate.earlyDecls.has(s) }] }]);
+  }
+  return bound;
 }
 
 /** A `type` or `interface` statement: TypeScript erases it, so it runs
@@ -624,7 +729,7 @@ function typeStatement(s: Statement): Within<{ value: "any"; store: "grow" }, bo
  * A function literal that is a constant's whole initializer runs only after
  * the constant holds it, so its mentions of the constant are the closure's
  * self entry. A pattern's binding so mentioned is refused. */
-export function markEarly(this: Gate, live: readonly Statement[]): Within<{ value: "any"; store: "grow" }, void> {
+export function markEarly(this: Gate, live: readonly Statement[], placed: ReadonlyMap<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
   const functionLike = (n: Node): boolean => ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n);
   const declared = new Map<string, ts.VariableDeclaration>();
@@ -644,6 +749,28 @@ export function markEarly(this: Gate, live: readonly Statement[]): Within<{ valu
       }
     }
   }
+  // A function declaration is bound before the statement it is placed at
+  // (`functionPlacement`), those placed together in source order: one
+  // mentioned in the closure of one bound before it is early.
+  const functions = [...placed.keys()];
+  const order = new Map(functions.map((f, i) => [f.name ? gate.local(f.name) : "", i]));
+  functions.forEach((f, i) => {
+    const mention = (n: Node): void => {
+      if (ts.isTypeNode(n)) return;
+      if (ts.isIdentifier(n)) {
+        const parent = n.parent;
+        const key = !!parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+          ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+            ts.isPropertySignatureDeclaration(parent)) && parent.name === n)));
+        const j = key || n === f.name ? undefined : order.get(gate.local(n));
+        const later = j === undefined ? undefined : functions[j];
+        if (j !== undefined && j > i && later && placed.get(later) === placed.get(f)) gate.earlyDecls.add(later);
+        return;
+      }
+      n.forEachChild(mention);
+    };
+    mention(f);
+  });
   if (!declared.size && !patterns.size) return;
   // `created` is where the outermost closure around a mention is created,
   // null outside one: a closure created after a binding's initialization
@@ -671,11 +798,19 @@ export function markEarly(this: Gate, live: readonly Statement[]): Within<{ valu
         gate.fail(n, `a binding of a pattern read where it may be uninitialized is outside the fragment: ${n.text}`);
       return;
     }
-    // A function declaration is created when its scope is entered (hoisted).
-    const inner = created ?? (ts.isFunctionDeclaration(n) ? -1 : functionLike(n) ? n.getStart(gate.file) : null);
+    // A function declaration of the list is created where it is placed
+    // (`functionPlacement`); one of a block nested in a statement, when
+    // that block is entered, after the statement starts.
+    const place = ts.isFunctionDeclaration(n) ? placed.get(n) : undefined;
+    const inner = created ?? (place !== undefined ? live[place]?.getStart(gate.file) ?? -1
+      : ts.isFunctionDeclaration(n) ? statementStart : functionLike(n) ? n.getStart(gate.file) : null);
     n.forEachChild((c) => visit(c, inner));
   };
-  for (const st of live) visit(st, null);
+  let statementStart = -1;
+  for (const st of live) {
+    statementStart = st.getStart(gate.file);
+    visit(st, null);
+  }
 }
 
 /** A statement, preceded by the statements its lowering runs before it:

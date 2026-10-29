@@ -3,7 +3,7 @@
  * reads `this.name(...)`; its body names the gate `gate`, typed, which lets a
  * call that never returns (`gate.fail`) narrow what follows. */
 import * as ts from "typescript/unstable/ast";
-import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, FunctionExpression, Identifier, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
+import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Atom } from "./claim.mts";
 import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numericKey, optionalTerm } from "./type-term.mts";
@@ -1990,7 +1990,7 @@ function chainTest(gate: Gate, node: Node, chain: Expr): Within<{ value: "any"; 
 }
 
 export function lambda(this: Gate,
-  node: ArrowFunction | FunctionExpression | MethodDeclaration,
+  node: ArrowFunction | FunctionExpression | FunctionDeclaration | MethodDeclaration,
   instance?: TypeTerm,
   member?: PropertyKey,
 ): Within<{ value: "any"; store: "grow" }, Expr> {

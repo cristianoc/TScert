@@ -1,13 +1,13 @@
-// A module whose function `jumped` the gate refuses (a function declaration
-// after its `return`). `relayed` calls it, `chained` calls `relayed`,
+// A module whose function `jumped` the gate refuses (a `debugger`
+// statement). `relayed` calls it, `chained` calls `relayed`,
 // `passed` passes it as a value, `inClosure` calls it in a closure and
 // `defaulted` in a parameter default: each reads it. `shadowed` reads its
 // own parameter of the same name, and `kept` reads no function.
 function jumped(x: number): number {
-  return inner(x);
-  function inner(y: number): number {
-    return y;
-  }
+  // `debugger` is outside the fragment:
+  debugger;
+  return x;
+  // the gate refuses the function at it.
 }
 export function relayed(x: number): number {
   return jumped(x);

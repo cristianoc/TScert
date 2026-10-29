@@ -37,6 +37,7 @@ each item's design and evidence, not its progress.
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
+| [Investigation of an early binding read in an operator's arm](#early-read-in-arm) | open: an investigation, cause unknown | the two functions of its section verify |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
@@ -52,7 +53,7 @@ each item's design and evidence, not its progress.
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Class methods' effects](#class-methods-effects) | open: the draft's design accepted by the owner (2026-10-23): D1 (a), stated effects, and D2–D6 as the draft recommends; D5's rewrite of `Gate`'s four `shift`s into field writes is approved within step 3 as an exception to the no-rewrite rule (2026-10-23); step 1 (`no-return` with the async refusal L6) verifies `enumMembers` and `enumOpen` (slices of `fragment-classes.mts`, 300 s, 2026-10-24); step 3's [statements](docs/SOURCE-ELABORATION.md#stated-effects) are read and certified from each definition's code, and the compiler API's callback-free node methods state the empty footprint (D4); `Gate` states its members `span`, `local`, `hasTypeParam` and `typeParamName` (uncertified: no verified slice lowers `Gate`) and the method fields' functions `patternDefaults`, `inert` and `steppedPattern`, certified in their slices; census slices at 300 s, 16 functions of `fragment-{statements,expressions,classes}.mts`: verified 9 → 9, none gained or lost (2026-10-24); `pattern`'s array-pattern `map` passes, and `pattern`, `forOfPattern`, `protocolPattern`, `patternStmt` and `abrupt` stop at its object-pattern `map`, whose callback calls `gate.expr`: `expr`'s contract closure, with D7 and D8 (a) approved (2026-10-24) and D5's rewrite, is designed in the draft's §12; `forEachChild` is read at each callback footprint (D7), and a `map` callback calling it with a visitor within a stable footprint gives a dense result; 157 of the 167 functions a syntactic scan finds in `expr`'s contract closure, `expr` and `pattern` among them, state `{value: any, store: grow}` (of the others, 6 state a smaller footprint, 2 return `never` and 2 are type predicates) (`Gate`'s stacks popped by field writes, D5), and census slices at 300 s, 84 functions of 15 files of `tools/`: verified 76 → 78, `pattern` and `forOfPattern` gained, none lost (2026-10-24); census slices at 300 s on fea595c, 158 functions of 17 files of `tools/`, the 84 above among them: verified 78 → 76, `enumMembersTerm` and `enumIntrinsic` lost (`enumMembersTerm` states `{value: any, store: grow}`, which a `TermScope` member calling it needs, and its slice does not establish it at its `sort` of the array `filter` returns), none gained; `refers` verifies, and `patternStmt`, `protocolPattern`, `abrupt` and `neverAssigned` stop at an incoming-edge obligation in `markEarly`'s recursive closure `names` (2026-10-24); census slices at 300 s of the 18 functions of `fragment-statements.mts` sharing that obligation, `neverAssigned` among them, on 0e159b5 → on 3726ae4 (a guard's membership test decided by its binding, a fact filtered by its slot's type): each passes `markEarly`'s obligation and stops at a node-typing obligation of `protocolPattern`'s `rest`, `elements.at(-1)`; verified 0 → 0; the slowest search 38.5 → 24.3 s of CPU (2026-10-24); the same 18 on 8d9b1cb → with a condition's derived expressions unmarked by a source span ([residuals](docs/SOURCE-ELABORATION.md#residuals)): each passes `rest`'s obligation and its search exceeds 300 s; verified 0 → 0; with clause disjointness decided pair by pair, the search takes 68.7 s of CPU and stops at a node-typing obligation of `hoisting`'s write `gate.hoisted = []`; verified 0 → 0 (2026-10-24); [the inventory](docs/drafts/method-effects-inventory.md) gives each of the 183 functions `expr` and the gate's `TermScope` reach its statement and basis, 61 certified; a type guard states its effect at its promise's type (`x is Within<F, T>`), and `isTypeAlias` of `syntax.mts` states the empty footprint: census slices at 300 s of `resolve`, `moduleFunction`, `inertRead` and `typeStatement`, c105173 → this change: verified 0 → 4 (2026-10-28) | callbacks calling a class instance's methods use effects stated with `Within<…>` and certified in each definition's own module |
 | [Async and generator code](#async-and-generator-code) | open | an async function's entry and resumption are checked by an asynchronous entry judgment, and `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` leave the trust surface |
-| [Function declarations in bodies](docs/SOURCE-ELABORATION.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
+| [Function declarations in bodies](docs/SOURCE-ELABORATION.md#function-declarations-in-a-body) | done: `function-declarations-in-body` and `function-declaration-before-initialization` verify | a function declared in a body is bound where it may first be read, and a call of it before the block's bindings are initialized reaches their checked accesses |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -389,6 +390,27 @@ It is the first refusal of the slices of `fragment-expressions.mts`'s
 `parent` that may be absent pass
 ([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
 edge the claim mismatches, and why, is unknown.
+
+<a id="early-read-in-arm"></a>
+**An early binding read in an operator's arm.** Lean's search refuses both
+functions at the edge from the arm that does not read `isOdd` into the point
+after the operator: "The incoming claim for isOdd is { value: ((number) =>
+boolean) | { "[[uninitialized]]": undefined } }. The next point requires
+(number) => boolean." The same read in a statement's arm verifies
+(`function-declarations-in-body`'s `parity`).
+
+```typescript
+export function ternary(n: number): boolean {
+  const isEven = (k: number): boolean => k === 0 ? true : isOdd(k - 1);
+  const isOdd = (k: number): boolean => k === 0;
+  return isEven(n);
+}
+export function disjunction(n: number): boolean {
+  const isEven = (k: number): boolean => k === 0 || isOdd(k - 1);
+  const isOdd = (k: number): boolean => k === 0;
+  return isEven(n);
+}
+```
 
 <a id="literal-guard-json-read"></a>
 **A literal guard over `JsonValue | undefined`.**

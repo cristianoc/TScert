@@ -1428,9 +1428,12 @@ does not return on every terminal arm ends with `return undefined`:
 ```math
 \frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsf{return-bare}
 \qquad
-\frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, none hoisted}}
+\frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, no}\ \mathtt{var}}
      {\Gamma\vdash_R S_1;S_2}\ \textsf{dead}
 ```
+
+A function declaration of $`S_2`$ belongs to the list's scope and is
+[placed](#function-declarations-in-a-body) as any other.
 
 `for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
 body's end and every `continue` run `update`, then go to the head (a closure
@@ -2429,11 +2432,10 @@ evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
 declaration list at a time. A function literal that is a constant's whole
 initializer is the exception: creating it runs nothing, so its reads of the
 constant are the [recursive constant](#recursive-constants)'s self entry,
-not checked accesses. Every other binding is a slot or a cell ([slot or cell](#slot-or-cell)). A function
-declaration in a body, which JavaScript creates when its block is entered
-(`f(); let x = 1; function f() { return x; }` throws), is outside the
-fragment (refused at the declaration); the parser's analysis takes its
-creation at the block's entry.
+not checked accesses. Every other binding is a slot or a cell ([slot or cell](#slot-or-cell)). A
+closure of a [function declaration in a body](#function-declarations-in-a-body)
+is created where the lowering binds it, before the first statement that may
+read it (`f(); let x = 1; function f() { return x; }` throws).
 
 #### Representation
 
@@ -2571,6 +2573,74 @@ cell, which a later assignment may rebind, never a self entry
 other read of a binding in its own initializer is refused at its location
 (`recursive-const-before-initialization-refused`), and module initialization
 order is checked by `Sites.checkInitializationOrder`.
+
+### Function declarations in a body
+
+A function declaration in a function's body or in a block,
+`function f(…) { … }`, binds `f` in that statement list's scope, and
+JavaScript creates its closure and initializes the binding when the list
+is entered, before its first statement (FunctionDeclarationInstantiation
+and BlockDeclarationInstantiation, [ECMA-262](REFERENCES.md#ecma-262)). A
+function's parameters are bound before its body's declarations, so a
+parameter default does not see them. Creating a closure evaluates nothing:
+it captures the scope's bindings, never their values. Until a mention of
+`f` runs, no code holds the new closure. Creating it later, at any point
+before the first mention that may run, is therefore the same execution.
+
+The lowering binds `f` as a constant holding the closure of the function
+literal with `f`'s parameters, result and body, an ordinary function whose
+receiver is any value where no `this:` parameter states one. Its **place**
+is an index of the list's statements. Let $`\mathit{stmts} = s_0 \ldots
+s_{n-1}`$ be the list, and let $`f`$ be declared by $`s_j`$. A statement
+$`s_i`$ *mentions* $`f`$ when an identifier the fragment names as $`f`$
+occurs in it, in a closure it holds included, outside types and property
+keys. The place $`p_f`$ is the least fixpoint of
+
+```math
+p_f = \min\Bigl(\{j\} \cup \{\, i \mid s_i\ \text{mentions}\ f,\ s_i\ \text{no function declaration} \,\} \cup \{\, p_g \mid g\ \text{a function declaration of the list mentioning}\ f \,\}\Bigr)
+```
+
+and $`f`$ is bound before $`s_{p_f}`$, after the declarations placed there
+that precede it in source order. A declaration placed past the list's last
+reachable statement is never read and is not bound. No mention of $`f`$ can
+run before $`s_{p_f}`$ starts: one in $`s_i`$ runs after $`s_i`$ starts, and one
+in the closure of a declaration $`g`$ runs after $`g`$ is created, at
+$`p_g \geq p_f`$. The rule, with $`⟦\cdot⟧`$ the lowering of a list:
+
+```math
+\frac{f\ \text{declared in}\ \mathit{stmts}\ \text{with code}\ \lambda_f\qquad p_f = i}
+     {⟦s_0 \ldots s_{n-1}⟧ = ⟦s_0 \ldots s_{i-1}⟧;\ \mathsf{const}\ f = \lambda_f;\ ⟦s_i \ldots s_{n-1}⟧}\ \textsf{function-in-body}
+```
+
+The bindings $`f`$ reads keep their own rules at the closure's place: a
+`let` or `const` of the list declared in $`s_k`$ with $`k \geq p_f`$ is
+mentioned by a closure created before its initialization point, so it is an
+[early binding](#lexical-bindings-before-initialization), and a call of
+$`f`$ before $`s_k`$ completes reaches its checked access, which throws as
+JavaScript does. A declaration $`g`$ that $`f`$ mentions, placed with $`f`$
+after it, is early too: mutual recursion reads it through its cell, which is
+initialized before either closure can be called. `f`'s own mentions are its
+[recursive constant](#recursive-constants)'s self entry. An early
+declaration's contract is its literal's parameter, result and receiver
+annotations. A declaration a dead statement follows stays reachable: one
+after a statement that always jumps is in the list's scope and is placed as
+any other.
+
+Outside the fragment, refused at the declaration: one in a `case` clause,
+whose binding is the whole `switch` block's; one in a block of sloppy code,
+which Annex B also assigns to a binding of the enclosing function when the
+declaration is evaluated (a module is strict; a file without imports or
+exports may run as a script); an overloaded or repeated declaration; one
+naming a parameter of the function whose body holds it, whose binding it
+replaces there; and a generator.
+
+TypeScript keeps a `let` narrowed across a call of a declaration writing it;
+the `let` is a cell the declaration captures, so after the call it is at its
+contract (`invalid-function-declaration-stale`, run under Node). Cases:
+`function-declarations-in-body`, `function-declaration-before-initialization`
+(run under Node: a `ReferenceError`), `function-declaration-sloppy-block-refused`;
+the forged contracts of `pipeline/test.mts` (an early declaration's contract
+dropped, or claimed at a string).
 
 ### Module cells
 

@@ -143,14 +143,15 @@ reference representation. Every such action is recorded as an opaque region. -/
         let C ← (SourceClaims.resolve (← table) candidate).mapError fun msg =>
           s!"storage contract for '{b.name}' at {b.init.span.1}: {msg}"
         -- The stated type: the annotation, or the function literal's
-        -- parameter and result annotations, a defaulted parameter optional.
+        -- parameter and result annotations, a defaulted parameter optional,
+        -- and an ordinary function's receiver annotation.
         let reason := s!"the early binding '{b.name}' needs its type stated: an annotation, or a function literal's parameter and result annotations"
         match b.annot, b.init with
         | some annotation, _ =>
           let written ← lower (Fragment.translate annotation)
           requireSameMeaning (← table) b.init.span .bindingAnnotation C written
             s!"claimed storage contract differs from the source annotation for '{b.name}'"
-        | none, .lambda _ none [] params defaults false (some result) _ _ _ _ =>
+        | none, .lambda _ receiver [] params defaults false (some result) _ _ _ _ =>
           let Ds ← params.zipIdx.mapM fun ((_, j), i) => do
             let D ← lower (Fragment.translate j)
             pure (if defaults.any (·.1 == i) then (D ++ [Labels.undef]).eraseDups else D)
@@ -164,6 +165,9 @@ reference representation. Every such action is recorded as an opaque region. -/
           for (A, D) in sig.arguments.zip Ds do
             requireSameMeaning (← table) b.init.span .bindingAnnotation A D differs
           requireSameMeaning (← table) b.init.span .bindingAnnotation sig.result R differs
+          if let some (this, _) := receiver then
+            requireSameMeaning (← table) b.init.span .bindingAnnotation sig.receiver
+              (← lower (Fragment.translate this)) differs
         | none, _ => throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
         let stored := (C ++ U).eraseDups
         let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])

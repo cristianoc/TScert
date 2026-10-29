@@ -740,7 +740,7 @@ control(async (): Promise<void> => {
   const leftOut = (name: string, line: number, col: number): string =>
     `gate: a read of ${name}, a function of its module left out (line ${line}, col ${col})`;
   assert.deepEqual(module.absent.map((a) => [a.name, a.reason]), [
-    ["jumped", "gate: a hoisted declaration after a statement that always jumps is outside the fragment (line 8, col 3)"],
+    ["jumped", "gate: statement outside the fragment (LastStatement) (line 8, col 3)"],
     ["relayed", leftOut("jumped", 13, 10)],
     ["passed", leftOut("jumped", 19, 17)],
     ["inClosure", leftOut("jumped", 22, 24)],
@@ -1505,6 +1505,25 @@ control(async (): Promise<void> => {
     const path = writeClaims(good, "early-literal-contract", claims);
     refusedAt(good, path, "early-literal-contract", "the early binding 'wanted' needs its type stated");
     invoke(path, join(good, "evidence.json"), good);
+  }
+  // A function declaration a closure bound before it mentions is an early
+  // binding whose contract is its own annotations, its receiver's included:
+  // dropped, or claimed at a string, refused.
+  {
+    const declared = run("function-declarations-in-body");
+    for (const [name, edit, at] of [
+      ["function-early-no-contract", (fn: SourceClaims["functions"][number]) => {
+        fn.contracts = fn.contracts.filter(c => c.name !== "isOdd"); }, "no claimed storage contract for the early binding 'isOdd'"],
+      ["function-early-string-contract", (fn: SourceClaims["functions"][number], claims: SourceClaims) => {
+        for (const c of fn.contracts) if (c.name === "isOdd") c.type = [rowOf(claims, "str")]; },
+        "the early binding 'isOdd' needs its type stated"],
+    ] as const) {
+      const claims = readClaims(declared);
+      edit(must(claims.functions.find(f => f.name === "parity"), "parity"), claims);
+      const path = writeClaims(declared, name, claims);
+      refusedAt(declared, path, name, at);
+      invoke(path, join(declared, "evidence.json"), declared);
+    }
   }
   // A property spelled as a later constant is no mention: the file lists no
   // `%ThrowUninitialized%`.

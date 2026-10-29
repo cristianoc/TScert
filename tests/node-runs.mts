@@ -1276,8 +1276,14 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("early-bindings", `JSON.stringify([count([5, 20, 30]), later(), perIteration([1, 2]), boxed(),
     (() => { try { tooSoon(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()])`),
     "[2,2,3,1,true]", "early-bindings: the closures read the bindings once initialized, and a read before throws a ReferenceError");
-  assert.equal(runExample("function-declaration-in-body-refused", `(() => { try { early(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
-    true, "function-declaration-in-body-refused: the hoisted declaration's call reads the binding before its initialization");
+  assert.equal(runExample("function-declaration-before-initialization", `JSON.stringify([early, throughClosure].map((f) => {
+    try { f(); return "none"; } catch (e) { return e instanceof ReferenceError; } }))`),
+    "[true,true]", "function-declaration-before-initialization: the declaration's call, direct or through a closure, reads the binding before its initialization");
+  assert.equal(runExample("function-declarations-in-body", `JSON.stringify([hoisted(), factorial(5), parity(10), parity(7),
+    filtered(["a", "b", "c"], ["b"]), pair(4), inBlock(true)])`), `[4,120,true,false,["a","c"],2,1]`,
+    "function-declarations-in-body: each declaration is callable from its block's entry");
+  assert.equal(runExample("invalid-function-declaration-stale", "stale()"), "s",
+    "invalid-function-declaration-stale: the declaration's write reaches the read TypeScript narrowed to number");
   assert.equal(runExample("module-cells", "JSON.stringify([bump(), bump(), cached(), limited(), afterCall()])"), "[1,2,\"computed\",6,3]",
     "module-cells: the functions read and write the module's cells");
   assert.throws(() => runExample("module-cell-before-initialization", "sum()"), /ReferenceError|before initialization/,

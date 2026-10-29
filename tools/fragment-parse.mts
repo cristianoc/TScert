@@ -1044,6 +1044,7 @@ export class Gate {
   hoisting: typeof statements.hoisting = statements.hoisting;
 
   markEarly: typeof statements.markEarly = statements.markEarly;
+  functionDeclarations: typeof statements.functionDeclarations = statements.functionDeclarations;
 
   letPattern: typeof statements.letPattern = statements.letPattern;
   letPatternOf: typeof statements.letPatternOf = statements.letPatternOf;
@@ -1607,6 +1608,15 @@ function lowerFile(file: string, carriesContext: boolean,
     for (const st of block.statements)
       if (ts.isVariableStatement(st) && st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
         for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) declared.set(d.name.text, d);
+    // A function declaration mentioned in an earlier one's closure.
+    const functions = block.statements.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s) && !!s.name);
+    const order = new Map(functions.map((f, i) => [f.name?.text ?? "", i]));
+    const forward = (n: Node, i: number): boolean => {
+      if (ts.isTypeNode(n)) return false;
+      if (ts.isIdentifier(n)) return (order.get(n.text) ?? -1) > i;
+      return n.forEachChild((c) => forward(c, i) || undefined) ?? false;
+    };
+    if (functions.some((f, i) => forward(f, i))) return true;
     if (!declared.size) return false;
     const visit = (n: Node, created: number | null): boolean => {
       if (ts.isTypeNode(n)) return false;
@@ -2046,7 +2056,10 @@ function lowerFile(file: string, carriesContext: boolean,
           const statement = declaration?.parent?.parent;
           const block = !!declaration && ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name) &&
             !!statement && ts.isVariableStatement(statement) && !!statement.parent && ts.isBlock(statement.parent);
-          if (read && ((start < dStart && !block) || inInitializer || inHead)) early.push(read);
+          // A function declaration's binding is initialized at the block's
+          // entry (`functionDeclarations`): a mention above it reads it.
+          const hoisted = !!declaration && ts.isFunctionDeclaration(declaration);
+          if (read && ((start < dStart && !block && !hoisted) || inInitializer || inHead)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         staticTypes: staticTypeNodes.map(node => gate.span(node)),
