@@ -2351,6 +2351,49 @@ control(async (): Promise<void> => {
   process.stdout.write("a guard on a field, then a middle disjunct claimed to change everything: the reread refused\n");
 });
 
+/** A twin's claims given to a negative of the same spans that declares
+ * `name` with `let` where the twin has `const`, and assigns it (`assignment`,
+ * `name = literal`) where the twin reads it: `name` gets its storage
+ * contract at its initializer (`init`, its first occurrence after `= `), at
+ * the type the twin's entries give it, and the assignment and its literal
+ * are claimed at the literal's row. Search must refuse the claims at the
+ * expression `use`. */
+const refusedAsLet = (negative: string, positive: string, name: string, init: string, assignment: string,
+    literal: string, row: Row[number], use: string): void => {
+  const real = run(negative);
+  const twin = run(positive);
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  const fn = must(claims.functions.find(f => f.name === "size"), "size");
+  const start = source.indexOf(`= ${init}`) + 2;
+  const binding = must(fn.entries.flatMap(e => e.bindings).find(b => b.name === name), name).type;
+  fn.contracts.push({ pos: [start, start + init.length], name, type: binding });
+  const at = source.indexOf(assignment);
+  const point = must(fn.expressions.find(e => e.pos[0] === at), "the twin's read").point;
+  const label = rowOf(claims, row);
+  const lit = at + assignment.indexOf(literal);
+  fn.expressions = fn.expressions.filter(e => e.pos[0] !== at);
+  fn.expressions.push(
+    { point, pos: [lit, lit + literal.length], type: [label], current: null },
+    { point, pos: [at, at + assignment.length], type: [label], current: null });
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const forged = writeClaims(real, `${positive}-claims`, claims);
+  refusedAt(real, forged, `${positive}-claims`, `source incoming edge obligation at [${source.indexOf(use)},`);
+};
+
+control(async (): Promise<void> => {
+  // TypeScript and the producer refuse both: given a twin's claims, which
+  // state a constant's implication, the reassigned `let` holding the guard's
+  // answer, or the reassigned guarded `let`, carries none to the use.
+  refusedAsLet("invalid-guard-answer-let-prettier-ignore", "guard-answer-let-twin-prettier-ignore",
+    "ok", "isRow(claim)", "ok = true", "true", { boolLit: { value: true } }, "ok ? claim.context.length");
+  refusedAsLet("invalid-guard-answer-reassigned-prettier-ignore", "guard-answer-reassigned-twin-prettier-ignore",
+    "c", "claim", "c = 1", "1", { numLit: { bits: "4607182418800017408" } }, "ok ? c.context.length");
+  process.stdout.write("a guard's answer held past a reassignment of the answer or the guarded binding: the use refused\n");
+});
+
 control(async (): Promise<void> => {
   // A call between a guard and the field's reread keeps the guard's
   // finding only at a signature keeping the heap: `count` claimed at the

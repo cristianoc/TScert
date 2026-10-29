@@ -310,6 +310,11 @@ let transfer (expr:Analysis_state.expression_infer) =
          let candidate = { pos = init.pos; name = n; type_ = contract } in
          publish_contract candidate
        | Value _ -> ());
+      (* A constant holding a condition's value narrows, where it is `true`,
+         what the condition narrows (`Refinement.condition_constants`). *)
+      (match mutable_,binding with
+       | false,Value _ -> Refinement.record_condition_constant n init env
+       | _ -> ());
       extend (after init env) n binding
     | Declare _ -> Json.fail "a declaration flow operation requires one binding"
     (* The initializer, then each binding in pattern order: a property at its

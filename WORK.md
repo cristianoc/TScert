@@ -29,7 +29,6 @@ each item's design and evidence, not its progress.
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review (`blocker-in-name-object`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [A field's narrowing across a `for...of` loop](#field-narrowing-for-of) | open | `blocker-field-narrowing-for-of` verifies: a field's test narrows its reread after a loop over an array |
-| [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`); open: `every`'s, and a guard closure's at `find` | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
@@ -278,13 +277,6 @@ loop is read after it at its declared type
 (`blocker-field-narrowing-for-of`). The narrowing needs the step's write
 stated as one of a location the iterator allocated, apart from every field
 the facts name, and the loop head's entry claims carrying the facts.
-
-<a id="guard-answer-constant"></a>
-**A guard's answer held in a constant.** `const ok = isRecord(v)` keeps the
-call's promise on the call's result, an implication of its slot, which no
-statement entry carries: `if (ok) return v` reads `v` at its declared type,
-and a narrowed claim there is refused at the edge. Carrying implications in
-entry claims is a fact kind of its own.
 
 <a id="guard-overloads"></a>
 **Guard overloads beyond `filter`'s.** TypeScript's `every<S>` narrows the

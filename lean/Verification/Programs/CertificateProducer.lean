@@ -1634,22 +1634,37 @@ every pair of target slots the mapping reads it from. -/
 
 /-- What every predecessor of a merge establishes, in the merge's slots: an
 implication one of them states, at the union of the types each states or
-justifies by its own type of the target slot; dropped where one justifies it
-neither way nor by never holding `true` in the tested slot. -/
+justifies by its own type of the target slot, or by never holding `true` in
+the tested slot; dropped where one justifies it no way. Where an edge's
+tested slot never holds `true` (a `false` arm of `g(x) && e`), each other
+slot is a candidate too, kept where the union of what the other edges hold
+there leaves out a label of the merge's own claim of the slot (`target`): a
+constant holding the condition's value implies what the other arms narrow. -/
 def meetImplications [DecidableEq ι] (G : NormalGraph ι)
     (edges : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-    (width : Nat) : List (PromiseCalls.Implication ι) :=
+    (width : Nat) (target : List (Ty ι) := []) : List (PromiseCalls.Implication ι) :=
   let projected := edges.map fun (Γ, xs, m) => (Γ, m, projectImplications xs m width)
-  let candidates := (projected.flatMap fun (_, _, xs) => xs.map fun x => (x.test, x.target)).eraseDups
-  candidates.filterMap fun (t, a) => do
+  let vacuous := fun (Γ : List (Ty ι)) (m : PointClaims.Mapping) (t : Nat) =>
+    (Γ[PointClaims.slot m t]?).any (BranchRefinement.impossible G · (.boolean true))
+  let stated := (projected.flatMap fun (_, _, xs) => xs.map fun x => (x.test, x.target)).eraseDups
+  -- A tested slot the merge claims at both Booleans, never `true` on some
+  -- edge and possibly `true` on another.
+  let boolean := fun (t : Nat) => (target[t]?).any fun A =>
+    !BranchRefinement.impossible G A (.boolean true) && !BranchRefinement.impossible G A (.boolean false)
+  let tests := ((List.range width).filter fun t => boolean t &&
+    projected.any (fun (Γ, m, _) => vacuous Γ m t) && projected.any (fun (Γ, m, _) => !vacuous Γ m t))
+  let inferred := (tests.flatMap fun t => ((List.range width).filter (· != t)).map (t, ·)).filter
+    (!stated.contains ·)
+  let meet := fun (t, a) => do
     let types ← projected.mapM fun (Γ, m, xs) =>
       match xs.find? (fun x => x.test == t && x.target == a) with
       | some x => some x.type
-      | none => match Γ[PointClaims.slot m a]? with
-        | some A => some A
-        | none => if (Γ[PointClaims.slot m t]?).any (BranchRefinement.impossible G · (.boolean true))
-          then some [] else none
-    return ⟨t, a, types.flatten.eraseDups⟩
+      | none => if vacuous Γ m t then some [] else Γ[PointClaims.slot m a]?
+    return (⟨t, a, types.flatten.eraseDups⟩ : PromiseCalls.Implication ι)
+  stated.filterMap meet ++ inferred.filterMap fun (t, a) => do
+    let x ← meet (t, a)
+    let A ← target[a]?
+    if x.type.isEmpty || A.all x.type.contains then none else some x
 
 /-- A node's evidence at its expression's derivation and the yields chosen
 for it: its edges, its handler and, at a return under a promise goal, the
@@ -1902,79 +1917,126 @@ Every edge is still checked by the independent consumer. -/
       (successors node.continuation).zipIdx.foldl (fun acc (t,index) =>
         if t.label < acc.size then acc.modify t.label (· ++ [(l,index,t)]) else acc) acc)
     (Array.replicate P.length [])
-  let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
-  -- A merge waits for its predecessors while some pass still makes progress;
-  -- once none does, the merges still waiting (a cycle through no cut) take
-  -- their stated requirements alone, as every merge did before.
-  let mut force := false
-  for _ in List.range (2 * P.length + 2) do
-    let mut progress := false
-    for l in List.range P.length do
-      if (table.getD l none).isSome then continue
-      let some node := nodes[l]? | throw .claimCount
-      let some c := claimed[l]? | throw .claimCount
-      let required := (requirements.lookup l).getD {}
-      let mut k := required
-      let mut implies : List (PromiseCalls.Implication ι) := []
-      -- At the entry and at cuts, the argument slots every edge carries.
-      let mut held := arguments.getD l []
-      if l != start && !cuts.contains l then
-        match incoming[l]? with
-        | some [(pred,index,target)] =>
-          let some previous := table.getD pred none | continue
-          let some source := nodes[pred]? | throw .claimCount
-          let o := ControlFlow.outFacts G previous
-          k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index)
-            target.mapping c.context.length
-          implies := projectImplications (edgeImplicationsOf G previous source.continuation o) target.mapping
-            c.context.length
-          held := projectArguments (edgeArgumentsOf G previous source o) target.mapping c.context.length
-        | some preds =>
-          -- A merge that is not a cut states no requirement of its own; it
-          -- keeps what every predecessor establishes, once all are available.
-          -- Cycles pass through cuts, so waiting here cannot deadlock.
-          let mut projections : List HeapKnowledge.Knowledge := []
-          let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
-          let mut holding : List (List Nat) := []
-          let mut ready := true
-          for (pred,index,target) in preds do
-            match table.getD pred none, nodes[pred]? with
-            | some previous, some source =>
-              let o := ControlFlow.outFacts G previous
-              projections := projections ++ [HeapKnowledge.project
-                (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
-              carried := carried ++ [(edgeContextOf G previous source.continuation index o,
-                edgeImplicationsOf G previous source.continuation o, target.mapping)]
-              holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
-                c.context.length]
-            | _, _ => ready := false
-          if !ready && !force then continue
-          if ready then
-            k := HeapKnowledge.meet projections
-            implies := meetImplications G carried c.context.length
-            held := match holding with
-              | first :: rest => first.filter fun p => rest.all (·.contains p)
-              | [] => []
-        | none => pure ()
-      k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
-        HeapLinks.dedup (k.links ++ required.links),
-        HeapSeparation.union k.separation required.separation⟩
-      -- A handler target is entered by throws too, which carry no
-      -- implication, and the argument slots the throwing nodes carry.
-      if handlerTargets.contains l then
-        implies := []
-        held := held.filter (arguments.getD l []).contains
-      -- A point other than a cut stores its knowledge's normal form at the
-      -- point's contexts; a cut stores exactly its requirement.
-      if l != start && !cuts.contains l then
-        k := KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k
-      let evidence ← produceNode G images pool fuel l node claims k suggestions index codes aliases checker
-        implies held goal
-      table := table.set! l (some evidence)
-      progress := true
-    if !progress then
-      if force then break else force := true
-    else force := false
+  -- A cut's implications: none in the first round, which schedules every
+  -- node as before; then, while a round fails and leaves a cut whose
+  -- entering edges all establish an implication it was not seeded with (a
+  -- constant holding a guard's answer), another round with each such cut's
+  -- (`meetImplications`), at most four rounds. A round that fails at a node
+  -- goes on with the others, so the cuts after it are met; a successful
+  -- round keeps its evidence.
+  let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
+  let mut result : Option (Array (Option (NodeEvidence ι))) := none
+  let mut failure : Option (Failure ι) := none
+  for _ in List.range (min (cuts.length + 1) 4) do
+    let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
+    let mut failed : Option (Failure ι) := none
+    -- A node that failed in this round is not attempted again in it.
+    let mut failedAt : Array Bool := Array.replicate P.length false
+    -- A merge waits for its predecessors while some pass still makes
+    -- progress; once none does, the merges still waiting (a cycle through no
+    -- cut) take their stated requirements alone, as every merge did before.
+    let mut force := false
+    for _ in List.range (2 * P.length + 2) do
+      let mut progress := false
+      for l in List.range P.length do
+        if (table.getD l none).isSome || failedAt.getD l false then continue
+        let some node := nodes[l]? | throw .claimCount
+        let some c := claimed[l]? | throw .claimCount
+        let required := (requirements.lookup l).getD {}
+        let mut k := required
+        let mut implies : List (PromiseCalls.Implication ι) := (seeds.lookup l).getD []
+        -- At the entry and at cuts, the argument slots every edge carries.
+        let mut held := arguments.getD l []
+        if l != start && !cuts.contains l then
+          match incoming[l]? with
+          | some [(pred,index,target)] =>
+            let some previous := table.getD pred none | continue
+            let some source := nodes[pred]? | throw .claimCount
+            let o := ControlFlow.outFacts G previous
+            k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index)
+              target.mapping c.context.length
+            implies := projectImplications (edgeImplicationsOf G previous source.continuation o) target.mapping
+              c.context.length
+            held := projectArguments (edgeArgumentsOf G previous source o) target.mapping c.context.length
+          | some preds =>
+            -- A merge that is not a cut states no requirement of its own; it
+            -- keeps what every predecessor establishes, once all are available.
+            -- Cycles pass through cuts, so waiting here cannot deadlock.
+            let mut projections : List HeapKnowledge.Knowledge := []
+            let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
+            let mut holding : List (List Nat) := []
+            let mut ready := true
+            for (pred,index,target) in preds do
+              match table.getD pred none, nodes[pred]? with
+              | some previous, some source =>
+                let o := ControlFlow.outFacts G previous
+                projections := projections ++ [HeapKnowledge.project
+                  (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
+                carried := carried ++ [(edgeContextOf G previous source.continuation index o,
+                  edgeImplicationsOf G previous source.continuation o, target.mapping)]
+                holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
+                  c.context.length]
+              | _, _ => ready := false
+            if !ready && !force then continue
+            if ready then
+              k := HeapKnowledge.meet projections
+              implies := meetImplications G carried c.context.length c.context
+              held := match holding with
+                | first :: rest => first.filter fun p => rest.all (·.contains p)
+                | [] => []
+          | none => pure ()
+        k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
+          HeapLinks.dedup (k.links ++ required.links),
+          HeapSeparation.union k.separation required.separation⟩
+        -- A handler target is entered by throws too, which carry no
+        -- implication, and the argument slots the throwing nodes carry.
+        if handlerTargets.contains l then
+          implies := []
+          held := held.filter (arguments.getD l []).contains
+        -- A point other than a cut stores its knowledge's normal form at the
+        -- point's contexts; a cut stores exactly its requirement.
+        if l != start && !cuts.contains l then
+          k := KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k
+        let produced ← tryCatch (Except.ok <$> produceNode G images pool fuel l node claims k suggestions index codes aliases checker
+            implies held goal) (fun e => pure (Except.error e))
+        match produced with
+        | .ok evidence =>
+          table := table.set! l (some evidence)
+          progress := true
+        | .error e =>
+          -- The first round fails as before where no cut's implications
+          -- could follow; a later one rethrows the last failure.
+          if seeds.isEmpty && cuts.isEmpty then throw e
+          failed := failed <|> some e
+          failedAt := failedAt.set! l true
+          progress := true
+      if !progress then
+        if force then break else force := true
+      else force := false
+    -- What every edge entering each cut establishes, where all are produced.
+    let met := cuts.filterMap fun l => do
+      if l == start || handlerTargets.contains l then none
+      let c ← claimed[l]?
+      let preds := incoming.getD l []
+      if preds.isEmpty then none
+      let carried ← preds.mapM fun (pred,index,target) => do
+        let previous ← table.getD pred none
+        let source ← nodes[pred]?
+        let o := ControlFlow.outFacts G previous
+        pure (edgeContextOf G previous source.continuation index o,
+          edgeImplicationsOf G previous source.continuation o, target.mapping)
+      let xs := meetImplications G carried c.context.length c.context
+      if xs.isEmpty then none else some (l, xs)
+    if failed.isNone then
+      result := some table
+      failure := none
+      break
+    let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
+    failure := failed
+    if grown.isEmpty then break
+    seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
+  if let some e := failure then throw e
+  let some table := result | throw .rejected
   table.toList.mapM fun c => match c with
     | some e => pure e
     | none => throw .rejected

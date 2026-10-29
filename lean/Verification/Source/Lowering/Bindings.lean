@@ -23,14 +23,22 @@ set_option maxHeartbeats 1000000
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
   let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
   let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
+  recordConditionConstant b.name b.init
   let next ← after (bound::scope)
   -- A function literal reading the constant: its self entry
   -- (SOURCE-ELABORATION.md, "Recursive constants").
   let self := match b.init with
     | .lambda .. => if b.init.freeNames.contains b.name then some b.name else none
     | _ => none
-  withSelfConstant self (LoweringExecution.compileExprThen recursive fc scope Γ b.init fun Γ =>
-    emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
+  -- The value at the type its path states, where that is within the
+  -- initializer's claim: a `false` arm of a condition is `false` there,
+  -- which the constant's implications read (`meetImplications`).
+  let G := SourceTypes.graph (← table)
+  withSelfConstant self (LoweringExecution.compileExprThenAt recursive fc scope Γ b.init fun Γ V =>
+    let V := match V with
+      | some V => if !V.isEmpty && V.all A.contains && BranchRefinement.onlyBoolean G A then V else A
+      | none => A
+    emitAt b.init.span (.var 0) (.effect next) (V::Γ) B "binding-annotation" (some pos.1)
       (scope := held ⟨b.name,some b.init.span⟩::scope))
 
 /-- A mutable declaration allocates one private cell at its explicit lifetime
