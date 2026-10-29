@@ -2080,7 +2080,8 @@ export function lambda(this: Gate,
   // signatures. Its closure's binders are named by the member's key and
   // the binder's position, so the producer's claims and the closure's
   // annotations name them alike; the closure's scheme binds them.
-  const typeParams = gate.enterTypeParams(node.typeParameters, member === undefined ? undefined :
+  const typeParams = !node.typeParameters?.length && member === undefined && instance === undefined
+    ? gate.enterContextualTypeParams(node) : gate.enterTypeParams(node.typeParameters, member === undefined ? undefined :
     (tp, index) => {
       if (tp.constraint)
         gate.fail(tp, "a bounded type parameter of a generic class method is outside the fragment: its binder row is named by its bound");

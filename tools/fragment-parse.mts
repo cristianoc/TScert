@@ -299,6 +299,10 @@ export class Gate {
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
   readonly contextualParams: Map<string, Answered<TypeTerm>> = new Map();
+  /** Arrows and function expressions written without type parameters and
+   * with a parameter written without a type, by the closure's span: the type parameters of the
+   * signature TypeScript gives each, its context's, or why none states them. */
+  readonly contextualBinders: Map<string, Answered<string[]>> = new Map();
   /** The type TypeScript gives each static field written without an
    * annotation, by its name's span, or why none. */
   readonly staticTypes: Map<string, Answered<TypeTerm>> = new Map();
@@ -487,6 +491,26 @@ export class Gate {
       this.resolutionScopes = this.resolutionScopes.slice(1);
       throw error;
     }
+  }
+
+  /** A closure written without type parameters, at a generic signature:
+   * TypeScript gives it that signature's type parameters, which its
+   * parameters' contextual types name (`contextualBinders`). They are the
+   * closure's own, as if written, each unbounded, under the fresh names
+   * the declaration graph gives them, which no written type spells. */
+  enterContextualTypeParams(node: Node): Within<{ value: "any"; store: "grow" }, TypeParamAst[]> {
+    const answered = this.contextualBinders.get(this.span(node).join(":"));
+    if (!answered) return this.enterTypeParams(undefined);
+    if (!answered.ok) return this.fail(node, answered.refused);
+    const scope = this.enterTypeParams(undefined);
+    const local = this.typeParamScopes[0];
+    if (!local) throw new Error("internal: no type-parameter scope entered");
+    for (const name of answered.value) {
+      if (local.has(name)) this.fail(node, "duplicate type parameter");
+      local.set(name, name);
+      scope.push({ name, bound: null, resolution: null });
+    }
+    return scope;
   }
 
   leaveTypeParams(): Within<{ value: "any"; store: "grow" }, void> {
@@ -1886,11 +1910,14 @@ function lowerFile(file: string, carriesContext: boolean,
           m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword))
         staticTypeNodes.push(m.name);
   const contextualNodes: Node[] = [];
+  const contextualClosures: Node[] = [];
   const findContextual = (node: Node): void => {
     if (ts.isParameterDeclaration(node) && !node.type && !node.dotDotDotToken && node.parent &&
         (ts.isArrowFunction(node.parent) || ts.isFunctionExpression(node.parent) ||
           (ts.isMethodDeclaration(node.parent) && ts.isObjectLiteralExpression(node.parent.parent))))
       contextualNodes.push(node.name);
+    if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) && !node.typeParameters?.length && node.parameters.some(p => !p.type && !p.dotDotDotToken))
+      contextualClosures.push(node);
     node.forEachChild(findContextual);
   };
   if (!carriesContext) findContextual(source);
@@ -2066,6 +2093,8 @@ function lowerFile(file: string, carriesContext: boolean,
         staticType: ([start, end], result) => gate.staticTypes.set(`${start}:${end}`, result),
         contextualParams: contextualNodes.map(node => gate.span(node)),
         contextualParam: ([start, end], result) => gate.contextualParams.set(`${start}:${end}`, result),
+        contextualClosures: contextualClosures.map(node => gate.span(node)),
+        contextualBinders: ([start, end], result) => gate.contextualBinders.set(`${start}:${end}`, result),
         assignCalls: assignNodes.map(node => gate.span(node)),
         assignTypes: ([start, end], result) => gate.assignTypes.set(`${start}:${end}`, result),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
@@ -2146,7 +2175,7 @@ function lowerFile(file: string, carriesContext: boolean,
       const at = declared
         ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...importMetaNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
-            ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
+            ...classTestNodes, ...classReadNodes, ...contextualNodes, ...contextualClosures, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes, ...blockNodes].find(node =>
             node.getStart(source) === declared[0] && node.end === declared[1]) ?? expressionAt(source, declared) ?? first

@@ -1224,6 +1224,25 @@ site of the census of 4d25222.
   runs no code in either form. `getMembers` is called once in both.
 - **Commit:** the introducing commit.
 
+### `ReturnType` of a function's `typeof`
+
+`collectDeclarations` in `tools/declaration-graph.mts` named the symbols
+its sweep reads `NonNullable<ReturnType<typeof targetOf>>`. The written
+application `ReturnType<typeof targetOf>` is refused at its bound,
+`(...args: any) => any`, whose rest reads the library's `any` as `unknown`,
+which no rest parameter holds; past the bound, the result `R` the
+conditional infers is no member of `typeof targetOf` as written, which the
+computed-alias reading selects from (`blocker-returntype-typeof`). Support
+needs a reading of `any` at a library bound's parameter position, which no
+principle states, for this one site of the census of 4d25222.
+
+- **Equivalent form:** `type Symbolic = CompilerSymbol`: `targetOf`'s
+  annotation states `CompilerSymbol | null` for its result, and the type
+  TypeScript computes for the application is that without `null`. Types
+  are erased, so the code runs the same.
+- **Commit:** the introducing commit, `A closure at a generic signature
+  takes its type parameters; ReturnType of a typeof avoided`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

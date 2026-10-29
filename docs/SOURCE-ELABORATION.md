@@ -2807,6 +2807,35 @@ parameter with a number is no handler of a signature passing a function of
 strings alone (`invalid-closure-contextual-callable`, run under Node;
 `closure-contextual-callable`, `compiler-api-contextual-callable`).
 
+An arrow or function expression written without type parameters, at a
+generic signature TypeScript types its parameters at, takes that
+signature's type parameters as its own, as TypeScript gives them to it: the
+closure is read as if it wrote them, unbounded, each under a fresh name
+$`X_i'`$ no written type spells, and its parameters' contextual types name
+them there. They are the type parameters of the one call signature of the
+closure expression's type:
+
+```math
+\frac{\lambda(\vec x).t\ \text{writes no type parameter}\quad \mathit{ts}(\lambda(\vec x).t)\ \text{has exactly the call signature}\ \langle X_1,\ldots,X_k\rangle(\ldots)\Rightarrow B\quad \text{each}\ X_i\ \text{unbounded, without default}}
+     {\lambda(\vec x).t\ \text{is read as}\ \langle X_1',\ldots,X_k'\rangle\,\lambda(\vec x{:}\vec D[\vec X:=\vec X']).t}\ \textsf{contextual-binders}
+```
+
+with $`D_j`$ the contextual type of $`x_j`$, its free occurrences of the
+$`X_i`$ renamed. A type parameter of the enclosing code of the same spelling
+stays distinct: an annotation the body writes names the outer one
+(`contextual-generic-closure-shadow`). The binders are a proposal like the
+parameter types: the closure is checked at them, and then at the signature
+it flows to (`blocker-contextual-generic-closure`). Refused at the closure:
+a bounded or defaulted type parameter, which the closure's scheme would not
+state (`contextual-generic-closure-bounded-refused`); a contextual type
+naming both one of the $`X_i`$ and another type parameter of its spelling,
+as a signature instantiated at an outer parameter of that spelling does,
+whose occurrences the renaming cannot tell apart
+(`contextual-generic-closure-spelling-refused`). An object literal's method
+is not read so: the type TypeScript states for the method's declaration
+binds no type parameter, so a parameter it types at one is refused
+(`contextual-generic-method-refused`).
+
 A contextual parameter type is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the
 call offering it included. A closure is **offered** each signature binding

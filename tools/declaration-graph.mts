@@ -664,6 +664,14 @@ export function collectDeclarations(file: string, options: {
   staticType?: (span: Span, result: Answered<TypeTerm>) => void;
   contextualParams?: readonly Span[];
   contextualParam?: (span: Span, result: Answered<TypeTerm>) => void;
+  /** The client's arrows and function expressions written without type
+   * parameters and with a parameter written without a type: each is reported to
+   * `contextualBinders` with fresh names for the type parameters of the
+   * signature TypeScript gives it, which it takes from a generic context
+   * signature, or the reason none states them (a bounded one); its
+   * parameters' contextual types name them by these names. */
+  contextualClosures?: readonly Span[];
+  contextualBinders?: (span: Span, result: Answered<string[]>) => void;
   /** The client's calls `Object.assign(arrow, literal)` written without type
    * arguments: each is reported to `assignTypes` with the two TypeScript
    * infers, the arrow's function type and the literal's record, as the
@@ -3620,6 +3628,26 @@ export function collectDeclarations(file: string, options: {
         result: contextualTerm(promised, span) }], span);
     };
     const typesRead = new Set<number>();
+    // The type parameters a closure takes from its context signature, by
+    // their symbol, at the fresh names it binds them under, while one of its
+    // parameters' contextual types is read.
+    let closureBinders: ReadonlyMap<number, { spelled: string; fresh: string }> = new Map();
+    // A contextual type read for a closure's parameter names the closure's
+    // type parameters as spelled; each free occurrence becomes its fresh
+    // name, a scheme's own binders hiding it.
+    const renameFree = (term: TypeTerm, names: ReadonlyMap<string, string>): TypeTerm => {
+      if (!names.size) return term;
+      if (term.k === "binder") {
+        const fresh = names.get(term.name);
+        return fresh === undefined ? term : { ...term, name: fresh };
+      }
+      if (term.k === "scheme") {
+        const inner = new Map(names);
+        for (const binder of term.binders) inner.delete(binder.name);
+        return mapTypeParts(term, part => renameFree(part, inner));
+      }
+      return mapTypeParts(term, part => renameFree(part, names));
+    };
     const readContextualTerm = (type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
         throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
@@ -3699,7 +3727,10 @@ export function collectDeclarations(file: string, options: {
           return parts.length === 1 && only ? only : { k: isUnionType(type) ? "union" : "intersection", parts, span };
         }
         if (isTypeParameter(type)) {
-          const name = type.getSymbol()?.name;
+          const symbol = type.getSymbol();
+          const name = symbol?.name;
+          if (symbol && name && !closureBinders.has(symbol.id) && [...closureBinders.values()].some(b => b.spelled === name))
+            throw Error(`the contextual type ${text()} names two type parameters spelled ${name}, the closure's and another`);
           if (name) return { k: "binder", name, span };
         }
         if (checker.isArrayType(type) && isTypeReference(type)) {
@@ -3763,15 +3794,60 @@ export function collectDeclarations(file: string, options: {
         options.staticType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
+    // A closure TypeScript types at a generic context signature takes that
+    // signature's type parameters as its own; its parameters' contextual
+    // types name them. They are read from the closure expression's type,
+    // which TypeScript states once it has checked the expression in its
+    // context, before any parameter's type is asked. Each is bound under a
+    // fresh name, `R#closure<start>`, so a type parameter of one spelling
+    // declared around the closure stays distinct from it.
+    const closureBinderNames = new Map<string, Map<number, { spelled: string; fresh: string }>>();
+    const closureAt = (span: Span): Node | null => {
+      const visit = (node: Node): Node | null => {
+        if ((ts.isArrowFunction(node) || ts.isFunctionExpression(node)) &&
+            node.getStart(client) === span[0] && node.end === span[1]) return node;
+        return node.getStart(client) <= span[0] && span[1] <= node.end ? node.forEachChild(visit) ?? null : null;
+      };
+      return visit(client);
+    };
+    for (const span of options.contextualClosures ?? []) {
+      const closure = closureAt(span);
+      if (!closure) throw declarationError(span, "TypeScript closure missing");
+      try {
+        const type = checker.getTypeAtLocation(closure);
+        if (!type || type.isErrorType()) throw Error("TypeScript gives this closure no type");
+        const [signature, ...others] = checker.getSignaturesOfType(type, SignatureKind.Call);
+        if (!signature || others.length) throw Error("TypeScript gives this closure no one call signature");
+        const names = signature.getTypeParameters().map(parameter => {
+          const symbol = parameter.getSymbol();
+          const declaration = symbol?.declarations[0]?.resolve();
+          if (!symbol || !declaration || !ts.isTypeParameterDeclaration(declaration))
+            throw Error("TypeScript gives this closure a type parameter no declaration states");
+          if (declaration.constraint || declaration.defaultType)
+            throw Error(`TypeScript gives this closure its context's type parameter ${symbol.name}, whose bound or default the closure's scheme does not state`);
+          return { id: symbol.id, spelled: symbol.name, fresh: `${symbol.name}#closure${span[0]}` };
+        });
+        if (new Set(names.map(n => n.spelled)).size !== names.length)
+          throw Error("TypeScript gives this closure two type parameters of one spelling");
+        closureBinderNames.set(span.join(":"), new Map(names.map(n => [n.id, { spelled: n.spelled, fresh: n.fresh }])));
+        options.contextualBinders?.(span, { ok: true, value: names.map(n => n.fresh) });
+      } catch (error) {
+        options.contextualBinders?.(span, { ok: false, refused: refusalAt(span, error) });
+      }
+    }
     for (const span of options.contextualParams ?? []) {
       const parameter = parameterAt(span);
       if (!parameter) throw declarationError(span, "TypeScript parameter missing");
       const type = checker.getTypeAtLocation(parameter.name);
+      closureBinders = closureBinderNames.get(`${parameter.parent.getStart(client)}:${parameter.parent.end}`) ?? new Map();
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
-        options.contextualParam?.(span, { ok: true, value: contextualTerm(type, span) });
+        const renames = new Map([...closureBinders.values()].map(b => [b.spelled, b.fresh]));
+        options.contextualParam?.(span, { ok: true, value: renameFree(contextualTerm(type, span), renames) });
       } catch (error) {
         options.contextualParam?.(span, { ok: false, refused: refusalAt(span, error) });
+      } finally {
+        closureBinders = new Map();
       }
     }
     // `Object.assign(arrow, literal)` without type arguments: the two
@@ -4033,7 +4109,7 @@ export function collectDeclarations(file: string, options: {
     // members, as the checker has them: a class's instance and static
     // members, a module's or namespace's exports, `export =` and a default
     // export included.
-    type Symbolic = NonNullable<ReturnType<typeof targetOf>>;
+    type Symbolic = CompilerSymbol;
     const follow = (symbol: Symbolic | undefined): Symbolic | undefined =>
       symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
     const exportsOf = (symbol: Symbolic): Symbolic[] => {
