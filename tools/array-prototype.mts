@@ -258,10 +258,23 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: emptyEffect },
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;",
     effect: emptyEffect },
+  // `find` is reviewed against its guard overload, whose declaration binds
+  // `S`, and states both of TypeScript's: the predicate one at each
+  // footprint, and the guard one at each footprint keeping array stores
+  // (`native-guard-find`). There every visit passes an element at the
+  // receiver's contract, and where the answer is `true` the native returns
+  // that very value, which the promise leaves an `S`, running no client code
+  // after the callback's call; where none answers `true`, `undefined`.
   { name: "find", from: "ReadonlyArray",
-    signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
-      result: maybeElement })) },
+    signature: "find<S extends T>(predicate: (value: T, index: number, obj: readonly T[]) => value is S, thisArg?: any): S | undefined;",
+    stated: [
+      ...atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
+        result: maybeElement })),
+      ...closedFootprints.filter((footprint) => footprint.store === "keep").map((footprint) => ({
+        params: [callback(element, guarded, { ...footprintEffect(footprint), promise: { guards: { param: 0 } } })],
+        result: { k: "union", parts: [guarded, atomOf("undefined")], span: at } satisfies TypeTerm,
+        effect: footprintEffect(footprint) })),
+    ] },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
     stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],

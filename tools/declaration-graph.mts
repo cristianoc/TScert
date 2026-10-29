@@ -1817,12 +1817,12 @@ export function collectDeclarations(file: string, options: {
           target: { module: `tscert/family/${marker}`, name, span: [0, 0] } } };
       }
       // Any further argument, which the entry states changes no answer, is
-      // an element of a third signature's rest, of every value.
+      // an element of a rest, of every value, of the plain signature and of
+      // the promise signature alike.
       const rest: TypeTerm = { k: "atom", name: "unknown", span };
       const plainForm = { ...one, effect: emptyEffect };
-      return { k: "intersection", span, parts: [plainForm,
-        { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised },
-        { ...plainForm, rest }] };
+      const promiseForm = { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised };
+      return { k: "intersection", span, parts: [plainForm, promiseForm, { ...plainForm, rest }, { ...promiseForm, rest }] };
     };
     const valueRead = (declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !isTypeAlias(n));

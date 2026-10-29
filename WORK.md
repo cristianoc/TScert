@@ -30,7 +30,7 @@ each item's design and evidence, not its progress.
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review (`blocker-in-name-object`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [An assertion's promise on a field](#guard-promise-field) | open | `guard-field-assertion` verifies: an assertion function's call on a field narrows the field reread in the next statement |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
-| [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
+| [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`); open: `every`'s, and a guard closure's at `find` | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
@@ -295,10 +295,9 @@ callback may append untested elements or replace tested ones before `every`
 answers, and `find` passes `undefined` at positions a callback removed. Both
 hold at a callback keeping array stores, which a promise signature can state
 once a promise row's code is checked at a footprint (`effectChecked` checks
-it at the top one alone). A guard read as a value meets `filter`'s guard
-overload once its promise signature is adapted to the callback's longer one,
-as a module function's slot meets a longer plain signature
-(`filter-guard-value-refused`).
+it at the top one alone); a guard read as a value, whose slot or entry
+states its promise signature extended by a rest, meets `find`'s at its own
+footprint ([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)).
 
 <a id="conditional-optional-field"></a>
 **A conditional's join past an arm's read.**

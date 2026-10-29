@@ -60,7 +60,10 @@ discarded. By [function coverage](POSITIVE-TYPES.md#function-and-class-coverage)
 $`(R';\vec A'\vec C\to B')`$ and $`(R';\vec A'\vec C,\ldots E\to B')`$ with
 $`R'\sqsubseteq R`$, $`\vec A'\sqsubseteq\vec A`$ and $`B\sqsubseteq B'`$,
 whatever $`\vec C`$ and $`E`$: a module function is a value of a signature
-binding more parameters, as JavaScript calls it. A function with a rest
+binding more parameters, as JavaScript calls it. A guard's slot holds its
+promise signature beside its plain one, and that one extended by the same
+rest, which the same code offers, so the guard meets a promise signature
+binding more parameters (`native-guard-filter`). A function with a rest
 parameter collects further actuals, so its slot is its signature alone. A
 value known only by its type, a parameter or an import, has no such
 extension: a function type's meaning is a promise about calls writing at most
@@ -2214,18 +2217,41 @@ Every kept value is an $`S`$ without the bound $`S\le T`$, which the
 overlay leaves out; at $`S`$ the empty type the result is empty. The
 signature states the callback at the top footprint, the one a closure's
 promise signature is checked at, so the call may change any location; its
-result is fresh. A callback whose promise is about another parameter, or a
-promise signature at fewer parameters than the callback takes (a guard read
-as a value, `nodes.filter(ts.isIdentifier)`), meets only the plain
-signatures, where `filter` keeps `T` (`compiler-api-guard-values`,
-`filter-guard-value-refused`).
+result is fresh. A callback whose promise is about another parameter meets
+only the plain signatures, where `filter` keeps `T`. A guard read as a
+value meets the guard signature where its value states its promise
+signature extended by a rest of `unknown`, the actuals past its parameters
+it discards: a module function's slot ([module functions](SOURCE-ELABORATION.md#user-defined-guards))
+and a compiler-API guard's entry
+([guards as values](HOST-FAMILIES.md#guards-as-values)) state it
+(`filter-guard-value`, `blocker-compiler-api-filter-guard-element`). A
+value known only by its type states no such extension, and meets only the
+plain signatures.
 
-`find`'s guard overload is not stated: at the top footprint `find` visits
-positions a callback removed and passes them `undefined`, so its callback
-there takes `T | undefined`, which a guard closure TypeScript types at `T`
-does not admit. `every`'s, `this is readonly S[]`, is not a contract of the
-native: a callback may append untested elements or replace tested ones, so
-a traversal answering `true` says nothing of the receiver it leaves.
+`find` is stated at its guard overload,
+`find<S extends T>(predicate: (value: T, index: number, obj: readonly T[]) => value is S): S | undefined`,
+at each closed footprint $`\varepsilon`$ keeping array stores
+($`\varepsilon.\mathit{store}=\mathsf{keep}`$):
+
+```math
+\frac{\varepsilon.\mathit{store}=\mathsf{keep}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon} S\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{find}(f):S\cup\mathtt{undefined}\;!\;\varepsilon}\ \textsf{native-guard-find}
+```
+
+At such a callback the receiver's store, and so its length, stays as it
+was, and each visit passes an element at the receiver's contract, as for
+`find`'s plain signatures. Where the answer converts to `true` the native
+returns that very value, which the promise leaves an $`S`$, running no
+client code after the callback's call; where no answer does, `undefined`.
+At any other footprint `find` visits positions a callback removed and
+passes them `undefined`, which a guard TypeScript types at `T` does not
+admit. A closure's promise signature is checked at the top footprint
+alone, so a guard closure passed to `find` meets the plain signatures; a
+guard read as a value meets this one at its own footprint
+(`filter-guard-value`). `every`'s, `this is readonly S[]`, is not a
+contract of the native: a callback may append untested elements or
+replace tested ones, so a traversal answering `true` says nothing of the
+receiver it leaves.
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source

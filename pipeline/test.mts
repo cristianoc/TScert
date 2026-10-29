@@ -4129,6 +4129,54 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A guard passed by name to `filter` is claimed at the guard overload's
+  // callback, which its slot, or its host entry, meets by its promise
+  // signature extended by a rest of `unknown`. That claim forged without the
+  // promise, or at a promised type the guard does not state; and a function
+  // stating no promise forged at a promise signature: each refused where
+  // evidence is produced and where the honest evidence is checked.
+  type Arrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  const forgeArgument = (artifacts: string, fnName: string, text: string, name: string,
+      edit: (arrow: Arrow, claims: SourceClaims) => void): string => {
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const start = source.indexOf(`(${text})`) + 1;
+    assert.ok(start > 0, text);
+    const forged = readClaims(artifacts);
+    const fn = must(forged.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const argument = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + text.length),
+      `the claim of ${text}`);
+    const label = Array.isArray(argument.type) ? argument.type[0] : undefined;
+    assert.ok(typeof label === "number", "the argument's claim is a row");
+    const clause = must(forged.types[label], "the argument's row")[0];
+    assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+    const [arrow] = clause.arrs.arrows;
+    assert.ok(arrow !== undefined && clause.arrs.arrows.length === 1, "one signature");
+    edit(arrow, forged);
+    return writeClaims(artifacts, name, forged);
+  };
+  const user = run("filter-guard-value");
+  const host = run("blocker-compiler-api-filter-guard-element");
+  const forgeries = [
+    [user, forgeArgument(user, "defined", "isDeclaration", "forged-guard-value-plain",
+      (arrow) => { arrow.effect = { ...arrow.effect, promise: null }; }), "forged-guard-value-plain"],
+    [user, forgeArgument(user, "defined", "isDeclaration", "forged-guard-value-promise",
+      (arrow, claims) => { arrow.result = [rowOf(claims, "nul")]; }), "forged-guard-value-promise"],
+    [user, forgeArgument(user, "others", "isOther", "forged-plain-value-promise",
+      (arrow, claims) => { arrow.effect = { ...arrow.effect, promise: { guards: { param: 0 } } }; arrow.result = [rowOf(claims, "nul")]; }),
+      "forged-plain-value-promise"],
+    [host, forgeArgument(host, "arity", "ts.isConstructorDeclaration", "forged-host-guard-value-promise",
+      (arrow, claims) => { arrow.result = [rowOf(claims, "nul")]; }), "forged-host-guard-value-promise"],
+  ] as const;
+  for (const [artifacts, input, name] of forgeries) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+  }
+  process.stdout.write("guard value callback: its claim without the promise, at a promise the guard does not state, and a plain function's at a promise refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // `Object.entries`'s generic and plain overloads are one callee, each call
   // claimed at the overload its operand meets. The dictionary's call forged
   // at the plain overload, whose values are unknown where the loop adds

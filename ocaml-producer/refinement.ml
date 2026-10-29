@@ -351,8 +351,12 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
       List.for_all2 (fun (a:expr) param -> match actual a with
         | Some t -> plausible_subtype t param
         | None -> true) args (List.filteri (fun i _ -> i < List.length args) s.params) in
+    (* Promise signatures alike but for a rest of the actuals the callee
+       discards (a host guard's entry states both) promise one type of one
+       actual. *)
     let chosen = match promises with
-      | [_] -> promises
+      | (p,s) :: rest when List.for_all (fun (q,(t:Semantic.signature)) -> q=p && t.result=s.result
+          && t.params=s.params && t.receiver=s.receiver) rest -> promises
       | _ -> List.filter applicable promises in
     (match chosen with
      | (p,s) :: _ -> (match List.nth_opt args p with

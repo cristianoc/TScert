@@ -124,6 +124,46 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            | Some t -> restate_expression target.pos t; t
            | None -> callee)
         | _ -> callee in
+      (* A guard passed by name whose value states its promise signature
+         extended by a rest of the actuals it discards: a module function
+         without a rest parameter, whose slot states it, or an import whose
+         type states it (a compiler-API guard's entry). Its fixed promise
+         signature. A value known only by its type states no extension. *)
+      let value_promise (arg:expr) = match arg.node with
+        | Id n when not (List.mem_assoc n env) ->
+          (match quietly (fun () -> resolve env n) with
+           | Some t ->
+             (match (try declared_head declarations [] t with Json.Error _ -> t) with
+              | Atoms [Shape {calls;_}] ->
+                let promising = List.filter (fun (c:Semantic.signature) ->
+                  c.call_effect.promise <> None && c.quantified=[] && c.rest_pack=None) calls in
+                let fixed,extended = List.partition (fun (c:Semantic.signature) -> c.variadic=None) promising in
+                (match fixed with
+                 | [c] when List.for_all (fun (d:Semantic.signature) ->
+                       d.call_effect.promise = c.call_effect.promise) extended
+                     && (module_arity n = Some Module_contract.Discards || extended <> []) -> Some c
+                 | _ -> None)
+              | _ -> None)
+           | None -> None)
+        | _ -> None in
+      (* A guard passed by name meets a callback parameter stating its
+         promise at as many parameters or more, each within the guard's own
+         parameter, at a promised type within the guard's: its slot, or its
+         host entry, states that promise extended by a rest of `unknown`
+         elements, the further actuals it discards, which Lean checks the
+         argument at. *)
+      let guard_meets (arg:expr) = function
+        | Atoms [Shape {calls=[c];_}] ->
+          (match value_promise arg with
+           | Some own ->
+             own.call_effect.promise = c.call_effect.promise && own.variadic=None && own.rest_pack=None
+             && c.variadic=None && c.rest_pack=None
+             && List.length own.params <= List.length c.params
+             && List.for_all2 (fun mine theirs -> plausible_subtype_declared declarations theirs mine)
+                  own.params (List.filteri (fun i _ -> i < List.length own.params) c.params)
+             && plausible_subtype_declared declarations own.result c.result
+           | None -> false)
+        | _ -> false in
       (* A closure passed where a callback is offered more parameters than it
          binds — a fixed signature taking more, or a variadic one whose fixed
          parameters cover them — is claimed at the offered signature: calls
@@ -172,6 +212,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            is expected. *)
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.classes ->
           Some (fun () -> offer_class (List.assoc n (path_facts ()).Proposal_flow.classes) param)
+        (* A guard passed by name is claimed at a callback parameter stating
+           its promise that it meets (`guard_meets`), as TypeScript resolves
+           `filter`'s guard overload at it. *)
+        | Id _ when guard_meets arg param -> Some (fun () -> publish_instance arg.pos param)
         (* Any other named function is not offered a signature binding more
            parameters: a module function that discards the actuals past its
            parameters meets it from its slot, and any other is refused. *)
@@ -240,12 +284,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | _ -> [] in
         (* A guard closure's written promise is the type a callback
            parameter stating that promise promises: its result operand, as
-           TypeScript infers `filter<S>`'s `S` from the predicate. *)
+           TypeScript infers `filter<S>`'s `S` from the predicate. So is a
+           guard passed by name: its promise signature's result. *)
         let promised (s:Semantic.signature) = List.concat (List.mapi (fun i (arg:expr) ->
-          match arg.node,param_at s i with
-          | Lambda (_,_,_,_,_,_,Some (stated,written),_),Some (Atoms [Shape {calls=[c];_}])
+          match arg.node,param_at s i,value_promise arg with
+          | Lambda (_,_,_,_,_,_,Some (stated,written),_),Some (Atoms [Shape {calls=[c];_}]),_
               when c.call_effect.promise <> None && c.call_effect.promise = stated.promise ->
             bind c.result written
+          | _,Some (Atoms [Shape {calls=[c];_}]),Some own
+              when c.call_effect.promise = own.call_effect.promise ->
+            bind c.result own.result
           | _ -> []) args) in
         let seed (s:Semantic.signature) =
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
@@ -309,6 +357,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | [],[] -> params
                | [],plain -> plain
                | promised,_ -> promised)
+            (* A function passed by name, at those stating the promise its
+               type states, or none. *)
+            | Id _ ->
+              let promise = Option.bind (value_promise arg) (fun (c:Semantic.signature) -> c.call_effect.promise) in
+              (match List.filter (states promise) params with
+               | [] -> params
+               | kept -> kept)
             | _ -> params in
           match params with
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
@@ -669,10 +724,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            TypeScript resolves `filter`'s guard overload at a type
            predicate. *)
         let states_written ((s:Semantic.signature),_,_) = List.for_all Fun.id (List.mapi (fun i (arg:expr) ->
-          match arg.node,param_at s i with
-          | Lambda (_,_,_,_,_,_,Some (stated,_),_),Some (Atoms [Shape {calls=_::_ as calls;_}]) ->
+          match arg.node,param_at s i,value_promise arg with
+          | Lambda (_,_,_,_,_,_,Some (stated,_),_),Some (Atoms [Shape {calls=_::_ as calls;_}]),_ ->
             List.for_all (fun (c:Semantic.signature) -> c.call_effect.promise = stated.promise) calls
-          | Lambda (_,_,_,_,_,_,Some _,_),_ -> false
+          | Lambda (_,_,_,_,_,_,Some _,_),_,_ -> false
+          (* A guard passed by name, as TypeScript resolves the guard
+             overload at a function whose type is a predicate. *)
+          | _,Some (Atoms [Shape {calls=_::_ as calls;_}]),Some own ->
+            List.for_all (fun (c:Semantic.signature) -> c.call_effect.promise = own.call_effect.promise) calls
+          | _,_,Some _ -> false
           | _ -> true) args) in
         let matching = List.filter matches_actuals proposals in
         let matching = List.filter states_written matching @

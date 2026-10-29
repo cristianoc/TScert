@@ -1473,6 +1473,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // of `null` leaves `null` in a result read at `string[]`.
     ["filter-guard-callback", "JSON.stringify([defined([{ kind: 'declaration', name: 'f', body: true, modifiers: [{ kind: 'declare' }] }], 'f'), defined([{ kind: 'declaration', name: 'f', body: true }], 'f'), declarations([{ kind: 'other', name: 'x' }, { kind: 'declaration', name: 'y', body: false }]).length, evenStrings(['a', 1, 'b', 'c']), none(['a']), overwriting(['a', 1, 'b'])])", '[false,true,1,["a","b"],[],["a","b"]]'],
     ["invalid-filter-guard-promise", "JSON.stringify(strings([null, 'a']))", '[null,"a"]'],
+    // A guard passed by name keeps, and finds, exactly the values it
+    // answers `true` for; one answering `true` of `null` leaves `null` in a
+    // result read at `string[]`.
+    ["filter-guard-value", "const ds = [{ kind: 'other' }, { kind: 'declaration', body: true }]; JSON.stringify([defined(ds), first(ds), first([{ kind: 'other' }]), others(ds).length])", '[true,true,false,1]'],
+    ["invalid-filter-guard-value-promise", "JSON.stringify(strings([null, 'a']))", '[null,"a"]'],
     ["invalid-closure-parameter-write", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     ["invalid-closure-parameter-cell", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     // A path rooted at a `let` slot holds what its test saw until the root's
