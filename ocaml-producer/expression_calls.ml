@@ -20,6 +20,11 @@ module Support = Expression_support.Make(S)
 open Support
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   let site = e.pos in
+  (* A type mentioning a hole (`contextual_actual`) guides a callback's
+     result alone (`result_bound`); the call's instance is inferred from its
+     actuals. *)
+  let contextual = expected in
+  let expected = match expected with Some t when mentions_hole t -> None | _ -> expected in
   match e.node with
     | Call _ | Invoke _ ->
       (* A method call types its callee, the read of the method, and so its
@@ -273,6 +278,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          as TypeScript reads a method of `A[] | B[]` at `(A | B)[]`. *)
       let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
         | Rigid r,_ -> [r,actual]
+        (* An array pattern at a union with one array arm, `readonly T[] |
+           undefined`: at that arm, as the other arms hold no array. *)
+        | Atoms [Shape {elements=Some _;calls=[];_}],Atoms (_::_::_ as atoms)
+            when List.length (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) atoms) = 1 ->
+          bind pattern (Atoms (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) atoms))
         | Atoms [Shape {elements=Some p;calls=[];_}],Atoms (_::_ as arms)
             when p.required=[] && p.optional_elements=[] ->
           let arm_elements = List.map (function
@@ -347,7 +357,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | _ -> []) args) in
         let seed (s:Semantic.signature) =
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
-          let found = bind s.receiver receiver_type @ promised s @ from_actuals s @ (match expected with
+          let found = bind s.receiver receiver_type @ promised s @ from_actuals s @ (match contextual with
             | Some t -> bind s.result t
             | None -> []) in
           let seeds = List.filter_map (fun (r,t) ->
@@ -675,7 +685,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            }))` expected at `Array<Term>` builds the literal at the arm of
            `Term` it fits. A proposal: the instance is inferred from the
            actuals afterwards, and Lean checks it and the closure. *)
-        let result_bound p = match expected with
+        let result_bound p = match contextual with
           | None -> None
           | Some t ->
             let own = List.map (fun (q:Semantic.quantifier) -> q.identity) signature.quantified in
@@ -684,7 +694,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             if solution = [] then None
             else
               let p = Inference.substitute solution p in
-              if Semantic.mentions_rigid p then None else Some p in
+              (* Holes stand in the callback's result alone: its parameters
+                 are types. *)
+              let holed = mentions_hole p && (match p with
+                | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}] ->
+                  not (List.exists mentions_hole (s.receiver :: s.params @ Option.to_list s.variadic))
+                | _ -> false) in
+              let hidden = Inference.substitute (List.map (fun r -> r,ValueArgument (Atoms [])) (holes ())) p in
+              if Semantic.mentions_rigid hidden || (mentions_hole p && not holed) then None else Some p in
         let dictionary_bound = function
           | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
                           signature.quantified with
@@ -735,6 +752,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                 | _ -> expr ~expected:bound env arg)
              | None -> expr env arg)
           | p,_ ->
+            match Option.bind p (fun p -> contextual_actual expr signature.quantified env p arg) with
+            | Some t -> t
+            | None ->
             (match arg.node with Id n -> explain_builtin_array arg.pos env n p | _ -> ());
             expr env arg]) args) @
           List.init (max 0 (List.length signature.params - written_positions)) (fun _ -> Atoms [Undef]) in

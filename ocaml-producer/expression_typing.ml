@@ -21,6 +21,7 @@ module Objects = Expression_objects.Make(S)
 module Properties = Expression_properties.Make(S)
 module Closures = Expression_closures.Make(S)
 module Calls = Expression_calls.Make(S)
+module Support = Expression_support.Make(S)
   let infer expr execute_bindings body ?expected env (e:Source.expr) =
     let saved_roots = typing_roots () in
     let root=if speculative_typing () then None else match saved_roots with
@@ -32,6 +33,13 @@ module Calls = Expression_calls.Make(S)
     let env=match root,e.node with
       | _,BlockBody _ | None,_ -> env
       | Some root,_ -> expression_entry root e.pos env in
+    (* A type mentioning a hole (`Expression_support.contextual_actual`)
+       guides an array literal, a call's callback and a closure's result
+       alone; any other expression is built at no type. *)
+    let expected = match expected,e.node with
+      | Some t,_ when not (Support.mentions_hole t) -> expected
+      | Some _,(ArrayLiteral _ | Call _ | Invoke _ | Lambda _) -> expected
+      | _ -> None in
     let t = match e.node with
     | Id _ | Literal _ | Not _ | TypeofTest _ | TagMember _ | HasKey _ | InstanceTest _
     | Arith _ | Comma _ | Update _ | LogicalAssign _ | NullishAssign _ | Unary _

@@ -103,6 +103,40 @@ open S
          && not (List.exists (fun a -> record a || a = Top) wanted) then
         S.explain site ("a record at an index signature: " ^ implicit_index_reason)
     | None -> ()
+  (* Whether a type mentions a binder of a generic call whose actuals are
+     being built (`with_holes`). *)
+  let mentions_hole t = match holes () with
+    | [] -> false
+    | hs -> Inference.substitute (List.map (fun r -> r,ValueArgument (Atoms [])) hs) t <> t
+  (* An actual built at a generic call's parameter that places the call's
+     own binders at tuple positions, `readonly [K, V]` or `readonly
+     (readonly [K, V])[]`: TypeScript's contextual type makes an array
+     literal there a tuple before it infers the binders, so `new Map([["a",
+     1]])` is a `Map<string, number>`, and so does a callback result the
+     binders reach through a generic call's result (`new Map(xs.map(x =>
+     [x.k, x]))`). The actual is built at the parameter with the binders
+     standing as holes: a tuple position holding one is its element's own
+     type (`Objects`, array literals). Only an array literal or a call is
+     built so, and only binders no bound constrains are holes. None where no
+     tuple of the parameter holds one of them. A proposal: Lean checks the
+     actual at the type built, and the call at the instance inferred from
+     it. *)
+  let contextual_actual (expr:Analysis_state.expression_infer) (own:quantifier list) env (p:ty) (arg:expr) =
+    let free = List.filter_map (fun (q:quantifier) -> if q.bound = None then Some q.identity else None) own in
+    let solution = List.map (fun r -> r,ValueArgument (Atoms [])) free in
+    let mentions t = Inference.substitute solution t <> t in
+    let rec places depth t = depth > 0 && match (try declared_head declarations [] t with Json.Error _ -> t) with
+      | Union ts -> List.exists (places depth) ts
+      | Atoms atoms -> List.exists (function
+          | Shape {elements=Some s;_} ->
+            List.exists mentions (s.required @ s.optional_elements)
+            || Option.fold ~none:false ~some:(places (depth-1)) s.rest
+          | _ -> false) atoms
+      | Rigid _ | Meet _ -> false in
+    match arg.node with
+    | (ArrayLiteral _ | Call _ | Invoke _) when free <> [] && places 4 p ->
+      Some (with_holes free (fun () -> expr ~expected:p env arg))
+    | _ -> None
   (* A write at a key a dictionary may lack adds it. *)
   let dictionary_growth site t field =
     match Option.value ~default:[] (flat_atoms declarations t) with

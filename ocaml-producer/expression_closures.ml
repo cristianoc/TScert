@@ -102,7 +102,6 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             | None -> Proposal_diagnostics.unsupported "a constructor spread needs a tuple of required positions"
           else [t]) args)) in
       let count = match expanded with Some ts -> List.length ts | None -> List.length args in
-      let actual_types () = match expanded with Some ts -> ts | None -> List.map (expr env) args in
       let contextual_actuals ps = match expanded with
         | Some _ -> ()
         | None -> List.iter2 (fun p a -> ignore (expr ~expected:p env a)) ps args in
@@ -120,7 +119,18 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          let fitting = List.filter (fun (s:Semantic.signature) -> count <= List.length s.params) signatures in
          if fitting = [] then
            Proposal_diagnostics.unsupported "no construct signature takes this many arguments";
-         let actuals = if types <> [] then [] else actual_types () in
+         (* An actual at a parameter placing the class's binders at tuple
+            positions is built there with the binders as holes
+            (`contextual_actual`), at the first fitting signature placing
+            them so. *)
+         let actuals = if types <> [] then [] else match expanded with
+           | Some ts -> ts
+           | None -> List.mapi (fun i arg ->
+               match List.find_map (fun (s:Semantic.signature) -> match List.nth_opt s.params i with
+                 | Some p -> Support.contextual_actual expr s.quantified env p arg
+                 | None -> None) fitting with
+               | Some t -> t
+               | None -> expr env arg) args in
          let instance_at (signature:Semantic.signature) =
            if types <> [] then begin
              if List.length types <> List.length signature.quantified then
@@ -237,7 +247,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | _ -> false in
       let result = match written,contextual with
         | Some result,_ -> result
-        | None,Some r when fits body_type r -> r
+        | None,Some r when not (Support.mentions_hole r) && fits body_type r -> r
         | None,_ -> widen body_type in
       let params = List.mapi (fun i (_,t) ->
         if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in

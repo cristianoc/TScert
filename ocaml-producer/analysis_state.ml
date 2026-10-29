@@ -48,6 +48,10 @@ type t = {
   assumed: (Json.t * ty) list;
   env0: env;
   rigid_bounds: (Semantic.rigid * ty) list ref;
+  (* The binders of the generic calls whose actuals are being built at their
+     parameters (`with_holes`), which an array literal's tuple positions
+     take at its elements' own types. *)
+  holes: Semantic.rigid list ref;
   resolution_parameters: Semantic.quantifier list;
   writes: (Json.t * ty) list ref;
   (* What an evolving binding's uses expect it to hold, by its initializer. *)
@@ -91,7 +95,7 @@ let create diagnostics flows offered declarations module_functions arities bound
     if List.exists (fun s -> List.exists (mentions n) (Source.statement_children s)) f.body
     then Some (n,cell t) else None) !module_cells in
   { diagnostics; flows; offered; declarations; module_functions; arities; assumed; env0;
-    executions; expression_hints; rigid_bounds=ref bounds;
+    executions; expression_hints; rigid_bounds=ref bounds; holes=ref [];
     resolution_parameters = !resolution_parameters; writes=ref []; uses=ref [];
     typing_roots=ref []; block_result=ref (Some f.result);
     block_returned=ref (ref []); following=Hashtbl.create 64;
@@ -140,6 +144,11 @@ let with_rigid_bounds state bounds f =
   state.rigid_bounds := bounds;
   Fun.protect ~finally:(fun () -> state.rigid_bounds := saved) f
 
+let with_holes state holes f =
+  let saved = !(state.holes) in
+  state.holes := holes @ saved;
+  Fun.protect ~finally:(fun () -> state.holes := saved) f
+
 let with_typing_roots state roots f =
   let saved = !(state.typing_roots) in
   state.typing_roots := roots;
@@ -182,6 +191,7 @@ module Access (S : sig val state : t end) = struct
   let current_point () = (!local).current_point
   let rigid_bounds () = !(state.rigid_bounds)
   let rigid_bound r = List.assoc_opt r (rigid_bounds ())
+  let holes () = !(state.holes)
   let owned_resolution r = List.find_map (fun (q:Semantic.quantifier) ->
     if q.identity=r then q.resolution else None) state.resolution_parameters
   let observation_owner r = List.find_map (fun (q:Semantic.quantifier) ->
@@ -345,6 +355,7 @@ module Access (S : sig val state : t end) = struct
   let speculate action = speculate state action
   let with_current_point point action = with_current_point state point action
   let with_rigid_bounds bounds action = with_rigid_bounds state bounds action
+  let with_holes holes action = with_holes state holes action
   let with_typing_roots roots action = with_typing_roots state roots action
   let with_block_context result action = with_block_context state result action
 end

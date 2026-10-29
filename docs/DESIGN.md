@@ -400,8 +400,13 @@ the element binder at the union of its arms' elements, as TypeScript reads
 a method of `A[] | B[]` at `(A | B)[]`), and a callback actual is typed at
 its parameter read at them, so its body's object literal is built at the arm
 of the contextual result it fits (`callback-literal-context`,
-`blocker-callback-literal-union-receiver`). Generic classes
-and closures use this mechanism too.
+`blocker-callback-literal-union-receiver`). An argument at a parameter
+placing the call's binders that have no bound at tuple positions
+(`readonly [K, V]`, a Map's entries) is typed against it with those binders
+left open: an array literal, also one a callback returns into such a
+position, is a tuple, each position holding an open binder at its element's
+widened type, and the binders are inferred from it (`generic-tuple-context`).
+Generic classes and closures use this mechanism too.
 
 A **type scheme** is a callable contract with universally quantified type
 parameters. A generic closure is checked at its scheme's signatures with

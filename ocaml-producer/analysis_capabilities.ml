@@ -30,6 +30,8 @@ module type Queries = sig
   val offered : (Json.t * Semantic.signature list) list
   val current_point : unit -> string
   val rigid_bounds : unit -> (Semantic.rigid * ty) list
+  val holes : unit -> Semantic.rigid list
+  val with_holes : Semantic.rigid list -> (unit -> 'a) -> 'a
   val rigid_bound : Semantic.rigid -> ty option
   val owned_resolution : Semantic.rigid -> (Semantic.rigid * Semantic.rigid option) option
   (* The resolvable binder whose observation a rigid is, with its result. *)

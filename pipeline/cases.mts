@@ -398,6 +398,8 @@ export const cases: Case[] = [
     /^reject: source incoming edge obligation at \[339,369\): evidence search failed: the edge from node \d+ does not establish the claims at this point/), project: "pipeline/blocker-project" },
   { ...positive("blocker-omit-interface", "`Omit` of an interface and of an object type alias, a computed alias: `Pick<T, Exclude<keyof T, K>>` at the reference's arguments, the kept members with their readonly and optional modifiers, read and returned"), project: "pipeline/blocker-project" },
   { ...positive("blocker-pattern-key-early-binding", "A property key of an object pattern spelled as a later local is a key, which reads no binding: the later local is no early binding."), project: "pipeline/blocker-project" },
+  { ...positive("blocker-distinct-map-values", "A Map built from a callback's array literals holds the pairs' types: the literal is a tuple where the Map's binders reach the callback's result, and its values are the elements."), project: "pipeline/blocker-project" },
+  positive("generic-tuple-context", "An array literal at a generic parameter placing the binders at tuple positions is a tuple there, each position at its element's widened type: a pair, pairs, a Map's entries and a callback's result"),
   { file: "invalid-pattern-default-later-local", area: "A default of an object pattern reading a later local reads it before its initialization: the unannotated local is an early binding, refused.",
     kind: "negative", status: "unsupported", phase: "proposal",
     diagnostic: /^unsupported: the binding stated may be read before its initialization, which needs its type stated: an annotation, or a function literal's parameter and result annotations(?:\n|$)/ },

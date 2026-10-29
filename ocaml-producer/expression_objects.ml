@@ -205,9 +205,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       and elements_of parts =
         let each = List.map elements parts in
         if List.for_all Option.is_some each then Some (combine (List.filter_map Fun.id each)) else None in
+      (* A position holding a hole (`contextual_actual`) is its element's own
+         type: the element is built at no type there. *)
+      let hole = function Rigid r -> List.mem r (holes ()) | _ -> false in
       let types = List.mapi (fun i e ->
         let expected = Option.bind contract (fun s -> match List.nth_opt (s.required @ s.optional_elements) i with
           | Some t -> Some t | None -> s.rest) in
+        let expected = match expected with Some t when hole t -> None | _ -> expected in
         if List.mem i spreads then
           let expected = Option.map (fun t ->
             array {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable}) expected in
@@ -216,6 +220,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | None -> Proposal_diagnostics.unsupported "an array literal spread needs an array operand"
         else expr ?expected env e) es in
       (match contract with
+        | Some s when Support.mentions_hole (array s) && spreads = [] ->
+          (* Each position mentioning a hole is its element's type, widened
+             as TypeScript widens an unconstrained binder's candidate. *)
+          let fixed = List.length (s.required @ s.optional_elements) in
+          let at i q = if Support.mentions_hole q then widen (List.nth types i) else q in
+          let rest = List.filteri (fun i _ -> i >= fixed) types in
+          array {s with required=List.mapi at s.required;
+            optional_elements=List.mapi (fun i q -> at (i + List.length s.required) q) s.optional_elements;
+            rest=Option.map (fun q -> if Support.mentions_hole q then widen (combine rest) else q) s.rest}
         | Some s -> array s
         | None -> array {required=[];optional_elements=[];rest=Some (absorb declarations (widen (combine types)));
             readonly=false;presence=Readable})
