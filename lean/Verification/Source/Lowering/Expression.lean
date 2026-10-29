@@ -166,6 +166,12 @@ slots are introduced only after the operand supplying their type is checked. -/
     let H := (BranchRefinement.tagSlice G r.type .isNullish false) :: Γ
     let b ← closureExpr recursive fc (held ⟨Fragment.chainName,some mark⟩ :: scope) H body
     pure (DirectProof.letE Γ r (← selectPlan G K 0 A .isNullish (DirectProof.node K .undef [Labels.undef] .undef) b))
+  | .withObject _ mark object body => do
+    -- `o.m?.(a)`'s object, bound once: the body reads it by `objectName`,
+    -- the method off it and the call's receiver.
+    let o ← closureExpr recursive fc scope Γ object
+    let b ← closureExpr recursive fc (held ⟨Fragment.objectName,some mark⟩ :: scope) (o.type :: Γ) body
+    pure (DirectProof.letE Γ o (DirectProof.cast (o.type::Γ) A b))
   | .not _ a => do
     let a ← closureExpr recursive fc scope Γ a
     if BranchRefinement.onlyBoolean G a.type then

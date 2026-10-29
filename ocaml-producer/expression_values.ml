@@ -439,6 +439,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     (* The body runs where the receiver is present, and reads it so; a
        nullish receiver gives `undefined`. An inner chain's receiver hides
        an outer one's. *)
+    (* The object once, then the body, which reads it as `?.object`. *)
+    | WithObject (o,b) -> ignore (expr env o); expr ?expected env b
     | Optional (r,b) -> let receiver=expr env r in
       let present=without_nullish receiver in
       let body=expr ?expected env b in

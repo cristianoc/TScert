@@ -1,6 +1,6 @@
-// A chain's truthy result says its receiver is no `undefined`, which
-// TypeScript reads to narrow `o` in the arm; the chain's lowering narrows the
-// value it saved, and `o` stays `Outer | undefined` there.
+// A chain's truthy result in a condition says its receiver is no
+// `undefined`: `o?.inner` there is `o != null && o.inner`, which narrows `o`
+// in the arm.
 interface Inner {
   ready: boolean;
 }

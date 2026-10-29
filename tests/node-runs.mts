@@ -546,6 +546,38 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     undefined, "invalid-optional-chain-test-ambient: a global accessor answers the second read with another arm");
   assert.equal(runExample("invalid-optional-chain-test-getter", "wrong(new Flip())"), "e",
     `invalid-optional-chain-test-getter: the second read answers "e" despite the "d" contract`);
+  // A chain read for its truthiness: each result at the type the case
+  // verifies; as a value, `&&` keeps `undefined` where the receiver is
+  // nullish.
+  for (const [call, expected] of [
+    [`pick(new Map([["a", { ok: true, value: 1 }]]), "a")`, 1],
+    [`pick(new Map([["b", { ok: false, refused: "r" }]]), "b")`, null],
+    [`pick(new Map(), "z")`, null],
+    [`literal({ ok: true, value: { literal: "L" } })`, "L"],
+    [`literal({ ok: true, value: 3 })`, null],
+    [`literal(undefined)`, null],
+    [`early(undefined)`, ""],
+    [`early({ ok: true, value: "v" })`, "v"],
+    [`either(null, false)`, "none"],
+    [`either({ ok: false, refused: "r" }, false)`, "r"],
+    [`kept(undefined)`, undefined],
+    [`first({ name: "" })`, "anonymous"],
+    [`first({ name: "n" })`, "n"],
+  ] as const)
+    assert.equal(runExample("optional-chain-discriminant", call), expected, `optional-chain-discriminant: ${call}`);
+  // Where the chain's truthiness failed, or a call rewrote the tested
+  // `let`, or a global accessor answered the second read anew, the source
+  // returns what its contract excludes.
+  for (const [file, call] of [
+    ["invalid-optional-chain-discriminant-else", "wrong(undefined)"],
+    ["invalid-optional-chain-discriminant-write", `wrong({ ok: true, value: 1 }, { ok: false, refused: "r" })`],
+  ])
+    assert.equal(runExample(file, call), undefined, `${file}: the source returns undefined despite its contract`);
+  assert.equal(runExample("invalid-optional-chain-discriminant-ambient",
+    `(() => { let n = 0; Object.defineProperty(globalThis, "current", { configurable: true, get: () => ++n === 1 ? { ok: true, value: 1 } : { ok: false, refused: "r" } }); try { return wrong(); } finally { delete globalThis.current; } })()`),
+    undefined, "invalid-optional-chain-discriminant-ambient: a global accessor answers the second read with another arm");
+  assert.equal(runExample("optional-chain-receiver-narrowed", "guarded(undefined)"), 0,
+    "optional-chain-receiver-narrowed: a nullish receiver takes the other arm");
   // A negated `||` or `&&` of tests: where its answer leaves a tested field
   // otherwise, a call or a test's operand wrote it, or a getter answered the
   // read anew, the source returns a name its contract excludes.
@@ -2183,6 +2215,25 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "(() => { const log = []; const r = apply({ base: 2, equation(x) { return this.base + x; } }, 1, log); " +
     "const s = apply({ base: 0 }, 1, log); return JSON.stringify([r, s === undefined, log]); })()"),
   '[3,true,["argument"]]', "optional-method-call: the receiver bound, the arguments skipped where the method is absent");
+  // `e.m?.(a)` on any object: the object's call runs once per call, the
+  // method sees it as `this`, and an earlier `?.` skips the call and the
+  // links after it.
+  const scope = "{ base: 10, equation(x) { return this.base + x; } }";
+  for (const [call, expected] of [
+    [`(() => { const log = []; return JSON.stringify([apply(${scope}, 1, log), apply({ base: 0 }, 1, log), log]); })()`,
+      '[11,null,["object","object"]]'],
+    [`assigned({ base: 0 }, ${scope}, 2)`, 12],
+    [`JSON.stringify([linked(undefined, 1), linked({}, 1), linked({ scope: ${scope} }, 1)])`, "[null,null,11]"],
+    [`after({}, 1)`, undefined],
+    [`after({ make(k) { return { n: k + (this.make ? 100 : 0) }; } }, 1)`, 101],
+  ] as const)
+    assert.equal(runExample("optional-method-call-object", call), expected, `optional-method-call-object: ${call}`);
+  // The receiver is the saved object, which meets no `this: Keyed`; an
+  // absent method gives `undefined`.
+  assert.equal(runExample("invalid-optional-method-call-receiver", "wrong({ read() { return this.k; } })"), undefined,
+    "invalid-optional-method-call-receiver: the method reads a `k` its receiver lacks");
+  assert.equal(runExample("invalid-optional-method-call-absent", "wrong({}, 1)"), undefined,
+    "invalid-optional-method-call-absent: an absent method gives undefined");
 }
 
 // Each invalidation changes the value observed by the second member read.

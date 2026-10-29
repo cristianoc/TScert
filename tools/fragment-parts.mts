@@ -41,6 +41,7 @@ export function mapExprParts(e: Expr, m: PartMap): Within<{ value: "any"; store:
     case "update": return { ...e, target: m.expr(e.target), rhs: e.rhs && m.expr(e.rhs) };
     case "coalesce": case "comma": return { ...e, left: m.expr(e.left), right: m.expr(e.right) };
     case "optional": return { ...e, receiver: m.expr(e.receiver), body: m.expr(e.body) };
+    case "withObject": return { ...e, object: m.expr(e.object), body: m.expr(e.body) };
     case "tagMember": return { ...e, domain: m.type(e.domain), e: m.expr(e.e) };
     case "write": return { ...e, receiver: m.expr(e.receiver), rhs: m.expr(e.rhs) };
     case "logicalAssign": return { ...e, target: m.expr(e.target), rhs: m.expr(e.rhs) };

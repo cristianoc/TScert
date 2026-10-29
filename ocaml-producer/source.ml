@@ -554,6 +554,9 @@ and expr_node =
   (* An optional chain: the receiver once, `undefined` where it is nullish,
      else the body, which reads the receiver as `?.`. *)
   | Optional of expr * expr
+  (* An optional method call's object: once, then the body, which reads it
+     as `?.object`, the method's object and the call's receiver. *)
+  | WithObject of expr * expr
   (* An array literal's elements, and the positions of those written with
      `...`, each standing for its operand's elements. *)
   | ArrayLiteral of expr list * int list | Index of expr * expr | IndexWrite of expr * expr * expr
@@ -673,7 +676,7 @@ let rec children e = match e.node with
   | ArrayAssign (targets,rest,rhs) ->
     rhs :: List.concat_map (fun (_,t,d) -> t :: Option.to_list d) targets
     @ (match rest with Some (_,_,t,_) -> [t] | None -> [])
-  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
+  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | WithObject (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) -> [a;b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
@@ -874,6 +877,7 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
   | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
+  | WithObject (o,b) -> join_bound (go o) (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable:("?.object" :: readable) b)
   | BlockBody body -> footprint_stmts ~fresh ~dispatched ~callable ~no_return ~iteration ~readable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
@@ -946,7 +950,7 @@ and throws_expr ~callable (e:expr) : bool =
     List.for_all go (callee :: Option.to_list receiver @ args) && calls callee
   | Invoke ({node=Read (o,_);_} as callee,args,_,_) -> List.for_all go (o :: args) && calls callee
   | New (callee,_,args,spreads) -> spreads = [] && List.for_all go (callee :: args) && calls callee
-  | Optional (r,b) -> go r && go b
+  | Optional (r,b) | WithObject (r,b) -> go r && go b
   | BlockBody body -> throws_stmts ~callable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
@@ -1124,6 +1128,7 @@ let rec expr binders j =
     Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[],[])
   | "coalesce" -> Coalesce (sub "left",sub "right")
   | "optional" -> Optional (sub "receiver",sub "body")
+  | "withObject" -> WithObject (sub "object",sub "body")
   | "arrayLit" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with

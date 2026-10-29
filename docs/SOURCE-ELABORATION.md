@@ -431,21 +431,28 @@ $`\mathsf{chain}`$ is not read as the outer one, and is left as the saved
 value itself (`optional-chain-element-receiver`). The body is checked where the saved
 receiver holds its present slice, so a method called through the chain
 (`o?.m()`) has the present `o` as its receiver. `o.m?.(a)` tests the member
-read once, `o.m`, and calls it with `o` as its receiver (ECMA-262's
-OptionalChain: the reference's base is the call's `this`), the arguments
-evaluated only where the member is present:
+read once, `e.m`, and calls it with the object $`e`$ evaluated to as its
+receiver (ECMA-262's OptionalChain: the reference's base is the call's
+`this`), the arguments evaluated only where the member is present. The
+object is evaluated once and saved under the variable $`\mathsf{object}`$
+(`objectName`, spelled `?.object`, which no source identifier is), which
+the member read and the call both read:
 
 ```math
-o.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{chain}=o.m\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ \mathsf{chain}.\mathtt{call}(o,\vec a)
+e.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{object}=e\ \mathsf{in}\ \mathsf{let}\ \mathsf{chain}=\mathsf{object}.m\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ \mathsf{chain}.\mathtt{call}(\mathsf{object},\vec a)
 ```
 
-The chain saves the tested value, and the receiver is read again: `o` is
-`this` or a name whose read cannot throw nor run code and whose binding no
-write in its scope names ([written](#a-let-nothing-assigns), `unassigned`),
-so the second read gives the value the first
-did (`optional-method-call`, run under Node). A member at a computed key
-(`o[k]?.()`), any other object (`f().m?.()`, a name a write names) and
-spread arguments are refused (`optional-method-call-object-refused`). On a `null` or `undefined` literal receiver the
+The object is any expression (`optional-method-call`,
+`optional-method-call-object`, each run under Node: a call as the object
+runs once). Where `e.m` is itself a link of a chain (`r?.e.m?.(a)`,
+`r?.m?.(a)`), the object is the chain's value, saved inside the chain's
+body, so the earlier `?.` skips it with the call; a link after the call
+(`e.m?.(a).n`) is in the inner chain's body, skipped where the member is
+absent. The saved object is read at the method's name for the member's
+read and at the call's `(` as the receiver, each a claim site of its own.
+A member at a computed key (`o[k]?.()`), a member that is no property read
+of its object (a static or a namespace member), a method read through a
+parenthesized chain and spread arguments are refused. On a `null` or `undefined` literal receiver the
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
 
@@ -511,6 +518,29 @@ known of `b`. A comparison with another operand (a name, which may itself be
 read is the chain's value compared, which refines nothing
 (`optional-chain-test`, `invalid-optional-chain-test-*`, each run under
 Node).
+
+A chain whose value only its truthiness decides (`chainTest`) is the test
+of the receiver, then the receiver's reads, with $`x`$ and $`.p`$ as above:
+
+```math
+x\,?.\,p\;\equiv\;x\ \texttt{!=}\ \texttt{null}\ \ \texttt{\&\&}\ \ x.p
+\qquad\text{where only the truthiness of } x\,?.\,p \text{ is observed}
+```
+
+Its truthiness is observed alone where it is the test of a conditional, an
+`if`, a `while`, a `do` or a `for`, the operand of `!`, the left operand of
+`||`, or an operand of `&&` or `||` itself in such a position
+(`testPosition`). Where $`x`$ is nullish both sides are falsy, the chain
+`undefined` and the right side `false`; elsewhere both are $`x.p`$'s value,
+which is also the value the left operand of `||` gives where it is truthy.
+The two reads of $`x`$ give one value, as for a comparison. Where the chain
+is truthy, $`x`$ is present and its field truthy, so a discriminant tested
+through the chain selects the arm (`found?.ok ? found.value : null`); where
+it is falsy, nothing is known of $`x`$. As a value elsewhere, `x?.p && b`
+keeps the chain's `undefined` where $`x`$ is nullish, and its chain is not
+rewritten (`optional-chain-discriminant`,
+`optional-chain-receiver-narrowed`,
+`invalid-optional-chain-discriminant-*`, each run under Node).
 
 ### `typeof` as a value
 

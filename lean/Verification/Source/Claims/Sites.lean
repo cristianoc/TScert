@@ -81,6 +81,9 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
       ((list.map (exprSitesCore includeBodies)).getD ([],[],[]))))
   -- The saved receiver's read, spelled at the `?.` token, is a site of its own.
   | .optional p _ r b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies r) (exprSitesCore includeBodies b))
+  -- The saved object's reads, at the method's name and the call's `(`, are
+  -- sites of their own, in the body.
+  | .withObject p _ o b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies o) (exprSitesCore includeBodies b))
   | .ifBody p a b c => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (joinSites (exprSitesCore includeBodies b) (exprSitesCore includeBodies c)))
   -- A closure's statements are its body's sites, as a function's are.
   | .block _ ss => if !includeBodies then ([],[],[]) else ss.foldl (fun s st => joinSites s (stmtSitesCore includeBodies st)) ([],[],[])

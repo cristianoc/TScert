@@ -18,7 +18,7 @@ partial def expressionOccurrences (e : Expr) : List Expr :=
     | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
     | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
     | .elemAt _ a b | .arith _ _ a b | .inKeys _ a b | .comma _ a b
-    | .logicalAssign _ _ a b | .withValue _ a b _ _ | .optional _ _ a b => [a,b]
+    | .logicalAssign _ _ a b | .withValue _ a b _ _ | .optional _ _ a b | .withObject _ _ a b => [a,b]
     | .elemWrite _ a b c | .indexWrite _ _ a b c | .ifBody _ a b c => [a,b,c]
     | .update _ _ target rhs _ => target :: rhs.toList
     | .objectAssign _ target sources => target :: sources

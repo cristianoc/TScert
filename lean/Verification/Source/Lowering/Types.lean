@@ -597,6 +597,7 @@ negation. -/
   | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .optional p m r b => return .optional p m (← comparisonsExpr fc r) (← comparisonsExpr fc b)
+  | .withObject p m o b => return .withObject p m (← comparisonsExpr fc o) (← comparisonsExpr fc b)
   | .nullishAssign p n np r => return .nullishAssign p n np (← comparisonsExpr fc r)
   | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)

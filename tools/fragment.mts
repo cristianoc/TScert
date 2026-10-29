@@ -13,6 +13,10 @@ import type { GuardUndefined } from "./host-families.mts";
 /** The name an optional chain's body reads its saved receiver by; no source
  * identifier is spelled so (Fragment.lean's `chainName`). */
 export const CHAIN = "?.";
+/** The name an optional method call's body reads its saved object by, the
+ * call's receiver; no source identifier is spelled so (Fragment.lean's
+ * `objectName`). */
+export const OBJECT = "?.object";
 /** The arithmetic a compound assignment may perform: the bitwise operators
  * `&`, `|`, `^`, `<<`, `>>` and `>>>` among them. */
 export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem" | "bitAnd" | "bitOr" | "xor" | "shl" | "shr" | "ushr";
@@ -105,6 +109,9 @@ export type Expr =
      `body`, which reads the receiver's value as the variable `CHAIN`, spelled
      at `at`, the `?.` token. */
   | { k: "optional"; pos: Span; at: Span; receiver: Expr; body: Expr }
+  /* `o.m?.(a)`'s object: `object` once, then `body`, which reads its value
+     as the variable `OBJECT`, first spelled at `at`, the method's name. */
+  | { k: "withObject"; pos: Span; at: Span; object: Expr; body: Expr }
   /* `left, right`: the left operand for its effects, then the right one's
      value. `void e` is `e, undefined`. */
   | { k: "comma"; pos: Span; left: Expr; right: Expr }

@@ -8,7 +8,7 @@ import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Atom } from "./claim.mts";
 import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numericKey, optionalTerm } from "./type-term.mts";
 import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
-import { CHAIN } from "./fragment.mts";
+import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
@@ -45,8 +45,10 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ||
       ts.isCallExpression(node) || ts.isNonNullExpression(node)) &&
     node.flags & ts.NodeFlags.OptionalChain
-  )
-    return gate.optionalChain(node);
+  ) {
+    const chain = gate.optionalChain(node);
+    return (testPosition(node) && chainTest(gate, node, chain)) || chain;
+  }
 
   if (ts.isConditionalExpression(node))
     return {
@@ -831,6 +833,17 @@ export function optionalChain(this: Gate,
 ): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const question = ts.isNonNullExpression(node) ? undefined : node.questionDotToken;
+  if (question && ts.isCallExpression(node)) {
+    if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
+    const target = skipParentheses(node.expression);
+    if (ts.isElementAccessExpression(target))
+      gate.fail(node, "an optional call of a method read at a computed key is outside the fragment");
+    if (ts.isPropertyAccessExpression(target)) {
+      if (target !== node.expression && target.flags & ts.NodeFlags.OptionalChain)
+        gate.fail(node, "an optional call of a method read in a parenthesized optional chain is outside the fragment");
+      return gate.optionalMethodCall(node, target);
+    }
+  }
   if (question) {
     const at = gate.span(question);
     const receiver = gate.expr(node.expression);
@@ -841,8 +854,68 @@ export function optionalChain(this: Gate,
   }
   const chain = gate.expr(node.expression);
   if (chain.k === "comma") return { ...chain, pos: gate.span(node) };
-  if (chain.k !== "optional") gate.fail(node, "a link of an optional chain without its `?.`");
-  return { ...chain, pos: gate.span(node), body: gate.chainLink(node, chain.body, [chain.at[0], node.end]) };
+  return extendChain(gate, node, chain, (value, at) => gate.chainLink(node, value, [at[0], node.end]));
+}
+
+/** The chain `chain` with one more link, `link` applied to the chain's
+ * value: the body of its innermost `optional`, past the saved objects of
+ * optional method calls (`withObject`), so that each `?.` before the link
+ * skips it. Each node it passes through ends where `node` does. */
+function extendChain(gate: Gate, node: Node, chain: Expr, link: (value: Expr, at: Span) => Expr): Within<{ value: "any"; store: "grow" }, Expr> {
+  const pos: Span = [chain.pos[0], node.end];
+  if (chain.k === "withObject") return { ...chain, pos, body: extendChain(gate, node, chain.body, link) };
+  if (chain.k !== "optional") return gate.fail(node, "a link of an optional chain without its `?.`");
+  if (chain.body.k === "withObject") return { ...chain, pos, body: extendChain(gate, node, chain.body, link) };
+  return { ...chain, pos, body: link(chain.body, chain.at) };
+}
+
+/** `o.m?.(a)`: `o` once, saved (`withObject`); its member `m` read once,
+ * the chain's tested value; `undefined` where that is null or undefined,
+ * else the member called with the saved object as its receiver (ECMA-262,
+ * OptionalChain: the reference's base is the call's `this`), the arguments
+ * evaluated only there. The saved object is read at the method's name for
+ * the member's read, and at the call's `(` as the receiver. Where `o.m` is
+ * itself a link of a chain (`r?.o.m?.(a)`, `r?.m?.(a)`), the object is the
+ * chain's value, saved inside the chain's body, which the earlier `?.`
+ * skips. */
+export function optionalMethodCall(this: Gate, node: ts.CallExpression, target: ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, Expr> {
+  const gate: Gate = this;
+  if (node.arguments.some(ts.isSpreadElement) || node.typeArguments?.length)
+    gate.fail(node, "an optional call of a method takes ordinary arguments");
+  const question = node.questionDotToken;
+  if (!question) return gate.fail(node, "an optional call without its `?.`");
+  const q = gate.span(question);
+  const name = gate.span(target.name);
+  const paren = gate.token(q[1], "(", node);
+  const saved = (pos: Span): Expr => ({ k: "id", pos, name: OBJECT });
+  const method = (read: Expr, pos: Span): Expr => {
+    if (read.k !== "read")
+      return gate.fail(node, "an optional call of a member read other than as a property of its object is outside the fragment");
+    const args = node.arguments.map((arg) => gate.expr(arg));
+    return {
+      k: "withObject", pos, at: name, object: read.e,
+      body: {
+        k: "optional", pos: [name[0], node.end], at: q,
+        receiver: { ...read, e: saved(name) },
+        body: { k: "callWithReceiver", pos: [q[0], node.end], callee: { k: "id", pos: q, name: CHAIN },
+          receiver: saved([paren, paren + 1]), args },
+      },
+    };
+  };
+  if (!(target.flags & ts.NodeFlags.OptionalChain)) return method(gate.expr(target), gate.span(node));
+  const own = target.questionDotToken;
+  if (own) {
+    const at = gate.span(own);
+    const receiver = gate.expr(target.expression);
+    if (receiver.k === "lit" && (receiver.lit.a === "null" || receiver.lit.a === "undefined"))
+      return { k: "comma", pos: gate.span(node), left: receiver, right: { k: "lit", pos: at, lit: { a: "undefined" } } };
+    const read = gate.chainLink(target, { k: "id", pos: at, name: CHAIN }, [at[0], target.end]);
+    return { k: "optional", pos: gate.span(node), at, receiver, body: method(read, [at[0], node.end]) };
+  }
+  const chain = gate.expr(target.expression);
+  if (chain.k === "comma") return { ...chain, pos: gate.span(node) };
+  return extendChain(gate, node, chain, (value, at) =>
+    method(gate.chainLink(target, value, [at[0], target.end]), [target.expression.end, node.end]));
 }
 
 /** One link of an optional chain applied to `object`, the chain so far. */
@@ -873,32 +946,6 @@ export function chainLink(this: Gate,
     return { k: "index", pos, e: object, key: gate.expr(node.argumentExpression) };
   }
   if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
-  let target: Expression = node.expression;
-  while (ts.isParenthesizedExpression(target)) target = target.expression;
-  // `o.m?.(a)` reads `o.m` once, the chain's tested value, and calls it with
-  // `o` as its receiver (ECMA-262, OptionalChain: the reference's base is the
-  // call's `this`): the call of the tested value with the receiver read
-  // again, which is the value read before where `o` is `this` or a name
-  // whose read cannot throw nor run code and whose binding no write names
-  // (`unassigned`).
-  if (node.questionDotToken && ts.isElementAccessExpression(target))
-    gate.fail(node, "an optional call of a method read at a computed key is outside the fragment");
-  if (node.questionDotToken && ts.isPropertyAccessExpression(target)) {
-    let base: Expression = target.expression;
-    while (ts.isParenthesizedExpression(base)) base = base.expression;
-    // The receiver read again is claimed at the method's name, a site of
-    // its own.
-    const at = gate.span(target.name);
-    const receiver: Expr | null = base.kind === ts.SyntaxKind.ThisKeyword ? { k: "this", pos: at }
-      : ts.isIdentifier(base) && gate.unassigned(base) &&
-        !gate.libraryValues.has(gate.span(base).join(":")) ? { k: "id", pos: at, name: gate.local(base) }
-      : null;
-    if (!receiver)
-      gate.fail(node, "an optional call of a method whose object is other than `this` or a name read without effect and never assigned is outside the fragment: the object is read once, and again as the call's receiver");
-    if (node.arguments.some(ts.isSpreadElement) || node.typeArguments?.length)
-      gate.fail(node, "an optional call of a method takes ordinary arguments");
-    return { k: "callWithReceiver", pos, callee: object, receiver, args: node.arguments.map((arg) => gate.expr(arg)) };
-  }
   const spreads: number[] = [];
   const args = node.arguments.map((arg, i) => {
     if (!ts.isSpreadElement(arg)) return gate.expr(arg);
@@ -1866,21 +1913,9 @@ function chainComparison(gate: Gate, node: BinaryExpression, op: "===" | "!==" |
   const chain = chainLeft ? l : r;
   const other = chainLeft ? r : l;
   if (chain.k !== "optional" || other.k !== "lit") return null;
-  const source = chainReceiver(skipParentheses(chainLeft ? node.left : node.right));
-  if (!source || !inertRead(gate, source)) return null;
-  const receiver = chain.receiver;
-  if (receiver.k !== "id" && receiver.k !== "this") return null;
-  const reread: Expr = receiver.k === "id" ? { k: "id", pos: chain.at, name: receiver.name } : { k: "this", pos: chain.at };
-  // The chain's links: named reads of its saved value, which the receiver
-  // read again replaces.
-  const reads = (e: Expr): Expr | null => {
-    if (e.k === "id" && e.name === CHAIN) return reread;
-    if (e.k !== "read") return null;
-    const inner = reads(e.e);
-    return inner ? { ...e, e: inner } : null;
-  };
-  const body = reads(chain.body);
-  if (!body) return null;
+  const reread = chainReads(gate, chainLeft ? node.left : node.right, chain);
+  if (!reread) return null;
+  const { receiver, body } = reread;
   const lit = other.lit.a;
   const equal = op === "===" || op === "==";
   // `undefined ⊙ c`: strict equality holds of `undefined` alone, loose
@@ -1894,7 +1929,67 @@ function chainComparison(gate: Gate, node: BinaryExpression, op: "===" | "!==" |
   return { k: "bin", pos: gate.span(node), op: absent ? "||" : "&&", l: test, r: comparison };
 }
 
-export function lambda(this: Gate, 
+/** An optional chain `x?.p` of named reads whose receiver `x` is a name
+ * whose read runs no code (`inertRead`) or `this`: the receiver, and the
+ * reads applied to the receiver read again, at the `?.` token's span, where
+ * the chain's saved value was. */
+function chainReads(gate: Gate, at: Node, chain: Expr & { k: "optional" }): Within<{ value: "any"; store: "grow" }, { receiver: Expr; body: Expr } | null> {
+  const source = chainReceiver(skipParentheses(at));
+  if (!source || !inertRead(gate, source)) return null;
+  const receiver = chain.receiver;
+  if (receiver.k !== "id" && receiver.k !== "this") return null;
+  const reread: Expr = receiver.k === "id" ? { k: "id", pos: chain.at, name: receiver.name } : { k: "this", pos: chain.at };
+  // The chain's links: named reads of its saved value, which the receiver
+  // read again replaces.
+  const reads = (e: Expr): Expr | null => {
+    if (e.k === "id" && e.name === CHAIN) return reread;
+    if (e.k !== "read") return null;
+    const inner = reads(e.e);
+    return inner ? { ...e, e: inner } : null;
+  };
+  const body = reads(chain.body);
+  return body ? { receiver, body } : null;
+}
+
+/** Whether only the truthiness of `node`'s value is observed: it is the
+ * test of a conditional, an `if`, a `while`, a `do` or a `for`, the
+ * operand of `!`, the left operand of `||`, or an operand of `&&` or `||`
+ * itself in such a position, parentheses around each skipped. The left
+ * operand of `||` is the value only where it is truthy, and there the
+ * operand's own value. */
+function testPosition(node: Node): Within<{ value: "any"; store: "grow" }, boolean> {
+  let at: Node = node;
+  while (ts.isParenthesizedExpression(at.parent)) at = at.parent;
+  const parent = at.parent;
+  if (ts.isConditionalExpression(parent)) return parent.condition === at;
+  if (ts.isIfStatement(parent) || ts.isWhileStatement(parent) || ts.isDoStatement(parent)) return parent.expression === at;
+  if (ts.isForStatement(parent)) return parent.condition === at;
+  if (ts.isPrefixUnaryExpression(parent)) return parent.operator === ts.SyntaxKind.ExclamationToken;
+  if (ts.isBinaryExpression(parent)) {
+    const op = parent.operatorToken.kind;
+    if (op === ts.SyntaxKind.BarBarToken && parent.left === at) return true;
+    return (op === ts.SyntaxKind.BarBarToken || op === ts.SyntaxKind.AmpersandAmpersandToken) && testPosition(parent);
+  }
+  return false;
+}
+
+/** `x?.p` in a test position (`testPosition`), `.p` named reads of a
+ * receiver read without effect (`chainReads`): `x != null && x.p`, which
+ * has the chain's truthiness. Where `x` is nullish both are falsy (the
+ * chain `undefined`, the test `false`); elsewhere both are `x.p`'s value.
+ * The nullish test is spelled from the receiver to the `?.` token, its
+ * `null` at the `?`; the tests then refine `x` and its field as every
+ * test of a name does (SOURCE-ELABORATION.md, optional chains). */
+function chainTest(gate: Gate, node: Node, chain: Expr): Within<{ value: "any"; store: "grow" }, Expr | null> {
+  if (chain.k !== "optional") return null;
+  const reread = chainReads(gate, node, chain);
+  if (!reread) return null;
+  const test: Expr = { k: "bin", pos: [chain.pos[0], chain.at[1]], op: "!=", l: reread.receiver,
+    r: { k: "lit", pos: [chain.at[0], chain.at[0] + 1], lit: { a: "null" } } };
+  return { k: "bin", pos: chain.pos, op: "&&", l: test, r: reread.body };
+}
+
+export function lambda(this: Gate,
   node: ArrowFunction | FunctionExpression | MethodDeclaration,
   instance?: TypeTerm,
   member?: PropertyKey,

@@ -79,7 +79,7 @@ const calls = transparent("a call: the callee's contract; a callback keeps its o
 
 export const expressionForms: { readonly [K in Expr["k"]]: HostClass } = {
   id: value, this: value, lit: value, not: value, cast: value, comma: value, conditional: value,
-  coalesce: value, optional: value, lambda: value, blockBody: value, assign: value, nullishAssign: value,
+  coalesce: value, optional: value, withObject: value, lambda: value, blockBody: value, assign: value, nullishAssign: value,
   alloc: transparent("allocates an ordinary object"),
   ctor: transparent("allocates an ordinary class value"),
   build: obligated("each spread operand", "a fresh record of the operand's members as own keys"),

@@ -228,6 +228,10 @@ inductive Expr where
   else `body`, in which the variable `chainName` (spelled at `mark`, the
   `?.` token) is the receiver's value. -/
   | optional (pos mark : Span) (receiver body : Expr)
+  /-- `o.m?.(a)`'s object: `object` once, then `body`, in which the variable
+  `objectName` (first spelled at `mark`, the method's name) is its value, the
+  call's receiver. -/
+  | withObject (pos mark : Span) (object body : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
   /-- A family guard's call (HOST-FAMILIES.md, "A guard on any argument"):
   the operand, evaluated once, at one more obligation, its guard's domain, then the test of
@@ -454,6 +458,10 @@ def iterateNames : List String :=
 identifier is spelled so. -/
 def chainName : String := "?."
 
+/-- The name an optional method call's body reads its saved object by: no
+source identifier is spelled so. -/
+def objectName : String := "?.object"
+
 mutual
 /-- Lexical dependencies, including deferred bodies. Exhaustive so a new
 executable source form cannot bypass parameter-initialization checks. -/
@@ -487,6 +495,7 @@ partial def Expr.freeNames : Expr → List String
   | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .objectAssign _ t ss => t.freeNames ++ ss.flatMap Expr.freeNames
   | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
+  | .withObject _ _ o b => o.freeNames ++ b.freeNames.filter (· != objectName)
   | .block _ ss => stmtsFreeNames ss
 
 /-- Every direct call of a named function: the call's span, the callee read's
@@ -525,6 +534,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
   | .objectAssign _ t ss => t.callees ++ ss.flatMap Expr.callees
   | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
+  | .withObject _ _ o b => o.callees ++ b.callees.filter (·.2.2.1 != objectName)
   | .block _ ss => stmtsCallees ss
 
 /-- The names a statement binds for the statements after it. -/
@@ -625,7 +635,7 @@ def sloppyReceiverReason : String :=
 def Expr.span : Expr → Span
   | .ifBody p _ _ _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
-  | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
+  | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .withObject p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
@@ -912,6 +922,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "optional" => do
     fieldsExactly j ["k","pos","at","receiver","body"]
     return .optional p (← jSpan j "at") (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "body"))
+  | "withObject" => do
+    fieldsExactly j ["k","pos","at","object","body"]
+    return .withObject p (← jSpan j "at") (← decodeExpr (← jField j "object")) (← decodeExpr (← jField j "body"))
   | "comma" => do
     fieldsExactly j ["k","pos","left","right"]
     return .comma p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))

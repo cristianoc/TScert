@@ -15,7 +15,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e =>
     assignsExpr name e
-  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b | .withObject _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b =>
     assignsExpr name a || assignsExpr name b
   | .indexWrite _ _ a b c | .elemWrite _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
@@ -115,7 +115,7 @@ private partial def captureExpr (x : String) (c : Bool) (e : Fragment.Expr) (w :
       match q.target.targetLocal with | some n => written n c w | none => w
     let w := targets.foldl (fun w q => target q w) (captureExpr x true rhs w)
     rest.toList.foldl (fun w (_, _, q) => target q w) w
-  | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b => all [a, b] w
+  | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b | .withObject _ _ a b => all [a, b] w
   | .ifBody _ a b d => all [a, b, d] w
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e => captureExpr x true e w
   | .equality _ _ a b | .singletonTest _ _ _ _ a b
@@ -245,7 +245,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
   | .invoke _ (.read _ _ (.var _ m)) args _ _ => m == n || args.any (escapesExpr n)
   | .invoke _ (.index _ _ (.var _ m) key) args _ _ =>
     m == n || escapesExpr n key || args.any (escapesExpr n)
-  | e@(.lambda ..) | e@(.ctor ..) | e@(.block ..) | e@(.ifBody ..) | e@(.optional ..)
+  | e@(.lambda ..) | e@(.ctor ..) | e@(.block ..) | e@(.ifBody ..) | e@(.optional ..) | e@(.withObject ..)
   | e@(.withValue ..) | e@(.arrayAssign ..) | e@(.assign ..) | e@(.nullishAssign ..) =>
     e.freeNames.contains n
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e => escapesExpr n e
@@ -273,7 +273,7 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e => closureBodies e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
   | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
-  | .inKeys _ a b | .logicalAssign _ _ a b | .optional _ _ a b
+  | .inKeys _ a b | .logicalAssign _ _ a b | .optional _ _ a b | .withObject _ _ a b
   | .withValue _ a b _ _ => closureBodies a ++ closureBodies b
   | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ a b c =>
     closureBodies a ++ closureBodies b ++ closureBodies c

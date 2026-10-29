@@ -1211,25 +1211,54 @@ control(async (): Promise<void> => {
   process.stdout.write("forged reserved writes: each write form renamed to `stack`, refused at the write in search and check\n");
 });
 control(async (): Promise<void> => {
-  // An optional call of a method reads its object again as the call's
-  // receiver, claimed at the method's name: claimed at `undefined`, it is
-  // refused there where evidence is produced, and checking refuses the
-  // evidence of the original claim for it.
+  // An optional call of a method saves its object and reads it twice, the
+  // method's object at the method's name and the call's receiver at its
+  // `(`: either claimed at `undefined` is refused there where evidence is
+  // produced, and checking refuses the evidence of the original claim for
+  // it.
   const optional = run("optional-method-call");
-  const claims = readClaims(optional);
   const source = readFileSync(sourceKey(optional), "utf8");
-  const start = source.indexOf("equation?.(x) ??");
-  const fn = must(claims.functions.find(f => f.name === "withDefault"), "withDefault's claims");
-  const receiver = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "equation".length),
-    "the receiver read again");
-  receiver.type = [rowOf(claims, "undef")];
-  const forged = writeClaims(optional, "forged-optional-receiver", claims);
-  const searched = produceWith(optional, forged, "forged-optional-receiver");
+  const name = source.indexOf("equation?.(x) ??");
+  const paren = name + "equation?.".length;
+  for (const [at, end, what] of [[name, name + "equation".length, "object"], [paren, paren + 1, "receiver"]] as const) {
+    const claims = readClaims(optional);
+    const fn = must(claims.functions.find(f => f.name === "withDefault"), "withDefault's claims");
+    const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === end), `the saved ${what}'s read`);
+    read.type = [rowOf(claims, "undef")];
+    const forged = writeClaims(optional, `forged-optional-${what}`, claims);
+    const searched = produceWith(optional, forged, `forged-optional-${what}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(`[${at},${end})`), searched.stdout + searched.stderr);
+    invoke(forged, join(optional, "evidence.json"), optional);
+  }
+  process.stdout.write("forged optional method call: either read of the saved object claimed at undefined refused\n");
+});
+control(async (): Promise<void> => {
+  // A chain read for its truthiness tests its receiver, then reads the
+  // receiver again at the `?.` token: that read claimed at the arm the test
+  // selects, which the receiver holds only past the test, is refused within the test
+  // where evidence is produced, and checking refuses the evidence of the
+  // original claim for it.
+  const chain = run("optional-chain-discriminant");
+  const source = readFileSync(sourceKey(chain), "utf8");
+  const at = source.indexOf("?.ok ? found.value", source.indexOf("function pick"));
+  const arm = source.indexOf("found.value", at);
+  const claims = readClaims(chain);
+  const fn = must(claims.functions.find(f => f.name === "pick"), "pick's claims");
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 2), "the receiver read again");
+  const value = must(fn.expressions.find(e => e.pos[0] === arm && e.pos[1] === arm + "found".length),
+    "the receiver read in the arm");
+  read.type = value.type;
+  const forged = writeClaims(chain, "forged-chain-test-receiver", claims);
+  const searched = produceWith(chain, forged, "forged-chain-test-receiver");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  assert.ok((searched.stdout + searched.stderr).includes(`[${start},${start + "equation".length})`),
+  // Refused within the test `found?.ok`: at the read, or at the edge into it.
+  const refused = /at \[(\d+),(\d+)\)/.exec(searched.stdout + searched.stderr);
+  const start = at - "found".length;
+  assert.ok(refused && Number(refused[1]) >= start && Number(refused[2]) <= at + "?.ok".length,
     searched.stdout + searched.stderr);
-  invoke(forged, join(optional, "evidence.json"), optional);
-  process.stdout.write("forged optional method call: the receiver read again claimed at undefined refused\n");
+  invoke(forged, join(chain, "evidence.json"), chain);
+  process.stdout.write("forged chain test: the receiver read again claimed at the tested arm refused\n");
 });
 control(async (): Promise<void> => {
   // A parameter's entry claim in an `&&` operand is its first read before a

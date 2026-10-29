@@ -53,9 +53,12 @@ open S
           | Execution.Truthy,_ -> t in
         (match cond.node with Id name -> refine_value env name refine | _ -> env))
 
-  let restore_optional original env =
-    let env=List.remove_assoc "?." env in
-    match List.assoc_opt "?." original with None -> env | Some binding -> env @ ["?.",binding]
+  (* The hidden names a plan binds: an optional chain's saved receiver and
+     an optional method call's saved object. *)
+  let hidden name = name = "?." || name = "?.object"
+  let restore_optional ?(name = "?.") original env =
+    let env=List.remove_assoc name env in
+    match List.assoc_opt name original with None -> env | Some binding -> env @ [name,binding]
 
   (* Two paths' states from `base`: as `join` leaves them, and where the
      paths are a condition's (`refine`), an immutable value holds what either
@@ -97,13 +100,14 @@ open S
       apply t,apply f,apply all
     | Execution.Sequence (_,binding,evaluate,next) ->
       let env=run_execution ~observe env evaluate in
-      let optional=binding.Execution.name="?." in
+      let name=binding.Execution.name in
+      let optional=hidden name in
       let original=env in
       let env=if optional then
         let t=Option.value (claimed_type (Execution.source evaluate)) ~default:top in
-        List.remove_assoc "?." env @ ["?.",Value t] else env in
+        List.remove_assoc name env @ [name,Value t] else env in
       let t,f,all=outcomes ~observe ~refine env next in
-      let restore = if optional then Option.map (restore_optional original) else Fun.id in
+      let restore = if optional then Option.map (restore_optional ~name original) else Fun.id in
       restore t,restore f,restore all
     | Execution.Choose (_source,condition,test,binding,evaluate,yes,no) ->
       let optional=binding.Execution.name="?." in

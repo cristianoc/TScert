@@ -70,7 +70,7 @@ partial def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. => true
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .optional _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
+  | .optional _ _ a b | .withObject _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
   | .comma _ a b | .inKeys _ a b => readOnly a && readOnly b
   | .ifBody _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .build .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..

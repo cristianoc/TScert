@@ -186,6 +186,12 @@ private partial def expression (root : Span) (e : Expr) (observed : Bool := true
         let binding := { binding with name := chainName }
         pure (.choose e.span receiver.span .nullish binding (← expression root receiver)
           (atom (.lit e.span .vundef)) (← expression root body))
+    -- `o.m?.(a)`'s object, saved under `objectName` for the body, which
+    -- reads the method off it and passes it as the call's receiver.
+    | .withObject _ mark object body =>
+        let binding ← saved root mark "receiver"
+        let binding := { binding with name := objectName }
+        pure (.sequence e.span binding (← expression root object) (← expression root body))
     | .nullishAssign _ name namePos rhs =>
         let target := Expr.var namePos name
         reference root target fun location => do

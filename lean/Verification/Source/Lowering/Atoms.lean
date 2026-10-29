@@ -512,7 +512,7 @@ Mappings discard only the temporaries introduced by this expression. -/
   let next ← if prepared then pure next else observeExprCurrent fc scope Γ e.span A next
   match _he : e with
   | .nullishAssign .. | .arrayAssign .. | .build .. | .objectAssign .. | .ifBody ..
-    | .logical .. | .coalesce .. | .optional .. | .comma .. | .logicalAssign .. | .update .. =>
+    | .logical .. | .coalesce .. | .optional .. | .withObject .. | .comma .. | .logicalAssign .. | .update .. =>
     throw "internal execution plan: compound source syntax reached atomic elaboration"
   | .equality .. => throw "internal unresolved equality"
   | .block .. => throw "internal extraction error: statements outside a closure body"
