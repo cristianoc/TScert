@@ -15,26 +15,27 @@ import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { isTypeAlias } from "./syntax.mts";
 
-export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: Node, mutable: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
+/** The declarator `d` of a pattern, the statement `node` holds it, lowered
+ * as a statement of its own at `pos`: the statement's span, or the
+ * declarator's where an earlier declarator of its list is lowered before
+ * it (`hoisting`). */
+export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, mutable: boolean, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (mutable)
     gate.fail(node, "a `let` pattern whose bindings are assigned in a `for` head is outside the fragment: its bindings are cells, which only a statement of a block lowers them to (one never assigned is a `const` pattern)");
-  if (list.declarations.length !== 1)
-    gate.fail(node, "a pattern declares alone in the fragment");
-  const d = list.declarations[0];
   if (d.type) gate.fail(d, "an annotated pattern is outside the fragment");
   if (!d.initializer) gate.fail(d, "a `const` needs an initializer");
   const kind = gate.iterations.get(gate.span(d.initializer).join(":"));
   if (ts.isArrayBindingPattern(d.name) && kind?.startsWith("client")) {
     if (kind === "client-unclosable" && !d.name.elements.some((e) => ts.isBindingElement(e) && e.dotDotDotToken))
       gate.fail(d.initializer, UNCLOSABLE);
-    return gate.protocolPattern(d.name, d.initializer, node, kind === "client-method");
+    return gate.protocolPattern(d.name, d.initializer, node, kind === "client-method", pos);
   }
   const target = gate.pattern(d.name, new Set(), ts.isArrayLiteralExpression(skipParentheses(d.initializer)));
   gate.initializedBefore(d, [[target, null]]);
   return {
     k: "destructure",
-    pos: gate.span(node),
+    pos,
     target,
     default_: null,
     init: gate.expr(d.initializer),
@@ -61,7 +62,7 @@ export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: 
  * Binding a name runs nothing, so binding each after the steps is binding
  * it at its step. A default or a nested pattern, which run code between
  * the steps (and IteratorClose on a throw of theirs), is outside it. */
-export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
+export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, init: Expression, node: Node, method: boolean, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (gate.hoist?.stmt !== node)
     gate.fail(node, "an array pattern over a program's iterable is outside the fragment here: its steps are statements, with cells, before the declaration, which a function's or a closure's body has and a module's top level or a `for` initializer does not");
@@ -121,7 +122,7 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
       cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
       body: gate.collectStep(start.next, `%resultRest@${tag}`, restCell, leave, site) });
   } else inner.push(...this.closeStatements(start.iteratorAt, tag, site, method));
-  statements.push({ k: "block", pos: gate.span(node), label, body: inner });
+  statements.push({ k: "block", pos, label, body: inner });
   gate.hoisted.push(...statements);
   const bindings: BindingAst[] = [];
   for (const { cell, name } of named)
@@ -130,7 +131,7 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
   if (restName && restName.name && ts.isIdentifier(restName.name))
     bindings.push({ early: false, name: gate.local(restName.name), namePos: gate.span(restName.name), annot: null,
       init: { k: "id", pos: gate.span(restName.name), name: restCell } });
-  return { k: "const", pos: gate.span(node), bindings };
+  return { k: "const", pos, bindings };
 }
 
 /** One step of a collecting loop: the step, its `done` leaving by `leave`,
@@ -689,6 +690,22 @@ export function hoisting(this: Gate, s: Statement): Within<{ value: "any"; store
     site: { entry: () => lazy().entry(), span: () => lazy().span() } };
   gate.hoisted = [];
   try {
+    // A list of several declarators, a pattern among them, binds each in
+    // turn, its initializer seeing the earlier bindings: each is lowered as
+    // a declaration of its own, preceded by the statements its own lowering
+    // runs before it, in the list's order.
+    // A `var` list is not this binding form: `declarations` refuses it.
+    const list = ts.isVariableStatement(s) ? s.declarationList : null;
+    if (list && list.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let) &&
+        list.declarations.length > 1 && list.declarations.some((d) => !ts.isIdentifier(d.name))) {
+      const parts: Stmt[] = [];
+      list.declarations.forEach((d, i) => {
+        gate.hoisted = [];
+        const part = gate.declarator(list, d, s, i === 0 ? gate.span(s) : gate.span(d));
+        parts.push(...gate.hoisted, ...part);
+      });
+      return parts;
+    }
     const stmts = (ts.isVariableStatement(s) ? gate.letPattern(s) : null) ?? [gate.stmt(s)];
     return [...this.hoisted, ...stmts];
   } finally {
@@ -711,6 +728,14 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Within<{ value:
   if (list.flags & ts.NodeFlags.Const || !(list.flags & ts.NodeFlags.Let) || list.declarations.length !== 1 ||
       !d || !(ts.isObjectBindingPattern(d.name) || ts.isArrayBindingPattern(d.name)) || gate.neverAssigned(list))
     return null;
+  return gate.letPatternOf(d, gate.span(s));
+}
+
+/** The declarator `d` of a `let` list whose bindings are written, a
+ * pattern, as `letPattern` lowers it, its destructuring at `pos`. Null over
+ * a program's iterable. */
+export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt[] | null> {
+  const gate: Gate = this;
   if (d.type) gate.fail(d, "an annotated pattern is outside the fragment");
   if (!d.initializer) gate.fail(d, "a `let` pattern needs an initializer");
   // Over a program's iterable, an array pattern is the iterator's steps
@@ -736,7 +761,7 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Within<{ value:
   };
   const hidden = hide(target);
   return [
-    { k: "destructure", pos: gate.span(s), target: hidden, default_: null, init: gate.expr(d.initializer) },
+    { k: "destructure", pos, target: hidden, default_: null, init: gate.expr(d.initializer) },
     { k: "let", pos: gate.span(d.name), bindings: cells },
   ];
 }
@@ -1244,28 +1269,55 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
  * variable statement, or a `for` loop's initializer. */
 export function declarations(this: Gate, list: ts.VariableDeclarationList, at: Node): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
+  gate.lexicalList(list, at);
+  if (list.declarations.length > 1 && list.declarations.some((d) => !ts.isIdentifier(d.name)))
+    gate.fail(at, "a declaration list with a pattern among several declarators is outside the fragment here: each declarator is a statement of its own, which a function's or a closure's body has and a module's top level or a `for` initializer does not");
+  return gate.declarationsOf(list, list.declarations, at, gate.span(at));
+}
+
+/** The declarator `d` of the list `list`, the statement `at` holds it, as
+ * a declaration of its own at `pos`: a pattern's, or a binding's. */
+export function declarator(this: Gate, list: ts.VariableDeclarationList, d: ts.VariableDeclaration, at: Statement, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt[]> {
+  const gate: Gate = this;
+  if (ts.isIdentifier(d.name)) return [gate.declarationsOf(list, [d], at, pos)];
+  const mutable = gate.mutableList(list, at);
+  return (mutable ? gate.letPatternOf(d, pos) : null) ?? [gate.patternStmt(d, at, mutable, pos)];
+}
+
+/** Refuses `list`, the statement `at` holds it, unless it is a `let` or a
+ * `const` list. */
+export function lexicalList(this: Gate, list: ts.VariableDeclarationList, at: Node): Within<{ value: "any"; store: "grow" }, void> {
+  const gate: Gate = this;
   // `var` is function-scoped and hoisted, so it is not this binding form.
   if (!(list.flags & ts.NodeFlags.Const) && !(list.flags & ts.NodeFlags.Let))
     gate.fail(at, "`var` is outside the fragment");
+}
+
+/** Whether the bindings of `list`, the statement `at` holds it, are cells:
+ * a `let` or `const` list (`lexicalList`). */
+export function mutableList(this: Gate, list: ts.VariableDeclarationList, at: Node): Within<{ value: "any"; store: "grow" }, boolean> {
+  const gate: Gate = this;
+  gate.lexicalList(list, at);
   // A `let` statement whose bindings are all initialized and nothing
   // assigns is a `const`: each binding holds its initial value throughout,
   // so reading it reads that value, as a `const`'s read does.
   // A module `let` stays one, a module cell, whatever writes it.
   const moduleLet = !(list.flags & ts.NodeFlags.Const) && ts.isVariableStatement(at) && !!at.parent && ts.isSourceFile(at.parent);
-  const mutable = moduleLet || (!(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && gate.neverAssigned(list)));
+  return moduleLet || (!(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && gate.neverAssigned(list)));
+}
+
+/** The declarators `ds` of `list`, the statement `at` holds them, as one
+ * declaration at `pos`. */
+export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds: readonly ts.VariableDeclaration[], at: Node, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt> {
+  const gate: Gate = this;
+  const mutable = gate.mutableList(list, at);
   const kindWord = mutable ? "let" : "const";
-  if (
-    list.declarations.some(
-      (d) =>
-        ts.isObjectBindingPattern(d.name) ||
-        ts.isArrayBindingPattern(d.name),
-    )
-  )
-    return gate.patternStmt(list, at, mutable);
+  const [only, ...others] = ds;
+  if (only && !others.length && !ts.isIdentifier(only.name)) return gate.patternStmt(only, at, mutable, pos);
   // A declaration list binds its declarators left to right, each
   // initializer seeing the earlier bindings, under the statement's one
   // entry. Each declarator is gated on its own terms.
-  const bindings: BindingAst[] = list.declarations.map((d) => {
+  const bindings: BindingAst[] = ds.map((d) => {
     if (d.name.kind !== ts.SyntaxKind.Identifier)
       gate.fail(d, "destructuring is outside the fragment");
     if (d.name.text === "undefined")
@@ -1323,8 +1375,8 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
       early: gate.earlyDecls.has(d),
     };
   });
-  if (mutable) return { k: "let", pos: gate.span(at), bindings };
-  return { k: "const", pos: gate.span(at), bindings };
+  if (mutable) return { k: "let", pos, bindings };
+  return { k: "const", pos, bindings };
 }
 
 /** Whether a `let` list's bindings are all initialized and none is

@@ -1045,6 +1045,11 @@ export class Gate {
   markEarly: typeof statements.markEarly = statements.markEarly;
 
   letPattern: typeof statements.letPattern = statements.letPattern;
+  letPatternOf: typeof statements.letPatternOf = statements.letPatternOf;
+  declarator: typeof statements.declarator = statements.declarator;
+  mutableList: typeof statements.mutableList = statements.mutableList;
+  lexicalList: typeof statements.lexicalList = statements.lexicalList;
+  declarationsOf: typeof statements.declarationsOf = statements.declarationsOf;
 
   token: typeof statements.token = statements.token;
 

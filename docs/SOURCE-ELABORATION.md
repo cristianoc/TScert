@@ -1998,6 +1998,29 @@ iterable the program defines, the inner declaration is the first statement
 of the protocol's closing region
 ([iterator protocol](#the-iterator-protocol)).
 
+A declaration list of several declarators, a pattern among them, in a
+function's or a closure's body, is its declarators declared in turn:
+
+```math
+\mathtt{const}\ d_1, \ldots, d_n;\ \rightsquigarrow\ \mathtt{const}\ d_1;\ \ldots\ \mathtt{const}\ d_n;
+```
+
+and likewise for `let`. JavaScript runs each declarator in turn, in one
+scope: its initializer, then its pattern's reads, defaults and bindings, one
+binding at a time (a default may read an earlier binding of its own
+pattern), before the next declarator's initializer runs. A name's dead zone
+ends where its own binding is initialized, in either form, so the two run
+the same steps and bind the same names. Each declarator lowers as a
+declaration of its own, preceded by the statements its own lowering runs
+before it, such as the protocol's steps of an array pattern over an iterable
+the program defines (`declaration-list-order`). A read of a later
+declarator's binding is a read of an
+[early binding](#lexical-bindings-before-initialization)
+(`declaration-list-forward-read`, `declaration-list-capture`), refused where
+a pattern declares it (`declaration-list-pattern-forward-refused`). A `var`
+list is refused (`declaration-list-var-refused`), and so is such a list at a
+module's top level or in a `for` initializer.
+
 A default replaces a read that is `undefined`, and only then runs. With
 $`R'`$ the read's labels told apart clause by clause (`byClause`: a label that
 is a union row, such as a declared alias, is replaced by one label per
