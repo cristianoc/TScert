@@ -112,15 +112,15 @@ function stepLimit(): number {
 export type Ran = { code: number; out: string; detail: string };
 /** A process stage run through the common invocation mechanism, its attempt
  * recorded by `recorder`. */
-export function runStep(call: ProcessCall, recorder: Recorder | null = null): Ran {
-  const p = invokeProcess(call, { limitMs: stepTimeoutMs, force: false, recorder });
+export function runStep(call: ProcessCall, recorder: Recorder | null = null, limitMs: number = stepTimeoutMs): Ran {
+  const p = invokeProcess(call, { limitMs, force: false, recorder });
   const step = [
     basename(call.program),
     ...call.arguments.flatMap((a) => ("text" in a && a.text.startsWith("--") ? [a.text] : [])),
   ].join(" ");
   if (p.record.execution === "timed-out")
     throw Error(
-      `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
+      `timeout: ${step} did not finish within ${limitMs / 1000} s`,
     );
   // A reused observation reports an earlier attempt's timeout, at a limit no
   // smaller than this one, not proof that this one would time out.
@@ -402,6 +402,96 @@ function failedImport(detail: string): { module: string; name: string | null } |
   return run?.[1] ? { module: run[1], name: null } : null;
 }
 
+/** The read or module run the plan of `reads` refuses, before the importer
+ * is proposed at them, as `module#name` or `module#*`; null where the plan
+ * holds or its refusal names neither. The plan (`--plan-imports`) reads of
+ * the importer's claims document only its `qualified` list, which the
+ * producer writes as the declarations of `reads`, in order, and its
+ * `modules`, the claims `used`: given those, its answer is the one the
+ * search of the assembled claims gives. */
+function planRefused(recorder: Recorder, ast: string, reads: QualifiedRead[], used: string[], budget: string[],
+    planPath: string): string | null {
+  // Spliced as text, as the claims assembly is: a bigint literal's digits pass through unrounded.
+  writeFileSync(planPath, `{"qualified":${JSON.stringify(reads.map((r) => r.declaration))},"modules":[${used.join(",")}]}`);
+  const refusal = verifierRefusal(runStep(verifierCall(verifier, [...budget, "--plan-imports", ast, planPath]), recorder),
+    "--plan-imports");
+  const failed = refusal === null ? null : failedImport(refusal);
+  return failed ? `${failed.module}#${failed.name ?? "*"}` : null;
+}
+
+/** The search of a document with certified imports, run by run: the plan
+stage's runs (`--plan-imports`) searched in its order, the importer's under
+its file key `snapshot`, then each module run's under its location, up to
+the first that fails. Each run is a stage of its own, so a run whose
+document, claims and qualified reads are unchanged replays. The stages share
+one step limit, each given what the earlier ones left, and a failure of a
+tool is reported as the whole document's search's (`--produce-source-claims`)
+is. Its refusal is that search's: the plan's, the importer's, or a module
+run's prefixed `module <location>: `; on success the evidence is written to
+`evidence` as that search writes it, and the log is the last run's. */
+function searchRuns(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
+    evidence: string, budget: string[]): { produced: Ran; refusal: string | null } {
+  const program = [basename(verifier), ...budget.filter((a) => a.startsWith("--"))].join(" ");
+  const whole = `${program} --produce-source-claims`;
+  // A failure of a tool names the stage as `runStep` (`tool failure: <program> <mode>`)
+  // or `refusalOf` (`tool failure: verifier <mode>`) states it, renamed as the whole search's.
+  const renamed = (message: string, named: string, as: string): string => {
+    for (const mode of ["--plan-imports", "--produce-run"]) {
+      const at = `tool failure: ${named} ${mode}`;
+      if (message.startsWith(at)) return `tool failure: ${as}${message.slice(at.length)}`;
+    }
+    return message;
+  };
+  const deadline = performance.now() + stepTimeoutMs;
+  const timeout = `timeout: ${whole} did not finish within ${stepTimeoutMs / 1000} s`;
+  const step = (args: string[]): Ran => {
+    const left = Math.floor(deadline - performance.now());
+    if (left <= 0) throw Error(timeout);
+    try {
+      return runStep(verifierCall(verifier, [...budget, ...args]), recorder, left);
+    } catch (error) {
+      const message = messageOf(error);
+      // A timeout, fresh or replayed, is the whole search's at its limit.
+      if (message.startsWith("timeout: "))
+        throw Error(message.replace(/^timeout: .*? did not finish within [0-9.]+ s/, () => timeout));
+      throw Error(renamed(message, program, whole));
+    }
+  };
+  const named = (text: string): string => renamed(text, "verifier", "verifier --produce-source-claims");
+  const refusalOfStep = (ran: Ran, mode: string): string | null => {
+    try {
+      return verifierRefusal(ran, mode);
+    } catch (error) {
+      throw Error(named(messageOf(error)));
+    }
+  };
+  const planned = step(["--plan-imports", ast, claims]);
+  const planRefusal = refusalOfStep(planned, "--plan-imports");
+  if (planRefusal !== null) return { produced: planned, refusal: planRefusal };
+  const runs = planned.out.split("\n").filter((line) => line !== "");
+  const parts: string[] = [];
+  let last: Ran = planned;
+  for (const [index, text] of runs.entries()) {
+    const location = index === 0 ? null : field(JSON.parse(text), "location");
+    if (location !== null && typeof location !== "string") throw Error("a planned module run names no location");
+    const run = join(artifacts, `run-${index}.json`), runEvidence = join(artifacts, `run-${index}.evidence.json`);
+    writeFileSync(run, text);
+    const produced = step(["--produce-run", run, location ?? snapshot, runEvidence, String(searchDepth)]);
+    const refusal = refusalOfStep(produced, "--produce-run");
+    if (refusal !== null) {
+      if (location === null) return { produced, refusal };
+      // The location is inserted as written: a replacement function reads no `$` pattern in it.
+      const inModule = (text: string): string => text.replace(/^reject: /, () => `reject: module ${location}: `);
+      return { produced: { ...produced, detail: inModule(produced.detail) }, refusal: inModule(refusal) };
+    }
+    last = produced;
+    parts.push(readFileSync(runEvidence, "utf8").trimEnd());
+  }
+  // Spliced as text, as the claims assembly is: a bigint literal's digits pass through unrounded.
+  writeFileSync(evidence, `{"main":${parts[0] ?? "null"},"modules":[${parts.slice(1).join(",")}]}\n`);
+  return { produced: last, refusal: null };
+}
+
 /** The parse stage of `source`, read in the project `tsconfigPath` (or a
  * snapshot's own), its log and the TypeScript errors its gate read written
  * under `artifacts`: the parse, the source's bytes, the snapshot it parsed and the file its
@@ -529,6 +619,8 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // Certified imports: each module's claims, and the reads they may
     // qualify. A read the search or the check refuses, or a module run it
     // refuses, is withdrawn, and the documents proposed again without it.
+    // A document with qualified reads is searched run by run
+    // (`searchRuns`), so a later round replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json"),
@@ -539,30 +631,43 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     for (;;) {
       phase = "proposal";
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
+      // The claims of each module a read qualifies, directly or through a
+      // module's reads.
+      const used = readClosure(reads, readsOf).flatMap((m) => {
+        const text = moduleClaims.get(m)?.text;
+        return text === undefined ? [] : [text];
+      });
+      // A read the plan refuses is withdrawn before the importer is proposed
+      // at it: the plan reads of the importer's claims only the qualified
+      // reads, which the proposal lists as `reads` (`planRefused`).
+      const refused = reads.length > 0 ? planRefused(recorder, ast, reads, used, budget, join(artifacts, "plan-reads.json")) : null;
+      if (refused !== null && !withdrawn.has(refused)) {
+        withdrawn.add(refused);
+        continue;
+      }
       const proposed = propose(recorder, ast, flow, reads, join(artifacts, "qualified.json"));
       writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
       const proposalRefusal = producerRefusal(proposed);
       if (proposalRefusal !== null)
         return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposalRefusal, refusedErrors) };
-      // The importer's claims, its `modules` the claims of each module a read
-      // qualifies, directly or through a module's reads.
-      const used = readClosure(reads, readsOf).flatMap((m) => {
-        const text = moduleClaims.get(m)?.text;
-        return text === undefined ? [] : [text];
-      });
+      // The importer's claims, its `modules` the claims `used`.
       const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
       phase = "search";
-      produced = runStep(verifierCall(verifier, [
-        ...budget,
-        "--produce-source-claims",
-        ast,
-        claims,
-        snapshot,
-        evidence,
-        String(searchDepth),
-      ]), recorder);
-      searchRefusal = verifierRefusal(produced, "--produce-source-claims");
+      if (reads.length > 0)
+        ({ produced, refusal: searchRefusal } = searchRuns(recorder, artifacts, ast, claims, snapshot, evidence, budget));
+      else {
+        produced = runStep(verifierCall(verifier, [
+          ...budget,
+          "--produce-source-claims",
+          ast,
+          claims,
+          snapshot,
+          evidence,
+          String(searchDepth),
+        ]), recorder);
+        searchRefusal = verifierRefusal(produced, "--produce-source-claims");
+      }
       const failed = searchRefusal !== null ? failedImport(searchRefusal) : null;
       if (!failed) break;
       const key = `${failed.module}#${failed.name ?? "*"}`;

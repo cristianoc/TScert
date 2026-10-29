@@ -302,6 +302,35 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     return Json.mkObj [("location", toJson m.location), ("evidence", e)]
   return Json.mkObj [("main", main), ("modules", Json.arr modules.toArray)]
 
+/-- A run's qualified reads on the wire: each its binding, footprint and
+on-throw flag. -/
+private def readsJson (qualified : List (String × Footprints.Closed × Bool)) : Json :=
+  Json.arr (qualified.map fun (l, f, t) =>
+    Json.mkObj [("local", toJson l), ("footprint", toJson f), ("onThrow", toJson t)]).toArray
+
+/-- The runs `produceJson` searches, in its order: the importer's, then each
+module run's, each as its document, claims and qualified reads, one per
+line, a module run's with its location. -/
+def planJson (ast claims : Json) : Except String (List Json) := do
+  let p ← planImports ast claims
+  return Json.mkObj [("ast", p.ast), ("claims", p.claims), ("qualified", readsJson p.qualified)] ::
+    p.modules.map fun m => Json.mkObj [("location", toJson m.location), ("ast", m.ast), ("claims", m.claims),
+      ("qualified", readsJson m.qualified)]
+
+/-- Search evidence for one run `planJson` printed, under `fileKey`: the
+importer's file key, or a module run's location, as `produceJson` searches
+it; a module run's as `produceJson` lists it, with its location. -/
+def produceRunJson (run : Json) (fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
+  let qualified ← (← jArr run "qualified").mapM fun q => do
+    fieldsExactly q ["local", "footprint", "onThrow"]
+    let footprint : Footprints.Closed ← fromJson? (← jField q "footprint")
+    return ((← jStr (← jField q "local")), footprint, ← (← jField q "onThrow").getBool?)
+  let e ← produceDocument (← jField run "ast") (← jField run "claims") fileKey fuel budget qualified
+  return match run.getObjVal? "location" with
+    | .ok location => Json.mkObj [("location", location), ("evidence", e)]
+    | .error _ => e
+
 /-- Each module run checked as a document of its own, at its evidence. -/
 def checkModules : List (ModuleRun × Json) → PositiveCertificates.SearchBudget → Except String Unit
   | [], _ => pure ()
