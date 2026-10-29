@@ -1087,6 +1087,25 @@ statements of 17 functions in the census of 6be11ce.
 - **Commit:** the introducing commit, `The sync API's type predicates are
   stated guards`.
 
+### A spread of a record of readonly fields
+
+`requestReading` in `tools/compiler-api.mts` gave a request's signature its
+effect as `{ ...effect, fresh: … }`, a spread of a local typed `CallEffect`,
+whose fields are all readonly. A merge reads only operands whose type
+excludes host values, and a record of readonly fields alone excludes none
+([excluding host values](HOST-FAMILIES.md#excluding-host-values),
+`invalid-compiler-api-node-spread`). Support would track that the local
+holds a fresh literal through its annotation, for this one site, which
+a8cba50 introduced into a function the census of 6be11ce verified.
+
+- **Equivalent form:** a literal reads `effect`'s five fields in the order
+  the spread copies them, with `fresh` at its place, as the spread's later
+  field overwrites it. `effect` is a local literal no code writes, owning
+  exactly these five data properties, so the copy holds the same values
+  under the same keys in the same order, and is fresh as the spread's was.
+- **Commit:** the introducing commit, `requestReading builds a request's
+  effect field by field`.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

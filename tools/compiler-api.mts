@@ -406,7 +406,8 @@ export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
     receiverStore: false, onThrow: false };
   const at = (t: TypeTerm): TypeTerm =>
     t.k === "function" && t.effect.promise === null
-      ? { ...t, effect: { ...effect, fresh: fresh && t.result.k === "array" } }
+      ? { ...t, effect: { footprint: effect.footprint, promise: effect.promise, fresh: fresh && t.result.k === "array",
+        receiverStore: effect.receiverStore, onThrow: effect.onThrow } }
     : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
     : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
     : t;
