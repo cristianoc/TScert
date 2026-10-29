@@ -179,9 +179,12 @@ it, so removing the copied executable makes Lake relink it (about 1 s) from
 the worktree's own objects. The saving is complete when the main
 checkout's cache is built at or near the worktree's commit; otherwise Lake
 rebuilds just the modules that differ. Each worktree keeps its own `.lake`,
-so builds in different worktrees may run in parallel. Nothing else needs
-seeding: Dune restores OCaml builds from its shared cache, and
-`node_modules` can be symlinked from the main checkout (never committed).
+so builds in different worktrees may run in parallel. Dune restores OCaml
+builds from its shared cache. Each `node_modules` directory is copied from the
+main checkout with `cp -c -R` (never committed): the root's, `tools/`'s and
+every `pipeline/*/` one, `pipeline/library-project/node_modules` included. A
+symbolic link resolves type declarations from the main checkout's path, and
+the cases reading `@types/node` then fail.
 
 `make suite` includes the pipeline cases, including those importing from
 `pipeline/imports-project/` and `pipeline/library-project/`. Install OCaml and
