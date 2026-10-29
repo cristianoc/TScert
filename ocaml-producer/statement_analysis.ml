@@ -384,7 +384,27 @@ let transfer (expr:Analysis_state.expression_infer) =
     List.fold_left loosen result aliased in
   transfer_statement
 
+(* The constants a statement list binds to an object or array literal, which
+   Lean's lowering leaves out of an iterator's separation
+   (`ScopeBinding.fresh`). *)
+let rec allocated_constants ss = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+  | Declare (false,bindings) -> List.filter_map (fun (name,_,(init:Source.expr)) -> match init.node with
+      | Alloc _ | ArrayLiteral _ -> Some name
+      | _ -> None) bindings
+  | If (_,a,b) -> allocated_constants a @ allocated_constants b
+  | While (_,b,u) -> allocated_constants (b @ u)
+  | Block (_,b) | ForOf (_,_,_,_,b) -> allocated_constants b
+  | Try (b,h,f) -> allocated_constants (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> allocated_constants (b @ c)
+  | Declare (true,_) | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> []) ss
+
+(* The allocated constants of the function analysed and of every body
+   enclosing a closure of it: a closure captures a binding with its
+   allocation (Lean's `ScopeBinding.fresh` survives the capture). *)
+let allocated = ref []
+
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
+  allocated := allocated_constants ss @ !allocated;
   let ordinary_transfer = transfer expr in
   (* A failed transfer preserves binding identities and storage contracts.
      Its heap observations and local refinements are forgotten. *)
@@ -454,8 +474,9 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
        `call-fresh`, which separates the fresh iterator from the context's
        contract fields). A step keeps the paths through stable members, as
        every step keeps Lean's stable links, and, where it changes only its
-       receiver's own locations (`call-own`), the paths known at the start
-       and unchanged since, which the iterator's separation keeps. *)
+       receiver's own locations (`call-own`), the paths known at the start,
+       unchanged since, through records' required fields and rooted at no
+       allocated constant, which the iterator's separation keeps. *)
     iterator_start=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) ->
       diagnostic_recover s.span (fun () ->
         publish_expression s.span top None;
@@ -511,7 +532,10 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
           let kept=match own,Hashtbl.find_opt at_start s.span with
             | true,Some start ->
               forget ~keep:(fun n -> Refinement.stable_path declarations env n ||
-                (match List.assoc_opt n env,List.assoc_opt n start with
+                (not (List.mem (owner n) !allocated) &&
+                 Refinement.separated_path declarations env n &&
+                 Refinement.separated_path declarations start n &&
+                 match List.assoc_opt n env,List.assoc_opt n start with
                  | Some b,Some b' -> b = b' | _ -> false)) env
             | _ -> forget_unstable env in
           extend kept element.Flow.name (Value t),kept));

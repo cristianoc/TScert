@@ -199,11 +199,10 @@ let stable_member declarations t field =
     | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
     | _ -> false in
   has [] t
-(* Whether a path entry survives a step that may write cells: each member
-   of the path stable in every arm of what its receiver holds, the root's
-   type or the refinement its prefix's entry states (Lean's stable links,
-   `HeapExpressionRules.withStable`). *)
-let stable_path declarations env n =
+(* Whether every member of a path entry meets `member` in every arm of
+   what its receiver holds, the root's type or the refinement its prefix's
+   entry states. *)
+let path_through member declarations env n =
   is_path n &&
   match String.split_on_char '\001' (field_of n) with
   | "" :: fields ->
@@ -212,7 +211,7 @@ let stable_path declarations env n =
        let rec walk t prefix = function
          | [] -> true
          | f :: rest ->
-           stable_member declarations t f &&
+           member declarations t f &&
            let here = prefix @ [f] in
            let next = match List.assoc_opt (path_key (owner n) here) env with
              | Some (Value t') -> Some t'
@@ -221,6 +220,28 @@ let stable_path declarations env n =
        in walk root [] fields
      | _ -> false)
   | _ -> false
+(* Whether a path entry survives a step that may write cells: each member
+   of the path stable (Lean's stable links, `HeapExpressionRules.withStable`). *)
+let stable_path declarations env n = path_through stable_member declarations env n
+(* Whether a path entry survives a step changing only its receiver's own
+   locations: each member of the path a required field every record arm of
+   its receiver names, the locations the iterator's separation facts state
+   it apart from (Lean's `separationFacts`, through `commonFields`). A
+   dictionary's key is not among them, nor a readonly `length`, which an
+   array's length may answer (Lean's `clauseField`). *)
+let separated_path declarations env n =
+  let rec readonly_length seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
+    | Some (Atoms atoms) -> List.exists (function
+        | Shape {fields;_} | Exact fields ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name "length" && f.write = None) fields
+        | Named (id,args) when not (List.mem id seen) ->
+          (try readonly_length (id::seen) (definition declarations id args) with Json.Error _ -> true)
+        | _ -> false) atoms
+    | Some (Union ts) -> List.exists (readonly_length seen) ts
+    | Some (Meet (t,ts)) -> List.exists (readonly_length seen) (t::ts)
+    | _ -> false in
+  path_through (fun declarations t f ->
+    record_field declarations t f && not (f = "length" && readonly_length [] t)) declarations env n
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
 (* The atoms of a field's type some of the known contents may be: a

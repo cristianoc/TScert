@@ -3609,7 +3609,11 @@ an alias, a closure created before the loop or a native call's callback,
 discards the link (`invalid-field-narrowing-for-of-write`,
 `invalid-field-narrowing-for-of-closure`,
 `invalid-field-narrowing-for-of-callback`, run under Node). A readonly field
-and a writable one alike keep their narrowing.
+and a writable one alike keep their narrowing. A dictionary's key is not a
+field a record names, and the separation leaves out a constant bound to an
+object or array literal, so a step keeps no read link about either, and the
+loop's cuts claim none (`for-of-dictionary-key-iterable`,
+`for-of-allocated-constant-field-guard`).
 
 ##### Every other expression
 
