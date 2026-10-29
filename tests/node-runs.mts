@@ -1282,6 +1282,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("function-declarations-in-body", `JSON.stringify([hoisted(), factorial(5), parity(10), parity(7),
     filtered(["a", "b", "c"], ["b"]), pair(4), inBlock(true)])`), `[4,120,true,false,["a","c"],2,1]`,
     "function-declarations-in-body: each declaration is callable from its block's entry");
+  assert.equal(runExample("function-declaration-early-recursion", "start()"), 0,
+    "function-declaration-early-recursion: the early declaration calls itself through its binding");
   assert.equal(runExample("invalid-function-declaration-stale", "stale()"), "s",
     "invalid-function-declaration-stale: the declaration's write reaches the read TypeScript narrowed to number");
   assert.equal(runExample("module-cells", "JSON.stringify([bump(), bump(), cached(), limited(), afterCall()])"), "[1,2,\"computed\",6,3]",

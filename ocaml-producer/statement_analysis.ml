@@ -242,6 +242,11 @@ let transfer (expr:Analysis_state.expression_infer) =
          literal's own signature, with the footprint the round assumes of the
          closure (SOURCE-ELABORATION.md, "Recursive constants"). *)
       let init_env = match mutable_,init.node with
+        (* An early binding's initializer reading the binding: a closure's
+           read runs through the cell it captures, checked, after the
+           declaration writes it. *)
+        | _,_ when Hashtbl.mem Source.early_bindings (n,init.pos) && mentions n init ->
+          extend env n (cell (early_contract n written init))
         | false,Lambda (_,[],ps,defaults,false,result,guard,_) when mentions n init ->
           let self = match written,result with
             | Some t,_ -> t
@@ -266,11 +271,6 @@ let transfer (expr:Analysis_state.expression_infer) =
             | None -> Hashtbl.replace Source.self_effects init.pos (empty_footprint,true);
               empty_footprint,true in
           extend env n (Value (with_footprint ~on_throw footprint self))
-        (* An early `let`'s initializer reading the binding: a closure's
-           read runs after the declaration writes the cell, through the
-           cell, which any later assignment may rebind. *)
-        | true,_ when Hashtbl.mem Source.early_bindings (n,init.pos) && mentions n init ->
-          extend env n (cell (early_contract n written init))
         | _ -> env in
       let initial = expr ?expected:(if committed <> None then committed else written) init_env init in
       if not mutable_ then named_closure n written init;

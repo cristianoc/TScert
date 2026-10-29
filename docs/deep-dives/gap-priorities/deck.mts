@@ -49,7 +49,7 @@ const more: [string, string, string, string][] = [
   ["A member read from Number.prototype after an earlier refusal (a judgement)", "340", "1", noCase],
   ["An object pattern's key spelled as a later local's name", "340", "1", gap("blocker-pattern-key-early-binding")],
   ["A test of an optional never field as a union's discriminant", "320", "1", gap("blocker-optional-never-discriminant")],
-  ["A function declaration inside a function", "305", "2", gap("function-declaration-in-body-refused")],
+  ["A function declaration inside a function", "305", "2", `${status("ok", "verifies")} ${c("function-declaration-before-initialization")}`],
   ["A field holding an object or null, reread after a test", "299", "8", gap("guard-field-assertion")],
 ];
 

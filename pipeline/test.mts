@@ -1517,6 +1517,17 @@ control(async (): Promise<void> => {
       ["function-early-string-contract", (fn: SourceClaims["functions"][number], claims: SourceClaims) => {
         for (const c of fn.contracts) if (c.name === "isOdd") c.type = [rowOf(claims, "str")]; },
         "the early binding 'isOdd' needs its type stated"],
+      // Its parameters and result as written, its receiver a string: the
+      // literal states no `this`, so any receiver.
+      ["function-early-receiver-contract", (fn: SourceClaims["functions"][number], claims: SourceClaims) => {
+        const c = must(fn.contracts.find(x => x.name === "isOdd"), "isOdd's contract");
+        const only = Array.isArray(c.type) && c.type.length === 1 ? c.type[0] : undefined;
+        const clause = typeof only === "number" ? claims.types[only]?.[0] : undefined;
+        if (clause === undefined || typeof clause !== "object" || !("arrs" in clause)) throw new Error("isOdd's contract is no callable");
+        const forged = structuredClone(clause);
+        for (const arrow of forged.arrs.arrows) arrow.receiver = [rowOf(claims, "str")];
+        c.type = [claims.types.push([forged]) - 1]; },
+        "claimed storage contract differs from the function literal's annotations for 'isOdd'"],
     ] as const) {
       const claims = readClaims(declared);
       edit(must(claims.functions.find(f => f.name === "parity"), "parity"), claims);

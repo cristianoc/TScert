@@ -2534,7 +2534,13 @@ type $`T`$ is the annotation, or a function literal's parameter and result
 annotations; an early binding with neither is refused, and so are the
 compound assignment, update and logical assignment of an early `let`, an
 assignment to one in closure term code, a key-adding write of an object one
-holds, and an initializer that reads its own binding.
+holds, and an initializer other than a function literal that reads its own
+binding. A function literal's reads of its own early binding run when it is
+called, through the cell it captures, each a checked access
+(`function-declaration-early-recursion`, run under Node; a `let` the literal
+reads and a later assignment rebinds, `invalid-find-recursive-cell` and
+`invalid-recursive-cell-callback`, run under Node, is read at its contract,
+a value known only by its type).
 
 ### Recursive constants
 
@@ -2628,7 +2634,8 @@ $`f`$ before $`s_k`$ completes reaches its checked access, which throws as
 JavaScript does. A declaration $`g`$ that $`f`$ mentions, placed with $`f`$
 after it, is early too: mutual recursion reads it through its cell, which is
 initialized before either closure can be called. `f`'s own mentions are its
-[recursive constant](#recursive-constants)'s self entry. An early
+[recursive constant](#recursive-constants)'s self entry, or, where `f` is
+early, checked reads of its cell. An early
 declaration's contract is its literal's parameter, result and receiver
 annotations. A declaration a dead statement follows stays reachable: one
 after a statement that always jumps is in the list's scope and is placed as

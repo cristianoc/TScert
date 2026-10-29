@@ -397,7 +397,7 @@ functions at the edge from the arm that does not read `isOdd` into the point
 after the operator: "The incoming claim for isOdd is { value: ((number) =>
 boolean) | { "[[uninitialized]]": undefined } }. The next point requires
 (number) => boolean." The same read in a statement's arm verifies
-(`function-declarations-in-body`'s `parity`).
+(`function-declarations-in-body`'s `parity`). The gap case `blocker-recursive-early-arrow` meets it.
 
 ```typescript
 export function ternary(n: number): boolean {

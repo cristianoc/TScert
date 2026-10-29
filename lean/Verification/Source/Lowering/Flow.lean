@@ -200,7 +200,11 @@ reference representation. Every such action is recorded as an opaque region. -/
         -- checked at the contract, written in place of the marker.
         let some (i, .early stored _ _) := resolve scope binding.name
           | throw s!"internal flow error: the early binding '{binding.name}' has no cell"
-        if binding.init.freeNames.contains binding.name then
+        -- A function literal's reads of the binding run when it is called,
+        -- through the cell it captures, each a checked access; any other
+        -- initializer reading it is refused.
+        let literal := match binding.init with | .lambda .. => true | _ => false
+        if binding.init.freeNames.contains binding.name && !literal then
           throw (locatedRefusal (← table) binding.init.span .bindingAnnotation
             "an early binding whose initializer reads it is outside the fragment")
         let C ← initializedContract stored

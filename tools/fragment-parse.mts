@@ -1654,7 +1654,7 @@ function lowerFile(file: string, carriesContext: boolean,
         if (!d || n === d.name || at >= d.end) return false;
         let literal: Node | undefined = d.initializer;
         while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
-        return !(literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+        return !(!!(d.parent.flags & ts.NodeFlags.Const) && literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
           n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
       }
       const inner = created ?? (ts.isFunctionDeclaration(n) ? -1
