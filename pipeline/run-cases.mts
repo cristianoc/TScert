@@ -10,6 +10,7 @@ import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { checkApart, type Outcome } from "./verify-source.mts";
 import { linkFixtures } from "./fixture-links.mts";
+import { startEviction } from "./stages.mts";
 // cases.mts is the inventory this runner judges: each case's source, project and expected status, phase and diagnostic.
 import { cases, type Case } from "./cases.mts";
 
@@ -99,6 +100,7 @@ export function expectOutcome(test: Case, result: Outcome): Outcome {
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
+  startEviction();
   linkFixtures();
   const patterns = process.argv.slice(2);
   const selected = cases.filter((c) => !patterns.length || patterns.some((p) => c.file.includes(p)));

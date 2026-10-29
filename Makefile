@@ -44,8 +44,8 @@ cases: ## the pipeline cases whose file names contain P (all of them when P is e
 check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))
 
-clean-store: ## remove stage entries and timeouts; keep source snapshots (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
-	node pipeline/stages.mts clean
+clean-store: ## remove stage entries, timeouts and the source snapshots no running process holds; FORGET_HOST=h counts host h's owners stopped (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
+	node pipeline/stages.mts clean $(if $(FORGET_HOST),--forget-host=$(FORGET_HOST))
 
 census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n; a record per run; each stage limited to 300 s unless TSCERT_STEP_LIMIT says otherwise; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
 	TSCERT_STEP_LIMIT=$${TSCERT_STEP_LIMIT:-300} node dev/census.mts $(if $(DIAGNOSTIC),--diagnostic) --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD))

@@ -418,7 +418,8 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   writeFileSync(join(artifacts, "tsconfig.json"), configuration);
   // The snapshot's path is the Fragment's file identity, which every later
   // stage's input embeds: with the store, it is a stable location named by
-  // the snapshot's and its configuration's contents, the same in every run.
+  // the snapshot's and its configuration's contents, the same in every run;
+  // where the store gives none (a pass is removing snapshots), the run's copy.
   const snapshot = join(currentStore()?.stableDirectory("sources", [["source.ts", bytes],
     ["tsconfig.json", configuration]]) ?? artifacts, "source.ts");
   // A caller may name the TypeScript project the source belongs to. The

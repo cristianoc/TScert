@@ -4,7 +4,7 @@
 // Every operation a control runs replays from the stage store like any stage
 // (DESIGN.md, "The stage store"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
@@ -13,8 +13,9 @@ import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
 import { fork, spawn, spawnSync } from "node:child_process";
-import { controlOperations, tested, ran as ranStage, readInvocationLog, type AttemptRecord, type Invoked }
+import { controlOperations, tested, ran as ranStage, readInvocationLog, startEviction, type AttemptRecord, type Invoked }
   from "./stages.mts";
+import { Store } from "./stage-store.mts";
 import { producerCall, verifierCall } from "./stage-execution.mts";
 import { check as checkSource, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
@@ -7044,8 +7045,10 @@ control(async (): Promise<void> => {
   // Replay: a cold run in a fresh store and a warm run in another run root
   // agree on their outcome, documents and logs; the warm run replays every
   // stage (module runs and explanations included), the parse by its
-  // observations. The warm worker first checks other sources.
-  // A changed source executes again.
+  // observations. The warm worker first checks other sources. After a
+  // pass evicting everything, its source snapshots included, a run executes
+  // every stage again to the same outcome, documents and logs. A changed
+  // source executes again.
   const store = runDirectory("tscert-replay-store-");
   const runAt = (source: string, project: string | null, preceding: readonly string[] = []): { outcome: Outcome; records: AttemptRecord[] } => {
     const root = runDirectory("tscert-replay-root-");
@@ -7093,6 +7096,21 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     }
     assert.ok(warm.records.filter((r) => r.stage === "lower").length > (project ? 1 : 0), `${name}: module runs replayed`);
     assert.ok(project !== null || warm.records.some((r) => r.stage === "explain"), `${name}: its explanation replayed`);
+    // The drivers' worker processes hold their source snapshots until they stop.
+    const stored = (part: string): number => present(join(store, part)) ? readdirSync(join(store, part)).length : 0;
+    assert.ok(stored("sources") > 0 && stored("entries") > 0, `${name}: snapshots and entries stored`);
+    let pass = new Store(store).evictionPass(0);
+    for (const started = Date.now(); pass && pass.held > 0 && Date.now() - started < 30_000;) {
+      await new Promise((done) => setTimeout(done, 200));
+      pass = new Store(store).evictionPass(0);
+    }
+    assert.ok(pass && pass.afterBytes === 0 && stored("sources") === 0, JSON.stringify(pass));
+    assert.ok(readdirSync(join(store, "entries")).every((stage) => stored(join("entries", stage)) === 0), `${name}: no entry left`);
+    const evicted = runAt(source, projectPath);
+    const { artifacts: evictedArtifacts, ...evictedOutcome } = evicted.outcome;
+    assert.deepEqual(evictedOutcome, coldOutcome, `${name}: the same outcome after eviction`);
+    assert.deepEqual(contents(evictedArtifacts), contents(coldArtifacts), `${name}: the same documents and logs after eviction`);
+    for (const r of evicted.records) assert.ok(ranStage(r), `${name}: ${r.stage} executed after eviction`);
   }
   const changed = join(runDirectory("tscert-replay-changed-"), "changed.ts");
   writeFileSync(changed, readFileSync(join(here, "examples", "values.ts"), "utf8") + "\n// changed\n");
@@ -7101,7 +7119,8 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
   process.stdout.write("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
-    "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; a changed source executes\n");
+    "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; after an eviction " +
+    "every stage executes to the same outcome; a changed source executes\n");
 });
 
 // A callable type's methods cross the type graph's TypeScript decoder: a
@@ -7165,6 +7184,7 @@ if (serving) {
   });
   process.on("disconnect", () => process.exit(0));
 } else {
+  startEviction();
   linkFixtures();
   const started = performance.now();
   const failures: string[] = [];

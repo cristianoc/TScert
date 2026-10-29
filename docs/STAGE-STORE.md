@@ -700,8 +700,21 @@ The controls of the store itself (`tests/stage-store.mts`, the observed
 stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)
 name fresh stores of their own and execute every time: their subject is the
 replay mechanism. Store tests cover dependency invalidation, concurrent
-publication, interrupted writers, timeout/success races and writable
-artifact isolation.
+publication, interrupted writers, timeout/success races, writable
+artifact isolation and eviction: least recent use within the budget, items
+no use line names measured, references going with their entry, a held
+snapshot kept, a snapshot's use during a removal doing without the store's
+snapshot, markers per process, a use before a removal's second read of the
+use logs keeping its snapshot and one after it doing without, the lock
+taken over from a stopped or missing owner and never from a running one
+(also when another process takes it over first, or acquires it while it
+is being put back), a release removing only its own lock, another host's
+owners running until a clean forgets the host, each timeout observation an
+item, a replay racing
+passes a miss or the entry's own result, and a pass an orchestrator starts
+leaving the store within its budget. The replay control evicts its store
+whole and runs again: every stage executes, to the same outcome, documents
+and logs.
 
 ## Timing
 
@@ -774,12 +787,103 @@ count waiting.
 The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-`make clean-store` removes finished entries, timeout observations and
-abandoned publication directories on this host. It retains
-immutable, content-addressed source locations, validated at each use, so
-active parses keep their inputs.
-Eviction is approximate and affects reuse only; readers treat concurrent
-removal as a miss.
+The store keeps itself within a size budget, `TSCERT_STORE_BUDGET`: a
+number of bytes with an optional `K`, `M`, `G` or `T` suffix (powers of
+1024), 15 GiB by default. Eviction is approximate and affects reuse only;
+readers treat concurrent removal as a miss.
+
+*Items.* An eviction pass accounts four kinds of item: a finished entry, a
+timeout observation, a source snapshot, and an observed stage's
+reference, which belongs to the entry it names. An item's size is the bytes
+its files take in whole 4 KiB blocks, the allocation unit of the volume:
+most of the store's files are smaller than one block.
+
+*The use log.* Every process using the store appends to a use log of its
+own, `uses/<host>.<pid>.<id>`, one line `<ms> <bytes> <item>` for each
+item it publishes and, at most once per ten minutes for each item, for each
+item it reuses. A publication's line is written before its rename. The
+use log gives each item's size and last use in one line read in sequence;
+ordering items by modification time instead would read the status of every
+file of the store, millions of them. Least recent use orders the
+generations of entries that edits of keyed files produce: a generation no
+checkout's code names any more stops being used and goes first, and an entry
+every checkout reuses (a check whose verifier and inputs no edit changed)
+stays whatever its age.
+
+*Owners.* A lock, a marker and a use log name their owner: a host, a
+process and a random id. An owner of this host runs while its process is
+alive. This host cannot see another host's processes, so an owner of
+another host counts as running until a clean names that host as forgotten
+(`make clean-store FORGET_HOST=<host>`); until then its holds stay, its
+marker keeps uses off the store's snapshots and its lock stops passes.
+
+*The lock.* A pass holds the store's eviction lock, the directory
+`eviction/` holding its owner's name. The directory is built whole in a
+temporary directory and renamed into place, so a lock present names its
+owner. A lock whose owner has stopped, or one without an owner, is taken
+over: renamed into the taker's temporary directory and deleted there where
+it still names the owner judged stopped (or still has none); otherwise it is
+renamed back, and where another lock took its place meanwhile, it stays in
+that temporary directory, which goes once the taker has stopped. The holder
+releases its lock the same way, deleting it only where it names its own
+id. The lock keeps passes from repeating each other's work; two passes at once remove
+nothing a running process holds either, since each removal of snapshots has
+a marker of its own and every other removal is a rename a reader sees
+whole.
+
+*A pass.* It reads the
+pass summary (`uses/base`, one line per item, written by the previous
+pass) and every process's use log, and lists the store's entry, timeout
+and snapshot directories. An item listed that no line names is measured
+from its files, its latest modification time standing for its last use; an
+item named and not listed is dropped; a reference whose entry is not
+listed is removed. A store without a summary also has its references listed.
+Where the items take more than the budget, the pass removes the least
+recently used ones until they take at most 80% of it, so that a pass that
+removes is followed by passes that only read; an entry goes with its
+references, and a pre-key directory left empty with them. An item is
+removed by renaming its directory into the pass's temporary directory and
+deleting it there: a reader sees it whole or absent, and a writer whose
+destination's parent a pass removed creates the parent again. The pass then
+writes the summary, folding in the use logs of the processes that have
+stopped, and removes those files where their processes are still stopped.
+
+*When a pass runs.* The orchestrators (the case runner, the census and the
+controls) start a pass as they begin where one is due: none is running and
+none finished in the last ten minutes. The pass runs in a detached process
+of its own, `node pipeline/stages.mts evict`, which prints its summary when
+run by hand; the orchestrator does not wait for it. Between two passes the
+store exceeds its budget by at most what is published meanwhile. On a store
+of 30,112 items taking 1.8 GB (the suite run from two checkouts), a pass
+removing nothing took 0.3 to 0.5 s, one measuring every item 3.8 s, and one
+removing 19,581 entries, 2,431 snapshots and 4,392 references down to
+0.4 GB took 23 s, most of it the system deleting files; a warm `make suite`
+took 18 s with the use logs and 18 to 20 s without them. On a copy of the
+shared store (392,759 items, 14.9 GB: 241,707 snapshots, 151,052 entries
+and timeout observations), the first pass, measuring every item, took 392 s; the
+next one 3.5 s; and one removing 119,224 entries and 43,053 references
+down to 3.4 GB 126 s (measured 2026-10-29).
+
+*Snapshots in use.* A source snapshot's path is the Fragment's file
+identity, and the parse reads the snapshot through the compiler. A process
+writes a line for a snapshot in its use log before validating it, and no
+pass removes a snapshot that a running process has named. Snapshots are
+removed under a marker of the removing process,
+`evicting/<host>.<pid>.<id>`: the process creates the marker, reads the
+running processes' use logs again, moves out the snapshots none of them
+holds, and deletes its marker. A use that finds a running process's marker,
+after writing its line, parses its own snapshot in the run's directory
+instead, at once. Either the use's line precedes that second read, and the
+store's snapshot stays, or the marker precedes the use's check, and the use
+does without it. An entry needs no hold: a reader copies it whole and
+validates the copy, so an eviction during a replay is a miss.
+
+*Cleaning.* `make clean-store` waits for a running pass, then removes every
+finished entry, timeout observation and reference, every source snapshot
+no running process holds (under a marker of its own), the abandoned
+publication directories on this host, the pass summary, and the use
+logs and markers of stopped processes. `FORGET_HOST=<host>` counts that
+host's owners as stopped for the clean.
 
 ## Census records
 

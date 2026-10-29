@@ -30,7 +30,7 @@ import { syntax as ts, isTypeAlias } from "../tools/syntax.mts";
 import { readDiagnosticReport, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
-import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
+import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
   from "./statement-coverage.mts";
@@ -263,6 +263,7 @@ function reference(r: AttemptRecord): InvocationReference {
 }
 
 async function census(args: string[]): Promise<void> {
+  startEviction();
   const diagnosticMode = args.includes("--diagnostic");
   if (diagnosticMode) args.splice(args.indexOf("--diagnostic"), 1);
   const directory = option(args, "--dir") ?? "tools";

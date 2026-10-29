@@ -264,7 +264,9 @@ are keyed by the file system's answers to their reads as
 compiler retained between them
 ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions)); timeouts are recorded at
 their limit ([entries and timeouts](STAGE-STORE.md#entries-and-timeouts));
-and every attempt records its timing ([timing](STAGE-STORE.md#timing)). A
+every attempt records its timing ([timing](STAGE-STORE.md#timing)); and
+the store keeps itself within a size budget by evicting the least recently
+used items ([location and size](STAGE-STORE.md#location-and-size)). A
 replayed check, parse or control operation is a trusted step: the trust
 surface's rows state what each replay assumes.
 

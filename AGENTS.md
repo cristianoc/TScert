@@ -20,7 +20,7 @@ make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
 make build       # build-lean, build-producer and build-runner: the Lean verifier, the OCaml producer and the stage runner
 make setup       # the node dependencies
-make clean-store # remove stage entries and timeout observations; keep source snapshots
+make clean-store # remove stage entries, timeout observations and the source snapshots no running process holds
 make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
 ```
 
@@ -45,8 +45,11 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `~/.cache/tscert/stages`, shared by every checkout and worktree; `off`
   executes every stage. A branch uses the default store; an agent testing
-  the store itself names one under `$TMPDIR`. `make clean-store` removes
-  entries and timeout observations.
+  the store itself names one under `$TMPDIR`. The store keeps itself within
+  `TSCERT_STORE_BUDGET` (15 GiB by default), the case runner, the census
+  and the controls starting a background pass that evicts the least
+  recently used entries ([location and size](docs/STAGE-STORE.md#location-and-size));
+  `make clean-store` removes every entry and timeout observation.
 - Each process stage is killed after 60 s, and a control's operation after
   30 s unless the control states another limit;
   `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported

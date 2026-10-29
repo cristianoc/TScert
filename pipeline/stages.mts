@@ -10,8 +10,11 @@
 // replayed stage returns an entry the store (`stage-store.mts`) holds at its
 // key, reuses a timeout observed there, or executes through its adapter, and
 // publishes what an execution produced.
-//   node pipeline/stages.mts clean    removes entries and timeout observations
-import { spawnSync } from "node:child_process";
+//   node pipeline/stages.mts clean [--forget-host=<host>]…
+//                                     removes entries, timeout observations and unheld snapshots,
+//                                     the named hosts' owners counting as stopped
+//   node pipeline/stages.mts evict    one eviction pass within TSCERT_STORE_BUDGET, its summary printed
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -105,6 +108,25 @@ export function storeSetting(): { off: true } | { off: false; directory: string 
 export function currentStore(): Store | null {
   const setting = storeSetting();
   return setting.off ? null : new Store(setting.directory);
+}
+/** The store's size budget in bytes: `TSCERT_STORE_BUDGET`, a number of
+ * bytes with an optional K, M, G or T suffix (powers of 1024), by default
+ * 15 GiB. */
+export function storeBudget(): number {
+  const named = process.env["TSCERT_STORE_BUDGET"];
+  if (!named) return 15 * 1024 ** 3;
+  const m = /^(\d+(?:\.\d+)?)([KMGT]?)$/i.exec(named.trim());
+  if (!m) throw Error(`TSCERT_STORE_BUDGET is a number of bytes with an optional K, M, G or T suffix: ${named}`);
+  return Math.floor(Number(m[1]) * 1024 ** " KMGT".indexOf((m[2] || " ").toUpperCase()));
+}
+/** Start an eviction pass of the store where one is due, in a detached
+ * process of its own: the orchestrators (the case runner, the census, the
+ * controls) call it as they start, and their run does not wait for it. */
+export function startEviction(): void {
+  const store = currentStore();
+  if (!store?.evictionDue()) return;
+  storeBudget(); // an invalid budget stops the orchestrator, where it is seen
+  spawn(process.execPath, [import.meta.filename, "evict"], { detached: true, stdio: "ignore" }).unref();
 }
 /** Whether recorded timeouts are retried: `TSCERT_RETRY_TIMEOUTS=1` executes a
  * stage whose key holds a timeout observation and no finished result, at the
@@ -587,13 +609,23 @@ export function readInvocationLog(file: string): AttemptRecord[] {
   return records;
 }
 
-if (import.meta.filename === resolve(process.argv[1] ?? "") && process.argv[2] === "clean") {
+if (import.meta.filename === resolve(process.argv[1] ?? "") && (process.argv[2] === "clean" || process.argv[2] === "evict")) {
   const store = currentStore();
   if (!store) {
-    process.stderr.write("TSCERT_STAGE_STORE is off: there is no store to clean\n");
+    process.stderr.write(`TSCERT_STAGE_STORE is off: there is no store to ${process.argv[2]}\n`);
     process.exitCode = 2;
+  } else if (process.argv[2] === "clean") {
+    const options = process.argv.slice(3);
+    const forget = options.map((o) => /^--forget-host=(.+)$/.exec(o)?.[1]);
+    if (forget.some((h) => h === undefined)) {
+      process.stderr.write(`usage: node pipeline/stages.mts clean [--forget-host=<host>]…\n`);
+      process.exitCode = 2;
+    } else {
+      store.clean(forget.filter((h) => h !== undefined));
+      process.stdout.write(`cleaned ${store.root}\n`);
+    }
   } else {
-    store.clean();
-    process.stdout.write(`cleaned ${store.root}\n`);
+    const pass = store.evictionPass(storeBudget());
+    process.stdout.write(pass ? JSON.stringify(pass) + "\n" : `another pass is running in ${store.root}\n`);
   }
 }

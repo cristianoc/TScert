@@ -2,19 +2,20 @@
 // invalidation, concurrent publication by two processes, an interrupted
 // writer, a timeout/success race, writable artifact isolation, a longer
 // limit executing past a recorded timeout and a retry of timeouts executing
-// it again at the same limit, and an edit of the replay policy, which no key
-// covers, replaying its entries. The stages are shell-script
+// it again at the same limit, an edit of the replay policy, which no key
+// covers, replaying its entries, and eviction within a budget. The stages are shell-script
 // stand-ins declared audited for the test, so no build is needed; the
 // pipeline's own stages replay in `pipeline/test.mts`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, symlinkSync,
-  writeFileSync } from "node:fs";
-import { platform } from "node:os";
-import { join, resolve } from "node:path";
+import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync,
+  symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { hostname, platform } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { Store, StoreError, pausePublicationForTests } from "../pipeline/stage-store.mts";
-import { invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
+import { Store, StoreError, pausePublicationForTests, pauseLockForTests } from "../pipeline/stage-store.mts";
+import { invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
 import { auditForTests, canonical, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
 
@@ -124,6 +125,75 @@ if (process.argv[2] === "--child") {
     process.stdout.write(JSON.stringify({ error: error instanceof StoreError ? "store" : String(error) }));
   }
   process.exit(0);
+}
+
+// A child process of the eviction controls: one operation on the store at
+// `root`, by a process that has stopped once a pass runs.
+if (process.argv[2] === "--store-op") {
+  const [, , , root, op, ...rest] = process.argv;
+  const store = new Store(root);
+  if (op === "publish")
+    for (const input of rest) evictable(store, "lower", input);
+  else if (op === "replay")
+    for (const input of rest) assert.ok(store.finished("lower", sha256(input), input), `replay of ${input}`);
+  else if (op === "observed") {
+    const preKey = sha256(`pre ${rest[0]}`);
+    evictable(store, "parse", rest[0]);
+    store.reference("parse", preKey, sha256(rest[0]));
+  } else if (op === "timeouts") {
+    const [input, ...attempts] = rest;
+    for (const attempt of attempts)
+      store.publishTimeout("lower", sha256(input), { input, attempt, elapsedMs: 300, limitMs: 300, policy: "test",
+        cpu: { unavailable: "test" } });
+  } else if (op === "snapshot") {
+    const snapshot = store.stableDirectory("sources", [["source.ts", Buffer.from(rest[0])]]);
+    process.stdout.write(`${snapshot}\n`);
+  } else if (op === "read") {
+    // Replays of one entry until the file `rest[1]` exists, while another
+    // process publishes and evicts it: each is the entry's own result or a
+    // miss.
+    const input = rest[0], stop = rest[1];
+    const counts = { hits: 0, misses: 0, wrong: 0 };
+    process.stdout.write("ready\n");
+    while (!existsSync(stop)) {
+      const found = store.finished("lower", sha256(input), input);
+      if (!found) counts.misses++;
+      else if (found.result.stdout.equals(evictableOutput(input))) counts.hits++;
+      else counts.wrong++;
+    }
+    process.stdout.write(JSON.stringify(counts) + "\n");
+  }
+  process.exit(0);
+}
+
+/** The output an eviction control's entry for `input` holds: 5000 bytes. */
+function evictableOutput(input: string): Buffer {
+  return Buffer.alloc(5000, input);
+}
+/** Publish an eviction control's entry for `input` at `stage`. */
+function evictable(store: Store, stage: string, input: string): void {
+  store.publishFinished(stage, sha256(input), { input, exitStatus: 0, stdout: evictableOutput(input), stderr: Buffer.alloc(0),
+    outputs: [], measurement: { attempt: randomUUID(), elapsedMs: 1, limitMs: 1000, cpu: { unavailable: "test" } } });
+}
+/** One operation on `store` by a child process, which stops once it is done;
+ * its output. */
+function storeOp(store: Store, op: string, ...args: string[]): string {
+  const child = spawnSync(process.execPath, [import.meta.filename, "--store-op", store.root, op, ...args], { encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  return child.stdout;
+}
+/** The process number of a process that has stopped. */
+function stoppedPid(): number {
+  const child = spawnSync(process.execPath, ["-e", "0"]);
+  assert.equal(child.status, 0);
+  return child.pid ?? 0;
+}
+/** The bytes the files below `parts` take, in whole 4 KiB blocks. */
+function onDisk(...parts: string[]): number {
+  const path = join(...parts);
+  const s = lstatSync(path);
+  if (!s.isDirectory()) return Math.ceil(s.size / 4096) * 4096;
+  return readdirSync(path).reduce((sum, name) => sum + onDisk(path, name), 0);
 }
 
 freshStore("probe");
@@ -776,6 +846,274 @@ if (process.argv[3] === "keyed") {
   assert.equal(readFileSync(join(snapshot, "source.ts"), "utf8"), files[0][1].toString());
   assert.equal(store.stableDirectory("sources", files), snapshot);
   process.stdout.write("cleanup preserves validated source snapshots for active readers\n");
+}
+// Eviction (STAGE-STORE.md, "Location and size"): a pass removes the least
+// recently used entries within the budget, an entry with its references,
+// and measures what no use line names; a snapshot a running process holds
+// stays; a replay racing an eviction is a miss, never another result.
+{
+  const store = new Store(join(dir, "evict-lru"));
+  const old = Array.from({ length: 10 }, (_, i) => `old ${i}`), fresh = Array.from({ length: 10 }, (_, i) => `new ${i}`);
+  storeOp(store, "publish", ...old);
+  storeOp(store, "publish", ...fresh);
+  storeOp(store, "replay", ...old.slice(0, 3));
+  const entry = onDisk(join(store.root, "entries", "lower", sha256(old[0])));
+  assert.equal(onDisk(store.root, "entries"), 20 * entry);
+  const budget = 12 * entry;
+  const pass = store.evictionPass(budget);
+  assert.ok(pass);
+  const kept = new Set(readdirSync(join(store.root, "entries", "lower")));
+  const survives = (input: string): boolean => kept.has(sha256(input));
+  assert.deepEqual(old.map(survives), [true, true, true, false, false, false, false, false, false, false],
+    "the replayed entries outlive the newer ones");
+  assert.equal(fresh.filter(survives).length, 6, "the oldest of the newer entries go next");
+  assert.equal(pass.evicted.entries, 11);
+  assert.equal(pass.afterBytes, onDisk(store.root, "entries"));
+  assert.ok(pass.afterBytes <= budget * 0.8, `${pass.afterBytes} within the budget's low water`);
+  // A store whose use logs are gone is measured whole: the same bytes.
+  rmSync(join(store.root, "uses"), { recursive: true });
+  const measured = store.evictionPass(budget);
+  assert.equal(measured?.measured, 9);
+  assert.equal(measured?.afterBytes, pass.afterBytes);
+  assert.equal(measured?.evicted.entries, 0);
+}
+{
+  const store = new Store(join(dir, "evict-references"));
+  storeOp(store, "observed", "observed input");
+  const references = join(store.root, "observed", "parse");
+  assert.equal(readdirSync(references).length, 1);
+  const pass = store.evictionPass(0);
+  assert.deepEqual([pass?.evicted.entries, pass?.evicted.references], [1, 1]);
+  assert.deepEqual(readdirSync(references), [], "the reference and its pre-key directory go with the entry");
+  assert.deepEqual(readdirSync(join(store.root, "entries", "parse")), []);
+}
+{
+  const store = new Store(join(dir, "evict-snapshots"));
+  const held = store.stableDirectory("sources", [["source.ts", Buffer.from("held by this process")]]);
+  const left = storeOp(store, "snapshot", "made by a stopped process").trim();
+  storeOp(store, "publish", "an entry");
+  assert.ok(held && existsSync(left));
+  const pass = store.evictionPass(0);
+  assert.deepEqual([pass?.held, pass?.evicted.sources, pass?.evicted.entries], [1, 1, 1]);
+  assert.ok(existsSync(held), "a snapshot a running process holds stays");
+  assert.ok(!existsSync(left), "one no running process holds goes");
+  const again = storeOp(store, "snapshot", "made by a stopped process").trim();
+  assert.equal(again, left, "a snapshot is published again at its location");
+  store.clean();
+  assert.ok(existsSync(held) && !existsSync(again), "cleanup removes the snapshots no running process holds");
+  assert.equal(store.stableDirectory("sources", [["source.ts", Buffer.from("held by this process")]]), held);
+}
+{
+  // The orchestrators' start: a due pass runs in a process of its own, and
+  // leaves the store within its budget.
+  const store = new Store(join(dir, "evict-started"));
+  storeOp(store, "publish", ...Array.from({ length: 10 }, (_, i) => `started ${i}`));
+  const budget = 4 * onDisk(join(store.root, "entries", "lower", sha256("started 0")));
+  assert.ok(store.evictionDue(), "a store no pass has seen");
+  const saved = { store: process.env["TSCERT_STAGE_STORE"], budget: process.env["TSCERT_STORE_BUDGET"] };
+  process.env["TSCERT_STAGE_STORE"] = store.root;
+  process.env["TSCERT_STORE_BUDGET"] = String(budget);
+  startEviction();
+  process.env["TSCERT_STAGE_STORE"] = saved.store;
+  if (saved.budget === undefined) delete process.env["TSCERT_STORE_BUDGET"];
+  else process.env["TSCERT_STORE_BUDGET"] = saved.budget;
+  const started = Date.now();
+  while (!existsSync(join(store.root, "uses", "base")) || existsSync(join(store.root, "eviction"))) {
+    assert.ok(Date.now() - started < 30_000, "the started pass finishes");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  }
+  assert.ok(onDisk(store.root, "entries") <= budget, "within the budget after the pass");
+  assert.equal(store.evictionDue(), false, "the next pass waits for its interval");
+}
+sections.push((async (): Promise<void> => {
+  // A replay racing an eviction: a reader replays one entry while this
+  // process publishes it and a pass removes it, over and over.
+  const store = new Store(join(dir, "evict-race"));
+  const input = "raced input";
+  evictable(store, "lower", input);
+  const stop = join(dir, "evict-race-stop");
+  const reader = spawn(process.execPath, [import.meta.filename, "--store-op", store.root, "read", input, stop]);
+  let out = "";
+  reader.stdout.setEncoding("utf8");
+  const ready = new Promise<void>((done) => {
+    reader.stdout.on("data", (text: unknown) => {
+      out += String(text);
+      if (out.startsWith("ready\n")) done();
+    });
+  });
+  const closed = new Promise<void>((done, fail) => {
+    reader.on("error", fail);
+    reader.on("close", () => done());
+  });
+  await ready;
+  // A fixed number of rounds, each a publication, a pause the reader
+  // replays in, and a pass removing the entry.
+  let passes = 0;
+  for (let round = 0; round < 100; round++) {
+    evictable(store, "lower", input);
+    await new Promise((done) => setTimeout(done, 5));
+    if (store.evictionPass(0)) passes++;
+    await new Promise((done) => setTimeout(done, 5));
+  }
+  writeFileSync(stop, "");
+  await closed;
+  out = out.slice("ready\n".length).trim();
+  const counts: unknown = JSON.parse(out);
+  assert.ok(typeof counts === "object" && counts !== null && "wrong" in counts && "hits" in counts && "misses" in counts);
+  assert.equal(counts.wrong, 0, out);
+  assert.ok(Number(counts.hits) > 0 && Number(counts.misses) > 0 && passes > 0, `${out}, ${passes} passes`);
+  process.stdout.write(`eviction: least recently used entries first, within the budget; references with their entry; ` +
+    `held snapshots stay; a replay racing ${passes} passes is a miss or the entry's result (${out})\n`);
+})());
+{
+  // A use while a running process removes snapshots does without the
+  // store's snapshot, at once; a marker of a stopped process is no removal.
+  // A pass's own marker goes when it ends, another's stays.
+  const store = new Store(join(dir, "evict-marker"));
+  const id = (): string => randomUUID().slice(0, 8);
+  mkdirSync(join(store.root, "evicting"), { recursive: true });
+  const stoppedMarker = join(store.root, "evicting", `${hostname()}.${stoppedPid()}.${id()}`);
+  writeFileSync(stoppedMarker, "");
+  const ordinary = storeOp(store, "snapshot", "a use beside a stopped marker").trim();
+  assert.ok(existsSync(ordinary), "a stopped process's marker is no removal");
+  const runningMarker = join(store.root, "evicting", `${hostname()}.${process.pid}.${id()}`);
+  writeFileSync(runningMarker, "");
+  const started = Date.now();
+  assert.equal(storeOp(store, "snapshot", "a use during a removal").trim(), "null", "the use does without the store's snapshot");
+  assert.ok(Date.now() - started < 10_000, "and does not wait");
+  const pass = store.evictionPass(0);
+  assert.equal(pass?.evicted.sources, 1);
+  assert.ok(!existsSync(ordinary), "a pass removes snapshots beside another process's marker");
+  assert.ok(existsSync(runningMarker), "another process's marker stays");
+  assert.equal(storeOp(store, "snapshot", "a use during a removal").trim(), "null");
+  rmSync(runningMarker);
+  assert.notEqual(storeOp(store, "snapshot", "a use during a removal").trim(), "null");
+}
+{
+  // The eviction lock: a lock is built whole and renamed into place, so one
+  // present names its owner; a running owner's lock stops a pass, a stopped
+  // owner's lock and a lock without an owner are taken over, and an
+  // interrupted acquisition leaves a temporary the pass removes.
+  const store = new Store(join(dir, "evict-lock"));
+  storeOp(store, "publish", "locked entry");
+  const lock = join(store.root, "eviction");
+  const placeLock = (owner: string | null): void => {
+    rmSync(lock, { recursive: true, force: true });
+    mkdirSync(lock);
+    writeFileSync(join(lock, owner === null ? "partial" : "owner"), owner ?? "");
+  };
+  placeLock(`${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`);
+  assert.equal(store.evictionPass(0), null, "a running owner's lock stops a pass");
+  assert.equal(store.evictionDue(), false);
+  const interrupted = join(store.root, "tmp", hostname(), `${stoppedPid()}.lock-0000`);
+  mkdirSync(interrupted, { recursive: true });
+  placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
+  assert.equal(store.evictionPass(0)?.evicted.entries, 1, "a stopped owner's lock is taken over");
+  assert.ok(!existsSync(lock) && !existsSync(interrupted), "the pass leaves no lock and no stopped temporary");
+  placeLock(null);
+  assert.ok(store.evictionPass(0), "a lock without an owner is taken over");
+  // Another process takes the stale lock over between this pass's judgment
+  // and its move: the pass finds the new owner, puts its lock back and
+  // stops.
+  const named = (): string => `${hostname()} ${process.pid} ${randomUUID().slice(0, 8)}`;
+  const other = named();
+  placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
+  pauseLockForTests((point) => {
+    if (point !== "takeover") return;
+    pauseLockForTests(null);
+    placeLock(other);
+  });
+  assert.equal(store.evictionPass(0), null);
+  assert.equal(readFileSync(join(lock, "owner"), "utf8"), other, "the other process keeps its lock");
+  // A third process acquires the lock while the pass is putting the second's
+  // back: the third keeps it, and the second's stays in the pass's
+  // temporary directory, deleted by no one while the pass runs.
+  const third = named();
+  placeLock(`${hostname()} ${stoppedPid()} ${randomUUID().slice(0, 8)}`);
+  pauseLockForTests((point) => {
+    if (point === "takeover") placeLock(other);
+    if (point === "restore") {
+      pauseLockForTests(null);
+      placeLock(third);
+    }
+  });
+  assert.equal(store.evictionPass(0), null);
+  assert.equal(readFileSync(join(lock, "owner"), "utf8"), third, "the third process keeps its lock");
+  const temporaries = join(store.root, "tmp", hostname());
+  assert.ok(readdirSync(temporaries).some((name) => name.includes(".lock-moved-") &&
+    readFileSync(join(temporaries, name, "owner"), "utf8") === other), "the second's lock is moved aside, not deleted");
+  // The holder's lock replaced before its release (its owner judged
+  // stopped): the release leaves the replacement in place.
+  rmSync(lock, { recursive: true });
+  pauseLockForTests((point) => {
+    if (point !== "release") return;
+    pauseLockForTests(null);
+    placeLock(other);
+  });
+  assert.ok(store.evictionPass(0));
+  assert.equal(readFileSync(join(lock, "owner"), "utf8"), other, "a release removes only its own lock");
+  rmSync(lock, { recursive: true });
+}
+{
+  // A use around a removal's second read of the use logs: a use whose line
+  // precedes that read keeps the store's snapshot; one after it does without
+  // it, and the snapshot goes.
+  const store = new Store(join(dir, "evict-reread"));
+  const before = storeOp(store, "snapshot", "used before the read").trim();
+  const after = storeOp(store, "snapshot", "used after the read").trim();
+  const use = (text: string): string | null => store.stableDirectory("sources", [["source.ts", Buffer.from(text)]]);
+  const uses: (string | null)[] = [];
+  pauseLockForTests((point) => {
+    if (point === "marked") uses.push(use("used before the read"));
+    if (point === "reread") uses.push(use("used after the read"));
+  });
+  const pass = store.evictionPass(0);
+  pauseLockForTests(null);
+  assert.deepEqual(uses, [null, null], "each use during the removal does without the store's snapshot");
+  assert.equal(pass?.evicted.sources, 1);
+  assert.ok(existsSync(before), "a use recorded before the read keeps its snapshot");
+  assert.ok(!existsSync(after), "one recorded after it does not");
+}
+{
+  // Another host's owners count as running whatever their age: its use
+  // log's snapshot stays and the log too, its marker stops uses, its lock
+  // stops passes; a clean naming the host forgets them.
+  const store = new Store(join(dir, "evict-remote"));
+  const snapshot = storeOp(store, "snapshot", "held on another host").trim();
+  const remote = "another-host.example";
+  const old = new Date(Date.now() - 30 * 24 * 60 * 60_000);
+  const log = join(store.root, "uses", `${remote}.4242.abcdef01`);
+  writeFileSync(log, `${old.getTime()} 4096 sources/${basename(snapshot)}\n`);
+  utimesSync(log, old, old);
+  assert.equal(store.evictionPass(0)?.held, 1);
+  assert.ok(existsSync(snapshot) && existsSync(log), "another host's hold and log stay");
+  mkdirSync(join(store.root, "evicting"), { recursive: true });
+  const marker = join(store.root, "evicting", `${remote}.4242.abcdef02`);
+  writeFileSync(marker, "");
+  utimesSync(marker, old, old);
+  assert.equal(storeOp(store, "snapshot", "a use beside another host's marker").trim(), "null");
+  const lock = join(store.root, "eviction");
+  mkdirSync(lock);
+  writeFileSync(join(lock, "owner"), `${remote} 4242 abcdef03`);
+  utimesSync(lock, old, old);
+  assert.equal(store.evictionPass(0), null, "another host's lock stops a pass");
+  store.clean([remote]);
+  assert.ok(![snapshot, log, marker, lock].some(existsSync), "a clean forgetting the host removes them");
+  process.stdout.write("eviction: the lock is taken over, restored and released by its owner's id, through " +
+    "concurrent takeovers; a use before a removal's second read keeps its snapshot; another host's owners " +
+    "run until a clean forgets the host\n");
+}
+{
+  // Each timeout observation is an item of its own.
+  const store = new Store(join(dir, "evict-timeouts"));
+  storeOp(store, "timeouts", "timed out", "attempt-1", "attempt-2", "attempt-3");
+  const pass = store.evictionPass(1 << 30);
+  assert.deepEqual([pass?.items, pass?.beforeBytes], [3, 3 * 4096]);
+  assert.equal(store.evictionPass(0)?.evicted.timeouts, 3);
+  assert.deepEqual(readdirSync(join(store.root, "timeouts", "lower")), [], "the key's emptied directory goes");
+  process.stdout.write("eviction: a use during a removal does without the store's snapshot; markers are per process; " +
+    "the lock is taken whole and over from a stopped or missing owner, never from a running one; " +
+    "each timeout observation is an item\n");
 }
 await Promise.all(sections);
 assert.throws(() => invoke(lower(script("any.sh", "/bin/cat \"$2\""), file("x.json", "x")), 0), /positive integer/);
