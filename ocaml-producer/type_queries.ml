@@ -744,6 +744,8 @@ let rec restrict ?declarations singleton equal t = match t with
           let rec head_answer = function
             | Atoms (a::rest) when Atoms (a::rest) <> Atoms [atom] -> agree (List.map known (a::rest))
             | Meet (principal,_) -> head_answer principal
+            (* A union answers as its parts do, where they all agree. *)
+            | Union (_::_ as ts) -> agree (List.map head_answer ts)
             | _ -> None in
           (match declarations with
            | None -> None

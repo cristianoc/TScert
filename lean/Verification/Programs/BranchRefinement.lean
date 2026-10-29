@@ -1112,6 +1112,48 @@ theorem promotes_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {k : 
   exact expand_sem_mpr ⟨d, expand_sub hd, weaker_sound hw (promote_sound hcv hk),
     (builtinInvariant_carriesInvariant (Clause.carriesInvariant_of_record hdr.2) (Clause.carriesInvariant_of_record hdr.1)).mp hinv⟩
 
+/-- The labels of `A` an object owning the key `f` may still have once the
+value at `f` answered `tag` with `q`: the field slice of each clause with
+`f` taken as present (`promote`), so that an optional key's type answers as
+a field's does. A label is dropped only where every clause of it, so
+promoted, fixes `f` at a type answering the other way; an empty type
+answers every way. -/
+def presentSlice (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (tag : Tag) (q : Bool) : Ty ι :=
+  A.filter fun a => !(G.plain a && (expand G [a]).all fun c => fieldAnswers G (promote f c) f tag (!q))
+
+theorem presentSlice_sound {G : NormalGraph ι} {A : Ty ι} {f tag q n W h v flds code l u}
+    (hv : meaning G A (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
+    (hq : tagHolds tag u = q ∨ protoFree tag u = false) : meaning G (presentSlice G A f tag q) (n+1) W v := by
+  obtain ⟨a, ha, hva⟩ := hv
+  refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
+  cases hd : (G.plain a && (expand G [a]).all fun c => fieldAnswers G (promote f c) f tag (!q)) with
+  | false => rfl
+  | true =>
+    exfalso
+    simp only [Bool.and_eq_true, List.all_eq_true] at hd
+    have hm : meaning G [a] (n+1) W v := ⟨a, by simp, hva⟩
+    rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
+    obtain ⟨c, hc, hcv, -⟩ := hm
+    have hk : KeyFound f v := fun flds' code' oid' he hn => by
+      rw [hl] at he
+      cases he
+      rw [hf] at hn
+      cases hn
+    have hcv' := promote_sound hcv hk
+    have hans := hd.2 c hc
+    generalize promote f c = c' at hcv' hans
+    cases c' with
+    | refs a' bs vs os ms ks =>
+      simp only [fieldAnswers, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
+      obtain ⟨⟨g, K⟩, hp, ⟨rfl, hplain⟩, hall⟩ := hans
+      have hK : Answers G K tag (!q) :=
+        ⟨hplain, fun c hc => beq_iff_eq.mp (List.all_eq_true.mp hall c hc)⟩
+      have hu' := field_value (c := .refs a' bs vs os ms ks _) (K := K) hp hcv' hh hl hf hu
+      have := answers_weak hK hu' hq
+      cases q <;> simp at this
+    | _ => simp [fieldAnswers] at hans
+
 /-- A small, explicit vocabulary of observations established by execution. -/
 inductive Observation where
   | boolean (value : Bool)
@@ -1806,6 +1848,38 @@ def optionalRefinements [DecidableEq ι] (o : Observation) (optionals : List (Na
     (j : Nat) (G : NormalGraph ι) : Bool :=
   excludesUndef o && optionals.any fun (k, f) => k == j && promotes G A B f
 
+/-- The present-key refinements an observation admits for other slots: an
+object the tested value was read from through an optional key
+(`optionals`), where the observation rules out the `undefined` a read of
+the key gives where the object lacks it, so that the object has the key and
+the value read is the one at it: the object keeps the labels of its present
+slice (`presentSlice`). -/
+@[nospecialize] def presentRefinementsResult [DecidableEq ι] (o : Observation) (optionals : List (Nat × PropKey))
+    (A B : Ty ι) (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (p : PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
+  match o with
+  | .tag t q => (CheckResult.ofBool (excludesUndef (.tag t q))).bind fun _ =>
+      CheckResult.any optionals fun (k, f) =>
+        (CheckResult.ofBool (k == j)).bind fun _ =>
+          ProgramCertificates.checkSubtypeUsing G images (presentSlice G A f t q) B p
+  | .boolean _ => failure
+
+@[nospecialize] def presentRefinements [DecidableEq ι] (o : Observation) (optionals : List (Nat × PropKey))
+    (A B : Ty ι) (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
+  (presentRefinementsResult o optionals A B j G images p).accepted
+
+theorem presentRefinements_eq [DecidableEq ι] (o : Observation) (optionals : List (Nat × PropKey)) (A B : Ty ι)
+    (j : Nat) (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) :
+    presentRefinements o optionals A B j G images p =
+  match o with
+  | .tag t q => excludesUndef (.tag t q) && optionals.any fun (k, f) => k == j &&
+      PositiveCertificates.checkUsing G images (presentSlice G A f t q) B p
+  | .boolean _ => false := by
+  cases o <;> simp only [presentRefinements, presentRefinementsResult, CheckResult.accepted_any,
+    CheckResult.accepted_bind, CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted]
+  rfl
+
 /-- An observation no value of the tested type makes: a tag answer every
 label contradicts, or a Boolean the type does not hold. The edge is then
 never taken, and constrains nothing. -/
@@ -1840,9 +1914,10 @@ theorem impossible_sound [DecidableEq ι] {G : NormalGraph ι} {A o n W v}
   match source, target, evidence with
   | some A, some B, some p =>
       if sourceSlot == tested then checkObservedSubResult G images A B o p
-      else (((ProgramCertificates.checkSubtypeUsing G images A B p).orElse fun _ =>
+      else ((((ProgramCertificates.checkSubtypeUsing G images A B p).orElse fun _ =>
         fieldRefinementsResult o (fields ++ optionals) A B sourceSlot G images p).orElse fun _ =>
         CheckResult.ofBool (optionalRefinements o optionals A B sourceSlot G)).orElse fun _ =>
+        presentRefinementsResult o optionals A B sourceSlot G images p).orElse fun _ =>
         cellRefinementsResult cells A B sourceSlot G images p
   | _, _, _ => failure
 
@@ -1857,6 +1932,7 @@ theorem checkObservedSlotResult_accepted [DecidableEq ι] (G : NormalGraph ι) (
           else PositiveCertificates.checkUsing G images A B p ||
             fieldRefinements o (fields ++ optionals) A B sourceSlot G images p ||
             optionalRefinements o optionals A B sourceSlot G ||
+            presentRefinements o optionals A B sourceSlot G images p ||
             cellRefinements cells A B sourceSlot G images p
       | _, _, _ => false := by
   cases source <;> cases target <;> cases evidence <;>
@@ -1901,6 +1977,7 @@ theorem checkObservedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : In
       else PositiveCertificates.checkUsing G images A B p ||
         fieldRefinements o (fields ++ optionals) A B (slot mapping j) G images p ||
         optionalRefinements o optionals A B (slot mapping j) G ||
+        presentRefinements o optionals A B (slot mapping j) G images p ||
         cellRefinements cells A B (slot mapping j) G images p
     | _, _, _ => false))) := by
   simp only [checkObservedUsing, checkObservedResult, CheckResult.accepted_bind,
@@ -1917,6 +1994,8 @@ def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
        (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ++ optionals ∧
          FamLe (meaning G (fieldSlice G A f t q)) (meaning G B)) ∨
        (∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true) ∨
+       (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧
+         FamLe (meaning G (presentSlice G A f t q)) (meaning G B)) ∨
        ∃ fct ∈ cells, fct.slot = slot mapping j ∧
          FamLe (meaning G (factSlice G A fct.field fct.contents.atomsView)) (meaning G B))
 
@@ -1950,7 +2029,7 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         exact checkObservedSub_sound hc
       · simp only [beq_iff_eq,he,↓reduceIte,Bool.or_eq_true] at hc
         simp only [he,↓reduceIte]
-        rcases hc with ((hc | hc) | hc) | hc
+        rcases hc with (((hc | hc) | hc) | hc) | hc
         · exact .inl (PositiveCertificates.acceptedUsing hc)
         · right; left
           cases o with
@@ -1963,7 +2042,14 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
           simp only [optionalRefinements, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨hx, ⟨k, f⟩, hk, rfl, hp⟩ := hc
           exact ⟨f, hk, hx, hp⟩
-        · right; right; right
+        · right; right; right; left
+          cases o with
+          | boolean _ => simp [presentRefinements_eq] at hc
+          | tag t q =>
+            simp only [presentRefinements_eq, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
+            obtain ⟨hx, ⟨k, f⟩, hk, rfl, hck⟩ := hc
+            exact ⟨t, q, f, rfl, hk, hx, PositiveCertificates.acceptedUsing hck⟩
+        · right; right; right; right
           simp only [cellRefinements_eq, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨fct, hm, hslot, hck⟩ := hc
           exact ⟨fct, hm, hslot, PositiveCertificates.acceptedUsing hck⟩
@@ -1991,7 +2077,7 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
     rw [hij]
     exact h (n+1) W _ (by simpa [hij] using he.2 _ A ha) ho
   · simp only [hij,↓reduceIte] at h
-    rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩ | ⟨fct, hm, hslot, hs⟩
+    rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩ | ⟨t, q, f, rfl, hf, hx, hs⟩ | ⟨fct, hm, hslot, hs⟩
     · exact h (n+1) W _ (he.2 _ A ha)
     · rcases List.mem_append.mp hf with hf | hf
       · obtain ⟨flds, c, oid, l, hv, hfl, hu⟩ := hl _ f hf
@@ -2013,6 +2099,13 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
         cases he''
         rw [hfl] at hn
         cases hn
+    -- Read through a key the object may lack, where the observation rules
+    -- out the `undefined` an absent key gives: the object has the key, and
+    -- the read gave its value.
+    · obtain ⟨flds, c, oid, hv, hab, hpresent⟩ := hopt _ f hf
+      cases hfl : flds.lookup f with
+      | none => exact absurd (hab hfl) (excludesUndef_sound hx ho)
+      | some l => exact hs (n+1) W _ (presentSlice_sound (he.2 _ A ha) hh hv hfl (hpresent l hfl) ho)
     · obtain ⟨flds, c, oid, u, hv, hr, hatom⟩ := hcells fct hm
       rw [hslot] at hv
       exact hs (n+1) W _ (factSlice_sound (he.2 _ A ha) hh hv hr (ValueSets.ValueSet.atomsView_holds hatom))

@@ -2569,6 +2569,26 @@ records with $`f`$ present (`promotes`, below). The environment theorem takes th
 optional links' meaning as one more premise, $`\forall(k,f)\in\mathit{os}.\ f\notin\mathrm{keys}\rho(k)\Rightarrow\rho(i)=\mathsf{undefined}`$
 (`ObservedCovers.env`).
 
+Where that observation is a tag answer, the slot is also covered by its
+present slice $`P^{f}_{t,q}(\Gamma(k))`$ (`presentSlice`): the labels of
+$`\Gamma(k)`$ but those every clause $`c`$ of which, promoted, $`c^{+f}`$,
+fixes $`f`$ at a type answering $`t`$ with $`\lnot q`$; an empty type answers
+every way, so an arm declaring `inferred?: never` is dropped once
+`inferred !== undefined` holds:
+
+```math
+\frac{(k,f)\in\mathit{os}\quad o=(t,q)\quad \mathsf{tagHolds}(t,\mathsf{undefined})\neq q\quad P^{f}_{t,q}(\Gamma(k))\le\Delta(j)}
+     {\Gamma(k)\ \text{covers}\ \Delta(j)}\ \textsf{present-slice}
+```
+
+It is sound one level up (`presentSlice_sound`): the observation excludes
+`undefined`, which the read gives where the object lacks the key, so the
+object has it, the read gave the value at its location, and the object is a
+member of $`c^{+f}`$ (`promote_sound`), whose field holds that value one level
+down (`field_value`). A test that `undefined` passes keeps every arm with
+the key optional (`optional-key-present-slice`, and its forged-claim
+control).
+
 An observation the tested slot's type rules out (`impossible`: a tag answer
 every label of it contradicts, or a Boolean it does not hold) covers any
 destination: no environment meets both, so the edge is never taken.

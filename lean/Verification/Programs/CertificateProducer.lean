@@ -1319,7 +1319,15 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- the `undefined` an absent key reads: the key is present.
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
-        then some {} else none) |>.orElse fun _ =>
+        then some {} else none) |>.orElse (fun _ => match o with
+        -- Read through an optional key the observation shows present: the
+        -- object keeps the labels of its present slice.
+        | .tag t q =>
+          if BranchRefinement.excludesUndef o then optionals.findSearch? fun (k, f) =>
+            if k == slot target.mapping i then subtypeUsing G images (BranchRefinement.presentSlice G A f t q) B
+            else none
+          else none
+        | .boolean _ => none) |>.orElse fun _ =>
         -- An object a cell fact is about keeps the labels its field's
         -- observed contents admit.
         cells.findSearch? fun fct =>

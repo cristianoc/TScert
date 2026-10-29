@@ -1280,6 +1280,35 @@ control(async (): Promise<void> => {
   process.stdout.write("forged chain test: the receiver read again claimed at the tested arm refused\n");
 });
 control(async (): Promise<void> => {
+  // A read through an optional key that gave something other than
+  // `undefined` drops the arms whose key, taken as present, holds a type
+  // the test contradicts. Claimed without an arm whose optional key's type
+  // the test admits (`kept`), or past a test `undefined` passes, where the
+  // object may lack the key (`absent`), the entry is refused where evidence
+  // is produced and where the honest evidence is checked.
+  const good = run("optional-key-present-slice");
+  const source = readFileSync(sourceKey(good), "utf8");
+  for (const [name, binding, test, kept] of [
+    ["kept", "d", "return 0;", "other"],
+    ["absent", "u", "return 0;", "spare"],
+  ] as const) {
+    const claims = readClaims(good);
+    const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+    const start = source.indexOf(test, source.indexOf(`function ${name}`));
+    const entry = must(fn.entries.find(e => e.start === start), `${name}'s entry where the test passed`);
+    const bound = must(entry.bindings.find(b => b.name === binding), `${name}'s ${binding}`);
+    // The arm declaring the key, the only row naming it.
+    const arms = claims.types.flatMap((row, label) => JSON.stringify(row).includes(`"${kept}"`) ? [label] : []);
+    assert.equal(arms.length, 1, `${name}'s arm naming ${kept}`);
+    assert.notDeepEqual(bound.type, arms, `${name}'s honest claim`);
+    bound.type = arms;
+    const forged = writeClaims(good, `forged-present-slice-${name}`, claims);
+    refusedAt(good, forged, `forged-present-slice-${name}`, "evidence search failed");
+    assert.match(invoke(forged, join(good, "evidence.json"), good), /^reject: /);
+  }
+  process.stdout.write("forged present slice: an arm the test admits dropped, and an arm dropped past a test undefined passes, refused in search and in checking\n");
+});
+control(async (): Promise<void> => {
   // A parameter's entry claim in an `&&` operand is its first read before a
   // call, which the incoming edge checks: a read claimed narrower than any
   // test establishes is refused where evidence is produced and where it is
