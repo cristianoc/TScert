@@ -4644,9 +4644,9 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
     if (overload.typeParameters?.length && !entry.stated) throw Error(`${what} is generic`);
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
       throw Error(`${what} is reviewed in a form a global function does not take`);
-    const written = entry?.stated;
+    if (entry.forms) throw Error(`${what} states several forms`);
+    const written = entry.stated;
     const stated = typeof written === "function" ? written(context.library, context.view) : written;
-    if (Array.isArray(stated)) throw Error(`${what} states several forms`);
     if (stated) {
       if (stated.binders.length) throw Error(`${what} is stated with binders`);
       for (const call of calls) boundedArguments(call, stated, what);
@@ -4739,16 +4739,18 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // one, under the entry's binders, which every form names alike. Read
   // anywhere else, or empty, the list is refused rather than an arm dropped.
   const reviewedForms = (member: string | undefined, node: Node, what: string):
-      (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
+      (Omit<GlobalEntry, "stated" | "forms"> & { forms?: Stated[] }) | undefined => {
     const text = node.getText(node.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, member, signature => signature === text,
       declarationOrigin(node.getSourceFile(), context.libraryFile));
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
-    const { stated: written, ...rest } = entry;
+    const { stated: written, forms: listed, ...rest } = entry;
     const stated = typeof written === "function" ? written(context.library, context.view) : written;
-    if (stated === undefined) return rest;
-    const forms = Array.isArray(stated) ? stated : [stated];
+    const several = typeof listed === "function" ? listed(context.library, context.view) : listed;
+    if (stated !== undefined && several !== undefined) throw Error(`${what} states a signature beside its forms`);
+    const forms = several ?? (stated === undefined ? undefined : [stated]);
+    if (forms === undefined) return rest;
     const [first] = forms;
     if (!first) throw Error(`${what} states an empty list of forms`);
     if (forms.some(f => JSON.stringify(f.binders) !== JSON.stringify(first.binders)))
@@ -4756,7 +4758,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     return { ...rest, forms };
   };
   const reviewed = (member: string | undefined, node: Node, what: string):
-      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
+      (Omit<GlobalEntry, "stated" | "forms"> & { stated?: Stated }) | undefined => {
     const entry = reviewedForms(member, node, what);
     if (!entry) return undefined;
     const { forms, ...rest } = entry;
@@ -4771,7 +4773,9 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     signature => signature === declaredText, declarationOrigin(declaration.getSourceFile(), context.libraryFile)) : undefined;
   if (constructed?.constructs) {
     const written = typeof constructed.stated === "function" ? constructed.stated(context.library, context.view) : constructed.stated;
-    const forms = written === undefined ? [] : Array.isArray(written) ? written : [written];
+    const listed = typeof constructed.forms === "function" ? constructed.forms(context.library, context.view) : constructed.forms;
+    if (written !== undefined && listed !== undefined) throw Error(`new ${name}(…) states a signature beside its forms`);
+    const forms = listed ?? (written === undefined ? [] : [written]);
     const [form] = forms;
     if (!form || forms.length !== 1 || form.binders.length || form.rest)
       throw Error(`new ${name}(…) is reviewed with no one construct form`);

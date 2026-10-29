@@ -205,11 +205,12 @@ function printSignature(stated: Stated): string | null {
 /** The signatures an overlay entry states, as TypeScript writes them, or
  * `null` where one has no spelling here; `undefined` where it states none. */
 function statedSignatures(entry: GlobalEntry): string[] | null | undefined {
-  if (entry.stated === undefined) return undefined;
+  if (entry.stated === undefined && entry.forms === undefined) return undefined;
   const library = (name: string, args: TypeTerm[]): TypeTerm => ({ k: "reference", args, span: [0, 0],
     reference: { name, span: [0, 0], arguments: args.map(() => [0, 0]), target: { module: "typescript/lib", name, span: [0, 0] } } });
   const stated = typeof entry.stated === "function" ? entry.stated(library, nativeCollectionView) : entry.stated;
-  const printed = (Array.isArray(stated) ? stated : [stated]).map(printSignature);
+  const forms = typeof entry.forms === "function" ? entry.forms(library, nativeCollectionView) : entry.forms;
+  const printed = [...(stated === undefined ? [] : [stated]), ...(forms ?? [])].map(printSignature);
   return printed.every((p): p is string => p !== null) ? printed : null;
 }
 

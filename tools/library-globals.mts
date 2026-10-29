@@ -87,7 +87,10 @@ export type GlobalEntry = {
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
    * the result. */
-  stated?: Stated | Stated[] | ((library: LibraryReference, view: CollectionViewReference) => Stated | Stated[]);
+  stated?: Stated | ((library: LibraryReference, view: CollectionViewReference) => Stated);
+  /** Several signatures read instead of the declared one, each as `stated`
+   * reads one: construct signatures, under binders every form names alike. */
+  forms?: Stated[] | ((library: LibraryReference, view: CollectionViewReference) => Stated[]);
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
   definitions?: TypeDefinition[];
@@ -769,7 +772,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
   { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
-    stated: (library, view) => [
+    forms: (library, view) => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) },
       { binders: ["T"], params: [view("Set", [binder("T")])], result: library("Set", [binder("T")]) }] },
@@ -793,13 +796,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
     .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), global: "Map", signature, effect: emptyEffect,
-      stated: (library, view) => {
+      forms: (library, view) => {
         const pairs: Stated = { binders: ["K", "V"],
           params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
             optional: [], rest: null, span: at }))],
           result: library("Map", [binder("K"), binder("V")]) };
         return signature.includes("Iterable") ? [pairs, { binders: ["K", "V"], params: [view("Map", [binder("K"), binder("V")])],
-          result: library("Map", [binder("K"), binder("V")]) }] : pairs;
+          result: library("Map", [binder("K"), binder("V")]) }] : [pairs];
       } })),
   // `new Date()` is now; `new Date(v)` converts a number or a string without
   // client code, but a `Date` argument, which any object meeting the

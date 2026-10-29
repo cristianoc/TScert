@@ -1016,6 +1016,28 @@ them over the fields before it. The result is not established at
   `moduleEntries` and `moduleObjectDefault`.
 - **Commit:** the introducing commit.
 
+### One signature or several in one field
+
+A reviewed global's entry (`GlobalEntry`, `tools/library-globals.mts`)
+stated its signatures in one field, `stated`, holding a `Stated` record or
+an array of them, and its readers told them apart with `Array.isArray`. An
+open record may be an array carrying its keys (`invalid-isarray-record`),
+so on the arm where the test holds the value is `readonly unknown[]`, whose
+elements are no `Stated`, and the forms read from it were refused.
+
+- **Rewrite:** the entry states one signature in `stated` and several in a
+  field of their own, `forms`, each a value or a function of the library
+  and view references; an entry stating both is refused. `stated: s` reads
+  as the one form `[s]`, as the array test made of it, and `forms: fs` as
+  `fs`; the `Set` and `Map` constructors' iterable overloads move their
+  lists to `forms`, and `Map`'s other overloads, stated by the same
+  function with one form each, state the list of it. Every entry's forms, and so the declarations read,
+  are unchanged.
+- **Pattern:** a field holding one value or a list of them is two fields,
+  each holding one shape.
+- **Functions:** `selectGlobal`, `globalFunction`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
