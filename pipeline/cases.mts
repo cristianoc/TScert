@@ -1814,6 +1814,8 @@ export const cases: Case[] = [
   negative("invalid-filter-guard-promise", "a guard closure passed to `filter` whose body does not establish its promise is refused at its promise signature: `x !== undefined` holds of `null`, which `filter` keeps at `string[]` (run under Node)",
     /source expression obligation at \[\d+,\d+\): evidence search failed: the promised argument is not within the promise at this return/),
   positive("filter-guard-value", "a guard read as a value and passed to `filter` or `find`: its slot's promise signature, extended by a rest of `unknown` it discards, meets the guard overload's callback, so the result holds the promise's type; a function stating no promise meets the plain overload (run under Node)"),
+  negative("invalid-find-guard-shrink", "a guard passed by name to `find` that pops the array `find` searches is refused at the argument: its footprint is the top one, and `find`'s guard overload (`native-guard-find`) takes a callback keeping array stores; once the array shrinks, `find` calls the guard at `undefined` (run under Node)",
+    /source expression obligation at \[689,702\): evidence search failed: no derivation of its node-typing claim/),
   negative("invalid-filter-guard-value-promise", "a guard passed by name to `filter` whose body does not establish its promise is refused at its return: `x !== undefined` holds of `null`, which `filter` keeps at `string[]` (run under Node)",
     /source expression obligation at \[\d+,\d+\): evidence search failed: the promised argument is not within the promise at this return/),
   negative("invalid-guard-closure-callback", "a guard closure passed as a callback whose body does not establish its promise is refused: `x !== undefined` holds of `null` (run under Node)",

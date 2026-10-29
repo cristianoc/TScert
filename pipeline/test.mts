@@ -4304,6 +4304,22 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // `find`'s guard overload (`native-guard-find`) takes a callback keeping
+  // array stores. A guard passed by name that pops the array `find` searches,
+  // forged at a footprint keeping values and stores, which would let the
+  // call meet that overload, is refused at the guard's declaration in search.
+  const artifacts = run("invalid-find-guard-shrink");
+  const claims = readClaims(artifacts);
+  const guard = must(claims.functions.find(f => f.name === "isDeclaration"), "isDeclaration's claims");
+  assert.deepEqual(guard.footprint, { value: "any", store: "any" }, "isDeclaration: its honest footprint");
+  guard.footprint = { value: "keep", store: "keep" };
+  const name = "forged-find-guard-preserving";
+  refusedAt(artifacts, writeClaims(artifacts, name, claims), name,
+    "the footprint claimed for 'isDeclaration' is not established by its body");
+  process.stdout.write("find guard value: a guard popping the searched array forged as preserving stores refused at its declaration in search\n");
+});
+
+control(async (): Promise<void> => {
   // `Object.entries`'s generic and plain overloads are one callee, each call
   // claimed at the overload its operand meets. The dictionary's call forged
   // at the plain overload, whose values are unknown where the loop adds

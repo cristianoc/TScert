@@ -2252,7 +2252,8 @@ passes them `undefined`, which a guard TypeScript types at `T` does not
 admit. A closure's promise signature is checked at the top footprint
 alone, so a guard closure passed to `find` meets the plain signatures; a
 guard read as a value meets this one at its own footprint
-(`filter-guard-value`). `every`'s, `this is readonly S[]`, is not a
+(`filter-guard-value`), and one popping the receiver does not
+(`invalid-find-guard-shrink`). `every`'s, `this is readonly S[]`, is not a
 contract of the native: a callback may append untested elements or
 replace tested ones, so a traversal answering `true` says nothing of the
 receiver it leaves.
@@ -2471,7 +2472,7 @@ where the native is modelled and audited otherwise:
 | `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
 | `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
 | a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
-| a native regex's other members, a regex neither global nor sticky | the empty footprint | they write nothing (audited) |
+| a native regex's other members; a regex neither global nor sticky's `exec`, `test`, `[Symbol.match]` at a string and `[Symbol.replace]` at a string and a string replacement | the empty footprint | they write nothing (audited) |
 | a native regex's `[Symbol.replace]` at a replacement callback, the regex a literal written at the call | none stated | it calls the callback, client code (`invalid-regexp-replace-callback-effect`) |
 | `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |
 | an iteration intrinsic, `%Iterate%` over an array and those over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |

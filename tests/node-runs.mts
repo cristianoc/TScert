@@ -1019,12 +1019,16 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "set-string-construction: three letters, an \"a\" and a 1");
   assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
     "invalid-set-string-at-number: the set at number holds strings");
+  // A complete `ReadonlySet<string>` and `ReadonlyMap<string, number>`,
+  // each answering values of its declared types, whose iterator, or an entry's
+  // getter, pops a separate array: the copy holds strings, and the call
+  // changed the store.
   assert.equal(runExample("invalid-set-from-readonly-set",
-    `(() => { let ran = 0; const names = { [Symbol.iterator]() { ran++; return [1][Symbol.iterator](); } }; return [ran, typeof [...copy(names)][0], ran].join(); })()`),
-    "0,number,1", "invalid-set-from-readonly-set: new Set runs the object's iterator, and the set at string holds a number");
+    `(() => { const xs = [1, 2]; const inner = new Set(["a"]); const names = { get size() { return inner.size; }, has: (k) => inner.has(k), forEach(f, t) { inner.forEach((v) => f.call(t, v, v, names)); }, entries: () => inner.entries(), keys: () => inner.keys(), values: () => inner.values(), [Symbol.iterator]() { xs.pop(); return inner.values(); } }; return [xs.length, typeof [...copy(names)][0], xs.length].join(); })()`),
+    "2,string,1", "invalid-set-from-readonly-set: new Set runs the set's iterator, which pops another array");
   assert.equal(runExample("invalid-map-from-readonly-map",
-    `(() => { let ran = 0; const entry = { get 0() { ran++; return 5; }, 1: 2 }; const names = { [Symbol.iterator]() { return [entry][Symbol.iterator](); } }; return [ran, typeof [...copy(names).keys()][0], ran].join(); })()`),
-    "0,number,1", "invalid-map-from-readonly-map: new Map runs an entry's getter, and the map at string keys holds a number");
+    `(() => { const xs = [1, 2]; const inner = new Map([["a", 5]]); const entry = ["a", 5]; Object.defineProperty(entry, 0, { get() { xs.pop(); return "a"; } }); const names = { get size() { return inner.size; }, get: (k) => inner.get(k), has: (k) => inner.has(k), forEach(f, t) { inner.forEach((v, k) => f.call(t, v, k, names)); }, entries: () => inner.entries(), keys: () => inner.keys(), values: () => inner.values(), [Symbol.iterator]: () => [entry][Symbol.iterator]() }; const copied = copy(names); return [typeof [...copied.keys()][0], typeof copied.get("a"), xs.length].join(); })()`),
+    "string,number,1", "invalid-map-from-readonly-map: new Map reads an entry's getter, which pops another array");
   assert.equal(runExample("conditional-empty-array", `lineCount("a\\nb", true) + lineCount("a", false)`), 2);
   assert.equal(runExample("invalid-conditional-empty-array", `typeof lengths("a")[0]`), "string",
     "invalid-conditional-empty-array: the elements are strings");
@@ -1179,6 +1183,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   for (const name of ["invalid-object-growth-early-alias", "invalid-loop-object-growth-early-alias"]) {
     assert.equal(runExample(name, `(() => { try { stale(); return "none"; } catch (e) { return e instanceof TypeError; } })()`),
       true, `${name}: the retained alias reads a number as a string`);
+  }
+  for (const [name, input] of [["invalid-loop-object-growth-escape", `["y", "x"]`],
+    ["invalid-loop-object-growth-outer-escape", `[["y"], ["x"]]`]] as const) {
+    assert.equal(runExample(name, `(() => { try { aliased(${input}); return "none"; } catch (e) { return e instanceof TypeError; } })()`),
+      true, `${name}: the view bound in an earlier iteration reads the number 1 at x as a string`);
   }
   assert.equal(runExample("invalid-early-binding-stale", "stale()"), "s",
     "invalid-early-binding-stale: the closure's write reaches the read TypeScript narrowed to number");
@@ -1716,6 +1725,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // result read at `string[]`.
     ["filter-guard-value", "const ds = [{ kind: 'other' }, { kind: 'declaration', body: true }]; JSON.stringify([defined(ds), first(ds), first([{ kind: 'other' }]), others(ds).length])", '[true,true,false,1]'],
     ["invalid-filter-guard-value-promise", "JSON.stringify(strings([null, 'a']))", '[null,"a"]'],
+    // A guard passed by name to `find` popping the array `find` searches is
+    // called at `undefined` once the array is shorter than the length `find`
+    // read, and reading its `kind` throws.
+    ["invalid-find-guard-shrink", "(() => { try { return String(first()); } catch (e) { return e instanceof TypeError; } })()", true],
     ["invalid-closure-parameter-write", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     ["invalid-closure-parameter-cell", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     // A path rooted at a `let` slot holds what its test saw until the root's

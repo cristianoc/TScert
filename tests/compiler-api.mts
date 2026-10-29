@@ -910,8 +910,9 @@ const nodeListMembersHold = (list: object, what: string): void => {
 // helper `isObjectType` among them; `TypeObject`'s prototype defines no
 // getter; flags and objectFlags are own data properties; and on a
 // program's literal, union, intersection and reference
-// types each guard answering `true` leaves the members its promise covers at
-// their declared types (T7, regression evidence).
+// types each guard answers `true` on one of them and, answering `true`, leaves
+// the members its promise covers at their declared types (T7, regression
+// evidence).
 {
   const declarations = readFileSync(join(root, "dist", "api", "sync", "api.d.ts"), "utf8");
   const exported = new Map<string, unknown>(Object.entries(sync));
@@ -931,6 +932,7 @@ const nodeListMembersHold = (list: object, what: string): void => {
     "export const m: Map<string, number> = new Map();", ""].join("\n"));
   const api = openCompiler({ cwd: dir });
   let met = 0;
+  const exercised = new Set<string>();
   try {
     const project = api.updateSnapshot({ openProjects: [join(dir, "tsconfig.json")] }).getProject(join(dir, "tsconfig.json"));
     const tree = project?.program.getSourceFile(file);
@@ -968,15 +970,19 @@ const nodeListMembersHold = (list: object, what: string): void => {
       };
       if (syncApi.isUnionType(type) || syncApi.isIntersectionType(type)) {
         met++;
+        exercised.add(syncApi.isUnionType(type) ? "isUnionType" : "isIntersectionType");
         const first = type.getTypes(), second = type.getTypes();
         types(first);
         types(second);
         assert.notEqual(first, second, "getTypes gives a fresh array of types");
       }
-      const literal: string | null = syncApi.isStringLiteralType(type) ? "string" : syncApi.isNumberLiteralType(type) ? "number"
-        : syncApi.isBigIntLiteralType(type) ? "bigint" : syncApi.isBooleanLiteralType(type) ? "boolean" : null;
-      if (literal !== null) {
+      const guard: string | null = syncApi.isStringLiteralType(type) ? "isStringLiteralType"
+        : syncApi.isNumberLiteralType(type) ? "isNumberLiteralType" : syncApi.isBigIntLiteralType(type) ? "isBigIntLiteralType"
+        : syncApi.isBooleanLiteralType(type) ? "isBooleanLiteralType" : null;
+      const literal: string | null = guard === null ? null : guard.slice(2, -"LiteralType".length).toLowerCase();
+      if (guard !== null) {
         met++;
+        exercised.add(guard);
         assert.equal(typeof ownData(type, "value"), literal, `a ${literal} literal type's value is a ${literal}`);
         assert.ok(syncApi.isLiteralType(type));
         const seen = new Set<syncApi.FreshableType>();
@@ -993,6 +999,7 @@ const nodeListMembersHold = (list: object, what: string): void => {
       }
       if (syncApi.isTypeReference(type)) {
         met++;
+        exercised.add("isTypeReference");
         assert.equal(typeof ownData(type, "objectFlags"), "number");
         checkType(type.getTarget());
       }
@@ -1001,5 +1008,7 @@ const nodeListMembersHold = (list: object, what: string): void => {
     releaseCompiler(api, null);
   }
   assert.equal(met, 9, "every guarded constant meets its guard");
-  console.log(`C6: ${statedGuards.length} stated guards declared and loaded as reviewed; their promised members at their declared types on ${met} types`);
+  assert.deepEqual([...exercised].sort(), statedGuards.map(({ name }) => name).sort(),
+    "every stated guard answers true on one of the program's types");
+  console.log(`C6: ${statedGuards.length} stated guards declared and loaded as reviewed; each answers true and its promised members are at their declared types, on ${met} types`);
 }
