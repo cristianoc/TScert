@@ -236,10 +236,12 @@ The outcome is one of:
   tuple (`[] as const`, or `[]` where a destructuring or a tuple type is its
   context) into a reply, observed of `Checker.getTypeAtLocation` and
   `TypeObject.getTypes`; a query whose reply holds that type is such a tool
-  failure, and its report names the cause (`empty-tuple-literal-api-panic`).
-  A literal whose type no query asks is unaffected (`constructor-tuple-spread`,
-  `as-const`); TScert's own source avoids forming one
-  ([the empty-tuple panic](SOURCE-REWRITES.md#the-compiler-apis-empty-tuple-panic)).
+  failure, and its report names the cause. A literal whose type no query
+  asks is unaffected (`constructor-tuple-spread`, `as-const`): the front end
+  reads an iteration's kind from a conditional's arms and from an array
+  literal's syntax, so `c ? xs : []` asks no type holding the literal's
+  (`conditional-empty-array-pattern`), and TScert's own source forms no
+  other ([the empty-tuple panic](SOURCE-REWRITES.md#the-compiler-apis-empty-tuple-panic)).
 
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.

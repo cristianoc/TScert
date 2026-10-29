@@ -2849,15 +2849,26 @@ export function collectDeclarations(file: string, options: {
     for (const { span, spread } of iterated) {
       const iterable = expressionAt(client, span);
       if (!iterable) throw declarationError(span, "TypeScript iterable missing");
-      // The iterable's type, read part by part: a failure of the compiler's
-      // API there is located at the iterable.
-      const kindsOf = (): string[] => {
-        const type = checker.getTypeAtLocation(iterable);
+      // The iterable's kinds: a parenthesized expression's are its operand's,
+      // a conditional's its arms', an array literal's an array's, also
+      // asserted or checked by `satisfies`, and any other expression's its
+      // type's, read part by part: a failure of the compiler's API there is
+      // located at the iterable. The API panics writing an empty array
+      // literal's tuple type (DESIGN.md, "The pipeline entry point"), which a
+      // destructuring gives the `[]` of `c ? xs : []`; read arm by arm, the
+      // literal is no query's.
+      const literalArray = (e: Node): boolean => ts.isArrayLiteralExpression(e) ||
+        ((ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) && literalArray(e.expression));
+      const kindsOf = (e: Node): string[] => {
+        if (ts.isParenthesizedExpression(e)) return kindsOf(e.expression);
+        if (ts.isConditionalExpression(e)) return [...new Set([...kindsOf(e.whenTrue), ...kindsOf(e.whenFalse)])];
+        if (literalArray(e)) return ["array"];
+        const type = checker.getTypeAtLocation(e);
         return [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : []).map(iterationKind))];
       };
       let kinds: string[];
       try {
-        kinds = kindsOf();
+        kinds = kindsOf(iterable);
       } catch (error) {
         recover(span, error);
         continue;
