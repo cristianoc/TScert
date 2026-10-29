@@ -1220,6 +1220,76 @@ program holds none.
 - **What depends on it:** the worker loop of `unchecked.mts`.
 - **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
 
+### Module customization hooks
+
+`files.mts` resolves a specifier as Node does, reads the conditions Node's
+resolution enables, and loads a package's module observing every module
+the load reads, each through a hook `registerHooks` of `node:module`
+installs. A hook runs inside every resolution or load of the process while
+it is registered, and other code may register hooks around it: one
+registered earlier answers in its place (a forged URL or source, a throw),
+and one registered later, by a subscriber of the `module.require` tracing
+channel or by the code of a module being loaded, calls it with arguments of
+its own (a URL that is no string). No contract a program could hold a hook
+at states all of that, so the program holds none.
+
+- **Boundary:** `tools/module-hooks.mts`.
+  `resolveWithNode(specifier, parentHref): string | null`,
+  `resolutionConditions(): string[]` and
+  `loadObserved(path): { reads: ModuleRead[]; outcome: LoadOutcome }`, with
+  `ModuleRead = { url: string | null; digest: string | null }` and
+  `LoadOutcome = { k: "loaded"; value: unknown } | { k: "threw"; thrown: unknown }`.
+  Each registers its hook and deregisters it before it returns. Node's
+  chain of hooks is a chain of continuations built for each resolution or
+  load, so a hook registered later may keep the continuation that calls
+  the boundary's and call it after the boundary's function returned (after
+  throwing, say): each hook is active only until its function returns,
+  and afterwards passes the call to the next step and records nothing.
+- **What callers get:** strings, arrays of strings, records of them, and a
+  loaded module's value or what its load threw at `unknown`; never a hook,
+  a context or a `require`. Callers are verified against these signatures,
+  which state no effect (`blocker-node-module-hooks`).
+  `files.mts#loadModule` observes each read, then throws what the load
+  threw, so a load's reads are observed whether it returns or throws; the
+  observed-stages check refuses another importer of the boundary, by a
+  declaration or by `import(…)`.
+- **Contract, what TScert relies on:** each value has its stated type:
+  `resolveWithNode` answers the `url` of the resolution's result where it
+  is a string and `null` where the resolution throws, its thrown value
+  unread; `resolutionConditions` answers a fresh copy of the context's
+  `conditions` and throws where they are no array of strings;
+  `loadObserved` records, for each call of its load hook whose next step
+  returns, the URL where it is a string and the SHA-256 of the result's
+  `source` where it is a string (its UTF-8 encoding) or a `Uint8Array` (its
+  bytes, hashed when the hook sees them; a `Buffer` may share its memory
+  with other views, which may write it later), and `null` otherwise or
+  where hashing throws; the reads it returns are a fresh array holding the
+  calls made before it returned.
+- **Not promised:** that a URL, a condition or a digest is Node's own. A
+  hook registered earlier may answer for Node, and one registered later
+  may call the boundary's load hook with values of its own; their reads
+  are recorded as they come. Loading runs the module's code and every
+  hook other code registered, and those may register hooks that outlive
+  the call.
+- **Audited against Node 25.2.1's
+  `lib/internal/modules/customization_hooks.js`:** `registerHooks` pushes
+  a frozen `ModuleHooks` onto the process's lists, and `deregister` splices
+  it out by its own symbol, both through primordials; the most recently
+  registered hook runs first, so each boundary hook is the first at its
+  call; a resolve step's result is validated into a fresh null-prototype
+  object whose `url` is a string; a load step's result is the hook's own
+  object, whose `source` is read once more. `tests/node-runs.mts` runs a
+  resolution, the conditions under `--conditions`, a load that throws, a
+  load whose module registers a hook calling the boundary's with the URL
+  `42`, which an earlier hook answers, a resolution an earlier hook
+  forges or throws from, and a load whose module registers a hook that
+  keeps its continuation and throws, the continuation called after
+  `loadObserved` returned (2026-10-29).
+- **What depends on it:** `files.mts#resolveObserved` (through
+  `nodeResolve`), `files.mts#runtimeConditions` and
+  `files.mts#loadModule`, which family activation uses.
+- **Commit:** the introducing commit, `Module customization hooks behind a host boundary; node:os and isBuiltin entries`.
+
 ## Changes for a tool's defect
 
 ### The compiler API's empty-tuple panic

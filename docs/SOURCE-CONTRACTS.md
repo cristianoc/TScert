@@ -3819,6 +3819,40 @@ type names does, and a definition's methods name it as their receiver
   `process.env` is Node's, whose values are strings, where a replaced
   `process.env` holding `TEMP: 7` makes Windows return 7. The call reads
   `process.env`, so it is unrestricted in its effect (`node-os-tmpdir`).
+- `node:os`'s `availableParallelism()` is the native
+  `getAvailableParallelism`, libuv's `uv_available_parallelism`, an
+  unsigned integer returned as a number: it reads no property, runs no
+  code of the client's, allocates nothing and does not throw, so it is
+  within the empty footprint (Node's `lib/os.js`, `src/node_os.cc`;
+  `node-os-host-info`, `blocker-node-os-host-info`).
+- `node:os`'s `userInfo()`, at no argument, calls the native `getUserInfo`
+  with `null` options, which reads no property, and encodes libuv's
+  password entry as UTF-8: a fresh object of null prototype owning the
+  writable data properties `uid` and `gid`, numbers, `username` and
+  `homedir`, strings, and `shell`, a string or `null`,
+
+  ```text
+  { username: string; uid: number; gid: number; shell: string | null; homedir: string }
+  ```
+
+  A failure of `uv_os_get_passwd` throws a `SystemError`, whose
+  construction runs Node's error code, so the call is unrestricted in its
+  effect. An options object may select the `"buffer"` encoding, which
+  answers `Buffer`s: no entry states a call with an argument
+  (`invalid-node-os-user-info-buffer`, run under Node).
+- `node:module`'s `isBuiltin(id)` at a string tests the id in the set of
+  built-ins requirable without a scheme, and, after a `node:` prefix, in
+  the set of those requirable by users (Node's
+  `lib/internal/bootstrap/realm.js`): `SafeSet`s and primordial string
+  functions, which run no code of the client's, write and allocate nothing
+  and do not throw, so it is within the empty footprint. The sets are
+  filled while Node starts, so the answer is the running Node's
+  (`blocker-node-module-hooks`). `@types/node` 22.10.7 declares it as a
+  static member of the module's class, which no entry names. No entry
+  lists `registerHooks`, whose hooks run inside every later resolution
+  and load of the process (`invalid-module-register-hooks`, run under
+  Node): the front end runs it through the host boundary
+  [module customization hooks](SOURCE-REWRITES.md#module-customization-hooks).
 - `node:path`'s `sep`, a constant: a data property of the exported object,
   `"/"` on POSIX and `"\\"` on Windows, set when Node loads the module
   (`lib/path.js`). It is writable: no code writes it, an assumption, as of

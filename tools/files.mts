@@ -17,12 +17,13 @@
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
   type BigIntStats, type Dirent } from "node:fs";
-import { createRequire, isBuiltin, registerHooks } from "node:module";
+import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Json } from "./calculus.mts";
 import { fieldOf, ioFailure, ioFailureOf } from "./thrown.mts";
+import { loadObserved, resolutionConditions, resolveWithNode } from "./module-hooks.mts";
 import { pathToFileHref, resolveHref } from "./url-strings.mts";
 
 /** `run`, its failure an `IoFailure` of `operation` at `path`. */
@@ -825,28 +826,18 @@ function emptyQueryAndFragment(href: string): boolean {
 
 function resolveObserved(specifier: string, parent: string): string | null {
   const before = observedNoting(() => fresh(() => observeResolution(specifier, parent)), false, false);
-  const probe = "tscert:resolve";
-  const found: { url: string | null } = { url: null };
-  const hooks = registerHooks({
-    resolve: (requested, context, next) => {
-      if (requested !== probe) return next(requested, context);
-      try {
-        found.url = next(specifier, { ...context, parentURL: pathToFileHref(parent) }).url;
-      } catch {
-        found.url = null;
-      }
-      return { url: "data:text/javascript,", shortCircuit: true };
-    },
-  });
+  // A parent with no file URL (a relative path with no working directory)
+  // resolves nothing.
+  let parentHref: string | null = null;
   try {
-    import.meta.resolve(probe);
-  } finally {
-    hooks.deregister();
+    parentHref = pathToFileHref(parent);
+  } catch {
+    parentHref = null;
   }
+  const url = parentHref === null ? null : resolveWithNode(specifier, parentHref);
   const after = observedNoting(() => fresh(() => observeResolution(specifier, parent)), false, false);
   if (JSON.stringify(before.noted) !== JSON.stringify(after.noted))
     inconsistent(`the files Node read resolving ${specifier} from ${parent} changed meanwhile`);
-  const url = found.url;
   // The resolver answers a serialized URL: its scheme lowercase at the
   // start, so a `file:` prefix is its protocol, and `?` and `#` in its path
   // percent-encoded, so the first `#` starts its fragment and the first `?`
@@ -864,63 +855,38 @@ function resolveObserved(specifier: string, parent: string): string | null {
 
 /** The conditions Node's ES module resolution enables in this process
  * (`node`, `import`, `module-sync` and `node-addons` by default, and any
- * `--conditions`), read from the resolution itself through a resolve hook,
- * with `default`, which every resolution admits. */
+ * `--conditions`), read from the resolution itself through a resolve hook
+ * (`resolutionConditions`), with `default`, which every resolution admits. */
 let runtimeConditionsRead: readonly string[] | null = null;
 export function runtimeConditions(): readonly string[] {
   if (runtimeConditionsRead) return runtimeConditionsRead;
-  const probe = "tscert:conditions";
-  const seen: { conditions: readonly string[] | null } = { conditions: null };
-  const hooks = registerHooks({
-    resolve: (specifier, context, next) => {
-      if (specifier !== probe) return next(specifier, context);
-      seen.conditions = context.conditions;
-      return { url: "data:text/javascript,", shortCircuit: true };
-    },
-  });
-  try {
-    import.meta.resolve(probe);
-  } finally {
-    hooks.deregister();
-  }
-  const read = seen.conditions;
-  if (read === null) throw Error("the resolve hook saw no resolution of the conditions probe");
-  runtimeConditionsRead = [...read, "default"];
+  runtimeConditionsRead = [...resolutionConditions(), "default"];
   return runtimeConditionsRead;
 }
 
-/** Node's loader for a module by its path: `require` of an ES module, which
- * shares the instance an `import` of the same file loads. */
-const requireModule: (path: string) => unknown = createRequire(moduleLocation(import.meta.url));
-
 /** The module at `path` of the installation at `root` (a real path), as
- * Node loads it: the bytes of each module the load reads, as a load hook
- * sees them, and its package scope are observed; a module read outside the
- * installation is not accounted for. */
+ * Node loads it (`loadObserved`): the bytes of each module the load reads,
+ * as a load hook sees them, and its package scope are observed; a module
+ * read outside the installation is not accounted for. What the load threw
+ * is thrown once its reads are observed. */
 export function loadModule(root: string, path: string): unknown {
-  const loaded: { url: string; source: unknown }[] = [];
-  const hooks = registerHooks({
-    load: (url, context, next) => {
-      const result = next(url, context);
-      loaded.push({ url, source: result.source });
-      return result;
-    },
-  });
-  try {
-    return requireModule(path);
-  } finally {
-    hooks.deregister();
-    for (const { url, source } of loaded) {
-      if (url.startsWith("node:")) continue;
-      const file = url.startsWith("file:") ? fileURLToPath(url) : null;
-      const real = file === null ? null : realOf(file, true);
-      if (file === null || real === null || relative(root, real).split(sep)[0] === "..") {
-        nodeUnobservable(`loading ${path} read ${url}, outside its installation`);
-        continue;
-      }
-      observeScope(file);
-      if (source instanceof Uint8Array || typeof source === "string") note("read", file, sha256(source), true);
-      else readAnswer(file, true);
+  const { reads, outcome } = loadObserved(path);
+  for (const { url, digest } of reads) {
+    if (url === null) {
+      nodeUnobservable(`loading ${path} read a module no URL names`);
+      continue;
     }
+    if (url.startsWith("node:")) continue;
+    const file = url.startsWith("file:") ? fileURLToPath(url) : null;
+    const real = file === null ? null : realOf(file, true);
+    if (file === null || real === null || relative(root, real).split(sep)[0] === "..") {
+      nodeUnobservable(`loading ${path} read ${url}, outside its installation`);
+      continue;
+    }
+    observeScope(file);
+    if (digest !== null) note("read", file, digest, true);
+    else readAnswer(file, true);
   }
+  if (outcome.k === "threw") throw outcome.thrown;
+  return outcome.value;
 }

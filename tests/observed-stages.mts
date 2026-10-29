@@ -132,11 +132,38 @@ if (process.argv[2] === "--reads") {
     assert.equal(reads(source).length > 0, refused, text);
   });
   // The execution adapters read the code they identify and a process
-  // stage's inputs, never an observed stage's.
-  const adapters = ["tools/files.mts", "pipeline/stage-execution.mts", "pipeline/run-directory.mts"];
+  // stage's inputs, never an observed stage's. tools/module-hooks.mts runs
+  // Node's resolution and loading for tools/files.mts, its one importer,
+  // which observes what each read.
+  const adapters = ["tools/files.mts", "tools/module-hooks.mts", "pipeline/stage-execution.mts", "pipeline/run-directory.mts"];
   const checked = inProcessFiles.filter((f) => !adapters.includes(f)).map((f) => join(repository, f));
+  // An import declaration, an export-from or an `import(…)` naming it; an
+  // `import(…)` of anything but a string is refused above.
+  const hooksImport = (file: ts.SourceFile): boolean => {
+    let found = false;
+    const visit = (n: ts.Node): void => {
+      const specifier = ts.isImportDeclaration(n) || ts.isExportDeclaration(n) ? n.moduleSpecifier
+        : ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword ? n.arguments[0] : undefined;
+      if (specifier !== undefined && ts.isStringLiteral(specifier) && /(^|\/)module-hooks\.mts$/.test(specifier.text)) found = true;
+      n.forEachChild(visit);
+    };
+    visit(file);
+    return found;
+  };
+  const hooksControls: [string, boolean][] = [['import { loadObserved } from "./module-hooks.mts";', true],
+    ['const m = await import("./module-hooks.mts");', true], ["const f = async () => (await import('../tools/module-hooks.mts')).loadObserved;", true],
+    ['export { loadObserved } from "./module-hooks.mts";', true], ['const text = "./module-hooks.mts";', false]];
+  const hooksNames = hooksControls.map(([text], i) => {
+    writeFileSync(join(guard, `h${i}.mts`), `${text}\nexport {};\n`);
+    return join(guard, `h${i}.mts`);
+  });
+  parsed(guard, hooksNames, (file, source) => {
+    const [text, refused] = hooksControls[hooksNames.indexOf(file)];
+    assert.equal(hooksImport(source), refused, text);
+  });
   parsed(join(repository, "tools"), checked, (file, source) => {
     assert.deepEqual(reads(source), [], `${file} reads the file system other than through tools/files.mts`);
+    assert.ok(!hooksImport(source), `${file} imports tools/module-hooks.mts, whose reads only tools/files.mts observes`);
   });
   process.stdout.write("observed stages: the keyed code is every node-side file but the named exclusions; " +
     "the stages' code reads the file system only through tools/files.mts\n");

@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
@@ -166,6 +167,81 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     assert.equal(run.status, 0, run.stderr);
     assert.match(String(JSON.parse(run.stdout)), /no standard output stream/);
   }
+}
+
+{
+  // tools/module-hooks.mts runs Node's resolution and loading through hooks
+  // of its own and hands back plain values. Hooks other code registered run
+  // inside: one registered earlier forges a resolution or throws, and one a
+  // loaded module registers calls the boundary's load hook with a URL that
+  // is no string, which an earlier hook answers with a source of its own.
+  // The values keep their types and may be forged.
+  const boundary = pathToFileURL(join(import.meta.dirname, "..", "tools", "module-hooks.mts")).href;
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), "tscert-hooks-")));
+  try {
+    writeFileSync(join(directory, "x.mjs"), "export {};");
+    writeFileSync(join(directory, "b.cjs"), "module.exports = 2;");
+    writeFileSync(join(directory, "a.cjs"), `const { registerHooks } = require("node:module");
+      registerHooks({ load: (u, c, n) => u.endsWith("/b.cjs") ? n(42, c) : n(u, c) });
+      module.exports = 1 + require("./b.cjs");`);
+    writeFileSync(join(directory, "t.cjs"), "throw 7;");
+    // A hook a loaded module registers keeps the continuation that calls
+    // the boundary's load hook and throws; the continuation, called after
+    // loadObserved returned, passes the call on and records nothing.
+    writeFileSync(join(directory, "d.cjs"), "module.exports = 4;");
+    writeFileSync(join(directory, "c.cjs"), `const { registerHooks } = require("node:module");
+      registerHooks({ load: (u, c, n) => { if (u.endsWith("/d.cjs")) { globalThis.kept = n; throw 8; } return n(u, c); } });
+      require("./d.cjs");`);
+    const script = `const { registerHooks } = await import("node:module");
+      const { createHash } = await import("node:crypto");
+      const { readFileSync } = await import("node:fs");
+      const { loadObserved, resolutionConditions, resolveWithNode } = await import(${JSON.stringify(boundary)});
+      const at = (name) => ${JSON.stringify(directory)} + "/" + name;
+      const parent = new URL("file://" + at("main.mjs")).href;
+      const digest = (name) => createHash("sha256").update(readFileSync(at(name))).digest("hex");
+      const out = { plain: resolveWithNode("./x.mjs", parent), missing: resolveWithNode("./none.mjs", parent),
+        conditions: resolutionConditions(), threw: loadObserved(at("t.cjs")), t: digest("t.cjs"), a: digest("a.cjs") };
+      registerHooks({ load: (u, c, n) => u === 42 ? { format: "commonjs", source: "module.exports = 40;", shortCircuit: true } : n(u, c) });
+      out.loaded = loadObserved(at("a.cjs"));
+      registerHooks({ resolve: (s, c, n) => s === "./x.mjs" ? { url: "file:///forged", shortCircuit: true }
+        : s === "./boom.mjs" ? (() => { throw 9; })() : n(s, c) });
+      out.forged = resolveWithNode("./x.mjs", parent);
+      out.thrown = resolveWithNode("./boom.mjs", parent);
+      const kept = loadObserved(at("c.cjs"));
+      const before = kept.reads.length;
+      const late = typeof globalThis.kept("file://" + at("b.cjs"), { format: "commonjs" }).source;
+      out.retained = { outcome: kept.outcome, grew: kept.reads.length - before, late };
+      console.log(JSON.stringify(out));`;
+    const run = spawnSync(process.execPath, ["--conditions=tscert", "--input-type=module", "-e", script], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(run.status, 0, run.stderr);
+    const out: unknown = JSON.parse(run.stdout);
+    assert.ok(out !== null && typeof out === "object");
+    const field = (key: string): unknown => Object.getOwnPropertyDescriptor(out, key)?.value;
+    assert.match(String(field("plain")), /^file:\/\/\/.*\/x\.mjs$/);
+    assert.equal(field("missing"), null);
+    assert.deepEqual(field("conditions"), ["node", "import", "module-sync", "node-addons", "tscert"]);
+    const t = String(field("t")), a = String(field("a"));
+    assert.deepEqual(field("threw"), { reads: [{ url: pathToFileURL(join(directory, "t.cjs")).href, digest: t }],
+      outcome: { k: "threw", thrown: 7 } });
+    const loaded = field("loaded");
+    assert.ok(loaded !== null && typeof loaded === "object");
+    const reads: unknown = Object.getOwnPropertyDescriptor(loaded, "reads")?.value;
+    assert.ok(Array.isArray(reads) && reads.length === 3);
+    assert.equal(Object.getOwnPropertyDescriptor(reads[0], "digest")?.value, a);
+    assert.deepEqual(reads[1], { url: "node:module", digest: null });
+    assert.deepEqual(reads[2], { url: null, digest: createHash("sha256").update("module.exports = 40;").digest("hex") });
+    assert.deepEqual(Object.getOwnPropertyDescriptor(loaded, "outcome")?.value, { k: "loaded", value: 41 });
+    assert.equal(field("forged"), "file:///forged");
+    assert.equal(field("thrown"), null);
+    assert.deepEqual(field("retained"), { outcome: { k: "threw", thrown: 8 }, grew: 0, late: "string" });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  // The negatives: a hook `registerHooks` installs runs inside a later
+  // resolution, and `userInfo` with the buffer encoding answers `Buffer`s.
+  assert.equal(runImporting("invalid-module-register-hooks",
+    '(() => { const seen = counting(); import.meta.resolve("node:fs"); return seen.count; })()'), 1);
+  assert.equal(runImporting("invalid-node-os-user-info-buffer", "home()"), "object");
 }
 
 {

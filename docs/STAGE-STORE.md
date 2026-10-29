@@ -105,7 +105,11 @@ calls whose specifier names a Node file-system, module, process, worker or
 vm module, and every `import(…)` whose argument is not a string literal.
 The exceptions are `tools/files.mts`, `pipeline/stage-execution.mts` and
 `pipeline/run-directory.mts`: the execution adapters read the code they
-identify and a process stage's inputs, never an observed stage's inputs.
+identify and a process stage's inputs, never an observed stage's inputs;
+and `tools/module-hooks.mts`, which runs Node's resolution and loading for
+`tools/files.mts`, its one importer (the check refuses another, by an
+import declaration, an export-from declaration or `import(…)`), which
+observes what each read.
 
 *Cost.* An edit of any keyed file misses every entry of the kinds it keys:
 an edit of a front-end module misses every parse, diagnostics and assembly
@@ -197,8 +201,9 @@ replay, its ineligibility recorded.
 through [`tools/files.mts`](../tools/files.mts), which records each answer:
 its own reads, the answers it gives the compiler, and the reads of Node's
 resolver and loader where family activation uses them. A fast check
-requires every module of the stages' code closure other than `files.mts` to
-import no file system, module or process API.
+requires every module of the stages' code closure other than `files.mts`
+and the module hooks it runs Node's resolver and loader through
+(`tools/module-hooks.mts`) to import no file system, module or process API.
 
 - *The compiler.* The compiler API delegates five queries to the client
   (`readFile`, `fileExists`, `directoryExists`, `getAccessibleEntries`,

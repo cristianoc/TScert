@@ -479,6 +479,40 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // effect, since the call reads `process.env`.
   { module: "os", name: "tmpdir", signature: "function tmpdir(): string;",
     stated: { binders: [], params: [], result: atom("string") } },
+  // `availableParallelism()` is the native `getAvailableParallelism`
+  // (Node 25.2.1's lib/os.js and src/node_os.cc): libuv's
+  // `uv_available_parallelism`, an unsigned integer, returned as a number.
+  // It reads no property, runs no code of the client's, allocates nothing
+  // and does not throw: the empty footprint.
+  { module: "os", name: "availableParallelism", signature: "function availableParallelism(): number;",
+    stated: { binders: [], params: [], result: atom("number") }, effect: emptyEffect },
+  // `userInfo()` with no options (Node 25.2.1's lib/os.js and
+  // src/node_os.cc) calls the native `getUserInfo` with `null` options, so
+  // no property is read, and encodes libuv's password entry as UTF-8: a
+  // fresh object of null prototype whose own data properties, writable, are
+  // `uid` and `gid`, numbers, `username` and `homedir`, strings, and `shell`,
+  // a string or `null`. A failure of `uv_os_get_passwd` throws a
+  // `SystemError`, whose construction runs Node's error code: the call
+  // states no effect. Stated at no argument, where an encoding option may
+  // select `Buffer`s.
+  { module: "os", name: "userInfo",
+    signature: "function userInfo(options?: UserInfoOptionsWithStringEncoding): UserInfo<string>;",
+    alternatives: ["function userInfo(options?: { encoding: BufferEncoding }): UserInfo<string>;"],
+    stated: { binders: [], params: [], result: { k: "object", stringIndex: null, calls: [], span: at, fields: [
+      { ...field("username", atom("string"), false), readonly: false },
+      { ...field("uid", atom("number"), false), readonly: false },
+      { ...field("gid", atom("number"), false), readonly: false },
+      { ...field("shell", union(atom("string"), atom("null")), false), readonly: false },
+      { ...field("homedir", atom("string"), false), readonly: false }] } } },
+  // `isBuiltin(id)` with a string (Node 25.2.1's lib/internal/bootstrap/realm.js)
+  // tests the id in the set of built-ins requirable without a scheme, and,
+  // for an id starting `node:`, the rest in the set of those requirable by
+  // users: `SafeSet`s and primordial string functions, which run no code of
+  // the client's, write and allocate nothing and do not throw. The sets are
+  // filled while Node starts (`--expose-internals` adds to them): the
+  // answer is the running Node's, a Boolean.
+  { module: "module", name: "isBuiltin", signature: "function isBuiltin(moduleName: string): boolean;",
+    stated: { binders: [], params: [atom("string")], result: atom("boolean") }, effect: emptyEffect },
   // Only strings enter fileURLToPath. The URL it parses reaches no other code: it has no own
   // auth/path/hostname/pathname hooks or externally aliased search params.
   // POSIX rejects hosts and encoded slashes; Windows accepts UNC hosts and
