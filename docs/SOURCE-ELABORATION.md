@@ -265,7 +265,10 @@ as `import { default as x } from M` does, and is read as that named import:
 
 `export default function f` exports $`f`$'s own binding as `default`, which
 no code of an imported module may write, so its unit is certified as a named
-export's is (`default-import-value-import`). An import binding no name
+export's is (`default-import-value-import`). The default export of one of
+Node's built-in modules is the module's object, read as a namespace import
+([the default import of a Node module](SOURCE-CONTRACTS.md#the-default-import-of-a-node-module)).
+An import binding no name
 (`import "m"`) runs the module for its effects alone and is refused.
 
 ### Namespace imports

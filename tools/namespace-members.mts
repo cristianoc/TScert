@@ -20,8 +20,14 @@
  * (`import assert from "node:assert/strict"`), is read the same way: each
  * member read `assert.m` is the binding `assert.m`, of the export
  * `default.m`, and a call `assert(…)` stays a call of the import's own
- * binding. Any other mention is refused. */
-import { moduleEntries } from "./library-modules.mts";
+ * binding. Any other mention is refused.
+ *
+ * A default import of a Node module whose default export is the module's
+ * object (`import fs from "node:fs"`, `moduleObjectDefault`) is a namespace
+ * import of that module: each member read `fs.x` is the binding `fs.x`, of
+ * the named export `x`, and any other mention is refused as a namespace
+ * import's is. The binding `fs` itself is never read. */
+import { moduleEntries, moduleObjectDefault } from "./library-modules.mts";
 import type { Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Expression, Identifier, ImportDeclaration, Node, SourceFile } from "typescript/unstable/ast";
@@ -52,7 +58,11 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     (!s.importClause.namedBindings || ts.isNamedImports(s.importClause.namedBindings)) &&
     ts.isStringLiteral(s.moduleSpecifier) &&
     moduleEntries(s.moduleSpecifier.text, "default").some(e => e.member !== undefined));
-  if (!imports.length && !functions.length) return members;
+  // Default imports of a module whose default export is its object.
+  const objects = file.statements.filter((s): s is ImportDeclaration =>
+    ts.isImportDeclaration(s) && !!s.importClause?.name && ts.isStringLiteral(s.moduleSpecifier) &&
+    moduleObjectDefault(s.moduleSpecifier.text));
+  if (!imports.length && !functions.length && !objects.length) return members;
   const occurrences = new Map<string, Identifier[]>();
   const collect = (node: Node): void => {
     if (ts.isIdentifier(node)) {
@@ -85,19 +95,25 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
       else members.set(local, { local, imported: `default.${parent.name.text}`, specifier, uses: [use] });
     });
   }
-  for (const declaration of imports) {
+  const namespaces = [
+    ...imports.flatMap(declaration => {
+      const clause = declaration.importClause;
+      const bindings = clause?.namedBindings;
+      if (!clause || !bindings || !ts.isNamespaceImport(bindings)) return [];
+      if (clause.name) fail(declaration, "a default import beside a namespace import is outside the source fragment");
+      return [{ declaration, namespace: bindings.name, what: "namespace import" }];
+    }),
+    ...objects.flatMap(declaration => declaration.importClause?.name ? [{ declaration, namespace: declaration.importClause.name, what: "default import" }] : [])];
+  for (const { declaration, namespace, what } of namespaces) {
     const clause = declaration.importClause;
-    const bindings = clause?.namedBindings;
-    if (!clause || !bindings || !ts.isNamespaceImport(bindings)) continue;
-    if (clause.name) fail(declaration, "a default import beside a namespace import is outside the source fragment");
+    if (!clause) continue;
     if (declaration.attributes) fail(declaration, "import attributes are outside the source fragment");
     if (!ts.isStringLiteral(declaration.moduleSpecifier))
       fail(declaration, "a namespace import names its module by a string literal");
     const specifier = declaration.moduleSpecifier.text;
     const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
-    const namespace = bindings.name;
     const symbol = checker.getSymbolAtLocation(namespace);
-    if (!symbol) fail(namespace, `TypeScript binds no namespace to ${namespace.text}`);
+    if (!symbol) fail(namespace, `TypeScript binds no ${what} to ${namespace.text}`);
     const candidates = (occurrences.get(namespace.text) ?? []).filter(id => id !== namespace);
     const symbols = checker.getSymbolAtLocation(candidates);
     candidates.forEach((id, i) => {
@@ -111,10 +127,10 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
             ? { node: parent, name: parent.right, value: false, callee: false }
             : null;
       if (!use)
-        fail(id, `the namespace import ${namespace.text} is used only through member reads and qualified type names`);
-      if (use.value && typeOnly) fail(use.node, `the type-only namespace import ${namespace.text} is read as a value`);
+        fail(id, `the ${what} ${namespace.text} is used only through member reads and qualified type names`);
+      if (use.value && typeOnly) fail(use.node, `the type-only ${what} ${namespace.text} is read as a value`);
       if (use.value && ts.isPropertyAccessExpression(use.node) && written(use.node))
-        fail(use.node, `a member of the namespace import ${namespace.text} is an import binding, which no code writes`);
+        fail(use.node, `a member of the ${what} ${namespace.text} is an import binding, which no code writes`);
       const local = memberLocal(namespace.text, use.name.text);
       const known = members.get(local);
       if (known) known.uses.push(use);

@@ -29,7 +29,7 @@ import { compareTags, familyTable, footprintReading, type FamilyArm, type Family
 import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { moduleEntries, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
+import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
 import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
@@ -45,7 +45,7 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
 import { documentHolds } from "./fragment-parts.mts";
 // files.mts makes every file-system failure a tool failure.
-import { manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
+import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
@@ -394,6 +394,33 @@ export type Answered<T> = { readonly ok: true; readonly value: T } | { readonly 
  * first, which come first among its definition's parameters. */
 export type BlockType = { computed: boolean; declaration: DeclarationIdentity; required: number; total: number; captured: string[] };
 
+/** The Node built-in module, as `node:` names it without the prefix, whose
+ * ambient declaration (`declare module "os"`) holds every one of `nodes`,
+ * or is one of them; null where any lies outside such a declaration. */
+function nodeOrigin(nodes: readonly Node[]): string | null {
+  const origins = nodes.map(node => {
+    for (let at: Node | undefined = node; at; at = at.parent)
+      if (ts.isModuleDeclaration(at) && ts.isStringLiteral(at.name) && builtinModule(at.name.text))
+        return at.name.text.startsWith("node:") ? at.name.text.slice("node:".length) : at.name.text;
+    return null;
+  });
+  const [first] = origins;
+  return first !== undefined && first !== null && origins.every(o => o === first) ? first : null;
+}
+
+/** The name a value's declarations give it in their module: a function's,
+ * a variable's, a class's or a member's own identifier, the same for every
+ * declaration; null for any other declaration, a module among them. */
+function exportedName(nodes: readonly Node[]): string | null {
+  const names = nodes.map(node => {
+    const name = ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node) || ts.isClassDeclaration(node) ||
+      ts.isPropertySignatureDeclaration(node) || ts.isMethodSignatureDeclaration(node) ? nameOf(node) : undefined;
+    return name && ts.isIdentifier(name) ? name.text : null;
+  });
+  const [first] = names;
+  return first !== undefined && first !== null && names.every(n => n === first) ? first : null;
+}
+
 /** The client's imports, each the binding `name` the client reads, the
  * identifier `at` TypeScript resolves to the export, and the span a refusal
  * names: a named import's specifier and its import declaration, a namespace
@@ -407,8 +434,10 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
       throw declarationError(span, "only named, default and namespace imports are resolved");
     const specifier = node.moduleSpecifier.text;
     const clauseTypeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
-    // A default import binds the module's `default` export.
-    const defaulted = clause.name ? [{ name: clause.name.text, at: clause.name, imported: "default", specifier, span,
+    // A default import binds the module's `default` export; one of a
+    // module whose default export is its object is read through its
+    // members alone (`moduleObjectDefault`).
+    const defaulted = clause.name && !moduleObjectDefault(specifier) ? [{ name: clause.name.text, at: clause.name, imported: "default", specifier, span,
       typeOnly: clauseTypeOnly }] : [];
     if (!clause.namedBindings || ts.isNamespaceImport(clause.namedBindings)) return defaulted;
     return [...defaulted, ...clause.namedBindings.elements.map(element => ({ name: element.name.text, at: element.name,
@@ -2361,7 +2390,26 @@ export function collectDeclarations(file: string, options: {
         // A function with overloads is its several declarations; any other
         // name must have one.
         const nodes = resolveDeclarations(binding.at, binding.name);
+        // The Node module a value's declarations lie in, wherever the
+        // client imports it from: a program module's re-export (`export {
+        // hostname } from "node:os"`, `export * from "node:os"`) binds the
+        // same export, so its entries are selected, and its refusal made, by
+        // that module and the export's own name.
+        const value = !binding.typeOnly && nodes.some(n => !isTypeAlias(n) && !ts.isInterfaceDeclaration(n));
+        const origin = value ? nodeOrigin(nodes) : null;
+        const direct = builtinModule(binding.specifier);
+        const exported = origin === null || direct ? null : exportedName(nodes);
+        if (origin !== null && !direct && exported === null)
+          throw Error(`${binding.name}, which ${binding.specifier} re-exports from node:${origin}, is read through a direct import of node:${origin} alone`);
+        // A value of a Node module no entry lists is refused where it is
+        // imported; no entry lists an enum, so a Node module's enum, which
+        // only an augmentation of its declarations can state, is refused
+        // before an enum is read.
+        const unreviewed = (): Error => Error(direct
+          ? `${binding.name} of ${binding.specifier} is a value no entry of the overlay of library modules reviews`
+          : `${binding.name}, which ${binding.specifier} re-exports from node:${origin}, is a value no entry of the overlay of library modules reviews`);
         const enums = enumsOf(binding.at);
+        if (enums && value && (direct || origin !== null)) throw unreviewed();
         if (enums) {
           options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name));
           if (!binding.typeOnly)
@@ -2369,7 +2417,8 @@ export function collectDeclarations(file: string, options: {
               specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });
           continue;
         }
-        const reviewed = moduleEntries(binding.specifier, binding.imported);
+        const reviewed = direct ? moduleEntries(binding.specifier, binding.imported)
+          : origin !== null && exported !== null ? moduleEntries(origin, exported) : [];
         // Node's assertion functions state promises their declarations alone
         // assert: a value of `node:assert` or `node:assert/strict` is read
         // through the latter's default import and its members alone, at
@@ -2390,6 +2439,12 @@ export function collectDeclarations(file: string, options: {
             specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
           continue;
         }
+        // A value of one of Node's built-in modules is read at a reviewed
+        // entry alone (SOURCE-CONTRACTS.md, "Library modules"): its
+        // declaration need not state what Node binds, nor Node bind the
+        // export it declares (`crypto.fips`, a deprecated accessor on the
+        // module's object that no named export holds).
+        if (value && (direct || origin !== null)) throw unreviewed();
         const [node] = nodes;
         // Merged type declarations are one, as `lookup` reads them.
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))

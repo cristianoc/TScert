@@ -3338,10 +3338,29 @@ the calculus does not prove Node's scheduler.
 behaviour from Node 25.2.1's `lib/` sources and probes run under Node 25.2.1
 (2026-10-19).
 
-A function a client imports from one of Node's modules (`node:fs`, or `fs`)
-is read through the reviewed overlay of library modules
-(`library-modules.mts`) where an entry lists it, and otherwise as an
-imported value ([imported values](#imported-ambient-and-global-values)).
+A value a client imports from one of Node's built-in modules (`node:fs`, or
+`fs`; a specifier Node's `isBuiltin` answers true of) is read through the
+reviewed overlay of library modules (`library-modules.mts`), and only where
+an entry lists it: any other value of such a module, named, a namespace's
+member or a default object's member, is refused where it is imported. The module is the one whose
+ambient declaration (`declare module "os"`) holds the value's declarations,
+however the client reaches it: a program module's re-export, by name or by
+`export *`, binds the same export, so it is read at that module's entry for
+the export's own name, and refused where none lists it
+(`node-reexport-tmpdir`, `invalid-node-reexport-named`,
+`invalid-node-reexport-star`, run under Node). No entry lists an enum, so
+an enum of a Node module, which only an augmentation of its declarations
+states, is refused before it is read: `declare module "node:crypto" { enum
+argon2 { tag = 1 } }` states `argon2.tag` as 1, where Node's `argon2` is a
+function whose `tag` is undefined (`invalid-node-augmented-enum`, run under
+Node). A
+declaration need not state what Node binds: `node:crypto` declares
+`const fips: boolean`, and Node's module object holds a deprecated
+accessor answering 0, which no named export holds
+(`invalid-node-default-import-unreviewed`, run under Node). The class values
+`Dirent` and `Stats`, which no entry lists, are refused alike
+(`invalid-node-dirent-prototype-write`); a name imported for its type alone
+is read as a type.
 An entry names one overload of the function's declaration in Node's
 declarations, with exactly the text it was reviewed against, its
 $`\mathit{texts}`$ the text and the same overload's text in the other pinned
@@ -3634,6 +3653,14 @@ type names does, and a definition's methods name it as their receiver
   and `invalid-node-path-resolve-callback`, run under Node). The module
   exports one object (`export = path`), whose methods are the overloads an
   entry names.
+- `node:os`'s `tmpdir()` returns a string: on POSIX the native
+  `getTempDir`, the first of `TMPDIR`, `TMP` and `TEMP` set, or `"/tmp"`; on
+  Windows `process.env`'s `TEMP` or `TMP`, or `SystemRoot` or `windir`
+  joined to `\temp` (Node's `lib/os.js`). That the result is a string rests
+  on the approved assumption that standard objects are not tampered with:
+  `process.env` is Node's, whose values are strings, where a replaced
+  `process.env` holding `TEMP: 7` makes Windows return 7. The call reads
+  `process.env`, so it is unrestricted in its effect (`node-os-tmpdir`).
 - `node:path`'s `sep`, a constant: a data property of the exported object,
   `"/"` on POSIX and `"\\"` on Windows, set when Node loads the module
   (`lib/path.js`). It is writable: no code writes it, an assumption, as of
@@ -3648,6 +3675,48 @@ type names does, and a definition's methods name it as their receiver
 ```
 
   so `sep` is $`\mathtt{"\backslash\backslash"}\mid\mathtt{"/"}`$, as declared (`blocker-node-path-sep`).
+
+### The default import of a Node module
+
+Node's default export of a built-in module is the module's object,
+`module.exports`, and its named exports are bound from that object's own
+properties when Node loads the module (Node 25.2.1,
+`lib/internal/bootstrap/realm.js`, `BuiltinModule.prototype.syncExports`;
+probed under Node 25.2.1: `(await import("node:fs")).default` is
+`require("node:fs")`, and its `existsSync` is the named export). A default
+import of a module $`\mu`$ the overlay lists whose `default` it reviews no
+entry of (`import fs from "node:fs"`, `import path from "node:path"`;
+`moduleObjectDefault`, `library-modules.mts`) is read as a namespace import
+of $`\mu`$ ([namespace imports](SOURCE-ELABORATION.md#namespace-imports)):
+every mention of `fs` is a member read `fs.x` or a qualified type name
+`fs.T`, and each member is the binding `fs.x` of the named export $`x`$:
+
+```math
+\frac{\mathrm{mentions}(d)\subseteq\{\,d.x_1,\ldots,d.x_n\,\}\quad \mathsf{objectDefault}(\mu)\quad \Gamma(x_i@\mu)=T_i}
+     {\Gamma(d.x_i)=T_i}\ \textsf{module-object-default}
+```
+
+$`\Gamma(x_i@\mu)`$ is the named import's reading, through the overlay's
+entries for $`x_i`$ (`library-module`, `library-module-constant`), so a
+member and the named export share one model, and a member no entry lists is
+refused, as its named import is. The binding `fs` itself is not read. That `fs.x` holds the named
+export at each read rests on the approved assumption that standard objects
+are not tampered with ([trust surface](DESIGN.md#trust-surface)): no code
+replaces a member of a Node module's object. A write of a member and any
+other mention of the default import, an alias that could write one, are
+refused where they are written (`invalid-node-default-import-write`,
+`invalid-node-default-import-value`, run under Node: a replaced `dirname`
+shrinks the array `map` visits). A member call passes the module's object
+as the receiver, which none of the listed functions reads (their sources
+under Node 25.2.1 mention no `this`); a callee whose declaration states a
+`this` parameter is refused, as a namespace member's is.
+
+TypeScript declares `node:path`'s `path` twice, `namespace path`, which
+declares interfaces alone, and `const path: path.PlatformPath`, the module's
+value (`export = path`). Only the constant has a value, so the checker
+resolves each member read to a member of `PlatformPath`, the declaration a
+named import of the same export resolves to (`blocker-node-default-import`,
+`blocker-fs-default-import`).
 
 ### `node:assert/strict`
 

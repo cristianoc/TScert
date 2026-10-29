@@ -22,13 +22,16 @@
     "noEmit": true,
     "types": ["node"],
     "typeRoots": ["./node_modules/@types"],
-    "paths": { "@fixture/collections": ["./collections.ts"] }
+    "paths": { "@fixture/collections": ["./collections.ts"], "@fixture/node-os-named": ["./node-os-named.ts"], "@fixture/node-os-star": ["./node-os-star.ts"] }
   },
   "include": [
     "../examples/collections-*.ts",
     "../examples/invalid-collections-*.ts",
     "../examples/node-*.ts",
     "../examples/invalid-node-*.ts",
-    "./collections.ts"
+    "./collections.ts",
+    "./node-os-named.ts",
+    "./node-os-star.ts",
+    "./node-crypto-augmentation.d.ts"
   ]
 }

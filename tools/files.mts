@@ -745,6 +745,10 @@ function observePackageLinks(directory: string): void {
  * its target; for a built-in, nothing. A package without `exports` is not
  * accounted for. Whether a package or a scope resolves the specifier, so
  * that its target is to be found. */
+/** Whether Node resolves `specifier` to one of its built-in modules
+ * (`node:fs`, `fs`), as `isBuiltin` of the running Node answers. */
+export const builtinModule = (specifier: string): boolean => isBuiltin(specifier);
+
 function observeResolution(specifier: string, parent: string): boolean {
   if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return false;
   // Another package lookup can resolve back into the scope through an

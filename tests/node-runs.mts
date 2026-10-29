@@ -982,6 +982,35 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-path-join-callback",
     `(() => { const xs = ["a", "b", "c"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { return 2 in parents(xs); } finally { path.posix.normalize = normalize; } })()`),
     false, "invalid-node-path-join-callback: a replaced posix.normalize shrinks the array map visits, leaving a hole");
+  // `crypto.fips`, declared `boolean`, is a deprecated accessor answering a
+  // number on the module's object, and no named export holds it.
+  assert.equal(runImporting("invalid-node-default-import-unreviewed",
+    `(() => { process.noDeprecation = true; return [typeof probe(), "fips" in process.getBuiltinModule("node:crypto"), Object.getOwnPropertyDescriptor(process.getBuiltinModule("node:crypto"), "fips").enumerable].join(); })()`),
+    "number,true,false", "invalid-node-default-import-unreviewed: crypto.fips answers a number and is no enumerable own property, so no named export");
+  // A class's method replaced through its `prototype`: a write changes
+  // what every instance's call answers; `Reflect.set` of a function
+  // returning a number makes the `boolean` call return 7.
+  assert.equal(runExample("invalid-class-prototype-write", "(() => { const before = check(); replace(); return [before, check()].join(); })()"),
+    "false,true", "invalid-class-prototype-write: the written prototype answers every instance's call");
+  assert.equal(runExample("invalid-reflect-method-replaced",
+    "(() => { replace(); return typeof check(); })()"),
+    "number", "invalid-reflect-method-replaced: the replaced method returns a number where boolean is declared");
+  // `argon2`, which an augmentation states as an enum whose `tag` is 1, is
+  // a function under Node, whose `tag` is undefined.
+  assert.equal(runImporting("invalid-node-augmented-enum", `[typeof process.getBuiltinModule("node:crypto").argon2, probe() === undefined].join()`),
+    "function,true", "invalid-node-augmented-enum: argon2 is a function and its tag undefined");
+  // A program module's re-export of `node:os`'s `hostname`, by name or by
+  // `export *`, binds `node:os`'s own function.
+  for (const name of ["invalid-node-reexport-named", "invalid-node-reexport-star"])
+    assert.equal(runImporting(name, `probe() === process.getBuiltinModule("node:os").hostname()`), true,
+      `${name}: the re-exported hostname is node:os's own`);
+  // A member of `node:path`'s object replaced through its default import,
+  // written or through an alias of the object: the replaced `dirname`
+  // shrinks the array `map` visits, leaving a hole.
+  for (const name of ["invalid-node-default-import-write", "invalid-node-default-import-value"])
+    assert.equal(runImporting(name,
+      `(() => { const path = process.getBuiltinModule("node:path"); const dirname = path.dirname; const xs = ["a", "b", "c"]; hook(xs); try { return 2 in parents(xs); } finally { path.dirname = dirname; } })()`),
+      false, `${name}: a replaced dirname shrinks the array map visits, leaving a hole`);
   assert.equal(runImporting("invalid-node-path-resolve-callback",
     `(() => { const xs = ["a", "b", "c"]; process.cwd = () => { xs.pop(); return "/"; }; return 2 in absolute(xs); })()`),
     false, "invalid-node-path-resolve-callback: a replaced process.cwd shrinks the array map visits, leaving a hole");

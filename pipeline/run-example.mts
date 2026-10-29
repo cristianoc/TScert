@@ -16,8 +16,9 @@ export const runExample = (file: string, expression: string): unknown =>
   runInNewContext(`${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))
     .replace(/^export /gm, "")}\n${expression}`, {}, { timeout: 1000 });
 /** Run a value-import example as Node runs its ES modules, then print
- * `expression`: the example and the modules of `imports-project` it imports
- * are stripped of types, `@fixture/NAME` resolved to `NAME`'s module. */
+ * `expression`: the example and the modules of `imports-project` it imports,
+ * and `library-project`'s re-exporting modules of `node:os`, are stripped of
+ * types, `@fixture/NAME` resolved to `NAME`'s module. */
 export const runImporting = (file: string, expression: string): unknown => {
   const out = runDirectory("imports-");
   const project = join(here, "imports-project");
@@ -27,6 +28,8 @@ export const runImporting = (file: string, expression: string): unknown => {
     const ts = join(project, `${name}.ts`);
     writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(present(ts) ? ts : join(project, `${name}.mts`), "utf8")));
   }
+  for (const name of ["node-os-named", "node-os-star"])
+    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(join(here, "library-project", `${name}.ts`), "utf8")));
   writeFileSync(join(out, "main.mjs"), `${relink(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}
 console.log(JSON.stringify(${expression}));
 `);

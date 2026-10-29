@@ -7,8 +7,8 @@
  * host meets at the arguments it admits: what the host does there, stated as
  * a type. The value is the statements' intersection; the declaration's types
  * are not read, so the types they name (`Buffer`, `URL`, streams) are not
- * collected. A function the overlay lists none of is read as its declaration
- * states (an imported value). */
+ * collected. A value of a built-in module the overlay lists none of is
+ * refused where it is imported (`declaration-graph.mts`). */
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
@@ -468,6 +468,17 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     effect: pathEffect },
   { module: "path", name: "relative", signature: "relative(from: string, to: string): string;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
+  // `node:os`'s `tmpdir()` returns the directory for temporary files: on
+  // POSIX the native `getTempDir`, the first of `TMPDIR`, `TMP` and `TEMP`
+  // set, stripped of a trailing separator, or `"/tmp"`; on Windows
+  // `process.env`'s `TEMP` or `TMP`, or `SystemRoot` or `windir` joined to
+  // `\temp` (Node 25.2.1's lib/os.js). The result is a string under the
+  // approved assumption that standard objects are not tampered with:
+  // `process.env` is Node's, whose values are strings; a replaced
+  // `process.env` holding `TEMP: 7` makes Windows return 7. It states no
+  // effect, since the call reads `process.env`.
+  { module: "os", name: "tmpdir", signature: "function tmpdir(): string;",
+    stated: { binders: [], params: [], result: atom("string") } },
   // `node:path`'s `sep`, the separator of the platform's paths: a data
   // property of the object the module exports, set when Node loads it (`"/"`
   // on POSIX, `"\\"` on Windows; Node 25.2.1's lib/path.js). It is writable:
@@ -487,8 +498,27 @@ export function reviewedText(declaration: string): string {
   return declaration.replace(/\s+/g, " ").trim();
 }
 
+/** The module `specifier` names: `node:fs` and `fs` name one module. */
+const moduleOf = (specifier: string): string =>
+  specifier.startsWith("node:") ? specifier.slice("node:".length) : specifier;
+
 /** The entries of an import from `specifier` of `name`: `node:fs` and `fs` name one module. */
 export function moduleEntries(specifier: string, name: string): readonly ModuleEntry[] {
-  const module = specifier.startsWith("node:") ? specifier.slice("node:".length) : specifier;
+  const module = moduleOf(specifier);
   return modulesOverlay.filter(e => e.module === module && e.name === name);
+}
+
+/** Whether the default import of `specifier` is the module's object, read
+ * through its members as a namespace import is (`namespace-members.mts`):
+ * a Node module the overlay lists, whose `default` it reviews no entry of.
+ * Node's default export of a built-in module is its `module.exports`, the
+ * object whose own properties the named exports are bound from when Node
+ * loads the module (Node 25.2.1, `lib/internal/bootstrap/realm.js`,
+ * `BuiltinModule.prototype.syncExports`); with that object's members not
+ * replaced (the approved assumption that standard objects are not tampered
+ * with), its member `x` holds the named export `x`. */
+export function moduleObjectDefault(specifier: string): boolean {
+  const module = moduleOf(specifier);
+  return modulesOverlay.some(e => e.module === module) &&
+    !modulesOverlay.some(e => e.module === module && e.name === "default");
 }
