@@ -545,8 +545,11 @@ which only separating storage an unknown call cannot reach would show
 - **Pattern:** a field a guard tested is read into a constant before a call
   that changes storage, rather than read again after it.
 - **Functions:** `atomText`, and `typeText`, `printType` and the others
-  calling it.
-- **Commit:** the introducing commit, `Fields atomText's guards test are read before its callbacks run`.
+  calling it; `liftClause`, whose store clause maps `required` and
+  `optional` through `liftType`, which writes `types.lifted`, and the
+  functions calling it (`liftLabels`, `treeAtom`, `liftSignatures`).
+- **Commit:** the introducing commit, `Fields atomText's guards test are read before its callbacks run`;
+  for `liftClause`, `A field's narrowing survives a map or forEach call whose callback changes nothing`.
 
 ### A wire document's strings checked at `unknown`
 

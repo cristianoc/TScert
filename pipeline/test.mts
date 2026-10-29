@@ -2287,6 +2287,38 @@ control(async (): Promise<void> => {
   process.stdout.write("an unrestricted call between a guard and the field's reread: refused in search and in checking\n");
 });
 
+control(async (): Promise<void> => {
+  // A native's call keeps a guard's finding only at the signature of a
+  // footprint its callback is within: `size`, passed to `forEach`, and
+  // `forEach`'s instance claimed at the ordinary effect, the signature
+  // letting every location change, keep no read link, and the field's
+  // reread after the call is refused, bypassing the producer, which keeps
+  // the field only across a call its instance keeps the heap at.
+  const artifacts = run("guard-field-native-callback");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const call = source.indexOf("seen.forEach(");
+  forgeCallee(claims, "count", source.indexOf("size", call), "size", (arrows) => {
+    assert.equal(arrows.length, 1);
+    for (const arrow of arrows) arrow.effect = ordinaryEffect;
+  });
+  const unit = must(claims.functions.find(f => f.name === "count"), "count");
+  const callback = must(unit.expressions.find(e => e.pos[0] === source.indexOf("size", call)), "the callback").type;
+  assert.ok(Array.isArray(callback));
+  forgeCallee(claims, "count", call, "seen.forEach", (arrows) => {
+    assert.equal(arrows.length, 1);
+    for (const arrow of arrows) {
+      arrow.effect = ordinaryEffect;
+      arrow.arguments = [callback];
+    }
+  });
+  const forged = writeClaims(artifacts, "guard-native-unrestricted-callback", claims);
+  const reread = source.indexOf("return t.optional.length");
+  refusedAt(artifacts, forged, "guard-native-unrestricted-callback", `[${reread},`);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  process.stdout.write("a native's call at an unrestricted callback between a guard and the field's reread: refused in search and in checking\n");
+});
+
 for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union-host", "total"]]) control(async (): Promise<void> => {
   // Only the bound function's claimed effect changes. Its hosts' members
   // permit writes, so a claim preserving all locations needs refusal.

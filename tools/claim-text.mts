@@ -495,12 +495,15 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
   const list = body("list");
   if (isObject(list) && isObject(list.first) && isList(list.rest)) {
     const t = list.first;
-    if (list.rest.length || !isList(t.required) || !isList(t.optional))
+    // Read before `liftType`, which writes `types.lifted`, runs.
+    const required = t.required;
+    const optional = t.optional;
+    if (list.rest.length || !isList(required) || !isList(optional))
       return encoding(clause);
     return {
       a: "store",
-      required: t.required.map((a) => liftType(types, a, depth - 1)),
-      optional: t.optional.map((a) => liftType(types, a, depth - 1)),
+      required: required.map((a) => liftType(types, a, depth - 1)),
+      optional: optional.map((a) => liftType(types, a, depth - 1)),
       rest: t.rest === null ? null : liftType(types, t.rest, depth - 1),
       // A flag the graph lacks is left out.
       ...(t.readonly === undefined ? {} : { readonly: t.readonly }),

@@ -10,6 +10,8 @@ module type Inputs = sig
   val execution_at : Json.t -> Execution.plan option
   val expression_hint : Json.t -> Source.expr option
   val claimed_type : Json.t -> Semantic.ty option
+  (* The instance a call published of its callee read at a source. *)
+  val latest_instance : Json.t -> Semantic.ty option
   val grew : string -> bool
   val branch : (string * Environment.binding) list -> Source.expr -> bool ->
     (string * Environment.binding) list
@@ -143,10 +145,12 @@ open S
   (* A call whose callee's every signature keeps the heap (its footprint
      within the empty one, its receiver's store included): Lean's
      `call-keep` keeps every heap fact across it, so the step keeps the
-     fields and paths a test found. *)
+     fields and paths a test found. The signatures are those the call's
+     instance projects from its callee's overloads, as a closure's footprint
+     reads them, else all of the callee's type's. *)
   and keeps_heap source = match expression_hint source with
     | Some {node=(Call (callee,_,_,_,_) | Invoke (callee,_,_,_));_} ->
-      (match claimed_type callee.pos with
+      (match (match latest_instance callee.pos with Some t -> Some t | None -> claimed_type callee.pos) with
        | Some t ->
          (match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
           | Some (Atoms [Shape {calls=(_ :: _ as calls);_}]) ->

@@ -22,6 +22,7 @@ module Execution_inputs : Execution_analysis.Inputs = struct
   let execution_at = S.execution_at
   let expression_hint = S.expression_hint
   let claimed_type = S.claimed_type
+  let latest_instance = S.latest_instance
   let grew name = List.mem name (path_facts ()).Proposal_flow.grown_locals
   let branch = S.branch_for_execution
 end

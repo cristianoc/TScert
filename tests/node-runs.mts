@@ -1872,6 +1872,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-guard-field-saved", "String(wrong({ f: 'a' }))", "undefined"],
     ["invalid-guard-field-saved-callback", "String(wrong({ f: 'a' }, (x) => { x.f = 0; return 'a'; }))", "undefined"],
     ["invalid-guard-field-call", "(() => { const b = { args: [1, 2] }; return String(wrong(b, () => { b.args = 0; })); })()", "undefined"],
+    ["invalid-guard-field-native-callback", "String(wrong({ args: [1, 2] }, [3]))", "undefined"],
     ["invalid-slot-path-write", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-loop", "String(lastKey({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, 2))", "undefined"],
     ["invalid-slot-path-finally", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, () => {}))", "undefined"],
