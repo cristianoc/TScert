@@ -266,6 +266,19 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             match (if literal then List.find_opt fits (List.filter_map Fun.id params) else None) with
             | Some p -> expr ~expected:p env arg,Some p
             | None -> expr env arg,None) args in
+      (* The binders a pattern (a signature's receiver or result) places
+         where a type places a type: a binder itself, or an array's
+         element, which a tuple's is the union of its required positions' and
+         its rest's. *)
+      let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
+        | Rigid r,_ -> [r,actual]
+        | Atoms [Shape {elements=Some p;calls=[];_}],Atoms [Shape {elements=Some a;_}]
+            when p.required=[] && p.optional_elements=[] ->
+          (match p.rest,a.required @ Option.to_list a.rest with
+           | Some p,(_::_ as elements) when a.optional_elements = [] ->
+             bind p (List.fold_left Semantic.union (Atoms []) elements)
+           | _ -> [])
+        | _ -> [] in
       (* Quantified overloads whose receiver or result places a binder where
          the call's receiver or expected type places a type: the binder is that
          type for typing the actuals, as TypeScript infers from the return
@@ -276,12 +289,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          inferred from its body. The proposal is untrusted; Lean checks the
          instance and every actual. *)
       let seeded_actuals (candidates:Semantic.signature list) =
-        let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
-          | Rigid r,_ -> [r,actual]
-          | Atoms [Shape {elements=Some p;calls=[];_}],Atoms [Shape {elements=Some a;_}]
-              when p.required=[] && p.optional_elements=[] && a.required=[] && a.optional_elements=[] ->
-            (match p.rest,a.rest with Some p,Some a -> bind p a | _ -> [])
-          | _ -> [] in
         (* A guard closure's written promise is the type a callback
            parameter stating that promise promises: its result operand, as
            TypeScript infers `filter<S>`'s `S` from the predicate. So is a
@@ -654,6 +661,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           else
             let t = Inference.substitute solution p in
             if Semantic.mentions_rigid t then None else Some t in
+        (* A closure literal at a parameter whose binders the call's expected
+           result fixes is built at the parameter read at them, as TypeScript
+           infers from the return position first and types the callback's
+           body at that contextual return type: `xs.map(n => ({ k: "atom", n
+           }))` expected at `Array<Term>` builds the literal at the arm of
+           `Term` it fits. A proposal: the instance is inferred from the
+           actuals afterwards, and Lean checks it and the closure. *)
+        let result_bound p = match expected with
+          | None -> None
+          | Some t ->
+            let own = List.map (fun (q:Semantic.quantifier) -> q.identity) signature.quantified in
+            let solution = List.filter_map (fun (r,t) ->
+              if List.mem r own then Some (r,ValueArgument t) else None) (bind signature.result t) in
+            if solution = [] then None
+            else
+              let p = Inference.substitute solution p in
+              if Semantic.mentions_rigid p then None else Some p in
         let dictionary_bound = function
           | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
                           signature.quantified with
@@ -680,6 +704,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Some p,None when (match arg.node with ArrayLiteral _ -> true | _ -> false)
                               && literal_bounds p <> None ->
             expr ?expected:(literal_bounds p) env arg
+          | Some p,None when (match arg.node with Lambda _ -> true | _ -> false)
+                              && result_bound p <> None ->
+            expr ?expected:(result_bound p) env arg
           (* A dictionary bound guides a fresh literal's construction.
              Readonly bounds admit precise field contracts; writable bounds
              supply the index's storage contract. *)

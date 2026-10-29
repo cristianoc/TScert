@@ -268,8 +268,8 @@ export const cases: Case[] = [
     project: "pipeline/blocker-project" },
   { ...gap("blocker-infinite-loop-completion", "A loop with no exit needs no implicit return obligation.", "unverified", "search",
     /^reject: source expression obligation at \[131,134\): evidence search failed: no derivation of its completion claim(?:\n|$)/), project: "pipeline/blocker-project" },
-  { ...gap("blocker-callback-literal-context", "A map callback returning a record needs the expected discriminated result type on its literal.", "unverified", "search",
-    /^reject: source expression obligation at \[416,466\): evidence search failed: no derivation of its return-contract claim(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-callback-literal-context", "A map callback over a const tuple returning a record is typed at the expected discriminated element type, its literal at the arm it fits."),
+    project: "pipeline/blocker-project" },
   { ...positive("blocker-regexp-capture-callback", "A replacement callback taking the regex's captures as `unknown` is claimed at the callback `[Symbol.replace]` calls, each capture `string | undefined`."),
     project: "pipeline/blocker-project" },
   { ...gap("blocker-fresh-sort-effect", "Sorting the fresh result of filter needs its store mutation recognised as confined to fresh storage.", "unverified", "search",
@@ -2565,6 +2565,15 @@ export const cases: Case[] = [
     "invalid-captured-write",
     "captured cell written at the binder's type",
     /source expression obligation at \[128,143\): evidence search failed: no derivation of its storage-contract claim/,
+  ),
+  positive(
+    "callback-literal-context",
+    "a callback's object literal built at the arm of the expected element type it fits: `map`'s binder and a generic function's fixed by the expected result, a field's, the enclosing function's",
+  ),
+  negative(
+    "invalid-callback-literal-context",
+    "a callback's object literal whose discriminant is no arm's of the expected element type",
+    /^reject: source expression obligation at \[370,394\): evidence search failed: no derivation of its return-contract claim(?:\n|$)/,
   ),
   negative(
     "invalid-callback-result",
