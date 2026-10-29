@@ -1588,6 +1588,9 @@ where a statement or a name reads it. The entries:
 - `Dirent`, at `Dirent<string>`: `{ name, parentPath: string; isFile, …,
   isSocket(): unknown }`, the strings writable, as `readdirSync` with
   `withFileTypes` returns its entries ([library modules](#library-modules)).
+- `URL`, Node's global interface extending the class of `node:url`:
+  $`\mathsf{host}_u\,\{\}`$, with $`u`$ the marker `"node:url"`, as
+  [Node's `URL`](#nodes-url) states it.
 
 $`\mathsf{host}_m\,R`$ is the record $`R`$ with a host family's marker
 $`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
@@ -3016,6 +3019,44 @@ reaches no prototype. The standard library's DOM, which declares
 `TextDecoder` too, gives the global a second declaration, which the entry
 does not review.
 
+#### Node's `URL`
+
+**Audited against:** `@types/node` 22.20.2 and 22.10.7; host behaviour
+from Node 25.2.1's `lib/internal/url.js` and probes run under Node 25.2.1
+(2026-10-29).
+
+`URL` is read only as a constructor through `library-global-constructs`.
+Its contract admits string inputs and an optional string base:
+$`(\mathtt{string},\ \mathtt{string}^?)\Rightarrow_\emptyset\mathit{URL}`$.
+The native parser writes the fresh object's private fields. The empty
+footprint holds on normal return; error construction may run
+`Error.prepareStackTrace` on a throw.
+
+The [stated library type](#stated-library-types) is opaque:
+$`\mathit{URL}=\mathsf{host}_u\,\{\}`$.
+Property reads, writes and URL-valued bases are refused. A URL the program
+holds may reach other code, passed at the declared `URL`, at an `unknown`
+parameter or returned at `unknown`, and that code may give it an own
+member or give its search parameters an own `toString`,
+`Symbol.toPrimitive` or `size`, without replacing any standard method: a
+later read of `href` or a conversion to a string then runs that code
+(`invalid-node-url-fresh-escape`, `invalid-node-url-unknown-parameter`,
+`invalid-node-url-unknown-return`, run under Node: a getter answering a
+number), and so do `fileURLToPath`'s reads of `auth`, `path`, `hostname`
+and `pathname` (`invalid-node-url-input`, run under Node). `href` is a
+setter too, which parses again (`invalid-node-url-write`,
+`invalid-node-url-write-only`, run under Node). The front end reads a
+URL's serialization through the host boundary
+[URLs as strings](SOURCE-REWRITES.md#urls-as-strings), which keeps each URL
+it makes inside one function. The approved policy is that standard objects
+and prototypes are not tampered with ([trust surface](DESIGN.md#trust-surface)):
+`URL.prototype` and `Object.prototype` hold their standard properties.
+`tests/node-runs.mts` executes the serialization and own-getter
+counterexamples and the fixtures `blocker-node-url-import`,
+`node-url-strings`, `invalid-node-url-write`, `invalid-node-url-spread`,
+`invalid-node-url-member`, `invalid-node-url-program-object` and
+`invalid-node-url-replaced`.
+
 ### `JSON` and `Error`
 
 Overloads stated alike are one signature. A statement may name a library
@@ -3694,6 +3735,21 @@ type names does, and a definition's methods name it as their receiver
   would run at the member read, before the call
   (`invalid-node-crypto-hash-method-getter`, run under Node: it pops the
   array).
+- `node:url`'s `fileURLToPath(url)` admits one string argument:
+  $`(\mathtt{string})\Rightarrow_\emptyset\mathtt{string}`$.
+  It parses the string into a URL that reaches no other code and decodes
+  its pathname. The platform selects the default path rules:
+  POSIX rejects hosts and encoded `/`; Windows accepts UNC hosts and also
+  rejects encoded backslashes. A protocol other than `file:` throws.
+  URL objects are refused, avoiding own `auth`, `path`, `hostname` and
+  `pathname` members and search-parameter serialization callbacks.
+  Options are refused (`invalid-node-url-options`, run under Node).
+- `pathToFileURL(path)` admits one string argument and returns an opaque
+  URL ([Node's `URL`](#nodes-url)):
+  $`(\mathtt{string})\Rightarrow\mathit{URL}`$.
+  It resolves paths using `path.posix.resolve` on POSIX and
+  `path.win32.resolve` on Windows, reads `process.cwd()` for relative paths,
+  and encodes URL control characters. It states no effect.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
   too (Node's `lib/path.js`). `join` of any number of strings,

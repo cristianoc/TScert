@@ -870,6 +870,45 @@ refused, though no caller writes the result: `findIn` only reads it.
 - **Functions:** `typesOf`.
 - **Commit:** the introducing commit.
 
+### A resolved URL read through URL members
+
+`resolveObserved` parsed the URL Node's resolver answers with `new URL` and
+read its `protocol`, `search` and `hash`; `observeResolution` resolved a
+relative specifier with `new URL(specifier, pathToFileURL(parent))`, and
+`family-activation.mts` read `pathToFileURL(path).href`. A URL the program
+holds is opaque ([Node's `URL`](SOURCE-CONTRACTS.md#nodes-url)): other
+code it reaches may give it, or its search parameters, an own member that
+a later read of a member or a conversion runs, so no member is read.
+
+- **Rewrite:** the program holds serialized URLs only. `pathToFileHref`
+  and `resolveHref`, the host boundary [URLs as strings](#urls-as-strings),
+  stand for `pathToFileURL(path).href` and `new URL(input, base).href`;
+  `fileURLToPath` takes the string. The resolver's answer is tested as a
+  string: it names a file where it starts with `file:`, and is kept where
+  its query and its fragment are empty or absent (`emptyQueryAndFragment`:
+  nothing follows the first `#`, and nothing follows the first `?` before
+  it).
+- **Observable contract:** the same results, throws and file-system
+  observations on every URL the resolver answers. The resolver answers a
+  URL in serialized form, its scheme in lowercase at the start and `?` and
+  `#` in its path percent-encoded, so a `file:` prefix is its protocol, the
+  first `#` starts its fragment and the first `?` before it its query; the
+  fragment may hold `?` and `#`. `search` and `hash` are `""` exactly where
+  that query and fragment are empty or absent, which the default resolver
+  makes of an empty delimiter by dropping it and `--preserve-symlinks`
+  keeps. A URL base converts to its `href`, and `fileURLToPath` of a URL's
+  `href` parses a URL with the same path. `tests/node-runs.mts` compares
+  both forms on what the resolver answers for empty and non-empty queries
+  and fragments, with and without `--preserve-symlinks`, on other
+  serialized URLs (other schemes, encoded `?`, `#` and space, a fragment
+  holding `?`), and on specifiers with encodings, queries, fragments and an
+  invalid URL (Node 25.2.1, 2026-10-29).
+- **Functions:** `files.mts#resolveObserved`, `files.mts#observeResolution`
+  and the two reads of `family-activation.mts`; `blocker-node-url-import`
+  shows the rewritten form.
+- **Pattern:** a URL crosses a call boundary as its serialization.
+- **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
@@ -1069,6 +1108,93 @@ language reads them: a read through the client can run a getter.
   returns passes through the wrapper.
 - **Commit:** the introducing commit, `Confine Object.getPrototypeOf to a
   host boundary of the compiler channel`.
+
+### URLs as strings
+
+The front end's two operations on WHATWG URLs, each from strings to a
+string. A URL the program held could reach other code, which may give it
+or its search parameters an own member that a later read of its `href`
+runs ([Node's `URL`](SOURCE-CONTRACTS.md#nodes-url)); the boundary holds
+each URL it makes inside one function.
+
+- **Boundary:** `tools/url-strings.mts`. `pathToFileHref(path)` is
+  `pathToFileURL(path).href`, and `resolveHref(input, base)` is
+  `new URL(input, base).href`.
+- **What callers get:** a string, the URL's serialization; never a URL.
+  Callers are verified against `(string) => string` and
+  `(string, string) => string`, which state no effect
+  (`blocker-node-url-import`).
+- **Contract, audited against Node 25.2.1's `lib/internal/url.js`:** each
+  function constructs a URL, reads its `href` once and returns it; the URL
+  reaches no other code, since Node's URL construction publishes nothing
+  (no diagnostics channel) and the function passes it nowhere. The `href`
+  getter of a URL whose search parameters no code has read serializes its
+  parsed record. Under the approved policy that standard objects and
+  prototypes are not tampered with, the getter is `URL.prototype`'s and
+  runs no other code. `pathToFileHref` resolves a relative path against
+  `process.cwd()`, so its result depends on the working directory, and
+  for a relative path throws what `process.cwd()` throws (the working
+  directory removed: ENOENT, run under Node 25.2.1); a NUL character is
+  encoded as `%00`;
+  `resolveHref` throws a `TypeError` where its input is no URL relative to
+  the base, or the base is no URL.
+- **What depends on it:** `files.mts#observeResolution`,
+  `files.mts#resolveObserved` and `family-activation.mts`'s module URLs.
+- **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
+
+### A child's output
+
+`unchecked.mts` runs each part of its check in a child process and reads
+the child's standard output. Node publishes a child on a diagnostics
+channel before `spawn` returns, so other code may hold it: replace its
+`stdout` (an own getter answering anything) or its methods, change the
+stream's encoding, remove listeners, or emit `data`, `close` and `error`
+with any arguments and any number of them, no standard prototype changed;
+out of file descriptors, `spawn` returns before it assigns `stdout`. No
+contract a program could hold the child at states all of that, so the
+program holds none.
+
+- **Boundary:** `tools/child-output.mts`.
+  `runChild(command, args): Promise<ChildOutput>`, with
+  `ChildOutput = { code: number | null; signal: string | null; stdout: string }`,
+  runs the command with standard input ignored, standard output collected
+  and standard error inherited.
+- **What callers get:** a promise of plain values, never a child, a stream
+  or a listener. Callers are verified against that signature, which states
+  no effect (`blocker-node-child-output`).
+- **Contract, what TScert relies on:** the promise, where it settles,
+  resolves to a value of `ChildOutput`'s types or rejects with an `Error`
+  of a fixed message, and settles once. Every value is checked before it
+  is used: a `data` event other than one string, and a `close` event other
+  than a number or `null` and a string or `null`, reject; an event after
+  settling is ignored before its arguments are read; an `error` event
+  rejects without its payload being read, so no getter or conversion of
+  the payload runs; a `stdout` that is no object with `setEncoding` and
+  `on`, or another object on a second read, rejects; and whatever `spawn`,
+  a replaced method or a getter throws while the child is started and its
+  listeners are installed (a NUL character in the command, a throwing
+  `on`) rejects with a fixed message, the thrown value unread.
+- **Not promised:** that the values are the child's, that the output is
+  UTF-8, or that the promise settles. Other code holding the child may emit
+  valid events (resolving with its values while the child prints and exits
+  otherwise), substitute a stable stream or replace the child's `on`,
+  change the encoding after `setEncoding("utf8")`, or remove the `close`
+  listener (the promise stays pending); an `error` emitted after that code
+  removed the boundary's `error` listener ends the process. The child is
+  not killed on a rejection: its `pid` is a property other code may have
+  replaced.
+- **Audited against Node 25.2.1's `lib/child_process.js` and
+  `lib/internal/child_process.js`:** where no other code holds the child,
+  it resolves once the child closes, with the exit code and the signal Node
+  passes to `close` and the output decoded as UTF-8, a character split
+  across chunks kept whole, and rejects where the child cannot start (a
+  missing command, ENOENT; no file descriptors left, EMFILE, where `stdout`
+  is absent). `tests/node-runs.mts` runs each case above under Node, each
+  in a process of its own whose diagnostics-channel subscriber does what
+  other code may, and reports a promise still pending after three seconds
+  (2026-10-29).
+- **What depends on it:** the worker loop of `unchecked.mts`.
+- **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
 
 ## Changes for a tool's defect
 

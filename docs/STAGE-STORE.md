@@ -60,8 +60,9 @@ Excluded from every key (`unkeyed`), by role:
   example under Node, and creating the fixture projects' links;
 - `tools/diagnostic.mts`, `tools/diagnostic-view.mts`, `tools/claim-text.mts`:
   decoding and rendering diagnostics after the stages;
-- `tools/unchecked.mts`, `tools/shadow-contracts.mts`: the `any` audit of the
-  node side's sources, a suite;
+- `tools/unchecked.mts`, `tools/shadow-contracts.mts`, `tools/child-output.mts`:
+  the `any` audit of the node side's sources, a suite, and the child
+  processes it runs its parts in;
 - `tools/strip-types.mts`: type erasure for the examples run under Node by
   the excluded controls;
 - `tools/compiler-processes.mts`: the attempt records' measurement of the

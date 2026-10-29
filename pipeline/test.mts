@@ -2792,6 +2792,49 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Borrow successful claims and evidence from a contract accepting the
+  // narrow listener / extra argument; consume both against the honest wire.
+  for (const file of ["invalid-node-url-options", "invalid-node-url-input", "invalid-node-url-read"]) {
+    const artifacts = run(file);
+    const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    if (file === "invalid-node-url-read") {
+      const url = must(ast.declarations.definitions.find(d => d.declaration.name === "URL"), "URL");
+      assert.ok(url.expression?.k === "object");
+      url.expression.fields.push({ name: "href", optional: false, readonly: true, span: [0, 0],
+        type: { k: "atom", name: "string", span: [0, 0] } });
+    } else if (file === "invalid-node-url-options" || file === "invalid-node-url-input") {
+      const value = must(ast.declarations.values.find(v => v.binding.imported === "fileURLToPath"), "fileURLToPath");
+      const widen = (t: TypeTerm): TypeTerm => {
+        const params = (ps: TypeTerm[]): TypeTerm[] => file === "invalid-node-url-options"
+          ? [...ps, { k: "atom", name: "unknown", span: t.span }]
+          : [{ k: "atom", name: "unknown", span: t.span }];
+        if (t.k === "function") return { ...t, params: params(t.params) };
+        if (t.k === "scheme") return { ...t, signatures: t.signatures.map(s => ({ ...s,
+          params: params(s.params) })) };
+        assert.fail("fileURLToPath has a callable contract");
+      };
+      value.type = widen(value.type);
+    }
+    const weak = join(artifacts, "weakened-host.json");
+    writeFileSync(weak, JSON.stringify(ast));
+    const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weak]));
+    assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+    const flow = join(artifacts, "weakened-host-flow.json");
+    writeFileSync(flow, lowered.stdout);
+    const proposed = tested(producerCall(producerExecutable, [weak, flow]));
+    assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
+    const claims = join(artifacts, "weakened-host-claims.json");
+    writeFileSync(claims, proposed.stdout);
+    const borrowed = produceWith(artifacts, claims, "weakened-host", weak);
+    assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
+    const searched = produceWith(artifacts, claims, "forged-host");
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.equal(readDiagnostic(searched.stdout + searched.stderr)?.kind, "node-typing");
+    invoke(claims, join(artifacts, "weakened-host-evidence.json"), artifacts);
+  }
+});
+
+control(async (): Promise<void> => {
   // A signal listener is called with the signal's name, whatever claims are
   // offered: claims and evidence borrowed from a weakened document whose
   // `process.on` takes a listener of a number at the signals are accepted

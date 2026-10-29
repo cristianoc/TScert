@@ -1,8 +1,172 @@
 // Examples and native-contract counterexamples run under Node: each result is
 // what the case's outcome and the contracts it relies on say. No build needed.
 import assert from "node:assert/strict";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
+
+{
+  assert.equal(runImporting("invalid-node-url-write-only", '(() => { const u = new URL("file:///x"); moved(u); return u.protocol; })()'), "http:");
+  assert.equal(runImporting("node-url-strings", 'pathOf("file:///tmp/x")'), "/tmp/x");
+  assert.equal(runImporting("node-url-strings", 'file("/tmp/x")'), "file:///tmp/x");
+  assert.equal(runImporting("node-url-strings", 'relative("file:///tmp/")'), "file:///tmp/x");
+  assert.equal(runImporting("invalid-node-url-input", '(() => { let n = 0; const u = new URL("file:///x"); Object.defineProperty(u, "pathname", { get() { n++; return "/hook"; } }); return pathOf(u) + n; })()'), "/hook1");
+  assert.equal(runImporting("invalid-node-url-base", '(() => { let n = 0; const u = new URL("file:///tmp/"); const p = u.searchParams; p.toString = () => { n++; return "a=b"; }; p.append("a", "b"); relative(u); return n; })()'), 1);
+  assert.equal(runImporting("invalid-node-url-read", '(() => { let n = 0; const u = new URL("file:///tmp/"); const p = u.searchParams; p.toString = () => { n++; return "a=b"; }; p.append("a", "b"); hrefOf(u); return n; })()'), 1);
+  // blocker-node-url-import imports the boundary tools/url-strings.mts, so
+  // it runs in place.
+  const urls: {
+    pathOf: (url: string) => string; hrefOf: (path: string) => string;
+    target: (specifier: string, parent: string) => string | null; fileOf: (url: string | null) => string | null;
+  } = await import("../pipeline/examples/blocker-node-url-import.ts");
+  assert.equal(urls.pathOf("file:///tmp/x"), "/tmp/x");
+  assert.equal(urls.hrefOf("/tmp/x"), "file:///tmp/x");
+  assert.equal(urls.target("x", "/tmp/parent"), "/tmp/x");
+  // The rewritten string tests answer as the URL members they replace, on
+  // what the resolver answers with and without --preserve-symlinks, which
+  // keeps an empty query or fragment, and on other serialized URLs.
+  const members = (href: string): string | null => {
+    const u = new URL(href);
+    return u.protocol === "file:" && u.search === "" && u.hash === "" ? fileURLToPath(u) : null;
+  };
+  const resolving = mkdtempSync(join(tmpdir(), "tscert-resolve-"));
+  try {
+    mkdirSync(join(resolving, "real"));
+    writeFileSync(join(resolving, "real", "f.mjs"), "");
+    symlinkSync(join(resolving, "real"), join(resolving, "link"));
+    const specifiers = ["./f.mjs", "./f.mjs?", "./f.mjs#", "./f.mjs?#", "./f.mjs?q", "./f.mjs#h", "./f.mjs?q#", "./f.mjs?#h", "./%3F.mjs", "./%23.mjs"];
+    writeFileSync(join(resolving, "link", "main.mjs"),
+      `console.log(JSON.stringify(${JSON.stringify(specifiers)}.map(s => import.meta.resolve(s))))`);
+    const kept: string[] = [];
+    for (const flags of [[], ["--preserve-symlinks", "--preserve-symlinks-main"]]) {
+      const run = spawnSync(process.execPath, [...flags, join(resolving, "link", "main.mjs")], { encoding: "utf8" });
+      assert.equal(run.status, 0, run.stderr);
+      const hrefs: unknown = JSON.parse(run.stdout);
+      assert.ok(Array.isArray(hrefs));
+      for (const href of hrefs) {
+        assert.equal(typeof href, "string");
+        const text = String(href);
+        assert.equal(urls.fileOf(text), members(text), text);
+        if (/[?#]$/.test(text)) kept.push(text);
+      }
+    }
+    assert.ok(kept.length >= 3, "--preserve-symlinks keeps empty delimiters");
+  } finally {
+    rmSync(resolving, { recursive: true, force: true });
+  }
+  for (const href of ["file:///tmp/x?q", "file:///tmp/x#f", "file:///tmp/x?", "file:///tmp/x#", "file:///tmp/x?#", "file:///tmp/x?#f",
+    "file:///tmp/x#a?b", "file:///tmp/%3F", "file:///tmp/%23", "file:///tmp/a%20b", "node:fs", "data:text/javascript,"])
+    assert.equal(urls.fileOf(href), members(href), href);
+  for (const [specifier, parent] of [["./x.ts", "/tmp/a/b.ts"], ["../%3F.ts", "/tmp/sp ace/b.ts"], ["./q.ts?x#h", "/tmp/#h/b.ts"], ["http://[", "/tmp/b.ts"]])
+    assert.equal(urls.target(specifier ?? "", parent ?? ""), (() => {
+      try { return fileURLToPath(new URL(specifier ?? "", pathToFileURL(parent ?? ""))); } catch { return null; }
+    })(), specifier);
+  assert.equal(runImporting("invalid-node-url-unknown-parameter",
+    'escaped((u) => { Object.defineProperty(u, "href", { get: () => 7 }); })'), 7);
+  assert.equal(runImporting("invalid-node-url-unknown-return",
+    '(() => { const m = make(); Object.defineProperty(m.leaked, "href", { get: () => 7 }); return read(m); })()'), 7);
+  assert.equal(runImporting("invalid-node-url-options", 'windowsPath("file:///C:/x")'), "C:\\x");
+  assert.equal(runImporting("invalid-node-url-program-object", 'pathOf(() => "/callback")'), "/callback");
+  assert.equal(runImporting("invalid-node-url-member", 'pathnameOf(new URL("file:///x?q"))'), "/x");
+  assert.equal(runImporting("invalid-node-url-spread", 'copied(new URL("file:///x")) === undefined'), true);
+  assert.equal(runImporting("invalid-node-url-write", 'moved()'), "http://example.com/a");
+  assert.equal(runImporting("invalid-node-url-fresh-escape", '(() => { let n = 0; const href = escaped((u) => { const p = u.searchParams; p.toString = () => { n++; return "a=b"; }; p.append("a", "b"); }); return n > 0 && href; })()'), "file:///tmp/x?a=b");
+  assert.equal(runImporting("invalid-node-url-replaced", '(() => { replace(() => "file:///elsewhere/"); return new URL("x", new URL("file:///tmp/")).href; })()'), "file:///elsewhere/x");
+  // Each hook is on an instance; all standard prototypes stay unchanged.
+  for (const operation of ["new URL('x', u)", "fileURLToPath(u)", "u.href"]) {
+    for (const hook of ["toString", "primitive", "size"]) {
+      assert.equal(runImporting("node-url-strings", `(() => {
+        let calls = 0;
+        const u = new URL('file:///tmp/x');
+        const p = u.searchParams;
+        if (${JSON.stringify(hook)} === 'size') Object.defineProperty(p, 'size', { get() { calls++; return 1; } });
+        else Object.defineProperty(p, ${JSON.stringify(hook)} === 'primitive' ? Symbol.toPrimitive : 'toString', { value() { calls++; return 'a=b'; } });
+        p.append('a', 'b');
+        ${operation};
+        return calls > 0;
+      })()`), true, `${operation}: own ${hook} serialization callback`);
+    }
+  }
+  for (const key of ["auth", "path", "hostname", "pathname"]) {
+    assert.equal(runImporting("node-url-strings", `(() => {
+      let calls = 0; const u = new URL('file:///tmp/x');
+      Object.defineProperty(u, ${JSON.stringify(key)}, { get() { calls++; return ${JSON.stringify(key)} === 'pathname' ? '/tmp/x' : ${JSON.stringify(key)} === 'hostname' ? '' : undefined; } });
+      fileURLToPath(u); return calls > 0;
+    })()`), true, `fileURLToPath: own ${key} getter`);
+  }
+  // tools/child-output.mts runs a child and hands back plain values. Each
+  // scenario runs in a process of its own, where a diagnostics-channel
+  // subscriber, which sees the child before `spawn` returns, does what other
+  // code may, every standard prototype unchanged: the result's types hold,
+  // its values may be forged, and a promise left pending is reported as
+  // such after three seconds.
+  const boundary = pathToFileURL(join(import.meta.dirname, "..", "tools", "child-output.mts")).href;
+  const ran = (subscriber: string, command: readonly string[] = [process.execPath, "-e", "process.stdout.write('ok')"]): unknown => {
+    const script = `process.getBuiltinModule("node:diagnostics_channel").subscribe("child_process", ({ process: child }) => { ${subscriber} });
+      const { runChild } = await import(${JSON.stringify(boundary)});
+      const pending = new Promise((done) => setTimeout(() => done("pending"), 3000));
+      const result = runChild(${JSON.stringify(command[0])}, ${JSON.stringify(command.slice(1))}).catch((e) => e.message);
+      console.log(JSON.stringify(await Promise.race([result, pending])));
+      process.exit(0);`;
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(run.status, 0, run.stderr);
+    return JSON.parse(run.stdout.trim().split("\n").pop() ?? "null");
+  };
+  assert.deepEqual(ran(""), { code: 0, signal: null, stdout: "ok" });
+  assert.deepEqual(ran(`child.on("spawn", () => child.stdout.setEncoding("latin1"));`), { code: 0, signal: null, stdout: "ok" });
+  assert.deepEqual(ran("", ["/bin/sh", "-c", "kill -TERM $$"]), { code: null, signal: "SIGTERM", stdout: "" });
+  assert.match(String(ran(`child.on("spawn", () => child.stdout.emit("data", 123));`)), /delivered no text/);
+  assert.match(String(ran(`child.on("spawn", () => child.stdout.emit("data", "ok", "bad"));`)), /delivered no text/);
+  assert.match(String(ran(`child.on("spawn", () => child.emit("close", "bad", 42));`)), /unexpected arguments/);
+  assert.match(String(ran(`child.on("spawn", () => child.emit("close", 0, null, "bad"));`)), /unexpected arguments/);
+  assert.match(String(ran(`Object.defineProperty(child, "stdout", { get() { return 123; }, set() {} });`)), /no standard output stream/);
+  assert.match(String(ran(`let n = 0; Object.defineProperty(child, "stdout", { get() { return n++ === 0 ? { setEncoding() {}, on() {} } : 7; }, set() {} });`)),
+    /standard output changed/);
+  assert.match(String(ran("", ["/no/such/command"])), /failed to start/);
+  // What spawn or a replaced method throws is not read: the rejection's
+  // message is the boundary's own.
+  assert.match(String(ran("child.on = () => { throw 42; };")), /starting the child or reading its standard output threw/);
+  assert.match(String(ran("", ["/bin/ec\u0000ho"])), /starting the child or reading its standard output threw/);
+  // Valid events another holder emits are taken as Node's: forged values of
+  // the stated types (the child itself prints "real" and exits 7).
+  const real = [process.execPath, "-e", "setTimeout(() => { process.stdout.write('real'); process.exit(7); }, 300)"];
+  assert.deepEqual(ran(`child.on("spawn", () => { child.stdout.emit("data", "forged"); child.emit("close", 0, null); });`, real),
+    { code: 0, signal: null, stdout: "forged" });
+  // A stable substitute stream, and a replaced instance method.
+  assert.deepEqual(ran(`const fake = { setEncoding() {}, on(event, f) { if (event === "data") setTimeout(() => f("fake")); return fake; } };
+    Object.defineProperty(child, "stdout", { get() { return fake; }, set() {} });`, real), { code: 7, signal: null, stdout: "fake" });
+  assert.deepEqual(ran(`child.on = (event, f) => { if (event === "close") setTimeout(() => f(0, null), 10); return child; };`, real),
+    { code: 0, signal: null, stdout: "" });
+  // Listeners removed: the promise stays pending after the child exits.
+  assert.equal(ran(`child.on("spawn", () => child.removeAllListeners("close"));`), "pending");
+  // An error whose every read throws: rejected, before and after settling,
+  // and the process does not end.
+  const hostile = `const e = new Error(); Object.defineProperty(e, "message", { get() { throw new Error("read"); } });
+    for (const key of ["name", "stack", "code"]) Object.defineProperty(e, key, { get() { throw new Error("read"); } });`;
+  assert.match(String(ran(`${hostile} child.on("spawn", () => child.emit("error", e));`)), /failed to start or was signalled an error/);
+  assert.deepEqual(ran(`${hostile} child.on("spawn", () => { child.emit("close", 0, null); child.emit("error", e); });`),
+    { code: 0, signal: null, stdout: "" });
+  // Another holder's encoding: the output is a string, decoded otherwise.
+  const accented = [process.execPath, "-e", "process.stdout.write(String.fromCharCode(233))"];
+  assert.deepEqual(ran("", accented), { code: 0, signal: null, stdout: String.fromCharCode(233) });
+  assert.deepEqual(ran(`child.on("spawn", () => child.stdout.setEncoding("latin1"));`, accented),
+    { code: 0, signal: null, stdout: String.fromCharCode(195, 169) });
+  // Out of file descriptors, `spawn` returns before it assigns `stdout`.
+  {
+    const script = `const fs = process.getBuiltinModule("node:fs");
+      const { runChild } = await import(${JSON.stringify(boundary)});
+      const fds = []; try { while (true) fds.push(fs.openSync("/dev/null", "r")); } catch {}
+      const result = await runChild(process.execPath, ["-e", "1"]).catch((e) => e.message);
+      for (const fd of fds) fs.closeSync(fd);
+      console.log(JSON.stringify(result));`;
+    const run = spawnSync("/bin/sh", ["-c", 'ulimit -n 64; exec "$0" --input-type=module -e "$1"', process.execPath, script], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(String(JSON.parse(run.stdout)), /no standard output stream/);
+  }
+}
 
 {
   for (const [file, call] of [

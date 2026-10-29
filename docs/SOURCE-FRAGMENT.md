@@ -286,3 +286,13 @@ representation does not state it; the paths are in
 | A replacement callback of a regex other than a literal of known shape written at the call; `new RegExp` of a regex pattern; a write to a match result | Not stated: the callback's arguments follow the shape, which code holding the regex may change through `lastIndex` and `compile`; a regex pattern is read through accessors; match results are readonly views | [regular expressions](SOURCE-CONTRACTS.md#regular-expressions) | `invalid-regexp-object-pattern`, `invalid-regexp-replace-shared` (Node) |
 | `catch` or `finally` after a void async completion through a `Promise<void>` annotation | `void` denotes `unknown`, and its payload may hide a callable `then` | [async functions and await](SOURCE-CONTRACTS.md#async-functions-and-await) | — |
 | A NaN or infinite enum member; a reverse key naming a member; an empty enum | A NaN or infinite value has no literal type; the reverse entry would replace the member; an empty object leaves no record | [enums](SOURCE-CONTRACTS.md#enums) | — |
+
+### Opaque Node URLs
+
+The reviewed URL view admits construction from strings and storage as an
+opaque host value. Member reads and writes, URL-valued constructor bases,
+and URL-valued `fileURLToPath` arguments are refused; the front end reads
+URLs as strings through a host boundary
+([URLs as strings](SOURCE-REWRITES.md#urls-as-strings)). External aliases may
+attach own properties or alter associated search parameters; admitted uses
+avoid their callbacks ([contracts](SOURCE-CONTRACTS.md#nodes-url)).

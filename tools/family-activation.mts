@@ -5,7 +5,7 @@
  * through its description; the compiler contract additionally supplies the
  * entry points whose enum exports C1 audits. */
 import { createHash } from "node:crypto";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { join, relative, resolve, sep } from "node:path";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
 import { guardClosure } from "./guard-closure.mts";
@@ -14,6 +14,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { toolFailureOf } from "./thrown.mts";
+import { pathToFileHref } from "./url-strings.mts";
 // files.mts makes every file-system failure a tool failure.
 import { findPackage, listDirectory, loadModule, manifestMember, nodeResolve, orAbsent, readBytes, readText, realPath, remembered,
   runtimeConditions, type Remembered } from "./files.mts";
@@ -287,7 +288,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   // importing it shares; null where the load throws.
   // Each module loaded, by its URL; recognition reads these alone. A
   // module's exports are a Map by name, which holds no inherited member.
-  const urlOf = (module: string): string => pathToFileURL(join(realRoot, module)).href;
+  const urlOf = (module: string): string => pathToFileHref(join(realRoot, module));
   const modules = new Map<string, ReadonlyMap<string, unknown>>();
   const load = (module: string): ReadonlyMap<string, unknown> | null => {
     if (!Object.hasOwn(table.closure.files, module)) return null;
@@ -527,7 +528,7 @@ export function guardOfExport(description: FamilyDescription, value: unknown): G
 export function tagEnumObject(description: FamilyDescription): unknown {
   const root = checkedInstallation(description);
   const table = description.guards;
-  const entry = loadedGuards(table, root)?.modules.get(pathToFileURL(join(realPath(root), table.entryModule)).href);
+  const entry = loadedGuards(table, root)?.modules.get(pathToFileHref(join(realPath(root), table.entryModule)));
   return entry?.get(description.tag.constants.enum);
 }
 

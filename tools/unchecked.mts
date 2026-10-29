@@ -94,11 +94,11 @@
  * excuses them: each is an error, as is an assertion without a reason, and
  * the command fails on one.
  */
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runChild } from "./child-output.mts";
 import { TypeFlags, isIntersectionType, isTypeParameter, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
@@ -532,19 +532,17 @@ if (workerAt >= 0) {
 }
 // The files are checked in parallel, each part by a compiler of its own.
 const parts = Math.max(1, Math.min(8, availableParallelism() - 1));
-const results = await Promise.all<Promise<{ files: string[]; found: Found[] }>[]>(Array.from({ length: parts }, (_, part) => new Promise<{ files: string[]; found: Found[] }>((
-  done: (result: { files: string[]; found: Found[] }) => void, fail: (reason: unknown) => void) => {
-  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--project", projectDir, "--worker", `${part}/${parts}`],
-    { stdio: ["ignore", "pipe", "inherit"] });
-  let out = "";
-  child.stdout.on("data", (chunk: unknown) => (out += String(chunk)));
-  child.on("close", (code) => {
-    const parsed: Json | undefined = code === 0 ? JSON.parse(out) : undefined;
-    const result = decodeResult(parsed);
-    if (result) done(result);
-    else fail(new Error(`part ${part} of ${parts} of unchecked.mts failed (${code})`));
-  });
-})));
+// Each part runs in a process of its own through tools/child-output.mts,
+// which checks what the child delivers.
+const runPart = async (part: number): Promise<{ files: string[]; found: Found[] }> => {
+  const ran = await runChild(process.execPath,
+    [fileURLToPath(import.meta.url), "--project", projectDir, "--worker", `${part}/${parts}`]);
+  const parsed: Json | undefined = ran.code === 0 ? JSON.parse(ran.stdout) : undefined;
+  const result = decodeResult(parsed);
+  if (!result) throw new Error(`part ${part} of ${parts} of unchecked.mts failed (${ran.code ?? ran.signal ?? "no exit code"})`);
+  return result;
+};
+const results = await Promise.all(Array.from({ length: parts }, (_, part) => runPart(part)));
 const files = results[0]?.files ?? [];
 const found = results.flatMap((result) => result.found)
   .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);

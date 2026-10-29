@@ -78,7 +78,7 @@ export const unkeyed: readonly string[] = [
   "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
   "pipeline/run-example.mts", "pipeline/fixture-links.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
   "tools/claim-text.mts", "tools/unchecked.mts", "tools/shadow-contracts.mts", "tools/strip-types.mts",
-  "tools/compiler-processes.mts",
+  "tools/compiler-processes.mts", "tools/child-output.mts",
 ];
 /** The in-process stages' own modules, which no process stage executes. */
 export const inProcessOnly: readonly string[] = [

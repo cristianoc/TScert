@@ -148,9 +148,22 @@ export const textDecoder: TypeTerm = named(textDecoderIdentity);
 export const textDecoderDefinition: TypeDefinition = definitionOf(textDecoderIdentity,
   { k: "object", stringIndex: null, calls: [], span: at, fields: [field("decode", method([bytes], atom("string")))] });
 
+/** The marker of a WHATWG URL: a host object (HOST-FAMILIES.md, "Host
+ * objects"), as a view of bytes is. */
+export const urlMarker = "node:url";
+
+/** An opaque host URL. Property reads can invoke own getters or serialize
+ * externally aliased search parameters; this view admits no member access. */
+const urlIdentity = identity("URL");
+export const url: TypeTerm = named(urlIdentity);
+const urlDefinition: TypeDefinition = definitionOf(urlIdentity,
+  { k: "object", stringIndex: null, calls: [], host: urlMarker, span: at,
+    fields: [] });
+
 export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIntStats: TypeDefinition;
-  dirent: TypeDefinition; textDecoder: TypeDefinition } = { bytes: bytesDefinition, buffer: bufferDefinition,
-  bigIntStats: bigIntStatsDefinition, dirent: direntDefinition, textDecoder: textDecoderDefinition };
+  dirent: TypeDefinition; textDecoder: TypeDefinition; url: TypeDefinition } = { bytes: bytesDefinition,
+  buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition, dirent: direntDefinition,
+  textDecoder: textDecoderDefinition, url: urlDefinition };
 
 const node = "@types/node";
 const library = "library";
@@ -169,6 +182,9 @@ export const typesOverlay: readonly TypeEntry[] = [
   { name: "Dirent", definition: direntDefinition, arguments: [atom("string")], parts: [
     { origin: node, heading: "export class Dirent<Name extends string | Buffer = string> {" },
     { origin: node, heading: "export class Dirent {" }] },
+  // Node's global `URL`, an interface extending the module's class, as both
+  // pinned installations declare it.
+  { name: "URL", definition: urlDefinition, parts: [{ origin: node, heading: "interface URL extends _URL {" }] },
 ];
 
 /** The entry stating `name`, where every part TypeScript binds it to as a

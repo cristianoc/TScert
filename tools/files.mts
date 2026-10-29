@@ -20,9 +20,10 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathS
 import { createRequire, isBuiltin, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import type { Json } from "./calculus.mts";
 import { fieldOf, ioFailure, ioFailureOf } from "./thrown.mts";
+import { pathToFileHref, resolveHref } from "./url-strings.mts";
 
 /** `run`, its failure an `IoFailure` of `operation` at `path`. */
 function io<T>(operation: string, path: string, run: () => T): T {
@@ -762,7 +763,7 @@ function observeResolution(specifier: string, parent: string): boolean {
   if (/^(\.{0,2}\/|file:)/.test(specifier)) {
     let target: string;
     try {
-      target = fileURLToPath(new URL(specifier, pathToFileURL(parent)));
+      target = fileURLToPath(resolveHref(specifier, pathToFileHref(parent)));
     } catch {
       return false;
     }
@@ -803,6 +804,16 @@ export function nodeResolve(specifier: string, parent: string): string | null {
 /** Each resolution made in this process, with the observations it was made
  * from (`remembered`). */
 const resolutions = new Map<string, Remembered<string | null>>();
+/** Whether a serialized URL's query and fragment are empty or absent, as
+ * its `search` and `hash` are `""`: nothing follows the first `#`, and
+ * nothing follows the first `?` before it. */
+function emptyQueryAndFragment(href: string): boolean {
+  const fragment = href.indexOf("#");
+  const beforeFragment = fragment < 0 ? href : href.slice(0, fragment);
+  const query = beforeFragment.indexOf("?");
+  return (fragment < 0 || fragment === href.length - 1) && (query < 0 || query === beforeFragment.length - 1);
+}
+
 function resolveObserved(specifier: string, parent: string): string | null {
   const before = observedNoting(() => fresh(() => observeResolution(specifier, parent)), false, false);
   const probe = "tscert:resolve";
@@ -811,7 +822,7 @@ function resolveObserved(specifier: string, parent: string): string | null {
     resolve: (requested, context, next) => {
       if (requested !== probe) return next(requested, context);
       try {
-        found.url = next(specifier, { ...context, parentURL: pathToFileURL(parent).href }).url;
+        found.url = next(specifier, { ...context, parentURL: pathToFileHref(parent) }).url;
       } catch {
         found.url = null;
       }
@@ -827,15 +838,19 @@ function resolveObserved(specifier: string, parent: string): string | null {
   if (JSON.stringify(before.noted) !== JSON.stringify(after.noted))
     inconsistent(`the files Node read resolving ${specifier} from ${parent} changed meanwhile`);
   const url = found.url;
-  const parsed = url === null ? null : new URL(url);
-  if (parsed?.protocol === "file:") {
-    const target = fileURLToPath(parsed);
+  // The resolver answers a serialized URL: its scheme lowercase at the
+  // start, so a `file:` prefix is its protocol, and `?` and `#` in its path
+  // percent-encoded, so the first `#` starts its fragment and the first `?`
+  // before it its query.
+  const file = url !== null && url.startsWith("file:") ? url : null;
+  if (file !== null) {
+    const target = fileURLToPath(file);
     kindOf(target, true);
     realOf(target, true);
   } else if (after.value && !/^(\.{0,2}\/|file:)/.test(specifier))
     nodeUnobservable(`${specifier} is unresolved in the package found for it`);
   // A query or a fragment names another instance of the same file: refused.
-  return parsed && parsed.protocol === "file:" && parsed.search === "" && parsed.hash === "" ? url : null;
+  return file !== null && emptyQueryAndFragment(file) ? file : null;
 }
 
 /** The conditions Node's ES module resolution enables in this process

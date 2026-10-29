@@ -30,7 +30,7 @@ import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSe
   symbolKeyForName } from "./intrinsics.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
-import { buffer, bytes, definitions as stated, textDecoder } from "./library-types.mts";
+import { buffer, bytes, definitions as stated, textDecoder, url } from "./library-types.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -324,9 +324,23 @@ const bytesEntries: GlobalEntry[] = [
         result: textDecoder }, definitions: [stated.textDecoder, stated.bytes] })),
 ];
 
+/** Node's global `URL` (SOURCE-CONTRACTS.md, "Node's `URL`"), at the
+ * declaration both pinned installations give it. */
+const urlEntries: GlobalEntry[] = [
+  // String input and string base go directly to the native parser.
+  // A URL base could serialize externally aliased search parameters and
+  // run client callbacks. The admitted strings avoid that path. The empty
+  // footprint holds only on normal return.
+  { host: contract, origin: node, global: "URL", constructs: true, effect: emptyEffect,
+    signature: "URL: typeof globalThis extends {\n            onmessage: any;\n            URL: infer T;\n        } ? T\n            : typeof _URL",
+    stated: { binders: [], params: [atom("string"), optional(atom("string"))],
+      result: url }, definitions: [stated.url] },
+];
+
 export const globalsOverlay: readonly GlobalEntry[] = [
   ...processEntries,
   ...bytesEntries,
+  ...urlEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,
   // as `console.log` below: each argument at a primitive, no effect stated.
   ...["log(message?: any, ...optionalParams: any[]): void;", "error(message?: any, ...optionalParams: any[]): void;",

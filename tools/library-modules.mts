@@ -12,7 +12,7 @@
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { bigIntStats, buffer, bytes, definitions as stated, dirent } from "./library-types.mts";
+import { bigIntStats, buffer, bytes, definitions as stated, dirent, url } from "./library-types.mts";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
@@ -479,6 +479,23 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // effect, since the call reads `process.env`.
   { module: "os", name: "tmpdir", signature: "function tmpdir(): string;",
     stated: { binders: [], params: [], result: atom("string") } },
+  // Only strings enter fileURLToPath. The URL it parses reaches no other code: it has no own
+  // auth/path/hostname/pathname hooks or externally aliased search params.
+  // POSIX rejects hosts and encoded slashes; Windows accepts UNC hosts and
+  // also rejects encoded backslashes. The default selects the platform.
+  { module: "url", name: "fileURLToPath",
+    signature: "function fileURLToPath(url: string | URL, options?: FileUrlToPathOptions): string;",
+    stated: { binders: [], params: [atom("string")], result: atom("string") }, effect: emptyEffect },
+  // `pathToFileURL(path)` (Node 25.2.1's `lib/internal/url.js`) validates
+  // the string, resolves it by platform-specific posix/win32.resolve, which reads
+  // `process.cwd()` for a relative path, a writable property other code may
+  // replace, keeps a trailing `/`, and returns a fresh URL of the `file:`
+  // protocol whose path is the resolved one, its URL control characters
+  // encoded. Stated at one argument: `options.windows` selects Windows
+  // paths. The call states no effect.
+  { module: "url", name: "pathToFileURL",
+    signature: "function pathToFileURL(path: string, options?: PathToFileUrlOptions): URL;",
+    stated: { binders: [], params: [atom("string")], result: url }, definitions: [stated.url] },
   // `node:path`'s `sep`, the separator of the platform's paths: a data
   // property of the object the module exports, set when Node loads it (`"/"`
   // on POSIX, `"\\"` on Windows; Node 25.2.1's lib/path.js). It is writable:
