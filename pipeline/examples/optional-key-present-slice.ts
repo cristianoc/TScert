@@ -11,7 +11,7 @@ export function count(d: Determined): number {
 // An optional key's type the test does not contradict keeps its arm.
 type Kept = { nodes: number[]; inferred?: string | null } | { inferred: string | null; other: number };
 export function kept(d: Kept): number {
-  if (d.inferred !== undefined) return 0;
+  if (d.inferred !== undefined) return d.inferred === null ? 0 : 2;
   return 1;
 }
 

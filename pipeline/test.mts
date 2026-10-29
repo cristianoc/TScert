@@ -1289,7 +1289,7 @@ control(async (): Promise<void> => {
   const good = run("optional-key-present-slice");
   const source = readFileSync(sourceKey(good), "utf8");
   for (const [name, binding, test, kept] of [
-    ["kept", "d", "return 0;", "other"],
+    ["kept", "d", "return d.inferred", "other"],
     ["absent", "u", "return 0;", "spare"],
   ] as const) {
     const claims = readClaims(good);
@@ -1304,7 +1304,11 @@ control(async (): Promise<void> => {
     bound.type = arms;
     const forged = writeClaims(good, `forged-present-slice-${name}`, claims);
     refusedAt(good, forged, `forged-present-slice-${name}`, "evidence search failed");
-    assert.match(invoke(forged, join(good, "evidence.json"), good), /^reject: /);
+    // The honest evidence decodes against the forged claims, every row it
+    // names still claimed elsewhere (`kept` reads `d` again on the branch),
+    // and is refused at the entry where the test passed.
+    assert.ok(invoke(forged, join(good, "evidence.json"), good)
+      .includes(`reject: source evidence refusal at [${start},`), `${name}'s check refusal at ${start}`);
   }
   process.stdout.write("forged present slice: an arm the test admits dropped, and an arm dropped past a test undefined passes, refused in search and in checking\n");
 });
