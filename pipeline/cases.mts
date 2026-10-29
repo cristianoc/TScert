@@ -3557,6 +3557,10 @@ export const cases: Case[] = [
     "defaults replacing an omitted argument, including one reading an earlier parameter",
   ),
   positive(
+    "default-parameter-named-type",
+    "a parameter whose default is taken holds the named type its annotation states, so `new Set` of it reads its element type, also in a closure and through an alias with an undefined arm",
+  ),
+  positive(
     "parameter-patterns",
     "parameter patterns and defaults of a function and of closures, a pattern in a closure body, readonly and alias rest parameters",
   ),

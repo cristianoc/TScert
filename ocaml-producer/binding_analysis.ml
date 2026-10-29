@@ -30,7 +30,12 @@ open S
       | Union alternatives -> combine (List.map (defined_slice truth) alternatives)
       | Atoms atoms -> combine (List.map (fun atom ->
           match atom,expand_named declarations (Atoms [atom]) with
-          | Named _,Some expanded when expanded <> Atoms [atom] -> defined_slice truth expanded
+          (* A named type is expanded only to find the undefined it may
+             hold: one whose expansion holds none, `Set<number>`, stays
+             named on the defined side. *)
+          | Named _,Some expanded when expanded <> Atoms [atom] ->
+            if not truth && defined_slice true expanded=Atoms [] then Atoms [atom]
+            else defined_slice truth expanded
           | _ -> restrict Undef truth (Atoms [atom])) atoms)
       | t -> restrict Undef truth t in
     let span = function
