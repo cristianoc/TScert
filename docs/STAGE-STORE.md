@@ -741,9 +741,11 @@ unavailable, with its reason.
   limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues and signals
   the program, by its process id, and the group (SIGTERM at the limit), and
   250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
-  the group ends too. When the program ends, the runner kills what remains
-  of its group, so no descendant in it holds the output pipes, and ends with
-  the program's exit status or signal. The watchdog holds a pipe only the
+  the group ends too. Its standard output and standard error are files the
+  adapter opens and unlinks before the runner starts and reads whole when
+  the runner ends, so an output's size is bounded by the file system alone.
+  When the program ends, the runner kills what remains of its group and
+  ends with the program's exit status or signal. The watchdog holds a pipe only the
   runner writes to; when the runner ends in any way, the watchdog kills the
   group. Node kills the runner 2 s past the grace period, a backstop for a
   runner that does not end. A failed system call of the runner's kills the
@@ -751,8 +753,8 @@ unavailable, with its reason.
 - Containment is limited to the program and its group: a descendant that
   left the group (`setsid`, `setpgid`) is not killed, and neither is a
   program that left the group when the runner itself dies. Such a
-  descendant may also hold the output pipes, keeping the invocation waiting
-  until the backstop. TScert's process stages, the Lean verifier and the
+  descendant may still write to the output files after the adapter reads
+  them; what it writes then is not part of the result. TScert's process stages, the Lean verifier and the
   OCaml producer, start no process.
 - The runner's report, the `RUSAGE_CHILDREN` CPU time and peak resident set
   (`ru_maxrss`) of the program and the descendants it waited for, whether

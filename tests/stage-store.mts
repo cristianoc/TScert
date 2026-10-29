@@ -1,5 +1,5 @@
-// The stage store's tests (DESIGN.md, "The stage store"): dependency
-// invalidation, concurrent publication by two processes, an interrupted
+// The stage store's tests (DESIGN.md, "The stage store"): streams larger
+// than a pipe's buffer executed and replayed, dependency invalidation, concurrent publication by two processes, an interrupted
 // writer, a timeout/success race, writable artifact isolation, a longer
 // limit executing past a recorded timeout and a retry of timeouts executing
 // it again at the same limit, an edit of the replay policy, which no key
@@ -229,6 +229,27 @@ const replayExecution = eligible ? "replayed" : "executed";
   process.stdout.write("DYLD overrides: Node and stage-child environments execute without keys\n");
 }
 
+{
+  // Large streams: a stage printing 40 MiB on standard output and 20 MiB on
+  // standard error finishes, and its invocation again replays both, byte
+  // for byte; the streams are files, bounded by the file system alone.
+  freshStore("large-streams");
+  const big = Buffer.alloc(20 * 1024 * 1024);
+  for (let i = 0; i < big.length; i++) big[i] = 32 + (i * 7919) % 95;
+  const input = join(dir, "large.json");
+  writeFileSync(input, big);
+  const program = script("large.sh", '/bin/cat "$2"; /bin/cat "$2"; /bin/cat "$2" >&2');
+  const first = invoke(lower(program, input));
+  assert.equal(first.record.execution, "executed", first.error?.message);
+  assert.equal(first.status, 0);
+  assert.ok(first.stdoutBytes.equals(Buffer.concat([big, big])), "the whole standard output");
+  assert.ok(first.stderrBytes.equals(big), "the whole standard error");
+  const again = invoke(lower(program, input));
+  assert.equal(again.record.execution, replayExecution);
+  assert.ok(again.stdoutBytes.equals(first.stdoutBytes) && again.stderrBytes.equals(first.stderrBytes),
+    "the replayed streams are the executed ones");
+  process.stdout.write("large streams: 40 MiB standard output and 20 MiB standard error, executed and replayed\n");
+}
 
 {
   // Dependency invalidation: the same invocation replays; another input,

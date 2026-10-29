@@ -429,14 +429,12 @@ export type ProcessCall = {
   protocol: Protocol;
 };
 
-/** The largest output a stage may print. */
-const maxBuffer = 16 * 1024 * 1024;
 /** How long the runner lets a program run past SIGTERM before killing its
  * group (`GRACE_MS` of `runner/stage-runner.c`), and how long past that the
  * runner itself is killed, when its watchdog kills the stage's group. */
 const graceMs = 250, runnerBackstopMs = 2_000;
 /** What, beside the limit, decides whether a process stage times out. */
-export const resourcePolicy: string = canonical({ maxBuffer, killSignal: "SIGTERM", graceMs, kill: "process group",
+export const resourcePolicy: string = canonical({ output: "files", killSignal: "SIGTERM", graceMs, kill: "process group",
   spawn: "spawnSync" });
 export const text = (bytes: Buffer): string => new TextDecoder("utf-8").decode(bytes);
 
@@ -621,35 +619,46 @@ function readReport(report: string):
       covers: "the stage's program and the descendants it waited for" }
       : { unavailable: "the stage runner reported no CPU time" } };
 }
+/** An open file's whole contents. */
+function readDescriptor(fd: number): Buffer {
+  const bytes = Buffer.alloc(fstatSync(fd).size);
+  let read = 0;
+  for (let n = 1; n > 0 && read < bytes.length; read += n) n = readSync(fd, bytes, read, bytes.length - read, read);
+  return bytes.subarray(0, read);
+}
 const errnoNames = new Map(Object.entries(constants.errno).map(([name, n]) => [n, name]));
 /** Run a bound process stage in `directory`, a fresh empty directory: its
  * inputs written there under their roles' names, the program run there with
  * the argument vector and the call's environment under the runner, which
  * signals its process group at `limitMs` and kills it `graceMs` later, its
  * exit classified by its protocol; its outputs delivered to
- * the caller's paths. The runner's report goes to a file unlinked before the
- * program starts, the runner's descriptor 3, which the program does not
- * inherit. */
+ * the caller's paths. The program's standard output and standard error, and
+ * the runner's report, go to files unlinked before the program starts, so a
+ * stream's size is bounded by the file system alone; the report is the
+ * runner's descriptor 3, which the program does not inherit. */
 export function executeProcess(bound: BoundProcess, directory: string, limitMs: number): ProcessRun {
   for (const [role, bytes] of bound.inputFiles) writeFileSync(join(directory, role), bytes);
-  const reportPath = `${directory}.report`;
-  const reportFile = openSync(reportPath, "w+");
-  let p: ReturnType<typeof spawnSync>, report: string;
+  const files: number[] = [];
+  let p: ReturnType<typeof spawnSync>, stdoutBytes: Buffer, stderrBytes: Buffer, report: string;
   try {
-    unlinkSync(reportPath);
+    for (const name of ["stdout", "stderr", "report"]) {
+      const path = `${directory}.${name}`;
+      files.push(openSync(path, "w+"));
+      unlinkSync(path);
+    }
+    const [stdoutFile, stderrFile, reportFile] = files;
     p = spawnSync(runnerBuild, [String(limitMs), bound.program, ...bound.argv], {
       cwd: directory,
       env: { ...bound.environment },
       timeout: limitMs + graceMs + runnerBackstopMs,
       killSignal: "SIGKILL",
-      maxBuffer,
-      stdio: ["pipe", "pipe", "pipe", reportFile],
+      stdio: ["pipe", stdoutFile, stderrFile, reportFile],
     });
-    const bytes = Buffer.alloc(fstatSync(reportFile).size);
-    readSync(reportFile, bytes, 0, bytes.length, 0);
-    report = bytes.toString("utf8");
+    stdoutBytes = readDescriptor(stdoutFile);
+    stderrBytes = readDescriptor(stderrFile);
+    report = readDescriptor(reportFile).toString("utf8");
   } finally {
-    closeSync(reportFile);
+    for (const fd of files) closeSync(fd);
   }
   if (p.error && "code" in p.error && p.error.code === "ENOENT" && p.error.message.includes(runnerBuild))
     throw Error("the stage runner is not built (make build-runner)");
@@ -661,8 +670,6 @@ export function executeProcess(bound: BoundProcess, directory: string, limitMs: 
       { code: errnoNames.get(execErrno) ?? String(execErrno), errno: -execErrno })
     : runnerFailure !== null ? Error(`the stage runner failed: ${runnerFailure}`) : undefined);
   const status = execErrno === null && runnerFailure === null ? p.status : null;
-  const stdoutBytes = p.stdout ? Buffer.from(p.stdout) : Buffer.alloc(0);
-  const stderrBytes = p.stderr ? Buffer.from(p.stderr) : Buffer.alloc(0);
   const stdout = text(stdoutBytes), stderr = text(stderrBytes);
   // A timeout is the expiry of this attempt's own enforced limit.
   const timedOut = expired || ((p.error && "code" in p.error && p.error.code === "ETIMEDOUT") ?? false);
