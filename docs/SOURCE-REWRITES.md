@@ -854,6 +854,22 @@ loop's paths join.
 - **Functions:** `inferredTerm`.
 - **Commit:** the introducing commit.
 
+### An array result annotated wider and writable
+
+`typesOf` (`tools/unchecked.mts`) returned the array form of
+`getTypeAtLocation`, a `(Type | undefined)[]`, at its annotation
+`(Type | undefined | null)[]`, the `null` standing for a node the compiler
+panics on. TypeScript reads arrays covariantly; a writable array's element
+contract is invariant ([arrays](POSITIVE-TYPES.md#arrays)), so the return is
+refused, though no caller writes the result: `findIn` only reads it.
+
+- **Rewrite:** the result is annotated `readonly (Type | undefined | null)[]`,
+  which every array of a narrower element meets. The function's code and
+  values are unchanged.
+- **Pattern:** a result only read is annotated as a readonly array.
+- **Functions:** `typesOf`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

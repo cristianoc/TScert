@@ -5585,10 +5585,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // statement (T6, `requestReading`).
       const request = (f: { name: PropertyKey }): boolean =>
         !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
+      const fresh = (f: { name: PropertyKey }): boolean =>
+        !!named && named.members.some(m => m.name === f.name && m.fresh === true);
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
         .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
-          type: hostBrands(request(f) ? requestReading(f.type) : f.type, true, context.isBrand,
+          type: hostBrands(request(f) ? requestReading(f.type, fresh(f)) : f.type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality

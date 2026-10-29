@@ -239,12 +239,13 @@ let excludes_undefined_declared declarations t =
 (* `plausible_subtype` up to the declarations: each side is read as
    written or with its declared atoms unfolded, through unions, to what they
    name (the compiler API's `Statement`, which TypeScript reads as
-   `StatementBase`; `type T = A | F`, which holds `F` written inline). A
-   proposal heuristic; Lean decides inclusion. Where both sides are
-   unfolded, a host method whose receiver is the declaration it unfolds
-   (`Set<T>`'s members, `NativeSetView<T>`'s) is compared at one receiver
-   for both, as the declaration's own `this`. *)
-let plausible_subtype_declared declarations actual expected =
+   `StatementBase`; `type T = A | F`, which holds `F` written inline), and a
+   readonly array's elements likewise, covariantly (`readonly Identifier[]`
+   within `readonly Node[]`). A proposal heuristic; Lean decides inclusion.
+   Where both sides are unfolded, a host method whose receiver is the
+   declaration it unfolds (`Set<T>`'s members, `NativeSetView<T>`'s) is
+   compared at one receiver for both, as the declaration's own `this`. *)
+let rec plausible_subtype_declared declarations actual expected =
   let unfold ~own t =
     (* Each declared atom contributes once to the union; the path retains
        the named atom at a cycle. Equations are read only as needed. *)
@@ -275,11 +276,21 @@ let plausible_subtype_declared declarations actual expected =
     walk [] t in
   let unfolded_actual = lazy (unfold ~own:false actual) in
   let unfolded_expected = lazy (unfold ~own:false expected) in
+  let readonly_elements () = match actual,expected with
+    | Atoms [Shape ({elements=Some p;_} as a)],Atoms [Shape ({elements=Some q;_} as b)] ->
+      q.readonly && a.fields=b.fields && a.indexes=b.indexes && a.calls=[] && b.calls=[] &&
+      p.required=[] && q.required=[] && p.optional_elements=[] && q.optional_elements=[] &&
+      (p.presence=q.presence || p.presence=Dense || q.presence=Sparse) &&
+      (match p.rest,q.rest with
+       | Some x,Some y -> plausible_subtype_declared declarations x y
+       | _ -> false)
+    | _ -> false in
   plausible_subtype actual expected ||
   plausible_subtype actual (Lazy.force unfolded_expected) ||
   plausible_subtype (Lazy.force unfolded_actual) expected ||
   plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected) ||
-  plausible_subtype (unfold ~own:true actual) (unfold ~own:true expected)
+  plausible_subtype (unfold ~own:true actual) (unfold ~own:true expected) ||
+  readonly_elements ()
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

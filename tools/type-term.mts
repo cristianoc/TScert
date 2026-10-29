@@ -1446,6 +1446,10 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
     admit: (member: ts.ClassElement) => boolean = () => true): TypeTerm {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   const names = new Set<string>();
+  const ambient = node.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword) === true;
+  // The field of an ambient class's bodyless method, by name: a later
+  // overload of the name joins it.
+  const overloads = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
   const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
     const name = member.name;
     // A private name `#x` is a key of its own, a symbol no code outside the
@@ -1502,6 +1506,24 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       only(member, [ts.SyntaxKind.AsyncKeyword]);
       if (member.postfixToken || member.asteriskToken)
         scope.fail(member, "an optional or generator method is outside the fragment");
+      // Overloads of an ambient class's method, several declarations of one
+      // name without a body, are one member: the conjunction of their
+      // signatures, as a declared function's overloads are (`oneTerm`). A
+      // later overload joins the field the first one states.
+      const overloadName = ambient && !member.body && !member.typeParameters?.length && ts.isIdentifier(member.name)
+        ? member.name.text : undefined;
+      const overload = overloadName === undefined ? undefined : overloads.get(overloadName);
+      if (overload) {
+        const forms = signature(scope, member.parameters, member.type, member, memberSpan, true);
+        const added = forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) }));
+        const earlier = overload.type.k === "intersection"
+          ? overload.type.parts.filter((p): p is FunctionTerm => p.k === "function")
+          : overload.type.k === "function" ? [overload.type] : [];
+        const joined = { ...overload, type: oneTerm([...earlier, ...added], overload.span) };
+        fields[fields.indexOf(overload)] = joined;
+        overloads.set(overloadName ?? "", joined);
+        continue;
+      }
       const name = named(member);
       if (member.typeParameters?.length) {
         // A generic method is a host-relative member with quantified
@@ -1535,8 +1557,10 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         continue;
       }
       const forms = signature(scope, member.parameters, member.type, member, memberSpan, true);
-      fields.push({ name, optional: false, readonly: true,
-        type: oneTerm(forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) })), memberSpan), span: memberSpan });
+      const field = { name, optional: false, readonly: true,
+        type: oneTerm(forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) })), memberSpan), span: memberSpan };
+      fields.push(field);
+      if (ambient && !member.body && typeof name === "string") overloads.set(name, field);
     } else if (ts.isConstructorDeclaration(member)) {
       // A parameter property is a field the constructor assigns from its
       // parameter. Its visibility is TypeScript's alone; `readonly` is the

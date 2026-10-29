@@ -261,10 +261,13 @@ are ordinary types.
    text; the branded parameters are those of `getSourceFileMetadataByPath`,
    the internal registry's `getProject` and `unescapeLeadingUnderscores`.
 
-Overloaded methods of a declared class are the conjunction of their
-signatures, by the `overloads` rule
+Overloaded methods of a declared class, several declarations of one name
+without a body, are one member: the conjunction of their signatures, by the
+`overloads` rule
 ([imported values](SOURCE-CONTRACTS.md#imported-ambient-and-global-values))
-read per member; private members are no members.
+read per member (`classInstance`); a named view lists each overload it
+admits, as `Checker`'s lists both forms of `getSymbolAtLocation` and
+`getTypeAtLocation`. Private members are no members.
 
 ### Host provenance
 
@@ -717,11 +720,11 @@ and spans (`declaration-graph.mts`).
 `Type`, `Signature` and `NodeHandle` are host types read through their named
 views, under T6.
 
-### Audits of eight sync members
+### Audits of sync members
 
 Cited: TypeScript 7.0.2, `dist/api/sync/api.d.ts` and
 `dist/api/sync/api.js` of the installation bound by C0, audited 2026-10-25
-(the last three rows 2026-10-29).
+(the last six rows 2026-10-29).
 Each declaration below is the exact text stored in `hostViews`; `tests/compiler-api.mts` checks
 it against the installed declaration. The implementation audit supports T6,
 an assumption about runtime behaviour, rather than a Lean proof.
@@ -736,6 +739,9 @@ an assumption about runtime behaviour, rather than a Lean proof.
 | `Project.rootFiles` (declaration `readonly rootFiles: readonly string[];`) | The `Project` constructor assigns `data.rootFiles`, the channel's JSON-decoded array, once; no other assignment occurs in `api.js`, and the package writes no element of it. The member is a stable readonly view of a dense array of strings under T6; a write through another alias is T8's. |
 | `Program.getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];` | Sends snapshot and project ids and `file`, as `getSemanticDiagnostics` does, and returns the decoded array or a fresh empty one. An object identifier is serialized with `JSON.stringify`, so `serializingRequests` keeps the declared signature. |
 | `Program.getGlobalDiagnostics(): readonly Diagnostic[];` | Sends snapshot and project ids alone and returns the decoded array or a fresh empty one: a request, at the store-growth footprint on normal return (T6, T8). |
+| `Checker.getSymbolAtLocation(nodes: readonly Node[]): (Symbol \| undefined)[];` | The method's second overload, beside `getSymbolAtLocation(node: Node)`. `Array.isArray` selects it, and `nodes.map(node => getNodeId(node))` reads the argument; the call runs no code of the program under the [trust surface](DESIGN.md#trust-surface)'s rows on arrays a program receives: a plain array, no proxy, owning no key `ArrayProto` declares (so `map` is the standard one) and no `constructor` (so `map` allocates an ordinary array), and holding data properties at its numeric keys (so `map` runs no getter). Outside those rows, a proxy, an array subclass or an indexed getter runs code during the call. `getNodeId` tests `instanceof RemoteNode` and reads the node's id, throwing on any other value; a hole, which `map` skips, is sent as `null`, and the server's answer, observed under Node, is an error (`invalid node handle`). It sends `getSymbolsAtLocations` with the ids and returns `data.map(…)` over the decoded response: a fresh dense array, one entry per node, each the client's shared `Symbol` for its id (the one the single form returns for that node) or `undefined` where the node has none (a statement, `invalid-compiler-api-array-query-entry`, run under Node). A request at the store-growth footprint on normal return (T6, T8), whose array result is fresh (`fresh` in `hostViews`). |
+| `Checker.getTypeAtLocation(nodes: readonly Node[]): (Type \| undefined)[];` | As the row above, with `getTypeAtLocations` and the client's shared `Type`s: a request at the store-growth footprint whose array result is fresh. |
+| `Signature.declaration` (declaration `readonly declaration?: NodeHandle \| undefined;`) | The `Signature` constructor assigns it, a new `NodeHandle` of the response's handle or `undefined`, and `api.js` assigns it nowhere else. It is an own writable, configurable data property, and the client shares one `Signature` per id (`getOrCreateSignature`), so code holding another alias may reassign it: each read is of `NodeHandle \| undefined`, and a test of it holds until the next call (`invalid-compiler-api-signature-declaration-call`, whose callback reassigns it through a signature fetched again, run under Node). The program writes it through no alias, the view's members being readonly; that what external code writes there is a `NodeHandle` or `undefined` is T8's. A signature with no declaration exists: the one TypeScript resolves at a binary expression (`invalid-compiler-api-signature-declaration`, run under Node). |
 
 ### Stated type guards
 

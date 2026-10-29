@@ -2014,4 +2014,36 @@ for (const [file, call] of [
   ].join("\n"));
   assert.deepEqual([visited.stdout, visited.status], ["hole", 0],
     "invalid-compiler-api-visitor-effect: the installed forEachChild runs the popping visitor");
+  // The checker's answers at nodes of a real source file: the array form
+  // of `getSymbolAtLocation` gives `undefined` for a statement, and the
+  // signature resolved at a binary expression has no declaration.
+  const opened = [
+    `import { API } from ${JSON.stringify(pathToFileURL(sync).href)};`,
+    `const api = new API({});`,
+    `const snapshot = api.updateSnapshot({ openProject: ${JSON.stringify(project)} });`,
+    `const p = snapshot.getProject(${JSON.stringify(project)});`,
+    `const sf = p.program.getSourceFile(${JSON.stringify(file)});`,
+    `const statement = sf.statements[1].body.statements[0];`,
+    `let binary; const find = (n) => { if (n.kind === 227) binary ??= n; n.forEachChild(find); }; find(sf);`,
+  ];
+  const entry = runNode("invalid-compiler-api-array-query-entry",
+    [...opened, `const r = wrong(p.checker, [statement]);`, `api.close();`,
+      `console.log(r === undefined ? "undefined" : "symbol");`].join("\n"));
+  assert.deepEqual([entry.stdout, entry.status], ["undefined", 0],
+    "invalid-compiler-api-array-query-entry: the array form gives undefined for a statement");
+  const declared = runNode("invalid-compiler-api-signature-declaration",
+    [...opened, `const r = wrong(p.checker, binary, null);`, `api.close();`,
+      `console.log(r === undefined ? "undefined" : "handle");`].join("\n"));
+  assert.deepEqual([declared.stdout, declared.status], ["undefined", 0],
+    "invalid-compiler-api-signature-declaration: the binary expression's signature has no declaration");
+  // The client shares one `Signature` per id, and its `declaration` is a
+  // writable data field: the callback fetches the same signature again and
+  // reassigns it, so the test made before the call no longer holds.
+  const reassigned = runNode("invalid-compiler-api-signature-declaration-call", [...opened,
+    `const signatureOf = () => p.checker.getSignaturesOfType(p.checker.getTypeAtLocation(sf.statements[1].name), 0)[0];`,
+    `const s = signatureOf();`,
+    `const r = wrong(s, null, () => { signatureOf().declaration = undefined; });`, `api.close();`,
+    `console.log(s.declaration === undefined && r === undefined ? "undefined" : "handle");`].join("\n"));
+  assert.deepEqual([reassigned.stdout, reassigned.status], ["undefined", 0],
+    "invalid-compiler-api-signature-declaration-call: another alias reassigns the shared signature's declaration during the call");
 }

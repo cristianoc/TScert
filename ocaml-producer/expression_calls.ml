@@ -813,7 +813,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            does an actual built at it. *)
         let matching = List.filter (fun (s:Semantic.signature) ->
           List.for_all Fun.id (List.mapi (fun i (arg,(t,built)) -> match param_at s i with
-            | Some p -> built = Some p || plausible_subtype t p || offer_to arg p <> None
+            | Some p -> built = Some p || plausible_subtype_declared declarations t p || offer_to arg p <> None
             | None -> false) (List.combine args actuals))) usable in
         (* A result with required positions forbids a removal from it: it is
            proposed only where nothing shrinks the array (`Source.unshrunk`). *)

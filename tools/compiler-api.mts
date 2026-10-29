@@ -244,6 +244,9 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
 /** The named views of the host classes (reading rule 4): each class is read
  * through the members its view lists, each read exactly as its reviewed
  * declaration text states it; an overloaded member is the overloads listed.
+ * An entry marked `fresh` returns an array its call allocates (audited,
+ * COMPILER-API.md, "Audits of sync members"), which its request reading
+ * states (`requestReading`).
  * A class the contract lists no view for has none: no member. The members
  * are the ones the front end reads (2026-10-18), but `Symbol.getExports` and
  * `getMembers`, whose `ReadonlyMap<__String, Symbol>` takes the branded key
@@ -251,7 +254,7 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * methods, whose promise is about the receiver, which is no actual of a call:
  * the stated guards of their names state them as functions (`statedGuards`).
  * `Type`, an interface, has a view of its own as a class does. */
-export const hostViews: readonly { owner: string; members: readonly { name: string; text: string }[] }[] = [
+export const hostViews: readonly { owner: string; members: readonly { name: string; text: string; fresh?: true }[] }[] = [
   { owner: "API", members: [
     { name: "parseConfigFile", text: "parseConfigFile(file: DocumentIdentifier): ConfigResponse;" },
     { name: "close", text: "close(): void;" },
@@ -296,8 +299,10 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "getShorthandAssignmentValueSymbol", text: "getShorthandAssignmentValueSymbol(node: Node): Symbol | undefined;" },
     { name: "getSignaturesOfType", text: "getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[];" },
     { name: "getSymbolAtLocation", text: "getSymbolAtLocation(node: Node): Symbol | undefined;" },
+    { name: "getSymbolAtLocation", text: "getSymbolAtLocation(nodes: readonly Node[]): (Symbol | undefined)[];", fresh: true },
     { name: "getTypeArguments", text: "getTypeArguments(type: TypeReference): readonly Type[];" },
     { name: "getTypeAtLocation", text: "getTypeAtLocation(node: Node): Type | undefined;" },
+    { name: "getTypeAtLocation", text: "getTypeAtLocation(nodes: readonly Node[]): (Type | undefined)[];", fresh: true },
     { name: "getTypeFromTypeNode", text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
     { name: "getTypeOfSymbol", text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
     { name: "getTypePredicateOfSignature", text: "getTypePredicateOfSignature(signature: Signature): TypePredicate | undefined;" },
@@ -328,6 +333,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "isErrorType", text: "isErrorType(): boolean;" },
   ] },
   { owner: "Signature", members: [
+    { name: "declaration", text: "readonly declaration?: NodeHandle | undefined;" },
     { name: "getParameters", text: "getParameters(): readonly Symbol[];" },
     { name: "getThisParameter", text: "getThisParameter(): Symbol | undefined;" },
     { name: "getTypeParameters", text: "getTypeParameters(): readonly TypeParameter[];" },
@@ -392,12 +398,15 @@ export const isRequest = (owner: string, entry: { name: string; text: string }):
   !entry.text.startsWith("readonly ") && !serializingRequests.includes(`${owner}.${entry.name}`);
 
 /** A request's reading: each of its signatures at `{value: any, store:
- * grow}`, on normal return only. */
-export function requestReading(type: TypeTerm): TypeTerm {
+ * grow}`, on normal return only; where the member has a `fresh` entry, a
+ * signature whose result is an array also states that its call allocated
+ * the result's store. */
+export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
   const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
     receiverStore: false, onThrow: false };
   const at = (t: TypeTerm): TypeTerm =>
-    t.k === "function" && t.effect.promise === null ? { ...t, effect }
+    t.k === "function" && t.effect.promise === null
+      ? { ...t, effect: { ...effect, fresh: fresh && t.result.k === "array" } }
     : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
     : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
     : t;

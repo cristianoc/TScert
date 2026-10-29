@@ -326,7 +326,7 @@ function typeOnly(node: Node): boolean {
 
 /** The type of each node, `null` where the compiler's API fails to return
  * it. */
-function typesOf(checker: Checker, nodes: Node[], panicked: Panicked): (Type | undefined | null)[] {
+function typesOf(checker: Checker, nodes: Node[], panicked: Panicked): readonly (Type | undefined | null)[] {
   try {
     return checker.getTypeAtLocation(nodes);
   } catch (error) {
