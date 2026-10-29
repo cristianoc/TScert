@@ -1246,38 +1246,17 @@ site of the census of 4d25222.
   runs no code in either form. `getMembers` is called once in both.
 - **Commit:** the introducing commit.
 
-### `ReturnType` of a function's `typeof`
-
-`collectDeclarations` in `tools/declaration-graph.mts` named the symbols
-its sweep reads `NonNullable<ReturnType<typeof targetOf>>`. The written
-application `ReturnType<typeof targetOf>` is refused at its bound,
-`(...args: any) => any`, whose rest reads the library's `any` as `unknown`,
-which no rest parameter holds; past the bound, the result `R` the
-conditional infers is no member of `typeof targetOf` as written, which the
-computed-alias reading selects from (`blocker-returntype-typeof`). Support
-needs a reading of `any` at a library bound's parameter position, which no
-principle states, for this one site of the census of 4d25222.
-
-- **Equivalent form:** `type Symbolic = CompilerSymbol`: `targetOf`'s
-  annotation states `CompilerSymbol | null` for its result, and the type
-  TypeScript computes for the application is that without `null`. Types
-  are erased, so the code runs the same.
-- **Commit:** the introducing commit, `A closure at a generic signature
-  takes its type parameters; ReturnType of a typeof avoided`.
-
 ### A parameter type computed from a compiler-API method
 
 `tools/declaration-session.mts` and `tools/compiler-channel.mts` named a
 snapshot request's type `NonNullable<Parameters<API["updateSnapshot"]>[0]>`,
 and `openCompiler`'s parameter `ConstructorParameters<typeof API>[0]`. An
 indexed access reads a member's declared annotation, which a method has
-none of, and `Parameters`' bound `(...args: any) => any` has no reading,
-as [`ReturnType`'s](#returntype-of-a-functions-typeof) has none
-(`blocker-api-indexed-method`). Support would read a method member of a
-generic host class at its instance's arguments through the class's view,
-and the bounds of `Parameters`, `ConstructorParameters` and `ReturnType`, for
-these three sites of the census of 4d25222, which block 245 statements of
-13 functions.
+none of (`blocker-api-indexed-method`), and `ConstructorParameters` of a
+generic class's `typeof` is refused (`returntype-generic-refused`). Support
+would read a method member and the constructor of a generic host class at
+its instance's arguments through the class's view, for these three sites of
+the census of 4d25222, which block 245 statements of 13 functions.
 
 - **Equivalent form:** the request's type is `UpdateSnapshotParams` of
   `typescript/unstable/proto`, the declaration the view's

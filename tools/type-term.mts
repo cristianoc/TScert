@@ -220,6 +220,10 @@ export type TermScope = {
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
   annotation: boolean;
+  /** An external declaration's type-level wildcard being read, a type
+   * parameter's constraint: the reading of each `any` in it by its span
+   * (`wildcardReadings`). */
+  wildcard?: ReadonlyMap<string, "unknown" | "never">;
   /** A declaration's own equation, when it is a type literal: its methods'
    * receiver is the declaration, as an interface's are. */
   body?: TypeNode;
@@ -365,6 +369,29 @@ export function restPositions(type: TypeTerm): Within<{ value: "any"; store: "gr
   return null;
 }
 
+/** The readings of each `any` in a type-level wildcard of an external
+ * declaration, a type parameter's constraint, by its span: the top type at
+ * its position, `unknown` at a positive one and `never` at a parameter's,
+ * each parameter flipping the polarity, as the declarations a program is
+ * checked against read it (`shadow-contracts.mts`). Such a type constrains
+ * types; no value has it. */
+export function wildcardReadings(node: Node, source: SourceFile): Map<string, "unknown" | "never"> {
+  const readings = new Map<string, "unknown" | "never">();
+  const visit = (n: Node, positive: boolean): void => {
+    if (n.kind === ts.SyntaxKind.AnyKeyword) {
+      readings.set(`${n.getStart(source)}:${n.end}`, positive ? "unknown" : "never");
+      return;
+    }
+    if (ts.isParameterDeclaration(n)) {
+      if (n.type) visit(n.type, !positive);
+      return;
+    }
+    n.forEachChild(child => { visit(child, positive); });
+  };
+  visit(node, true);
+  return readings;
+}
+
 export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null = null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const term = readTypeTerm(scope, node, at);
   const location = node ?? at;
@@ -392,7 +419,7 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
     // every type; nothing here inherits that. An annotation of the checked
     // source states its own types, and `any` stays outside them.
     case ts.SyntaxKind.AnyKeyword:
-      if (!scope.annotation) return atom("unknown");
+      if (!scope.annotation) return atom(scope.wildcard?.get(spanOf(scope, node).join(":")) ?? "unknown");
       break;
     case ts.SyntaxKind.NeverKeyword: return atom("never");
     case ts.SyntaxKind.VoidKeyword: return atom("void");
@@ -462,6 +489,13 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isMappedTypeNode(node))
     return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record);
   if (ts.isFunctionTypeNode(node)) {
+    // A rest admitting no argument list, `(...args: never) => R`: no call
+    // is possible, and the type is every value with call code.
+    const last = node.parameters[node.parameters.length - 1];
+    if (!node.typeParameters?.length && last?.dotDotDotToken && last.type) {
+      const rest = typeTerm(scope, last.type, last);
+      if (rest.k === "atom" && rest.name === "never") return atom("function");
+    }
     if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
     // A generic function type, `<A>(x: A) => R`, in a declaration or an
     // annotation, is a scheme whose signatures take any receiver, or the one
@@ -474,6 +508,13 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   // `new (params) => R`: a construct signature per accepted argument list. It
   // has no receiver; its rest, if any, is a function's.
   if (ts.isConstructorTypeNode(node)) {
+    // A rest admitting no argument list, `abstract new (...args: never) => R`:
+    // no construction is possible, and the type is every class value.
+    const last = node.parameters[node.parameters.length - 1];
+    if (!node.typeParameters?.length && last?.dotDotDotToken && last.type) {
+      const rest = typeTerm(scope, last.type, last);
+      if (rest.k === "atom" && rest.name === "never") return atom("class");
+    }
     const forms = constructorForms(scope, node, span);
     const [only] = forms;
     return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };

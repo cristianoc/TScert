@@ -129,6 +129,11 @@ let rec source_type ctx j =
        with call or construct code. *)
     | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
     | "nonHost" -> non_host
+    (* `function`, every value with call code: no signature is known, and no
+       class value meets it. *)
+    | "function" -> Atoms [Callable]
+    (* `class`, every class value: no construct signature is known. *)
+    | "class" -> Atoms [Ctors ([],[])]
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   (* The standard library's `Function`: callable or constructible, with no
      signature, as Lean lowers it. *)

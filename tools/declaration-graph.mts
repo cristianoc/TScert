@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import { auditedOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -2219,7 +2219,7 @@ export function collectDeclarations(file: string, options: {
     // or a computed alias's application naming them, what TypeScript
     // computes for it at the application `use`; any other computed form
     // what TypeScript computes for it where it is written.
-    const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode) => TypeTerm => {
+    const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode, bound?: boolean) => TypeTerm => {
       const source = declaration.getSourceFile();
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
       const merged = parametersOf(declaration);
@@ -2257,7 +2257,10 @@ export function collectDeclarations(file: string, options: {
           return outer.named(part, pos, read);
         },
         computed: evaluate };
-      return node => typeTerm(scope, node, declaration);
+      // An external declaration's bound is a type-level wildcard: each `any`
+      // in it the top type at its position.
+      return (node, bound = false) => typeTerm(bound && !programFile(source)
+        ? { ...scope, wildcard: wildcardReadings(node, source) } : scope, node, declaration);
     };
     // The arguments of an application `use` of `declaration`: those written,
     // then each omitted one its parameter's default read at the arguments
@@ -4128,7 +4131,7 @@ export function collectDeclarations(file: string, options: {
     // members, as the checker has them: a class's instance and static
     // members, a module's or namespace's exports, `export =` and a default
     // export included.
-    type Symbolic = CompilerSymbol;
+    type Symbolic = NonNullable<ReturnType<typeof targetOf>>;
     const follow = (symbol: Symbolic | undefined): Symbolic | undefined =>
       symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
     const exportsOf = (symbol: Symbolic): Symbolic[] => {

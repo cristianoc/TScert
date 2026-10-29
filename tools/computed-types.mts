@@ -246,6 +246,8 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
       `${computed}: it distributes over no union`);
   const argument = decided.node;
   const members = unionMembers(context, argument, decided.read, new Set(), decided.params);
+  const inferred = inferredResult(context, alias, body, members, span);
+  if (inferred) return inferred;
   const results = isUnionType(type) ? type.getTypes() : [type];
   const ids = new Set(results.map(t => t.id));
   const covered = new Set<number>();
@@ -266,6 +268,104 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
   const [only] = terms;
   if (!only) return { k: "atom", name: "never", span };
   return terms.length === 1 ? only : { k: "union", parts: terms, span };
+}
+
+/** An application of an alias whose equation infers from a function or
+ * constructor type: `ReturnType<T>`,
+ * `T extends (...args: any) => infer R ? R : any`, its result;
+ * `Parameters<T>`, `T extends (...args: infer P) => any ? P : never`, and
+ * `ConstructorParameters<T>`, of `abstract new (...args: infer P) => any`,
+ * its parameter list. The extends type matches every function (every
+ * class), so at a member that is one the answer is its declared result or
+ * parameter list, of its last signature where it has several, as
+ * TypeScript infers from an overload set; at a union, the union of its
+ * members' answers. Null where the equation is of another form; refused
+ * where a member is no function (class) the reader states the signatures
+ * of. */
+function inferredResult(context: ComputedContext, alias: TypeAliasDeclaration, body: ts.ConditionalTypeNode,
+    members: readonly Member[], span: Span): TypeTerm | null {
+  let written = body.extendsType;
+  while (ts.isParenthesizedTypeNode(written)) written = written.type;
+  const construct = ts.isConstructorTypeNode(written);
+  if (!ts.isFunctionTypeNode(written) && !ts.isConstructorTypeNode(written)) return null;
+  const extendsType: ts.FunctionTypeNode | ts.ConstructorTypeNode = written;
+  if (!extendsType.type) return null;
+  const [rest, ...others] = extendsType.parameters;
+  const result = extendsType.type;
+  const restType = rest?.type;
+  const inferred = ts.isInferTypeNode(result) ? { at: "result" as const, infer: result.typeParameter }
+    : restType && ts.isInferTypeNode(restType) ? { at: "parameters" as const, infer: restType.typeParameter } : null;
+  if (!inferred) return null;
+  const trueType = body.trueType;
+  const any = (n: Node | undefined): boolean => n?.kind === ts.SyntaxKind.AnyKeyword;
+  if (extendsType.typeParameters?.length || inferred.infer.constraint || others.length || !rest?.dotDotDotToken ||
+      (construct && inferred.at === "result") ||
+      // Every class value meets `abstract new (...)`; a concrete `new (...)`
+      // excludes an abstract class, whose typeof then takes the false arm.
+      (construct && !extendsType.modifiers?.some(m => m.kind === ts.SyntaxKind.AbstractKeyword)) ||
+      (!construct && !!extendsType.modifiers?.length) ||
+      !any(inferred.at === "result" ? restType : result) || !ts.isTypeReferenceNode(trueType) ||
+      !ts.isIdentifier(trueType.typeName) || trueType.typeName.text !== inferred.infer.name.text || trueType.typeArguments?.length)
+    throw Error(`the conditional type ${alias.name.text} infers from a function type other than ` +
+      "`(...args: any) => infer R` with result `R`, or `(...args: infer P) => any` or " +
+      "`abstract new (...args: infer P) => any` with result `P`");
+  const answers = members.map(member => {
+    const written = member.node.getText(member.node.getSourceFile());
+    const refused = (): never => {
+      throw Error(`${alias.name.text} of ${written}: ${written} is no ${construct ? "class" : "function"} ` +
+        "whose signatures the reader states");
+    };
+    const query = member.node;
+    const declarations = ts.isTypeQueryNode(query)
+      ? (context.checker.getSymbolAtLocation(ts.isIdentifier(query.exprName) ? query.exprName : query.exprName.right)
+        ?.declarations ?? []).map(d => d.resolve()) : [];
+    // The declared signatures, overloads where some have no body: TypeScript
+    // infers from the last.
+    const declared: readonly (ts.FunctionDeclaration | ts.ConstructorDeclaration)[] = construct
+      ? declarations.flatMap(d => d && ts.isClassDeclaration(d)
+        ? d.members.filter((m): m is ts.ConstructorDeclaration => ts.isConstructorDeclaration(m)) : [])
+      : declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d));
+    if (declared.some(f => f.type && ts.isTypePredicateNode(f.type)))
+      throw Error(`${alias.name.text} of ${written}: a guard's result is its Boolean, which its signatures state beside its promise`);
+    const signatures = declared.some(f => !f.body) ? declared.filter(f => !f.body) : declared;
+    const term = member.read(member.node);
+    const kind = construct ? "constructor" : "function";
+    const forms = term.k === kind ? [term]
+      : term.k === "intersection" && term.parts.every(p => p.k === kind) ? term.parts : null;
+    const last = forms?.[forms.length - 1];
+    if (!forms || !last || (last.k !== "function" && last.k !== "constructor")) return refused();
+    if (inferred.at === "result") {
+      if (declared.length && forms.length !== signatures.length) return refused();
+      return last.result;
+    }
+    // The parameter list as a tuple: each required parameter a required
+    // position, each optional one (written `?` or with a default) an optional
+    // position at its type, which holds the `undefined` an omitted argument
+    // gives, and a rest its rest.
+    const signature = signatures[signatures.length - 1];
+    if (construct && !signature) {
+      // A class declaring no constructor: its parameters are its base's.
+      const owner = declarations.find(d => !!d && ts.isClassDeclaration(d));
+      if (!owner || !ts.isClassDeclaration(owner) || owner.heritageClauses?.length || last.params.length || last.rest)
+        return refused();
+      const empty: TypeTerm = { k: "tuple", presence: "dense", readonly: false, required: [], optional: [], rest: null, span };
+      return empty;
+    }
+    if (!signature || forms.length !== signatures.length) return refused();
+    const ordinary = signature.parameters.filter(p => !(ts.isIdentifier(p.name) && p.name.text === "this"));
+    const fixed = ordinary.filter(p => !p.dotDotDotToken);
+    const optionalFrom = fixed.findIndex(p => !!p.questionToken || !!p.initializer);
+    if (fixed.length !== last.params.length || (last.rest && last.rest.k === "pack") ||
+        (optionalFrom >= 0 && fixed.slice(optionalFrom).some(p => !p.questionToken && !p.initializer)))
+      return refused();
+    const cut = optionalFrom < 0 ? fixed.length : optionalFrom;
+    const list: TypeTerm = { k: "tuple", presence: "dense", readonly: false, required: last.params.slice(0, cut),
+      optional: last.params.slice(cut), rest: last.rest, span };
+    return list;
+  });
+  const [only] = answers;
+  if (!only) return { k: "atom", name: "never", span };
+  return answers.length === 1 ? only : { k: "union", parts: answers, span };
 }
 
 /** Why `type` is not a union of literals and primitives: its first part that

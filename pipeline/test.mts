@@ -9,6 +9,7 @@ import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
+import type { Span } from "../tools/span.mts";
 import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -669,6 +670,41 @@ control(async (): Promise<void> => {
   assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
 });
 control(async (): Promise<void> => {
+  // Bypass the producer's refusal of a call (a construction) through a value
+  // of type `function` (`class`): the proposal for the parameter forged at a
+  // signature taking no argument. Checked against the original document,
+  // whose parameter states no signature, it is refused.
+  for (const [file, name, forged] of [
+    ["invalid-function-wildcard-call", "called", (span: Span): TypeTerm => ({ k: "function", effect: ordinaryEffect,
+      receiver: null, params: [], rest: null, result: { k: "atom", name: "number", span }, span })],
+    ["invalid-class-wildcard-construct", "made", (span: Span): TypeTerm => ({ k: "constructor", effect: ordinaryEffect,
+      params: [], rest: null, result: { k: "atom", name: "unknown", span }, span })],
+  ] as const) {
+    const artifacts = run(file);
+    const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    const param = must(ast.functions.find(f => f.name === name)?.params[0], `${name}'s parameter`);
+    assert.ok(param.type.k === "atom" && (param.type.name === "function" || param.type.name === "class"), JSON.stringify(param.type));
+    param.type = forged(param.type.span);
+    const signed = join(artifacts, "forged-signed.json");
+    writeFileSync(signed, JSON.stringify(ast));
+    const lowered = tested(verifierCall(verifier, ["--lower-control-flow", signed]));
+    assert.equal(lowered.status, 0, lowered.stderr);
+    const flow = join(artifacts, "forged-signed-flow.json");
+    writeFileSync(flow, lowered.stdout);
+    const proposal = tested(producerCall(producerExecutable, [signed, flow]));
+    assert.equal(proposal.status, 0, proposal.stdout + proposal.stderr);
+    const claims = join(artifacts, "forged-signed-claims.json");
+    const evidence = join(artifacts, "forged-signed-evidence.json");
+    writeFileSync(claims, proposal.stdout);
+    const searched = tested(verifierCall(verifier, ["--produce-source-claims",
+      join(artifacts, "fragment.json"), claims, sourceKey(artifacts), evidence, "12"]));
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    if (!present(evidence)) writeFileSync(evidence, "{}");
+    invoke(claims, evidence, artifacts);
+  }
+  process.stdout.write("a call through `function` and a construction through `class`, forged at a signature: refused\n");
+});
+control(async (): Promise<void> => {
   // A module document whose kept function reads a function the document
   // leaves out, which no source makes: the parser leaves the reader out with
   // it (`invalid-absent-callee-value-import`). The producer's run of the
@@ -828,6 +864,30 @@ control(async (): Promise<void> => {
     entry.bounds = entry.bounds.map(() => null);
   });
   assert.equal(relaxed.status, 0, relaxed.detail);
+  // ReturnType's bound, `(...args: any) => any`, is every function and
+  // nothing else: a number, and a value that may be a class (`Function`),
+  // forged as its argument, are refused.
+  for (const [name, forged] of [["number", { k: "atom", name: "number", span }],
+      ["callable", { k: "callable", span }]] as const) {
+    const outside = forgeDocument(run("blocker-returntype-typeof"), `forged-returntype-${name}`, fragment => {
+      const entry = must(fragment.declarations.applications.find(a => a.reference.name === "ReturnType"),
+        "ReturnType<typeof find>");
+      entry.args = [forged];
+    });
+    assert.equal(outside.status, 1, outside.detail);
+    assert.match(outside.detail, /the type argument for ReturnType's "T" .*does not establish its declared bound/);
+  }
+  // Parameters' bound is every function and ConstructorParameters' every
+  // class: each other's forged as the argument is refused.
+  for (const [alias, forged] of [["Parameters", { k: "atom", name: "class", span }],
+      ["ConstructorParameters", { k: "atom", name: "function", span }]] as const) {
+    const outside = forgeDocument(run("parameters-typeof"), `forged-${alias}`, fragment => {
+      const entry = must(fragment.declarations.applications.find(a => a.reference.name === alias), alias);
+      entry.args = [forged];
+    });
+    assert.equal(outside.status, 1, outside.detail);
+    assert.match(outside.detail, new RegExp(`the type argument for ${alias}'s "T" .*does not establish its declared bound`));
+  }
   // A reference carries every argument, the omitted ones completed where it
   // is read: one left short, for the checker to complete with a default, is
   // refused.

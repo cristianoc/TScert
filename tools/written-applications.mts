@@ -52,8 +52,10 @@ export type SweepContext = {
   read(node: TypeNode, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TypeTerm;
   /** The reader of a declaration's bounds and defaults at the application
    * `use`: its type parameters read as the arguments' terms, a computed form
-   * naming them as TypeScript computes it at `use` (`type-probe.mts`). */
-  instantiate(declaration: Node, args: readonly TypeTerm[], use: Node): (node: TypeNode) => TypeTerm;
+   * naming them as TypeScript computes it at `use` (`type-probe.mts`); a
+   * bound of an external declaration read as its type-level wildcard
+   * (`wildcardReadings`) where `bound` says so. */
+  instantiate(declaration: Node, args: readonly TypeTerm[], use: Node): (node: TypeNode, bound?: boolean) => TypeTerm;
   /** A declaration's type parameters by position, its merged declarations
    * together: each one's bound and default from a declaration stating it. */
   parameters(declaration: Node): readonly MergedParameter[];
@@ -315,7 +317,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         return { k: "binder", name: bound, span: spanOf(node) };
       });
       const instance = context.instantiate(first, terms, node);
-      const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
+      const bounds = parameters.map(p => p.constraint ? instance(p.constraint, true) : null);
       found.push({ scope: pruned(env, [...terms, ...bounds.filter((b): b is TypeTerm => !!b)]),
         reference: context.reference(name, args),
         parameters: parameters.map(p => ({ name: p.name.text, span: spanOf(p.name.parent) })),

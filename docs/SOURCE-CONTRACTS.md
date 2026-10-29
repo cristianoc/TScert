@@ -1835,6 +1835,47 @@ which TypeScript keeps, read where it is written by the declaration reader as
 `unknown` (`any` constrains nothing): a parameter at it accepts every value,
 and a result at it promises none.
 
+An alias inferring from a function or constructor type matches every
+function (every class): its extends type's rest admits any argument list.
+`ReturnType<T>`, `T extends (...args: any) => infer R ? R : any`, infers
+the result; `Parameters<T>`, `T extends (...args: infer P) => any ? P : never`,
+and `ConstructorParameters<T>`, of `abstract new (...args: infer P) => any`,
+the parameter list. At a member that is a function (a class), the answer is
+its declared result or parameter list; at an overload set, TypeScript infers
+from the last signature, and so does the reader; at a union, the union of
+its members' answers:
+
+```math
+\frac{A\langle X\rangle=(X\ \mathtt{extends}\ (\ldots a\colon\mathtt{any})\Rightarrow\mathtt{infer}\ R\ \mathtt{?}\ R\ \mathtt{:}\ \tau)\quad
+      \mathsf{members}(\sigma)=\overline{\mu_j}\quad
+      ⟦\mu_j⟧=\textstyle\bigwedge_{k\le n_j}(\vec A_{jk})\Rightarrow B_{jk}}
+     {⟦A\langle\sigma\rangle⟧=\textstyle\bigcup_j B_{j n_j}}\ \textsf{inferred-result}
+```
+
+```math
+\frac{A\langle X\rangle=(X\ \mathtt{extends}\ (\ldots a\colon\mathtt{infer}\ P)\Rightarrow\mathtt{any}\ \mathtt{?}\ P\ \mathtt{:}\ \tau)\quad
+      \mathsf{members}(\sigma)=\overline{\mu_j}\quad
+      \mu_j\text{'s last signature}\ (\vec x{:}\vec C,\ \vec y\,?{:}\vec D,\ \ldots r{:}E[\,])}
+     {⟦A\langle\sigma\rangle⟧=\textstyle\bigcup_j\,[⟦\vec C⟧,\ ⟦\vec D⟧?,\ \ldots⟦E⟧[\,]]}\ \textsf{inferred-parameters}
+```
+
+with $`\vec y`$ the parameters written optional or with a default, each
+position at the type that holds the `undefined` an omitted argument gives;
+the form `abstract new (...args: infer P) => any`, which every class value
+meets, reads a class's constructor the same way, and a class declaring no
+constructor and no base has the empty list. A concrete
+`new (...args: infer P) => any` is refused: an abstract class does not meet
+it, and TypeScript then takes the false arm
+(`inferred-concrete-constructor-refused`); so is a class with several
+constructor declarations or a constructor with a rest parameter, as the
+reader of a class value states one constructor without a rest
+(`blocker-returntype-typeof`, `returntype-overloads`, `parameters-typeof`).
+A guard's result is its Boolean, which TypeScript computes as a union of
+literals (`returntype-guard`); a generic function's `typeof` is refused, as
+its instantiation at its bounds states a value type no reader states
+(`returntype-generic-refused`), as is a member other than a `typeof`
+(an indexed access of a method, `blocker-api-indexed-method`).
+
 Each rule above gives what a computed type denotes. That replaces the
 applications written in it, which keep their obligations by
 [written applications](#written-applications): `ElementOf<number[]>` with
@@ -2038,7 +2079,18 @@ Lean checks every supplied entry; that the entries are exactly the
 applications written in the swept syntax, read faithfully, is the front
 end's (the declared-types bridge of [TRUST-REDUCTION](TRUST-REDUCTION.md#the-bridges)).
 `any` in a user declaration reads as
-`unknown`, so `Box<any>` with a bounded `Box` is refused.
+`unknown`, so `Box<any>` with a bounded `Box` is refused. A bound of an
+external declaration (the standard library's, a package's) is a type-level
+wildcard: each `any` in it is the top type at its position, `unknown` at a
+positive one and `never` at a parameter's, each parameter flipping the
+polarity, as the declarations a program is checked against read it
+([shadow contracts](../tools/shadow-contracts.mts)). A function type whose
+rest admits no argument list, `(...args: never) => R`, is every value with
+call code, a class value excluded, through which nothing is called, and a
+constructor type whose rest admits none, `abstract new (...args: never) => R`,
+is every class value: `ReturnType`'s bound `(...args: any) => any` is every
+function, and `ConstructorParameters`' every class
+(`function-wildcard-parameter`, `invalid-function-wildcard-call`).
 
 Refused, each a limit of the mechanism: an argument computed over a binder,
 `B<T["k"]>` in a generic body, which has no term there; `infer U` at a

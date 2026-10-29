@@ -486,6 +486,14 @@ def atomLabels (term : Json) : M Union := do
       ← prim "false" (.boolLit false), ← prim "number" .num, ← prim "string" .str, ← prim "bigint" .bigint,
       ← prim "symbol" .symbol, ← prim "non-host object" (.refs [] [] [] [] [] [⟨false, [hostKey]⟩]),
       ← prim "function" (.arrs [] []), ← prim "constructor" (.ctors [])]
+  -- Every value with call code, of which no signature is known: a function
+  -- type whose rest admits no argument list, `(...args: never) => R`. No
+  -- class value meets it, its code having `[[Construct]]` only.
+  | "function" => return [← prim "function" (.arrs [] [])]
+  -- Every class value, of which no construct signature is known: a
+  -- constructor type whose rest admits no argument list,
+  -- `abstract new (...args: never) => R`.
+  | "class" => return [← prim "constructor" (.ctors [])]
   | _ => throw "unsupported declaration primitive"
 
 

@@ -172,6 +172,14 @@ let definition_of declarations id args =
         | Atoms [Named (named,named_args)] when not (List.mem named (id::seen)) ->
           (try instantiate (id::seen) named named_args with Json.Error _ -> t)
         | t -> t in
+      (* `{}` is every value but `null` and `undefined`: a ground union met
+         with it (`NonNullable<T>`, `T & {}`) is that union without them. *)
+      let non_nullish = ground [True;False;Num;Str;Bigint;Symbol;
+        Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])] in
+      match List.partition (fun part -> part = non_nullish) (t::ts) with
+      | _::_,[Atoms atoms] when not (List.mem Top atoms) ->
+        Atoms (List.filter (fun a -> a <> Nul && a <> Undef) atoms)
+      | _ ->
       match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
               (Some (expand t)) ts with
       | Some merged -> merged
