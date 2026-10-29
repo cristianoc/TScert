@@ -13,6 +13,8 @@
   },
   "include": [
     "../examples/blocker-*.ts",
+    "../examples/import-meta.ts",
+    "../examples/invalid-import-meta-*.ts",
     "../examples/node-bytes-*.ts",
     "../examples/invalid-node-bytes-*.ts",
     "../examples/invalid-node-url-*.ts",

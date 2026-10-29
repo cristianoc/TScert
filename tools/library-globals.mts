@@ -337,10 +337,49 @@ const urlEntries: GlobalEntry[] = [
       result: url }, definitions: [stated.url] },
 ];
 
+/** The name the entries of `import.meta`'s members are keyed by. No
+ * identifier spells it. */
+export const importMetaName = "import.meta";
+/** Node's `import.meta` (SOURCE-CONTRACTS.md, "Module metadata"), at the
+ * members the repository's code reads, each pinned to its declaration in
+ * `@types/node` (the tools' text, then `library-project`'s where it
+ * differs) and read as a call of an intrinsic at `unknown` stating no
+ * effect (`intrinsics.mts`). Node 25.2.1's
+ * `DefaultImportMetaObjectInitializer` (`src/module_wrap.cc`) fills the
+ * object at the module's first evaluation of `import.meta`, from the
+ * module's wrapper, which other code reaches through `require.cache`: it
+ * copies the wrapper's `url`, whatever value it holds, and reads its
+ * `isMain`, where a getter other code defined runs
+ * (`invalid-import-meta-url` and `invalid-import-meta-stale`, run under Node). For a `file:` URL
+ * alone it defines `dirname` and `filename`, lazy data properties whose
+ * first read converts the URL to a path in native code; and, outside the
+ * loader hooks' worker thread, `resolve`, a lazy data property whose first
+ * read makes the function by Node's own `createImportMetaResolve`. */
+const importMetaEntries: GlobalEntry[] = [
+  ...["url", "dirname", "filename"].map((member): GlobalEntry => ({ host: contract, origin: node,
+    global: importMetaName, member, signature: `${member}: string;`, intrinsic: `%ImportMeta:${member}%` })),
+  // `import.meta.resolve(specifier)` at one argument: the loader's
+  // `resolveSync` converts the specifier by a template, a string's own
+  // value, and runs every resolve hook `module.registerHooks` and
+  // `module.register` installed, code of any module's. A URL a hook returns
+  // is checked to be a string, but where a hook throws an error with the
+  // code ERR_MODULE_NOT_FOUND or ERR_UNSUPPORTED_DIR_IMPORT and a truthy
+  // `url`, that `url` is returned, whatever value it is
+  // (`invalid-import-meta-resolve`, run under Node); without a truthy `url`
+  // the error is thrown again. Node ignores a second argument unless
+  // `--experimental-import-meta-resolve` is set. Absent on the loader hooks'
+  // worker thread, where the call throws.
+  ...["resolve(specifier: string, parent?: string | URL): string;",
+    "resolve(specifier: string, parent?: string | URL | undefined): string;"].map((signature): GlobalEntry => (
+    { host: contract, origin: node, global: importMetaName, member: "resolve", signature,
+      intrinsic: "%ImportMeta:resolve%" })),
+];
+
 export const globalsOverlay: readonly GlobalEntry[] = [
   ...processEntries,
   ...bytesEntries,
   ...urlEntries,
+  ...importMetaEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,
   // as `console.log` below: each argument at a primitive, no effect stated.
   ...["log(message?: any, ...optionalParams: any[]): void;", "error(message?: any, ...optionalParams: any[]): void;",

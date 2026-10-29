@@ -28,7 +28,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
-import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
 import { definitions as typeDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -520,6 +520,10 @@ export function collectDeclarations(file: string, options: {
    * the members and call signatures those references select
    * (`selectGlobal`). The first reference locates it. */
   globalValues?: readonly Span[];
+  /** The client's references to `import.meta`, each a member read the
+   * overlay reads as a call of an intrinsic (`selectImportMeta`), reported
+   * through `globalIntrinsic`. */
+  importMeta?: readonly Span[];
   /** Told each call of a global that the reviewed overlay reads as a test
    * of the calculus, such as `Array.isArray(e)`, by the call's span. */
   globalTest?: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
@@ -3192,6 +3196,26 @@ export function collectDeclarations(file: string, options: {
         continue;
       }
     }
+    // The module's `import.meta`, each member read a call of an intrinsic
+    // (SOURCE-CONTRACTS.md, "Module metadata").
+    const metaUses = (options.importMeta ?? []).map(span => {
+      const node = expressionAt(client, span);
+      if (!node || !ts.isMetaProperty(node)) throw declarationError(span, "TypeScript import.meta missing");
+      return node;
+    });
+    const [firstMeta] = metaUses;
+    if (firstMeta) {
+      const at: Span = [firstMeta.getStart(client), firstMeta.end];
+      try {
+        selectImportMeta(checker, metaUses, { identityOf: idOf, libraryFile, clean, overlay: globalsOverlay,
+          intrinsic: (span, name) => {
+            listIntrinsics(span, [name]);
+            options.globalIntrinsic?.(span, name);
+          } });
+      } catch (error) {
+        recover(at, error);
+      }
+    }
     // A private name reads the key of the member TypeScript binds it to.
     for (const span of options.privateNames ?? []) {
       const name = expressionAt(client, span);
@@ -4979,6 +5003,60 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!fields.length && !callForms.length) return null;
   return { definition: { declaration: identity, parameters: [], bases: [],
     expression: { k: "object", fields, stringIndex: null, calls: callForms, span: spanOf(first) } } };
+}
+
+/**
+ * The module's `import.meta`, read at the members its references `uses`
+ * select (SOURCE-CONTRACTS.md, "Module metadata"): each reference reads a
+ * member by name, `resolve` only called, and each read or call is reported
+ * as a call of the intrinsic the member's reviewed entry names. No value
+ * denotes the object itself.
+ */
+function selectImportMeta(checker: Checker, uses: readonly ts.MetaProperty[],
+    context: Pick<SelectionContext, "identityOf" | "libraryFile" | "clean" | "overlay" | "intrinsic">): void {
+  const [first] = uses;
+  if (!first) throw Error("import.meta without a reference");
+  const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  const keys = new Map<string, ts.PropertyAccessExpression[]>();
+  for (const use of uses) {
+    const parent = use.parent;
+    if (!ts.isPropertyAccessExpression(parent) || parent.expression !== use || parent.questionDotToken ||
+        !ts.isIdentifier(parent.name))
+      throw Error(`${importMetaName} is read only at a member it names`);
+    const outer = parent.parent;
+    if ((ts.isBinaryExpression(outer) && outer.left === parent && outer.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        outer.operatorToken.kind <= ts.SyntaxKind.LastAssignment) || ts.isDeleteExpression(outer) ||
+        ((ts.isPrefixUnaryExpression(outer) || ts.isPostfixUnaryExpression(outer)) &&
+          (outer.operator === ts.SyntaxKind.PlusPlusToken || outer.operator === ts.SyntaxKind.MinusMinusToken)))
+      throw Error(`${importMetaName}.${parent.name.text} is written, which the module may not do`);
+    keys.set(parent.name.text, [...keys.get(parent.name.text) ?? [], parent]);
+  }
+  const type = checker.getTypeAtLocation(first);
+  if (!type) throw Error(`TypeScript gives ${importMetaName} no type`);
+  const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#ImportMeta.${key}`;
+  for (const [key, accesses] of keys) {
+    const what = `${importMetaName}.${key}`;
+    const nodes = (checker.getPropertyOfType(type, key)?.declarations ?? []).map(d => d.resolve());
+    const [declaration, ...more] = nodes;
+    if (!declaration || more.length || !(ts.isPropertySignatureDeclaration(declaration) || ts.isMethodSignatureDeclaration(declaration)))
+      throw Error(`${what} is not one declared member`);
+    const text = declaration.getText(declaration.getSourceFile()).trim();
+    const entry = globalEntry(context.overlay, importMetaName, key, signature => signature === text,
+      declarationOrigin(declaration.getSourceFile(), context.libraryFile));
+    const intrinsic = entry?.intrinsic;
+    if (!intrinsic) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
+    context.clean(declaration, where(declaration, key));
+    for (const access of accesses) {
+      if (ts.isMethodSignatureDeclaration(declaration)) {
+        // A call at one argument, its arguments as written.
+        const call = access.parent;
+        if (!ts.isCallExpression(call) || call.expression !== access || call.questionDotToken ||
+            call.typeArguments?.length || call.arguments.length !== 1 || call.arguments.some(ts.isSpreadElement))
+          throw Error(`the method ${what} is only called, at one argument`);
+        context.intrinsic(spanOf(call), intrinsic);
+      } else context.intrinsic(spanOf(access), intrinsic);
+    }
+  }
 }
 
 /** The errors TypeScript reports in `file` itself, in its configured project:

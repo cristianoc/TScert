@@ -15,7 +15,7 @@
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { API } from "typescript/unstable/sync";
-import { compilerFileSystem, findPackage, importLedger, installed, newLedger, privateLauncher, takeQueryFailure, treeDigest, unobservable,
+import { compilerFileSystem, findPackage, importLedger, installed, moduleLocation, newLedger, privateLauncher, takeQueryFailure, treeDigest, unobservable,
   withLedger, type Ledger } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
 import { compilerEnding, compilerStarted } from "./compiler-processes.mts";
@@ -205,7 +205,7 @@ function current(from: string): Current {
     : { identity: identified.identity,
       changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
 }
-let using: Current = current(import.meta.dirname);
+let using: Current = current(moduleLocation(import.meta.dirname));
 /** How many times the installation in use was chosen: a compiler opened
  * under one choice is not another's. */
 let choices: number = 0;
@@ -218,7 +218,7 @@ export const compilerChoice = (): string =>
 /** Tests only: the compiler installed in the `node_modules` of `directory`
  * from now on, or the front end's own for null. */
 export function useInstallationForTests(directory: string | null): void {
-  using = current(directory ?? import.meta.dirname);
+  using = current(directory ?? moduleLocation(import.meta.dirname));
   choices++;
 }
 

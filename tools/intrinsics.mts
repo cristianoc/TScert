@@ -89,6 +89,7 @@ import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaratio
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import { bytes } from "./library-types.mts";
+import { moduleLocation } from "./files.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -97,7 +98,7 @@ export const promiseResolveName = "%PromiseResolve%";
 /** The file declaring `Resolvable`, the bound that makes a type parameter
  * resolution-qualified, recognized by this declaration's identity. Every
  * project a program writing it is checked in lists the file. */
-export const resolvableDeclaration: string = join(import.meta.dirname, "resolvable.d.ts");
+export const resolvableDeclaration: string = join(moduleLocation(import.meta.dirname), "resolvable.d.ts");
 /** The intrinsics typed through a resolution descriptor, which need the
  * stable family `%Stable%` and the native `Promise`. */
 export const resolutionIntrinsics: readonly string[] = ["%Await%", "%AsyncReturn%", "%PromiseResolve%"];
@@ -150,6 +151,13 @@ export const assertionFailureName = "%AssertionFailure%";
  * `ReferenceError` by the realm's intrinsic constructor, whatever a source
  * binding of that name holds, and throws it. */
 export const throwUninitializedName = "%ThrowUninitialized%";
+/** `import.meta.url`, `.dirname` and `.filename` read, and
+ * `import.meta.resolve(s)` called (SOURCE-CONTRACTS.md, "Module
+ * metadata"): each a value at `unknown`, stating no effect. */
+export const importMetaUrlName = "%ImportMeta:url%";
+export const importMetaDirnameName = "%ImportMeta:dirname%";
+export const importMetaFilenameName = "%ImportMeta:filename%";
+export const importMetaResolveName = "%ImportMeta:resolve%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -447,6 +455,14 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [throwUninitializedName]: () => ({ typeParams: [],
       type: { ...fn([], atom("never")), effect: { ...emptyEffect, onThrow: true } } }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
+    // The first evaluation of `import.meta` in a module fills the object
+    // from the module's wrapper, which other code reaches
+    // (`require.cache[p]`): its `url` may hold any value, and a getter it
+    // defines there runs. A member's value is `unknown`, and no effect is
+    // stated; `resolve` runs the resolve hooks as well.
+    ...Object.fromEntries([importMetaUrlName, importMetaDirnameName, importMetaFilenameName].map(name =>
+      [name, () => ({ typeParams: [], type: fn([], atom("unknown")) })])),
+    [importMetaResolveName]: () => ({ typeParams: [], type: fn([atom("string")], atom("unknown")) }),
     // OrdinaryHasInstance walks the operand's prototype chain, which runs no
     // code, no object being a proxy, and writes nothing.
     // Building the error reads no argument but the message, a string, yet

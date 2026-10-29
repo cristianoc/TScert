@@ -95,6 +95,14 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     return { k: "id", pos: gate.span(node), name: gate.ownClass(node) ?? gate.local(node) };
   }
 
+  // `import.meta.k`, which the overlay reads as a call of the intrinsic
+  // `%ImportMeta:k%` (SOURCE-CONTRACTS.md, "Module metadata"); a call of
+  // `import.meta.resolve` is the call form's.
+  if (ts.isPropertyAccessExpression(node) && ts.isMetaProperty(node.expression)) {
+    const read = gate.globalIntrinsics.get(gate.span(node).join(":"));
+    if (read) return gate.intrinsic(read, gate.span(node), gate.span(node.name), []);
+  }
+
   if (ts.isNewExpression(node)) {
     // `new Promise(e)`, which the overlay reads as a call of the intrinsic
     // stating the same step, read at the constructor's name. Its type

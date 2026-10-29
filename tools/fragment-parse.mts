@@ -1563,6 +1563,15 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findGlobalValues);
   };
   if (!carriesContext) findGlobalValues(source);
+  // The module's `import.meta`, a value the declaration graph reads at the
+  // members the references select.
+  const importMetaNodes: ts.MetaProperty[] = [];
+  const findImportMeta = (node: Node): void => {
+    if (ts.isTypeNode(node)) return;
+    if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) importMetaNodes.push(node);
+    node.forEachChild(findImportMeta);
+  };
+  if (!carriesContext) findImportMeta(source);
   // An array reaches `Array.prototype`, whose contract then joins the graph;
   // the first array the file writes stands for it. `Array<T>` is written by
   // name: if TypeScript binds the name elsewhere, the contract is unused.
@@ -1938,7 +1947,7 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findComputed);
   };
   if (!carriesContext) findComputed(source);
-  if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
+  if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length || importMetaNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       staticTypeNodes.length ||
@@ -1946,7 +1955,7 @@ function lowerFile(file: string, carriesContext: boolean,
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || lengthReadNodes.length || openReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
-    const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
+    const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
@@ -1978,6 +1987,7 @@ function lowerFile(file: string, carriesContext: boolean,
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
+        importMeta: importMetaNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
         root: gate.span(first),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
@@ -2115,7 +2125,7 @@ function lowerFile(file: string, carriesContext: boolean,
     } catch (error) {
       const declared = declarationSpanOf(error);
       const at = declared
-        ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
+        ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...importMetaNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,

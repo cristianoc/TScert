@@ -682,6 +682,40 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     assert.equal(handled.stdout, "false", "invalid-node-process-exit-handler: the handler goes on and the result has a hole");
   }
   {
+    // `import.meta` as audited: a `data:` module has no `dirname`; a resolve
+    // hook's thrown ERR_MODULE_NOT_FOUND has its `url` returned, a number;
+    // other code handed the object writes a number at `url`.
+    const reload = "if (import.meta.url.startsWith(\"file:\")) { const { readFileSync } = await import(\"node:fs\"); " +
+      "const m = await import(\"data:text/javascript,\" + encodeURIComponent(readFileSync(new URL(import.meta.url), \"utf8\"))); " +
+      "console.log(typeof m.directory()); }";
+    assert.equal(runNode("invalid-import-meta-dirname", reload).stdout, "undefined",
+      "invalid-import-meta-dirname: a data: module reads no dirname");
+    const thrown = runNode("import-meta", reload);
+    assert.deepEqual([thrown.stdout, thrown.status], ["", 1], "import-meta: a data: module's directory() throws");
+    const hooked = runNode("invalid-import-meta-resolve", "const { registerHooks } = await import(\"node:module\"); " +
+      "registerHooks({ resolve: (s, c, next) => { if (s !== \"probe:x\") return next(s, c); " +
+      "throw Object.assign(new Error(\"hooked\"), { code: \"ERR_MODULE_NOT_FOUND\", url: 42 }); } }); " +
+      "console.log(typeof located(\"probe:x\"));");
+    assert.equal(hooked.stdout, "number", "invalid-import-meta-resolve: the thrown error's url is returned");
+    const leaked = runNode("invalid-import-meta-escape", "console.log(typeof leaked((m) => { m.url = 1; }));");
+    assert.equal(leaked.stdout, "number", "invalid-import-meta-escape: the writer replaces url");
+    // The module required, other code reaches its wrapper through
+    // `require.cache`: a number at the wrapper's `url` is what `import.meta.url`
+    // reads, and a getter at its `isMain` runs at the module's first
+    // `import.meta`.
+    const wrapped = (file: string, statements: string): string => runNode(file,
+      "const { createRequire } = await import(\"node:module\"); const require = createRequire(import.meta.url); " +
+      `const p = ${JSON.stringify(join(import.meta.dirname, "..", "pipeline", "examples", `${file}.ts`))}; ` +
+      "const m = require(p); const cached = require.cache[p]; " +
+      "const w = cached[Object.getOwnPropertySymbols(cached).find((s) => s.description === \"kRequiredModuleSymbol\")]; " +
+      statements).stdout;
+    assert.equal(wrapped("invalid-import-meta-url", "w.url = 42; console.log(typeof m.where());"), "number",
+      "invalid-import-meta-url: the wrapper's url is read");
+    assert.equal(wrapped("invalid-import-meta-stale", "const box = { v: \"a\" }; " +
+      "Object.defineProperty(w, \"isMain\", { get() { box.v = undefined; return false; } }); console.log(typeof m.stale(box));"),
+      "undefined", "invalid-import-meta-stale: the getter runs at the first import.meta");
+  }
+  {
     // A timer's extra arguments reach its callback.
     const ticked = runNode("invalid-node-set-timeout-parameter", "later((n) => console.log(typeof n));");
     assert.equal(ticked.stdout, "number", "invalid-node-set-timeout-parameter: the callback receives the argument after the delay");

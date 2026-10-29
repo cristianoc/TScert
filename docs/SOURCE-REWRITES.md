@@ -909,6 +909,30 @@ a later read of a member or a conversion runs, so no member is read.
 - **Pattern:** a URL crosses a call boundary as its serialization.
 - **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
 
+### A module's location read from `import.meta`
+
+The front end passed `import.meta.url`, `import.meta.dirname` and
+`import.meta.filename` where a string is required. Each read is `unknown`
+([module metadata](SOURCE-CONTRACTS.md#module-metadata)): `dirname` and
+`filename` are absent for a module not loaded from a `file:` URL, and `url`
+is whatever the module's wrapper holds, which other code reaches through
+`require.cache`. Each use was refused.
+
+- **Rewrite:** a runtime check, `moduleLocation(import.meta.dirname)`
+  (`tools/files.mts`), which throws unless the value is a string and
+  returns it otherwise. It excludes one behaviour: where the read is not a
+  string, the original passed it on to a parameter typed `string`
+  (`path.resolve`, `path.join`, `fileURLToPath`, `createRequire`,
+  `nodeResolve`, `current`); the rewrite throws at the read. Where it is a
+  string, the two agree.
+- **Pattern:** a location `import.meta` holds is checked to be a string
+  where the code requires one.
+- **Functions:** the module bindings `repository` (`family-activation.mts`),
+  `using` (`compiler-channel.mts`), `requireModule` (`files.mts`) and
+  `resolvableDeclaration` (`intrinsics.mts`), `activatedModules`,
+  `useInstallationForTests` and `unchecked.mts`'s worker spawn.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

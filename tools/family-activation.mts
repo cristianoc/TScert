@@ -16,7 +16,7 @@ import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { toolFailureOf } from "./thrown.mts";
 import { pathToFileHref } from "./url-strings.mts";
 // files.mts makes every file-system failure a tool failure.
-import { findPackage, listDirectory, loadModule, manifestMember, nodeResolve, orAbsent, readBytes, readText, realPath, remembered,
+import { findPackage, listDirectory, loadModule, manifestMember, moduleLocation, nodeResolve, orAbsent, readBytes, readText, realPath, remembered,
   runtimeConditions, type Remembered } from "./files.mts";
 import type { Json } from "./calculus.mts";
 export { nodeResolve, runtimeConditions } from "./files.mts";
@@ -43,7 +43,7 @@ export function activeFamilies(): readonly FamilyDescription[] {
 
 /** The repository's root, against which a description's installation is
  * named. */
-const repository = resolve(import.meta.dirname, "..");
+const repository = resolve(moduleLocation(import.meta.dirname), "..");
 
 /** The declaration files of the package installed at `root`, the
  * installation's inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under
@@ -497,7 +497,7 @@ function activatedModules(description: FamilyDescription): ReadonlyMap<string, R
   const modules = new Map(loadedGuards(description.guards, root)?.modules);
   if (description === compilerApiFamily) {
     for (const { specifier, namespace } of hostEnumModules) {
-      const url = nodeResolve(specifier, import.meta.filename);
+      const url = nodeResolve(specifier, moduleLocation(import.meta.filename));
       if (url !== null) modules.set(url, namespace);
     }
   }

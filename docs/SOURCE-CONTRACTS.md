@@ -3423,6 +3423,55 @@ ordinary effect of `%Await%` drops every fact another job may change. The
 scheduling is a host assumption ([trust surface](DESIGN.md#trust-surface)):
 the calculus does not prove Node's scheduler.
 
+### Module metadata
+
+**Audited against:** Node 25.2.1, `src/module_wrap.cc`
+(`DefaultImportMetaObjectInitializer`) and
+`lib/internal/modules/esm/loader.js` (`createImportMetaResolve`,
+`resolveSync`); `@types/node` 22.20.2 and 22.10.7.
+
+A read of a member of `import.meta` is a call of an intrinsic stating no
+effect, whose value is `unknown`: `import.meta.k` is $`\%\mathsf{ImportMeta{:}}k\%()`$
+for $`k\in\{\mathtt{url},\mathtt{dirname},\mathtt{filename}\}`$, and
+`import.meta.resolve(s)` at one argument is
+$`\%\mathsf{ImportMeta{:}resolve}\%(s)`$ at
+$`s:\mathtt{string}`$. Each member is pinned to its declaration in
+`@types/node`'s `ImportMeta`. Every reference reads a member by name, and
+`resolve` appears only as a call's callee; any other reference, which would
+hand the object to other code, is refused (`invalid-import-meta-escape`,
+run under Node: code handed the object writes a number at `url`). A use of
+a member as a string checks it first (`import-meta`).
+
+The module's first evaluation of `import.meta` fills a fresh object, with a
+null prototype, from the module's wrapper. Other code reaches the wrapper
+of a module it requires, through `require.cache`, and may write it or
+define getters on it:
+
+- `url` is the wrapper's `url`, copied whatever value it holds
+  (`invalid-import-meta-url`, run under Node: a number);
+- the wrapper's `isMain` is read, and a getter defined there runs code of
+  any module's (`invalid-import-meta-stale`, run under Node: the getter
+  empties a field the function tested before);
+- `dirname` and `filename` are defined for a `file:` URL alone, as lazy
+  data properties whose first read converts the URL to a path in native
+  code; a module at another URL (a `data:` module, a URL a resolve hook
+  chose) has neither (`invalid-import-meta-dirname`, run under Node);
+- `resolve`, outside the loader hooks' worker thread, is a lazy data
+  property whose first read makes the function by Node's own
+  `createImportMetaResolve`; on that thread it is absent, and the call
+  throws. The call converts the specifier by a template, the string
+  itself, and resolves it through every resolve hook `module.registerHooks`
+  and `module.register` installed, code of any module's, which may throw. A
+  URL a hook returns is checked to be a string; where a hook throws an
+  error with the code `ERR_MODULE_NOT_FOUND` or `ERR_UNSUPPORTED_DIR_IMPORT`
+  and a truthy `url`, that `url` is returned, whatever value it holds
+  (`invalid-import-meta-resolve`, run under Node), and without a truthy
+  `url` the error is thrown again. Node ignores a second argument unless
+  `--experimental-import-meta-resolve` is set.
+
+A `vm` module whose own `initializeImportMeta` fills the object may hold
+anything there, which the `unknown` values and the absent effect cover.
+
 ## Library modules
 
 **Audited against:** `@types/node` 22.20.2 and 22.10.7 (`tools/package.json`,

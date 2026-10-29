@@ -510,6 +510,26 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // `import.meta.url` and `import.meta.dirname` read, and
+  // `import.meta.resolve(s)` called, are each `unknown`: each claimed at
+  // `string`, which the return requires, is refused at the read.
+  for (const [file, name, text] of [["invalid-import-meta-url", "where", "import.meta.url"],
+    ["invalid-import-meta-dirname", "directory", "import.meta.dirname"],
+    ["invalid-import-meta-resolve", "located", "import.meta.resolve(specifier)"]] as const) {
+    const artifacts = run(file);
+    const claims = readClaims(artifacts);
+    const start = readFileSync(sourceKey(artifacts), "utf8").indexOf(`return ${text}`) + "return ".length;
+    assert.ok(start >= "return ".length, text);
+    const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+    const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + text.length), `the claim of ${text}`);
+    read.type = [rowOf(claims, "str")];
+    refusedAt(artifacts, writeClaims(artifacts, `forged-${file}`, claims), `forged-${file}`,
+      `source expression obligation at [${start},${start + text.length})`);
+  }
+  process.stdout.write("import.meta's url, dirname and resolve result claimed at string: refused at the read\n");
+});
+
+control(async (): Promise<void> => {
   // `instanceof Map` promises the map's reading view, and `instanceof Set`
   // the set's: the value of the Map branch claimed at the writable
   // `Map<unknown, unknown>` the branch allocates, and the value of the Set

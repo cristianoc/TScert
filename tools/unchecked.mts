@@ -105,6 +105,7 @@ import type { Node, SourceFile } from "typescript/unstable/ast";
 import { isHostFile } from "./family-activation.mts";
 import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
 import { toolFailureOf } from "./thrown.mts";
+import { moduleLocation } from "./files.mts";
 import { openCompiler } from "./compiler-channel.mts";
 import type { Json } from "./calculus.mts";
 import { isTypeAlias } from "./syntax.mts";
@@ -536,7 +537,7 @@ const parts = Math.max(1, Math.min(8, availableParallelism() - 1));
 // which checks what the child delivers.
 const runPart = async (part: number): Promise<{ files: string[]; found: Found[] }> => {
   const ran = await runChild(process.execPath,
-    [fileURLToPath(import.meta.url), "--project", projectDir, "--worker", `${part}/${parts}`]);
+    [fileURLToPath(moduleLocation(import.meta.url)), "--project", projectDir, "--worker", `${part}/${parts}`]);
   const parsed: Json | undefined = ran.code === 0 ? JSON.parse(ran.stdout) : undefined;
   const result = decodeResult(parsed);
   if (!result) throw new Error(`part ${part} of ${parts} of unchecked.mts failed (${ran.code ?? ran.signal ?? "no exit code"})`);

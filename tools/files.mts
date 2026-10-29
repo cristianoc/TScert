@@ -790,6 +790,15 @@ function observeResolution(specifier: string, parent: string): boolean {
   return false;
 }
 
+/** The module's location as `import.meta` holds it (`url`, `dirname`,
+ * `filename`), checked to be a string (SOURCE-CONTRACTS.md, "Module
+ * metadata"): `dirname` and `filename` are absent for a module not loaded
+ * from a `file:` URL, and `url` is whatever the module's wrapper held. */
+export function moduleLocation(value: unknown): string {
+  if (typeof value !== "string") throw Error("import.meta holds no string location for this module");
+  return value;
+}
+
 /** The URL Node's own ES module resolver resolves `specifier` to from the
  * module at `parent`, under the conditions it enables in this process: a
  * file URL with no query or fragment, else `null`, as where Node throws.
@@ -882,7 +891,7 @@ export function runtimeConditions(): readonly string[] {
 
 /** Node's loader for a module by its path: `require` of an ES module, which
  * shares the instance an `import` of the same file loads. */
-const requireModule: (path: string) => unknown = createRequire(import.meta.url);
+const requireModule: (path: string) => unknown = createRequire(moduleLocation(import.meta.url));
 
 /** The module at `path` of the installation at `root` (a real path), as
  * Node loads it: the bytes of each module the load reads, as a load hook
