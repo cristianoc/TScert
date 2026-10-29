@@ -294,10 +294,12 @@ export function computedForm(node: TypeNode): Within<{ value: "any"; store: "gro
 
 /** A generic type alias whose equation is a type TypeScript computes
  * (`computedForm`), `type ElementOf<T> = T[number]`, `type Keys<T> = keyof T`,
- * or is an application of another such alias: over its parameters it is
- * known only at an application, so it has no equation of its own, and each
- * reference to it is a computed type, evaluated at the reference's arguments
- * (`computed-types.mts`). `aliasOf` is the alias a reference names, if any. */
+ * or is an application of another such alias, or an application one of whose
+ * arguments is such a type, `type Omit<T, K> = Pick<T, Exclude<keyof T, K>>`:
+ * over its parameters it is known only at an application, so it has no
+ * equation of its own, and each reference to it is a computed type, evaluated
+ * at the reference's arguments (`computed-types.mts`). `aliasOf` is the alias
+ * a reference names, if any. */
 export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode) => TypeAliasDeclaration | null,
     seen: Set<Node> = new Set()): node is TypeAliasDeclaration {
   if (!isTypeAlias(node) || !node.typeParameters?.length || seen.has(node)) return false;
@@ -305,8 +307,14 @@ export function computedAlias(node: Node, aliasOf: (reference: TypeReferenceNode
   const body = unwrap(node.type);
   if (computedForm(body) !== null) return true;
   if (!ts.isTypeReferenceNode(body)) return false;
-  const target = aliasOf(body);
-  return !!target && computedAlias(target, aliasOf, seen);
+  const computed = (reference: TypeReferenceNode): boolean => {
+    const target = aliasOf(reference);
+    return !!target && computedAlias(target, aliasOf, new Set(seen));
+  };
+  return computed(body) || (body.typeArguments ?? []).some(argument => {
+    const a = unwrap(argument);
+    return computedForm(a) !== null || (ts.isTypeReferenceNode(a) && computed(a));
+  });
 }
 
 const PRIMITIVE_KEYWORDS: ts.SyntaxKind[] = [ts.SyntaxKind.NullKeyword, ts.SyntaxKind.UndefinedKeyword,

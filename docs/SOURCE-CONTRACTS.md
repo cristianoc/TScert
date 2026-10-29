@@ -1757,9 +1757,11 @@ members met, an alias through its equation (a generic one's at the
 reference's arguments; an imported one's, read where it is declared), a named type's member through its annotation under
 the same identity premise.
 
-A **computed alias** is a generic alias whose equation is a computed form or
-an application of another computed alias (`computedAlias`): `type
-ElementOf<T> = T[number]`, `type Keys<T> = keyof T`. Over its parameters it
+A **computed alias** is a generic alias whose equation is a computed form,
+an application of another computed alias, or an application one of whose
+arguments is a computed form or an application of a computed alias
+(`computedAlias`): `type ElementOf<T> = T[number]`, `type Keys<T> = keyof T`,
+the library's `type Omit<T, K> = Pick<T, Exclude<keyof T, K>>`. Over its parameters it
 is known only at an application, so it has no equation of its own, and an
 application of it, declared in the file or imported, is a computed type,
 evaluated where it is written, its equation read with the parameters as the
@@ -1779,7 +1781,14 @@ where $`⟦\tau⟧_{\vec X:=\vec S}`$ evaluates $`\tau`$ by the
 rules here with each $`X_i`$ read as $`S_i`$: an indexed access projects its
 argument, and `keyof` of a type literal is the union of its property names'
 string literals (`keysOf`), so `ElementOf<readonly E[]>` is `E` and
-`Keys<{ good: E }>` is `"good"`. A `typeof` of a constant without an
+`Keys<{ good: E }>` is `"good"`. An equation that is an application of an
+alias that is no computed alias is that application read at the evaluated
+arguments: `Omit<Entry, "stated">` is `Pick<Entry, U>` with $`U`$ the
+literals of `Exclude<keyof Entry, "stated">` by $`\textsf{computed}`$, the
+[library mapped type](#library-types) at `Entry`'s other members, each with
+its modifiers (`blocker-omit-interface`, `invalid-omit-omitted-member`,
+`invalid-omit-readonly`). At a type parameter its keys are known only at an
+instance, and the reference is refused (`omit-type-parameter-refused`). A `typeof` of a constant without an
 annotation is the type TypeScript infers for its initializer where that is a
 union of literals and primitives or an object literal's record of such
 types, each property a writable field and each index a spread copied, read

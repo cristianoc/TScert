@@ -167,7 +167,13 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
   if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members);
-  return computedType(context, body, span, context.applied(alias, applied.args, node));
+  const atArguments = context.applied(alias, applied.args, node);
+  // An application of an alias that is no computed alias, one of whose
+  // arguments is computed (`Pick<T, Exclude<keyof T, K>>`), is that alias
+  // at the arguments, each evaluated at this reference.
+  const target = ts.isTypeReferenceNode(body) ? context.alias(body) : null;
+  if (ts.isTypeReferenceNode(body) && !(target && computedAlias(target, context.alias))) return atArguments(body);
+  return computedType(context, body, span, atArguments);
 }
 
 /** A union member as written: its type node, the reader of the scope it
