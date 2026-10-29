@@ -395,9 +395,12 @@ of its arbitrary type with `A`. A bound `U extends T` relates the parameters
 by the same intersection construction. A generic call proposes a substitution
 for the parameters; Lean checks the instance and its bounds. The producer
 proposes it as TypeScript infers it: the binders the receiver and the
-expected result fix come first, and a callback actual is typed at its
-parameter read at them, so its body's object literal is built at the arm of
-the contextual result it fits (`callback-literal-context`). Generic classes
+expected result fix come first (a receiver that is a union of arrays fixes
+the element binder at the union of its arms' elements, as TypeScript reads
+a method of `A[] | B[]` at `(A | B)[]`), and a callback actual is typed at
+its parameter read at them, so its body's object literal is built at the arm
+of the contextual result it fits (`callback-literal-context`,
+`blocker-callback-literal-union-receiver`). Generic classes
 and closures use this mechanism too.
 
 A **type scheme** is a callable contract with universally quantified type

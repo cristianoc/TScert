@@ -269,14 +269,21 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       (* The binders a pattern (a signature's receiver or result) places
          where a type places a type: a binder itself, or an array's
          element, which a tuple's is the union of its required positions' and
-         its rest's. *)
+         its rest's, and a union of arrays' the union of its arms' elements,
+         as TypeScript reads a method of `A[] | B[]` at `(A | B)[]`. *)
       let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
         | Rigid r,_ -> [r,actual]
-        | Atoms [Shape {elements=Some p;calls=[];_}],Atoms [Shape {elements=Some a;_}]
+        | Atoms [Shape {elements=Some p;calls=[];_}],Atoms (_::_ as arms)
             when p.required=[] && p.optional_elements=[] ->
-          (match p.rest,a.required @ Option.to_list a.rest with
-           | Some p,(_::_ as elements) when a.optional_elements = [] ->
-             bind p (List.fold_left Semantic.union (Atoms []) elements)
+          let arm_elements = List.map (function
+            | Semantic.Shape {elements=Some a;_} when a.optional_elements = [] ->
+              Some (a.required @ Option.to_list a.rest)
+            | _ -> None) arms in
+          (match p.rest with
+           | Some p when List.for_all Option.is_some arm_elements ->
+             (match List.concat_map (Option.value ~default:[]) arm_elements with
+              | _::_ as elements -> bind p (List.fold_left Semantic.union (Atoms []) elements)
+              | [] -> [])
            | _ -> [])
         | _ -> [] in
       (* Quantified overloads whose receiver or result places a binder where
