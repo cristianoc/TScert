@@ -5,7 +5,7 @@
  * children here, where each one is checked to be a node.
  */
 import * as ts from "typescript/unstable/ast";
-import type { Node, TypeAliasDeclaration } from "typescript/unstable/ast";
+import type { Node, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 
 /** The compiler's syntax module as the front end resolves it, for the suites
  * outside tools/ that read trees (tests/host-families.mts). */
@@ -33,6 +33,19 @@ export function childOf(node: Node, key: Child): Within<{ value: "any"; store: "
 export function childrenOf(node: Node, key: Children): Within<{ value: "any"; store: "grow" }, readonly Node[]> {
   const value: unknown = Reflect.get(node, key);
   return Array.isArray(value) ? value.filter(isNode) : [];
+}
+
+/** The type arguments written at an application: the declared
+ * `typeArguments` of the nine kinds whose child list holds that field
+ * (`childProperties` of the package's `dist/api/node/protocol.generated.js`),
+ * none for another kind (SOURCE-REWRITES.md, "A node's child read through
+ * `Reflect.get`"). */
+export function typeArgumentsOf(node: Node): Within<{ value: "keep"; store: "keep" }, readonly TypeNode[]> {
+  const written = ts.isTypeReferenceNode(node) || ts.isExpressionWithTypeArguments(node) || ts.isTypeQueryNode(node) ||
+      ts.isImportTypeNode(node) || ts.isCallExpression(node) || ts.isNewExpression(node) ||
+      ts.isTaggedTemplateExpression(node) || ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)
+    ? node.typeArguments : undefined;
+  return written ?? [];
 }
 
 /** The name a declaration or member declares, where its kind has one. */

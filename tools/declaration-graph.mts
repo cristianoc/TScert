@@ -4439,6 +4439,41 @@ function typesOnly(node: Node): boolean {
     : typesOnly(body);
 }
 
+/** A global declared as a namespace alone (`declare namespace Reflect`),
+ * whose functions are no annotated variable's members: each use calls one,
+ * `Reflect.ownKeys(o)`, and each call's overload, matched by its exact text
+ * to an entry of the reviewed overlay, is a call of the intrinsic the entry
+ * names, which states its step; any other use or overload is refused. The
+ * namespace is read as no value. */
+function globalNamespace(checker: Checker, name: string, uses: readonly Identifier[],
+    namespaces: readonly ts.ModuleDeclaration[], context: SelectionContext): { definition: TypeDefinition } {
+  const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  for (const use of uses) {
+    const access = use.parent;
+    const call = access.parent;
+    if (!ts.isPropertyAccessExpression(access) || access.expression !== use || access.questionDotToken ||
+        !ts.isIdentifier(access.name) || !call || !ts.isCallExpression(call) || call.expression !== access ||
+        call.questionDotToken || call.arguments.some(ts.isSpreadElement))
+      throw Error(`the global namespace ${name} is read only by calling its functions, without spreads`);
+    const what = `${name}.${access.name.text}(…)`;
+    const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+    const overload = resolved && ts.isFunctionDeclaration(resolved) && !resolved.body &&
+      namespaces.some(n => n.body && ts.isModuleBlock(n.body) && n.body.statements.includes(resolved)) ? resolved : null;
+    if (!overload) throw Error(`TypeScript resolves the call of ${what} to no function ${name} declares`);
+    const text = overload.getText(overload.getSourceFile()).trim();
+    const entry = globalEntry(context.overlay, name, access.name.text, signature => signature === text,
+      declarationOrigin(overload.getSourceFile(), context.libraryFile));
+    if (!entry?.intrinsic) throw Error(`${what} is not in the reviewed overlay of library globals: ${reviewedText(text)}`);
+    context.intrinsic(spanOf(call), entry.intrinsic);
+  }
+  const [declaration] = namespaces;
+  if (!declaration) throw Error(`the global namespace ${name} has no declaration`);
+  const source = declaration.getSourceFile();
+  return { definition: { declaration: { module: context.identityOf(source), name,
+    span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
+    expression: { k: "object", fields: [], stringIndex: null, calls: [], span: spanOf(declaration) } } };
+}
+
 /** A global function, its overloads declared without bodies: its value's
  * call signatures, each overload a call resolves to. Its implementation is
  * outside what is verified, wherever the declaration lies (the standard
@@ -4540,6 +4575,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const functions = declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d) && !d.body);
   if (functions.length && declarations.every(d => !!d && (ts.isFunctionDeclaration(d) || ts.isModuleDeclaration(d))))
     return globalFunction(checker, name, uses, functions, context);
+  // A global declared as a namespace alone, `declare namespace Reflect`.
+  const namespaces = declarations.filter((d): d is ts.ModuleDeclaration => !!d && ts.isModuleDeclaration(d));
+  if (namespaces.length && namespaces.length === declarations.length)
+    return globalNamespace(checker, name, uses, namespaces, context);
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
@@ -4672,7 +4711,44 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const constructs: ts.NewExpression[] = [];
   // References reading the global as a value, `xs.filter(Boolean)`.
   const valueUses: Identifier[] = [];
+  // `X.m(e) === X.prototype` or `!==`, either side, with `X` this global at
+  // both references: the comparison, where the overlay reads `X.m` only so
+  // (`GlobalEntry.prototypeTest`), and the call `X.m(e)`.
+  const useKeys = new Set(uses.map(u => spanOf(u).join(":")));
+  const ofThis = (n: Node, key: string): n is ts.PropertyAccessExpression => ts.isPropertyAccessExpression(n) &&
+    !n.questionDotToken && ts.isIdentifier(n.expression) && useKeys.has(spanOf(n.expression).join(":")) &&
+    ts.isIdentifier(n.name) && n.name.text === key;
+  const prototypeComparison = (use: Identifier): { binary: ts.BinaryExpression; call: ts.CallExpression } | null => {
+    const access = use.parent;
+    const operand = ofThis(access, "prototype") ? access : access.parent;
+    const binary = operand?.parent;
+    if (!operand || !binary || !ts.isBinaryExpression(binary) ||
+        (binary.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken &&
+         binary.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsEqualsToken)) return null;
+    const call = ts.isCallExpression(binary.left) ? binary.left : binary.right;
+    const read = call === binary.left ? binary.right : binary.left;
+    if (!ts.isCallExpression(call) || call.questionDotToken || call.typeArguments || !ofThis(read, "prototype") ||
+        !ts.isPropertyAccessExpression(call.expression) || !ofThis(call.expression, call.expression.name.text) ||
+        (operand !== call && operand !== read)) return null;
+    return { binary, call };
+  };
   for (const use of uses) {
+    const compared = prototypeComparison(use);
+    if (compared) {
+      const { binary, call } = compared;
+      if (!ts.isPropertyAccessExpression(call.expression)) throw Error(`${name}: a prototype comparison calls a member`);
+      const key = call.expression.name.text;
+      const what = `${name}.${key}(…) compared with ${name}.prototype`;
+      const methods = (checker.getPropertyOfType(type, key)?.declarations ?? []).map(d => d.resolve())
+        .filter((d): d is ts.MethodSignatureDeclaration => !!d && ts.isMethodSignatureDeclaration(d));
+      const overload = resolvedAmong(call, methods);
+      if (!overload) throw Error(`TypeScript resolves the call of ${name}.${key} to no overload it declares`);
+      const entry = reviewed(key, overload, what);
+      if (!entry?.prototypeTest || call.arguments.length !== 1 || call.arguments.some(ts.isSpreadElement))
+        throw Error(`${what} is not read as a prototype test of one argument`);
+      context.intrinsic(spanOf(binary), entry.prototypeTest);
+      continue;
+    }
     const parent = use.parent;
     if (ts.isPropertyAccessExpression(parent) && parent.expression === use && !parent.questionDotToken &&
         ts.isIdentifier(parent.name))
@@ -4712,6 +4788,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       }
       const selected = [...chosen].flatMap(([overload, calls]) => {
         const entry = reviewed(key, overload, what);
+        if (entry?.prototypeTest) throw Error(`${what} is read only compared with ${name}.prototype`);
         // A test of the calculus: each call is reported, and the member
         // joins no value.
         if (entry?.test) {

@@ -133,6 +133,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       `(() => { const b = { k: "b" }; return written(b, (x) => { x.k = "a"; }) ? b.k : ""; })()`, "a"],
   ])
     assert.equal(runExample(file, call), found, `${file}: the guard answers true of a value outside its promise`);
+  // `Reflect.get` calls an accessor's getter, which empties the caller's
+  // array.
+  assert.equal(runExample("invalid-reflect-get-getter",
+    "(() => { const xs = [1]; read({ get x() { xs.pop(); return 0; } }); return xs.length; })()"), 0,
+    "invalid-reflect-get-getter: the getter runs at Reflect.get");
   // An `if` and `||`'s false outcome past a call that writes the tested
   // field: the read returns what the call wrote.
   assert.equal(runExample("invalid-condition-stale-branch", `(() => { const b = { k: "union" }; return staleIf(b, () => { b.k = "intersection"; }); })()`),

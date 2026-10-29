@@ -131,6 +131,17 @@ export const instanceOfErrorName = "%InstanceOf:Error%";
  * (`instanceOfCollection`). */
 export const instanceOfMapName = "%InstanceOf:Map%";
 export const instanceOfSetName = "%InstanceOf:Set%";
+/** `Reflect.ownKeys(o)` of a value that is no host object: its
+ * [[OwnPropertyKeys]], which runs no code on an ordinary object and on
+ * ECMAScript's exotic objects but a proxy (none is held), as a fresh dense
+ * array of strings and symbols; a primitive is a TypeError (SOURCE-CONTRACTS.md, "`Object` and `Reflect`"). */
+export const ownKeysName = "%OwnKeys%";
+/** `Object.getPrototypeOf(o) === Object.prototype` of a value that is no host
+ * object: whether its [[GetPrototypeOf]] (after ToObject: a TypeError of
+ * `null` or `undefined`), which runs no code on such a value, answers the realm's
+ * `Object.prototype`, a Boolean that hands the program no prototype and
+ * states nothing of `o`; `!==` is its negation. */
+export const prototypeIsObjectName = "%PrototypeIs:Object%";
 /** A failing `assert(v, m)` of `node:assert/strict`, lowered as `if (!v)
  * throw %AssertionFailure%(m)`: the fresh `AssertionError`. */
 export const assertionFailureName = "%AssertionFailure%";
@@ -448,6 +459,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [instanceOfMapName]: () => ({ typeParams: [],
       type: instanceOfCollection(view("Map", [atom("unknown"), atom("unknown")])) }),
     [instanceOfSetName]: () => ({ typeParams: [], type: instanceOfCollection(view("Set", [atom("unknown")])) }),
+    [ownKeysName]: () => ({ typeParams: [],
+      type: { ...fn([atom("nonHost")], { k: "array", presence: "dense", readonly: false,
+        element: either(atom("string"), atom("symbol")), span }), effect: emptyEffect } }),
+    [prototypeIsObjectName]: () => ({ typeParams: [], type: { ...fn([atom("nonHost")], atom("boolean")), effect: emptyEffect } }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an
     // array holds a data property (`numericOwn`), and neither

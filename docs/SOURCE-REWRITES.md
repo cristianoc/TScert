@@ -356,6 +356,36 @@ For the supported ordinary and type imports, the two tests agree.
   and the declaration graph's local `closure` in `collectDeclarations`.
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
 
+### A node's child read through `Reflect.get`
+
+`argumentsOf` (`tools/type-probe.mts`) read an application's type
+arguments as `Reflect.get(use, "typeArguments")` of a `Node`, kept the
+result where it was an array and filtered its elements by a `kind` key.
+`Reflect.get` runs [[Get]], which calls a getter no type states
+([`Object` and `Reflect`](SOURCE-CONTRACTS.md#object-and-reflect)). On a
+syntax node it calls the package's `RemoteNode` getter, which reads the
+child its kind's child list names (`getNamedChild`,
+`dist/api/node/node.generated.js:293-304`) and `undefined` for a kind
+whose list has no `typeArguments`. The nine kinds whose list has it
+(`childProperties` of `dist/api/node/protocol.generated.js`) each declare
+`typeArguments?: NodeArray<TypeNode>`, which the call discarded.
+
+- **Rewrite:** `typeArgumentsOf` (`tools/syntax.mts`), the compiler's guards
+  of those nine kinds, then the declared member: `node.typeArguments ?? []`
+  where one passes, and `[]` otherwise. It returns the node list itself
+  where the original returned a fresh array of its elements; the one caller
+  spreads it and reads its length, which see the same nodes. In its own
+  module, the nine kinds join the arms of its run alone, and a caller reads
+  its signature.
+- **Pattern:** read a host object's declared member for the operation it
+  represents, as for [an import phase](#an-import-phase-read-through-an-undeclared-host-field).
+- **Functions:** `argumentsOf`, which `typeArgumentsOf` replaces, and
+  `makeProbe`, which calls it.
+  `childOf` and `childrenOf` (`tools/syntax.mts`) read nine other child
+  fields of any node, which up to 43 kinds carry, and keep `Reflect.get`
+  and its refusal.
+- **Commit:** the introducing commit, `Reflect.ownKeys and a prototype compared with Object.prototype are read; a node's type arguments by their declared member`.
+
 ### A host test whose result its contract leaves unknown
 
 `installed` (`tools/files.mts`) returned `statSync(path).isFile()` as a

@@ -1467,6 +1467,22 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
     ? gate.globalIntrinsics.get(gate.span(node).join(":")) : undefined;
   if (instanceIntrinsic)
     return gate.intrinsic(instanceIntrinsic, gate.span(node), gate.span(node.right), [gate.expr(node.left)]);
+  // `Object.getPrototypeOf(e) === Object.prototype`, either side, which the
+  // overlay reads as a call of the intrinsic stating the Boolean
+  // (`%PrototypeIs:Object%`) at the call's operand: the global's reads run
+  // nothing. `!==` is its negation.
+  const equality = node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+    node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken;
+  const prototypeTest = equality ? gate.globalIntrinsics.get(gate.span(node).join(":")) : undefined;
+  if (prototypeTest) {
+    const call = ts.isCallExpression(node.left) ? node.left : node.right;
+    const [operand] = ts.isCallExpression(call) ? call.arguments : [];
+    if (!operand) return gate.fail(node, "a prototype comparison reads the call's one operand");
+    const args = [gate.expr(operand)];
+    return node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+      ? gate.intrinsic(prototypeTest, gate.span(node), gate.span(node.operatorToken), args)
+      : { k: "not", pos: gate.span(node), e: gate.intrinsic(prototypeTest, gate.span(call), gate.span(node.operatorToken), args) };
+  }
   // Any other `instanceof` looks for a constructor's prototype along the
   // operand's prototype chain, or calls the constructor's static
   // `[Symbol.hasInstance]`. For a class of this file, which TypeScript binds

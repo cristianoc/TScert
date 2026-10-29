@@ -1650,7 +1650,8 @@ A replaced method answers what it returns
 getter in a method's place runs where the member is read
 (`invalid-node-bytes-method-getter`, run under Node: it pops the array). A
 program reaches none of them: `Buffer.prototype`, `Object.defineProperty`
-and `Object.getPrototypeOf` are refused. The cases are `node-bytes-buffer`,
+and `Object.getPrototypeOf` but its comparison with `Object.prototype`
+are refused. The cases are `node-bytes-buffer`,
 `node-bytes-text-decoder`, `node-fs-stat-bigint`, `node-readdir-dirents`,
 `blocker-node-buffer-contract`, `blocker-node-hash-contract` and
 `invalid-node-stat-bigint` (run under Node: a `BigIntStats`'s `size` is a
@@ -2777,16 +2778,66 @@ bounds its own keys without the key (`CoversBounds`), so `{ a: number }` is
 below it and `{ readonly a: number }`, `object` and `unknown` are not
 (`host-exclusion-reflection`, `object-values-readonly-refused`).
 
-`Object.getPrototypeOf` has no entry: it names built-in prototypes, among
-them `Array.prototype`, an array that does not inherit from
-`Array.prototype`. The `isArray` test stands for both `Array.isArray` and
-`instanceof Array` because no program can name such an array
+`Object.getPrototypeOf(o)` names built-in prototypes, among them
+`Array.prototype`, an array that does not inherit from `Array.prototype`.
+The `isArray` test stands for both `Array.isArray` and `instanceof Array`
+because no program can name such an array, so the call is read only
+compared with `Object.prototype`, by `===` or `!==`, either side, the two
+references to the global `Object`: the comparison is a call of
+$`\%\mathsf{PrototypeIs}{:}\mathsf{Object}\%`$ at `o` (`prototypeTest` in
+`library-globals.mts`), negated for `!==`. ECMA-262 fixes the
+[[GetPrototypeOf]] and [[OwnPropertyKeys]] of an ordinary object and of
+each of its exotic objects (arrays, typed arrays, `String` objects,
+arguments objects, module namespaces, bound functions), none of which runs
+code, the proxy's excepted, which no object is
+([trust surface](DESIGN.md#trust-surface)). A host exotic object's internal
+methods are the host's to define (a V8 interceptor's enumerator is code),
+so both intrinsics take $`\mathsf{NonHost}`$, every value but a host object
+(above): an `object` is refused at the argument
+(`invalid-prototype-is-object-host`, `invalid-reflect-own-keys-object`).
+That a value no host family types is an ordinary or ECMAScript exotic
+object holds of every object the program makes; of one external code
+supplies at a program type it is the assumption
+`Object.getOwnPropertyDescriptor` and `Object.values` make at the same
+parameter. ToObject throws a TypeError of `null` or `undefined` and wraps
+another primitive, `Object.prototype` is a non-writable, non-configurable
+property of the untampered `Object`, and the identity test converts
+nothing; the Boolean hands the program no prototype and narrows nothing
+(`prototype-is-object`). A loose `==` is no test
+(`invalid-prototype-loose-equality`), and a local named `Object` is no
+global (`prototype-shadowed-object`):
+
+```math
+\mathtt{Object.getPrototypeOf}(e)\ \texttt{===}\ \mathtt{Object.prototype}\;\equiv\;\%\mathsf{PrototypeIs}{:}\mathsf{Object}\%(e)
+\qquad
+\%\mathsf{PrototypeIs}{:}\mathsf{Object}\%:(\mathsf{NonHost})\Rightarrow_{\emptyset}\mathtt{boolean}
+```
+
+Any other read of `Object.getPrototypeOf` is refused
 (`invalid-get-prototype-array-prototype`; under Node its write lands in
-`Array.prototype`, where every array's holes read it).
+`Array.prototype`, where every array's holes read it;
+`invalid-error-subclass-prototype`).
 
 `Reflect` is a namespace, whose functions are no annotated variable's
-members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
-getter, code no type of `o` states: it is refused.
+members: each use calls one, whose overload an entry of the overlay states
+as an intrinsic; a function read as a value or by a computed key is refused
+(`invalid-reflect-extracted`, `invalid-reflect-computed`), as is a function
+no entry reviews (`invalid-reflect-unreviewed`). `Reflect.ownKeys(o)` of a
+$`\mathsf{NonHost}`$ value is its [[OwnPropertyKeys]], which runs no code
+there (above), as a fresh dense array (CreateArrayFromList) of strings and
+symbols; no value of the object is read, and a primitive is a TypeError
+(`reflect-own-keys`):
+
+```math
+\mathtt{Reflect.ownKeys}(e)\;\equiv\;\%\mathsf{OwnKeys}\%(e)
+\qquad
+\%\mathsf{OwnKeys}\%:(\mathsf{NonHost})\Rightarrow_{\emptyset}(\mathtt{string}\mid\mathtt{symbol})[\,]
+```
+
+`Reflect.get(o, k)` runs [[Get]], which calls an accessor's getter, code no
+type of `o` states: it is refused (`invalid-reflect-get-getter`, run under
+Node), as is every other function of `Reflect`
+(`invalid-node-dirent-test-replaced`).
 
 #### `Array.from`, `RegExp` and `instanceof Error`
 
@@ -3576,8 +3627,9 @@ type names does, and a definition's methods name it as their receiver
   (`invalid-node-dirent-name-accessor`, `invalid-node-dirent-method-getter`,
   `invalid-node-dirent-chain-insert`, `invalid-node-dirent-test-replaced`,
   run under Node). A program reaches neither prototype: a class value's
-  `prototype`, an entry's `constructor`, `Object.getPrototypeOf`,
-  `Object.setPrototypeOf`, `Object.defineProperty` and `Reflect` are refused
+  `prototype`, an entry's `constructor`, `Object.getPrototypeOf` but its
+  comparison with `Object.prototype`, `Object.setPrototypeOf`,
+  `Object.defineProperty` and `Reflect.set` are refused
   (`invalid-node-dirent-prototype-write`, run under Node,
   `invalid-node-dirent-constructor-prototype`,
   `invalid-node-dirent-get-prototype`, `invalid-node-dirent-set-prototype`). `encoding: "buffer"` names the entries by

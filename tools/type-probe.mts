@@ -40,7 +40,7 @@ import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable
 import { isInstanceReference, literalUnion } from "./computed-types.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
+import { childrenOf, nameOf, isTypeAlias, typeArgumentsOf } from "./syntax.mts";
 
 
 /** A symbol of the checker. */
@@ -80,12 +80,6 @@ function listEnd(list: Node): number | null {
   return null;
 }
 
-/** The type arguments written at an application. */
-function argumentsOf(use: Node): readonly TypeNode[] {
-  const value: unknown = Reflect.get(use, "typeArguments");
-  return Array.isArray(value) ? value.filter((n: unknown): n is TypeNode => !!n && typeof n === "object" && "kind" in n) : [];
-}
-
 /** Every identifier under `node`, `node` included. */
 function identifiers(node: Node): Identifier[] {
   const found: Identifier[] = [];
@@ -123,7 +117,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     };
     const declarationFile = declaration.getSourceFile();
     const useFile = use.getSourceFile();
-    const args = argumentsOf(use);
+    const args = typeArgumentsOf(use);
     const copied: Node[] = [...parameters.flatMap(p => [p.name, ...(p.constraint ? [p.constraint] : []),
       ...(p.default ? [p.default] : [])]), form, ...args];
     if (copied.some(holdsThis)) refuse("a `this` type means what it means where it is written");

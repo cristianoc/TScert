@@ -1045,7 +1045,7 @@ Operations excluded, refused with a location:
 
 - ownness through the prototype's method and the prototype itself:
   `e.hasOwnProperty`, a member `Error.prototype` inherits and the model does
-  not state, and `Object.getPrototypeOf`, which has no entry;
+  not state, and `Object.getPrototypeOf`, read only compared with `Object.prototype`;
 - serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
   message through `[[Get]]`; the parameter is a JSON value, which an instance
   holding a prototype is not;

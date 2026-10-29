@@ -26,7 +26,7 @@
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
+import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
@@ -78,6 +78,11 @@ export type GlobalEntry = {
    * the same step: the parser writes `Promise.resolve(v)` as
    * `%PromiseResolve%(v)`, and the member joins no value. */
   intrinsic?: string;
+  /** The member is read only in `X.m(e) === X.prototype` or `!==`, either
+   * side, `X` the global at both references: the comparison is a call of
+   * this intrinsic at `e` (negated for `!==`), and the member's result
+   * reaches the program in no other way. */
+  prototypeTest?: string;
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
@@ -426,6 +431,28 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // Boolean; no value of the object reaches the program, and nothing is
   // written.
   { host: contract, global: "Object", member: "hasOwn", signature: "hasOwn(o: object, v: PropertyKey): boolean;", effect: emptyEffect },
+  // `Object.getPrototypeOf(o) === Object.prototype`: ToObject of `o` (a
+  // TypeError of `null` or `undefined`), then its [[GetPrototypeOf]], which
+  // runs no code on an ordinary object or one of ECMAScript's exotic objects
+  // but a proxy (no object is one); a host object's may be the host's own
+  // code, so the intrinsic takes a value that is no host object. Then
+  // identity with the realm's `Object.prototype`, a non-writable,
+  // non-configurable property of the untampered `Object`. Read only so: the
+  // prototype itself, `Array.prototype` among the answers, an array outside
+  // `Array`'s chain, never reaches the program
+  // (`invalid-get-prototype-array-prototype`).
+  { host: obligated("the operand", "runs its [[GetPrototypeOf]], code of a host exotic object"), global: "Object", member: "getPrototypeOf", signature: "getPrototypeOf(o: any): any;",
+    prototypeTest: prototypeIsObjectName },
+  // `Reflect.ownKeys(o)` of a value that is no host object: its
+  // [[OwnPropertyKeys]], which runs no code on an ordinary object or one of
+  // ECMAScript's exotic objects but a proxy (no object is one; a host
+  // object's may be the host's own code),
+  // as a fresh dense array (CreateArrayFromList) of its own keys, strings
+  // and symbols; no value of the object is read, and nothing else is
+  // written. A primitive, which TypeScript's `object` excludes, is a
+  // TypeError.
+  { host: obligated("the operand", "runs its [[OwnPropertyKeys]], code of a host exotic object"), global: "Reflect", member: "ownKeys", signature: "function ownKeys(target: object): (string | symbol)[];",
+    intrinsic: ownKeysName },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called) and writes only the array it allocates: the empty
