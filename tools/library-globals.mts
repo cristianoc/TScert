@@ -154,12 +154,17 @@ const primitive: TypeTerm = { k: "union", span: at,
  * both kinds' `enumerable` and `configurable`. */
 /** A field of an object type term. */
 type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-const descriptorField = (name: string, type: TypeTerm, isOptional: boolean): Field =>
-  ({ name, optional: isOptional, readonly: true, type, span: at });
-const propertyDescriptor: TypeTerm = { k: "object", stringIndex: null, calls: [], span: at, fields: [
-  descriptorField("configurable", atom("boolean"), false), descriptorField("enumerable", atom("boolean"), false),
-  descriptorField("value", atom("unknown"), true), descriptorField("writable", atom("boolean"), true),
-  descriptorField("get", atom("unknown"), true), descriptorField("set", atom("unknown"), true)] };
+const descriptorField = (name: string, type: TypeTerm, isOptional: boolean, readonly: boolean): Field =>
+  ({ name, optional: isOptional, readonly, type, span: at });
+const descriptor = (readonly: boolean): TypeTerm => ({ k: "object", stringIndex: null, calls: [], span: at, fields: [
+  descriptorField("configurable", atom("boolean"), false, readonly),
+  descriptorField("enumerable", atom("boolean"), false, readonly),
+  descriptorField("value", atom("unknown"), true, readonly), descriptorField("writable", atom("boolean"), true, readonly),
+  descriptorField("get", atom("unknown"), true, readonly), descriptorField("set", atom("unknown"), true, readonly)] });
+const propertyDescriptor: TypeTerm = descriptor(true);
+/** The same descriptor, its fields writable: one of the fresh descriptors
+ * `Object.getOwnPropertyDescriptors` makes, which no other reference holds. */
+const freshDescriptor: TypeTerm = descriptor(false);
 const dictionary = (value: TypeTerm): TypeTerm =>
   ({ k: "object", fields: [], stringIndex: { readonly: true, value, span: at }, calls: [], span: at });
 
@@ -539,6 +544,21 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     stated: { binders: [], params: [atom("nonHost"),
       { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
       result: optional(propertyDescriptor) } },
+  // `Object.getOwnPropertyDescriptors(o)`: ToObject of `o` (a TypeError of
+  // `null` or `undefined`, an outcome; a primitive's wrapper otherwise),
+  // then its [[OwnPropertyKeys]] and, for each key, its [[GetOwnProperty]]:
+  // neither calls a getter or runs code on an ordinary or a built-in exotic
+  // object (no object is a proxy, as for the single form). Each descriptor
+  // is a fresh object (FromPropertyDescriptor), defined on a fresh object at
+  // its key (CreateDataPropertyOrThrow, a `"__proto__"` key included).
+  // Stated as a dictionary of those descriptors at the string keys; nothing
+  // is known of a `value`, a getter or a setter. Its fields are data
+  // properties of objects no other reference holds, stated writable, as
+  // the dictionary's index.
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptors",
+    signature: "getOwnPropertyDescriptors<T>(o: T): { [P in keyof T]: TypedPropertyDescriptor<T[P]>; } & { [x: string]: PropertyDescriptor; };",
+    stated: { binders: [], params: [atom("nonHost")],
+      result: { k: "object", fields: [], stringIndex: { readonly: false, value: freshDescriptor, span: at }, calls: [], span: at } } },
   // The generic overloads, which TypeScript selects for a record type whose
   // keys it does not bound, promise a `T` of every key's value. That is
   // true of a dictionary, whose every own string key holds a `T`

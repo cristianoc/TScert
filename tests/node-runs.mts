@@ -1245,6 +1245,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-own-property-descriptor-key-object", `const seen = { value: 0 };
     wrong({}, { toString() { seen.value = 1; return "a"; } }, seen)`), 1,
     "invalid-own-property-descriptor-key-object: the actual source returns 1 despite its 0 contract");
+  assert.throws(() => runExample("invalid-field-narrowing-for-of-write",
+    `(() => { const h = { statement: { k: "block", statements: [1] } }; return count(h, h); })()`), /length/,
+    "invalid-field-narrowing-for-of-write: the reread after the loop reads `length` of undefined");
+  assert.equal(runExample("invalid-own-property-descriptors-value", `extra({ a: 1, x: "s" })`), "s",
+    "invalid-own-property-descriptors-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-own-property-descriptor-value", `first({ a: "x" })`), "x",
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,

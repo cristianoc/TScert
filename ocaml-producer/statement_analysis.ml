@@ -410,6 +410,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
          extend env name (cell contract)
        | None -> Json.fail "an early binding names no binding of its statement")
     | _ -> Json.fail "an early binding names another statement" in
+  let forget_unstable env = forget ~keep:(Refinement.stable_path declarations env) env in
   let flow_callbacks = {
     early=(fun env (s:Source.stmt) name -> diagnostic_recover s.span
       (fun () ->
@@ -440,6 +441,8 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
     return_expression=(fun env e -> expr ?expected:(expected_result ()) env e);
     returned=record_return;
     entry;
+    (* The iterator's start and each step keep the paths through stable
+       members, as every step keeps Lean's stable links. *)
     iterator_start=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) ->
       diagnostic_recover s.span (fun () ->
         publish_expression s.span top None;
@@ -463,7 +466,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             inferred.result,inferred.substitution in
           publish_expression span result (if substitution=[] then None else
               Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution));
-          extend (forget env) b.Flow.name (Value result)));
+          extend (forget_unstable env) b.Flow.name (Value result)));
     iterator_step=(fun (_node:Flow.node) (s:Source.stmt) env (b:Flow.binding) (element:Flow.binding) ->
           diagnostic_recover s.span (fun () ->
             let pos = match s.statement with ForOf (_,p,_,_,_) -> p | _ -> s.span in
@@ -485,7 +488,7 @@ let statements (expr:Analysis_state.expression_infer) execute_bindings owner_spa
             | _ -> Proposal_diagnostics.unsupported "an iterator gives no step" in
           ignore name;
           publish_expression name_pos t None;
-          extend (forget env) element.Flow.name (Value t),forget env));
+          extend (forget_unstable env) element.Flow.name (Value t),forget_unstable env));
   } in
   let statements = Proposal_flow.statements flow_callbacks flow_graph register_following in
   statements owner_span env ss

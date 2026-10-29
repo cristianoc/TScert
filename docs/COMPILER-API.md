@@ -388,7 +388,9 @@ the same path is while its read link holds
 link. A link through stable members of node shapes holds through every step
 ([stable links](HOST-FAMILIES.md#stable-links)): their locations have
 stable contracts by T1′, and the other host classes (`Type`, `Symbol`,
-`Checker`, `API`) and node lists have no such assumption.
+`Checker`, `API`) and node lists have no such assumption. The steps of a
+`for...of` loop are among them: a node's field tested before the loop is
+reread at the narrowed type after it (`blocker-compiler-api-field-guard`).
 
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object

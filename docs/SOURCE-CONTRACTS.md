@@ -2824,6 +2824,22 @@ keeps from running.
 ```math
 \mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
 ```
+- `Object.getOwnPropertyDescriptors(o)` converts `o` by ToObject, then
+  takes its own keys by [[OwnPropertyKeys]] and looks each up by
+  [[GetOwnProperty]]: neither calls a getter or runs code on the objects a
+  program holds. Each descriptor is a fresh object, defined at its key on a
+  fresh object, a `"__proto__"` key among them. The result is a dictionary
+  of descriptors at the string keys, nothing known of what each holds, its
+  index and the descriptors' fields writable, since no other reference
+  holds them (`object-own-property-descriptors`); a key the record's type
+  does not state may be owned at another type
+  (`invalid-own-property-descriptors-value`, run under Node). Its object
+  is a $`\mathsf{NonHost}`$ value, as above, and $`\mathsf{Desc}^{w}`$ is
+  $`\mathsf{Desc}`$ with every field writable:
+
+```math
+\mathtt{getOwnPropertyDescriptors}:(\mathsf{NonHost})\Rightarrow\{[k:\mathtt{string}]:\mathsf{Desc}^{w}\}
+```
 - `Object.hasOwn(o, k)` converts `o` by ToObject, an object here, and `k` by
   ToPropertyKey, which runs no code of a string, number or symbol, then looks
   the key up by [[GetOwnProperty]], which runs no code (no object is a
