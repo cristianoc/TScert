@@ -13,14 +13,30 @@ module type Inputs = sig
   (* The instance a call published of its callee read at a source. *)
   val latest_instance : Json.t -> Semantic.ty option
   val grew : string -> bool
-  val branch : (string * Environment.binding) list -> Source.expr -> bool ->
+  val cache_entries : bool
+  val rigid_bounds : unit -> (Semantic.rigid * Semantic.ty) list
+  val branch : claimed:(Json.t -> Semantic.ty option) -> (string * Environment.binding) list -> Source.expr -> bool ->
     (string * Environment.binding) list
 end
 
 module Make (S : Inputs) = struct
 open S
-  let branch = S.branch
-  let claimed_type = S.claimed_type
+  (* A replay records the queries it actually reads, including refinement's
+     claims. Later typings may publish a claim or a call instance. *)
+  let dependencies = ref None
+  let track ?(equal = ( = )) read key =
+    let value = read key in
+    (match !dependencies with
+     | None -> ()
+     | Some checks -> checks := (fun () -> let current = read key in current == value || equal current value) :: !checks);
+    value
+  let same_type a b = match a,b with
+    | Some a,Some b -> a == b || a = b
+    | None,None -> true | _ -> false
+  let claimed_type source = track ~equal:same_type S.claimed_type source
+  let latest_instance source = track ~equal:same_type S.latest_instance source
+  let grew name = track S.grew name
+  let branch env cond truth = S.branch ~claimed:claimed_type env cond truth
   let execution (e:Source.expr) = match execution_at e.pos with
     | Some plan -> plan
     | None -> Json.fail ("missing expression execution plan at " ^ current_point () ^
@@ -219,17 +235,47 @@ open S
     (match t with Some t -> t | None -> branch after e true),
     (match f with Some f -> f | None -> branch after e false)
 
+  module Roots = Hashtbl.Make(struct
+    type t = Analysis_capabilities.root
+    let equal a b = a == b
+    let hash = Hashtbl.hash
+  end)
+  (* Each observation retains the dependency-list prefix that produced its
+     environment. Claims read later in the statement cannot invalidate that
+     entry. A repeated observation joins its environments and retains all
+     dependencies read up to that join. The root owns the plan and initial
+     environment; a pass owns the cache and its immutable source hints. *)
+  let entry_cache = Roots.create 16
+
   let expression_entry root source fallback =
     let (_,plan,initial)=root in
-    let entries=Hashtbl.create 16 in
-    let observe span env=match Hashtbl.find_opt entries span with
-      | None -> Hashtbl.add entries span env
-      | Some previous ->
-        let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
-        let env=if impossible previous then env else if impossible env then previous else
-          join previous previous env in
-        Hashtbl.replace entries span env in
-    ignore (run_execution ~observe initial plan);
-    Option.value (Hashtbl.find_opt entries source) ~default:fallback
+    let bounds = rigid_bounds () in
+    let cached = if cache_entries then Roots.find_opt entry_cache root else None in
+    let valid (entries,previous,checks) =
+      previous = bounds &&
+      let checks = match Hashtbl.find_opt entries source with
+        | Some (_,checks) -> checks | None -> checks in
+      List.for_all (fun check -> check ()) checks in
+    let entries = match cached with
+    | Some cached when valid cached -> let entries,_,_ = cached in entries
+    | _ ->
+      let entries=Hashtbl.create 16 in
+      let checks = ref [] in
+      let observe span env =
+        let env = match Hashtbl.find_opt entries span with
+          | None -> env
+          | Some (previous,_) ->
+            let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
+            if impossible previous then env else if impossible env then previous else
+              join previous previous env in
+        Hashtbl.replace entries span (env,!checks) in
+      let saved = !dependencies in
+      dependencies := Some checks;
+      Fun.protect ~finally:(fun () -> dependencies := saved)
+        (fun () -> ignore (run_execution ~observe initial plan));
+      if cache_entries then Roots.replace entry_cache root (entries,bounds,!checks);
+      entries in
+    match Hashtbl.find_opt entries source with
+    | Some (env,_) -> env | None -> fallback
 
 end

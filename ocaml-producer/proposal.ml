@@ -144,6 +144,9 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
       if raised = f && kept = t then changed
       else (Hashtbl.replace Source.self_effects pos (raised,kept); true))
       false (List.of_seq (Hashtbl.to_seq Source.self_effects)) in
+  (* Source-order rounds preserve the first refusal and limit typing before
+     that refusal to its source prefix. Entry-environment caching is local
+     to each typing pass. *)
   let rec rounds assumed thrown =
     let proposal : Proposal_types.t = infer_assuming ~thrown ~state flows program assumed in
     let selves_raised = raise_selves proposal in

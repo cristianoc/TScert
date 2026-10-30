@@ -233,9 +233,11 @@ module Access (S : sig val state : t end) = struct
   let observe_for_in name =
     let observations=state.diagnostics.Proposal_diagnostics.for_in_keys in
     observations := name :: !observations
-  let branch_for_execution env cond truth = Refinement.branch_with state.diagnostics
+  let cache_execution_entries = not state.diagnostics.Proposal_diagnostics.diagnosing &&
+    not !(state.diagnostics.Proposal_diagnostics.explaining)
+  let branch_for_execution ~claimed env cond truth = Refinement.branch_with state.diagnostics
     (rigid_bounds ()) declarations ~modules:(fun name ->
-      try module_type name with Json.Error _ -> None) ~claimed:claimed_type env cond truth
+      try module_type name with Json.Error _ -> None) ~claimed env cond truth
   let path_facts () : Proposal_flow.metadata = {
     Proposal_flow.evolving=(!local).evolving; grown_locals=(!local).grown_locals;
     exact_locals=(!local).exact_locals; closures=(!local).closures;

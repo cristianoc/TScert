@@ -35,7 +35,8 @@ module Access (_ : sig val state : t end) : sig
   val diagnostic_recover : Json.t -> (unit -> 'a) -> (unit -> 'a) -> 'a
   val initial_environment : env
   val observe_method_call : Json.t -> unit
-  val branch_for_execution : env -> Source.expr -> bool -> env
+  val cache_execution_entries : bool
+  val branch_for_execution : claimed:(Json.t -> Semantic.ty option) -> env -> Source.expr -> bool -> env
   val register_following : Json.t -> Source.stmt list -> unit
   val speculate : (unit -> 'a) -> 'a option
   val with_block_context : Semantic.ty option -> (unit -> 'a) -> 'a * Semantic.ty list

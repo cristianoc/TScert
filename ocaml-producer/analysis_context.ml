@@ -9,7 +9,8 @@ module type Inputs = sig
   include Closure_offers.Inputs
   include Analysis_capabilities.Entry_publication
   include Analysis_capabilities.Instance_publication
-  val branch_for_execution : Analysis_capabilities.env -> Source.expr -> bool -> Analysis_capabilities.env
+  val branch_for_execution : claimed:(Json.t -> Semantic.ty option) -> Analysis_capabilities.env -> Source.expr -> bool -> Analysis_capabilities.env
+  val cache_execution_entries : bool
   val speculate : (unit -> 'a) -> 'a option
   val mark_exact_allocations : Json.t list -> unit
 end
@@ -24,6 +25,8 @@ module Execution_inputs : Execution_analysis.Inputs = struct
   let claimed_type = S.claimed_type
   let latest_instance = S.latest_instance
   let grew name = List.mem name (path_facts ()).Proposal_flow.grown_locals
+  let cache_entries = S.cache_execution_entries
+  let rigid_bounds = S.rigid_bounds
   let branch = S.branch_for_execution
 end
 include Execution_analysis.Make(Execution_inputs)
