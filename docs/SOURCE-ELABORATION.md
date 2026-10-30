@@ -3386,7 +3386,12 @@ source annotations remain unrestricted; OCaml proposes preservation for
 closure bodies of reads, element reads, fresh allocations, patterns without a
 rest, and fixed calls and method calls whose callee's signatures all state it
 (`footprint_expr` in `source.ml`), retaining it through symbolic claims and
-substitution. Evidence production adds a
+substitution. A method call on a union of hosts each holding the member is
+such a call, its member bound to the object
+([bind-union-host](PROGRAM-TYPING.md#judgments-and-constructor-views)); a call
+the lowering dispatches on its object in one node gets no proposal
+(`compiler-api-find-union-node-method`, `invalid-find-union-method-effect`,
+run under Node). Evidence production adds a
 code entry to its search table only after the complete body/effect check passes.
 A forged effect thus fails at the defining callable's located typing obligation.
 All code certificates remain in the submitted response, and final acceptance

@@ -828,15 +828,25 @@ let rec unfolded_arms declarations seen t = match t with
    unbounded, which Lean accepts. A union of arrays none of which owns the
    member, the callee claimed at one atom, is not dispatched: each
    alternative reads the member from the one array prototype, at one row
-   (Lean's `Lowering.sharedFieldRow`). *)
+   (Lean's `Lowering.sharedFieldRow`). Nor is a union of hosts each holding
+   the member as a method, the callee claimed at one atom: the member is
+   bound to the object by splitting its slot, and called (Lean's
+   `unionMemberHosts`, `memberHead`). *)
 let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty option) args =
   let arms = List.sort_uniq compare (unfolded_arms declarations [] object_claim) in
   let prototype_read = function
     | Atoms [Shape {elements=Some _; fields; _}] -> not (List.exists (fun (f:field) -> f.name = k) fields)
     | _ -> false in
+  (* An intersection holds the members its operands hold. *)
+  let rec host_method seen = function
+    | Atoms [Shape {fields; _}] -> List.exists (fun (f:field) -> f.name = k && f.host) fields
+    | Meet (t,ts) as m when not (List.mem m seen) -> List.exists (fun part ->
+        List.exists (host_method (m :: seen)) (unfolded_arms declarations [] part)) (t :: ts)
+    | _ -> false in
+  let one_atom = match member_claim with Some (Atoms [_]) -> true | _ -> false in
   plain_actuals args
   && List.length arms > 1
-  && not ((match member_claim with Some (Atoms [_]) -> true | _ -> false) && List.for_all prototype_read arms)
+  && not (one_atom && (List.for_all prototype_read arms || List.for_all (host_method []) arms))
 (* `ToBoolean` of every value of an atom, through the declaration it names:
    a declaration all of whose arms settle it one way (a named union of
    records, always truthy) settles it so. *)

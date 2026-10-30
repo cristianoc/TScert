@@ -271,6 +271,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-recursive-constant-shadowed",
       `wrong({ k: "a", parts: [{ k: "b", parts: [] }] }, [(u, at) => at.name])`],
     ["invalid-field-call-effect-cell", "wrong([1, 2], { value: 0 })"],
+    ["invalid-find-union-method-effect",
+      "(() => { const xs = [{ size: 1 }, { size: 2 }], seen = []; wrong(xs, { size: 0, shrink(x) { seen.push(x); xs.pop(); return false; } }); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-readonly-field-call-effect",
       "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
