@@ -68,24 +68,46 @@ export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
     a.freshObject === b.freshObject;
 const isObject = (v: JsonRead): v is JsonObject =>
   typeof v === "object" && v !== null && !Array.isArray(v);
-/** Whether a value is a closed footprint, as the wire states one. */
-export function isClosedFootprint(value: JsonRead): value is ClosedFootprint {
-  return isObject(value) && Object.keys(value).length === 2 &&
-    (value.value === "keep" || value.value === "any") &&
-    (value.store === "keep" || value.store === "grow" || value.store === "any");
+/** The closed footprint a value states, as a fresh object of its fields, or
+ * `undefined` where the value states none. */
+export function decodeClosedFootprint(v: JsonRead): ClosedFootprint | undefined {
+  if (!isObject(v) || Object.keys(v).length !== 2) return undefined;
+  const value = v.value;
+  const store = v.store;
+  if (!isFootprintValue(value) || !isFootprintStore(store)) return undefined;
+  return { value, store };
 }
-/** Whether a value is a call effect, as the wire states one. */
-export function isCallEffect(value: JsonRead): value is CallEffect {
-  if (!isObject(value) || Object.keys(value).length !== 7 || !isClosedFootprint(value.footprint) ||
-      typeof value.fresh !== "boolean" || typeof value.receiverStore !== "boolean" ||
-      typeof value.onThrow !== "boolean" || typeof value.receiverOwn !== "boolean" ||
-      typeof value.freshObject !== "boolean") return false;
-  const promise = value.promise;
-  if (promise === null) return true;
-  if (!isObject(promise) || Object.keys(promise).length !== 1) return false;
-  const about: JsonRead = "guards" in promise ? promise.guards : "asserts" in promise ? promise.asserts : undefined;
-  return isObject(about) && Object.keys(about).length === 1 && typeof about.param === "number" &&
-    Number.isInteger(about.param) && about.param >= 0;
+function isFootprintValue(v: unknown): v is ClosedFootprint["value"] {
+  return v === "keep" || v === "any";
+}
+function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
+  return v === "keep" || v === "grow" || v === "any";
+}
+/** The call effect a value states, as fresh objects of its fields, or
+ * `undefined` where the value states none. */
+export function decodeCallEffect(v: JsonRead): CallEffect | undefined {
+  if (!isObject(v) || Object.keys(v).length !== 7) return undefined;
+  const footprint = decodeClosedFootprint(v.footprint);
+  const fresh = v.fresh;
+  const receiverStore = v.receiverStore;
+  const onThrow = v.onThrow;
+  const receiverOwn = v.receiverOwn;
+  const freshObject = v.freshObject;
+  if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||
+      typeof onThrow !== "boolean" || typeof receiverOwn !== "boolean" ||
+      typeof freshObject !== "boolean") return undefined;
+  const stated = v.promise;
+  let promise: CallPromise | null = null;
+  if (stated !== null) {
+    if (!isObject(stated) || Object.keys(stated).length !== 1) return undefined;
+    const guards = "guards" in stated;
+    const about: JsonRead = guards ? stated.guards : "asserts" in stated ? stated.asserts : undefined;
+    if (!isObject(about) || Object.keys(about).length !== 1) return undefined;
+    const param = about.param;
+    if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
+    promise = guards ? { guards: { param } } : { asserts: { param } };
+  }
+  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject };
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {
@@ -156,9 +178,10 @@ export type Clause<L = number> =
    * fields constrain their key only where the object has it, as a view there
    * when readonly; `methods` are
    * host-relative members; each of `bounds` says which keys the object may
-   * own. Each is left out when there are none. */
+   * own; `stable` lists its stable keys (HOST-FAMILIES.md, "Stable keys").
+   * Each is left out when there are none. */
   | { refs: { first: Fields<L>; rest: Fields<L>[]; views: Fields<L>; optional?: OptionalField<L>[];
-      methods?: MethodSig<L>[]; bounds?: KeyBound[] } }
+      methods?: MethodSig<L>[]; bounds?: KeyBound[]; stable?: PropertyKey[] } }
   /** Readonly index views apply to every present own field their key class
    * admits; each of `cells`, a mutable index signature's, is also one every
    * such field holds exactly. Left out when there are none. */
@@ -172,6 +195,7 @@ export type Clause<L = number> =
         methods?: MethodSig<L>[];
         bounds?: KeyBound[];
         cells?: IndexEntry<L>[];
+        stable?: PropertyKey[];
       };
     }
   /** A tuple contract on an array store: required positions, optional
@@ -241,19 +265,14 @@ type Covers<Missing extends never> = Missing;
 type EveryClauseKey = Covers<Exclude<KeysOf<Exclude<Clause, string>>, ClauseKey>>;
 type OnlyClauseKeys = Covers<Exclude<ClauseKey, KeysOf<Exclude<Clause, string>>>>;
 
-/** Adding a clause to `Clause` without adding it here is a compile error, and
- * these are the only places a clause kind is enumerated. */
-const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
-  nul: "null",
-  bool: "boolean",
-  undef: "undefined",
-  num: "number",
-  str: "string",
-  top: "calculus top",
-  source: "unknown",
-  bigint: "bigint",
-  symbol: "symbol",
-};
+/** The string clauses, each once: a clause of `Clause` missing here, or a
+ * string no clause is, does not compile. With `CLAUSE_KEYS`, these are the
+ * only places a clause kind is enumerated. */
+const STRING_CLAUSE_KEYS = [
+  "nul", "bool", "undef", "num", "str", "top", "source", "bigint", "symbol",
+] as const;
+type EveryStringClause = Covers<Exclude<StringClause, (typeof STRING_CLAUSE_KEYS)[number]>>;
+type OnlyStringClauses = Covers<Exclude<(typeof STRING_CLAUSE_KEYS)[number], StringClause>>;
 
 /** The number a literal's bit pattern denotes. Readers show the number; the
  * bits are its identity, not its display. */
@@ -293,16 +312,21 @@ function array(v: JsonRead): readonly JsonValue[] {
   if (!isList(v)) throw Error("expected graph list");
   return v;
 }
-export function decodeLabels(v: JsonRead, size: number): Labels {
-  if (
-    array(v).some(
-      (i) =>
-        typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size,
-    )
-  )
+/** Each element of a list, decoded in order, as a fresh dense list. */
+function each<T>(v: JsonRead, decode: (x: JsonValue) => T): T[] {
+  const result: T[] = [];
+  for (const x of array(v)) result.push(decode(x));
+  return result;
+}
+/** A reference to one of `size` rows. */
+function labelAt(i: JsonRead, size: number): number {
+  if (typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size)
     throw Error("type graph reference out of bounds");
-  // asserted: the decoder's result, checked field by field above
-  return v as Labels;
+  return i;
+}
+/** A union of references to `size` rows, as a fresh list. */
+export function decodeLabels(v: JsonRead, size: number): Labels {
+  return array(v).map((i) => labelAt(i, size));
 }
 /** The keys an index signature constrains: every string key, the canonical
  * numeric ones, or every symbol key (Lean's `IndexKeys`). */
@@ -312,37 +336,79 @@ type IndexEntry<L = number> = [IndexClass, Labels<L>];
 function isIndexClass(v: unknown): v is IndexClass {
   return v === "strings" || v === "numeric" || v === "symbols";
 }
+function isParamKind(v: unknown): v is ParamRow["kind"] {
+  return v === "value" || v === "arguments";
+}
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
+/** The type graph a parsed document states, as fresh rows of the clauses it
+ * checked. */
 export function decodeGraph(value: Json | undefined): TypeGraph {
   requireWellFormed(value, "type graph");
   const rows = array(value);
-  const labels = (v: JsonRead) => decodeLabels(v, rows.length);
-  const indexEntry = (v: JsonRead) => {
+  const label = (v: JsonRead): number => labelAt(v, rows.length);
+  const labels = (v: JsonRead): Labels => decodeLabels(v, rows.length);
+  const labelLists = (v: JsonRead): Labels[] => each(v, labels);
+  const indexEntry = (v: JsonRead): IndexEntry => {
     const pair = array(v);
-    if (pair.length !== 2 || !isIndexClass(pair[0]))
+    const keyClass = pair[0];
+    if (pair.length !== 2 || !isIndexClass(keyClass))
       throw Error("expected an index key class and its type");
-    labels(pair[1]);
+    return [keyClass, labels(pair[1])];
   };
-  const contract = (v: JsonRead, hosted: boolean, rest: boolean) => {
-    const sig = obj(v, ["receiver", "arguments", "result", "effect"]);
-    if (hosted) obj(sig.receiver, []); else labels(sig.receiver);
-    if (!isCallEffect(sig.effect)) throw Error("invalid callable effect");
-    labels(sig.result);
-    if (rest) {
-      const args = array(sig.arguments);
-      if (args.length !== 2) throw Error("expected fixed arguments and a rest contract");
-      array(args[0]).forEach(labels);
-      labels(args[1]);
-    } else array(sig.arguments).forEach(labels);
+  const signature = (v: JsonRead): JsonObject =>
+    obj(v, ["receiver", "arguments", "result", "effect"]);
+  const effect = (sig: JsonObject): CallEffect => {
+    const decoded = decodeCallEffect(sig.effect);
+    if (decoded === undefined) throw Error("invalid callable effect");
+    return decoded;
   };
-  const arrows = (v: JsonRead) => array(v).forEach((s) => contract(s, false, false));
+  const restArguments = (v: JsonRead): [Labels[], Labels] => {
+    const args = array(v);
+    if (args.length !== 2) throw Error("expected fixed arguments and a rest contract");
+    const fixed = labelLists(args[0]);
+    return [fixed, labels(args[1])];
+  };
+  const arrow = (v: JsonRead): Arrow => {
+    const sig = signature(v);
+    const receiver = labels(sig.receiver);
+    const e = effect(sig);
+    const result = labels(sig.result);
+    return { receiver, arguments: labelLists(sig.arguments), result, effect: e };
+  };
+  const restArrow = (v: JsonRead): RestArrow => {
+    const sig = signature(v);
+    const receiver = labels(sig.receiver);
+    const e = effect(sig);
+    const result = labels(sig.result);
+    return { receiver, arguments: restArguments(sig.arguments), result, effect: e };
+  };
+  const methodArrow = (v: JsonRead): MethodArrow => {
+    const sig = signature(v);
+    obj(sig.receiver, []);
+    const e = effect(sig);
+    const result = labels(sig.result);
+    return { receiver: {}, arguments: labelLists(sig.arguments), result, effect: e };
+  };
+  const methodRestArrow = (v: JsonRead): MethodRestArrow => {
+    const sig = signature(v);
+    obj(sig.receiver, []);
+    const e = effect(sig);
+    const result = labels(sig.result);
+    return { receiver: {}, arguments: restArguments(sig.arguments), result, effect: e };
+  };
+  const arrows = (v: JsonRead): Arrow[] => each(v, arrow);
   // Left out when empty: an explicit empty list is not the canonical form.
-  const variadic = (v: JsonRead) => {
+  const variadic = (v: JsonRead): RestArrow[] => {
     const sigs = array(v);
     if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
-    sigs.forEach((s) => contract(s, false, true));
+    return each(sigs, restArrow);
+  };
+  const methodVariadic = (v: JsonRead): MethodRestArrow[] => {
+    const sigs = array(v);
+    if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
+    return each(sigs, methodRestArrow);
   };
   // A key: a string, or `{"symbol": i}` for the declaration document's i-th
   // symbol.
@@ -353,71 +419,91 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       throw Error(`expected ${what}`);
     return { symbol: r.symbol };
   };
-  const fields = (v: JsonRead, repeated = false) => {
+  const fields = (v: JsonRead, repeated = false): Fields => {
     const names = new Set<string>();
-    array(v).forEach((f) => {
+    const result: Fields = [];
+    for (const f of array(v)) {
       const pair = array(f);
       if (pair.length !== 2)
         throw Error("expected a field name and its labels");
-      const name = keyText(key(pair[0], "a field name"));
+      const k = key(pair[0], "a field name");
+      const name = keyText(k);
       if (!repeated && names.has(name))
         throw Error("duplicate field in an object contract");
       names.add(name);
-      labels(pair[1]);
-    });
+      result.push([k, labels(pair[1])]);
+    }
+    return result;
   };
-  const optionalFields = (v: JsonRead) => {
+  const fieldLists = (v: JsonRead): Fields[] => each(v, (f) => fields(f));
+  const optionalFields = (v: JsonRead): OptionalField[] => {
     const names = new Set<string>();
-    array(v).forEach((f) => {
+    const result: OptionalField[] = [];
+    for (const f of array(v)) {
       const r = obj(f, ["key", "readonly", "type"]);
-      const name = keyText(key(r.key, "an optional field's key"));
+      const k = key(r.key, "an optional field's key");
+      const name = keyText(k);
       if (names.has(name)) throw Error("duplicate optional field in an object contract");
       names.add(name);
-      if (typeof r.readonly !== "boolean") throw Error("expected an optional field's readonly flag");
-      labels(r.type);
-    });
+      const readonly = r.readonly;
+      if (typeof readonly !== "boolean") throw Error("expected an optional field's readonly flag");
+      result.push({ key: k, readonly, type: labels(r.type) });
+    }
+    return result;
   };
-  const methods = (v: JsonRead) =>
-    array(v).forEach((m) => {
+  const methods = (v: JsonRead): MethodSig[] =>
+    each(v, (m) => {
       const r = obj(m, ["key", "calls", "rests", "schemes", "receivers"]);
-      key(r.key, "a method key");
-      array(r.schemes).forEach(labels);
-      array(r.receivers).forEach(labels);
-      array(r.calls).forEach((c) => contract(c, true, false));
-      array(r.rests).forEach((c) => contract(c, true, true));
+      const k = key(r.key, "a method key");
+      const schemes = labelLists(r.schemes);
+      const receivers = labelLists(r.receivers);
+      const calls = each(r.calls, methodArrow);
+      const rests = each(r.rests, methodRestArrow);
+      return { key: k, calls, rests, schemes, receivers };
     });
-  const bounds = (v: JsonRead) =>
-    array(v).forEach((b) => {
+  const bounds = (v: JsonRead): KeyBound[] =>
+    each(v, (b) => {
       const r = obj(b, ["among", "keys"]);
-      if (typeof r.among !== "boolean") throw Error("invalid key bound");
-      array(r.keys).forEach((k) => key(k, "a key in a bound"));
+      const among = r.among;
+      if (typeof among !== "boolean") throw Error("invalid key bound");
+      return { among, keys: each(r.keys, (k) => key(k, "a key in a bound")) };
     });
   // A record's stable keys (HOST-FAMILIES.md, "Stable keys"): a nonempty
   // list of keys, omitted when empty.
-  const stableKeys = (v: JsonRead) => {
+  const stableKeys = (v: JsonRead): PropertyKey[] => {
     const ks = array(v);
     if (!ks.length) throw Error("an empty stable-key list is written by omitting it");
-    ks.forEach((k) => key(k, "a stable key"));
+    return each(ks, (k) => key(k, "a stable key"));
   };
-  const tuple = (v: JsonRead) => {
+  const tuple = (v: JsonRead): Tuple => {
     const t = obj(v, ["required", "optional", "rest", "readonly", "presence"]);
-    if (!isArrayPresence(t.presence)) throw Error("invalid tuple density flag");
-    if (typeof t.readonly !== "boolean")
+    const presence = t.presence;
+    if (!isArrayPresence(presence)) throw Error("invalid tuple density flag");
+    const readonly = t.readonly;
+    if (typeof readonly !== "boolean")
       throw Error("invalid tuple readonly flag");
-    array(t.required).forEach(labels);
-    array(t.optional).forEach(labels);
-    if (t.rest !== null) labels(t.rest);
+    const required = labelLists(t.required);
+    const optional = labelLists(t.optional);
+    const rest = t.rest === null ? null : labels(t.rest);
+    return { required, optional, rest, readonly, presence };
   };
-  // One validator per clause kind. A missing key does not compile, so a new
+  const tuples = (v: JsonRead): { first: Tuple; rest: Tuple[] } => {
+    const r = obj(v, ["first", "rest"]);
+    const first = tuple(r.first);
+    return { first, rest: each(r.rest, tuple) };
+  };
+  // One decoder per clause kind. A missing key does not compile, so a new
   // clause cannot reach the decoder as a silent "unknown graph clause".
   // Keyed by the language's own union, so a clause added there and not here is
   // a type error; read only at the key of `CLAUSE_KEYS` equal to the
   // document's, so a clause this does not know, `toString` among them, is a
   // refusal rather than a silent pass.
-  const check: Record<ClauseKey, (body: JsonRead) => void> = {
+  const decode: Record<ClauseKey, (body: JsonRead) => Clause> = {
     boolLit: (b) => {
-      if (typeof obj(b, ["value"]).value !== "boolean")
+      const value = obj(b, ["value"]).value;
+      if (typeof value !== "boolean")
         throw Error("invalid Boolean literal");
+      return { boolLit: { value } };
     },
     // The identity is the double's bit pattern, decimal, as an unsigned 64.
     numLit: (b) => {
@@ -428,20 +514,25 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
         BigInt(bits) > 0xffffffffffffffffn
       )
         throw Error("invalid numeric literal");
+      return { numLit: { bits } };
     },
     strLit: (b) => {
-      if (typeof obj(b, ["value"]).value !== "string")
+      const value = obj(b, ["value"]).value;
+      if (typeof value !== "string")
         throw Error("invalid string literal");
+      return { strLit: { value } };
     },
     // Sorted and distinct, at least two: the one spelling of a set.
     numIn: (b) => {
       const bits = array(obj(b, ["bits"]).bits).map((x) => {
         if (typeof x !== "string" || !/^[0-9]+$/.test(x) || BigInt(x) > 0xffffffffffffffffn)
           throw Error("invalid number set");
-        return BigInt(x);
+        return x;
       });
-      if (bits.length < 2 || bits.some((x, i) => i > 0 && !((bits[i - 1] ?? x) < x)))
+      const numbers = bits.map((x) => BigInt(x));
+      if (numbers.length < 2 || numbers.some((x, i) => i > 0 && !((numbers[i - 1] ?? x) < x)))
         throw Error("invalid number set");
+      return { numIn: { bits } };
     },
     strIn: (b) => {
       const values = array(obj(b, ["values"]).values).map((x) => {
@@ -450,86 +541,115 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       });
       if (values.length < 2 || values.some((x, i) => i > 0 && !codePointLess(values[i - 1] ?? x, x)))
         throw Error("invalid string set");
+      return { strIn: { values } };
     },
     bigintLit: (b) => {
       const value = obj(b, ["value"]).value;
       if (typeof value !== "number" || !Number.isInteger(value))
         throw Error("invalid bigint literal");
+      return { bigintLit: { value } };
     },
     symbolLit: (b) => {
       const id = obj(b, ["id"]).id;
       if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0)
         throw Error("invalid symbol identity");
+      return { symbolLit: { id } };
     },
     refs: (b) => {
       const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds", "stable"]);
-      fields(r.first);
-      array(r.rest).forEach(v => fields(v));
+      const first = fields(r.first);
+      const rest = fieldLists(r.rest);
       // Views are conjunctive capabilities, not an object literal: a meet
       // can constrain one key more than once, exactly as Lean viewT does.
-      fields(r.views, true);
-      if ("optional" in r) optionalFields(r.optional);
-      if ("methods" in r) methods(r.methods);
-      if ("bounds" in r) bounds(r.bounds);
-      if ("stable" in r) stableKeys(r.stable);
+      const views = fields(r.views, true);
+      const optional = "optional" in r ? optionalFields(r.optional) : undefined;
+      const sigs = "methods" in r ? methods(r.methods) : undefined;
+      const keyBounds = "bounds" in r ? bounds(r.bounds) : undefined;
+      const stable = "stable" in r ? stableKeys(r.stable) : undefined;
+      return {
+        refs: {
+          first, rest, views,
+          ...(optional === undefined ? {} : { optional }),
+          ...(sigs === undefined ? {} : { methods: sigs }),
+          ...(keyBounds === undefined ? {} : { bounds: keyBounds }),
+          ...(stable === undefined ? {} : { stable }),
+        },
+      };
     },
     dict: (b) => {
       const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells", "stable"]);
-      fields(r.first);
-      array(r.rest).forEach(v => fields(v));
+      const first = fields(r.first);
+      const rest = fieldLists(r.rest);
       // Views are conjunctive capabilities, not an object literal: a meet
       // can constrain one key more than once, exactly as Lean viewT does.
-      fields(r.views, true);
-      array(r.indexes).forEach(indexEntry);
-      if ("cells" in r) array(r.cells).forEach(indexEntry);
-      if ("optional" in r) optionalFields(r.optional);
-      if ("methods" in r) methods(r.methods);
-      if ("bounds" in r) bounds(r.bounds);
-      if ("stable" in r) stableKeys(r.stable);
+      const views = fields(r.views, true);
+      const indexes = each(r.indexes, indexEntry);
+      const cells = "cells" in r ? each(r.cells, indexEntry) : undefined;
+      const optional = "optional" in r ? optionalFields(r.optional) : undefined;
+      const sigs = "methods" in r ? methods(r.methods) : undefined;
+      const keyBounds = "bounds" in r ? bounds(r.bounds) : undefined;
+      const stable = "stable" in r ? stableKeys(r.stable) : undefined;
+      return {
+        dict: {
+          first, rest, views, indexes,
+          ...(optional === undefined ? {} : { optional }),
+          ...(sigs === undefined ? {} : { methods: sigs }),
+          ...(keyBounds === undefined ? {} : { bounds: keyBounds }),
+          ...(cells === undefined ? {} : { cells }),
+          ...(stable === undefined ? {} : { stable }),
+        },
+      };
     },
     ctors: (b) => {
       const r = objOptional(b, ["signatures"], ["variadic", "first", "rest", "views"]);
-      if ("first" in r) fields(r.first);
-      if ("rest" in r) array(r.rest).forEach(v => fields(v));
-      if ("views" in r) fields(r.views, true);
-      array(r.signatures).forEach((c) => contract(c, true, false));
-      if ("variadic" in r) {
-        const sigs = array(r.variadic);
-        if (!sigs.length)
-          throw Error("an empty variadic list is written by omitting it");
-        sigs.forEach((c) => contract(c, true, true));
-      }
+      const first = "first" in r ? fields(r.first) : undefined;
+      const rest = "rest" in r ? fieldLists(r.rest) : undefined;
+      const views = "views" in r ? fields(r.views, true) : undefined;
+      const signatures = each(r.signatures, methodArrow);
+      const sigs = "variadic" in r ? methodVariadic(r.variadic) : undefined;
+      return {
+        ctors: {
+          signatures,
+          ...(sigs === undefined ? {} : { variadic: sigs }),
+          ...(first === undefined ? {} : { first }),
+          ...(rest === undefined ? {} : { rest }),
+          ...(views === undefined ? {} : { views }),
+        },
+      };
     },
-    list: (b) => {
-      const r = obj(b, ["first", "rest"]);
-      tuple(r.first);
-      array(r.rest).forEach(tuple);
-    },
-    pack: (b) => {
-      const r = obj(b, ["first", "rest"]);
-      tuple(r.first);
-      array(r.rest).forEach(tuple);
-    },
+    list: (b) => ({ list: tuples(b) }),
+    pack: (b) => ({ pack: tuples(b) }),
     arrs: (b) => {
       const r = objOptional(b, ["arrows"], ["variadic"]);
-      arrows(r.arrows);
-      if ("variadic" in r) variadic(r.variadic);
+      const fixed = arrows(r.arrows);
+      const sigs = "variadic" in r ? variadic(r.variadic) : undefined;
+      return { arrs: { arrows: fixed, ...(sigs === undefined ? {} : { variadic: sigs }) } };
     },
     callable: (b) => {
       const r = objOptional(b, ["first", "rest", "arrows"], ["variadic", "methods"]);
-      fields(r.first);
-      array(r.rest).forEach(v => fields(v));
-      arrows(r.arrows);
-      if ("variadic" in r) variadic(r.variadic);
-      if ("methods" in r) methods(r.methods);
+      const first = fields(r.first);
+      const rest = fieldLists(r.rest);
+      const fixed = arrows(r.arrows);
+      const sigs = "variadic" in r ? variadic(r.variadic) : undefined;
+      const members = "methods" in r ? methods(r.methods) : undefined;
+      return {
+        callable: {
+          first, rest, arrows: fixed,
+          ...(sigs === undefined ? {} : { variadic: sigs }),
+          ...(members === undefined ? {} : { methods: members }),
+        },
+      };
     },
   };
 
-  const clauses = (row: JsonRead) =>
-    array(row).forEach((c) => {
+  const clauses = (row: JsonRead): Row => {
+    const result: Row = [];
+    for (const c of array(row)) {
       if (typeof c === "string") {
-        if (!Object.hasOwn(STRING_CLAUSE_TEXT, c)) throw Error("unknown graph clause");
-        return;
+        const kind = STRING_CLAUSE_KEYS.find((k) => k === c);
+        if (kind === undefined) throw Error("unknown graph clause");
+        result.push(kind);
+        continue;
       }
       if (!isRecord(c)) throw Error("unknown graph clause");
       // The clause's one key and its body, read from its own entries.
@@ -538,55 +658,80 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
       const kind = entry === undefined ? undefined : CLAUSE_KEYS.find((k) => k === entry[0]);
       if (entry === undefined || kind === undefined) throw Error("unknown graph clause");
       if (entries.length !== 1) throw Error("unexpected type graph fields");
-      const validate = check[kind];
-      validate(entry[1]);
-    });
+      const decodeClause = decode[kind];
+      result.push(decodeClause(entry[1]));
+    }
+    return result;
+  };
+  const scheme = (v: JsonRead): SchemeRow => {
+    const r = objOptional(v, ["binders", "signatures"],
+      ["bounds", "variadic", "resolution", "construct"]);
+    if ("construct" in r && r.construct !== true) throw Error("a scheme's construct field, when present, is true");
+    const binders = array(r.binders).map(label);
+    const signatures = arrows(r.signatures);
+    const binderBounds = "bounds" in r
+      ? each(r.bounds, (b): [number, Labels] => {
+          const pair = array(b);
+          if (pair.length !== 2) throw Error("expected a binder and its bound");
+          const binder = label(pair[0]);
+          return [binder, labels(pair[1])];
+        })
+      : undefined;
+    const sigs = "variadic" in r ? variadic(r.variadic) : undefined;
+    let resolution: { input: number; observation: number; result: number | null }[] | undefined;
+    if ("resolution" in r) {
+      const owned = new Set<number>();
+      const slot = (s: JsonRead): number => {
+        if (typeof s !== "number" || !Number.isSafeInteger(s) || s < 0 ||
+            s >= binders.length || owned.has(s))
+          throw Error("resolution slots must be distinct binder positions");
+        owned.add(s);
+        return s;
+      };
+      const groups: { input: number; observation: number; result: number | null }[] = [];
+      for (const group of array(r.resolution)) {
+        const slots = obj(group, ["input", "observation", "result"]);
+        // An awaitable group has no result slot.
+        const input = slot(slots.input);
+        const observation = slot(slots.observation);
+        const result = slots.result === null ? null : slot(slots.result);
+        groups.push({ input, observation, result });
+      }
+      resolution = groups;
+    }
+    const construct = "construct" in r;
+    return {
+      scheme: {
+        binders, signatures,
+        ...(binderBounds === undefined ? {} : { bounds: binderBounds }),
+        ...(sigs === undefined ? {} : { variadic: sigs }),
+        ...(resolution === undefined ? {} : { resolution }),
+        ...(construct ? { construct: true as const } : {}),
+      },
+    };
+  };
+  const graph: TypeGraph = [];
   rows.forEach((row, index) => {
     if (isRecord(row) && "meet" in row) {
       const r = obj(row, ["clauses", "meet"]);
-      labels([r.meet]);
-      clauses(r.clauses);
+      const meet = label(r.meet);
+      graph.push({ meet, clauses: clauses(r.clauses) });
       return;
     }
     if (isRecord(row) && "param" in row) {
       const r = obj(row, ["kind", "name", "param"]);
-      if ((r.kind !== "value" && r.kind !== "arguments") || typeof r.name !== "string" ||
+      const kind = r.kind, name = r.name;
+      if (!isParamKind(kind) || typeof name !== "string" ||
           r.param !== index)
         throw Error("invalid parameter row");
+      graph.push({ kind, name, param: index });
       return;
     }
     if (isRecord(row) && "scheme" in row) {
-      const r = objOptional(obj(row, ["scheme"]).scheme, ["binders", "signatures"],
-        ["bounds", "variadic", "resolution", "construct"]);
-      if ("construct" in r && r.construct !== true) throw Error("a scheme's construct field, when present, is true");
-      array(r.binders).forEach((b) => labels([b]));
-      arrows(r.signatures);
-      if ("bounds" in r)
-        array(r.bounds).forEach((b) => {
-          const pair = array(b);
-          if (pair.length !== 2) throw Error("expected a binder and its bound");
-          labels([pair[0]]);
-          labels(pair[1]);
-        });
-      if ("variadic" in r) variadic(r.variadic);
-      if ("resolution" in r) {
-        const owned = new Set<number>();
-        const binders = array(r.binders);
-        for (const group of array(r.resolution)) {
-          const slots = obj(group, ["input", "observation", "result"]);
-          // An awaitable group has no result slot.
-          for (const slot of [slots.input, slots.observation, ...(slots.result === null ? [] : [slots.result])]) {
-            if (typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0 ||
-                slot >= binders.length || owned.has(slot))
-              throw Error("resolution slots must be distinct binder positions");
-            owned.add(slot);
-          }
-        }
-      }
+      graph.push(scheme(obj(row, ["scheme"]).scheme));
       return;
     }
-    clauses(row);
+    graph.push(clauses(row));
   });
-  // asserted: the decoder's result, checked field by field above
-  return value as TypeGraph;
+  return graph;
 }

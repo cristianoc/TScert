@@ -664,6 +664,8 @@ export const cases: Case[] = [
   positive("json-parse-own-proto", "a `\"__proto__\"` member of parsed text is an own data property and sets no prototype (run under Node)"),
   negative("invalid-json-parse-mutation", "parsed data written between the enumeration of its entries and a read: a write through a wider alias would store a function where parsed data is promised, and the key-adding write is refused (run under Node)",
     /a key-adding write is typed only on a local's own fresh object/),
+  positive("decoder-fresh-result", "a decoder of parsed JSON returns fresh storage of the values it checked: a list of in-bounds numbers, each tested as `map` visits it, and a record of a Boolean and such a list; a later write to the parsed value leaves the decoded one as it was"),
+  negative("invalid-decoder-closing-assertion", "a decoder closing with `v as number[]` after `v.some(…)` promises a writable list of numbers on the parsed list's own storage, which `some`'s Boolean does not establish: the caller writes a string into the parsed list, which the decoded one then holds (run under Node)"),
   positive("array-test-disjunction", "two `Array.isArray` tests joined by `||`: where the disjunction of their negations fails, each operand is its array arm, a parsed array's `map` dense"),
   negative("invalid-array-test-disjunction", "where `Array.isArray(a) || Array.isArray(b)` holds, `a` may be the number, whose `length` is `undefined` (run under Node)"),
   positive("map-stable-json-error", "`JSON.stringify` at a JSON value and `Error` at a string message within the empty footprint: callbacks calling them keep `map`'s result dense"),

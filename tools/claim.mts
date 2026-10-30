@@ -97,12 +97,134 @@ function list(v: JsonRead): readonly JsonValue[] {
 function str(v: JsonRead): asserts v is string {
   if (typeof v !== "string") throw Error("expected a string");
 }
-function bool(v: JsonRead): void {
+function bool(v: JsonRead): asserts v is boolean {
   if (typeof v !== "boolean") throw Error("expected a boolean");
 }
-function atom(v: JsonRead): void {
+/** A list of claim types, each decoded as the list is read. */
+function claimTypes(v: JsonRead): ClaimType[] {
+  const result: ClaimType[] = [];
+  for (const t of list(v)) result.push(decodeClaimType(t));
+  return result;
+}
+/** The atoms a list holds, each decoded as the list is read. */
+function atoms(v: JsonRead): Atom[] {
+  const result: Atom[] = [];
+  for (const a of list(v)) result.push(atom(a));
+  return result;
+}
+/** A record atom's fields, each name once. */
+function recordFields(v: JsonRead): Field[] {
+  const names = new Set<string>();
+  const fields: Field[] = [];
+  for (const f of list(v)) {
+    const field = object(f);
+    keys(field, ["name", "optional", "read", "write"]);
+    const name = field.name;
+    str(name);
+    const optional = field.optional;
+    bool(optional);
+    const read = decodeClaimType(field.read);
+    const write = decodeClaimType(field.write);
+    if (names.has(name)) throw Error("duplicate field");
+    names.add(name);
+    fields.push({ name, optional, read, write });
+  }
+  return fields;
+}
+/** A record atom's synthetic index markers. */
+function indexMarkers(v: JsonRead): RecordAtom["indexes"] {
+  const indexes = object(v);
+  keys(indexes, ["string", "number", "symbol"]);
+  const string = indexes.string;
+  const number = indexes.number;
+  const symbol = indexes.symbol;
+  str(string);
+  str(number);
+  str(symbol);
+  return { string, number, symbol };
+}
+function recordAtom(v: JsonObject): RecordAtom {
+  keys(
+    v,
+    ["a", "fields", "indexes", "call", "construct", "array"],
+    ["and", "indexSignature"],
+  );
+  const fields = recordFields(v.fields);
+  const indexes = indexMarkers(v.indexes);
+  let indexSignature: { read: ClaimType; write: ClaimType } | undefined;
+  if (v.indexSignature !== undefined) {
+    const index = object(v.indexSignature);
+    keys(index, ["read", "write"]);
+    const read = decodeClaimType(index.read);
+    const write = decodeClaimType(index.write);
+    indexSignature = { read, write };
+  }
+  const call = v.call;
+  const construct = v.construct;
+  const array = v.array;
+  str(call);
+  str(construct);
+  str(array);
+  const and = v.and !== undefined ? atoms(v.and) : undefined;
+  return {
+    a: "record",
+    fields,
+    indexes,
+    call,
+    construct,
+    array,
+    ...(indexSignature === undefined ? {} : { indexSignature }),
+    ...(and === undefined ? {} : { and }),
+  };
+}
+function functionAtom(v: JsonObject): FunctionAtom {
+  keys(
+    v,
+    ["a", "this", "params", "result", "construct", "array"],
+    ["and", "rest"],
+  );
+  const self = decodeClaimType(v.this);
+  const params = claimTypes(v.params);
+  const rest = v.rest !== undefined ? decodeClaimType(v.rest) : undefined;
+  const result = decodeClaimType(v.result);
+  const construct = v.construct;
+  const array = v.array;
+  str(construct);
+  str(array);
+  const and = v.and !== undefined ? atoms(v.and) : undefined;
+  return {
+    a: "function",
+    this: self,
+    params,
+    ...(rest === undefined ? {} : { rest }),
+    result,
+    construct,
+    array,
+    ...(and === undefined ? {} : { and }),
+  };
+}
+/** The atom kinds, each once: a kind of `Atom` missing here, or one no atom
+ * has, does not compile. */
+const ATOM_KINDS = [
+  "null", "undefined", "boolean", "string", "number", "bigint", "symbol", "void",
+  "constructor", "array", "store", "stringlit", "numberlit", "booleanlit", "bigintlit",
+  "param", "alias", "record", "function", "callable",
+] as const;
+type Covers<Missing extends never> = Missing;
+type EveryAtomKind = Covers<Exclude<Atom["a"], (typeof ATOM_KINDS)[number]>>;
+type OnlyAtomKinds = Covers<Exclude<(typeof ATOM_KINDS)[number], Atom["a"]>>;
+/** A literal atom's text. */
+function literalText(v: JsonObject): string {
+  keys(v, ["a", "v"]);
+  const value = v.v;
+  str(value);
+  return value;
+}
+/** The atom a value states, as fresh objects of its fields. */
+function atom(v: JsonRead): Atom {
   const o = object(v);
-  switch (o.a) {
+  const a = ATOM_KINDS.find((k) => k === o.a);
+  switch (a) {
     case "null":
     case "undefined":
     case "boolean":
@@ -110,106 +232,80 @@ function atom(v: JsonRead): void {
     case "number":
     case "bigint":
     case "symbol":
+      keys(o, ["a"]);
+      return { a };
     case "void":
       keys(o, ["a"]);
-      break;
+      return { a };
     case "array":
-    case "store":
+    case "store": {
       keys(o, ["a", "required", "optional", "rest", "readonly", "presence"]);
-      for (const t of list(o.required)) decodeClaimType(t);
-      for (const t of list(o.optional)) decodeClaimType(t);
-      if (o.rest !== null) decodeClaimType(o.rest);
-      if (!isArrayPresence(o.presence)) throw Error("invalid density flag");
-      if (typeof o.readonly !== "boolean") throw Error("invalid readonly flag");
-      break;
+      const required = claimTypes(o.required);
+      const optional = claimTypes(o.optional);
+      const rest = o.rest !== null ? decodeClaimType(o.rest) : null;
+      const presence = o.presence;
+      if (!isArrayPresence(presence)) throw Error("invalid density flag");
+      const readonly = o.readonly;
+      if (typeof readonly !== "boolean") throw Error("invalid readonly flag");
+      return { a, required, optional, rest, readonly, presence };
+    }
     case "booleanlit":
     case "numberlit":
-    case "stringlit":
-    case "bigintlit":
-      keys(o, ["a", "v"]);
-      str(o.v);
-      if (o.a === "bigintlit" && !/^(0|-?[1-9][0-9]*)$/.test(o.v))
-        throw Error("invalid bigint literal");
-      if (o.a === "booleanlit" && o.v !== "true" && o.v !== "false")
+    case "stringlit": {
+      const value = literalText(o);
+      if (a === "booleanlit" && value !== "true" && value !== "false")
         throw Error("invalid boolean literal");
-      if (o.a === "numberlit" && !Number.isFinite(Number(o.v)))
+      if (a === "numberlit" && !Number.isFinite(Number(value)))
         throw Error("invalid number literal");
-      break;
-    case "record": {
-      keys(
-        o,
-        ["a", "fields", "indexes", "call", "construct", "array"],
-        ["and", "indexSignature"],
-      );
-      const names = new Set();
-      for (const f of list(o.fields)) {
-        const field = object(f);
-        keys(field, ["name", "optional", "read", "write"]);
-        str(field.name);
-        bool(field.optional);
-        decodeClaimType(field.read);
-        decodeClaimType(field.write);
-        if (names.has(field.name)) throw Error("duplicate field");
-        names.add(field.name);
-      }
-      const indexes = object(o.indexes);
-      keys(indexes, ["string", "number", "symbol"]);
-      Object.values(indexes).forEach(str);
-      if (o.indexSignature !== undefined) {
-        const index = object(o.indexSignature);
-        keys(index, ["read", "write"]);
-        decodeClaimType(index.read);
-        decodeClaimType(index.write);
-      }
-      str(o.call);
-      str(o.construct);
-      str(o.array);
-      if (o.and !== undefined) list(o.and).forEach(atom);
-      break;
+      return { a, v: value };
     }
+    case "bigintlit": {
+      const value = literalText(o);
+      if (!/^(0|-?[1-9][0-9]*)$/.test(value))
+        throw Error("invalid bigint literal");
+      return { a, v: value };
+    }
+    case "record":
+      return recordAtom(o);
     case "function":
-      keys(
-        o,
-        ["a", "this", "params", "result", "construct", "array"],
-        ["and", "rest"],
-      );
-      decodeClaimType(o.this);
-      list(o.params).forEach(decodeClaimType);
-      if (o.rest !== undefined) decodeClaimType(o.rest);
-      decodeClaimType(o.result);
-      str(o.construct);
-      str(o.array);
-      if (o.and !== undefined) list(o.and).forEach(atom);
-      break;
-    case "callable":
+      return functionAtom(o);
+    case "callable": {
       keys(o, ["a", "function", "bag"]);
-      atom(o.function);
-      atom(o.bag);
-      if (object(o.function).a !== "function" || object(o.bag).a !== "record")
+      const fn = object(o.function);
+      const bag = object(o.bag);
+      if (fn.a !== "function" || bag.a !== "record") {
+        atom(fn);
+        atom(bag);
         throw Error("invalid callable");
-      break;
-    case "param":
+      }
+      return { a, function: functionAtom(fn), bag: recordAtom(bag) };
+    }
+    case "param": {
       keys(o, ["a", "name"]);
-      str(o.name);
-      if (!o.name.length) throw Error("empty type-parameter name");
-      break;
-    case "alias":
+      const name = o.name;
+      str(name);
+      if (!name.length) throw Error("empty type-parameter name");
+      return { a, name };
+    }
+    case "alias": {
       keys(o, ["a", "name", "args"]);
-      str(o.name);
-      if (!o.name.length) throw Error("empty alias name");
-      list(o.args).forEach(decodeClaimType);
-      break;
+      const name = o.name;
+      str(name);
+      if (!name.length) throw Error("empty alias name");
+      return { a, name, args: claimTypes(o.args) };
+    }
     default:
       throw Error("unknown claim atom");
   }
 }
-export function decodeClaimType(v: JsonValue): ClaimType {
+/** The claim type a value states, as fresh objects of its fields. */
+export function decodeClaimType(v: JsonRead): ClaimType {
   const o = object(v);
   keys(o, ["top", "atoms"]);
-  bool(o.top);
-  list(o.atoms).forEach(atom);
-  if (o.top && list(o.atoms).length)
+  const top = o.top;
+  bool(top);
+  const decoded = atoms(o.atoms);
+  if (top && decoded.length)
     throw Error("unknown cannot also carry atoms");
-  // asserted: the decoder's result, checked field by field above
-  return o as ClaimType;
+  return { top, atoms: decoded };
 }

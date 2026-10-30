@@ -5,7 +5,6 @@ import type { ArrayPresence } from "./type-graph.mts";
  * equations of the declarations reached. They are not evidence that a
  * producer's claim follows from them. This module has no runtime dependencies,
  * so importing its types does not pull the compiler into a reader's project. */
-import type { JsonObject } from "./calculus.mts";
 import type { Span } from "./span.mts";
 /** A closed footprint (`Footprints.Closed`): the change a call may make, on
  * normal return, to the locations of its entry heap holding a value and to
@@ -15,8 +14,8 @@ import type { Span } from "./span.mts";
 export type ClosedFootprint = { readonly value: "keep" | "any"; readonly store: "keep" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
-export type CallPromise = ({ readonly guards: { readonly param: number }; readonly asserts?: never } |
-  { readonly asserts: { readonly param: number }; readonly guards?: never }) & JsonObject;
+export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
+  { readonly asserts: { readonly param: number }; readonly guards?: never };
 /** What a signature guarantees beyond its contract: its footprint, an
  * optional promise, whether a normal return's value has an array store the
  * call allocated (`fresh`), and whether the footprint excepts the receiver's

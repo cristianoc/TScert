@@ -1,4 +1,4 @@
-import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } from "./type-graph.mts";
+import { decodeGraph, decodeLabels, type Labels, type Clause } from "./type-graph.mts";
 // calculus.mts decodes the native terms a record's judgements and source map name.
 // control-flow.mts decodes the program-graph node a node or edge obligation names.
 import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculus.mts";
@@ -125,8 +125,9 @@ interface Common {
   outcome: DiagnosticOutcome;
   /** The proof budget the search was given. */
   fuel: number;
-  /** The store's labels the record mentions, projected onto a finite table. */
-  types: TypeGraph;
+  /** The store's labels the record mentions, projected onto a finite table:
+   * the document's rows, which `decodeGraph` checks. */
+  types: Json;
   /**
    * A source-like spelling of each row of `types` that stands for an
    * application, `Promise<number | R>`, by row, in row order. Such a label is

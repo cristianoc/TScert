@@ -8,7 +8,7 @@ import { passToolFailure } from "./thrown.mts";
 import {
   numberOfBits,
   isArrayPresence,
-  isCallEffect,
+  decodeCallEffect,
   ordinaryEffect,
   sameEffect,
   presencePrefix,
@@ -34,8 +34,10 @@ const members = (v: JsonValue): readonly JsonValue[] =>
         ? [...v]
         : [];
 /** An ordinary arrow's effect, the one a structural function atom states. */
-const isOrdinary = (effect: JsonRead): boolean =>
-  isCallEffect(effect) && sameEffect(effect, ordinaryEffect);
+const isOrdinary = (effect: JsonRead): boolean => {
+  const decoded = decodeCallEffect(effect);
+  return decoded !== undefined && sameEffect(decoded, ordinaryEffect);
+};
 /** A list where the producer sends one of records: an array of any
  * values, each checked where it is read. */
 function isList(v: JsonRead): v is readonly JsonValue[] {

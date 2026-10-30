@@ -272,8 +272,7 @@ returning `undefined` from a function annotated to return `number`.
 
 - **Rewrite:** state the exclusivity the constructors provide: the other
   arm declares the selection field optional at `never`, and readers test
-  its value against `undefined`. A promise also carries its JSON object
-  contract, so its optional fields cannot introduce non-JSON values.
+  its value against `undefined`.
 - **Pattern:** a union selected by the presence of a field states that
   field's absence on its other arm. The field's defined value selects the
   arm. This preserves the objects each constructor produces.
@@ -287,22 +286,51 @@ returning `undefined` from a function annotated to return `number`.
   and the results of `identify`, `importedExport`, and `selectGlobal`.
 - **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
 
-### A readonly JSON check promising writable fields
+### A decoder's result asserted over parsed storage
 
-`isClosedFootprint` and `isCallEffect` (`tools/type-graph.mts`) inspect a
-readonly JSON value and promise `ClosedFootprint` and `CallEffect`.
-Writable fields in those types claim an invariant storage contract that
-checking the current contents does not establish. The same obligation
-applies to the nested promise and its parameter.
+`decodeLabels` and `decodeGraph` (`tools/type-graph.mts`) and
+`decodeClaimType` (`tools/claim.mts`) checked a parsed document field by
+field and closed with an assertion of the decoded type (`return v as
+Labels`, `return value as TypeGraph`, `return o as ClaimType`);
+`isClosedFootprint` and `isCallEffect` promised `ClosedFootprint` and
+`CallEffect` of the parsed object they tested. A check of the current
+contents establishes nothing of the storage's contract: the parsed list
+stays a `Json[]` its caller may write a string into, which the asserted
+`number[]` then holds (`invalid-decoder-closing-assertion`, run under Node:
+`typeof first('[1]')` is `"string"`), and a test of a field's value does not
+bound the values written there later. The diagnostic census of 5dd180f
+reports the assertions in `decodeGraph`, `atom`, `decodeClaimType` and
+`decodeLabels` (335 statements).
 
-- **Rewrite:** `ClosedFootprint`, `CallEffect`, and the fields and children
-  of `CallPromise` are readonly. Their consumers read the checked views;
-  a control forging an effect constructs its replacement as a fresh object.
-- **Pattern:** a guard that checks contents promises a readonly view.
-  A different writable contract requires fresh storage.
-- **Functions:** `isClosedFootprint`, `isCallEffect`, and the two effect
-  edits in the filter-guard forged-evidence control.
-- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+- **Rewrite:** each decoder returns fresh storage built from the values it
+  checked: a list by `map`, each element tested as `map` visits it; an
+  object as a literal of its checked fields, an optional field present
+  where the document has it; a clause and a claim atom by the decoder of
+  its kind, the kind found in a list of the kinds (`CLAUSE_KEYS`,
+  `STRING_CLAUSE_KEYS`, `ATOM_KINDS`) that does not compile where it differs
+  from its union. `decodeClosedFootprint` and `decodeCallEffect` take the
+  guards' place, answering `undefined` where they answered false.
+  `ClosedFootprint`, `CallEffect` and the fields and children of
+  `CallPromise` are readonly, a control forging an effect constructing its
+  replacement as a fresh object, and `CallPromise` states its two arms
+  alone. Every decoder accepts the documents the original accepted and
+  throws the original's message at the first malformed part, in the
+  original's order; its result has the fields of the parsed object, which
+  the decoders require exactly, and is another object, whose identity no
+  caller compares. The `refs` and `dict` clauses state the `stable` field
+  the decoder accepts, and a diagnostic record's `types` is the document's
+  rows, which `readDiagnostic` checks with `decodeGraph` and its view prints
+  as JSON.
+- **Pattern:** a decoder of parsed JSON returns fresh storage of the values
+  it checked.
+- **Functions:** `decodeLabels`, `decodeGraph`, `decodeClosedFootprint`,
+  `decodeCallEffect` (`tools/type-graph.mts`); `decodeClaimType`, `atom`,
+  `recordAtom`, `functionAtom` (`tools/claim.mts`); `isOrdinary`
+  (`tools/claim-text.mts`); the two effect edits in the filter-guard
+  forged-evidence control; `decoder-fresh-result` is the pattern as a case.
+- **Commits:** `State the contracts used by the front end's negative
+  patterns`, which made the effect types readonly, and the introducing
+  commit.
 
 ### A callback inheriting `any` from object entries
 
