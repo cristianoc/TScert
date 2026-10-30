@@ -8,7 +8,7 @@ import type { Span } from "./span.mts";
 import { childrenOf, isTypeAlias } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
-import type { CallEffect } from "./type-graph.mts";
+import type { CallEffect, CallPromise } from "./type-graph.mts";
 
 /** The projections a resolvable parameter owns: its observation and its
  * result. */
@@ -1550,8 +1550,14 @@ function sameEffect(a: CallEffect, b: CallEffect): Within<{ value: "keep"; store
     a.receiverOwn === b.receiverOwn && a.freshObject === b.freshObject &&
     JSON.stringify(a.requires) === JSON.stringify(b.requires) &&
     JSON.stringify(a.elements) === JSON.stringify(b.elements) &&
-    (a.promise === null || b.promise === null ? a.promise === b.promise
-      : JSON.stringify(a.promise) === JSON.stringify(b.promise));
+    (a.promise === null || b.promise === null ? a.promise === b.promise : samePromise(a.promise, b.promise));
+}
+
+/** Whether two call promises are about the same parameter, both guards or
+ * both assertions. */
+function samePromise(a: CallPromise, b: CallPromise): Within<{ value: "keep"; store: "keep" }, boolean> {
+  if (a.guards !== undefined) return b.guards !== undefined && a.guards.param === b.guards.param;
+  return b.asserts !== undefined && a.asserts.param === b.asserts.param;
 }
 
 /** The key kinds an index signature's parameter type names: `string`,

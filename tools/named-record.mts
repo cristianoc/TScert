@@ -4,7 +4,7 @@
  * definitions they reach were complete. Both readers use it: the
  * declaration graph once its collection ends, and the gate for the file's
  * annotations, read after the declaration document is complete. */
-import type { CallEffect, DeclarationDocument, ElementKinds, DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, DeclarationDocument, ElementKinds, DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import type { Ast, ModuleAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
@@ -118,10 +118,16 @@ function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): W
   return `{"name":${JSON.stringify(b.name)},"bound":${optionalTermText(b.bound)},"resolution":${resolution},"default":${optionalTermText(b.default)}}`;
 }
 
-/** A call effect as text; its promise, data of one key, by its JSON text. */
+/** A call promise's JSON text, built from its one key and its parameter. */
+function promiseText(p: CallPromise): Within<{ value: "keep"; store: "keep" }, string> {
+  return p.guards !== undefined ? `{"guards":{"param":${JSON.stringify(p.guards.param)}}}`
+    : `{"asserts":{"param":${JSON.stringify(p.asserts.param)}}}`;
+}
+
+/** A call effect as text; its promise by its JSON text. */
 function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, string> {
   return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
-    `"promise":${e.promise === null ? "null" : JSON.stringify(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
+    `"promise":${e.promise === null ? "null" : promiseText(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
     `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
     `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
     `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)}}`;

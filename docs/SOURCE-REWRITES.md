@@ -872,6 +872,16 @@ again. The callers hold `TypeTerm`s, whose grammar the parameter type
   compilation of `termText`'s `switch`; a field added to a kind is written
   only once `termText` names it. Two terms the replacer's texts called
   different only for the order their fields were made in have one text.
+  A function signature's call promise, `{ guards: { param } }` or
+  `{ asserts: { param } }`, is written by `promiseText` from its one key
+  and its parameter, the text `JSON.stringify` gives such an object, and
+  `sameEffect` (`tools/type-term.mts`) compares two promises by their key
+  and parameter (`samePromise`): a promise type is a record type no
+  `JsonValue` admits, so `JSON.stringify` of one is refused
+  (`invalid-stated-effect-stringify`). Every promise is built fresh with
+  that one key, each an object literal of it (`promiseEffect`,
+  `decodeCallEffect`, the reviewed contracts), so the texts and the
+  answers are the same.
 - **Pattern:** a key of data the caller has typed is written from that
   type, field by field.
 - **Functions:** `termText` and its helpers, `recordShape`'s `inherit`,
