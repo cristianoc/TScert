@@ -8,7 +8,7 @@ import type { CallEffect, DeclarationDocument, DeclarationIdentity, PropertyKey,
 import type { Ast, ModuleAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
-import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type RecordHook } from "./type-term.mts";
+import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type AliasHook, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
 type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
@@ -129,6 +129,22 @@ function effectText(e: CallEffect): Within<{ value: "keep"; store: "keep" }, str
 const keyText = (name: PropertyKey): Within<{ value: "any"; store: "grow" }, string> =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 
+/** What `reference` denotes (`AliasHook`, type-term.mts): `"record"` for a
+ * record written as one whose equation is a record (an interface, an alias
+ * of a record literal), its definition's equation at the reference's
+ * arguments for any other definition that has one, an alias of a named
+ * type included, which the caller follows in turn; refused otherwise. */
+export function aliasMeaning(reference: Reference, records: NamedRecords, fail: Fail): Within<{ value: "any"; store: "grow" }, TypeTerm | "record"> {
+  const target = reference.reference.target;
+  const name = `${target.module}#${target.name}`;
+  const definition = records.definition(target, fail) ?? fail(`a type with no definition the reader holds: ${name}`);
+  if (definition.parameters.length !== reference.args.length)
+    return fail(`a type applied at ${reference.args.length} of its ${definition.parameters.length} parameters: ${name}`);
+  if (!definition.expression) return fail(`a type with no equation the reader holds: ${name}`);
+  if (records.record(target) && definition.expression.k === "object") return "record";
+  return substitute(definition.expression, reference.args);
+}
+
 /** The outer record shape `reference` names: the record its definition's
  * equation is at the reference's arguments, an alias followed to its
  * equation, with the members of every base, transitively. One unfolding
@@ -242,9 +258,10 @@ export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
     const key = go(deferred.key);
     const fail: Fail = message => { throw Error(`${message} in ${where}`); };
     const record: RecordHook = (reference, failed) => recordShape(reference, records, failed);
+    const alias: AliasHook = (reference, failed) => aliasMeaning(reference, records, failed);
     try {
       return expandMapped({ key, value: object, optional: false, readonly: false,
-        identity: { ...deferred.identity, object } }, t.span, fail, record);
+        identity: { ...deferred.identity, object } }, t.span, fail, record, alias);
     } catch (error) {
       return refused(where, error);
     }

@@ -220,6 +220,11 @@ export type TermScope = {
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
   annotation: boolean;
+  /** The program's `exactOptionalPropertyTypes` under `strictNullChecks`,
+   * which decides what `-?` makes of an optional field's type. A scope
+   * without it reads `-?` only over a field whose type holds no
+   * `undefined`. */
+  exactOptional?: boolean;
   /** An external declaration's type-level wildcard being read, a type
    * parameter's constraint: the reading of each `any` in it by its span
    * (`wildcardReadings`). */
@@ -268,6 +273,11 @@ export type TermScope = {
    * complete. A scope without it, or answering null, defers the mapped type
    * (`deferredIdentity`). */
   record?: RecordHook;
+  /** What a reference denotes where the definitions it reaches are
+   * complete: `-?` without `exactOptionalPropertyTypes` takes `undefined`
+   * from an alias's meaning. A scope without it, or answering null, defers
+   * such a mapped type (`deferredIdentity`). */
+  alias?: AliasHook;
 };
 
 /** The hooks of a scope its readers pass on or implement apart from it:
@@ -278,6 +288,11 @@ export type ComputedHook = (node: TypeNode, span: Span, read: (node: TypeNode) =
 export type KeysHook = (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
 export type ModifiersHook = (node: ts.MappedTypeNode) => Within<{ value: "any"; store: "grow" }, readonly MappedMember[] | null>;
 export type RecordHook = (reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+/** What a reference denotes, where the definitions it reaches are complete
+ * (`aliasMeaning`, named-record.mts): `"record"` for a record written as one,
+ * which holds no `undefined`, an alias's equation at the reference's
+ * arguments otherwise; null where the definitions are not yet complete. */
+export type AliasHook = (reference: Extract<TypeTerm, { k: "reference" }>, fail: (message: string) => never) => Within<{ value: "any"; store: "grow" }, TypeTerm | "record" | null>;
 
 /** The type forms TypeScript computes from other types, as the syntax kind a
  * refusal names. Their meaning is the type TypeScript computes, which the
@@ -487,7 +502,7 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isTypeLiteralNode(node))
     return members(scope, node.members, node, span, node === scope.body ? true : "nested");
   if (ts.isMappedTypeNode(node))
-    return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record);
+    return expandMapped(mapped(scope, node), span, message => scope.fail(node, message), scope.record, scope.alias);
   if (ts.isFunctionTypeNode(node)) {
     // A rest admitting no argument list, `(...args: never) => R`: no call
     // is possible, and the type is every value with call code.
@@ -608,8 +623,12 @@ export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readon
  * names no `P`: over `keyof X`, X's own members and indexes (`Readonly`,
  * `Partial`, `Required`); over a key union `K`, the fields of X that K names
  * (`Pick`). Each modifier is added (`+`, or written alone), removed (`-`), or
- * kept from X where none is written. */
-export type Identity = { object: TypeTerm; homomorphic: boolean; readonlyMod: Modifier; optionalMod: Modifier };
+ * kept from X where none is written. `exact` is whether the program reads
+ * an optional property's type exactly (`exactOptionalPropertyTypes`), which
+ * decides the value type `-?` gives an optional field; null where the scope
+ * reading the mapped type does not state the program's option. */
+export type Identity = { object: TypeTerm; homomorphic: boolean; readonlyMod: Modifier; optionalMod: Modifier;
+  exact: boolean | null };
 export type Modifier = "keep" | "add" | "remove";
 /** A property of a mapped type over `keyof X` and its modifiers. */
 export type MappedMember = { name: string; optional: boolean; readonly: boolean };
@@ -663,7 +682,8 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
     const key: TypeTerm = homomorphic ? { k: "atom", name: "never", span: [constraint0.pos, constraint0.end] }
       : scope.keys?.(constraint0) ?? typeTerm(scope, constraint0, parameter);
     return { key, value: object, optional: false, readonly: false,
-      identity: { object, homomorphic, readonlyMod: modifier(node.readonlyToken), optionalMod: modifier(node.questionToken) } };
+      identity: { object, homomorphic, readonlyMod: modifier(node.readonlyToken), optionalMod: modifier(node.questionToken),
+        exact: scope.exactOptional ?? null } };
     }
   }
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
@@ -691,8 +711,8 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Within<{ valu
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never,
-    record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record);
+    record?: RecordHook, alias?: AliasHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  if (m.identity) return expandIdentity(m.identity, m.key, span, fail, record, alias);
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -751,8 +771,11 @@ export const DEFERRED_MODULE = "#deferred-mapped-identity";
 export function deferredIdentity(id: Identity, key: TypeTerm, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
     arguments: [], target: { module: DEFERRED_MODULE,
-      name: `${id.homomorphic ? "keyof" : "pick"}:${id.readonlyMod}:${id.optionalMod}`, span } } };
+      name: `${id.homomorphic ? "keyof" : "pick"}:${id.readonlyMod}:${id.optionalMod}:${String(id.exact)}`, span } } };
 }
+
+const exactOf = (text: string | undefined): boolean | null | undefined =>
+  text === "true" ? true : text === "false" ? false : text === "null" ? null : undefined;
 
 const isModifier = (text: string | undefined): text is Modifier =>
   text === "keep" || text === "add" || text === "remove";
@@ -761,11 +784,13 @@ const isModifier = (text: string | undefined): text is Modifier =>
  * for any other term. */
 export function deferredOf(term: TypeTerm): Within<{ value: "any"; store: "grow" }, { identity: Identity; key: TypeTerm } | null> {
   if (term.k !== "reference" || term.reference.target.module !== DEFERRED_MODULE) return null;
-  const [form, readonlyMod, optionalMod] = term.reference.target.name.split(":");
+  const [form, readonlyMod, optionalMod, exactText, ...rest] = term.reference.target.name.split(":");
   const [object, key, ...more] = term.args;
-  if ((form !== "keyof" && form !== "pick") || !isModifier(readonlyMod) || !isModifier(optionalMod) || !object || !key || more.length)
+  const exact = exactOf(exactText);
+  if ((form !== "keyof" && form !== "pick") || !isModifier(readonlyMod) || !isModifier(optionalMod) || exact === undefined ||
+      rest.length || !object || !key || more.length)
     throw Error(`a malformed deferred mapped type: ${term.reference.target.name}`);
-  return { identity: { object, homomorphic: form === "keyof", readonlyMod, optionalMod }, key };
+  return { identity: { object, homomorphic: form === "keyof", readonlyMod, optionalMod, exact }, key };
 }
 
 /** A mapped type whose value is `X[P]` at a known X: X's members (all of
@@ -775,7 +800,7 @@ export function deferredOf(term: TypeTerm): Within<{ value: "any"; store: "grow"
  * (`recordShape`) and deferred where the definitions it reaches are not yet
  * complete; a union or a type parameter is refused. */
 function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message: string) => never,
-    record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    record?: RecordHook, alias?: AliasHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   let x = id.object;
   if (x.k === "reference") {
     const shape = record?.(x, fail) ?? null;
@@ -793,24 +818,24 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
   const apply = (mod: Modifier, own: boolean): boolean => (mod === "keep" ? own : mod === "add");
   const readonly = (own: boolean): boolean => apply(id.readonlyMod, own);
   const optional = (own: boolean): boolean => apply(id.optionalMod, own);
-  // `-?` takes `undefined` from a field that was optional where
-  // `exactOptionalPropertyTypes` is off, and keeps it where it is on: a field
-  // whose type may hold `undefined` is refused, and any other keeps its type.
-  const mayHoldUndefined = (t: TypeTerm): boolean =>
-    t.k === "union" ? t.parts.some(mayHoldUndefined)
-      : t.k === "atom" ? t.name === "undefined" || t.name === "void" || t.name === "unknown"
-      : t.k === "binder" || t.k === "parameter" || t.k === "reference" || t.k === "intersection" || t.k === "self" || t.k === "pack";
-  const value = (f: { optional: boolean; type: TypeTerm }): TypeTerm =>
-    f.optional && id.optionalMod === "remove" && mayHoldUndefined(f.type)
-      ? fail("`-?` over an optional field whose type may hold undefined, whose meaning depends on exactOptionalPropertyTypes, is outside the fragment")
-      : f.type;
+  // `-?` keeps an optional field's type where `exactOptionalPropertyTypes`
+  // is on, and takes `undefined` from it where it is off (`withoutUndefined`).
+  // A scope stating no option refuses every field whose type may hold
+  // `undefined`.
+  const value = (f: { optional: boolean; type: TypeTerm }): TypeTerm | null =>
+    !f.optional || id.optionalMod !== "remove" || !mayHoldUndefined(f.type) || id.exact === true ? f.type
+      : id.exact === false ? withoutUndefined(f.type, fail, alias)
+      : fail("`-?` over an optional field whose type may hold undefined, whose meaning depends on exactOptionalPropertyTypes, is outside the fragment");
+  const settled = (values: (TypeTerm | null)[]): values is TypeTerm[] => values.every(v => v !== null);
   if (id.homomorphic) {
     if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
       return fail("an optional mapped type over an index signature's keys is outside the fragment");
     // No member: `{}`, every value but null and undefined, as TypeScript
     // reads a mapped type over an empty record.
     if (!x.fields.length && !x.stringIndex && !x.numberIndex && !x.symbolIndex) return emptyObject(span);
-    return { ...x, fields: x.fields.map(f => ({ ...f, type: value(f), readonly: readonly(f.readonly), optional: optional(f.optional) })),
+    const values = x.fields.map(value);
+    if (!settled(values)) return deferredIdentity(id, key, span);
+    return { ...x, fields: x.fields.map((f, i) => ({ ...f, type: values[i] ?? f.type, readonly: readonly(f.readonly), optional: optional(f.optional) })),
       stringIndex: x.stringIndex && { ...x.stringIndex, readonly: readonly(x.stringIndex.readonly) },
       ...(x.numberIndex ? { numberIndex: { ...x.numberIndex, readonly: readonly(x.numberIndex.readonly) } } : {}),
       ...(x.symbolIndex ? { symbolIndex: { ...x.symbolIndex, readonly: readonly(x.symbolIndex.readonly) } } : {}), span };
@@ -827,8 +852,67 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
   // No key: `{}`, every value but null and undefined.
   if (!names.length) return emptyObject(span);
   const fields = names.map(n => x.fields.find(f => f.name === n) ?? fail(`a mapped type's value names its key, and the record has no field ${String(n)}`));
-  return { k: "object", fields: fields.map(f => ({ ...f, type: value(f), readonly: readonly(f.readonly), optional: optional(f.optional), span })),
+  const values = fields.map(value);
+  if (!settled(values)) return deferredIdentity(id, key, span);
+  return { k: "object", fields: fields.map((f, i) => ({ ...f, type: values[i] ?? f.type, readonly: readonly(f.readonly), optional: optional(f.optional), span })),
     stringIndex: null, calls: [], span };
+}
+
+const undefinedAtom = (t: TypeTerm): boolean => t.k === "atom" && (t.name === "undefined" || t.name === "void");
+/** Whether a term may hold `undefined` as far as its own form tells: a
+ * type parameter, a reference and an intersection may. */
+const mayHoldUndefined = (t: TypeTerm): boolean =>
+  t.k === "union" ? t.parts.some(mayHoldUndefined)
+    : t.k === "atom" ? undefinedAtom(t) || t.name === "unknown"
+    : t.k === "binder" || t.k === "parameter" || t.k === "reference" || t.k === "intersection" || t.k === "self" || t.k === "pack";
+const unionParts = (t: TypeTerm): TypeTerm[] => (t.k === "union" ? t.parts.flatMap(unionParts) : [t]);
+
+/** An optional field's type as `-?` reads it without
+ * `exactOptionalPropertyTypes`: TypeScript's type with `undefined` taken
+ * away. Each `undefined` and `void` of its union is dropped (`never` where
+ * none is left); a reference to a record written as one is kept, and one to
+ * an alias is its meaning (`alias`) with `undefined` taken away, kept as
+ * written where that meaning holds none. Any other part that may hold
+ * `undefined` (a type parameter, an intersection, `unknown`) is refused.
+ * Null where a reference's meaning is not yet known: the mapped type is
+ * deferred. */
+function withoutUndefined(t: TypeTerm, fail: (message: string) => never, alias?: AliasHook):
+    Within<{ value: "any"; store: "grow" }, TypeTerm | null> {
+  const strip = (term: TypeTerm, depth: number): { term: TypeTerm; changed: boolean } | null => {
+    if (depth > 16) return fail("`-?` over an optional field whose type reaches more than 16 aliases is outside the fragment");
+    const kept: TypeTerm[] = [];
+    let changed = false;
+    for (const part of unionParts(term)) {
+      if (undefinedAtom(part)) {
+        changed = true;
+        continue;
+      }
+      if (part.k === "reference" && part.reference.target.module !== DEFERRED_MODULE) {
+        const meaning = alias?.(part, fail) ?? null;
+        if (meaning === null) return null;
+        if (meaning === "record") {
+          kept.push(part);
+          continue;
+        }
+        const inner = strip(meaning, depth + 1);
+        if (!inner) return null;
+        if (!inner.changed) kept.push(part);
+        else {
+          changed = true;
+          kept.push(...unionParts(inner.term).filter(p => !(p.k === "atom" && p.name === "never")));
+        }
+        continue;
+      }
+      if (mayHoldUndefined(part))
+        return fail("`-?` over an optional field whose type may hold undefined as a type parameter, an intersection or " +
+          "`unknown`, which TypeScript takes undefined from without exactOptionalPropertyTypes, is outside the fragment");
+      kept.push(part);
+    }
+    const [only] = kept;
+    return { changed, term: !only ? { k: "atom", name: "never", span: term.span }
+      : kept.length === 1 ? only : { k: "union", parts: kept, span: term.span } };
+  };
+  return strip(t, 0)?.term ?? null;
 }
 
 /** `term` with each of its declaration's parameters replaced by the term at

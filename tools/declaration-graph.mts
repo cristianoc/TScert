@@ -19,7 +19,7 @@ import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isImport, isTypeAlias } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
-  type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
+  type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
@@ -128,7 +128,7 @@ export type LibraryType =
 
 /** A reference to `library` at `args`, located at `span`. */
 export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], span: Span,
-    fail: (message: string) => never, record?: RecordHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    fail: (message: string) => never, record?: RecordHook, alias?: AliasHook): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   if (library.k === "stated") {
     if (args.length) return fail(`${library.identity.name} is read at the type the overlay of library types states, which takes no type arguments`);
     return { k: "reference", args: [], span,
@@ -144,7 +144,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
   return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args),
-    ...(t.identity ? { identity: { ...t.identity, object: substitute(t.identity.object, args) } } : {}) }, span, fail, record);
+    ...(t.identity ? { identity: { ...t.identity, object: substitute(t.identity.object, args) } } : {}) }, span, fail, record, alias);
 }
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
@@ -178,7 +178,7 @@ export function tsconfigOf(path: string): string {
  * program (`type-probe.mts`) reads some of them with text of its own, in a
  * snapshot of its own. */
 function withProject<T>(file: string, tsconfigPath: string | undefined,
-  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram, exactOptional: ExactOptional) => T): T {
   if (tsconfigPath === undefined) return withOwnProject(file, use);
   // A named project is opened alone: opening the file as well would load
   // the project the compiler finds for it besides the named one.
@@ -188,7 +188,7 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
 /** `use` over `project` as loaded for `file`: a strict configured project
  * holding the file whose own program has no error, `check`ed further. */
 function useProject<T>(file: string, project: Project | undefined, check: (project: Project) => void,
-  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T,
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram, exactOptional: ExactOptional) => T,
   probe: ProbeProgram): T {
   if (!project?.configFileName || !project.compilerOptions.strict)
     throw declarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
@@ -199,13 +199,24 @@ function useProject<T>(file: string, project: Project | undefined, check: (proje
   // `types: ["node"]`, that is not installed leaves its globals undeclared.
   const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
   if (broken) throw declarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
-  return use(project.checker, client, dirname(project.configFileName), project.program, probe);
+  // The project's `exactOptionalPropertyTypes`, which decides what `-?`
+  // makes of an optional field's type; TypeScript applies it, and takes
+  // `undefined` from such a field, only under `strictNullChecks`.
+  const options = project.compilerOptions;
+  const exactOptional: ExactOptional = (options.strictNullChecks ?? options.strict) === true
+    ? { exactOptional: options.exactOptionalPropertyTypes === true } : {};
+  return use(project.checker, client, dirname(project.configFileName), project.program, probe, exactOptional);
 }
+
+/** A project's `exactOptionalPropertyTypes` under `strictNullChecks`, as a
+ * term scope states it (`TermScope.exactOptional`); empty where the project
+ * has no `strictNullChecks`. */
+type ExactOptional = { exactOptional?: boolean };
 
 /** `withProject` for the project the compiler finds for `file`, in a
  * compiler opened for it and released after it. */
 function withOwnProject<T>(file: string,
-  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram, exactOptional: ExactOptional) => T): T {
   noteAutomaticCollection();
   const overlay = new Map<string, string>();
   const api = openFrontEndCompiler(dirname(file), overlay);
@@ -820,7 +831,7 @@ export function collectDeclarations(file: string, options: {
     options.diagnostic(declarationSpanOf(error) ?? pos, messageOf(error));
   };
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
+  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram, exactOptional) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw declarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
@@ -1606,7 +1617,7 @@ export function collectDeclarations(file: string, options: {
       const source = first.getSourceFile();
       const where = `${idOf(source)}#${name}`;
       const parameters = (first.typeParameters ?? []).map(p => p.name.text);
-      const template = mapped({ source, annotation: false,
+      const template = mapped({ source, annotation: false, ...exactOptional,
         fail: (_node, message) => { throw Error(`${message} in ${where} for ${what}`); },
         named: (node, span) => {
           const index = ts.isIdentifier(node.typeName) ? parameters.indexOf(node.typeName.text) : -1;

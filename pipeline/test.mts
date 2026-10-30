@@ -583,7 +583,7 @@ control(async (): Promise<void> => {
   const viewed = source.functions.find(f => f.name === "viewed");
   const [param] = viewed?.params ?? [];
   assert.ok(viewed && param && param.type.k === "reference", "viewed takes a Shape");
-  const deferred = deferredIdentity({ object: param.type, homomorphic: true, readonlyMod: "add", optionalMod: "keep" },
+  const deferred = deferredIdentity({ object: param.type, homomorphic: true, readonlyMod: "add", optionalMod: "keep", exact: null },
     { k: "atom", name: "never", span: param.type.span }, param.type.span);
   const atParameter = { ...source, functions: source.functions.map(f => f !== viewed ? f
     : { ...f, params: [{ ...param, type: deferred }] }) };

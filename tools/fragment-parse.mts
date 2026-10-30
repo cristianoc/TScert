@@ -35,7 +35,7 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isImport, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
-import { definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
+import { aliasMeaning, definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
 import { collectDeclarations, expressionAt, libraryArguments, libraryTerm, declarationSpanOf, tsconfigOf, type Answered,
   type BlockType, type LibraryType, type SeenDiagnostic }
@@ -756,6 +756,11 @@ export class Gate {
         const records = this.namedRecords();
         return records && recordShape(reference, records, fail);
       },
+      // What a reference denotes, at the complete declaration document.
+      alias: (reference, fail) => {
+        const records = this.namedRecords();
+        return records && aliasMeaning(reference, records, fail);
+      },
       // The alias the reference names, as TypeScript resolved it, at every
       // one of its parameters.
       equation: (reference) => {
@@ -811,7 +816,7 @@ export class Gate {
         if (library !== undefined && !this.hasTypeParam(name))
           return libraryTerm(library, libraryArguments(library, node.typeArguments ?? [], read,
             part => this.keyType(part)), span,
-            message => this.fail(node, message), this.termScope().record);
+            message => this.fail(node, message), this.termScope().record, this.termScope().alias);
         const declared = this.declaredTypes.get(name);
         if (declared !== undefined && !this.hasTypeParam(name))
           return this.declaredReference(node, name, span, declared, [], read);

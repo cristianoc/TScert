@@ -1385,10 +1385,33 @@ indexes $`\iota_j^{r_j}\colon U_j`$, and $`m`$ the mapped type's modifiers:
 At no key, and over a record with no member, the type is `{}`, every
 value but `null` and `undefined` (`mapped-pick-no-key`, `mapped-named-empty`,
 `invalid-mapped-named-empty-object`). Where $`m`$ writes `-?`, an optional
-field's type must hold no `undefined`: TypeScript takes `undefined` from it
-without `exactOptionalPropertyTypes` and keeps it with the option, so a field
-whose type may hold it is refused (`mapped-required-undefined-refused`,
-`mapped-required-alias-undefined-refused`). The
+field's type $`T`$ becomes $`\mathsf{req}(T)`$, which the project's
+`exactOptionalPropertyTypes` decides, as TypeScript's checker reads it under
+`strictNullChecks`. With the option $`\mathsf{req}(T)=T`$
+(`mapped-required-exact-optional`, `invalid-mapped-required-exact-optional`).
+Without it $`\mathsf{req}(T)`$ is $`T`$ with `undefined` taken away: each
+`undefined` and `void` of its union dropped, `never` where none is left; a
+reference to a record (an interface, an alias of a record literal) kept; a
+reference to any other alias, one of a named type included, replaced by its
+meaning with `undefined` taken away, followed through each alias to the
+types it names, and kept where that meaning holds none
+(`mapped-required-undefined`, `invalid-mapped-required-undefined`,
+`invalid-mapped-required-alias-undefined`,
+`mapped-required-alias-undefined`):
+
+```math
+\frac{T=T_1\mid\cdots\mid T_n\quad \text{no}\ T_i\ \text{a type parameter, an intersection or}\ \mathtt{unknown}\quad \{i_1,\ldots,i_k\}=\{i\mid T_i\notin\{\mathtt{undefined},\mathtt{void}\}\}}
+     {\mathsf{req}(T)=\mathsf{req}(T_{i_1})\mid\cdots\mid\mathsf{req}(T_{i_k})}\ \textsf{required-strip}
+```
+
+with $`\mathsf{req}(A)=\mathsf{req}(E)`$ for an alias $`A`$ of equation
+$`E`$ holding `undefined`, $`\mathsf{req}(R)=R`$ for any other part, and the
+empty union `never`. A part that is a type parameter, an intersection or
+`unknown` has no term for its instance without `undefined`, and the field is
+refused (`mapped-required-binder-undefined-refused`); so is every field whose
+type may hold `undefined` where the scope reading the mapped type states no
+option (a mapped type written outside the standard library, whose
+`Required` the reader reads at the project's option). The
 cases are `mapped-identity`, `invalid-mapped-readonly-write`,
 `invalid-mapped-pick-readonly`, `invalid-mapped-readonly-index-write`,
 `invalid-mapped-partial-alias` and
@@ -1435,8 +1458,9 @@ itself through its equations and bases has none, nor has one a mapped type
 inside its own definition needs. The cases are `mapped-identity-named`,
 `mapped-named-bases`, `mapped-named-generic`, `mapped-named-default`,
 `mapped-named-pick`, `mapped-named-hook-value-import` and
-`invalid-mapped-named-readonly-write`; the refusals are
-`mapped-named-required-undefined-refused`, `mapped-named-conflict-refused`,
+`invalid-mapped-named-readonly-write`, and `-?` over a named type is read as
+over a record written in place (`mapped-named-required-undefined`); the
+refusals are `mapped-named-conflict-refused`,
 `mapped-named-call-refused`, `mapped-named-call-refused-value-import`,
 `mapped-named-method-refused`, `mapped-named-cycle-refused` and
 `mapped-named-class-refused`. The front end reads $`\mathsf{shape}`$ from

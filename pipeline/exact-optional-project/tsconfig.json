@@ -1,0 +1,13 @@
+{
+  // A project with `exactOptionalPropertyTypes`, under which `-?` keeps an
+  // optional field's type: the `*exact-optional*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["../examples/*exact-optional*.ts"]
+}
