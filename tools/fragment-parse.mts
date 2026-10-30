@@ -32,7 +32,7 @@ import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
-import { childOf, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
+import { childOf, isImport, isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // named-record.mts reads a named type's record shape, which a mapped type over it maps.
 import { definitionKey, deferredInAst, deferredInModule, recordShape, settleTerm, type NamedRecords } from "./named-record.mts";
@@ -1405,7 +1405,7 @@ function lowerFile(file: string, carriesContext: boolean,
       if (s.name && !ambientNames.some(n => n.text === s.name?.text)) ambientNames.push(s.name);
     }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
-    else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
+    else if (isImport(s) && !carriesContext) importNodes.push(s);
     // An enum is a module constant bound to its object where it is written;
     // a `const enum` runs nothing, its reads being its members' values. An
     // ambient enum runs nothing either: its object is the environment's,

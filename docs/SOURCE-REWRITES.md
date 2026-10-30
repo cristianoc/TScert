@@ -664,6 +664,40 @@ accept the same nodes ([restrictions](COMPILER-API.md#restrictions)).
   a member both kinds state after `ts.isTypeAliasDeclaration`.
 - **Commit:** the introducing commit, `A type alias is recognised by its kind, excluding the JSDoc typedef`.
 
+### A type node or an import recognised by a guard accepting another kind
+
+The front end found the type node at a span with `ts.isTypeNode(node)`
+(`typeNodeAt`, `computedAt` of `tools/declaration-graph.mts`) and returned
+it at `TypeNode`, and recognised import declarations with
+`ts.isImportDeclaration` (`importBindings`, `statementsOnPath`, and
+`lowerFile`'s collection of `importNodes` in `tools/fragment-parse.mts`) and
+used them as `ImportDeclaration`s. `isTypeNode` also accepts
+`ExpressionWithTypeArguments` (kind 234), whose interface extends
+`MemberExpressionBase` and no `TypeNodeBase`
+([the node invariant](COMPILER-API.md#the-node-invariant)), and
+`isImportDeclaration` also accepts `JSImportDeclaration` (346), a kind of
+its own ([audited shapes](COMPILER-API.md#audited-shapes)): the code lacked
+the test that excludes the other kind, so its true edge gave no `TypeNode`
+or `ImportDeclaration` and the claimed result was refused. The spans the
+front end asks for are of type annotations, and the files it reads are
+TypeScript files, where neither other kind occurs at those points
+([restrictions](COMPILER-API.md#restrictions)).
+
+- **Rewrite:** `typeNodeAt` and `computedAt` test
+  `ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)`, as
+  `tools/written-applications.mts` does; `isImport(node): node is Within<{
+  value: "keep"; store: "keep" }, ImportDeclaration>` of `tools/syntax.mts`
+  tests `node.kind === SyntaxKind.ImportDeclaration`, and the three import
+  sites call it.
+- **Pattern:** a node is recognised by the kind whose members the code
+  reads, where the compiler's guard accepts more kinds than that one (as
+  [`isTypeAlias`](#a-type-alias-recognised-by-a-guard-accepting-a-jsdoc-typedef)).
+- **Functions:** `typeNodeAt`, `computedAt`, `statementsOnPath` (verified
+  after the rewrite), `importBindings`, `lowerFile` (refused at later
+  obligations); `blocker-compiler-api-type-node` is the guard's refusal as a
+  case.
+- **Commit:** the introducing commit, `A type node and an import are recognised by their kinds`.
+
 ### A binder bounded by a record with a writable field
 
 `attemptAnswer` in `tools/files.mts` bounds its binder by

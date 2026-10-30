@@ -5,7 +5,7 @@
  * children here, where each one is checked to be a node.
  */
 import * as ts from "typescript/unstable/ast";
-import type { Node, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
+import type { ImportDeclaration, Node, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 
 /** The compiler's syntax module as the front end resolves it, for the suites
  * outside tools/ that read trees (tests/host-families.mts). */
@@ -59,6 +59,15 @@ export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node
  * promise's type states (SOURCE-ELABORATION.md, "Stated effects"). */
 export function isTypeAlias(node: Node): node is Within<{ value: "keep"; store: "keep" }, TypeAliasDeclaration> {
   return node.kind === ts.SyntaxKind.TypeAliasDeclaration;
+}
+
+/** Whether `node` is an import declaration of a TypeScript file, by its
+ * kind. The compiler's `isImportDeclaration` also accepts a JavaScript
+ * file's `JSImportDeclaration` (a kind of its own, COMPILER-API.md, "Audited
+ * shapes"), so its true edge gives no `ImportDeclaration`; this test's does.
+ * It changes nothing, which its promise's type states. */
+export function isImport(node: Node): node is Within<{ value: "keep"; store: "keep" }, ImportDeclaration> {
+  return node.kind === ts.SyntaxKind.ImportDeclaration;
 }
 
 /** Whether a member is written `static`. */

@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
-import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
+import { childrenOf, nameOf, isImport, isTypeAlias } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
@@ -315,9 +315,9 @@ function statementsOnPath(checker: Checker, identifier: Identifier):
   while (symbol && symbol.flags & SymbolFlags.Alias && !seen.has(symbol.id)) {
     seen.add(symbol.id);
     let node: Node | undefined = symbol.declarations[0]?.resolve();
-    while (node && !ts.isImportDeclaration(node) && !ts.isExportDeclaration(node) && !ts.isSourceFile(node))
+    while (node && !isImport(node) && !ts.isExportDeclaration(node) && !ts.isSourceFile(node))
       node = node.parent;
-    if (node && (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))) {
+    if (node && (isImport(node) || ts.isExportDeclaration(node))) {
       out.push(node);
       if (node.moduleSpecifier) starExports(node.moduleSpecifier);
     }
@@ -399,7 +399,7 @@ function identifierAt(file: SourceFile, span: Span): Identifier | null {
 function typeNodeAt(file: SourceFile, span: Span): TypeNode | null {
   const visit = (node: Node): TypeNode | null => {
     if (node.end < span[1] || node.pos > span[0]) return null;
-    if (ts.isTypeNode(node) && node.getStart(file) === span[0] && node.end === span[1]) return node;
+    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node) && node.getStart(file) === span[0] && node.end === span[1]) return node;
     return node.forEachChild(visit) ?? null;
   };
   return visit(file);
@@ -410,7 +410,7 @@ function typeNodeAt(file: SourceFile, span: Span): TypeNode | null {
 function computedAt(file: SourceFile, span: Span): TypeNode | null {
   const visit = (node: Node): TypeNode | null => {
     if (node.end < span[1] || node.pos > span[0]) return null;
-    if (ts.isTypeNode(node) && (computedForm(node) !== null || ts.isTypeReferenceNode(node)) &&
+    if (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node) && (computedForm(node) !== null || ts.isTypeReferenceNode(node)) &&
         node.getStart(file) === span[0] && node.end === span[1]) return node;
     return node.forEachChild(visit) ?? null;
   };
@@ -479,7 +479,7 @@ function exportedName(nodes: readonly Node[]): string | null {
  * member's first occurrence (`members`). */
 function importBindings(client: SourceFile, members: readonly NamespaceMemberSpans[]): { name: string; at: Identifier;
   imported: string; specifier: string; span: Span; typeOnly: boolean }[] {
-  const named = client.statements.filter(ts.isImportDeclaration).flatMap(node => {
+  const named = client.statements.filter(isImport).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
     if (!clause || (!clause.name && !clause.namedBindings) || !ts.isStringLiteral(node.moduleSpecifier))
