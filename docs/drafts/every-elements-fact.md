@@ -6,8 +6,10 @@ paragraph on [guard overloads](../../WORK.md#guard-overloads). It is an
 instance of the four-part mechanism of [footprints](../FOOTPRINTS.md): a
 fact with the locations it reads, the stable operations stated as closed
 footprints, a contract Lean checks node by node, and the construct's rule
-that ignores side effects. Claims are labelled **proved** (with a Lean name
-that exists), **to prove** (a statement this design adds, with its
+that ignores side effects. The signatures stating the fact extend the
+receiver-relative parts of a call effect (`receiverStore`, `receiverOwn`):
+like them, they are about the call's receiver (§5). Claims are labelled
+**proved** (with a Lean name that exists), **to prove** (a statement this design adds, with its
 proposed name) or **audited** (a native's behaviour, as a row of
 [native footprints](../SOURCE-CONTRACTS.md#native-footprints)).
 
@@ -45,10 +47,10 @@ cause all test a local array at a guard that only reads (`p !== null`):
 
 The **elements fact** $`\mathrm{elems}(x,R)`$ says that every present
 element of the array slot $`x`$ holds currently satisfies $`R`$, a
-predicate of the
-[primitive predicate grammar](../POSITIVE-TYPES.md#state-assertion-grammar)
-(the literals, `string`, `number`, `boolean`, null, undefined and the
-nullish exclusions, which apply to values of any shape). Like density
+predicate of a value's runtime kind, as a tag test reads it: a set of the
+kinds null, undefined, boolean, number, string, bigint, symbol and object
+(`CallEffects.ElemPred`). The signatures of §5 state it at the fixed set
+{`string`, `number`, `boolean`}. Like density
 (`Dense`, `FootprintProvenance.lean`), it requires the store to exist in
 the heap, so that a heap extension cannot fill a store location the fact
 held of vacuously:
@@ -79,14 +81,9 @@ holds of a heap alone, as every atom of heap knowledge does
 (`HeapKnowledge.Holds`): it is kept by heap extension, compared along edges
 and met at joins by the existing knowledge rules, and a call's
 postcondition stating it reads only the heap, as the effect postconditions
-do. The guard's type $`S`$ gives its predicate $`\mathrm{pred}(S)`$: the
-primitive union $`S`$ denotes, or the strongest nullish exclusion it
-implies, the lookup the knowledge's value facts already use
-(`valuesAt`; proved: `HeapKnowledge.atoms_sem` for an exact primitive
-union, `nullishAtoms_sound` and `typeValues_sound` for the exclusions). Every census
-guard is `p !== null` at `string | null`, whose predicate is `string`. A
-guard narrowing a union of records by a field's literal has no predicate
-here, and gives no fact.
+do. Every census guard is `p !== null` at `string | null`, whose
+predicate is `string`. A guard narrowing a union of records by a field's
+literal has no predicate here, and gives no fact.
 
 **Presence.** The fact is about present elements: a hole lists no
 location. Density stays its own fact, $`\mathrm{dense}(x,n)`$, and the
@@ -146,25 +143,52 @@ re-tests the array may establish it again.
 
 ## 5. The construct's rules
 
-**`every` at a guard.** The overlay states `every`'s guard overload at the
-empty footprint, with a promise about the receiver's elements:
+**The signatures' two new parts.** A call signature's effect states, beside
+its footprint and promise, two optional predicates of the
+[elements fact's grammar](#2-the-fact): `requires R`, a precondition, that
+the elements of the call's receiver satisfy $`R`$ in the heap the call starts in;
+and `elements R`, a promise, that a normal return of `true` leaves them
+satisfying $`R`$. Proved (`CallEffects.PromiseWith`, `Effect.post`): a
+signature's guarantee quantifies over the entry heaps meeting its
+`requires`, and its postcondition reads the heap and the value only, the
+form of every effect postcondition, so the existing combination of two
+signatures' runs (`cross_upto`, `Effect.cross_result`) applies unchanged.
+The predicates read no world, so a signature stating them is still a value
+type (`callsT_adm`).
+
+**The receiver.** The two parts extend the existing receiver-relative
+parts of an effect, `receiverStore` and `receiverOwn`, which state what a
+call may change of the receiver it is invoked with (`Effect.within`), and
+like them they are about that receiver. `Array.prototype`'s members are
+fields of the prototype (`ArrayProto`), each typed by a scheme over the
+element type $`T`$ whose signatures state their array receiver:
+`xs.every(g)` reads the field and invokes its value with `xs` as receiver,
+in the lowered graph `x1.call(x4, x0)` with `x4` the array's slot. The
+receiver's own type, a dense or a readable array, is the signature's
+receiver contract, so `map`'s dense signatures keep reading density from
+it. Binding a signature (`.bind` in source, and a method member's
+binding to its host, `bindMember` and `bindScheme`) keeps neither part
+(`Effect.keeps`, proved in commit `1ac22b78`): a bound call does not pass
+the receiver the parts are about. So a call relying on either part invokes
+the native with the array as its receiver, and the call node's knowledge
+names that receiver's slot.
+
+**`every` at a guard.** The overlay states, in `every`'s scheme beside its
+predicate signatures, for
+each predicate $`R`$ of the fixed set {`string`, `number`, `boolean`}, one
+signature at the empty footprint whose callback promises $`R`$ of its
+first parameter and which promises the receiver's elements satisfy $`R`$:
 
 ```math
-\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} S\,[\mathsf{guards}\ 0]}
-     {\mathit{xs}.\mathsf{every}(f):\mathsf{boolean}\,[\mathsf{true}\Rightarrow\mathrm{elems}(\mathit{xs},\mathrm{pred}(S))]\;!\;\emptyset}\ \textsf{native-guard-every}
+\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} R\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{every}(f):\mathsf{boolean}\,[\mathsf{true}\Rightarrow\mathrm{elems}(\mathit{xs},R)]\;!\;\emptyset}\ \textsf{native-guard-every}
 ```
 
-Its postcondition, for receiver $`r`$, conjoins the empty footprint's with
-the fact on a `true` result:
-
-```math
-Q(r,h)(h',v)=\mathsf{Post}_{\emptyset}(h,h')\land\bigl(v=\mathsf{true}\Rightarrow\mathrm{elems}(r,\mathrm{pred}(S))(h')\bigr)
-```
-
-It reads the heap and the value only, the form of every effect
-postcondition (`Effect.post`), so the existing combination of two
-signatures' runs (`cross_upto`, `Effect.cross_result`) applies to it
-unchanged.
+A guard closure `(p): p is string => …` meets the callback's type at
+$`R=\mathtt{string}`$; one promising a narrower type, a literal, meets it
+by the promise's covariance. A guard's answer is a Boolean, `true` or
+`false` (`TypePromise.result`), so `every`'s truthiness test of it reads
+`true` exactly where the promise holds.
 
 Audited: `every` reads the receiver's length once, then for each index
 below it tests presence and calls $`f`$ with the element where it is
@@ -174,75 +198,56 @@ callback within the empty footprint, the store and every listed location
 keep their contents from the call's start to its return
 (`Closed.holds_empty`), so every listed location is visited, its value is
 the one the callback was given, and the callback's `true` leaves that value
-in $`S`$, so in $`\mathrm{pred}(S)`$. The call is within the empty
-footprint, so it keeps the caller's knowledge.
+in $`R`$. The call is within the empty footprint, so it keeps the caller's
+knowledge.
 
-The call's output carries the atom conditionally on its result slot $`r`$,
-$`r=\mathsf{true}\Rightarrow\mathrm{elems}(x,R)`$; a branch on $`r`$ keeps
-it unconditionally on its `true` edge, as a Boolean observation refines
+The call's output carries the atom conditionally on its result slot,
+$`0=\mathsf{true}\Rightarrow\mathrm{elems}(x,R)`$, where $`x`$ is the
+call's receiver slot; a branch on the result keeps it
+unconditionally on its `true` edge, as a Boolean observation refines
 knowledge on its edge (proved for cells: `observeBoolean_holds`), and a
-negated test takes the edges swapped.
+negated test takes the edges swapped. To prove: `everyCall_sound`.
 
 **`map` at the fact.** `map` relies on the fact between callbacks, as it
-relies on density. The overlay states `map`'s two signatures at the empty
-footprint (dense and sparse receiver) once more with a precondition on the
-heap the call starts in: the receiver's elements satisfy $`R`$; the
-callback then takes the element type filtered by $`R`$,
-$`T\setminus_R`$, the labels of $`T`$ that $`R`$ does not exclude
-([refinement by a fact](../PROGRAM-TYPING.md#refinement-by-a-fact)):
+relies on density. For each predicate $`R`$ of the fixed set the overlay
+states two more signatures of `map`'s scheme at the empty footprint,
+stating `requires R` and a callback whose first parameter is $`R`$'s type
+(`string`, `number` or `boolean`):
+
+- at a dense receiver, a dense result;
+- at any receiver, a result that may hold holes, where the receiver has
+  them: `map` skips a hole and leaves it in its result.
 
 ```math
-\frac{\mathrm{elems}(\mathit{xs},R)\ \text{at the call}\qquad f:(T\setminus_R,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} U}
-     {\mathit{xs}.\mathsf{map}(f):U[\,]\;!\;\emptyset}\ \textsf{native-map-elems}
+\frac{\mathit{xs}:\mathsf{ReadonlyArray}^{\pi}(T)\qquad\mathrm{elems}(\mathit{xs},R)\ \text{at the call}\qquad f:(R,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} U}
+     {\mathit{xs}.\mathsf{map}(f):\mathsf{Array}^{\pi}(U)\;!\;\emptyset}\ \textsf{native-map-elems}
 ```
 
-the result as `map`'s signature at the empty footprint states it, at
-either presence. Audited: at a callback within the empty footprint, `map`
-reads the length once and passes each present element; the fact holds at
-every visit (to prove: `elems_rely`, the instance of `rely_chain` at the
-new kind, as `map_rely` is at density), and an element of the store's
-contract $`T`$ satisfying $`R`$ is in $`T\setminus_R`$ (to prove:
-`predFilter_sound`, from `factFilter_sound`). Holes are skipped, so a
-sparse receiver needs nothing more. The result's elements are the
-callback's, at $`U`$.
+where the presence $`\pi`$ is `dense` for the dense signature, and
+`sparse` (holes admitted) for the other, whose receiver is any array.
 
-**Instances.** Both rules are instances, at a predicate $`R`$, of a
-signature the overlay states once. The effect gains two fields of data, no
-type operand: `requires`, an optional predicate the receiver's elements
-satisfy in the heap the call starts in, and the promise form
-`guards elements R`. A signature's guarantee quantifies over the entry
-heaps meeting its `requires`, which keeps it a value type, the predicate
-reading no world (`PromiseWith`; to prove: `callsT_adm` with the
-precondition). An overlay member flagged as an elements instance is
-trusted to meet, beside its stated signatures, every instance Lean
-derives from them:
+Audited: at a callback within the empty footprint, `map` reads the length
+once and passes each present element, and the fact holds at every visit
+(to prove: `elems_rely`, the instance of `rely_chain` at the new kind, as
+`map_rely` is at density), so each element passed is in $`R`$. The
+result's elements are the callback's, at $`U`$, its holes the receiver's,
+under the ordinary array construction the other `map` signatures assume
+([ordinary array construction](../SOURCE-MODEL.md#exact-contracts-and-native-effects)).
 
-- for `every`, at the guard signature whose callback promises $`S`$: the
-  same signature with the promise `guards elements pred(S)`;
-- for `map`, at each of its two signatures at the empty footprint, and
-  each predicate $`R`$: the signature whose callback's first parameter
-  type $`A`$ becomes $`A\setminus_R`$ and whose `requires` is $`R`$.
+A call node selecting a signature with `requires R` is accepted where its
+receiver slot's class has an atom
+$`\mathrm{elems}(x,R')`$ with $`R'\subseteq R`$ (to prove:
+`requiresCall_sound`, from `call_safe` with the precondition). The
+ordinary call rules select no signature with a precondition.
 
-The derivation is a Lean function of the stated signature and $`R`$ after
-the member's binders are instantiated, so substitution never meets $`R`$.
-At a call Lean derives the instance at the predicate of the receiver
-class's atom and checks the node against it (to prove: `mapElems_sound`,
-connecting the atom, the instance's `requires` and the callback's
-parameter through `predFilter_sound`, a bridge from a predicate to
-`factFilter_sound`'s type premise).
-
-**The operations on signatures.** One signature covers another where both
-state the same `requires` and promise (`Effect.covers`); two signatures of
-one call combine where both state the same `requires`, each entry
-precondition then justified by the one atom (`PromiseWith.combine`), and
-the elements promise combines by `cross_upto`, its postcondition reading
-the heap only. Erasing a signature stating `requires` to an ordinary arrow
-(`PromiseWith.erase`, whose premise `effect.plain` is extended to require
-no `requires`), binding its receiver (`Effect.drop`) and every elimination
-through `keeps` are refused for both new fields: a bound `map` keeping the
-filtered callback without its precondition would run after a later
-`push(null)` and throw. Lean refuses a code entry or a declaration stating
-either field, as it refuses `freshObject` on code (`effectChecked`).
+**The operations on signatures.** One signature covers another where its
+precondition is weaker and its elements promise stronger (`Effect.covers`);
+two signatures of one call combine where both state the same parts
+(`PromiseWith.combine`); erasing a signature to an ordinary arrow
+(`PromiseWith.erase`, `Effect.plain`) and binding it (`Effect.keeps`) are
+refused for both. Lean refuses graph
+code stating either part, as it refuses `freshObject` on code
+(`effectChecked`). Proved for all of these (commit `1ac22b78`).
 
 **Where the fact is not used.** No rule gives the slot $`x`$ a type from
 the fact: a type's meaning is independent of the heap, and the array,
@@ -290,42 +295,44 @@ along callbacks (`rely_chain`); the empty footprint as heap extension
 `keepsCall_sound`, `inspect_safe`); the edge, merge and cut rules of heap
 knowledge (`check_sound`, `checkIn_sound`, `shift_holds`,
 `dropResult_holds`); the combination of two signatures' runs
-(`cross_upto`, `Effect.cross_result`); the fact filter
-(`factFilter_sound`).
+(`cross_upto`, `Effect.cross_result`).
+
+Proved (commit `1ac22b78`): the effect's `requires` and `elements` through
+`Effect.post`, `PromiseWith`, `Effect.covers`, `PromiseWith.combine`,
+`.erase`, `.weaken`, `Effect.drop`/`keeps` and the application rules, and
+`effectChecked`'s refusal of both on code.
 
 New:
 
 - `FactKind.elems`, its support and `support_sound` case;
   `elemsCheck_stable`; the footprint controls.
-- The atom in `HeapKnowledge.Knowledge` (a list of slot and predicate
-  pairs, unconditional or on a Boolean slot), with its cases of `Holds`,
+- In `HeapKnowledge.Knowledge`: the atom (slot and predicate,
+  unconditional or on a Boolean slot), with its cases of `Holds`,
   `alloc_frame`, `shift`, `check`, `meet`, `project`, `dropResult` and
-  `observeBoolean`.
-- The effect's `requires` and elements promise, in `Effect.post`,
-  `PromiseWith`, `Effect.covers`, `PromiseWith.combine`, `.erase`,
-  `.weaken`, `Effect.drop` and the application rules, each quantifying over
-  effects and so taking a case or a refusal; `effectChecked`'s refusal of
-  both on code; the instance derivation for flagged members.
+  `observeBoolean`; a conditional atom tracks both its slots through
+  projections and joins, and is dropped by a step that drops the
+  unconditional one, whatever happens to its Boolean slot.
 - `everyCall_sound` (the conditional atom from the promise), `elems_rely`,
-  `predFilter_sound`, `mapElems_sound` (the precondition discharged by the
-  node's knowledge).
-- The search (`CertificateProducer`): the atom carried forward by the
-  knowledge rules, met at merges, proposed at cuts, and `map`'s signature
-  at the precondition tried where the receiver's class has an atom.
+  `requiresCall_sound` (the precondition discharged by the node's
+  knowledge).
+- The search (`CertificateProducer`): the link and the atom carried forward
+  by the knowledge rules, met at merges, proposed at cuts, and a signature
+  with a precondition tried where the receiver's class has an atom; at a
+  cut, the entry edge and every back edge checked.
 
 `checkJson_safe` keeps its premise and conclusion.
 
 ## 8. Producer, overlay and wire
 
-- **Overlay**: `every`'s guard signature at the empty footprint and `map`'s
-  two signatures at the precondition, with their audited rows.
-- **Wire** (the declaration document's effect,
+- **Overlay**: `every`'s three elements signatures; `map`'s six signatures at a precondition;
+  with their audited rows.
+- **Wire** (an effect,
   [source claims](../SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)):
-  an overlay member's flag `"elementsInstances"`, `false` or `true`,
-  marking `every` and `map` as meeting the instances Lean derives (§5).
-  The predicates are not on the wire: Lean computes them. Typed in
-  `tools/source-claims.mts`, decoded in Lean and OCaml, checked by
-  `tests/json-field-names.mts`. The claims document is unchanged.
+  two fields, `"requires"` and `"elements"`, each `null` or a list of the
+  kinds the predicate admits (`"string"`, `"number"`, `"boolean"`, …).
+  Typed in `tools/source-claims.mts`, decoded in Lean and OCaml, checked by
+  `tests/json-field-names.mts`. The producer states both `null` on every
+  effect it writes, and copies a declaration's.
 - **Producer**: the closures after the test are claimed at TypeScript's
   narrowed element type, as now; a receiver is claimed at its declared
   type, never at the narrowed `readonly S[]`.
@@ -334,10 +341,10 @@ New:
 
 Positive: `blocker-every-promise` (gap → verified);
 `every-elements-negated` (`if (!xs.every(g)) return null;` then
-`xs.map(…)`); `every-elements-guard-value` (a module guard read as a
-value); `every-elements-loop-reads` (a loop of reads between the test and
-the use); `every-elements-nullish` (`Node | undefined` at a guard
-excluding `undefined`, the callback reading a field).
+`xs.map(…)`); `every-elements-loop-reads` (a loop of reads between the test
+and the use); `every-elements-sparse` (a receiver typed with holes, the
+result keeping them, read at `(U | undefined)[]`); `every-elements-number`
+(the `number` instance).
 
 Negative, each run under Node in `tests/node-runs.mts`, where it throws a
 `TypeError` TypeScript does not predict: `invalid-every-elements-element-write`
@@ -346,42 +353,47 @@ through `const ys = xs`); `invalid-every-elements-push`;
 `invalid-every-elements-call` (an unknown function given `xs`);
 `invalid-every-elements-guard-mutates` (the guard writes `xs[1] = null`);
 `invalid-every-elements-map-callback-writes` (the `map` callback writes
-`xs[i + 1] = null`); `invalid-every-elements-escape` (`view` of §5).
+`xs[i + 1] = null`); `invalid-every-elements-other-array` (the test of one
+array, `map` of another); `invalid-every-elements-escape` (`view` of §5).
 
 Forged-claim controls (`pipeline/test.mts`, through evidence production
 and consumption): an atom stated after an element write; an atom about the
-other of two swapped slots; the conditional atom used on the `false` edge;
-a bound `map` at the precondition, and its erasure to an ordinary arrow;
-a cut atom justified only by its own back edge through a body that writes
-an element; a stale atom across a loop iteration that pushes; a callback
-that writes an element and throws before restoring it, its caller catching
-the throw; `every` selected at the elements promise with a callback beyond
-the empty footprint; `map` at the precondition with no atom; a closure's
-code entry claiming the promise or the precondition.
+other of two swapped slots; the conditional atom used on the `false` edge; `every`'s result saved,
+the array written, then the saved result tested;
+a sparse receiver selected at `map`'s dense signature at a precondition; a bound `map` at the
+precondition, and its erasure to an ordinary arrow; a cut atom justified
+only by its own back edge through a body that writes an element; `every`
+selected at the elements promise with a callback beyond the empty
+footprint; `map` at the precondition with no atom; graph code claiming the
+promise or the precondition.
 
 ## 10. Cost and risks
 
-Estimated by the size of the density instance and the knowledge atoms:
-Lean 2,000–3,000 lines (the fact kind, its stability and controls 250;
-the knowledge atom 400; the effect's two fields through every operation
-quantifying over effects, and the instance derivation, 900–1,500; the
-call rules 400; the search 200), the effect part the least certain and
-prototyped first; the producer 100–200; overlay, wire and decoders 150;
-docs 200; 12 cases and 9 controls; the two source rewrites of §6.
+Lean: the effect's two parts, measured +254 −101 lines (commit
+`1ac22b78`); the fact kind, its
+stability and controls 250; the knowledge atom 400; the call rules 300;
+the search 200; at most 1,500 lines beyond `1ac22b78`. The producer and
+the wire 150; the overlay and its audits 100; docs 200; 7 positive and
+negative cases each class, 10 controls; the two source rewrites of §6.
 
-Risks: the effect's two new fields touch every module reading `Effect`,
-and every lemma quantifying over effects (`erase`, binding, weakening,
-combination, application) takes a case for them or refuses them.
-The audits are two rows, `every` and `map`.
+Risks: each extra overload is one more signature the search tries at an
+`every` or `map` call.
 
 ## 11. Deferred
 
+- Predicates outside the fixed set: literals, the nullish exclusions
+  (`Node | undefined` at a guard excluding `undefined`), whose callback
+  type is the element type filtered by the predicate, which a stated
+  signature can write only as an intersection with the type parameter.
+  Deriving each instance in Lean from the stated signature would cover
+  every predicate, at the cost of a member contract quantified over
+  predicates, read through the meaning of scheme rows.
 - The other natives at the precondition (`forEach`, `filter`, `some`,
   `find`, `findIndex`, `slice`, `at`), element reads at a literal index and
   `for...of`: each another construct over the same fact, with its audit;
   `find`, `findIndex` and the iterator visit holes, so they read
-  $`T\setminus_R`$ or `undefined`; `slice` skips them and keeps them as
-  holes in its result.
+  `undefined` too; `slice` skips them and keeps them as holes in its
+  result.
 - Guards whose type has no predicate (a union of records by a field's
   literal): a fact about a type needs a postcondition reading the world.
 - Writes between the test and the use: regional footprints and separation
@@ -397,5 +409,7 @@ The audits are two rows, `every` and `map`.
 - **The fact at a type $`S`$**, with a postcondition reading the level and
   the world, an apart set per fact and a precondition on many natives:
   more general, and several times the size; no census site needs it.
+- **Instances derived in Lean** at the guard's predicate (§11): every
+  predicate, with a member contract over all of them.
 - **Rewriting all five sites** to `filter` with a length comparison: no
   model change, and the route for line 215 alone.
