@@ -3328,6 +3328,36 @@ orientation (`HeapSeparation.checkBy`). `checkIn_sound` proves the rule,
 given that the mapped environment meets the target's contexts, which the
 edge's type coverage establishes first.
 
+##### Facts a type states
+
+Every edge's source facts also hold what the source context's types state of
+the cells the target requires. With $`\Gamma(s)`$ expanding to clauses
+$`c_1,\dots,c_k`$, each stating the field $`f`$ as a location (an invariant
+field or a readonly view other than `length`, `fieldOperand`), and
+$`T_1,\dots,T_m`$ the types stated for $`f`$ in each clause's first invariant
+operand and, for a record, its readonly views other than `length`, each
+denoting a finite union $`R_j`$ of primitive predicates:
+
+```math
+\frac{(i,f,W)\in\Sigma_b\qquad m(i)=s\qquad \Gamma(s)\ \text{states}\ f\ \text{at}\ T_1,\dots,T_m\qquad T_j\ \text{denotes}\ R_j}
+{\Gamma;\Pi;\Sigma\vdash s.f\mapsto R_1\sqcup\dots\sqcup R_m}\ \textsf{typed-cell}
+```
+
+The value at the field's location meets that location's contract, which
+admits only members of the field's type in the clause the object meets
+(`HeapExpressionRules.fieldOperand_typed`); a heap meeting the world at a
+positive level holds such a value (`HeapExpressionRules.typedCells_holds`).
+`ControlFlow.withTypedCells` adds the facts, for the cells the target
+requires alone, to the facts of every normal edge, branch edge and handler
+edge before `knowledge-edge` reads them. So a case of an arm whose field type
+is the case's literal enters a clause grouped with a case whose fact is
+observed, `case "array": case "union":` over a union one arm of which has
+`k: "union" | "intersection"` (`field-contents-typed-join`,
+`blocker-recursive-union-join`); a fact narrower than an entering arm's field
+type is refused (the forged-typed-cell control), and a write that may alias
+the field leaves its type's union (`invalid-field-contents-typed-join`, run
+under Node).
+
 A node's stated `output` need not be the output its step computes from the
 view: the computed output $`o`$ must establish it, by the same rule with
 the identity map and the entry's contexts one slot further, the result's

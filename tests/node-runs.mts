@@ -647,6 +647,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "b,x,2", "field-contents-exclusion: each arm's value");
   assert.equal(runExample("invalid-field-contents-call", `wrong({ kind: "b" })`), undefined,
     "invalid-field-contents-call: the call rewrote kind, and the read finds no v");
+  assert.equal(runExample("field-contents-typed-handler", `["a", "b", "c", "d"].map(k => grouped({ k, x: 0, y: "", z: true }, () => { throw 0; })).join()`),
+    "a,b,c,d", "field-contents-typed-handler: each arm's field after a throw");
+  assert.equal(runExample("field-contents-typed-join", `["a", "b", "c", "d"].map(k => grouped({ k, x: 0, y: "", z: true })).join()`),
+    "a,b,c,d", "field-contents-typed-join: each arm's field");
+  assert.equal(runExample("invalid-field-contents-typed-join", `(() => { const s = { k: "b", y: "" }; return grouped(s, s); })()`), "c",
+    "invalid-field-contents-typed-join: the write through the alias changed the field, and the read gives \"c\"");
   assert.equal(runExample("json-parse-data", `[numbers('[1, "x", 2]').join(), count(JSON.parse('{"a": 1, "b": [2]}'))].join(";")`),
     "1,0,2;2", "json-parse-data: the numbers, and the keys counted");
   assert.equal(runExample("invalid-json-parse-class", `typeof wrong()`), "function",

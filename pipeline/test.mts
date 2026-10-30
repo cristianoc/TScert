@@ -4286,6 +4286,28 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A type states of a cell only what its arms' field types admit
+  // (`typed-cell`): at the grouped cases' clause, a fact of the field
+  // narrower than an entering arm's field type, `"b"` where the case of "a"
+  // enters, is refused where evidence is produced and where it is checked.
+  const artifacts = run("field-contents-typed-join");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "grouped"), "grouped's claims");
+  const clause = must(fn.entries.find(e => e.start === source.indexOf("return s.k")), "the grouped clause's entry");
+  const s = must(clause.bindings.find(b => b.name === "s"), "s at the grouped clause");
+  assert.ok(s.current?.some(([[field]]) => field === "k"), "the honest claims state a fact of k at the clause");
+  s.current = [[["k"], [rowOf(claims, { strLit: { value: "b" } })]]];
+  const input = writeClaims(artifacts, "forged-typed-cell", claims);
+  const produce = produceWith(artifacts, input, "forged-typed-cell");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /reject: source (incoming edge obligation|evidence does not justify|evidence refusal at)/);
+  process.stdout.write("forged typed cells: a fact of a field narrower than an entering arm's field type, refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // A field's equality test is a fact of the field only where an edge
   // establishes it: claimed at the test, before it, the write of the field's
   // read past the test is refused where evidence is produced and where it is

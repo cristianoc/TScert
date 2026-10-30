@@ -1,5 +1,6 @@
-// Grouped switch cases need compatible claims for a recursive discriminated
-// union at their shared return.
+// Grouped switch cases over a recursive discriminated union meet at their
+// shared return, entered from cases of arms whose discriminant type is the
+// case's literal.
 // Census functions:
 // type-term.mts#restRefusal.
 import type { TypeTerm } from "../../tools/declaration-types.mts";

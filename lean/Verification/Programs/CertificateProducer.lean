@@ -2110,7 +2110,8 @@ result type and forgets all output heap facts. The result is a diagnostic attemp
               (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G context out 0 o)))
         let facts := edgeKnowledge G (c.type :: c.context) out node.continuation edge
         let heapOK := ControlFlow.unsatisfiable G (edgeContextOf G assumed node.continuation edge) ||
-          HeapKnowledge.check facts ((requirements.lookup target.label).getD {}) target.mapping
+          HeapKnowledge.check (ControlFlow.withTypedCells G context ((requirements.lookup target.label).getD {})
+            target.mapping facts) ((requirements.lookup target.label).getD {}) target.mapping
         if searched.value.isNone || !heapOK then
           errors := errors ++ [match searched.exhaustion with
             | some stop => .exhaustedEdge label target.label edge stop
@@ -2120,10 +2121,13 @@ result type and forgets all output heap facts. The result is a diagnostic attemp
           (List.range tc.context.length).filterMap fun i =>
             if PointClaims.slot target.mapping i == 0 then tc.context[i]? else none)
         let searched ← searchIn ((landing ++ pool).findSearch? fun T =>
-          if ControlFlow.admitsAll G T then edgeUsing G images claims (T :: c.context) target else none)
-        if searched.value.isNone ||
-            !HeapKnowledge.check (ControlFlow.handlerFacts k)
-              ((requirements.lookup target.label).getD {}) target.mapping then
+          if ControlFlow.admitsAll G T then
+            (edgeUsing G images claims (T :: c.context) target).map (T, ·) else none)
+        let wanted := (requirements.lookup target.label).getD {}
+        let heapOK := searched.value.any fun (T, _) =>
+          HeapKnowledge.check (ControlFlow.withTypedCells G (T :: c.context) wanted
+            target.mapping (ControlFlow.handlerFacts k)) wanted target.mapping
+        if searched.value.isNone || !heapOK then
           errors := errors ++ [match searched.exhaustion with
             | some stop => .exhaustedEdge label target.label (successors node.continuation).length stop
             | none => .edge label target.label (successors node.continuation).length]
@@ -2183,7 +2187,8 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
       -- target's knowledge too (`vacuous-edge`).
       if ControlFlow.unsatisfiable G (edgeContextOf G c node.continuation index) then continue
       if !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ControlFlow.entry destination))
-          (HeapKnowledge.withTypedLinks G (edgeContextOf G c node.continuation index) facts)
+          (HeapKnowledge.withTypedLinks G (edgeContextOf G c node.continuation index)
+            (ControlFlow.withTypedCells G (edgeContextOf G c node.continuation index) destination.knowledge target.mapping facts))
           destination.knowledge target.mapping then
         return some (.edge l target.label index)
   return none

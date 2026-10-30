@@ -239,6 +239,21 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
+/-- An edge's facts with what the types of its context `Γ` state of the
+cells the target's knowledge `k` requires, at the slots the target's mapping
+`m` takes them from (`typed-cell`, PROGRAM-TYPING.md, "Facts a type states"). -/
+@[nospecialize] def withTypedCells [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
+    (m : Mapping) (facts : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  { facts with cells := HeapExpressionRules.typedCells G Γ (k.cells.map fun f => (slot m f.slot, f.field)) ++ facts.cells }
+
+theorem withTypedCells_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k m facts ρ h}
+    (hc : ∀ wanted, HeapFacts.Holds (HeapExpressionRules.typedCells G Γ wanted) ρ h)
+    (hf : HeapKnowledge.Holds facts ρ h) : HeapKnowledge.Holds (withTypedCells G Γ k m facts) ρ h := by
+  refine ⟨fun f hm => ?_, hf.2.1, hf.2.2.1, hf.2.2.2⟩
+  rcases List.mem_append.mp hm with hm | hm
+  · exact hc _ f hm
+  · exact hf.1 f hm
+
 /-- A context no environment meets: one of its slots has a type of clause
 rows none of which holds a clause, which no value meets. Each slot's labels
 are read until one has a clause. -/
@@ -269,7 +284,7 @@ the target's claims whatever they are (`vacuous-edge`). -/
   match P[target.label]?, C[target.label]? with
   | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
       (checkMappedResult G images Γ (entry c) target.mapping p).bind fun _ =>
-      CheckResult.ofBool (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge target.mapping && carries G Γ facts xs sources target c)
+      CheckResult.ofBool (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ (withTypedCells G Γ c.knowledge target.mapping facts)) c.knowledge target.mapping && carries G Γ facts xs sources target c)
   | _, _ => failure
 
 @[nospecialize] def checkTargetUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
@@ -283,7 +298,7 @@ theorem checkTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Inst
     checkTargetUsing G images P C Γ target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => unsatisfiable G Γ || (checkMappedUsing G images Γ (entry c) target.mapping p &&
-      (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge target.mapping && carries G Γ facts xs sources target c))
+      (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ (withTypedCells G Γ c.knowledge target.mapping facts)) c.knowledge target.mapping && carries G Γ facts xs sources target c))
   | _, _ => false
   ) := by
   cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
@@ -347,7 +362,7 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
   | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
       (checkObservedResult G images Γ (entry c) 0 o target.mapping p
         (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o))).bind fun _ =>
-      CheckResult.ofBool (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
+      CheckResult.ofBool (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge target.mapping facts) 0 o) c.knowledge target.mapping &&
         carries G Γ facts xs sources target c)
   | _, _ => failure
 
@@ -362,7 +377,7 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
     checkBranchTargetUsing G images P C Γ o target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => unsatisfiable G Γ || (checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
-      (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) && (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
+      (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) && (KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge target.mapping facts) 0 o) c.knowledge target.mapping &&
         carries G Γ facts xs sources target c))
   | _, _ => false
   ) := by
@@ -784,14 +799,14 @@ theorem checkGraphResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target)
     (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) : Prop :=
   ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (MappedCovers G Γ (entry c) l.mapping ∧
-    KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ facts) c.knowledge l.mapping = true ∧
+    KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.withTypedLinks G Γ (withTypedCells G Γ c.knowledge l.mapping facts)) c.knowledge l.mapping = true ∧
       carries G Γ facts xs sources l c = true))
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge)
     (xs : List (Implication ι)) (sources : List Nat) : Prop :=
   ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
-    (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) ∧ KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge l.mapping = true ∧
+    (optionalFields facts 0) (HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ facts 0 o)) ∧ KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (entry c)) (HeapKnowledge.observeTyped G Γ (withTypedCells G Γ c.knowledge l.mapping facts) 0 o) c.knowledge l.mapping = true ∧
     carries G Γ facts xs sources l c = true))
 
 /-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
@@ -856,7 +871,8 @@ theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (destination : C[target.label]? = some c)
     (typed : (entry c)[witness]? = some A)
     (linked : (⟨receiver,witness,false,field,optional⟩ : HeapLinks.Link) ∈ c.knowledge.links)
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds facts ρ h) :
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds facts ρ h)
+    (hcells : ∀ wanted, HeapFacts.Holds (HeapExpressionRules.typedCells G Γ wanted) ρ h) :
     meaning G A n W (mapEnv target.mapping ρ witness) ∧
       ∃ flds cls oid, mapEnv target.mapping ρ receiver = .objAt flds cls oid ∧
         HeapFacts.ReadGave flds field h (mapEnv target.mapping ρ witness) := by
@@ -868,7 +884,7 @@ theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   constructor
   · exact (covers.env he).2 witness A typed
   · have link := (KnowledgeExpand.checkIn_sound knowledge (KnowledgeExpand.ctxOf_ok (covers.env he))
-      (HeapKnowledge.withTypedLinks_holds he hk)).2.2.1 _ linked
+      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells hk))).2.2.1 _ linked
     cases optional <;> simp only [Bool.false_eq_true, ite_false, ite_true] at link
     · obtain ⟨flds, cls, oid, loc, obj, key, value⟩ := link
       exact ⟨flds, cls, oid, obj, HeapFacts.ReadGave.present key value⟩
@@ -1030,7 +1046,8 @@ def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certifica
 
 theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h facts xs sources v0}
     (ht : TargetOk G C Γ l facts xs sources) (he : EnvOk G Γ ρ n W) (hi : ImpliesOk G xs ρ n W)
-    (ha : ArgumentsOk sources ρ v0) (hf : HeapKnowledge.Holds facts ρ h) :
+    (ha : ArgumentsOk sources ρ v0) (hf : HeapKnowledge.Holds facts ρ h)
+    (hcells : ∀ wanted, HeapFacts.Holds (HeapExpressionRules.typedCells G Γ wanted) ρ h) :
     StateOk G Rty C v0 n W h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c, hc, hcases⟩ := ht
   rcases hcases with hu | ⟨hcov, hfact, hcar⟩
@@ -1039,7 +1056,8 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h 
   exact ⟨c, hc, hcov.env he,
     PromiseCalls.impliesCheck_sound hcar.1 he (PromiseCalls.aliasImplications_holds hf.2.2.1 hi),
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
-    KnowledgeExpand.checkIn_sound hfact (KnowledgeExpand.ctxOf_ok (hcov.env he)) (HeapKnowledge.withTypedLinks_holds he hf)⟩
+    KnowledgeExpand.checkIn_sound hfact (KnowledgeExpand.ctxOf_ok (hcov.env he))
+      (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds hcells hf))⟩
 
 theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h facts xs sources v0}
     (ht : BranchTargetOk G C Γ q l facts xs sources) (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h)
@@ -1057,7 +1075,8 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
       (Nat.le_succ n) _ (WExt_refl _),
     PromiseCalls.argFollows_sound hcar.2 (PromiseCalls.aliasSources_holds hf.2.2.1 ha),
     KnowledgeExpand.checkIn_sound hfact (KnowledgeExpand.ctxOf_ok (hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)
-      (HeapKnowledge.aliasCells_holds (HeapKnowledge.observeTyped_holds he hf hq)))) (HeapKnowledge.observeTyped_holds he hf hq)⟩
+      (HeapKnowledge.aliasCells_holds (HeapKnowledge.observeTyped_holds he hf hq))))
+      (HeapKnowledge.observeTyped_holds he (withTypedCells_holds (fun _ => HeapExpressionRules.typedCells_holds he hh) hf) hq)⟩
 
 /-- A context refined by facts its values meet, with a heap meeting the
 world (`PromiseCalls.envOk_refineBy`). -/
@@ -1184,20 +1203,27 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       | bind l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
           (target_state hk ((refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _))
-            (PromiseCalls.edgeImplications_holds hi' hy') (pushed_arguments ha hal) hf)⟩
+            (PromiseCalls.edgeImplications_holds hi' hy') (pushed_arguments ha hal) hf
+            (fun _ => HeapExpressionRules.typedCells_holds (refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh))⟩
       | effect l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
           (target_state hk ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
-            (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+            (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
+            (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+              (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
       | branch y no =>
         have hb := represents_raw hk.1 (n+1) W t hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
             (target_state hk.2.1 ((refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
+              (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
+                (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
         · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
             (target_state hk.2.2 ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
+              (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+                (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
       | branchBind y no =>
         have hb := onlyBoolean_sound hk.1 hA
         rcases hb with rfl | rfl
@@ -1234,7 +1260,8 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
         exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
           (target_state htarget (he'.push hvT)
             (PromiseCalls.edgeImplications_holds (ys := []) hi' (fun y hy => by cases hy))
-            (pushed_arguments ha (fun h => by cases h)) (hfacts v h))⟩
+            (pushed_arguments ha (fun h => by cases h)) (hfacts v h)
+            (fun _ => HeapExpressionRules.typedCells_holds (he.push (admitsAll_sound hT hsc.2)) hh))⟩
     · have hal' : aliased = true → t' = v0 := by
         intro hal'
         cases hal hal'

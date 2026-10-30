@@ -39,6 +39,32 @@ private def promised : List (Failure Nat) :=
 #guard promised.any fun | .expression 0 => true | _ => false
 #guard promised.any fun | .promise 0 [0] [2] => true | _ => false
 
+-- An explicit handler requirement exercises diagnostic entailment independently
+-- of which field facts the source producer proposes. The mapping drops the
+-- thrown value: target slot 0 denotes source slot 1, the record binding.
+private def fieldGraph : NormalGraph Nat where
+  rows
+    | 0 => [.refs [("f", [1])] [] []]
+    | 1 => [.num]
+    | _ => [.top]
+
+private def fieldProgram : Program := [
+  ⟨.var 0, .ret, some ⟨1, some [1]⟩⟩,
+  ⟨.var 0, .ret, none⟩]
+
+private def fieldClaims : List (PointClaim Nat) := [
+  ⟨[[0]], [0]⟩, ⟨[[0]], [0]⟩]
+
+private def fieldRequirements : List (Nat × HeapKnowledge.Knowledge) :=
+  [(1, { cells := [⟨0, ValueSets.ofAtoms [.num], "f"⟩] })]
+
+#guard (produceUsing fieldGraph (finiteInstanceImages fieldGraph) [0, 1, 2] 12
+  (.plain [0]) fieldProgram fieldClaims 0 (inputs := [[0]])
+  (requirements := fieldRequirements)).1.isOk
+
+#guard (diagnoseUsing fieldGraph (finiteInstanceImages fieldGraph) [0, 1, 2] 12
+  fieldProgram fieldClaims fieldRequirements (goal := .plain [0])).isEmpty
+
 -- Projection order and the first duplicate matter to deterministic search.
 -- Repeated destination slots retain each alias while cached lookups avoid
 -- rescanning the mapping inside the quadratic implication projection.

@@ -305,12 +305,24 @@ is then of a location of the object. -/
 def fieldOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => clauseField c fld
 
+/-- The types the clauses `cs` state for the field `fld` of a location: in
+each clause's first invariant operand, and, for a record, in its readonly
+views other than `length` (`clauseField`). -/
+@[nospecialize] def fieldTys (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : List α :=
+  cs.flatMap fun c =>
+    ((clauseBagOperand c).getD []).filterMap (fun p => if p.1 = fld then some p.2 else none) ++
+    (match c with
+      | .refs _ _ vs _ _ _ _ => if fld != lengthKey then vs.filterMap (fun p => if p.1 = fld then some p.2 else none) else []
+      | _ => [])
+
 /-- What such a read finds: the object, its location at `fld`, and that
-location's stored contract, which admits only members of the field's type. -/
-theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+location's stored contract, which admits only members of one of the types the
+clauses state for the field. -/
+theorem fieldOperand_typed [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
     ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
-      lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u := by
+      lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
+      El ∈ fieldTys (expand G Ref) fld := by
   simp only [fieldOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
   have hp : G.plainTy Ref = true := by
@@ -318,30 +330,96 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     exact plain_of_mem_expand (c := c) hc
   obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := hr.2 c hm
-  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B →
+  have inBag : ∀ {El : Ty ι}, (fld, El) ∈ (clauseBagOperand c).getD [] → El ∈ fieldTys (expand G Ref) fld :=
+    fun hmem => List.mem_flatMap.mpr ⟨c, hm, List.mem_append_left _ (List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
+  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B → El ∈ fieldTys (expand G Ref) fld →
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
       ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
-        lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u := by
-    intro B El hmem hbag
+        lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
+        El ∈ fieldTys (expand G Ref) fld := by
+    intro B El hmem hin hbag
     obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
     obtain ⟨flds',l,c',oid',hproj,hfd,hlookup,hagree⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
     cases hproj
-    exact ⟨El, flds, code, oid, l, c', hl, hfd, hlookup, fun j hj W' u hu => (hagree j hj W' u).mp hu⟩
+    exact ⟨El, flds, code, oid, l, c', hl, hfd, hlookup, fun j hj W' u hu => (hagree j hj W' u).mp hu, hin⟩
   cases c with
   | refs a bs vs os ms ks =>
     simp only [clauseField, clauseBagOperand, Bool.or_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq,
       List.any_eq_true, decide_eq_true_eq] at hb
     rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨hlen, ⟨g, El⟩, hmem, rfl⟩
-    · exact ofBag hmem (recT_bag hc.1.1)
+    · exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) (recT_bag hc.1.1)
     · obtain ⟨flds,l,c',oid,hl,hfd,hlookup,himp⟩ :=
         viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
-      exact ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp⟩
+      refine ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp, ?_⟩
+      exact List.mem_flatMap.mpr ⟨_, hm, List.mem_append_right _
+        (by simp only [bne_iff_ne, ne_eq, hlen, not_false_eq_true, if_true]; exact List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
   | callable a bs L S ms =>
     simp only [clauseField, clauseBagOperand, Bool.or_false, List.any_eq_true, decide_eq_true_eq] at hb
     obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
-    exact ofBag hmem hc.1.1.1.1
+    exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) hc.1.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
+
+theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
+      lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u := by
+  obtain ⟨El, flds, code, oid, l, c, h1, h2, h3, h4, -⟩ := fieldOperand_typed hr hv
+  exact ⟨El, flds, code, oid, l, c, h1, h2, h3, h4⟩
+
+/-- The value set every type in `Els` admits only members of, where each is of
+finitely many primitive predicates. -/
+@[nospecialize] def fieldSets (G : NormalGraph ι) : List (Ty ι) → Option ValueSets.ValueSet
+  | [] => some ValueSets.ValueSet.bot
+  | El :: rest => do
+    let R ← HeapKnowledge.atoms G El
+    let V ← fieldSets G rest
+    pure ((ValueSets.ofAtoms R).join V)
+
+theorem fieldSets_mem {G : NormalGraph ι} : ∀ {Els : List (Ty ι)} {V : ValueSets.ValueSet} {El : Ty ι} {n W v},
+    fieldSets G Els = some V → El ∈ Els → meaning G El n W v → V.mem v = true
+  | [], _, _, _, _, _, _, hEl, _ => by cases hEl
+  | E :: rest, V, El, n, W, v, hs, hEl, hm => by
+    simp only [fieldSets, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hs
+    obtain ⟨R, hR, V', hV', rfl⟩ := hs
+    rw [ValueSets.ValueSet.mem_join]
+    rcases List.mem_cons.mp hEl with rfl | hEl
+    · simp [ValueSets.ofAtoms_holds ((HeapKnowledge.atoms_sem hR n W v).mp hm)]
+    · simp [fieldSets_mem hV' hEl hm]
+
+/-- The value set every value stored at `fld` of an object of type `Ref` is
+in, where every alternative of `Ref` states `fld` as a location and every type
+stated for it is of finitely many primitive predicates. -/
+@[nospecialize] def typedFieldSet (G : NormalGraph ι) (Ref : Ty ι) (fld : PropKey) : Option ValueSets.ValueSet :=
+  if fieldOperand (expand G Ref) fld then fieldSets G (fieldTys (expand G Ref) fld) else none
+
+/-- What the types of `Γ` state of the cells `wanted` names, by slot and
+field (`typed-cell`, PROGRAM-TYPING.md, "Facts a type states"): a read of the
+field gives a value of the type its location's contract admits. -/
+@[nospecialize] def typedCells (G : NormalGraph ι) (Γ : List (Ty ι)) (wanted : List (Nat × PropKey)) : Facts :=
+  wanted.filterMap fun (s, fld) => do
+    let Ref ← Γ[s]?
+    let V ← typedFieldSet G Ref fld
+    pure ⟨s, V, fld⟩
+
+/-- A heap meeting the world at a positive level holds what the types state
+of its cells: the location's contract admits only members of a type the
+clause states for the field. -/
+theorem typedCells_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {wanted : List (Nat × PropKey)}
+    {ρ n W h} (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h) :
+    HeapFacts.Holds (typedCells G Γ wanted) ρ h := by
+  intro f hf
+  obtain ⟨⟨s, fld⟩, -, hf⟩ := List.mem_filterMap.mp hf
+  simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hf
+  obtain ⟨Ref, hRef, V, hV, rfl⟩ := hf
+  unfold typedFieldSet at hV
+  split at hV
+  · rename_i hr
+    obtain ⟨El, flds, code, oid, l, c, hl, hfd, hlookup, himp, hEl⟩ := fieldOperand_typed hr (he.2 s Ref hRef)
+    obtain ⟨v, hv, hmm⟩ := hh.2 l c hlookup
+    exact ⟨flds, code, oid, v, hl, by simpa [ReadGave, hfd] using hv,
+      fieldSets_mem hV hEl (himp 0 (by omega) _ v (hmm 0 (by omega)))⟩
+  · cases hV
 
 /-- A read a cell fact answers, of a field the receiver's type states: the
 object has the field's location, so the read link is present, as a typed

@@ -257,12 +257,27 @@ omit [DecidableEq ι] in
 theorem unsatisfiable_reassign (Γ : List (List ι)) :
     unsatisfiable (reassign G η) Γ = unsatisfiable G Γ := rfl
 
+omit [DecidableEq ι] in
+theorem fieldSets_reassign : ∀ (Els : List (List ι)),
+    HeapExpressionRules.fieldSets (reassign G η) Els = HeapExpressionRules.fieldSets G Els
+  | [] => rfl
+  | El :: rest => by
+    simp only [HeapExpressionRules.fieldSets, fieldSets_reassign rest]
+    rfl
+
+theorem withTypedCells_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (m : Mapping)
+    (facts : HeapKnowledge.Knowledge) :
+    withTypedCells (reassign G η) Γ k m facts = withTypedCells G Γ k m facts := by
+  simp only [withTypedCells, HeapExpressionRules.typedCells, HeapExpressionRules.typedFieldSet, expand_reassign,
+    fieldSets_reassign]
+
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
     (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
     (sources : List Nat) :
     checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts xs sources =
       checkTargetUsing G images P C Γ t p facts xs sources := by
-  simp only [checkTargetUsing_eq, checkMapped_reassign, carries_reassign, unsatisfiable_reassign]
+  simp only [checkTargetUsing_eq, checkMapped_reassign, carries_reassign, unsatisfiable_reassign,
+    withTypedCells_reassign]
   rfl
 
 theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι))
@@ -270,7 +285,8 @@ theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι
     (xs : List (PromiseCalls.Implication ι)) (sources : List Nat) :
     checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts xs sources =
       checkBranchTargetUsing G images P C Γ o t p facts xs sources := by
-  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign, unsatisfiable_reassign]
+  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign, unsatisfiable_reassign,
+    withTypedCells_reassign]
   rfl
 
 theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
