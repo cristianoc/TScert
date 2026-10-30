@@ -4728,19 +4728,24 @@ control(async (): Promise<void> => {
 control(async (): Promise<void> => {
   // A guard closure passed to `filter` is claimed at the guard overload's
   // longer promise signature (`offer-promise`), the one the call is checked
-  // at. That row forged without its promise, at a promise the body does not
-  // establish, at a parameter outside the closure's contextual one, or at a
-  // footprint narrower than the top one a promise row's code is checked at:
-  // each refused where evidence is produced and where the honest evidence is
-  // checked.
+  // at, at the footprint its body proposes. That row forged without its
+  // promise, at a promise the body does not establish, at a parameter
+  // outside the closure's contextual one, or, for the closure writing the
+  // receiver, at a footprint keeping values and stores: each refused where
+  // evidence is produced and where the honest evidence is checked.
   const artifacts = run("filter-guard-callback");
   const source = readFileSync(sourceKey(artifacts), "utf8");
-  const at = source.indexOf("(d): d is Declaration => d.kind === \"declaration\")");
-  assert.ok(at >= 0, "the guard closure of `declarations`");
+  const closures = {
+    declarations: "(d): d is Declaration => d.kind === \"declaration\")",
+    overwriting: "(x): x is string => {\n    xs[0] = 0;",
+  } as const;
   type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
-  const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void): string => {
+  const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void,
+    of: keyof typeof closures = "declarations"): string => {
+    const at = source.indexOf(closures[of]);
+    assert.ok(at >= 0, `the guard closure of \`${of}\``);
     const forged = readClaims(artifacts);
-    const fn = must(forged.functions.find(f => f.name === "declarations"), "declarations' claims");
+    const fn = must(forged.functions.find(f => f.name === of), `${of}'s claims`);
     const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
     const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
     assert.ok(typeof label === "number", "the closure's claim is a row");
@@ -4757,8 +4762,10 @@ control(async (): Promise<void> => {
       "forged-filter-guard-promise", "reject: "],
     [forgeLonger("forged-filter-guard-parameter", (longer, claims) => { longer.arguments[0] = [rowOf(claims, "nul")]; }),
       "forged-filter-guard-parameter", "closure signature claim is outside the source annotation"],
-    [forgeLonger("forged-filter-guard-footprint", (longer) => { longer.effect = { ...longer.effect, footprint: { value: "keep", store: "keep" } }; }),
-      "forged-filter-guard-footprint", "reject: "],
+    [forgeLonger("forged-filter-guard-footprint", (longer) => {
+      assert.notDeepEqual(longer.effect.footprint, { value: "keep", store: "keep" }, "the writing closure's honest footprint");
+      longer.effect = { ...longer.effect, footprint: { value: "keep", store: "keep" } };
+    }, "overwriting"), "forged-filter-guard-footprint", "reject: "],
   ] as const;
   for (const [input, name, refusal] of forgeries) {
     const searched = produceWith(artifacts, input, name);
@@ -4766,7 +4773,7 @@ control(async (): Promise<void> => {
     assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
     assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
   }
-  process.stdout.write("filter guard closure: its longer promise signature without the promise, at an unestablished promise, a parameter outside its context and a narrower footprint refused in search and in checking\n");
+  process.stdout.write("filter guard closure: its longer promise signature without the promise, at an unestablished promise, a parameter outside its context and a writing closure's at a footprint keeping values and stores refused in search and in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -4831,6 +4838,47 @@ control(async (): Promise<void> => {
   refusedAt(artifacts, writeClaims(artifacts, name, claims), name,
     "the footprint claimed for 'isDeclaration' is not established by its body");
   process.stdout.write("find guard value: a guard popping the searched array forged as preserving stores refused at its declaration in search\n");
+});
+
+control(async (): Promise<void> => {
+  // A guard closure passed to `find` is claimed at the guard overload's
+  // callback, keeping array stores, by its longer promise signature at the
+  // footprint its body proposes. That row forged at the top footprint, which
+  // the overload's callback does not admit, or at a promised type its body
+  // does not establish: each refused where evidence is produced and where
+  // the honest evidence is checked.
+  const artifacts = run("blocker-compiler-api-find-promise");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const at = source.indexOf("(st): st is ts.ClassDeclaration =>");
+  assert.ok(at >= 0, "the guard closure passed to `find`");
+  type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void): string => {
+    const forged = readClaims(artifacts);
+    const fn = must(forged.functions.find(f => f.name === "use"), "use's claims");
+    const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+    const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+    assert.ok(typeof label === "number", "the closure's claim is a row");
+    const clause = must(forged.types[label], "the closure's row")[0];
+    assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+    const longer = must(clause.arrs.arrows.find(a => a.arguments.length > 1 && a.effect.promise !== null),
+      "the longer promise signature");
+    assert.deepEqual(longer.effect.footprint, { value: "keep", store: "keep" }, "the closure's honest footprint");
+    edit(longer, forged);
+    return writeClaims(artifacts, name, forged);
+  };
+  for (const [input, name] of [
+    [forgeLonger("forged-find-guard-closure-top", (longer) => {
+      longer.effect = { ...longer.effect, footprint: { value: "any", store: "any" } };
+    }), "forged-find-guard-closure-top"],
+    [forgeLonger("forged-find-guard-closure-promise", (longer, claims) => { longer.result = [rowOf(claims, "nul")]; }),
+      "forged-find-guard-closure-promise"],
+  ] as const) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+  }
+  process.stdout.write("find guard closure: its longer promise signature at the top footprint and at an unestablished promise refused in search and in checking\n");
 });
 
 control(async (): Promise<void> => {

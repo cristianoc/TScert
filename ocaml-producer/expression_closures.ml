@@ -341,10 +341,14 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
           (* An offered signature stating the closure's written promise keeps
              it, at the promised type: Lean checks the body's promise at it. *)
+          (* The promise is claimed at the footprint the body proposes, as
+             its plain signature is: Lean establishes it node by node beside
+             the promise goal, and a callback bounding its footprint
+             (`find`'s guard overload, keeping array stores) takes it. *)
           let at_own (s:Semantic.signature) = match guard with
             | Some (stated,promised) when s.call_effect.promise <> None
                 && s.call_effect.promise = stated.promise ->
-              {s with call_effect=stated;result=promised}
+              {s with call_effect={call_effect with promise=stated.promise};result=promised}
             | _ -> {s with call_effect} in
           let calls = call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare (List.map at_own extra)) in

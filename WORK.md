@@ -29,7 +29,7 @@ each item's design and evidence, not its progress.
 | [Investigation: a boolean receiver after joined tag tests](#tag-join-element) | open: cause unknown | `compiler-api-tag-join-element` verifies, and a `switch` on a host family's tag enum reads its discriminant at each test |
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review, on an object no type states the key of (`blocker-in-name-object`) and where a passed `in` test makes the read syntactically eligible on a union with an arm stating no key, at `body` and `type` only on receivers each arm of which states the key or is of the host package (`compiler-api-in-union-read`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
-| [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`); open: `every`'s, and a guard closure's at `find` | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
+| [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`), and a guard closure meets `find`'s by its promise signature at its body's footprint (`blocker-compiler-api-find-promise`); open: `every`'s | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
@@ -276,15 +276,14 @@ and a host object's property may be a getter its family does not state.
 **Guard overloads beyond `filter`'s.** TypeScript's `every<S>` narrows the
 array to `readonly S[]` where it answers `true` at a guard, and `find<S>`
 returns `S | undefined`. Neither is a contract of the native at the top
-footprint a closure's promise signature is checked at
-([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)): a
+footprint ([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)): a
 callback may append untested elements or replace tested ones before `every`
 answers, and `find` passes `undefined` at positions a callback removed. Both
-hold at a callback keeping array stores, which a promise signature can state
-once a promise row's code is checked at a footprint (`effectChecked` checks
-it at the top one alone); a guard read as a value, whose slot or entry
-states its promise signature extended by a rest, meets `find`'s at its own
-footprint ([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)).
+hold at a callback keeping array stores. A guard read as a value, whose
+slot or entry states its promise signature extended by a rest, meets
+`find`'s at its own footprint, and a guard closure by its promise signature
+at the footprint its body proposes, its code checked at both
+([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)).
 
 <a id="conditional-optional-field"></a>
 **A conditional's join past an arm's read.**

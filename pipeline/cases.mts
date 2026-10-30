@@ -313,8 +313,7 @@ export const cases: Case[] = [
     /^reject: TypeScript refuses this code too/), status: "unsupported", phase: "proposal", typescriptErrors: true },
   { ...positive("blocker-compiler-api-field-guard", "A compiler node's field narrowed by a guard is reread at the narrowed type after a `for...of` loop over its own list: a node's fields are stable members, whose read links every step keeps."),
     project: "pipeline/blocker-project" },
-  { ...gap("blocker-compiler-api-find-promise", "The find guard overload needs to expose the promised host node type.", "unsupported", "proposal",
-    /^unsupported: missing field members at \[534,553\)(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-compiler-api-find-promise", "A guard closure passed to `find` is claimed at the guard overload's callback at the footprint its body proposes, keeping array stores, its promise checked there beside the footprint: the result is the promised host node or `undefined`."), project: "pipeline/blocker-project" },
   { ...positive("blocker-compiler-api-node-list-metadata", "A compiler node list's `pos`, read through `typeParameters ?? parameters`: its own member beside its readonly array view."), project: "pipeline/blocker-project" },
   // Search obligations.
   { ...positive("blocker-module-assignment", "An update or a logical assignment of a module cell: the checked access reads it, the value is written at its contract (run under Node)."), project: "pipeline/blocker-project" },
@@ -1961,6 +1960,8 @@ export const cases: Case[] = [
   negative("invalid-filter-guard-promise", "a guard closure passed to `filter` whose body does not establish its promise is refused at its promise signature: `x !== undefined` holds of `null`, which `filter` keeps at `string[]` (run under Node)",
     /source expression obligation at \[\d+,\d+\): evidence search failed: the promised argument is not within the promise at this return/),
   positive("filter-guard-value", "a guard read as a value and passed to `filter` or `find`: its slot's promise signature, extended by a rest of `unknown` it discards, meets the guard overload's callback, so the result holds the promise's type; a function stating no promise meets the plain overload (run under Node)"),
+  { ...negative("invalid-find-guard-closure-shrink", "a guard closure passed to `find` that pops the array `find` searches is offered no guard overload: its footprint is the top one, and `find`'s guard overload (`native-guard-find`) takes a callback keeping array stores, so the result is an element or `undefined`, without the promised field; once the array shrinks, `find` calls the closure at `undefined` (run under Node)",
+    /^unsupported: missing field body at \[\d+,\d+\)(?:\n|$)/), status: "unsupported", phase: "proposal" },
   negative("invalid-find-guard-shrink", "a guard passed by name to `find` that pops the array `find` searches is refused at the argument: its footprint is the top one, and `find`'s guard overload (`native-guard-find`) takes a callback keeping array stores; once the array shrinks, `find` calls the guard at `undefined` (run under Node)",
     /source expression obligation at \[689,702\): evidence search failed: no derivation of its node-typing claim/),
   negative("invalid-filter-guard-value-promise", "a guard passed by name to `filter` whose body does not establish its promise is refused at its return: `x !== undefined` holds of `null`, which `filter` keeps at `string[]` (run under Node)",

@@ -848,14 +848,13 @@ footprint letting everything change, without a fresh result or a footprint on
 a throw, holds of every run (`Closed.top_safe`); any other bound is
 established node by node (`compositionalChecked`), or, without a fresh result,
 by a graph of pure nodes, which keeps the heap a prefix at every step, a raise
-included, for code returning a plain result. A fresh result is established
-node by node whatever the footprint. -/
+included; either holds beside the entry's goal, a promise included. A fresh
+result is established node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   (ProgramCertificates.CheckResult.ofBool !c.row.effect.freshObject).bind fun _ =>
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
-    (ProgramCertificates.CheckResult.ofBool c.row.effect.promise.isNone).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
       (program c.exprs c.conts) C
@@ -870,10 +869,9 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
     (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked G images sums c C = (!c.row.effect.freshObject && (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
-    (c.row.effect.promise.isNone &&
     ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
       compositionalChecked G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
-        (program c.exprs c.conts) C))
+        (program c.exprs c.conts) C)
   )) := by
   cases hfo : c.row.effect.freshObject
   · by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false <;>
@@ -938,26 +936,30 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh hvalues
   have hs := goto_safe hc ht hs' n W heap L .nul he hw hh
-  have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
-      (framePromised c.row.effect (frameOffset c.store) L)) n W heap
-      (.goto c.exprs c.conts c.start L .nul) := by
+  -- The goal the graph is checked at is the signature's result, its
+  -- promise included.
+  have hres : GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)) =
+      c.row.effect.result (meaning (reassign G η) c.row.result)
+        (framePromised c.row.effect (frameOffset c.store) L) := by
     rcases hpr : c.row.effect.promise with _ | (p | p)
     · have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
-      rw [hg] at hs
-      rw [CallEffects.Effect.result_none hpr]
-      exact hs
+      rw [hg, CallEffects.Effect.result_none hpr]
+      rfl
     · have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
         simp [CodeEntry.goal, hpr]
-      rw [hg] at hs
+      rw [hg]
       simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
         CallEffects.TypePromise.param]
-      exact hs
+      rfl
     · have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
         simp [CodeEntry.goal, hpr]
-      rw [hg] at hs
+      rw [hg]
       simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
         CallEffects.TypePromise.param]
-      exact hs
+      rfl
+  have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
+      (framePromised c.row.effect (frameOffset c.store) L)) n W heap
+      (.goto c.exprs c.conts c.start L .nul) := hres ▸ hs
   rw [effectChecked_eq] at heff
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at heff
   obtain ⟨hfo, heff⟩ := heff
@@ -969,13 +971,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       fun hf => (by rw [hfo] at hf; cases hf)⟩
     rw [htop.1]
     exact hp
-  · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Option.isNone_iff_eq_none,
-      Bool.or_eq_true] at heff
-    obtain ⟨hpr, hp⟩ := heff
-    rw [CallEffects.Effect.result_none hpr]
-    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
-    rw [hg] at hs hc
-    rcases hp with hp | hp
+  · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
+    rcases heff with hp | hp
     · simp only [Bool.not_eq_true'] at hp
       have hfresh := hp.1
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp.2
@@ -986,15 +983,16 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
           fun hf => (by rw [hfo] at hf; cases hf)⟩)
         (fun h' hq r _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
-        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues rfl) hs)
+        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues rfl) hsafe)
     · rw [← compositionalChecked_reassign G images sums η, compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
-      have hgraph : checkGraphUsing (sums := sums) (reassign G η) (images.reassign η) (Goal.plain c.row.result)
+      have hgraph : checkGraphUsing (sums := sums) (reassign G η) (images.reassign η) c.goal
           (program c.exprs c.conts) C (admits table) = true := by
         have hchecked := hc
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
         exact hchecked.1
       have hb := goto_bounded hc ht hs' (nodes_of_checked hgraph ht hs' hp.2) hp.1 n W heap L .nul he hw hh
+      rw [hres] at hb
       exact HeapObservations.SafePostExc.weaken
         (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf)⟩)
         (fun h' hq r ho => CallEffects.Effect.within_of_holds (hq ho)) hb

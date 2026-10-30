@@ -2338,9 +2338,8 @@ one $`v\in S`$ held in, and membership of a type is kept by world extension
 (`Adm`'s `mono`, [Types.lean](../lean/Verification/Types/Types.lean)).
 Every kept value is an $`S`$ without the bound $`S\le T`$, which the
 overlay leaves out; at $`S`$ the empty type the result is empty. The
-signature states the callback at the top footprint, the one a closure's
-promise signature is checked at, so the call may change any location; its
-result is fresh. A callback whose promise is about another parameter meets
+signature states the callback at the top footprint, so the call may change
+any location; its result is fresh. A callback whose promise is about another parameter meets
 only the plain signatures, where `filter` keeps `T`. A guard read as a
 value meets the guard signature where its value states its promise
 signature extended by a rest of `unknown`, the actuals past its parameters
@@ -2368,11 +2367,11 @@ returns that very value, which the promise leaves an $`S`$, running no
 client code after the callback's call; where no answer does, `undefined`.
 At any other footprint `find` visits positions a callback removed and
 passes them `undefined`, which a guard TypeScript types at `T` does not
-admit. A closure's promise signature is checked at the top footprint
-alone, so a guard closure passed to `find` meets the plain signatures; a
-guard read as a value meets this one at its own footprint
-(`filter-guard-value`), and one popping the receiver does not
-(`invalid-find-guard-shrink`). `every`'s, `this is readonly S[]`, is not a
+admit. A guard closure meets this signature by its promise signature at
+the footprint its body proposes (`blocker-compiler-api-find-promise`), a
+guard read as a value at its own footprint (`filter-guard-value`), and
+either popping the receiver does not (`invalid-find-guard-closure-shrink`,
+`invalid-find-guard-shrink`). `every`'s, `this is readonly S[]`, is not a
 contract of the native: a callback may append untested elements or
 replace tested ones, so a traversal answering `true` says nothing of the
 receiver it leaves.

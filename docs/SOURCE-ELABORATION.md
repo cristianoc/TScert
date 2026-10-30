@@ -3582,8 +3582,10 @@ return meeting the goal. A guard's or an assertion function's promise
 signature states its footprint beside the promise (`moduleArrow`;
 `guard-footprint`, `invalid-guard-footprint`). A unit qualified by a
 resolution descriptor is refused such a claim. A code entry's signature
-follows the same rule (`GraphCode.effectCheckedResult`), a guard closure
-claiming no footprint. With $`P`$ the unit's graph, $`\Gamma`$ its
+follows the same rule (`GraphCode.effectCheckedResult`): a guard closure's
+promise signature a longer callback offers it states the footprint its body
+proposes beside the promise, its graph checked at both
+(`blocker-compiler-api-find-promise`). With $`P`$ the unit's graph, $`\Gamma`$ its
 inputs and $`B`$ its result,
 
 ```math

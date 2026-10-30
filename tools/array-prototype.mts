@@ -212,8 +212,8 @@ export const overlay: readonly OverlayEntry[] = [
   // passed where the answer is `true`, which the promise leaves an `S`, and
   // type membership survives every write the callbacks after it make; so
   // the result holds `S`s, without the bound `S extends T`. The callback is
-  // at the top footprint, the one a closure's promise signature is checked
-  // at, and so is the call.
+  // at the top footprint, which every promise signature's footprint is
+  // within, and so is the call.
   { name: "filter", from: "ReadonlyArray",
     signature: "filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): S[];",
     stated: [
