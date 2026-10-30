@@ -426,12 +426,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["iterator", "asyncIterator", "hasInstance", "toPrimitive", "toStringTag"].map(
     (member): GlobalEntry => ({ host: contract, global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
       stated: { binders: [], params: [], result: atom("symbol") } })),
-  // `String(v)` converts a primitive, a symbol included, without running
-  // client code; an object's conversion calls its `toString` or `valueOf`,
-  // which may throw or return an object, and then `String` throws.
-  // At a primitive it writes nothing, so it states heap preservation.
-  { host: contract, global: "String", signature: "(value?: any): string;", effect: emptyEffect,
-    admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
+  // `String(v)` called, with no new target (ECMA-262, "String ( value )"),
+  // is `""` of no argument, SymbolDescriptiveString of a symbol, and
+  // ToString of any other value: of a primitive without running client code;
+  // of an object, ToPrimitive first, which calls its `Symbol.toPrimitive`,
+  // or else its `toString` and `valueOf`, client code that may throw or
+  // return an object, and then `String` throws. So the parameter is stated
+  // at the primitives, where the call writes nothing and states heap
+  // preservation. It reads its first argument alone and no receiver, so the
+  // global may be read as a value (`xs.map(String)`): the callable taking a
+  // primitive and any further arguments, which it ignores.
+  { host: contract, global: "String", signature: "(value?: any): string;", value: true, effect: emptyEffect,
+    stated: { binders: [], params: [primitive], rest: atom("unknown"), result: atom("string") } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or

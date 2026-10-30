@@ -2870,6 +2870,14 @@ keeps from running.
   stated at a primitive, defined below: $`(\mathsf{Prim},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{number}`$,
   a value too (`texts.map(Number)`; `number-value`; `invalid-number-value-object`,
   run under Node).
+- `String(v, …)` called with no new target (ECMA-262, "String ( value )") is
+  `""` of no argument, SymbolDescriptiveString of a symbol, and ToString of
+  any other first argument, which runs an object's `Symbol.toPrimitive`,
+  `toString` or `valueOf`; it ignores the rest and reads no receiver. It is
+  stated at a primitive: $`(\mathsf{Prim},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{string}`$,
+  a value too (`xs.map(String)`; `string-value`; `invalid-string-value-object`,
+  run under Node). A global whose entries state no value, such as `BigInt`,
+  is refused as one (`library-global-value-unreviewed`).
 - `parseInt(s, r)` and `Math.ceil(x)` convert a string and numbers, primitives
   no conversion code runs on, and write nothing: as declared, within the empty
   footprint (`library-parse-int`, `library-math-ceil`). No argument of their
