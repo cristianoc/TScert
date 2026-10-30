@@ -34,8 +34,15 @@ def primitivePrototypes : List (Tag × String) :=
   [(.isStr, "[[String.prototype]]"), (.isNum, "[[Number.prototype]]"),
    (.isBigint, "[[BigInt.prototype]]"), (.isBool, "[[Boolean.prototype]]")]
 
+/-- The module value holding `Function.prototype`, at its contract
+`FunctionProto`: a function's `toString` is read from it, the program's
+functions owning none (SOURCE-CONTRACTS.md, "Function.prototype.toString") and
+external code's assumed to own none (DESIGN.md, "Trust surface"). -/
+def functionPrototypeName : String := "[[Function.prototype]]"
+
 /-- Every builtins prototype a unit may read through, whether or not it names it. -/
-def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.map (·.2)
+def prototypeNames : List String :=
+  arrayPrototypeName :: functionPrototypeName :: primitivePrototypes.map (·.2)
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
 view; the prototype as a view at `proto`, `ArrayProto`; and none of `excluded`,

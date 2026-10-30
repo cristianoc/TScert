@@ -1940,6 +1940,29 @@ control(async (): Promise<void> => {
   process.stdout.write("prototype contracts: invented read types and unbound parameters refused in both modes\n");
 });
 control(async (): Promise<void> => {
+  // A function's `toString` is read from `Function.prototype`, whose native
+  // returns a string, at `FunctionProto` as the declarations state it: the
+  // call claimed at a number is refused, and so is it where every signature
+  // the claims propose also returns a number.
+  const artifacts = run("blocker-function-member-read");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  for (const variant of ["call", "signature"] as const) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find((f) => f.name === "runs"), "runs");
+    const call = must(fn.expressions.find((e) => source.slice(e.pos[0], e.pos[1]) === "value.toString()"), "the call");
+    const num = rowOf(claims, "num");
+    call.type = [num];
+    if (variant === "signature")
+      for (const row of claims.types) for (const clause of row)
+        if (typeof clause === "object" && "arrs" in clause) for (const arrow of clause.arrs.arrows) arrow.result = [num];
+    const name = `forged-function-to-string-${variant}`;
+    const forged = writeClaims(artifacts, name, claims);
+    refusedAt(artifacts, forged, name, `source expression obligation at [${call.pos[0]},${call.pos[1]})`);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+  process.stdout.write("function toString: the call and the proposed signatures forged at number refused\n");
+});
+control(async (): Promise<void> => {
   // A class's generic method, a closure the prototype holds, covers the
   // instance type's member up to renaming the member's binders to the
   // closure's: the renamed signatures must still follow from the closure's.

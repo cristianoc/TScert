@@ -332,6 +332,14 @@ let primitive_prototype = function
   | Bigint | BigintLit _ -> Some "tscert/bigint-prototype#BigIntProto#0:0"
   | True | False -> Some "tscert/boolean-prototype#BooleanProto#0:0"
   | _ -> None
+(* `FunctionProto`, the contract of `Function.prototype`, from which a
+   function's `toString` is read: no function owns one
+   (SOURCE-CONTRACTS.md, "Function.prototype.toString"). *)
+let function_prototype = "tscert/function-prototype#FunctionProto#0:0"
+let function_atom = function
+  | Callable | Ctors _ -> true
+  | Shape {calls;elements=None;_} -> calls <> []
+  | _ -> false
 (* The property key a number spells (`ToString`), for integers below 1e21
    and decimals `%g` writes as JavaScript does; none otherwise. *)
 let number_key bits =
@@ -384,6 +392,10 @@ let empty_meet declarations parts =
              (required [] a)) parts) parts
 let rec field_type bounds declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
+      | atom when name = Name "toString" && function_atom atom ->
+        if not (List.exists (fun (d:Source.declaration) -> d.id=function_prototype) declarations) then
+          unsupported "a read of a function's toString where the type TypeScript gives the receiver admits no function: the producer and TypeScript disagree on the receiver";
+        field_type bounds declarations seen (Atoms [Named (function_prototype,[])]) name
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
       (* An array's own field (a regex match's `index`, a node list's
          `pos`); any other key of an array is read from its prototype. *)

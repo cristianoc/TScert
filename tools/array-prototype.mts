@@ -769,6 +769,28 @@ export function primitivePrototype(checker: Checker, at: Node, library: OverlayL
     effect: emptyEffect, receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
 }
 
+/** `FunctionProto`, the contract of `Function.prototype` a function's
+ * `toString` is read from: `toString` alone, at the receiver `Function`.
+ * ECMA-262's `Function.prototype.toString` (20.2.3.5) returns a string for a
+ * callable receiver (its source text, or a `NativeFunction` string), reads no
+ * property and calls no code, and throws a `TypeError` on any other receiver,
+ * an outcome: the empty footprint. A function's lookup of `toString` reaches
+ * it where the function owns no `toString` and no object of its chain before
+ * `Function.prototype` holds one: the program's functions own none
+ * (SOURCE-CONTRACTS.md, "Function.prototype.toString"), and external code's
+ * are assumed to (DESIGN.md, "Trust surface"). */
+const functionOverlay: readonly OverlayEntry[] =
+  [{ name: "toString", from: "Function", signature: "toString(): string;" }];
+const functionProtoIdentity: DeclarationIdentity =
+  { module: "tscert/function-prototype", name: "FunctionProto", span: [0, 0] };
+export const functionPrototypeName = "[[Function.prototype]]";
+
+export function functionPrototype(checker: Checker, at: Node, library: OverlayLibrary,
+    entries: readonly OverlayEntry[] = functionOverlay): TypeDefinition {
+  return prototype(checker, at, library, { identity: functionProtoIdentity, binders: [], entries,
+    effect: emptyEffect, receiver: () => ({ k: "callable", span: [0, 0] }) });
+}
+
 /** The interface declarations `name` resolves to. */
 function interfacesOf(checker: Checker, name: Node): ts.InterfaceDeclaration[] {
   return (checker.getSymbolAtLocation(name)?.declarations ?? []).map(d => d.resolve())

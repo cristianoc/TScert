@@ -20,7 +20,7 @@ import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
-import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
+import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
@@ -343,6 +343,46 @@ function primitivesOf(type: Type): PrimitiveKind[] {
   const flags: Record<PrimitiveKind, number> = { string: TypeFlags.StringLike, number: TypeFlags.NumberLike,
     bigint: TypeFlags.BigIntLike, boolean: TypeFlags.BooleanLike };
   return primitiveKinds.filter(kind => parts.some(part => part.flags & flags[kind]));
+}
+
+/** Whether a type admits a function: a part with call or construct
+ * signatures, or the standard library's `Function` (what `typeof x ===
+ * "function"` leaves of `unknown`), or an intersection with one. */
+function functionLike(checker: Checker, type: Type): boolean {
+  const parts = isUnionType(type) ? type.getTypes() : [type];
+  return parts.some(part => isIntersectionType(part) ? part.getTypes().some(t => functionLike(checker, t))
+    : checker.getSignaturesOfType(part, SignatureKind.Call).length > 0 ||
+      checker.getSignaturesOfType(part, SignatureKind.Construct).length > 0 ||
+      part.getSymbol()?.name === "Function");
+}
+
+/** Whether a node is a member access of the key `name`: `o.name`, or
+ * `o[k]` at a key TypeScript types as that one string literal, as the
+ * parser resolves a computed key. */
+function memberNamed(checker: Checker, node: Node, name: string): boolean {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text === name;
+  if (!ts.isElementAccessExpression(node)) return false;
+  const key = checker.getTypeAtLocation(node.argumentExpression);
+  return !!key && isStringLiteralType(key) && key.value === name;
+}
+
+/** Whether a member access is written: an assignment's or a compound
+ * assignment's target, an update's operand, a destructuring assignment's
+ * target, a `for...in` or `for...of` head, or `delete`'s operand. */
+function writtenMember(access: Node): boolean {
+  let at: Node = access;
+  while (at.parent && (ts.isParenthesizedExpression(at.parent) || ts.isArrayLiteralExpression(at.parent) ||
+      ts.isSpreadElement(at.parent) || ts.isSpreadAssignment(at.parent) ||
+      (ts.isPropertyAssignment(at.parent) && at.parent.initializer === at) ||
+      ts.isObjectLiteralExpression(at.parent))) at = at.parent;
+  const up = at.parent;
+  return !!up && ((ts.isBinaryExpression(up) && up.left === at &&
+      up.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      up.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
+    ((ts.isPrefixUnaryExpression(up) || ts.isPostfixUnaryExpression(up)) &&
+      (up.operator === ts.SyntaxKind.PlusPlusToken || up.operator === ts.SyntaxKind.MinusMinusToken)) ||
+    ts.isDeleteExpression(up) ||
+    ((ts.isForOfStatement(up) || ts.isForInStatement(up)) && up.initializer === at));
 }
 
 /** The identifier at exactly `span`, in TypeScript's tree of the client. */
@@ -2802,6 +2842,11 @@ export function collectDeclarations(file: string, options: {
     const primitiveProtos: TypeDefinition[] = [];
     const primitives = new Map<PrimitiveKind, Span>();
     let stringSplit: Span | undefined;
+    // A function's `toString` is read from `Function.prototype`, at
+    // `FunctionProto`, where TypeScript's type of the receiver admits a
+    // function; the program's functions own no `toString`, so a write of
+    // one on such a receiver is refused.
+    let functionToString: Span | undefined;
     for (const span of options.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
       if (!receiver) throw declarationError(span, "TypeScript member receiver missing");
@@ -2810,6 +2855,12 @@ export function collectDeclarations(file: string, options: {
       for (const kind of kinds)
         if (!primitives.has(kind)) primitives.set(kind, span);
       const member = receiver.parent;
+      if (member && memberNamed(checker, member, "toString") && type && functionLike(checker, type)) {
+        if (writtenMember(member))
+          recover([member.getStart(client), member.end], Error(
+            "a write of `toString` on a function is outside the fragment: the program's functions own no `toString` (SOURCE-CONTRACTS.md, \"Function.prototype.toString\")"));
+        functionToString ??= span;
+      }
       if (kinds.includes("string") && member && ts.isPropertyAccessExpression(member) &&
           member.name.text === "split" && member.parent && ts.isCallExpression(member.parent))
         stringSplit ??= span;
@@ -2845,6 +2896,19 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         recover(at, error);
         continue;
+      }
+    }
+    if (functionToString) {
+      try {
+        const definition = functionPrototype(checker, client, overlayLibrary);
+        primitiveProtos.push(definition);
+        values.push({ binding: { local: functionPrototypeName, imported: functionPrototypeName,
+            specifier: prototypeSpecifier, span: functionToString },
+          declaration: definition.declaration, construct: false, typeParams: [],
+          type: { k: "reference", reference: { name: definition.declaration.name, span: functionToString,
+            arguments: [], target: definition.declaration }, args: [], span: functionToString } });
+      } catch (error) {
+        recover(functionToString, error);
       }
     }
     // A `for...of` over a host iterable other than an array steps the

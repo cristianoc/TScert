@@ -597,7 +597,11 @@ one row gets the call one alternative gets, the member read, then the call. -/
 
 /-- The shapes a member read of `O` dispatches on: each primitive shape among
 `O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
-prototype is the built-ins'). An object shape needs none. -/
+prototype is the built-ins'), and, for `toString`, a function among them,
+read through a fresh object whose prototype is `Function.prototype`: a
+function's lookup of `toString` reaches `Function.prototype`'s, as no
+function owns one and none inherits one from an object before it. An object
+shape needs none. -/
 @[nospecialize] def primitiveArms (scope : List (ScopeBinding Tree)) (K : List (Ty Tree)) (O : Ty Tree)
     (fld : PropKey) : Compiler (List (Tag × (PrimitiveArm Tree))) := do
   let G := SourceTypes.graph (← table)
@@ -607,8 +611,12 @@ prototype is the built-ins'). An object shape needs none. -/
     | .bigint | .bigintLit _ => some .isBigint
     | .bool | .boolLit _ => some .isBool
     | _ => none
+  let functionShape := fld == "toString" && (PositiveRules.expand G O).any fun
+    | .arrs .. | .callable .. | .ctors .. => true
+    | _ => false
   let shapes := SourceTypes.primitivePrototypes.filter fun (tag, _) =>
     (PositiveRules.expand G O).any (shapeOf · == some tag)
+  let shapes := if functionShape then shapes ++ [(.isFun, SourceTypes.functionPrototypeName)] else shapes
   shapes.mapM fun (tag, name) => do
     if tag == .isStr && fld == "length" then return (tag, .length)
     let some (p, .value) := resolve scope name

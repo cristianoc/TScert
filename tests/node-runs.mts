@@ -1519,6 +1519,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-optional-inherited-key: the read finds Object.prototype.toString");
   assert.equal(runExample("invalid-pattern-inherited-key", "typeof destructured({})"), "function",
     "invalid-pattern-inherited-key: the pattern finds Object.prototype.valueOf");
+  // A function owning `toString`: its lookup finds the own one, which runs.
+  assert.equal(runExample("invalid-function-own-to-string", "JSON.stringify([runs(Shadow, \"t\"), state.n])"),
+    '[true,"written"]', "invalid-function-own-to-string: the static toString runs and writes");
+  assert.equal(runExample("invalid-function-own-to-string-assign", "typeof g.toString"), "string",
+    "invalid-function-own-to-string-assign: the function owns the literal's toString");
+  assert.equal(runExample("invalid-function-own-to-string-computed", "runs(f, \"123\")"), true,
+    "invalid-function-own-to-string-computed: the computed key gives the function its own toString, which runs");
+  assert.equal(runExample("blocker-function-member-read", "runs(() => 1, \"() => 1\")"), true,
+    "blocker-function-member-read: Function.prototype.toString gives the source text");
   // A non-null assertion on a read the object lacks the key of.
   assert.equal(runExample("invalid-non-null-index", "wrong({}, 0)"), undefined,
     "invalid-non-null-index: the read is undefined despite the assertion");

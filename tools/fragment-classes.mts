@@ -11,7 +11,7 @@ import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
 import { errorOptions } from "./library-globals.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, fileClasses, messageArgumentName, messageName, optionsArgumentName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, FUNCTION_TO_STRING, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, fileClasses, messageArgumentName, messageName, optionsArgumentName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -565,6 +565,10 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         if (!(ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) ||
             (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name) && !hasInstance))
           return gate.fail(member, unnamedMember(member, true));
+        // A class value is a function, whose `toString` is read from
+        // `Function.prototype` (`FunctionProto`).
+        if (ts.isIdentifier(member.name) && member.name.text === "toString")
+          gate.fail(member, FUNCTION_TO_STRING);
         const binding = staticName(name.text,
           ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name) ? member.name.text : HAS_INSTANCE);
         if (ts.isMethodDeclaration(member)) {

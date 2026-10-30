@@ -2607,6 +2607,64 @@ states the effect its declaration does, which is no footprint
 (`invalid-readonly-set-has-effect`, run under Node), and a loop or a spread
 over one runs the [iterator protocol](SOURCE-ELABORATION.md#the-iterator-protocol).
 
+### Function.prototype.toString
+
+`FunctionProto` is the record of one readonly member, `toString`, read from
+TypeScript's `Function` through the overlay (`functionOverlay`), at the
+receiver `Function` and the empty footprint:
+
+```math
+\mathsf{FunctionProto}=\{\mathsf{toString}:(\mathsf{this}:\mathsf{Function})\Rightarrow_{\emptyset}\mathtt{string}\}
+```
+
+[ECMA-262](REFERENCES.md#ecma-262)'s `Function.prototype.toString` returns
+a string for a receiver with call code (its source text, or a
+`NativeFunction` string) and throws a `TypeError` for any other receiver, an
+outcome; it reads no property and calls no code. A function's lookup of
+`toString` finds it where the function owns no `toString` and no object along
+its prototype chain before `Function.prototype` holds one. The program's
+functions meet this by a restriction of the fragment, which refuses each way
+a function of the program comes to own `toString`:
+
+- a class's static member named `toString`, a method or a field
+  (`invalid-function-own-to-string`, run under Node);
+- a key `toString`, or a spread, in the literal of `Object.assign`'s callable
+  form, the key as the literal's allocation resolves it: a name, a string,
+  or a computed key TypeScript types as that one literal
+  (`invalid-function-own-to-string-assign`,
+  `invalid-function-own-to-string-computed`, both run under Node);
+- a write of `toString` on a receiver TypeScript types as a function, by a
+  member name or at a computed key TypeScript types as `"toString"`
+  (`invalid-function-to-string-write`,
+  `invalid-function-to-string-write-computed`).
+
+A class's static side inherits from its base: a class of the program, which
+the first rule covers, or the standard `Error`, whose constructor owns no
+`toString`; any other base is refused
+([a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error)).
+`Object.defineProperty` and
+`Object.setPrototypeOf` are outside the overlay of library globals. A write
+types only at a record contract (`writeCell`), of which a function is no
+value; `Object.assign` copying onto a parameter's or a local's function is
+refused, as onto an object another reference may hold (observed, not a rule
+of its own). External
+code's functions are assumed to meet the same ([trust surface](DESIGN.md#trust-surface)).
+With both, a member read at `toString` of a value $`x`$ of a function's shape
+reads through a fresh object whose prototype is the slot `[[Function.prototype]]`,
+at $`\mathsf{FunctionProto}`$, as a primitive's member is read through its
+wrapper's prototype:
+
+```math
+\frac{x:F\quad F\ \text{a callable, an arrow set or a class value}}
+     {x.\mathsf{toString}\ \leadsto\ \mathsf{new}\{\mathtt{[[proto]]}:\mathit{FP}\}.\mathsf{toString}}\ \textsf{function-to-string}
+```
+
+A read of `toString` on a union dispatches on each shape, a test `isFun`
+selecting this arm (`primitiveArms`); the call passes $`x`$ as the receiver.
+`blocker-function-member-read` reads it on an `unknown` a `typeof` test found
+a function, and `function-to-string` on a signature type, a class value and a
+union with a string.
+
 ### Native footprints
 
 A native's **footprint** is the closed footprint its signatures state

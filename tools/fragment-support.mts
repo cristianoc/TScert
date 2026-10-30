@@ -100,6 +100,10 @@ export const staticName = (cls: string, member: string): Within<{ value: "any"; 
 
 /** Why an instance member reads none of its class's private static fields. */
 export const INSTANCE_STATIC = "an instance member or constructor reading a private static field of its own class is outside the fragment: it is a binding the class defines after its methods and constructor, whose closures cannot hold it";
+/** The program's functions own no `toString`: a function's `toString` is
+ * read from `Function.prototype` (`FunctionProto`, SOURCE-CONTRACTS.md,
+ * "Function.prototype.toString"). */
+export const FUNCTION_TO_STRING = "a function owning `toString` is outside the fragment: a function's `toString` is read from Function.prototype, whose native runs no code (SOURCE-CONTRACTS.md, \"Function.prototype.toString\")";
 /** Why a static initializer reads its class only through its static fields. */
 export const STATIC_INIT_CLASS = "a static initializer or static block reading its class other than through an earlier static field is outside the fragment: JavaScript runs it on a class value whose later static fields are undefined, where the model allocates the class value holding them after every initializer";
 /** Why a closure a static initializer creates reads no static of its class. */

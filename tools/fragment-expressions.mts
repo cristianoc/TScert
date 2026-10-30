@@ -13,7 +13,7 @@ import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
+import { FUNCTION_TO_STRING, GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -534,33 +534,28 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       const [functionType, bagType] = inferred?.ok ? [gate.settled(inferred.value.functionType, node), gate.settled(inferred.value.bagType, node)]
         : typeArguments?.length === 2 ? [gate.typeOf(typeArguments[0]), gate.typeOf(typeArguments[1])]
         : gate.fail(node, "Object.assign's callable form needs its two type arguments");
-      // These names either replace an intrinsic used by the lowering or
-      // encounter special/non-writable properties on JavaScript functions.
-      for (const property of initial.properties) {
-        if (
-          ts.isPropertyAssignment(property) &&
-          ts.isIdentifier(property.name) &&
-          [
-            "call",
-            "bind",
-            "apply",
-            "name",
-            "length",
-            "caller",
-            "arguments",
-            "__proto__",
-          ].includes(property.name.text)
-        )
-          gate.fail(
-            property,
-            "special function properties are outside callable initialization",
-          );
-      }
+      // The function the call returns owns each key of the literal, as the
+      // literal's allocation resolves it (`objectFields`: a name, a string,
+      // or a computed key TypeScript types as one literal); a spread's keys
+      // are its source's, which its type does not bound.
+      const callee = gate.expr(fn);
+      const bag = gate.expr(initial);
+      if (bag.k !== "alloc")
+        gate.fail(initial, "a spread in Object.assign's callable form is outside the fragment: the function would own its source's keys, `toString` among them, which the source's type does not bound");
+      bag.fields.forEach((field, i) => {
+        const at = initial.properties[i] ?? initial;
+        if (field.name === "toString") gate.fail(at, FUNCTION_TO_STRING);
+        // These names either replace an intrinsic used by the lowering or
+        // encounter special/non-writable properties on JavaScript functions.
+        if (typeof field.name === "string" &&
+            ["call", "bind", "apply", "name", "length", "caller", "arguments", "__proto__"].includes(field.name))
+          gate.fail(at, "special function properties are outside callable initialization");
+      });
       return {
         k: "withValue",
         pos: gate.span(node),
-        fn: gate.expr(fn),
-        initial: gate.expr(initial),
+        fn: callee,
+        initial: bag,
         functionType,
         bagType,
       };
