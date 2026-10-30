@@ -2476,6 +2476,11 @@ Its one scheme offers the intersection:
  ((\mathsf{this}:A(T)\cap V(D),\ \mathtt{undefined})\Rightarrow A(T)).
 ```
 
+The comparator signature is also offered once per closed footprint
+$`\varepsilon`$ whose store change is at most `grow`, at a comparator
+$`C_\varepsilon(T)`$ within $`\varepsilon`$, and states the call within
+`{value: any, store: grow}` ([native footprints](#native-footprints)).
+
 These are audited native contracts, consumed by the existing quantified call
 and subtype rules, not new calculus axioms or a proof of ECMA-262's algorithms.
 Custom array conversion is deliberately outside the admitted language: it adds
@@ -2585,6 +2590,8 @@ where the native is modelled and audited otherwise:
 | Native | Footprint | Argument |
 | --- | --- | --- |
 | `push`, `unshift` | `{value: any, store: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its store and element contents is audited |
+| `sort` at a comparator within `ε`, `ε` one of the four of the stable set | `{value: any, store: grow}` | one signature per such `ε`: proved of the specification steps, the snapshot then the writeback grow the receiver's store over the whole call when the comparator keeps its locations among the entry's and fresh ones, which `ε` states (`sort_grow`); beside the comparator's calls it reads the length and the present elements, data properties, converts the comparator's numeric answer, and changes only its receiver's store and element contents (audited) |
+| `sort` at any other comparator, and at `undefined` | none stated | another comparator is client code that may change any store (`invalid-sort-comparator-shrink`, run under Node); the conversion signature states no footprint |
 | `pop`, `shift`, `reverse`, `splice` | `{value: any, store: keep}` but for the receiver's store (`receiverStore`) | each changes only its receiver's store, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
 | `filter`, `map`, `flatMap`, `flat`, `slice`, `splice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a store no earlier heap held (audited) |
 | `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |

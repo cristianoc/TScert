@@ -231,7 +231,9 @@ every node.
 Each native signature states its closed footprint; the rows, with what is
 proved of each and what is audited, are
 [native footprints](SOURCE-CONTRACTS.md#native-footprints). Within the
-stable set are `push` and `unshift` (`{value: any, store: grow}`), a native
+stable set are `push` and `unshift` (`{value: any, store: grow}`), `sort`
+at a comparator within one of its footprints (`{value: any, store: grow}`,
+`sort_grow`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
 collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse`, `splice` and every native stated

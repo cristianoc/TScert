@@ -74,7 +74,7 @@ let declaration_footprint declarations values names (claim:function_claim) =
             claim.expressions with
     | [] -> None
     | types -> List.fold_left (fun acc t -> match acc,Type_queries.declared_head declarations [] t with
-      | Some effects,(Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)])
+      | Some effects,(Atoms [Shape {calls;_}] | Atoms [Ctors (calls,_)])
         when calls <> [] && List.for_all applicable calls ->
         Some (effects @ List.map (fun (s:signature) -> s.call_effect) calls)
       | _ -> None) (Some []) types in

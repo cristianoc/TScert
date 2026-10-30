@@ -753,6 +753,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "exceptional-footprint-fresh: the handler pushes onto the fresh store");
   assert.equal(runExample("invalid-exceptional-handler-fact", `wrong({ v: "x" })`), undefined,
     "invalid-exceptional-handler-fact: the handler reads the field the throwing call cleared");
+  assert.equal(runExample("invalid-sort-comparator-shrink", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
+    "invalid-sort-comparator-shrink: the comparator's pop of the mapped array leaves a hole");
+  assert.equal(runExample("blocker-fresh-sort-effect", "(r => r.length === 3 && 2 in r && r[2])(dense([1, -2, 3]))"),
+    3, "blocker-fresh-sort-effect: sorting the mapped array in place keeps the result dense");
   assert.equal(runExample("invalid-exceptional-handler-mutation", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
     "invalid-exceptional-handler-mutation: the callee's pop before its throw leaves a hole");
   assert.equal(runExample("json-stringify-recursive", `JSON.stringify(serialized([{ a: { b: [] } }, 1]))`), '["{\\"a\\":{\\"b\\":[]}}","1"]',

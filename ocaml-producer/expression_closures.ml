@@ -269,7 +269,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let callable (callee:expr) =
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)]
+          | Atoms [Shape {calls;_}] | Atoms [Ctors (calls,_)]
             when calls <> [] && List.for_all (fun (s:signature) -> s.quantified=[] && s.rest_pack=None) calls ->
             Some (List.map (fun (s:signature) -> s.call_effect) calls)
           | _ -> None)

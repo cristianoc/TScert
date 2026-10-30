@@ -122,6 +122,10 @@ const guarded: TypeTerm = { k: "binder", name: "S", span: at };
 /** A destructive member's: within `{value: any, store: keep}` but for its
  * receiver's store, which it may change arbitrarily. */
 const receiverStoreEffect: CallEffect = { ...footprintEffect({ value: "any", store: "keep" }), receiverStore: true };
+/** `sort`'s at a comparator whose store changes are at most `grow`: its
+ * writeback grows the receiver's store over the whole call (`sort_grow`) and
+ * changes element contents. */
+const sortGrowEffect: CallEffect = footprintEffect({ value: "any", store: "grow" });
 /** The closed footprints that keep an array's dense prefixes: those whose
  * change to array stores is at most `grow` (`stableDenseClosed`), smallest
  * first. */
@@ -285,7 +289,20 @@ export const overlay: readonly OverlayEntry[] = [
     // These are independent call contracts, not a restriction on every T.
     // An explicit comparator avoids element coercion. Omitted/undefined
     // comparison instead requires the recursive standard-conversion view.
+    // Beside its comparator's calls, `sort` reads the length and the present
+    // elements, data properties, calls the comparator only on the values it
+    // snapshot, converts its numeric answer, and writes back to its own
+    // receiver: `Set` of each index below the snapshot's count, then `Delete`
+    // of each later one, changing only the receiver's store and element
+    // contents. At a comparator whose store changes are at most `grow`, the
+    // receiver's store changes by `grow` over the whole call (`sort_grow`),
+    // so the call is within `{value: any, store: grow}`: a signature per
+    // such footprint of the comparator. At any other it states no footprint.
     stated: [
+      ...stableForDensity.map((footprint) => ({
+        params: [{ k: "function", effect: footprintEffect(footprint), receiver: null, params: [element, element],
+          rest: null, result: atomOf("number"), span: at } satisfies TypeTerm],
+        result: arrayOf(element, false), effect: sortGrowEffect })),
       { params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
         result: { k: "array", presence: "readable", readonly: false, element, span: at } },
