@@ -2045,13 +2045,14 @@ export function collectDeclarations(file: string, options: {
         // A constant initialized by a literal naming nothing states its type
         // by that literal (SOURCE-CONTRACTS.md, "Types stated by
         // annotations"): a primitive literal its literal type, an object
-        // literal of such the record TypeScript infers. An array literal or
-        // one `as const` is no type the reader states yet.
+        // literal of such the record TypeScript infers, an array literal of
+        // such the array TypeScript infers. One `as const` is no type the
+        // reader states yet.
         if (constant && !node.type && node.initializer && literal(node.initializer)) {
           const type = checker.getTypeAtLocation(node.name);
-          const term = type ? inferredTerm(checker, type, span) : null;
+          const term = type ? inferredTerm(checker, type, span, 0, true) : null;
           if (!term)
-            throw Error(`a declared value must be an annotated constant, function or class, or a constant initialized by a primitive literal or an object literal of such: ${what}`);
+            throw Error(`a declared value must be an annotated constant, function or class, or a constant initialized by a primitive literal or an object or array literal of such: ${what}`);
           clean(node, `${idOf(source)}#${node.name.text}`);
           return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
             typeParams: [], type: term };

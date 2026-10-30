@@ -323,11 +323,16 @@ export function call(n: number): number {
   return n + 1;
 }
 /** Constants stated by their literals; the cases
- * literal-constant-value-import and literal-array-constant-value-import read
- * them. */
+ * literal-constant-value-import, literal-array-constant-value-import,
+ * invalid-literal-array-constant-value-import and
+ * literal-const-array-constant-value-import read them. */
 export const greeting = "hello";
 export const origin = { x: 0, y: -1, label: "o" };
 export const offsets = [1, 2];
+export const points = [{ x: 1, label: "a" }, { x: 2, label: "b" }];
+export const rows = [[1], [2, -3]];
+export const mixed = [1, "one", null];
+export const pinned = [1, 2] as const;
 // Constants holding function literals, each stating its type by the
 // literal's parameter and result annotations; one states no result.
 export const halve = (x: number): number => x / 2;

@@ -505,13 +505,24 @@ function underConstAssertion(node: Node): boolean {
 /** The type TypeScript infers for an object literal, as the term that states
  * it: its properties, each a writable field (an object literal's property is
  * one) of a union of literals and primitives or of such a record in turn, and
- * the index signatures a spread copied into it. Null for anything else: a
+ * the index signatures a spread copied into it. With `arrays`, where every
+ * array type within comes from an array literal, also the array TypeScript
+ * infers for one, `T[]` as its annotation reads. Null for anything else: a
  * method, a symbol-keyed or `const`-asserted property, a property a spread
- * copied from a declared type, an array, a function. */
-export function inferredTerm(checker: Checker, type: Type, span: Span, depth: number = 0): TypeTerm | null {
+ * copied from a declared type, a tuple, a function. */
+export function inferredTerm(checker: Checker, type: Type, span: Span, depth: number = 0,
+    arrays: boolean = false): TypeTerm | null {
   const literals = literalUnion(type, span);
   if (literals) return literals;
-  if (depth > 8 || !(type.flags & TypeFlags.Object) ||
+  if (depth > 8) return null;
+  // An array literal's type is `Array<T>`, `T` the union of its elements'
+  // widened types; one `as const` is a readonly tuple, not read here.
+  if (arrays && checker.isArrayType(type) && isTypeReference(type) && type.getSymbol()?.name === "Array") {
+    const [element, ...more] = checker.getTypeArguments(type);
+    const term = element && !more.length ? inferredTerm(checker, element, span, depth + 1, arrays) : null;
+    return term ? { k: "array", presence: "readable", readonly: false, element: term, span } : null;
+  }
+  if (!(type.flags & TypeFlags.Object) ||
       checker.getSignaturesOfType(type, SignatureKind.Call).length ||
       checker.getSignaturesOfType(type, SignatureKind.Construct).length) return null;
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
@@ -521,7 +532,7 @@ export function inferredTerm(checker: Checker, type: Type, span: Span, depth: nu
         !ts.isIdentifier(declaration.name) || declaration.name.text !== property.name ||
         (property.flags & SymbolFlags.Optional) !== 0 || underConstAssertion(declaration)) return null;
     const value = checker.getTypeOfSymbol(property);
-    const term = value ? inferredTerm(checker, value, span, depth + 1) : null;
+    const term = value ? inferredTerm(checker, value, span, depth + 1, arrays) : null;
     if (!term) return null;
     fields.push({ name: property.name, optional: false, readonly: false, type: term, span });
   }
@@ -529,7 +540,7 @@ export function inferredTerm(checker: Checker, type: Type, span: Span, depth: nu
   let numberIndex: { readonly: boolean; value: TypeTerm; span: Span } | null = null;
   let symbolIndex: { readonly: boolean; value: TypeTerm; span: Span } | null = null;
   for (const info of checker.getIndexInfosOfType(type)) {
-    const value = inferredTerm(checker, info.valueType, span, depth + 1);
+    const value = inferredTerm(checker, info.valueType, span, depth + 1, arrays);
     if (!value) return null;
     const index = { readonly: info.isReadonly, value, span };
     const key = info.keyType.flags;

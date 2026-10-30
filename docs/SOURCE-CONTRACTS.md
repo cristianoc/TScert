@@ -1837,6 +1837,20 @@ from the checker (`inferredTerm`):
      {⟦\mathtt{typeof}\ x⟧=\{\overline{k_i\colon⟦t_i⟧};\ \overline{[\theta_j]\colon⟦u_j⟧}\}}\ \textsf{typeof-inferred}
 ```
 
+An imported constant initialized by a literal naming nothing is read by the
+same reading, where every array type within comes from an array literal and
+is read too: an array literal's type is `Array<t>`, $`t`$ the union of its
+elements' widened types, read as the annotation `t[]` reads, writable and of
+readable presence (`literal-array-constant-value-import`,
+`invalid-literal-array-constant-value-import`). A literal `as const`, a
+readonly tuple or record of literal types, is refused
+(`literal-const-array-constant-value-import`):
+
+```math
+\frac{\mathtt{const}\ x=e\ \text{imported},\ e\ \text{a literal naming nothing}\quad \mathit{ts}(x)=\mathtt{Array}\langle t\rangle\ \text{from an array literal of}\ e\quad ⟦t⟧\ \text{inferred}}
+     {⟦x⟧=⟦t⟧\mathtt{[]}}\ \textsf{import-inferred-array}
+```
+
 A conditional type is read through an alias distributing over a parameter,
 `type Extract<T, U> = T extends U ? T : never`, as `Extract`, `Exclude` and a
 user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
