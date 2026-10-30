@@ -11,9 +11,9 @@ import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, 
 import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
-import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
+import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -1470,7 +1470,7 @@ export function hasInstanceClass(this: Gate, right: Expression): Within<{ value:
   return gate.hasInstanceAlong(ts.isIdentifier(right) ? right.text : undefined) !== null;
 }
 
-/** The class, of those the file declares at its top level, along `name`'s
+/** The class, of those the file declares, along `name`'s
  * chain of bases whose static `[Symbol.hasInstance]` method `instanceof`
  * of `name` calls: the nearest declaring one, which a derived class
  * inherits through its constructor's prototype chain. Syntactic up to the
@@ -1478,8 +1478,8 @@ export function hasInstanceClass(this: Gate, right: Expression): Within<{ value:
 export function hasInstanceAlong(this: Gate, name: string | undefined): Within<{ value: "any"; store: "grow" }, { cls: string; member: ts.MethodDeclaration } | null> {
   const gate: Gate = this;
   const classes = new Map<string, ClassDeclaration>();
-  for (const s of gate.file.statements)
-    if (ts.isClassDeclaration(s) && s.name) classes.set(s.name.text, s);
+  for (const s of fileClasses(gate.file))
+    if (s.name) classes.set(s.name.text, s);
   const seen = new Set<string>();
   while (name && !seen.has(name)) {
     seen.add(name);
@@ -1593,7 +1593,24 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
       return { k: "instanceTest", pos: gate.span(node), e, proto, key: classKey(proto.name) };
     }
     if (!cls)
-      gate.fail(node, "`instanceof` whose right operand is neither a class declared at the file's top level nor an import of a class declaration another module checks: nothing says which prototype a constructor from elsewhere gives its instances");
+      gate.fail(node, "`instanceof` whose right operand is neither a class the file declares nor an import of a class declaration another module checks: nothing says which prototype a constructor from elsewhere gives its instances");
+    // A class a block declares has a prototype object per evaluation of its
+    // block, each holding the class's one key: the walk for this
+    // evaluation's prototype, `%OrdinaryHasInstance%(e, p)`, answers the
+    // test, and finding the key is what its `true` implies. A name operand
+    // is walked, then tested for the key, which narrows it; any other is
+    // evaluated once, by the walk (SOURCE-ELABORATION.md, "A class declared
+    // in a block").
+    if (gate.localClasses.has(cls)) {
+      const keyword = node.operatorToken.getStart(gate.file);
+      const keywordAt: Span = [keyword, node.operatorToken.end];
+      const proto = (): Expr => ({ k: "id", pos: gate.span(node.right), name: prototypeName(cls) });
+      const walk = (operand: Expr): Expr => gate.intrinsic(ordinaryHasInstanceName, [keyword, node.end], keywordAt, [operand, proto()]);
+      if (!ts.isIdentifier(node.left)) return { ...walk(gate.expr(node.left)), pos: gate.span(node) };
+      const test: Expr = { k: "instanceTest", pos: [node.getStart(gate.file), node.operatorToken.end],
+        e: gate.expr(node.left), proto: proto(), key: classKey(cls) };
+      return { k: "bin", pos: gate.span(node), op: "&&", l: walk(gate.expr(node.left)), r: test };
+    }
     return { k: "instanceTest", pos: gate.span(node), e: gate.expr(node.left),
       proto: { k: "id", pos: gate.span(node.right), name: gate.ownClass(node.right) ?? prototypeName(cls) },
       key: classKey(cls) };

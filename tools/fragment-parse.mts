@@ -43,7 +43,7 @@ import { collectDeclarations, expressionAt, libraryArguments, libraryTerm, decla
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
-  throwUninitializedName, objectProtoKeys, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
+  throwUninitializedName, ordinaryHasInstanceName, objectProtoKeys, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement, callTarget } from "./fragment-support.mts";
@@ -233,9 +233,11 @@ export class Gate {
   /** `X.m` reads of a static member a base class of `X` declares
    * (`inheritedStatic`), by span. */
   readonly inheritedStatics: Set<string> = new Set();
-  /** `instanceof` right operands TypeScript binds to a class declared at the
-   * file's top level, by span: the class. */
+  /** `instanceof` right operands TypeScript binds to a class the file
+   * declares, at its top level or in a block, by span: the class. */
   readonly classTests: Map<string, string> = new Map();
+  /** The names of the classes the file's blocks declare. */
+  readonly localClasses: Set<string> = new Set();
   /** `instanceof` right operands whose type TypeScript gives states
    * `[Symbol.hasInstance]`, by span. */
   readonly hookTests: Set<string> = new Set();
@@ -546,6 +548,7 @@ export class Gate {
   enumRead: typeof classes.enumRead = classes.enumRead;
 
   classStmt: typeof classes.classStmt = classes.classStmt;
+  localClass: typeof classes.localClass = classes.localClass;
 
   classBody: typeof classes.classBody = classes.classBody;
 
@@ -1470,6 +1473,18 @@ function lowerFile(file: string, carriesContext: boolean,
         `top-level statement outside the fragment (${ts.SyntaxKind[s.kind]})`,
       );
   }
+  // A class declared in a block declares its instance type as a top-level
+  // one does; its value is lowered where it is written (`classStmt`), once
+  // per evaluation of its block (SOURCE-ELABORATION.md, "A class declared
+  // in a block").
+  const findLocalClasses = (node: Node): void => {
+    if (ts.isClassDeclaration(node) && node.parent && !ts.isSourceFile(node.parent)) {
+      classNodes.push(node);
+      if (node.name) gate.localClasses.add(node.name.text);
+    }
+    node.forEachChild(findLocalClasses);
+  };
+  if (!carriesContext) findLocalClasses(source);
   // Every module body is strict, including one whose only module syntax is a
   // type-only import. This decides the receiver rule for nested ordinary
   // functions when imported declarations become certifiable.
@@ -1679,6 +1694,9 @@ function lowerFile(file: string, carriesContext: boolean,
     if (ts.isVariableStatement(node) && node.parent && ts.isSourceFile(node.parent) &&
         node.declarationList.flags & ts.NodeFlags.Let) add(throwUninitializedName);
     if (ts.isForOfStatement(node)) add(iterateName);
+    // `instanceof` of a class a block declares, by spelling here.
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+        ts.isIdentifier(node.right) && gate.localClasses.has(node.right.text)) add(ordinaryHasInstanceName);
     if (ts.isForInStatement(node))
       add(...(forInEntryReads(node).length ? [iterateForInName] : [forInName, iterateName]));
     if (ts.isFunctionLikeDeclaration(node) &&

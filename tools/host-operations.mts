@@ -20,7 +20,7 @@ import {
   iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSetName, iterateStringName,
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName,
-  importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
+  ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
 } from "./intrinsics.mts";
 
 /** The key capability for an open read, independent of the receiver's
@@ -138,6 +138,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [instanceOfErrorName]: transparent("a prototype chain walk for Error.prototype, which no host prototype is"),
   [instanceOfMapName]: transparent("a prototype chain walk for Map.prototype, which no host prototype is"),
   [instanceOfSetName]: transparent("a prototype chain walk for Set.prototype, which no host prototype is"),
+  [ordinaryHasInstanceName]: transparent("a prototype chain walk for a class's prototype, which no host prototype is; no proxy on the chain (DESIGN.md's no-proxy row)"),
   [ownKeysName]: obligated("the object", "runs its [[OwnPropertyKeys]], code of a host exotic object"),
   [prototypeIsObjectName]: obligated("the object", "runs its [[GetPrototypeOf]], code of a host exotic object"),
   [symbolForName]: value, [symbolKeyForName]: value,

@@ -1769,6 +1769,8 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
     };
   }
 
+  if (ts.isClassDeclaration(node)) return gate.classStmt(node);
+
   gate.fail(
     node,
     `statement outside the fragment (${ts.SyntaxKind[node.kind]})`,

@@ -363,11 +363,16 @@ e\ \mathtt{instanceof}\ C\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\ \mathsf{let}\
 ```
 
 Any operand is admitted: $`\mathsf{hasKey}`$ answers `false` on a primitive,
-as `instanceof` does (it throws only on its right operand). A tested
+as `instanceof` does (it throws only on its right operand). The key test stands for JavaScript's lookup of `C[Symbol.hasInstance]`,
+which finds the standard method, and its walk of `C.prototype` along the
+operand's chain: external code never changes a program class's
+`instanceof` behaviour, an owner-approved row of the
+[trust surface](DESIGN.md#trust-surface). A tested
 immutable variable is refined as by every tag test ([guards](#guards)).
 A class another module declares, imported by name, is tested alike, the
 import binding read in place of the prototype binding
-([imported classes](SOURCE-CONTRACTS.md#imported-classes-and-instanceof)).
+([imported classes](SOURCE-CONTRACTS.md#imported-classes-and-instanceof)). A class a block declares is tested at its evaluation's prototype
+([a class declared in a block](#a-class-declared-in-a-block)).
 
 A class whose chain of bases, classes of the file, holds a static method
 keyed by the built-in `Symbol.hasInstance` (TypeScript binds the key to the
@@ -955,8 +960,8 @@ leaves the shape, and the arm reads anew.
 ## Class forms
 
 A class declaration's reading is [classes](SOURCE-CONTRACTS.md#classes);
-the forms below lower a derived class, a class extending `Error`, and
-class members.
+the forms below lower a derived class, a class extending `Error`, a class
+declared in a block, and class members.
 
 ### Derived classes
 
@@ -1242,6 +1247,85 @@ The pipeline cases `error-subclass` and `error-subclass-methods` (run under
 Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
 constructed instance owning `message` or holding `stack` are refused in
 search and check (`pipeline/test.mts`).
+
+### A class declared in a block
+
+A class statement in a block (a function's body, a block statement, a
+loop's body) is the same lowering as a top-level one, run where it is
+written: each evaluation of the statement binds the class's methods, its
+prototype object and its constructor anew, as JavaScript creates a new class
+each time, so its methods and constructor close over that evaluation's
+bindings. Its instance type is read as a top-level class's, from its
+declaration under its name ([classes](SOURCE-CONTRACTS.md#classes)), the
+prototype key $`\kappa_D`$ included: every evaluation's prototype holds the
+same key.
+
+`instanceof` compares prototypes by identity: `x instanceof D` is `true`
+only where the prototype of the evaluation that `D` reads at the test is on
+`x`'s chain, and `false` for an instance of an earlier evaluation of the
+declaration, which holds $`\kappa_D`$ too. The test is the host's
+OrdinaryHasInstance walk at that prototype, a Boolean
+(`%OrdinaryHasInstance%`, `intrinsics.mts`); for a name operand its `true`
+is followed by the key test, which it implies and which narrows the name:
+
+```math
+x\ \mathtt{instanceof}\ D\;\equiv\;\mathsf{\%OrdinaryHasInstance\%}(x,\ D.\texttt{[[prototype]]})\ \mathbin{\&\&}\ \mathsf{let}\ p=D.\texttt{[[prototype]]}\ \mathsf{in}\ \mathsf{hasKey}(\kappa_D)(x)
+```
+
+$`\mathsf{\%OrdinaryHasInstance\%}(v, p)`$, at `(unknown, unknown) =>
+boolean` with the empty footprint, compares each object of $`v`$'s chain
+with $`p`$, each step a `[[GetPrototypeOf]]`. Its empty footprint is
+conditional on the [trust surface](DESIGN.md#trust-surface)'s row that no
+object a program holds, nor any on its chain, is a proxy: a proxy's
+`getPrototypeOf` trap runs code at the walk (`local-class`, run under Node).
+JavaScript's `instanceof` first looks up `D[Symbol.hasInstance]` and calls
+it; the walk stands for the standard method `Function.prototype` holds,
+which the boundary below keeps the lookup finding. Its `true` means $`p`$, which owns $`\kappa_D`$, is on
+the chain, so the key test then holds; its `false` narrows nothing. Any
+other operand is evaluated once, by the walk alone, and the test narrows
+nothing.
+
+The restrictions keep the class's value its block's and its type its
+declaration's (`localClass` in `fragment-classes.mts`), each refused at the
+construct:
+
+- the block is a block statement or a body, which runs from its start; a
+  `case` clause's binding is the clause list's, which control may enter past
+  the declaration (`invalid-local-class-case`);
+- the class has no static member (`invalid-local-class-static`) and no type
+  parameter, and no enclosing declaration has one, so its instance type
+  closes over no binder (`invalid-local-class-generic`);
+- its name is spelled nowhere outside its block, other than as a member
+  name, and declares nothing else in the file, so every reference by that
+  spelling is to it (`invalid-local-class-name`);
+- no value read of it may run before the class statement: a read lies after
+  the statement in its block or in code created there; a closure created
+  before it, a function declaration of the block
+  (created at the block's start) or any earlier read is refused, where
+  JavaScript throws on the uninitialized binding
+  (`invalid-local-class-early`, run under Node);
+- the class value goes to no code: its name is read only as `new`'s callee,
+  as `instanceof`'s right operand, or as the base of another class's
+  `extends`, so no code is given the class value to define its
+  `[Symbol.hasInstance]`, a getter for it, or another prototype chain
+  (`invalid-local-class-escape`, run under Node: a hook a callback defines
+  answers `true` of `0`). External code reaching the class value through an
+  instance's `constructor` is covered by the owner-approved
+  [trust surface](DESIGN.md#trust-surface) row that external code never
+  changes a program class's `instanceof` behaviour, as for a top-level class;
+- its members do not read its name (`invalid-local-class-self`): JavaScript
+  gives a class an inner binding of its name, which the lowering does not
+  bind per evaluation; and it declares no private name, which is admitted
+  only in a top-level class;
+- its base is `Error` or a class declared before it in its own or an
+  enclosing block, checked by the base's declaration: a top-level base is
+  refused (`invalid-local-class-top-base`), since a class in a function body
+  may be lowered before the top-level class it names.
+
+The pipeline cases `local-class` (run under Node: an instance of an earlier
+call's or loop iteration's class is no instance of a later one's, and a call
+operand is evaluated once) and `blocker-local-class`
+hold the form.
 
 ### Class members
 

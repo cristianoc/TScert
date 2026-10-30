@@ -102,6 +102,17 @@ export const STATIC_INIT_CLASS = "a static initializer or static block reading i
 /** Why a closure a static initializer creates reads no static of its class. */
 export const STATIC_INIT_CLOSURE = "a closure created by a static initializer or static block reading a static field of its class is outside the fragment: it may run after the field changes, and the class value does not exist yet where it is created";
 
+/** The class declarations of a file, its top level's and its blocks'. */
+export function fileClasses(file: SourceFile): Within<{ value: "any"; store: "grow" }, ClassDeclaration[]> {
+  const found: ClassDeclaration[] = [];
+  const visit = (n: Node): void => {
+    if (ts.isClassDeclaration(n)) found.push(n);
+    n.forEachChild(visit);
+  };
+  visit(file);
+  return found;
+}
+
 /** Whether class `cls`, declared at the file's top level, declares a static
  * field named `name` by a property name: an own data property of its class
  * value. */

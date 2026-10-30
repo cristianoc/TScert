@@ -125,6 +125,11 @@ export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
 export const symbolForName = "%SymbolFor%";
 export const symbolKeyForName = "%SymbolKeyFor%";
+/** `e instanceof C` of a class `C` a block declares: whether the prototype
+ * object this evaluation of the declaration allocated is on `e`'s prototype
+ * chain, a Boolean that states nothing of `e` (SOURCE-ELABORATION.md, "A
+ * class declared in a block"). */
+export const ordinaryHasInstanceName = "%OrdinaryHasInstance%";
 /** `e instanceof Error`: whether `Error.prototype` is on `e`'s prototype
  * chain, a Boolean that states nothing of `e`. */
 export const instanceOfErrorName = "%InstanceOf:Error%";
@@ -478,6 +483,12 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([either(atom("string"), atom("undefined"))], atom("unknown")) }),
     [instanceOfErrorName]: () => ({ typeParams: [],
       type: { ...fn([atom("unknown")], atom("boolean")), effect: emptyEffect } }),
+    // OrdinaryHasInstance compares each object of the operand's chain with
+    // the prototype by identity, each step a [[GetPrototypeOf]]: it runs no
+    // code and writes nothing on the condition of the trust surface's
+    // no-proxy row (DESIGN.md), which a proxy's trap would break.
+    [ordinaryHasInstanceName]: () => ({ typeParams: [],
+      type: { ...fn([atom("unknown"), atom("unknown")], atom("boolean")), effect: emptyEffect } }),
     [instanceOfMapName]: () => ({ typeParams: [],
       type: instanceOfCollection(view("Map", [atom("unknown"), atom("unknown")])) }),
     [instanceOfSetName]: () => ({ typeParams: [], type: instanceOfCollection(view("Set", [atom("unknown")])) }),

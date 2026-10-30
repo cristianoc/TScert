@@ -377,6 +377,18 @@ function computedAt(file: SourceFile, span: Span): TypeNode | null {
   return visit(file);
 }
 
+/** The class declaration a block of `client` holds at `span`. */
+function localClassAt(client: SourceFile, span: Span): ts.ClassDeclaration | undefined {
+  let found: ts.ClassDeclaration | undefined;
+  const visit = (node: Node): void => {
+    if (found || node.end < span[0] || node.pos > span[1]) return;
+    if (ts.isClassDeclaration(node) && node.getStart(client) === span[0] && node.end === span[1]) found = node;
+    else node.forEachChild(visit);
+  };
+  client.forEachChild(visit);
+  return found;
+}
+
 /** The client's named imports: each must name exactly one declaration. */
 /** A namespace member the parser found (`namespace-members.mts`): its
  * binding, the export it names, and its occurrences, each by the span of the
@@ -2563,9 +2575,11 @@ export function collectDeclarations(file: string, options: {
     }
     let resolutionContextAt: Span | undefined;
     for (const span of options.locals ?? []) {
+      // A class a block declares is a root as a top-level one is (the
+      // parser's local classes).
       const declaration = client.statements.find(statement =>
         isTypeDeclaration(statement) &&
-        statement.getStart(client) === span[0] && statement.end === span[1]);
+        statement.getStart(client) === span[0] && statement.end === span[1]) ?? localClassAt(client, span);
       if (!declaration || !isTypeDeclaration(declaration) || !declaration.name)
         throw declarationError(span, "TypeScript local declaration missing");
       try {
@@ -3425,7 +3439,7 @@ export function collectDeclarations(file: string, options: {
       const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
       const [owner] = owners;
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
-          owner.parent === client && owner.name.text === name.text)
+          owner.getSourceFile() === client && owner.name.text === name.text)
         options.classTest?.(span, owner.name.text);
     }
     // Whether `file` uses the class `owner` declares as a value other than

@@ -11,7 +11,7 @@ import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
 import { errorOptions } from "./library-globals.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, optionsArgumentName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, fileClasses, messageArgumentName, messageName, optionsArgumentName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, propertyKeyText, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -209,10 +209,71 @@ export function enumRead(this: Gate, node: Expression): Within<{ value: "any"; s
   return null;
 }
 
+/** The restrictions on a class a block declares (SOURCE-ELABORATION.md, "A
+ * class declared in a block"): its value is the block's, created each time
+ * the block runs, and its instance type is read as a top-level class's,
+ * under its name. So the block is a plain block, which runs from its start;
+ * the class has no static member and no type parameter, and no enclosing
+ * declaration has one, so its type is closed; its name is spelled nowhere
+ * outside its block and declares nothing else in the file, so every
+ * reference TypeScript binds by that spelling is to it; and no value read of
+ * it may run before the class statement, where JavaScript's binding is
+ * uninitialized: a read after it in the block, or in code the block creates
+ * after it. */
+export function localClass(this: Gate, node: ClassDeclaration, name: ts.Identifier): void {
+  const gate: Gate = this;
+  const block = node.parent;
+  if (!block || !ts.isBlock(block))
+    gate.fail(node, "a class declared other than in a block (a `case` clause) is outside the fragment: its binding is the clause list's, which control may enter after the declaration");
+  if (node.typeParameters?.length)
+    gate.fail(node, "a generic class declared in a block is outside the fragment: its binders would be the enclosing unit's parameter rows");
+  for (let at: Node | undefined = block; at; at = at.parent)
+    if ((ts.isFunctionLikeDeclaration(at) || ts.isClassLikeDeclaration(at)) && at.typeParameters?.length)
+      gate.fail(node, "a class declared in a block within a generic declaration is outside the fragment: its instance type would close over the enclosing binders");
+  for (const m of node.members)
+    if (isStatic(m) || ts.isClassStaticBlockDeclaration(m))
+      gate.fail(m, "a static member of a class declared in a block is outside the fragment");
+  const within = (n: Node, outer: Node): boolean => n.pos >= outer.pos && n.end <= outer.end;
+  const memberName = (id: ts.Identifier): boolean => {
+    const parent = id.parent;
+    return !!parent && ((ts.isPropertyAccessExpression(parent) && parent.name === id) ||
+      ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent) ||
+        ts.isPropertySignatureDeclaration(parent) || ts.isMethodSignatureDeclaration(parent) ||
+        ts.isGetAccessorDeclaration(parent) || ts.isSetAccessorDeclaration(parent)) && parent.name === id));
+  };
+  const visit = (n: Node, created: number | null, typed: boolean): void => {
+    if (ts.isIdentifier(n) && n.text === name.text && n !== name && !memberName(n)) {
+      if (!within(n, block))
+        gate.fail(n, "a name a class declared in a block binds, spelled outside that block, is outside the fragment: the class's type is read under its name");
+      const parent = n.parent;
+      if (parent && nameOf(parent) === n)
+        gate.fail(n, "a declaration of the name of a class declared in a block is outside the fragment: the class's type is read under its name");
+      if (!typed && !within(n, node) && (created ?? n.getStart(gate.file)) < node.end)
+        gate.fail(n, "a read of a class declared in a block where its binding may be uninitialized is outside the fragment: JavaScript throws there, before the class statement runs");
+      if (!typed && within(n, node))
+        gate.fail(n, "a class declared in a block reading its own name in its members is outside the fragment: the lowering gives the class no inner binding per evaluation");
+      // The class value goes nowhere: no code receives it to define a
+      // `[Symbol.hasInstance]`, a getter for it, or another prototype chain.
+      if (!typed && !(parent && ((ts.isNewExpression(parent) && parent.expression === n) ||
+          (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+            parent.right === n) ||
+          (ts.isExpressionWithTypeArguments(parent) && parent.expression === n && !!parent.parent &&
+            ts.isHeritageClause(parent.parent) && parent.parent.token === ts.SyntaxKind.ExtendsKeyword))))
+        gate.fail(n, "a class declared in a block read other than as `new`'s callee, `instanceof`'s right operand or a base class is outside the fragment: code given the class value may define its `[Symbol.hasInstance]` or change its prototype chain, which the test reads");
+    }
+    const inner = created !== null || !within(n, block) || n === node ? created
+      : ts.isFunctionDeclaration(n) ? (n.parent ?? block).getStart(gate.file)
+      : ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(gate.file) : null;
+    n.forEachChild((c) => visit(c, inner, typed || ts.isTypeNode(c)));
+  };
+  visit(gate.file, null, false);
+}
+
 export function classStmt(this: Gate, node: ClassDeclaration): Stmt {
   const gate: Gate = this;
   const name = node.name;
   if (!name) return gate.fail(node, "an anonymous class is outside the fragment");
+  if (node.parent && !ts.isSourceFile(node.parent)) gate.localClass(node, name);
   // A class extending another reads what that class's lowering recorded:
   // one declared earlier in the file. A class value from elsewhere, an
   // ambient or library class (`Array` included) and an expression are
@@ -230,6 +291,12 @@ export function classStmt(this: Gate, node: ClassDeclaration): Stmt {
     base = gate.classRecords.get(t.expression.text) ??
       (t.expression.text === "Error" && gate.libraryName(t.expression) && !t.typeArguments?.length
         ? errorBase(gate.span(t.expression)) : null);
+    // A class of a block extends `Error` or a class of its own or an
+    // enclosing block, by the base's declaration: a function body holding
+    // it may be lowered before the top-level class it names.
+    if (gate.localClasses.has(name.text) && (base ? gate.classRecords.has(t.expression.text) &&
+        !gate.localClasses.has(t.expression.text) : true))
+      gate.fail(t, "a class declared in a block extends the standard `Error` or a class declared before it in its own or an enclosing block; a top-level class, a library class, an ambient declaration or a value is outside the fragment");
     if (!base)
       gate.fail(t, "a class extends a class declared earlier in the file, or the standard `Error`; one from a library, an ambient declaration or a value is outside the fragment");
     // A generic class's binders are the declaring unit's parameter rows,
@@ -248,7 +315,7 @@ export function classStmt(this: Gate, node: ClassDeclaration): Stmt {
         gate.fail(heritage, "a class extending a generic class other than at the base's own binders, which the derived class declares, is outside the fragment: the base's construction is at those binders' rows");
     }
   }
-  const extended = gate.file.statements.some((st) => ts.isClassDeclaration(st) &&
+  const extended = fileClasses(gate.file).some((st) =>
     !!st.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword &&
       c.types.some((t) => ts.isIdentifier(t.expression) && t.expression.text === name.text)));
   if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))

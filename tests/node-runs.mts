@@ -996,6 +996,23 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("error-subclass",
     `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
     'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  // A class declared in a block is created again by each evaluation: an
+  // earlier call's instance is no instance of a later call's class, and a
+  // read before the class statement throws.
+  assert.equal(runExample("local-class",
+    `[count(["a", "bcd"], "x"), fresh(null).same, fresh(fresh(null).made).same, rounds(3), once()].join(";")`),
+    "1;false;false;0;1", "local-class: the counts, the tests across calls and iterations, one operand evaluation");
+  // The walk's [[GetPrototypeOf]] runs a proxy's trap: outside the no-proxy
+  // row of the trust surface the intrinsic's empty footprint rests on.
+  assert.equal(runExample("local-class", `(() => { let calls = 0;
+    fresh(new Proxy({}, { getPrototypeOf() { calls++; return null; } })); return calls; })()`), 1,
+    "local-class: a proxy operand's trap runs during the test");
+  assert.equal(runExample("invalid-local-class-escape", `(() => {
+    const define = (c) => { Object.defineProperty(c, Symbol.hasInstance, { value: () => true }); };
+    return String(held(define, true)); })()`), "undefined",
+    "invalid-local-class-escape: a hook the callback defines answers the test for 0");
+  assert.throws(() => runExample("invalid-local-class-early", "early()"), /before initialization/,
+    "invalid-local-class-early: the closure reads the uninitialized class binding");
   // A native weak table: an entry set through the table and read twice, its
   // deletion of another key through the alias `set` returns.
   assert.equal(runExample("native-weakmap", "lookup({}, {})"), 14);
