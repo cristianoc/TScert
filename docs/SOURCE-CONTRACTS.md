@@ -1762,7 +1762,31 @@ record's field (with `| undefined` where optional), an array's element at
 `number`, a tuple's position, a union's parts, an intersection's operands'
 members met, an alias through its equation (a generic one's at the
 reference's arguments; an imported one's, read where it is declared), a named type's member through its annotation under
-the same identity premise.
+the same identity premise. An alias's record is read as the alias's own
+equation, as the declaration graph reads it, each member at the reading the
+declaration gives it. An optional method of a record or interface $`D`$ is
+an optional field whose function takes $`D`$ as its receiver, so its
+projection is that function, received by $`D`$, or `undefined`:
+
+```math
+\frac{D=\{\ldots;\ m?(\vec x:\vec\tau):\rho\ \ldots\}\ \text{the one declaration of}\ m,\ \text{in}\ D\quad
+      D, m\ \text{without type parameters}\quad
+      m\ \text{without a}\ \mathit{this}\ \text{parameter or a polymorphic}\ \mathit{this}\quad
+      \text{no part of}\ D\ \text{in the standard library}}
+     {⟦D[\texttt{"}m\texttt{"}]⟧=(\mathit{this}{:}\,D,\ ⟦\vec\tau⟧)\Rightarrow⟦\rho⟧\ \mid\ \mathtt{undefined}}\ \textsf{indexed-optional-method}
+```
+
+with $`D`$ an alias's record or an interface. A call of the projected
+function must give it a $`D`$ as receiver
+(`computed-index-optional-method`, `invalid-computed-index-optional-method`,
+and `blocker-indexed-optional-method`, which calls it with none). A method
+$`D`$ inherits takes the interface declaring it as its receiver, which the
+reference does not name, and is refused
+(`computed-index-inherited-method-refused`); so is a method of a standard
+library interface or of an augmentation of one, whose contract the
+library's overlay gives (`invalid-augmented-optional-method`), and a
+required method, whose member is relative to the object it is read from
+(`invalid-computed-index-generic-method`).
 
 A **computed alias** is a generic alias whose equation is a computed form,
 an application of another computed alias, or an application one of whose

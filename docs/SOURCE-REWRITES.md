@@ -483,8 +483,10 @@ discarded.
 methods, and the readers that pass one on or implement it apart from a
 scope typed it by indexed access, `TermScope["record"]` or
 `NonNullable<TermScope["computed"]>`. An optional method's function takes
-the object it is a member of as its receiver, which the indexed access does
-not name, so the type reader refused the type; `typeTerm` passed
+the object it is a member of as its receiver, so the indexed access is a
+function received by a `TermScope`
+([indexed-optional-method](SOURCE-CONTRACTS.md#computed-types)), which a
+reader calling it with no receiver does not give; `typeTerm` passed
 `scope.record?.bind(scope)`, a method read off its object, which the
 fragment refuses. Every implementation is an arrow, which uses no receiver.
 
@@ -499,8 +501,9 @@ fragment refuses. Every implementation is an arrow, which uses no receiver.
 - **Functions:** `typeTerm`, `expandMapped`, `expandIdentity` and their
   callers in `tools/type-term.mts`; `libraryTerm`, `collect` and
   `collectDeclarations` (`tools/declaration-graph.mts`); `settleTerm`
-  (`tools/named-record.mts`); `blocker-indexed-optional-method` and
-  `blocker-optional-method-bind` are the refused forms as gap cases.
+  (`tools/named-record.mts`); `blocker-indexed-optional-method` (the
+  method's function called with no receiver, a negative case) and
+  `blocker-optional-method-bind` (a gap case) are the refused forms.
 - **Commit:** the introducing commit, `A scope's hooks are fields of written function types`.
 
 ### A dictionary read at a key known only at run time

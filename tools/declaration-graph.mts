@@ -2106,6 +2106,30 @@ export function collectDeclarations(file: string, options: {
         clean(type, what);
         return typeTerm(valueScope(at, what, binders), type, at);
       },
+      body: alias => {
+        const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
+        clean(alias.type, what);
+        let body = alias.type;
+        while (ts.isParenthesizedTypeNode(body)) body = body.type;
+        return typeTerm({ ...valueScope(alias, what), body }, alias.type, alias);
+      },
+      method: node => {
+        const source = node.getSourceFile();
+        const what = `${idOf(source)}#${node.getText(source)}`;
+        // A method of a standard library interface, or of an augmentation of
+        // one, is read through the library's overlay.
+        const owner = node.parent;
+        const parts = (ts.isInterfaceDeclaration(owner) ? checker.getSymbolAtLocation(owner.name)?.declarations ?? [] : [])
+          .map(d => d.resolve());
+        if (libraryFile(source) || parts.some(d => d && libraryFile(d.getSourceFile())))
+          throw Error(`${what} is a method of a standard library interface, read through its overlay`);
+        clean(node, what);
+        const span: Span = [node.getStart(source), node.end];
+        const forms = signatures(valueScope(node, what), node.parameters, node.type, node, span);
+        if (!node.type || forms.some(f => f.receiver))
+          throw Error(`${what}: an optional method with a \`this\` parameter or no result type is outside the fragment`);
+        return oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span } })), span);
+      },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
       referenceAlias: reference => aliasNodes.get(aliasKey(reference.reference.target)) ?? null,

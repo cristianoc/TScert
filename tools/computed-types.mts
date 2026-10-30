@@ -24,6 +24,13 @@ import { passToolFailure } from "./thrown.mts";
 export type ComputedContext = {
   checker: Checker;
   annotation(node: TypeNode, at: Node, binders: string[]): TypeTerm;
+  /** A type alias's equation read as the declaration's own body, as the
+   * declaration graph reads it: a method of its type literal takes the
+   * declaration as its receiver (`self`). */
+  body(alias: TypeAliasDeclaration): TypeTerm;
+  /** An optional method of an interface, read where it is declared: its
+   * signatures, each received by the declaration (`self`). */
+  method(node: ts.MethodSignatureDeclaration): TypeTerm;
   /** The type of the value `declarations` bind, read as an imported one's
    * is, with its binders (a generic value has some). */
   value(declarations: readonly Node[], what: string): { typeParams: readonly unknown[]; type: TypeTerm };
@@ -539,6 +546,25 @@ export function inferredTerm(checker: Checker, type: Type, span: Span, depth: nu
  * read from `T` as this scope reads it; a member of a named type is its
  * declaration's annotation, which must denote exactly the type TypeScript
  * computes. */
+/** A declaration's equation with its own receiver named: each optional
+ * method of its record, an optional field whose function takes the
+ * declaration as receiver (`self`), received by `receiver`, the
+ * declaration's reference. Every other member keeps its reading, a required
+ * method's host-relative receiver included. */
+function received(equation: TypeTerm, receiver: Extract<TypeTerm, { k: "reference" }>): TypeTerm {
+  if (equation.k !== "object") return equation;
+  return { ...equation, fields: equation.fields.map(f => f.optional ? { ...f, type: receivedBy(f.type, receiver) } : f) };
+}
+
+/** A method's forms, each received by `self`, received by `receiver`
+ * instead; any other type as it is. */
+function receivedBy(type: TypeTerm, receiver: TypeTerm): TypeTerm {
+  if (type.k === "function" && type.receiver?.k === "self") return { ...type, receiver };
+  if (type.k === "intersection" && type.parts.every(p => p.k === "function" && p.receiver?.k === "self"))
+    return { ...type, parts: type.parts.map(p => receivedBy(p, receiver)) };
+  return type;
+}
+
 function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode, type: Type, span: Span,
     read: (node: TypeNode) => TypeTerm): TypeTerm {
   const { checker } = context;
@@ -606,7 +632,7 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
             throw Error(`the indexed access ${computed} has a cyclic alias projection through ${alias.name.text}`);
           projecting.add(alias);
           try {
-            return project(context.annotation(alias.type, alias, []), depth + 1);
+            return project(received(context.body(alias), object), depth + 1);
           } finally {
             projecting.delete(alias);
           }
@@ -615,14 +641,14 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
         // equation at the reference's arguments.
         const equation = object.args.length ? context.equation(object) : null;
         if (equation) return project(equation, depth + 1);
-        return member();
+        return member(object);
       }
     }
     throw Error(`the indexed access ${computed} has no member, element or position at its key`);
   };
   // A member of a named type: its declaration's annotation, when that is
   // exactly what TypeScript computes and names no type parameter.
-  const member = (): TypeTerm => {
+  const member = (reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm => {
     const objectType = checker.getTypeFromTypeNode(node.objectType);
     const [key] = keyList;
     if (!objectType || keyList.length !== 1 || key?.k !== "literal" || key.name !== "string")
@@ -630,6 +656,20 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
     const property = checker.getPropertyOfType(objectType, key.text);
     const nodes = (property?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
     const [only] = nodes;
+    // An optional method of an interface without parameters is an optional
+    // field whose function takes the interface as its receiver: the member is
+    // that function or undefined, the type TypeScript computes for it. One
+    // the interface inherits takes the interface declaring it as receiver,
+    // which the reference does not name.
+    if (only && nodes.length === 1 && ts.isMethodSignatureDeclaration(only) &&
+        only.postfixToken?.kind === ts.SyntaxKind.QuestionToken && !only.typeParameters?.length &&
+        ts.isInterfaceDeclaration(only.parent) && !enclosingBinders(only).length) {
+      const owner = only.parent;
+      const parts = (objectType.getSymbol()?.declarations ?? []).map(d => d.resolve());
+      if (!parts.includes(owner))
+        throw Error(`the indexed access ${computed} is an optional method ${owner.name.text} declares, received by ${owner.name.text}, not by the type it is read from`);
+      return optionalTerm(receivedBy(context.method(only), reference), span);
+    }
     const { annotation, optional } = only && nodes.length === 1 ? declared(only) : { annotation: undefined, optional: false };
     if (!only || !annotation || optional || enclosingBinders(only).length ||
         checker.getTypeFromTypeNode(annotation)?.id !== type.id)
