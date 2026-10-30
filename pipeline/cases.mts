@@ -1746,6 +1746,7 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-open-read-kind", "an open read's `unknown` establishes no host family: a guard promising a node from a numeric `kind` is refused, which `{ kind: 1 }` passes (run under Node)",
     /the promised argument is not within the promise at this return/), project: "pipeline/compiler-api-project" },
+  { ...positive("in-index-signature-read", "a read after a passed `\"k\" in x` test, `x`'s type stating `k` by a string index signature: an ordinary read at the index's value type, narrowed by its tests, the form of decodeCode's optional `kind`") },
   { ...positive("compiler-api-in-union-read", "a node's `body` and `type` after `in` tests on unions of node kinds some of which state neither: the audited open read, every node inheriting both getters, the read made eligible by `&&`, `||`, `?:`, `if` and an exiting `if`, a reassignment between ignored"),
     project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-guard-subpath", "a listed guard's declaration imported through another subpath of the package, which Node may resolve to other code, is no guard: `n` stays a node (run under Node: a package mapping the subpath to a function answering `true`)",

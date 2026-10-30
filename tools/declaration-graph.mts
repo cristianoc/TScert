@@ -3279,7 +3279,11 @@ export function collectDeclarations(file: string, options: {
         const o = unparenthesized(operand);
         if (!ts.isIdentifier(o) || checker.getSymbolAtLocation(o)?.id !== symbol.id) return false;
         const type = checker.getTypeAtLocation(o);
-        if (!type || !(isUnionType(type) ? type.getTypes() : [type]).some(arm => !checker.getPropertyOfType(arm, key)))
+        // An arm states `key` by a property or by a string index signature,
+        // whose value type the read has.
+        const states = (arm: Type): boolean => !!checker.getPropertyOfType(arm, key) ||
+          checker.getIndexInfosOfType(arm).some(info => !!(info.keyType.flags & TypeFlags.String));
+        if (!type || !(isUnionType(type) ? type.getTypes() : [type]).some(arm => !states(arm)))
           return false;
         found = type;
         return true;

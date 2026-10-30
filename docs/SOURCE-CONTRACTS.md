@@ -2216,7 +2216,9 @@ the declaration graph finds one of two shapes of syntactic eligibility
   stating $`k`$ (`object & Record<"k", unknown>`), or an explicit
   annotation of the same shape.
 - **A guarded read.** `o` is a name, and a test `"k" in o` of the same
-  name, whose type at the test has an arm stating no $`k`$, makes the read
+  name, whose type at the test has an arm stating no $`k`$ (an arm states
+  $`k`$ by a property or by a string index signature, whose value type a
+  read of $`k`$ has, `in-index-signature-read`), makes the read
   eligible: within one function, the read lies in the right operand of
   `t && …` or of `t || …`, a branch of `t ? … : …` or of `if (t)`, or a statement after
   an `if (t)` without `else` whose branch ends in `return`, `throw`,
