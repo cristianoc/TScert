@@ -1216,6 +1216,23 @@ control(async (): Promise<void> => {
   process.stdout.write("forged for-of patterns: the element's read and the step's value claimed at a string, refused\n");
 });
 control(async (): Promise<void> => {
+  // A loop over a union of host kinds steps the union's iteration, which
+  // yields the union of its kinds' elements: the element of an array's or
+  // a `Map` iterator's numbers claimed at a string is refused where
+  // evidence is produced and where it is checked.
+  const union = run("for-of-map-or-array");
+  const source = readFileSync(sourceKey(union), "utf8");
+  const element = source.indexOf("v of c ? xs : m.values()");
+  const claims = readClaims(union);
+  const fn = must(claims.functions.find((f) => f.name === "lastOf"), "lastOf's claims");
+  must(fn.expressions.find((e) => e.pos[0] === element && e.pos[1] === element + 1), "the element's claim").type =
+    [rowOf(claims, "str")];
+  const forged = writeClaims(union, "forged-union-iteration-element", claims);
+  refusedAt(union, forged, "forged-union-iteration-element", `[${element},${element + 1})`);
+  invoke(forged, join(union, "evidence.json"), union);
+  process.stdout.write("forged union iteration: the element claimed at a string, refused\n");
+});
+control(async (): Promise<void> => {
   // `unknown` under a test is the kinds the test leaves (`sourceSlice`): a
   // read claimed at fewer kinds is refused where evidence is produced, and,
   // in a positive case, where its evidence is checked: `in`'s operand at an

@@ -22,7 +22,7 @@ import { wildcardReadings, classInstance, computedAlias, computedForm, expandMap
   type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
@@ -2846,7 +2846,7 @@ export function collectDeclarations(file: string, options: {
     const collectionDefinitions: TypeDefinition[] = [];
     const collectionIterator = (element: TypeTerm): TypeTerm => {
       if (!collectionDefinitions.length) collectionDefinitions.push(nativeCollectionIteratorDefinition(
-        markOf(collectionIteratorMark), argument => libraryReference("Iterator", [argument])));
+        markOf(collectionIteratorMark), argument => libraryReference("IterableIterator", [argument])));
       return nativeCollectionIterator(element);
     };
     // A host collection's reading view, its declaration listed with its
@@ -3047,6 +3047,27 @@ export function collectDeclarations(file: string, options: {
         if (ts.isParenthesizedExpression(e)) return kindsOf(e.expression);
         if (ts.isConditionalExpression(e)) return [...new Set([...kindsOf(e.whenTrue), ...kindsOf(e.whenFalse)])];
         if (literalArray(e)) return ["array"];
+        // A `ReadonlySet`'s or a `ReadonlyMap`'s `keys`, `values` and
+        // `entries`, which TypeScript types `SetIterator` or `MapIterator`,
+        // give the iterable iterator of the program's object meeting the
+        // view (`array-prototype.mts`): a loop over the call, on a receiver
+        // whose static type is the view itself, runs the protocol. A spread
+        // of one, and any call on a host `Set` or `Map`, keeps the host's
+        // iteration.
+        if (!spread && ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
+          const declaration = checker.getResolvedSignature(e)?.declaration?.resolve();
+          const owner = declaration?.parent;
+          const receiver = checker.getTypeAtLocation(e.expression.expression);
+          const view = receiver && !isUnionType(receiver) ? receiver.getSymbol()?.name : undefined;
+          if (owner && ts.isInterfaceDeclaration(owner) && libraryFile(owner.getSourceFile()) &&
+              view === owner.name.text &&
+              (owner.name.text === "ReadonlySet" || owner.name.text === "ReadonlyMap") && declaration &&
+              ts.isMethodSignatureDeclaration(declaration) && ts.isIdentifier(declaration.name) &&
+              ["keys", "values", "entries"].includes(declaration.name.text)) {
+            iteratorSymbol ??= overlayLibrary.wellKnownSymbol("iterator");
+            return ["client"];
+          }
+        }
         const type = checker.getTypeAtLocation(e);
         return [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : []).map(iterationKind))];
       };
@@ -3059,9 +3080,14 @@ export function collectDeclarations(file: string, options: {
       }
       const [kind] = kinds;
       // A union with a program's iterable among its parts runs the protocol
-      // (`client`), which every part's own iterator answers.
+      // (`client`), which every part's own iterator answers. A loop over a
+      // union of host kinds steps their union's iteration, which dispatches
+      // on the kind (`unionIterationName`).
+      const hostKinds = [...new Set(kinds.map(k => k === "array" ? iterateName : k))].sort();
+      const union = !spread && hostKinds.length > 1 && hostKinds.every(k => unionIterationParts.includes(k))
+        ? unionIterationName(hostKinds) : undefined;
       const picked = kinds.length === 1 && kind ? kind : kinds.includes("client-unclosable") ? "client-unclosable"
-        : kinds.includes("client") ? "client" : kinds.includes("client-method") ? "client-method" : "other";
+        : kinds.includes("client") ? "client" : kinds.includes("client-method") ? "client-method" : union ?? "other";
       if (picked === "array" || picked === "other") continue;
       const program = picked.startsWith("client");
       const listed = spread && !program ? spreadName(picked) : picked;

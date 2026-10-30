@@ -1155,21 +1155,6 @@ pattern's lowering, for this one site of the census of b81675f.
 - **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
   traversal keeps their bindings, three sites rewritten`.
 
-### A `for...of` over a `Map` or an empty array
-
-`collect` in `tools/declaration-graph.mts` iterated
-`context.guardPromises.get(marker) ?? []`, a `Map` or an array: the
-iteration intrinsic is picked by one host kind, so a union of two kinds has
-none (`for-of-map-or-array-refused`), for this one site of the census of
-b81675f.
-
-- **Equivalent form:** the loop runs over the `Map` where `get` finds one,
-  and is skipped otherwise; the array's loop runs no step, and the standard
-  array iterator runs no code ([host assumption](DESIGN.md#trust-surface)).
-  The condition and the `get` are evaluated as before.
-- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
-  traversal keeps their bindings, three sites rewritten`.
-
 ### A method call on the instance under construction
 
 The `Gate` constructor (`tools/fragment-parse.mts`) assigned its field
@@ -1317,28 +1302,6 @@ a8cba50 introduced into a function the census of 6be11ce verified.
   under the same keys in the same order, and is fresh as the spread's was.
 - **Commit:** the introducing commit, `requestReading builds a request's
   effect field by field`.
-
-### A `for...of` over a `ReadonlyMap`'s values
-
-`exportsOf` in `collectDeclarations` (`tools/declaration-graph.mts`)
-iterated a class symbol's member table with `for (const e of
-symbol.getMembers().values())`. The overlay reads `values()` of a
-`ReadonlyMap` as an `Iterator`, which a program's object meeting the
-interface may return without `[Symbol.iterator]`, so the loop has no
-iteration intrinsic (`for-of-readonly-map-values-refused`). Support would
-read the result as iterable where the map is a native `Map`, for this one
-site of the census of 4d25222.
-
-- **Equivalent form:** `for (const [, e] of symbol.getMembers())` iterates
-  the table's entries and binds each value. The table is a native `Map`
-  ([audits](COMPILER-API.md#audits-of-sync-members)), whose default
-  iterator is `Map.prototype.entries`, under the
-  [host assumption](DESIGN.md#trust-surface) of standard prototypes: it
-  visits the entries in insertion order, as `values()` visits their
-  values, and the loop body sees the same values in the same order. Neither
-  iterator has a `return`, and the body throws nothing, so leaving the loop
-  runs no code in either form. `getMembers` is called once in both.
-- **Commit:** the introducing commit.
 
 ### A parameter type computed from a compiler-API method
 

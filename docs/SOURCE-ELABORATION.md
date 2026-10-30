@@ -1921,19 +1921,46 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \end{array}
 ```
 
+A loop over a union of two or more of these kinds, and no program's
+iterable, steps their **union's iteration** `%Iterate:K₁%|…|%Iterate:Kₙ%`
+(`unionIterationName` in `intrinsics.mts`): with
+$`\mathit{it}_i:\forall\vec\alpha_i.\ (P_i)\Rightarrow\mathit{Step}(E_i)`$, the
+kinds' binders apart,
+
+```math
+\forall\vec\alpha_1\ldots\vec\alpha_n.\ (P_1\cup\ldots\cup P_n)\Rightarrow\mathit{Step}(E_1\cup\ldots\cup E_n)
+```
+
+GetIterator calls the iterable's own `[Symbol.iterator]`, which for a value
+of kind $`K_i`$ is that kind's standard one: the step is $`\mathit{it}_i`$'s
+for whichever kind the value is, and states the weakest of their effects,
+`{value: any, store: keep}`. An array arm is stepped as `%Iterate%` steps it,
+at a readable array (`for-of-map-or-array`; `invalid-for-of-map-or-array`, a
+`map` result with a hole, run under Node). A spread over a union of kinds
+takes no union's iteration.
+
 `Set` and `Map` are the [interface overlay](SOURCE-CONTRACTS.md#library-types)'s, which
 meet their [reading views](SOURCE-CONTRACTS.md#collections-passing-instanceof)
 $`\mathsf{NativeSetView}\langle T\rangle`$ and
 $`\mathsf{NativeMapView}\langle K,V\rangle`$, the members taking no element; their
 `keys`, `values`, `entries` and `[Symbol.iterator]` give a `SetIterator` or
 `MapIterator` read as the native collection iterator
-$`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `Iterator<T>` with
-a key $`\langle\mathit{CollectionIterator}\rangle`$ at `undefined`, a
+$`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `IterableIterator<T>`
+with a key $`\langle\mathit{CollectionIterator}\rangle`$ at `undefined`, a
 synthetic symbol no source declaration, literal or class states, so no
-other value meets it. A value TypeScript types `SetIterator` or
-`MapIterator` from any other source, a `ReadonlySet`'s or `ReadonlyMap`'s
-iterator included, is no argument of `%Iterate:Iterator%`, and its loop is
-refused (`invalid-readonly-set-iterator-native`, run under Node). None of these iterators has a `return`, so a
+other value meets it; its `[Symbol.iterator]` is `%IteratorPrototype%`'s,
+which returns the iterator. A call of a `ReadonlySet`'s or a
+`ReadonlyMap`'s `keys`, `values` or `entries`, whose result TypeScript types
+`SetIterator` or `MapIterator`, gives the `IterableIterator` the view states,
+which a program's object meeting the view may return: a loop over the call,
+on a receiver whose static type is the view itself, runs the
+[iterator protocol](#the-iterator-protocol)
+(`for-of-readonly-map-values`; `invalid-for-of-readonly-map-values`, run
+under Node). A spread of the call steps `%Spread:Iterator%`, and is refused
+(`spread-readonly-map-values-refused`). A value TypeScript types `SetIterator` or `MapIterator` from any
+other source, a `ReadonlySet`'s `[Symbol.iterator]` result held in a binding
+included, is no argument of `%Iterate:Iterator%`, and its loop is refused
+(`invalid-readonly-set-iterator-native`, run under Node). None of these iterators has a `return`, so a
 loop left early by `break`, `return` or a throw calls nothing. An iterable of
 any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
 record with one), or a union with one, is the program's, and runs the

@@ -244,17 +244,30 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   const spread = name.startsWith(spreadPrefix);
   const kind = spread ? iteratePrefix + name.slice(spreadPrefix.length) : name;
-  const key: TypeTerm = { k: "binder", name: "K", span };
-  const value: TypeTerm = { k: "binder", name: "V", span };
-  const t = [{ name: "T", bound: null, resolution: null }];
-  const [typeParams, param, element]: [SourceTypeParameter<TypeTerm>[], TypeTerm, TypeTerm] =
-    kind === iterateStringName ? [[], atom("string"), atom("string")]
-    : kind === iterateSetName ? [t, view("Set", [binder]), binder]
-    : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], view("Map", [key, value]),
-      { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
-    : kind === iterateIteratorName ? [t, nativeCollection(binder), binder]
-    : kind === iterateRegExpStringName ? [t, nativeMatches(binder), binder]
-    : (() => { throw Error(`no iteration intrinsic ${name}`); })();
+  // One kind's quantifiers, parameter and element, its binders named with
+  // `suffix`, so that the kinds of a union's iteration bind apart.
+  const part = (kind: string, suffix: string): [SourceTypeParameter<TypeTerm>[], TypeTerm, TypeTerm] => {
+    const quantified = (name: string): [SourceTypeParameter<TypeTerm>, TypeTerm] =>
+      [{ name: name + suffix, bound: null, resolution: null }, { k: "binder", name: name + suffix, span }];
+    const [tq, t] = quantified("T");
+    const [kq, key] = quantified("K");
+    const [vq, value] = quantified("V");
+    return kind === iterateStringName ? [[], atom("string"), atom("string")]
+      : kind === iterateName ? [[tq], { k: "array", presence: "readable", readonly: true, element: t, span }, t]
+      : kind === iterateSetName ? [[tq], view("Set", [t]), t]
+      : kind === iterateMapName ? [[kq, vq], view("Map", [key, value]),
+        { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
+      : kind === iterateIteratorName ? [[tq], nativeCollection(t), t]
+      : kind === iterateRegExpStringName ? [[tq], nativeMatches(t), t]
+      : (() => { throw Error(`no iteration intrinsic ${name}`); })();
+  };
+  // A union's iteration (`unionIterationName`) takes any of its kinds'
+  // iterables and steps it as that kind's intrinsic does.
+  const kinds = spread ? [kind] : unionIterationKinds(kind) ?? [kind];
+  const parts = kinds.map((k, i) => part(k, kinds.length > 1 ? String(i) : ""));
+  const typeParams = parts.flatMap(([q]) => q);
+  const [param, element] = parts.length === 1 && parts[0] ? [parts[0][1], parts[0][2]]
+    : [either(...parts.map(([, p]) => p)), either(...parts.map(([, , e]) => e))];
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
   const changesValues = footprintEffect({ value: "any", store: "keep" });
@@ -262,6 +275,25 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
     ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
     : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect } };
 }
+
+/** The iteration of a `for...of` over a union of host kinds no one
+ * intrinsic steps (an array beside a `Map`, a `Set` beside its iterator):
+ * the kinds' intrinsics' names, joined by `|` in the order given. JavaScript
+ * steps whichever iterator GetIterator gives, each one its kind's, so the
+ * union intrinsic takes the union of the kinds' parameters, each kind's
+ * binders apart, and steps what the value is as that kind's intrinsic does,
+ * yielding the union of their elements; none has a `return`. Its step states
+ * the weakest of the kinds' effects, `{value: any, store: keep}`. */
+export const unionIterationName = (kinds: readonly string[]): string => kinds.join("|");
+/** The kinds of a union's iteration, or `undefined` for one kind's. */
+export function unionIterationKinds(name: string): string[] | undefined {
+  const kinds = name.split("|");
+  return kinds.length > 1 && kinds.every(k => unionIterationParts.includes(k)) ? kinds : undefined;
+}
+/** The kinds a union's iteration may join: those whose intrinsic steps a
+ * value of its parameter without client code. */
+export const unionIterationParts: readonly string[] =
+  [iterateName, iterateStringName, iterateSetName, iterateMapName, iterateIteratorName, iterateRegExpStringName];
 
 /** The spread form of an iteration intrinsic: `...x` in an argument list, over
  * a value the step intrinsic `step` iterates, is `...%Spread:K%(x)`, a fresh

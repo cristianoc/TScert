@@ -2598,8 +2598,10 @@ contract introduces no iteration intrinsic or unrelated collection contract.
 `ReadonlySet<T>` and `ReadonlyMap<K, V>`, the readers' views of a `Set` and a
 `Map`, are read through the same mechanism at the restriction of the
 collection's own readers (`forEach` without `thisArg`, `has`, `get`, `size`,
-`keys`, `values`, `entries` and `[Symbol.iterator]`, each iterator result an
-`Iterator`, which the native collection iterator meets), so that `Set<T>` meets `ReadonlySet<T>` and `Map<K, V>` meets
+`keys`, `values`, `entries` and `[Symbol.iterator]`, the result of
+`[Symbol.iterator]` an `Iterator` and those of `keys`, `values` and
+`entries` an `IterableIterator`, each of which the native collection
+iterator meets), so that `Set<T>` meets `ReadonlySet<T>` and `Map<K, V>` meets
 `ReadonlyMap<K, V>` by width and by the callback's parameter, as `Array`
 meets `ReadonlyArray` (`readonly-collection-views`). They state no
 `[Symbol.toStringTag]`, so a program's object may meet them: each member

@@ -127,7 +127,8 @@ export const patternForms: { readonly [K in PatternAst["k"]]: HostClass } = {
 };
 
 /** The intrinsics the parser writes, by name; `%Spread:K%` and
- * `%RestFrom:k%` and `%Read:k%` by their prefixes. */
+ * `%RestFrom:k%` and `%Read:k%` by their prefixes, a union's iteration by
+ * its `|`. */
 export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [awaitName]: transparent("a value at a Promise type: a realm promise by the await assumption"),
   [asyncReturnName]: value, [asyncCompleteName]: value,
@@ -147,6 +148,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [iterateName]: store,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,
   [iterateRegExpStringName]: value,
+  "|": transparent("a union's iteration, `%Iterate:K%|…`: the step of the iterable's kind, each classified above"),
   [forInName]: transparent("strings, which is all its contract states"),
   [iterateForInName]: transparent("over a dictionary, whose family admits no host object"),
   [hasPropertyName]: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),

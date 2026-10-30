@@ -39,9 +39,10 @@ let create ?(explaining=false) ?(diagnosing=false) () = {
 let explain state pos s =
   if !(state.explaining) then state.explanations := (pos,s) :: !(state.explanations)
 let iteration_reason =
-  "the iteration of one host kind is stated (%Iterate:K%), picked where the whole iterable is of that \
-   kind: a union of host kinds has no one intrinsic (an iterable the program defines, or a union with \
-   one, runs the iterator protocol)"
+  "the iteration of a host kind is stated (%Iterate:K%), picked by the iterable's type, and a loop over \
+   a union of host kinds steps their union's iteration: a spread over such a union, or a loop over a value \
+   of no host kind, has no intrinsic (an iterable the program defines, or a union with one, runs the \
+   iterator protocol)"
 let module_arity_reason =
   "its use is read at the instance it names, a signature of its own parameters, which carries no \
    extension by a rest"

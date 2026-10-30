@@ -1962,7 +1962,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // and `findIndex` hands the callback `undefined`.
     ["invalid-readonly-set-has-effect", "(() => { const list = [1, 2], seen = []; const drain = { next: () => ({ done: true, value: undefined }), [Symbol.iterator]() { return this; } }; first({ size: 0, has: (n) => { seen.push(n); list.pop(); return false; }, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list); return String(seen[1]); })()", "undefined"],
     ["invalid-readonly-set-iterator-native", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
-    ["readonly-collection-views", "JSON.stringify([size(), merged(['a', 'b']), scoped(['a', 'a', 'b']), counted(['x', 'y', 'x'])])", "[0,2,4,[\"x\",\"y\"]]"],
+    // A `ReadonlyMap`'s values whose `next` shrinks the list; a hole of a
+    // popping `map` beside a `Map`'s values, stepped as an array's.
+    ["invalid-for-of-readonly-map-values", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, get: () => undefined, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
+    ["invalid-for-of-map-or-array", "typeof last(new Map(), true)", "undefined"],
+    ["for-of-readonly-map-values", "counted(['a', 'bb', 'a'])", 5],
+    ["for-of-map-or-array", "[promised(new Map([['k', new Map([['ab', 1]])]]), 'k'), promised(new Map(), 'k'), letters(new Set(['ab']), ['c'], true), lastOf(new Map([['a', 4]]), [1], false)].join()", "3,0,2,4"],
+    ["readonly-collection-views","JSON.stringify([size(), merged(['a', 'b']), scoped(['a', 'a', 'b']), counted(['x', 'y', 'x'])])", "[0,2,4,[\"x\",\"y\"]]"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
     ["invalid-evolving-use-contract", "build(6)", "many"],
     ["invalid-generic-callee-use-contract", "count(3).head", "many"],

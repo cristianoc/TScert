@@ -408,7 +408,8 @@ inductive Stmt where
   a `break` of its label goes: a lowered `switch` is made of them. -/
   | block (pos : Span) (label : Option String) (body : List Stmt)
   /-- `for (const name of iterable) body`: the iterable once, then the
-  iteration intrinsic `iterate` (one of `iterateNames`, which the parser picks
+  iteration intrinsic `iterate` (one of `iterateNames`, or a union's iteration
+  of several (`isUnionIteration`), which the parser picks
   by the iterable's type) steps its iterator, binding each element to `name`
   for one run of the body. -/
   | forOf (pos : Span) (name : String) (namePos : Span) (iterate : String) (iterable : Expr)
@@ -453,6 +454,14 @@ one of them and no other value. -/
 def iterateNames : List String :=
   [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%",
     "%Iterate:RegExpString%", "%Iterate:ForIn%"]
+
+/-- The iteration of a union of host kinds (`unionIterationName` in
+`intrinsics.mts`): two or more of the host kinds' intrinsics, `%Iterate:ForIn%`
+aside, joined by `|`, a trusted value stepping whichever kind the iterable
+is as that kind's intrinsic does. -/
+def isUnionIteration (iterate : String) : Bool :=
+  let parts := iterate.splitOn "|"
+  parts.length > 1 && parts.all (fun p => iterateNames.contains p && p != "%Iterate:ForIn%")
 
 /-- The name an optional chain's body reads its saved receiver by: no source
 identifier is spelled so. -/
@@ -1266,7 +1275,7 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "forOf" =>
     fieldsExactly j ["k","pos","name","namePos","iterate","iterable","body"]
     let iterate ← jStr (← jField j "iterate")
-    if !iterateNames.contains iterate then
+    if !(iterateNames.contains iterate || isUnionIteration iterate) then
       throw s!"a for...of loop steps an iteration intrinsic, not {iterate}"
     return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos") iterate
       (← decodeExpr (← jField j "iterable")) (← (← jArr j "body").mapM decodeStmt)

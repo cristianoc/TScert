@@ -36,10 +36,12 @@ it, in this order:
   failure has a stated reason, each at its source span
   (`Proposal_diagnostics.explain`). The innermost one whose span meets the
   failed obligation's names it. The forms and their reasons:
-  - a `for...of` loop or a spread over a union of iterable kinds, an arm of
-    which is no array: one host kind's iteration is stated (`%Iterate:K%`)
-    where the whole iterable is of it; an iterable the program defines, or a
-    union with one, runs the iterator protocol;
+  - a `for...of` loop or a spread over an iterable an arm of which is no
+    array: a host kind's iteration is stated (`%Iterate:K%`), and a loop over
+    a union of host kinds steps their union's iteration; a spread over such a
+    union, or a loop over a value of no host kind, has no intrinsic; an
+    iterable the program defines, or a union with one, runs the iterator
+    protocol;
   - an open record or `unknown` that `Array.isArray` or `instanceof Array`
     found an array, used as one: the object owns an array's store, which is
     no proof that it is an array of `Array.prototype`;

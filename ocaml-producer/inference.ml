@@ -379,6 +379,17 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         List.iter (fun x -> match List.filter (matches x) ys with
           | [y] -> constrain (Atoms [x]) (Atoms [y])
           | _ -> ()) xs
+      (* A union at a union of one array arm and one other arm, a union's
+         iteration's parameter (`Map<K, V> | never[]` at `NativeMapView<K0,
+         V0> | readonly T1[]`): each array part at the array arm, each other
+         part at the other arm. *)
+      | Atoms (_::_::_ as xs),Atoms ([_;_] as ys)
+        when (let array = function Shape {elements=Some _;_} -> true | _ -> false in
+              List.length (List.filter array ys) = 1 && List.exists array xs
+              && List.exists (fun x -> not (array x)) xs) ->
+        let array = function Shape {elements=Some _;_} -> true | _ -> false in
+        let arrays,others = List.partition array ys in
+        List.iter (fun x -> constrain (Atoms [x]) (Atoms (if array x then arrays else others))) xs
       (* A union is below a type where each of its parts is: a union of
          atoms at one atom, such as the arrays a callback's returns give at
          the array its result is (`[] | [k]` at `readonly U[]`). *)
