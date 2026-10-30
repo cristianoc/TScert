@@ -1557,9 +1557,20 @@ inside one for the whole switch: the innermost holds the dispatch, each case
 label in order `if (d === l) break` to the end of its clause's block, and
 each clause's statements follow its block's end, so fall-through is ordinary
 sequencing. The discriminant is evaluated once into a slot no source names,
-unless it is a name or a field of a name and every label a literal or a name,
-when it is re-read at each test. A name declared in one clause and read in
-another is refused.
+before any clause, as JavaScript evaluates it before the case block (where a
+name read before its initialization throws). It is instead re-read at each
+test when it is a name or a field of a name, the switch has a `case` test,
+and every label is a literal, a name or a member `E.M` of an enum no host
+family's installation declares (a host family's tag enum keeps the single evaluation,
+[WORK.md](../WORK.md#tag-join-element)): the first
+test then reads it where the single evaluation would, and evaluating such
+labels writes nothing, an enum's members being data fields of its object
+([enums](SOURCE-CONTRACTS.md#enums); an imported or declared enum's object
+meets the caller contract of the [trust surface](DESIGN.md#trust-surface)).
+A discriminant `typeof x`, with `x` a name or a field of a name and the same
+labels, is re-read the same way, each test `typeof x === l`, which is the
+`typeof` test of `x` when `l` is a string `typeof` answers. A name declared
+in one clause and read in another is refused.
 
 ```math
 \frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ \ell\mapsto\Gamma_{\mathit{after}}\quad

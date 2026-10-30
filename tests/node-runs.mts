@@ -392,6 +392,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-reflect-get-getter",
     "(() => { const xs = [1]; read({ get x() { xs.pop(); return 0; } }); return xs.length; })()"), 0,
     "invalid-reflect-get-getter: the getter runs at Reflect.get");
+  // A `switch` evaluates its discriminant before any clause: before the
+  // name's initialization it throws, also with no `case` test.
+  assert.equal(runExample("invalid-switch-discriminant-evaluated", "defaultOnly()"), 1);
+  for (const call of ["defaultOnly()", "empty()", "tested()"])
+    assert.equal(runExample("switch-discriminant-evaluated", call), 1, call);
   // An `if` and `||`'s false outcome past a call that writes the tested
   // field: the read returns what the call wrote.
   assert.equal(runExample("invalid-condition-stale-branch", `(() => { const b = { k: "union" }; return staleIf(b, () => { b.k = "intersection"; }); })()`),

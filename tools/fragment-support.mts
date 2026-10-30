@@ -3,12 +3,15 @@
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, Node, SourceFile, TypeParameterDeclaration } from "typescript/unstable/ast";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
-import type { Expr, PatternAst, Stmt } from "./fragment.mts";
+import type { Expr, PatternAst, Stmt, TypeofShape } from "./fragment.mts";
 import { forEachPart } from "./fragment-parts.mts";
 import type { Span } from "./span.mts";
 import { isStatic, nameOf, isTypeAlias } from "./syntax.mts";
 import { numberText } from "./intrinsics.mts";
 import { errorOptions } from "./library-globals.mts";
+
+/** Every string `typeof` answers. */
+export const TYPEOF_SHAPES: readonly TypeofShape[] = ["number", "string", "boolean", "undefined", "function", "bigint", "symbol", "object"];
 
 /** A value typed `Promise<T>` is assumed to be a built-in promise, which is
  * never fulfilled with a thenable (SOURCE-CONTRACTS.md, "Async functions and await"):

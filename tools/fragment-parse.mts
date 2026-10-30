@@ -354,7 +354,7 @@ export class Gate {
   readonly enums: Map<string, EnumInfo> = new Map();
   /** The enums the file imports, by local name, with their members as the
    * declaration graph read them. */
-  readonly importedEnums: Map<string, { members: readonly EnumMemberValue[]; reverse: EnumReverse }> = new Map();
+  readonly importedEnums: Map<string, { members: readonly EnumMemberValue[]; reverse: EnumReverse; host: boolean }> = new Map();
   /** Reads of a `const enum` member TypeScript writes as the member's value,
    * by span: that value. */
   readonly constEnumReads: Map<string, string | number> = new Map();
@@ -2166,7 +2166,7 @@ function lowerFile(file: string, carriesContext: boolean,
             for (const m of info.members) if (m.span[0] === start && m.span[1] === end) m.value = value;
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
-        importedEnum: (local, members, reverse) => gate.importedEnums.set(local, { members, reverse }),
+        importedEnum: (local, members, reverse, host) => gate.importedEnums.set(local, { members, reverse, host }),
         hostGuard: (local, entry, domain, field, tags) =>
           gate.hostGuards.set(local, { domain, field, tags, onUndefined: entry.onUndefined }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),

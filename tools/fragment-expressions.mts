@@ -13,7 +13,7 @@ import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm, ordinaryHasInstanceName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, propertyKeyText, prototypeName, elementBracket, wrappedMemberCallee, WRAPPED_MEMBER_CALL, skipParentheses, staticFieldOf, staticMethodOf, staticName, fileClasses, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
@@ -1869,9 +1869,8 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
       ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
     const left = unwrap(node.left),
       right = unwrap(node.right);
-    const shapes: readonly TypeofShape[] = ["number", "string", "boolean", "undefined", "function", "bigint", "symbol", "object"];
     const shapeOf = (e: Expression): TypeofShape | undefined =>
-      ts.isStringLiteral(e) ? shapes.find((s) => s === e.text) : undefined;
+      ts.isStringLiteral(e) ? TYPEOF_SHAPES.find((s) => s === e.text) : undefined;
     const pair =
       ts.isTypeOfExpression(left) && shapeOf(right)
         ? { operand: left, shape: shapeOf(right) }

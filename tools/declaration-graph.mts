@@ -697,8 +697,9 @@ export function collectDeclarations(file: string, options: {
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
   /** Told each imported enum's local name and members: the client's
-   * annotations read its type and its members' literal types. */
-  importedEnum?: (local: string, members: readonly EnumMemberValue[], reverse: EnumReverse) => void;
+   * annotations read its type and its members' literal types; `host` where
+   * a host family's installation declares it. */
+  importedEnum?: (local: string, members: readonly EnumMemberValue[], reverse: EnumReverse, host: boolean) => void;
   /** Told each import binding of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
    * declared parameter states, the field a node guard tests (the family's
@@ -2457,7 +2458,8 @@ export function collectDeclarations(file: string, options: {
         const enums = enumsOf(binding.at);
         if (enums && value && (direct || origin !== null)) throw unreviewed();
         if (enums) {
-          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name));
+          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name),
+            enums.some(e => familyOfFile(e.getSourceFile().fileName) !== null));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
               specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });

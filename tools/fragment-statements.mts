@@ -11,7 +11,7 @@ import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, Pattern
 import type { Span } from "./span.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
-import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
+import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { isTypeAlias } from "./syntax.mts";
@@ -1329,9 +1329,13 @@ export function protocolStep(this: Gate, next: string, result: string, leave: ()
  * as JavaScript falls through; a `break` leaves the switch's block. A
  * discriminant that is a name, or a field of a name, is read again at each
  * test, at the `case` keyword (the name of a field's object at its first
- * character), when every label is a literal or a name, since then nothing
- * between the tests writes and a field is a plain location; each test then
- * narrows the name, or the object's arms, as an `if` does. Any other is
+ * character), when the switch has a `case` test, so that the first test
+ * reads it where JavaScript evaluates it, and every label is a literal, a name or an enum's member,
+ * since then nothing between the tests writes and a field is a plain
+ * location; each test then narrows the name, or the object's arms, as an
+ * `if` does. A discriminant `typeof d`, `d` such a name or field, is read
+ * again the same way, each test `typeof d === l`, the `typeof` test of `d`
+ * where `l` is a string `typeof` answers. Any other is
  * evaluated first and bound to a name no source can spell. Every span is a node or a token: a test's `if`
  * begins at `case`, its read of the discriminant is at `case`, its `===`
  * at the clause's `:`, and its jump at the label; the jump to `default` is
@@ -1366,16 +1370,41 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
     return ts.isIdentifier(u) || ts.isStringLiteral(u) || ts.isNumericLiteral(u) ||
       u.kind === ts.SyntaxKind.TrueKeyword || u.kind === ts.SyntaxKind.FalseKeyword ||
       u.kind === ts.SyntaxKind.NullKeyword ||
-      (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand));
+      (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand)) ||
+      enumLabel(u);
   };
-  const discriminant = unwrap(node.expression);
+  // A member of a program's enum, `E.M` or `ns.E.M`: a read of a data field
+  // of the enum's object, which writes nothing. A host family's tag enum
+  // (`ts.SyntaxKind`) is left to the single evaluation: narrowing a host
+  // node through its tests meets the producer's refusal of
+  // `compiler-api-tag-join-element`.
+  const enumLabel = (u: Expression): boolean => {
+    if (!ts.isPropertyAccessExpression(u) || u.questionDotToken) return false;
+    if (gate.constEnumReads.has(gate.span(u).join(":"))) return true;
+    const base = u.expression;
+    const enumName = ts.isIdentifier(base) ? gate.local(base) : gate.namespaceMember(base);
+    if (enumName === undefined) return false;
+    const member = u.name.text;
+    return (gate.enums.has(enumName) && gate.enumMembers(enumName).some((m) => m.name === member)) ||
+      (gate.importedEnums.get(enumName)?.host === false &&
+        !!gate.importedEnums.get(enumName)?.members.some((m) => m.name === member));
+  };
+  const outer = unwrap(node.expression);
+  // `switch (typeof x)`: each test is the `typeof` test of `x` read again.
+  const typeofOf = ts.isTypeOfExpression(outer) ? outer : null;
+  const discriminant = typeofOf ? unwrap(typeofOf.expression) : outer;
   const bound: Stmt[] = [];
   let name: string;
   const fieldOf = ts.isPropertyAccessExpression(discriminant) && !discriminant.questionDotToken &&
     ts.isIdentifier(discriminant.expression) &&
     !gate.staticReads.has(gate.span(discriminant.name).join(":"))
     ? { object: gate.local(discriminant.expression), field: discriminant.name.text } : null;
-  const reread = clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression));
+  // With no `case` test, nothing would read the discriminant again, so it
+  // is evaluated once: JavaScript evaluates it before any clause, and that
+  // may throw (a name before its initialization).
+  const reread = clauses.some((c) => ts.isCaseClause(c)) &&
+    clauses.every((c) => !ts.isCaseClause(c) || plain(c.expression)) &&
+    (!typeofOf || ts.isIdentifier(discriminant) || fieldOf !== null);
   if (ts.isIdentifier(discriminant) && reread) name = gate.local(discriminant);
   else if (fieldOf && reread) name = fieldOf.object;
   else {
@@ -1394,13 +1423,19 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
       continue;
     }
     const colon = gate.token(c.expression.end, ":", c);
-    dispatch.push({ k: "if", pos: [start, c.expression.end],
-      cond: { k: "bin", pos: [colon, colon + 1], op: "===",
-        l: fieldOf && reread
-          ? { k: "read", pos: [start, start + "case".length], field: fieldOf.field,
-              e: { k: "id", pos: [start, start + 1], name } }
-          : { k: "id", pos: [start, start + "case".length], name },
-        r: gate.expr(c.expression) },
+    const read: Expr = fieldOf && reread
+      ? { k: "read", pos: [start, start + "case".length], field: fieldOf.field,
+          e: { k: "id", pos: [start, start + 1], name } }
+      : { k: "id", pos: [start, start + "case".length], name };
+    const written = unwrap(c.expression);
+    const shape = typeofOf && reread && ts.isStringLiteral(written)
+      ? TYPEOF_SHAPES.find((t) => t === written.text) : undefined;
+    const cond: Expr = shape
+      ? { k: "typeofTest", pos: [colon, colon + 1], shape, equal: true, e: read }
+      : { k: "bin", pos: [colon, colon + 1], op: "===",
+          l: typeofOf && reread ? { k: "unary", op: "typeof", pos: [start, start + "case".length], e: read } : read,
+          r: gate.expr(c.expression) };
+    dispatch.push({ k: "if", pos: [start, c.expression.end], cond,
       then: [{ k: "break", pos: gate.span(c.expression), label: label(c) }], else_: null });
   }
   const open = node.caseBlock.getStart(gate.file);
