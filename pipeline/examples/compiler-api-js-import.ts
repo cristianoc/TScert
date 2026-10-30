@@ -1,6 +1,5 @@
-// A tag value no declaration states and no audited shape describes, the
-// JSDoc `@import`'s, has the base declaration's shape (the table's `base`
-// rule), which states no `moduleSpecifier`.
+// The JSDoc `@import`'s kind, which no declaration states, has its audited
+// shape (COMPILER-API.md, "Audited shapes"), which states `moduleSpecifier`.
 import * as ts from "typescript/unstable/ast";
 
 export function specifierOf(n: ts.Node): ts.Node | undefined {

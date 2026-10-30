@@ -597,6 +597,19 @@ lowering a generator would take.
 [DESIGN: trust surface](DESIGN.md#trust-surface), [CALLABLES](CALLABLES.md),
 [COMPILER-API](COMPILER-API.md) (its compiler API as a host library).
 
+### typescript-go
+
+Microsoft. *typescript-go*, the Go implementation of TypeScript 7
+([github.com/microsoft/typescript-go](https://github.com/microsoft/typescript-go)),
+whose build the front end's `typescript` package is; the installed version
+7.0.2 names its revision `2bd066d87f5bafd315be9f40889d0a60b9e58e0b` as its
+`gitHead`.
+
+**Used for** auditing the server side of the compiler API at that revision:
+how the parser constructs a node kind and how the encoder sets the child
+presence bits the client's getters read.
+**Discussed in** [COMPILER-API: audited shapes](COMPILER-API.md#audited-shapes).
+
 ### Node.js modules
 
 OpenJS Foundation. *Node.js documentation: Modules: ECMAScript modules*,

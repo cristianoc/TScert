@@ -1534,9 +1534,9 @@ The description of `typescript` 7.0.2's syntax trees
   `generic` over `Token<k>`, `KeywordTypeNode<k>` and `KeywordExpression<k>`,
   every generic node declaration (the last gives `null`, `true`, `false`,
   `this`, `super` and `import`, which the declarations make expressions);
-  `audited` for `JSTypeAliasDeclaration`
+  `audited` for `JSTypeAliasDeclaration` and `JSImportDeclaration`
   ([audited shapes](COMPILER-API.md#audited-shapes));
-  `base` `NodeBase` (`JSImportDeclaration`);
+  `base` `NodeBase` (`Count`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
 - omitted members: `Node.jsDoc`, which builds a fresh array on each read,

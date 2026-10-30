@@ -34,6 +34,7 @@ export const shape = { size: 1 };
 /** @enum {number} */
 export const Kinds = { A: 1 };
 /** @import { Other } from "./other" */
+/** @import * as data from "./data.json" with { type: "json" } */
 export class Thing {
   /** @param {number} x */
   constructor(x) { /** @type {number} */ this.x = x; }

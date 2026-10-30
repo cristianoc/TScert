@@ -90,6 +90,22 @@ export const compilerApiFamily: FamilyDescription = {
         { owner: "TypeAliasDeclaration", member: "typeParameters", text: "readonly typeParameters?: NodeArray<TypeParameterDeclaration>;" },
         { owner: "TypeAliasDeclaration", member: "type", text: "readonly type: TypeNode;" },
       ] },
+      // A JavaScript file's JSDoc `@import`, which the parser reparses into
+      // a statement of kind `JSImportDeclaration` (346), and which no
+      // declaration states (COMPILER-API.md, "Audited shapes"). Its child
+      // list is `ImportDeclaration`'s, `modifiers`, `importClause`,
+      // `moduleSpecifier` and `attributes` (`protocol.generated.js:45-46`),
+      // read through the same getters (`node.generated.js:293-304`); the server
+      // at the package's revision builds it from the clause, specifier and
+      // attributes of the tag, parsed as kind 273's are, the specifier always
+      // present (COMPILER-API.md, "Audited shapes", the audit). So it
+      // has `ImportDeclaration`'s members at its own kind, and is a
+      // statement and a declaration as that one is.
+      { kind: "JSImportDeclaration", bases: ["DeclarationBase", "StatementBase", "ModifiersBase"], members: [
+        { owner: "ImportDeclaration", member: "importClause", text: "readonly importClause?: ImportClause;" },
+        { owner: "ImportDeclaration", member: "moduleSpecifier", text: "readonly moduleSpecifier: Expression;" },
+        { owner: "ImportDeclaration", member: "attributes", text: "readonly attributes?: ImportAttributes;" },
+      ] },
     ] },
     { rule: "generic", declarations: ["Token", "KeywordTypeNode", "KeywordExpression"] },
     { rule: "base", declaration: "NodeBase" },

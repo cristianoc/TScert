@@ -654,7 +654,9 @@ const nodeListMembersHold = (list: object, what: string): void => {
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):
 // `invalid-compiler-api-js-alias` returns 345 on a JSDoc `@typedef`, which
-// `isTypeAliasDeclaration` accepts; `compiler-api-guard-argument` evaluates
+// `isTypeAliasDeclaration` accepts, and `invalid-compiler-api-js-import-guard`
+// 346 on a JSDoc `@import`, which `isImportDeclaration` accepts;
+// `compiler-api-guard-argument` evaluates
 // a guard's argument once; and the write `invalid-compiler-api-enum-record-write`
 // makes, which F5 excludes, turns `isIdentifier` false on an identifier;
 // `invalid-compiler-api-guard-domain-object`'s program object, outside the
@@ -701,6 +703,19 @@ const nodeListMembersHold = (list: object, what: string): void => {
   assert.equal(members.arity(typedef), 0, "arity is 0 on a @typedef without @template");
   const templated = first(join(dir, "templated.js"), "/**\n * @template T, U\n * @typedef {{ a: T, b: U }} Pair\n */\nexport {};\n", 345);
   assert.equal(members.arity(templated), 2, "arity is 2 on a @typedef with two @template tags");
+  // `isImportDeclaration` accepts a JSDoc `@import` (346), whose audited
+  // shape states `moduleSpecifier`: `invalid-compiler-api-js-import-guard`
+  // returns 346, `blocker-let-guard-import-specifier` its specifier.
+  const jsImport = first(join(dir, "imported.js"), "/** @import { Other } from \"./other\" */\nexport {};\n", 346);
+  const importGuard = await fixture("invalid-compiler-api-js-import-guard");
+  assert.ok(unary(importGuard.importKind), "the fixture exports importKind");
+  assert.equal(importGuard.importKind(jsImport), 346, "importKind returns 346 on an @import");
+  const specifier = await fixture("blocker-let-guard-import-specifier");
+  assert.ok(unary(specifier.specifierOf), "the fixture exports specifierOf");
+  const read: unknown = specifier.specifierOf(jsImport);
+  assert.ok(read !== null && typeof read === "object", "specifierOf returns a node on an @import");
+  const text: unknown = Reflect.get(read, "text");
+  assert.equal(text, "./other", "specifierOf returns the @import's specifier");
   const argument = await fixture("compiler-api-guard-argument");
   assert.ok(unary(argument.counted), "the fixture exports counted");
   const name = first(join(dir, "name.ts"), "export const x = y;\n", Number(syntaxKind.Identifier));
@@ -853,7 +868,7 @@ const nodeListMembersHold = (list: object, what: string): void => {
   assert.ok(holdsUndefined(record.names([entry], () => { entry.node = spreadMember; })),
     "the replaced node's name is undefined");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; a node list owns hasTrailingComma holding undefined and its transformFlags takes a write; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
+  console.log("guards: aliasKind returns 345 on a @typedef and arity its @template count, importKind 346 on an @import and specifierOf its specifier, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; a node list owns hasTrailingComma holding undefined and its transformFlags takes a write; guards on a parent that may be absent return where it is present and throw a TypeError where it is absent, isParenthesizedExpression answers true of a program object of its kind, and a user guard's true and the throw's handler return the absent parent; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
 }
 
 // C5: the compiler-provided objects the front end reads through open reads

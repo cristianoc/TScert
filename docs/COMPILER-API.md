@@ -497,7 +497,8 @@ only a member-complete shape states per kind.
 
 A kind no declaration states as its literal gets an audited shape where the
 review states one ([the family description](HOST-FAMILIES.md#the-family-description)),
-and `NodeBase`'s otherwise. `JSTypeAliasDeclaration` (345) has one: in a
+and `NodeBase`'s otherwise (`Count`, the one such kind no node has).
+`JSTypeAliasDeclaration` (345) has one: in a
 JavaScript file the parser reparses each JSDoc `@typedef` and `@callback`
 into a node of that kind, a statement of its file's or its block's
 `statements`. Its shape extends `DeclarationBase`, `StatementBase` and
@@ -523,6 +524,117 @@ of its corpus, `tests/node-shapes-corpus/script.js` holding `@typedef` and
 function's block: each required member present, each member within its
 declared type, `typeParameters` a dense list of `TypeParameter` nodes where
 present, and each member held by some node.
+
+`JSImportDeclaration` (346) has one too: in a JavaScript file the parser
+reparses each JSDoc `@import` into a node of that kind, a statement of its
+file's `statements`. Its shape extends `DeclarationBase`, `StatementBase`
+and `ModifiersBase` and states `ImportDeclaration`'s
+`importClause?: ImportClause`, `moduleSpecifier: Expression` and
+`attributes?: ImportAttributes`, each read at that declaration; its `kind`
+is 346. So it is a member of `Node`, `Statement` and `Declaration`, and no
+value of type `ImportDeclaration` has it.
+
+The client's getters give a child exactly where the server encoded it: a
+child getter reads through the kind's child list (`getNamedChild`,
+`dist/api/node/node.generated.js:293-304`), absent where the node's child
+mask lacks the child's bit, and otherwise the encoded node, whatever its
+kind. The list of 346 is `ImportDeclaration`'s, `modifiers`,
+`importClause`, `moduleSpecifier`, `attributes`
+(`dist/api/node/protocol.generated.js:45-46`). So presence and kinds are
+the server's. The package's `gitHead` is
+`2bd066d87f5bafd315be9f40889d0a60b9e58e0b` of
+[typescript-go](REFERENCES.md#typescript-go), version 7.0.2; at that
+revision:
+
+- **The nodes the client reads.** The server encodes three things: a
+  program's source file (`handleGetSourceFile`, `internal/api/session.go:1045-1065`,
+  `sourceFile := program.GetSourceFile(...)` then
+  `encoder.EncodeSourceFile(sourceFile)`), and the results of
+  `typeToTypeNode` and `signatureToSignatureDeclaration`
+  (`session.go:2035-2105`), which no view lists. A program's file is the
+  parser's result: `GetSourceFileByPath` returns `p.filesByPath[path]`
+  (`internal/compiler/program.go:1817-1819`), filled from the host's
+  `GetSourceFile` (`internal/compiler/fileloader.go:370`), which is
+  `parser.ParseSourceFile(opts, text, …)` (`internal/compiler/host.go:83`)
+  or, in a project, the parse cache's
+  `parser.ParseSourceFile(key.SourceFileParseOptions, fh.Content(), key.ScriptKind)`
+  (`internal/project/parsecache.go:34`, `compilerhost.go:96-100`). A
+  program update replaces a changed file by a new parse,
+  `newFile := newHost.GetSourceFile(oldFile.ParseOptions())`
+  (`program.go:300-301`, `334-335`); the parser has no incremental
+  reparse (`internal/parser/parser.go:1134`, `// !!! incremental parsing`,
+  the reuse commented out). No code of the server assigns a parsed import
+  declaration's `ModuleSpecifier`, `ImportClause` or `Attributes` outside
+  its constructors (`data.ModuleSpecifier = moduleSpecifier`,
+  `internal/ast/ast_generated.go:2530-2537`), and no code calls
+  `setModifiers` (`internal/ast/ast.go:1523`). The transformers' and the
+  language service's `UpdateImportDeclaration` calls
+  (`internal/transformers/…`, `internal/ls/organizeimports.go`) build new
+  nodes for emit and edits, which no program file holds.
+- **Construction.** In a parse, a node of kind 346 is made at one site, the
+  reparse of a JSDoc `@import` tag (`internal/parser/reparser.go:119-133`):
+
+  ```go
+  case ast.KindJSDocImportTag:
+      importTag := tag.AsJSDocImportTag()
+      if importTag.ImportClause == nil {
+          break
+      }
+      importClause := p.addDeepCloneReparse(importTag.ImportClause)
+      …
+      importDeclaration := p.factory.NewJSImportDeclaration(
+          p.factory.DeepCloneReparseModifiers(importTag.Modifiers()),
+          importClause,
+          p.addDeepCloneReparse(importTag.ModuleSpecifier),
+          p.addDeepCloneReparse(importTag.Attributes),
+      )
+  ```
+
+  `NewJSImportDeclaration` stores its arguments as they are
+  (`ast_generated.go:2530-2537`). Its other callers are
+  `UpdateImportDeclaration`, which takes replacement children and checks
+  neither their presence nor their kinds (`ast_generated.go:2539-2551`),
+  `Clone`, which passes the node's own children (`ast_generated.go:2564-2573`),
+  and the decoder of nodes a client sends (`internal/api/encoder/decoder_generated.go:413-420`);
+  by the paragraph above, no program file holds a node they build.
+- **The tag.** `parseImportTag` (`internal/parser/jsdoc.go:940-954`) parses
+  the clause, the specifier and the attributes with the functions the
+  parse of kind 273 uses (`internal/parser/parser.go:2272-2277`):
+  `tryParseImportClause`, nil or an import clause (`parser.go:2337-2347`);
+  `parseModuleSpecifier` (`parser.go:2326-2335`), which returns
+  `p.parseLiteralExpression(true)` on a string literal and otherwise
+  `p.parseExpression()`; and `tryParseImportAttributes`, nil or an
+  `ImportAttributes` node (`parser.go:2501-2509`, `3090-3114`). The
+  specifier is never nil, a malformed tag included: `parseExpression`
+  returns `parseAssignmentExpressionOrHigher`'s node (`parser.go:4058-4077`),
+  whose last fallback is `parsePrimaryExpression`'s
+  `return p.parseIdentifierWithDiagnostic(diagnostics.Expression_expected, nil)`
+  (`parser.go:5606`), which reports the error and returns
+  `p.createMissingIdentifier()` (`parser.go:5903`), an identifier of empty
+  text (`parser.go:2981-2983`).
+- **The reparse.** The node's clause, specifier and attributes are deep
+  clones of the tag's: `DeepCloneReparse` (`internal/ast/deepclone.go:75-82`)
+  returns nil for nil and otherwise the visitor's clone, each node rebuilt
+  by its own kind's constructor (`deepclone.go:6-27`). Its modifiers are the
+  clone of the tag's, and a JSDoc tag has none: `JSDocImportTag` holds
+  `JSDocTagBase`, the clause, the specifier and the attributes
+  (`ast_generated.go:7751-7756`).
+- **The encoder.** Kinds 273 and 346 share one case of the child mask,
+  `(boolToByte(n.ImportClause != nil) << 1) | (boolToByte(n.ModuleSpecifier != nil) << 2) | (boolToByte(n.Attributes != nil) << 3)`
+  beside the modifiers' bit 0
+  (`internal/api/encoder/encoder_generated.go:149-151`).
+- **The client.** The client builds no node of kind 346 but a clone: the
+  visitor table has no entry for it, so `visitEachChild` returns the node
+  itself (`dist/ast/visitor.generated.js:45-50`), and `cloneNode` copies
+  its four children (`dist/ast/factory.generated.js:447-453`, `531-533`).
+
+So every node of kind 346 the client reads holds a specifier, produced as
+kind 273's is, and a clause and attributes absent or produced as kind 273's
+are: its children meet the contract the declaration of `ImportDeclaration`
+states for kind 273's, on the same trust as that declaration. C3 checks the
+shape's members on every node of kind 346 of the same corpus file, which
+holds an `@import` of named bindings and one of a namespace with
+attributes.
 
 ## Node lists
 
@@ -1118,9 +1230,11 @@ JavaScript and could be admitted with more machinery:
 
 Under R3, the true edge of `isTypeAliasDeclaration` holds both kinds, so it
 reads the members both shapes state (`blocker-type-alias-guard-member`) and
-does not establish `TypeAliasDeclaration` itself; a member
-`JSImportDeclaration`'s base shape lacks is refused after
-`isImportDeclaration`. The kind test
+does not establish `TypeAliasDeclaration` itself; so does the true edge of
+`isImportDeclaration`, which holds `JSImportDeclaration` beside
+`ImportDeclaration` (`blocker-let-guard-import-specifier` reads
+`moduleSpecifier`, `invalid-compiler-api-js-import-guard` is refused where
+it returns the node's kind as `ImportDeclaration`'s). The kind test
 (`n.kind === SyntaxKind.TypeAliasDeclaration`) narrows exactly; on a
 JavaScript file the guard accepts `JSTypeAliasDeclaration` and the kind test
 rejects it. The front end reads TypeScript files only: its parser refuses a
