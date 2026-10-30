@@ -271,6 +271,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-recursive-constant-shadowed",
       `wrong({ k: "a", parts: [{ k: "b", parts: [] }] }, [(u, at) => at.name])`],
     ["invalid-field-call-effect-cell", "wrong([1, 2], { value: 0 })"],
+    // A field's function of the type taking a further optional string,
+    // which `map` fills with the index, a number: its `length` is
+    // `undefined`.
+    ["invalid-callable-field-callback", "wrong([1, 2], { num: (n, tag) => tag === undefined ? n : tag.length })[0]"],
+    ["invalid-callable-field-callback-rest", "wrong([1, 2], { num: (n, ...tags) => tags.length === 0 ? n : tags[0].length })[0]"],
     ["invalid-find-union-method-effect",
       "(() => { const xs = [{ size: 1 }, { size: 2 }], seen = []; wrong(xs, { size: 0, shrink(x) { seen.push(x); xs.pop(); return false; } }); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-readonly-field-call-effect",

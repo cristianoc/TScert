@@ -1069,6 +1069,32 @@ elements are no `Stated`, and the forms read from it were refused.
 - **Functions:** `selectGlobal`, `globalFunction`.
 - **Commit:** the introducing commit.
 
+### A field's function passed to `map`
+
+The typed traversals (`tools/fragment-parts.mts`) map a node's lists by a
+function a record field holds, `list.map(m.expr)`, with `PartMap`'s field
+typed `(e: Expr) => …`. `map` calls it with the element, its index and the
+array, and a function of that type may take a further optional parameter
+the index fills (`invalid-callable-field-callback`, run under Node), so the
+call is refused. Every function the traversals store there is TScert's
+own code of one parameter, which discards the actuals past it; the
+field's type did not state that.
+
+- **Rewrite:** each field of `PartMap` and `DocumentMap`, the functions
+  `deepPartMap` takes and the `identity` test `documentHolds`, `moduleHolds`
+  and `astHolds` take (passed to `some`), takes its further actuals at a
+  rest of `unknown`,
+  `(e: Expr, ...further: unknown[]) => …`. A function of one parameter
+  meets that type from its code, and `map` passes the index and the array
+  there (`blocker-callable-field-callback`). Every call and every value
+  stored is unchanged.
+- **Pattern:** a field whose function is passed where more actuals are
+  passed than its type names takes them at a rest of `unknown`.
+- **Functions:** `mapExprParts`, `mapStmtParts`, `mapFunctionParts`,
+  `mapDocument`, `deepPartMap`, `documentHolds`, `moduleHolds`, `astHolds`,
+  `renamedModule`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

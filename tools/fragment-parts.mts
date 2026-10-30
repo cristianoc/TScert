@@ -12,11 +12,11 @@ import { someType } from "./type-term.mts";
  * a statement, a pattern, a type term, a type parameter (its name, bound
  * and resolution slots together). */
 export type PartMap = {
-  expr: (e: Expr) => Within<{ value: "any"; store: "grow" }, Expr>;
-  stmt: (s: Stmt) => Within<{ value: "any"; store: "grow" }, Stmt>;
-  pattern: (p: PatternAst) => Within<{ value: "any"; store: "grow" }, PatternAst>;
-  type: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
-  param: (p: TypeParamAst) => Within<{ value: "any"; store: "grow" }, TypeParamAst>;
+  expr: (e: Expr, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, Expr>;
+  stmt: (s: Stmt, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, Stmt>;
+  pattern: (p: PatternAst, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, PatternAst>;
+  type: (t: TypeTerm, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
+  param: (p: TypeParamAst, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeParamAst>;
 };
 
 /** `e` with each of its direct parts mapped by `m`. */
@@ -112,8 +112,8 @@ export function mapFunctionParts(f: FunctionAst, m: PartMap): Within<{ value: "a
 /** The map of every part under a node: its expressions, statements and
  * patterns mapped through their parts, its type terms by `type` and its
  * type parameters by `param`. */
-export function deepPartMap(type: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
-    param: (p: TypeParamAst) => Within<{ value: "any"; store: "grow" }, TypeParamAst>): Within<{ value: "any"; store: "grow" }, PartMap> {
+export function deepPartMap(type: (t: TypeTerm, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeTerm>,
+    param: (p: TypeParamAst, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeParamAst>): Within<{ value: "any"; store: "grow" }, PartMap> {
   function expr(e: Expr): Expr { return mapExprParts(e, deep); }
   function stmt(s: Stmt): Stmt { return mapStmtParts(s, deep); }
   function pattern(p: PatternAst): PatternAst { return mapPatternParts(p, deep); }
@@ -125,10 +125,10 @@ export function deepPartMap(type: (t: TypeTerm) => Within<{ value: "any"; store:
  * term, a type parameter, a declaration's identity, a written
  * application's site. */
 export type DocumentMap = {
-  type: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
-  param: (p: SourceTypeParameter<TypeTerm>) => Within<{ value: "any"; store: "grow" }, SourceTypeParameter<TypeTerm>>;
-  identity: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, DeclarationIdentity>;
-  site: (site: string) => Within<{ value: "any"; store: "grow" }, string>;
+  type: (t: TypeTerm, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
+  param: (p: SourceTypeParameter<TypeTerm>, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, SourceTypeParameter<TypeTerm>>;
+  identity: (id: DeclarationIdentity, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, DeclarationIdentity>;
+  site: (site: string, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, string>;
 };
 
 /** `doc` with each of its parts mapped by `m`. */
@@ -215,7 +215,7 @@ function documentParts(doc: DeclarationDocument): Within<{ value: "any"; store: 
 /** Whether a declaration document holds a term passing `term` or names an
  * identity passing `identity`. */
 export function documentHolds(doc: DeclarationDocument, term: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
   const declared = documentParts(doc);
   return declared.identities.some(identity) || declared.types.some(t => someType(t, term));
 }
@@ -230,7 +230,7 @@ function codeParts(code: { init: Stmt[]; functions: FunctionAst[] }): Within<{ v
 /** Whether a module's documents and code hold a term passing `term` or
  * name an identity passing `identity`. */
 export function moduleHolds(module: ModuleAst, term: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
   return documentHolds(module.declarations, term, identity) ||
     fragmentTypes(codeParts(module)).some(t => someType(t, term));
 }
@@ -238,7 +238,7 @@ export function moduleHolds(module: ModuleAst, term: (t: TypeTerm) => Within<{ v
 /** Whether a file's documents and code, its modules' included, hold a term
  * passing `term` or name an identity passing `identity`. */
 export function astHolds(ast: Ast, term: (t: TypeTerm) => Within<{ value: "any"; store: "grow" }, boolean>,
-    identity: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
+    identity: (id: DeclarationIdentity, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, boolean>): Within<{ value: "any"; store: "grow" }, boolean> {
   return documentHolds(ast.declarations, term, identity) ||
     fragmentTypes(codeParts(ast)).some(t => someType(t, term)) || ast.modules.some(m => moduleHolds(m, term, identity));
 }

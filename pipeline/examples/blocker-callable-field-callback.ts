@@ -1,5 +1,8 @@
-// A function a record field holds, passed to map, needs its effect stated:
-// a field's function type states none, so map takes it at any footprint.
+// A function a record field holds, passed to map: map passes it the index
+// and the array after the element, so the field's type states that the
+// function takes further actuals, at its rest, and the effect it keeps.
+// The record is built from module functions, a parameter and a literal of
+// closures, whose code discards the actuals past its parameters.
 // Census functions:
 // fragment-parse.mts#renamedModule, fragment-parts.mts#astHolds,
 // fragment-parts.mts#codeParts, fragment-parts.mts#deepPartMap,
@@ -8,9 +11,40 @@
 // fragment-parts.mts#fragmentTypes, fragment-parts.mts#mapDocument,
 // fragment-parts.mts#mapExprParts, fragment-parts.mts#mapFunctionParts,
 // fragment-parts.mts#mapStmtParts, fragment-parts.mts#moduleHolds.
-interface Mapper {
-  expr: (e: number) => number;
+type Tree = { k: "leaf"; n: number } | { k: "node"; kids: Tree[] };
+type Mapper = {
+  tree: (t: Tree, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, Tree>;
+  num: (n: number, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, number>;
+};
+export function mapParts(t: Tree, m: Mapper): Within<{ value: "any"; store: "grow" }, Tree> {
+  switch (t.k) {
+    case "leaf":
+      return { ...t, n: m.num(t.n) };
+    case "node":
+      return { ...t, kids: t.kids.map(m.tree) };
+  }
 }
-export function all(list: readonly number[], m: Mapper): number[] {
-  return list.map(m.expr);
+export function deep(
+  num: (n: number, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, number>,
+): Within<{ value: "any"; store: "grow" }, Mapper> {
+  function tree(t: Tree): Tree {
+    return mapParts(t, d);
+  }
+  const d: Mapper = { tree, num };
+  return d;
+}
+export function numbers(t: Tree): Within<{ value: "any"; store: "grow" }, number[]> {
+  const seen: number[] = [];
+  mapParts(t, {
+    tree: (u) => u,
+    num: (n) => {
+      seen.push(n);
+      return n;
+    },
+  });
+  return seen;
+}
+export function shifted(ts: Tree[], k: number): Tree[] {
+  const num = (n: number): number => n + k;
+  return ts.map(deep(num).tree);
 }

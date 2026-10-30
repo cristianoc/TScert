@@ -75,7 +75,19 @@ let rec plausible_subtype_with excludes actual expected =
             Semantic.plain_effect q.call_effect &&
             List.length p.params < List.length q.params &&
             {p with call_effect=q.call_effect}
-              = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params}))) a.calls) b.calls
+              = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params}) ||
+           (* A function taking further actuals at its rest meets a fixed
+              signature passing them there, as Lean's `rest` derivation
+              takes the target's extra parameters into the source's rest. *)
+           (match p.variadic with
+            | Some element when p.rest_pack=None && q.variadic=None && q.rest_pack=None &&
+                Semantic.plain_effect q.call_effect &&
+                List.length p.params <= List.length q.params ->
+              {p with call_effect=q.call_effect;variadic=None}
+                = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params} &&
+              List.for_all (fun t -> plausible_subtype_with excludes t element)
+                (List.filteri (fun i _ -> i >= List.length p.params) q.params)
+            | _ -> false))) a.calls) b.calls
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype_with excludes part expected) parts
   | _,Union parts -> List.exists (plausible_subtype_with excludes actual) parts

@@ -234,6 +234,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                (if List.mem_assoc n env then None else module_arity n))
            | _ -> ());
           None
+        (* A function a field holds is known only by the field's type. *)
+        | Read _ ->
+          (match param, Option.bind (quietly (fun () -> expr env arg))
+                   (fun t -> try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+           | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
+               when own.variadic = None
+                 && (List.length o.params > List.length own.params || o.variadic <> None) ->
+             Option.iter (S.explain arg.pos) (Module_contract.longer_refusal None)
+           | _ -> ());
+          None
         | _ -> None in
       let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
         | Some p -> Some p
