@@ -126,7 +126,7 @@ export const cases: Case[] = [
   { ...positive("blocker-readonly-record", "A record read through `Readonly`, the type the front end gives its tables: read through `Object.entries` and at its fields."), project: "pipeline/blocker-project" },
   { ...positive("blocker-in-name-object", "an open read: `x.k` after `\"k\" in x` on an object without call code no type states `k` of is `%Read:k%(x)`, the value the lookup finds, at `unknown`, under the open-read restriction"),
     project: "pipeline/blocker-project" },
-  { ...gap("blocker-function-member-read", "A member read on an `unknown` a `typeof` test found a function needs the function's members: the read is refused as one on a value that may be no object.", "unsupported", "proposal",
+  { ...gap("blocker-function-member-read", "A member read on an `unknown` a `typeof` test found a function: `toString`'s lookup finds `Function.prototype`'s only on a function owning and inheriting no other, and a class's `static toString()`, which the fragment admits, runs client code there; the read is refused as one on a value of no stated members (TypeScript's `Function`).", "unsupported", "proposal",
     /^unsupported: field read on non-object(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...positive("blocker-instanceof-imported-class", "`instanceof` of an error class another module declares, imported by name: the test walks the operand's chain for the prototype the class's declaration creates"),
     project: "pipeline/blocker-project" },
