@@ -2136,14 +2136,48 @@ at records is the [named access](SOURCE-ELABORATION.md#keyed-access-at-a-singlet
 
 ## Open reads
 
-A member read `o.k` whose object TypeScript types as `object` narrowed by
-`"k" in o` tests (or an explicit annotation of the same shape), every part
-of the intersection `object` or the standard library's `Record<"k'", unknown>` with $`k`$ among the $`k'`$, at
-a key $`k\in\mathrm{auditedOpenReadKeys}`$ and
-$`k\notin\mathrm{objectProtoKeys}`$, is an **open read**: a call of
-the intrinsic $`\%\mathsf{Read}{:}k\%`$ (`openReadIntrinsic` in
-`intrinsics.mts`), which the parser writes where the declaration graph
-finds that type (`openReads`):
+A member read `o.k` at a key $`k\notin\mathrm{objectProtoKeys}`$ of
+$`\mathrm{auditedOpenReadKeys}`$ or of $`\mathrm{receiverOpenReadKeys}`$
+is an **open read**, a call of the intrinsic $`\%\mathsf{Read}{:}k\%`$
+(`openReadIntrinsic` in `intrinsics.mts`), which the parser writes where
+the declaration graph finds one of two shapes of syntactic eligibility
+(`openReads`):
+
+- **A record part.** TypeScript types `o` as a union each arm of which is
+  an object type, alone or intersected with parts of the standard
+  library's `Record<"k'", unknown>`, and some arm holds such a part with
+  $`k`$ among the $`k'`$: the type `"k" in o` gives an operand of no arm
+  stating $`k`$ (`object & Record<"k", unknown>`), or an explicit
+  annotation of the same shape.
+- **A guarded read.** `o` is a name, and a test `"k" in o` of the same
+  name, whose type at the test has an arm stating no $`k`$, makes the read
+  eligible: within one function, the read lies in the right operand of
+  `t && …` or of `t || …`, a branch of `t ? … : …` or of `if (t)`, or a statement after
+  an `if (t)` without `else` whose branch ends in `return`, `throw`,
+  `break` or `continue`, with `t` answering the way that finds $`k`$ in
+  `o` (`"k" in o` true, through `!`, a conjunction found true or a
+  disjunction found false). TypeScript drops the arm stating no $`k`$,
+  which an open record may own at any type (`invalid-in-union-read`, run
+  under Node). Eligibility is syntactic: it does not track a reassignment
+  or a call between the test and the read (`in-union-read`), and it
+  establishes no presence at the read.
+
+At a key of $`\mathrm{receiverOpenReadKeys}`$ (`body`, `type`) the read is
+also restricted by its receiver. Each arm of TypeScript's type of `o` at
+the read, and for a guarded read also at the test, either states the key
+(a part of it, other than a `Record<"k'", unknown>` part, is an object
+type with that property, whose value the read finds as its stated
+contract says), or is of the host package: each such part is an object
+type all of whose declarations, and transitively every base type's, are
+the host package's, whose audit covers the key. Any other arm keeps the
+read refused: one of the program's own types stating no key, which may
+carry a getter at the unstated key (as a value at `ErrorOptions` may at
+`cause`, [`JSON` and `Error`](#json-and-error); `invalid-in-union-read`,
+run under Node), a type extending an external
+one (`interface LocalError extends Error {}`), another library's type,
+`object` or `unknown` (`invalid-in-union-read-receiver`). The open-read
+restriction at these keys then concerns only the audited package's
+objects and the stated keys of other receivers.
 
 ```math
 o.k\;\equiv\;\%\mathsf{Read}{:}k\%(o)
@@ -2152,8 +2186,8 @@ o.k\;\equiv\;\%\mathsf{Read}{:}k\%(o)
 ```
 
 ```math
-\frac{\Gamma\vdash o:A\quad A\le\{\}\quad k\in\mathrm{auditedOpenReadKeys}\quad k\notin\mathrm{objectProtoKeys}\quad
-      \text{TypeScript types } o \text{ as } \mathtt{object}\mathbin{\&}\mathtt{Record}\langle k_1,\mathtt{unknown}\rangle\mathbin{\&}\cdots,\ k\in\{k_i\}}
+\frac{\Gamma\vdash o:A\quad A\le\{\}\quad k\in\mathrm{auditedOpenReadKeys}\cup\mathrm{receiverOpenReadKeys}\quad k\notin\mathrm{objectProtoKeys}\quad
+      o.k \text{ eligible}\quad k\in\mathrm{receiverOpenReadKeys}\Rightarrow \text{each arm of } o \text{ states } k \text{ or is the host package's}}
      {\Gamma\vdash o.k:\mathtt{unknown}}\ \textsf{open-read}
 ```
 
@@ -2165,7 +2199,10 @@ that `typeof o === "object"` and `o !== null` leave
 and no write follows from it, and a write at the key stays a
 [key-adding write](PROGRAM-TYPING.md#key-adding-writes)
 (`invalid-open-read-write`). The eligibility check recognizes the type shape,
-which an explicit annotation can also state; it proves no preceding test.
+which an explicit annotation can also state, or the guard; the signature
+holds of every object, so neither proves anything the read relies on, and
+each only selects the reads that TypeScript's type of the operand gives
+no stated field of.
 A passed `in` test does not prove permanent presence: a later lookup can
 return `undefined`, which is within `unknown`.
 
@@ -2189,30 +2226,42 @@ The keys of `Object.prototype` (`toString`, `constructor`, `__proto__`, …)
 are no open-read keys: `in` with one is refused
 (`invalid-open-read-inherited`), and a read at one stays the model's.
 
-**Audited key capability.** `auditedOpenReadKeys` in
-[`host-operations.mts`](../tools/host-operations.mts) owns the cross-family
-audit and allowlist: `close`, `kill`, `once`, `exitCode`, `signalCode`,
-`kind`, `getStart` and `name`. Each key is audited against every admitted
+**Audited key capability.** `auditedOpenReadKeys` and
+`receiverOpenReadKeys` in
+[`host-operations.mts`](../tools/host-operations.mts) own the cross-family
+audit and allowlists: `close`, `kill`, `once`, `exitCode`, `signalCode`,
+`kind`, `getStart` and `name`, then the receiver-restricted `body` and
+`type`. Each key is audited against every admitted
 host family, its own and inherited properties, and the library overlays:
 absence or transparent data/getters whose results meet `unknown` and whose
 reads preserve the modeled heap. The audit covers compiler nodes and node
 lists, sync API views and client/channel/child, and Node and standard
-library objects. Adding a key, family or overlay requires that audit again.
+library objects. The audit reads the installed implementations (the
+package's `dist` sources and Node's); adding a key, family or overlay
+requires it again.
 The declaration graph checks this capability independently of the apparent
 receiver type, so erasure to `unknown` retains the gate. `view`, `parent`
 and `_byteIndex` are outside the allowlist; `invalid-compiler-api-open-read-erased`
 passes a Node to `expose(x: unknown)` and refuses its `x.view` read.
 
-`tests/compiler-api.mts` (C5) checks the compiler client/child data properties
-and the node's `kind` getter and `getStart` method along their chains.
+`tests/compiler-api.mts` (C5) samples that audit under Node: the compiler
+client/child data properties and the node's `kind` getter and `getStart`
+method along their chains, and, on three nodes of different kinds, the
+`body` and `type` getters of `RemoteNode.prototype`, reading the kind's
+named child or `undefined`, while the client and its process have neither
+key. It checks no other family and no heap preservation; those rest on the
+implementation audit.
 The source excludes custom inherited getters as well as literal getters
 (`invalid-open-read-inherited-getter`, run under Node). External code
 preserves the same restriction, including on prototype chains.
 An open read's `unknown` establishes no host family: a guard promising a
 node from a numeric `kind` is refused, which `{ kind: 1 }` passes
 (`invalid-compiler-api-open-read-kind`, run under Node). A receiver a
-family's type describes uses that family's stated keys
-(`invalid-compiler-api-open-read-internal`).
+family's type describes uses that family's stated keys, and a key outside
+the allowlist that none of its arms states stays refused
+(`invalid-compiler-api-open-read-internal`); an eligible read at an
+audited key is an open read on a family's union of kinds too
+(`compiler-api-in-union-read`).
 
 ## Prototype contracts
 

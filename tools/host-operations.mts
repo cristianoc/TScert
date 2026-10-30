@@ -26,18 +26,23 @@ import {
 /** The key capability for an open read, independent of the receiver's
  * apparent type: erasing a host value to unknown preserves this gate.
  *
- * Audit of all eight keys against every admitted family and overlay:
+ * Audit of these eight keys and of `receiverOpenReadKeys`' two against
+ * every admitted family and overlay (an implementation audit of the
+ * installed package and Node; C5 of tests/compiler-api.mts samples it):
  * - Compiler nodes: kind is RemoteNodeBase's byte-reading getter (or a
- *   NodeObject data field); getStart is a prototype method; name reads the
- *   encoded named child (RemoteNode.getNamedChild) or NodeObject._data.name.
- *   The child is a family node or undefined; lazy wrappers/cache writes are
- *   host bookkeeping, outside the modeled heap. The other keys are absent.
- * - Node lists (RemoteNodeList and factory arrays): all eight absent,
+ *   NodeObject data field); getStart is a prototype method; name, and the
+ *   receiver-restricted body and type, read the encoded named child (RemoteNode.getNamedChild, undefined
+ *   for a kind without that child) or NodeObject._data's field, on every
+ *   node, whatever its kind. The child is a family node or undefined; lazy
+ *   wrappers/cache writes are host bookkeeping, outside the modeled heap.
+ *   The other keys are absent.
+ * - Node lists (RemoteNodeList and factory arrays): all ten keys absent,
  *   including along Array.prototype and Object.prototype.
  * - Sync API/client/channel: close is a prototype method; the other keys
  *   are absent. Snapshot, Project, Program, Checker, Type and Signature
  *   have none; Symbol.name is a string data field, NodeHandle.kind a
- *   numeric data field. Other compiler response records carry ordinary
+ *   numeric data field, a type predicate's type a data field holding a
+ *   Type or undefined. Other compiler response records carry ordinary
  *   contract values. See dist/api/sync/{api,client}.js, syncChannel.js and
  *   dist/{api/node/node.generated,api/node/node.infrastructure,ast/factory.generated}.js.
  * - Channel ChildProcess: kill and inherited EventEmitter.once are data
@@ -62,6 +67,14 @@ import {
 export const auditedOpenReadKeys: ReadonlySet<string> = new Set([
   "close", "kill", "once", "exitCode", "signalCode", "kind", "getStart", "name",
 ]);
+
+/** Open-read keys admitted only where every arm of the receiver's type
+ * states the key or is of the host package, its declarations and its base
+ * types' all the package's, whose audit above covers the key. An arm of the
+ * program's own type stating no key, which may carry a getter there, of a
+ * type extending an external one, of another library's type, `object` or
+ * `unknown` keeps the read refused. */
+export const receiverOpenReadKeys: ReadonlySet<string> = new Set(["body", "type"]);
 
 export type HostClass =
   | { k: "transparent"; why: string }

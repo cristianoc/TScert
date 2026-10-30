@@ -901,23 +901,41 @@ const nodeListMembersHold = (list: object, what: string): void => {
     const child = fieldOf(fieldOf(client, "channel"), "child");
     assert.ok(typeof child === "object" && child !== null, "the client's process");
     for (const key of ["kill", "once", "exitCode", "signalCode"]) data(child, key, "API.client.channel.child");
+    for (const key of ["body", "type"]) {
+      assert.equal(lookup(client, key), undefined, `API.client has no ${key} along its chain`);
+      assert.equal(lookup(child, key), undefined, `API.client.channel.child has no ${key} along its chain`);
+    }
   } finally {
     releaseCompiler(api, null);
   }
   const file = join(dir, "open-read.ts");
-  const source = "export const answer = 42;\n";
+  const source = "export const answer = 42;\nexport function f(): number { return 1; }\n";
   writeFileSync(file, source);
   const tree = openText(file, source);
-  const [statement] = tree.statements;
-  assert.ok(statement, "a parsed statement");
-  for (const node of [tree, statement]) {
+  const [statement, declaration] = tree.statements;
+  assert.ok(statement && declaration, "two parsed statements");
+  for (const node of [tree, statement, declaration]) {
     data(node, "getStart", "a node");
     const kind = lookup(node, "kind");
     assert.ok(kind && kind.descriptor.get && !kind.descriptor.set && !("value" in kind.descriptor) &&
       kind.owner.constructor.name === "RemoteNodeBase", "a node's kind is RemoteNodeBase.prototype's getter");
+    // `body` and `type`: RemoteNode.prototype's getters of the named child,
+    // on every node whatever its kind.
+    for (const key of ["body", "type"]) {
+      const found = lookup(node, key);
+      assert.ok(found && found.descriptor.get && !found.descriptor.set && !("value" in found.descriptor) &&
+        found.owner.constructor.name === "RemoteNode", `a node's ${key} is RemoteNode.prototype's getter`);
+    }
+  }
+  // A kind without the child reads `undefined`; one with it, the child.
+  for (const key of ["body", "type"]) {
+    assert.equal(Reflect.get(tree, key), undefined, `a source file's ${key}`);
+    assert.equal(Reflect.get(statement, key), undefined, `a variable statement's ${key}`);
+    const child: unknown = Reflect.get(declaration, key);
+    assert.ok(typeof child === "object" && child !== null && lookup(child, "kind"), `a function declaration's ${key} is a node`);
   }
   closeParser();
-  console.log("C5: the open reads of the client, its process and a node find data properties, and a node's kind getter");
+  console.log("C5: the open reads of the client, its process and a node find data properties, a node's kind getter and its body and type getters");
 }
 
 // C6, stated guards: each stated guard of the sync API is declared as

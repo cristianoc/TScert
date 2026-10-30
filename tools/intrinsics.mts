@@ -61,7 +61,10 @@
  *   accessor or proxy, DESIGN.md "Trust surface").
  * - `o.k` where TypeScript types `o` as `object` narrowed by `"k" in o`
  *   tests (`object & Record<"k", unknown>`, also expressible by annotation),
- *   at a key in `auditedOpenReadKeys`, is `%Read:k%(o)` (`openReadIntrinsic`):
+ *   or a read a test `"k" in o` makes syntactically eligible where an arm
+ *   of `o`'s type at the test states no `k`, at a key in
+ *   `auditedOpenReadKeys` or, on a receiver each arm of which states the key
+ *   or is of the host package, `receiverOpenReadKeys`, is `%Read:k%(o)` (`openReadIntrinsic`):
  *   the value the lookup of `k` on `o` finds, at `unknown`. It preserves the
  *   modeled heap by the cross-family key audit and open-read restriction
  *   (SOURCE-CONTRACTS.md, "Open reads"): along every receiver's chain the

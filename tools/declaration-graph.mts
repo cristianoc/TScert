@@ -14,7 +14,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // array-prototype.mts holds the reviewed contracts of the built-in prototypes, the only members of `Array.prototype` and the primitive prototypes this reader admits.
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
-import { auditedOpenReadKeys } from "./host-operations.mts";
+import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
 import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
@@ -3061,17 +3061,115 @@ export function collectDeclarations(file: string, options: {
         return undefined;
       return "value" in key && typeof key.value === "string" ? key.value : undefined;
     };
+    // Syntactic eligibility of a read `x.k` by a test `"k" in x` of the same
+    // name `x` answering the way that finds `k` (the read in the right
+    // operand of `&&` or `||`, a branch of `?:` or `if`, or a statement
+    // after an `if` whose branch exits), where TypeScript's type of `x` at
+    // the test has an arm stating no `k`: TypeScript drops that arm, which
+    // may own the key. It selects reads; it proves no surviving presence.
+    const unparenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? unparenthesized(e.expression) : e;
+    const exits = (s: Node): boolean => {
+      if (ts.isReturnStatement(s) || ts.isThrowStatement(s) || ts.isContinueStatement(s) || ts.isBreakStatement(s)) return true;
+      const last = ts.isBlock(s) ? s.statements[s.statements.length - 1] : undefined;
+      return !!last && exits(last);
+    };
+    const functionBody = (n: Node): boolean => ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) ||
+      ts.isArrowFunction(n) || ts.isMethodDeclaration(n) || ts.isConstructorDeclaration(n) ||
+      ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n);
+    // The type of `x` at the test that makes the read eligible, if any.
+    const guardedBy = (receiver: Node, key: string): Type | undefined => {
+      if (!ts.isIdentifier(receiver)) return undefined;
+      const symbol = checker.getSymbolAtLocation(receiver);
+      if (!symbol) return undefined;
+      let found: Type | undefined;
+      // `x` at the test: the read's name, with an arm stating no `key`.
+      const tested = (operand: Node): boolean => {
+        const o = unparenthesized(operand);
+        if (!ts.isIdentifier(o) || checker.getSymbolAtLocation(o)?.id !== symbol.id) return false;
+        const type = checker.getTypeAtLocation(o);
+        if (!type || !(isUnionType(type) ? type.getTypes() : [type]).some(arm => !checker.getPropertyOfType(arm, key)))
+          return false;
+        found = type;
+        return true;
+      };
+      // Whether `test` answering `truth` finds `key` in `x`.
+      const finds = (test: Node, truth: boolean): boolean => {
+        const e = unparenthesized(test);
+        if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) return finds(e.operand, !truth);
+        if (!ts.isBinaryExpression(e)) return false;
+        const op = e.operatorToken.kind;
+        if (op === ts.SyntaxKind.InKeyword) {
+          const k = unparenthesized(e.left);
+          return truth && ts.isStringLiteral(k) && k.text === key && tested(e.right);
+        }
+        if (op === ts.SyntaxKind.AmpersandAmpersandToken) return truth && (finds(e.left, true) || finds(e.right, true));
+        if (op === ts.SyntaxKind.BarBarToken) return !truth && (finds(e.left, false) || finds(e.right, false));
+        return false;
+      };
+      for (let at: Node = receiver, up = at.parent; up && !functionBody(up); at = up, up = up.parent) {
+        if (ts.isBinaryExpression(up) && up.right === at &&
+            (up.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken && finds(up.left, true) ||
+             up.operatorToken.kind === ts.SyntaxKind.BarBarToken && finds(up.left, false))) return found;
+        if (ts.isConditionalExpression(up) &&
+            (up.whenTrue === at && finds(up.condition, true) || up.whenFalse === at && finds(up.condition, false))) return found;
+        if (ts.isIfStatement(up) &&
+            (up.thenStatement === at && finds(up.expression, true) || up.elseStatement === at && finds(up.expression, false))) return found;
+        if (ts.isBlock(up) || ts.isSourceFile(up)) {
+          const statements: readonly Node[] = up.statements;
+          const before = statements.slice(0, Math.max(statements.indexOf(at), 0));
+          if (before.some(s => ts.isIfStatement(s) && !s.elseStatement && exits(s.thenStatement) && finds(s.expression, false)))
+            return found;
+        }
+      }
+      return undefined;
+    };
+    // A receiver an open read at a key of `receiverOpenReadKeys` admits:
+    // each arm of its union states the key (an object type part stating it,
+    // read at its stated contract), or is of the host package, whose audit
+    // covers the key: every part but `Record<"k'", unknown>` ones an object
+    // type all of whose declarations, and every base type's, transitively,
+    // are the host package's. Another arm (the program's own types stating
+    // no key, a type extending an external one, `object`, `unknown`) may
+    // carry a getter at the key.
+    const hostDeclared = (type: Type, seen: Set<Node>): boolean => {
+      const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
+      return !!(type.flags & TypeFlags.Object) && declarations.length > 0 && declarations.every(node => {
+        if (!node || !isHostFile(node.getSourceFile().fileName)) return false;
+        if (seen.has(node)) return true;
+        seen.add(node);
+        const clauses = ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node) ? node.heritageClauses ?? [] : [];
+        return clauses.every(clause => clause.types.every(base => {
+          const t = checker.getTypeAtLocation(base);
+          return !!t && hostDeclared(t, seen);
+        }));
+      });
+    };
+    const auditedReceiver = (type: Type, key: string): boolean =>
+      (isUnionType(type) ? type.getTypes() : [type]).every(arm => {
+        const parts = (isIntersectionType(arm) ? arm.getTypes() : [arm]).filter(part => recordOf(part) === undefined);
+        return parts.length > 0 && (parts.some(part => !!(part.flags & TypeFlags.Object) && !!checker.getPropertyOfType(part, key)) ||
+          parts.every(part => hostDeclared(part, new Set())));
+      });
     for (const span of options.openReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isPropertyAccessExpression(read) || !ts.isIdentifier(read.name))
         throw declarationError(span, "TypeScript member read missing");
+      // Each arm of the object's union is an object type, or one
+      // intersected with `Record<"k'", unknown>` parts, and some arm holds
+      // the read key's part: TypeScript reads `unknown` there.
       const object = checker.getTypeAtLocation(read.expression);
-      const parts = object && isIntersectionType(object) ? object.getTypes() : [];
-      const keys = parts.map(recordOf);
-      if (!auditedOpenReadKeys.has(read.name.text) ||
-          !parts.some(t => !!(t.flags & TypeFlags.NonPrimitive)) ||
-          !parts.every((t, i) => !!(t.flags & TypeFlags.NonPrimitive) || keys[i] !== undefined) ||
-          !keys.includes(read.name.text)) continue;
+      const arms = !object ? [] : isUnionType(object) ? object.getTypes() : [object];
+      const partsOf = (arm: Type): readonly Type[] => isIntersectionType(arm) ? arm.getTypes() : [arm];
+      const objectType = (t: Type): boolean => !!(t.flags & (TypeFlags.NonPrimitive | TypeFlags.Object));
+      const recordRead = arms.length > 0 &&
+        arms.every(arm => partsOf(arm).some(objectType) && partsOf(arm).every(t => objectType(t) || recordOf(t) !== undefined)) &&
+        arms.some(arm => partsOf(arm).some(t => recordOf(t) === read.name.text));
+      const key = read.name.text;
+      const guard = recordRead ? undefined : guardedBy(read.expression, key);
+      if (!auditedOpenReadKeys.has(key) && !receiverOpenReadKeys.has(key) || !recordRead && !guard) continue;
+      // At a receiver-restricted key, the receiver's type at the test (for
+      // a guarded read) and at the read.
+      if (receiverOpenReadKeys.has(key) && !(object && auditedReceiver(object, key) && (!guard || auditedReceiver(guard, key)))) continue;
       const intrinsic = openReadIntrinsic(read.name.text);
       if (!intrinsicsListed.has(intrinsic.name)) {
         values.push({ binding: { local: intrinsic.name, imported: intrinsic.name, specifier: intrinsicModule, span },
