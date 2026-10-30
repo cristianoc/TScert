@@ -745,7 +745,11 @@ private partial def executionEntryRead (name : String) (immutable : Bool := fals
     -- A slot of fixed type keeps it, as at a statement entry (`envCore`): a
     -- read's claim is derived from it, so it says no more.
     if b.fixed.isSome then return Δ
-    if let .cell .. := b.storage then return Δ
+    -- A cell's slot, an early binding's included, holds the cell: a read's
+    -- claim is its contents' type.
+    match b.storage with
+    | .cell .. | .early .. => return Δ
+    | .value | .slot _ => pure ()
     if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
     let immutable := match b.storage with | .value => true | _ => false
     let some p := (executionEntryRead b.source.name immutable plan).1 | return Δ

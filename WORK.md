@@ -36,7 +36,6 @@ each item's design and evidence, not its progress.
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
-| [Investigation of an early binding read in an operator's arm](#early-read-in-arm) | open: an investigation, cause unknown | the two functions of its section verify |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
@@ -372,27 +371,6 @@ It is the first refusal of the slices of `fragment-expressions.mts`'s
 `parent` that may be absent pass
 ([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
 edge the claim mismatches, and why, is unknown.
-
-<a id="early-read-in-arm"></a>
-**An early binding read in an operator's arm.** Lean's search refuses both
-functions at the edge from the arm that does not read `isOdd` into the point
-after the operator: "The incoming claim for isOdd is { value: ((number) =>
-boolean) | { "[[uninitialized]]": undefined } }. The next point requires
-(number) => boolean." The same read in a statement's arm verifies
-(`function-declarations-in-body`'s `parity`). The gap case `blocker-recursive-early-arrow` meets it.
-
-```typescript
-export function ternary(n: number): boolean {
-  const isEven = (k: number): boolean => k === 0 ? true : isOdd(k - 1);
-  const isOdd = (k: number): boolean => k === 0;
-  return isEven(n);
-}
-export function disjunction(n: number): boolean {
-  const isEven = (k: number): boolean => k === 0 || isOdd(k - 1);
-  const isOdd = (k: number): boolean => k === 0;
-  return isEven(n);
-}
-```
 
 <a id="literal-guard-json-read"></a>
 **A literal guard over `JsonValue | undefined`.**
