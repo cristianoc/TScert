@@ -2340,6 +2340,24 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-optional-method-call-absent", "wrong({}, 1)"), undefined,
     "invalid-optional-method-call-absent: an absent method gives undefined");
 }
+{
+  // A call of a member read through `!`, `as` or `satisfies`: the emit
+  // erases the wrapper, so the member is called with its object as
+  // `this`, the object's call run once.
+  const counter = "{ base: 10, add(x) { return this.base + x; } }";
+  for (const fn of ["asserted", "cast", "checked", "keyed", "chained"])
+    assert.equal(runExample("wrapped-member-call", `${fn}(${counter}, 1)`), 11, `wrapped-member-call: ${fn} binds this`);
+  assert.equal(runExample("wrapped-member-call", "chained(undefined, 1)"), undefined, "wrapped-member-call: chained skips");
+  assert.equal(runExample("wrapped-member-call",
+    `(() => { let calls = 0; const r = once(() => { calls++; return ${counter}; }, 1); return JSON.stringify([r, calls]); })()`),
+  "[11,1]", "wrapped-member-call: once evaluates the object once and binds it");
+  assert.equal(runExample("invalid-wrapped-member-call-receiver", "wrong({ read() { return this.k; } })"), undefined,
+    "invalid-wrapped-member-call-receiver: the function reads a `k` its receiver lacks");
+  assert.equal(runExample("wrapped-member-call-refused", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
+    "TypeError", "wrapped-member-call-refused: an index past the end gives undefined, whose call throws");
+  assert.equal(runExample("wrapped-member-chain-call-refused", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
+    "TypeError", "wrapped-member-chain-call-refused: an index past the end gives undefined, whose call throws");
+}
 
 // Each invalidation changes the value observed by the second member read.
 for (const [file, call] of [

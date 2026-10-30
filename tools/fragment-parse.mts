@@ -954,6 +954,7 @@ export class Gate {
 
   chainLink: typeof expressions.chainLink = expressions.chainLink;
   optionalMethodCall: typeof expressions.optionalMethodCall = expressions.optionalMethodCall;
+  wrappedMethodCall: typeof expressions.wrappedMethodCall = expressions.wrappedMethodCall;
 
   refuseReceiverForm: typeof expressions.refuseReceiverForm = expressions.refuseReceiverForm;
 

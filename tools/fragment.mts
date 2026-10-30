@@ -109,8 +109,9 @@ export type Expr =
      `body`, which reads the receiver's value as the variable `CHAIN`, spelled
      at `at`, the `?.` token. */
   | { k: "optional"; pos: Span; at: Span; receiver: Expr; body: Expr }
-  /* `o.m?.(a)`'s object: `object` once, then `body`, which reads its value
-     as the variable `OBJECT`, first spelled at `at`, the method's name. */
+  /* `o.m?.(a)`'s object, or `o.m!(a)`'s: `object` once, then `body`, which
+     reads its value as the variable `OBJECT`, first spelled at `at`, the
+     method's name (an element's closing `]`). */
   | { k: "withObject"; pos: Span; at: Span; object: Expr; body: Expr }
   /* `left, right`: the left operand for its effects, then the right one's
      value. `void e` is `e, undefined`. */

@@ -489,10 +489,29 @@ where the chain does not skip (`optional-chain-dynamic-index`,
 under Node: `undefined` past the end). An element read that a call takes as
 its callee, inside a chain or outside, stays a member read, so its call
 passes the object as the receiver, which a call of an intrinsic would not.
-A call of a member read through a wrapper the emit erases (`!`, `as`, `<T>`,
-`satisfies`) passes that receiver too, which a call of the asserted value
-would not: it is refused (`wrapped-member-call-refused`,
-`wrapped-member-chain-call-refused`).
+
+A call of a member read through wrappers the emit erases (`!`, `as`, `<T>`,
+`satisfies`), $`w`$ standing for them, passes that receiver too: the
+parentheses keep the reference and the wrappers erase to it (ECMA-262,
+EvaluateCall). The object is evaluated once and saved under
+$`\mathsf{object}`$, as for `o.m?.(a)`; the member is read off it as a
+value, the read a value read is anywhere (`%ElementAt%` of an array at a
+`number` key), inside the wrappers, so each annotation is the obligation a
+cast's is; then the value is called with the saved object as its receiver
+(`wrappedMethodCall`):
+
+```math
+w(e.m)(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{object}=e\ \mathsf{in}\ \mathsf{invoke}(w(\mathsf{object}.m),\mathsf{object},\vec a)
+```
+
+and alike for $`e[k]`$ and for a link of a chain, whose object is the
+chain's value (`wrapped-member-call`, run under Node: `this` is the
+object, its call run once; `invalid-wrapped-member-call-receiver`). The
+member is read as a value, so a method of its object's contract, which is
+relative to that object, is refused at the read
+([method members](DESIGN.md#lasting-decisions)), and `!` rules out no
+`undefined` the read may give (`wrapped-member-call-refused`,
+`wrapped-member-chain-call-refused`: an index past the end).
 
 A chain compared with a literal, `x?.p ⊙ c` or `c ⊙ x?.p`, with $`\odot`$
 one of `===`, `!==`, `==`, `!=`, $`c`$ a literal, $`x`$ `this` or a name

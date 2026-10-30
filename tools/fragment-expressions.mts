@@ -637,7 +637,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     // A property reference, parenthesized or not, is a call target that
     // keeps its object as the receiver (EvaluateCall). A copied method is a
     // value, and takes the `apply` form below.
-    if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
+    if (wrappedMemberCallee(node.expression)) return gate.wrappedMethodCall(node, gate.expr(node.expression), gate.span(node));
     let target: Expression = node.expression;
     while (ts.isParenthesizedExpression(target)) target = target.expression;
     // `super.m(args)` calls the method the base class's prototype holds,
@@ -918,6 +918,55 @@ export function optionalMethodCall(this: Gate, node: ts.CallExpression, target: 
     method(gate.chainLink(target, value, [at[0], target.end]), [target.expression.end, node.end]));
 }
 
+/** `o.m!(a)`, `(o.m as F)(a)`, `(o[k] satisfies F)(a)`: a call of a member
+ * read through wrappers the emit erases. Parentheses keep the reference and
+ * the wrappers erase to it, so JavaScript calls the member with `o` as its
+ * receiver (ECMA-262, EvaluateCall). `o` once, saved (`withObject`); the
+ * member read off the saved object, inside the wrappers, `callee` with its
+ * object replaced; the arguments; then the call with the saved object, read
+ * at the call's `(`, as its receiver. Each wrapper's annotation is the
+ * obligation it is wherever a cast is written, on the member's value. */
+export function wrappedMethodCall(this: Gate, node: ts.CallExpression, callee: Expr, pos: Span): Within<{ value: "any"; store: "grow" }, Expr> {
+  const gate: Gate = this;
+  if (node.arguments.some(ts.isSpreadElement) || node.typeArguments?.length)
+    gate.fail(node, "a call of a member read through `!`, `as` or `satisfies` takes ordinary arguments");
+  let target: Node = node.expression;
+  while (ts.isParenthesizedExpression(target) || ts.isNonNullExpression(target) ||
+      ts.isAssertionExpression(target) || ts.isSatisfiesExpression(target))
+    target = target.expression;
+  const casts: Extract<Expr, { k: "cast" }>[] = [];
+  let read = callee;
+  while (read.k === "cast") {
+    casts.push(read);
+    read = read.e;
+  }
+  const mark: Span | undefined = ts.isPropertyAccessExpression(target) ? gate.span(target.name)
+    : ts.isElementAccessExpression(target) ? [target.end - 1, target.end] : undefined;
+  if (mark === undefined || (ts.isPropertyAccessExpression(target) &&
+      (gate.staticReads.has(gate.span(target.name).join(":")) || gate.staticPrivate(target) !== null)))
+    return gate.fail(node, WRAPPED_MEMBER_CALL);
+  const saved = (at: Span): Expr => ({ k: "id", pos: at, name: OBJECT });
+  // The member read off the object: a field or an element, or the
+  // intrinsic a value read of it is (`%ElementAt%`, `%ByteAt%`, an open
+  // read), whose first argument is the object.
+  let object: Expr;
+  let member: Expr;
+  if (read.k === "read" || read.k === "index") {
+    object = read.e;
+    member = { ...read, e: saved(mark) };
+  } else if (read.k === "apply" && read.callee.k === "id" && read.callee.name.startsWith("%") && read.args[0]) {
+    object = read.args[0];
+    member = { ...read, args: [saved(mark), ...read.args.slice(1)] };
+  } else return gate.fail(node, WRAPPED_MEMBER_CALL);
+  const paren = gate.token(node.expression.end, "(", node);
+  const method = casts.reduceRight<Expr>((e, cast) => ({ ...cast, e }), member);
+  return {
+    k: "withObject", pos, at: mark, object,
+    body: { k: "callWithReceiver", pos: [mark[0], node.end], callee: method,
+      receiver: saved([paren, paren + 1]), args: node.arguments.map((arg) => gate.expr(arg)) },
+  };
+}
+
 /** One link of an optional chain applied to `object`, the chain so far. */
 export function chainLink(this: Gate, 
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression | ts.CallExpression | ts.NonNullExpression,
@@ -945,7 +994,10 @@ export function chainLink(this: Gate,
       return gate.intrinsic(elementAtName, pos, elementBracket(node), [object, gate.expr(node.argumentExpression)]);
     return { k: "index", pos, e: object, key: gate.expr(node.argumentExpression) };
   }
-  if (wrappedMemberCallee(node.expression)) gate.fail(node, WRAPPED_MEMBER_CALL);
+  if (wrappedMemberCallee(node.expression)) {
+    if (node.questionDotToken || object.k !== "cast") gate.fail(node, WRAPPED_MEMBER_CALL);
+    return gate.wrappedMethodCall(node, object, pos);
+  }
   const spreads: number[] = [];
   const args = node.arguments.map((arg, i) => {
     if (!ts.isSpreadElement(arg)) return gate.expr(arg);
@@ -1102,11 +1154,16 @@ export function confined(this: Gate, seen: Set<number>, followed: Set<string>, f
       if (ts.isPropertyAccessExpression(outer) && outer.expression === strip(parent) && gateCallee(outer))
         return true;
       // Another member, read or written, not called: its value is not one
-      // followed, and the object is not handed on.
+      // followed, and the object is not handed on. A call through `!`, `as`
+      // or `satisfies` hands the object on as its receiver.
+      let called: Node = parent;
+      while (ts.isParenthesizedExpression(called.parent) || ts.isNonNullExpression(called.parent) ||
+          ts.isAssertionExpression(called.parent) || ts.isSatisfiesExpression(called.parent))
+        called = called.parent;
       const key = parent.name.text;
       return !followed.has(key) && !["call", "apply", "bind"].includes(key) &&
-        !((ts.isCallExpression(outer) || ts.isNewExpression(outer)) && outer.expression === strip(parent)) &&
-        !ts.isTaggedTemplateExpression(outer);
+        !((ts.isCallExpression(called.parent) || ts.isNewExpression(called.parent)) && called.parent.expression === called) &&
+        !ts.isTaggedTemplateExpression(called.parent);
     }
     if (ts.isBinaryExpression(parent) && parent.left === at &&
         parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) return true;

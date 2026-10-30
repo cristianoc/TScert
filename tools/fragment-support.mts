@@ -388,20 +388,20 @@ export type EnumInfo = { end: number; ambient: boolean; members: EnumEntry[] };
 export type EnumEntry = { name: string; node: ts.EnumMember; span: Span; nameSpan: Span; init: Span | null;
   value: string | number | undefined };
 
-/** Whether a call takes `node` as its callee, through parentheses and the
- * type wrappers the emit erases (`!`, `as`, `<T>`, `satisfies`): JavaScript
- * calls the value read with the reference's object as its receiver. */
+/** Whether a call takes `node` as its callee, through parentheses, which
+ * keep the reference: JavaScript calls the value read with the reference's
+ * object as its receiver. Under a type wrapper the emit erases (`!`, `as`,
+ * `<T>`, `satisfies`) the member is read as a value, its call
+ * `wrappedMethodCall`'s. */
 export function callTarget(node: ts.Expression): Within<{ value: "any"; store: "grow" }, boolean> {
   let at: Node = node;
-  while (at.parent && (ts.isParenthesizedExpression(at.parent) || ts.isNonNullExpression(at.parent) ||
-      ts.isAssertionExpression(at.parent) || ts.isSatisfiesExpression(at.parent)))
-    at = at.parent;
+  while (at.parent && ts.isParenthesizedExpression(at.parent)) at = at.parent;
   return !!at.parent && ts.isCallExpression(at.parent) && at.parent.expression === at;
 }
 
 /** Whether a callee is a member read wrapped in `!`, `as`, `<T>` or
- * `satisfies`: JavaScript calls it with the member's object as the receiver,
- * which the call of the wrapped value does not pass. */
+ * `satisfies`: the emit erases the wrappers, so JavaScript calls the member
+ * with its object as the receiver (`wrappedMethodCall`). */
 export function wrappedMemberCallee(callee: ts.Expression): Within<{ value: "any"; store: "grow" }, boolean> {
   let at = callee;
   let wrapped = false;
@@ -415,9 +415,10 @@ export function wrappedMemberCallee(callee: ts.Expression): Within<{ value: "any
   return wrapped && (ts.isPropertyAccessExpression(at) || ts.isElementAccessExpression(at));
 }
 
-/** Why a call of a wrapped member read is refused. */
+/** Why a call of a wrapped member read other than off its object's value
+ * is refused. */
 export const WRAPPED_MEMBER_CALL =
-  "a call of a member read through `!`, `as` or `satisfies` passes the member's object as its receiver, which a call of the asserted value would not: outside the fragment";
+  "a call of a member read through `!`, `as` or `satisfies` passes the member's object as its receiver: one read other than off an object's value (a static, namespace or `super` member) is outside the fragment";
 
 /** The span of an element access's `[` token. */
 export function elementBracket(node: ts.ElementAccessExpression): Within<{ value: "any"; store: "grow" }, Span> {

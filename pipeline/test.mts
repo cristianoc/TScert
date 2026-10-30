@@ -1338,6 +1338,29 @@ control(async (): Promise<void> => {
   process.stdout.write("forged optional method call: either read of the saved object claimed at undefined refused\n");
 });
 control(async (): Promise<void> => {
+  // A call of a member read through `!` saves its object and reads it
+  // twice, the member's object at the member's name and the call's receiver
+  // at its `(`: either claimed at `undefined` is refused there where
+  // evidence is produced, and checking refuses the evidence of the original
+  // claim for it.
+  const wrapped = run("wrapped-member-call");
+  const source = readFileSync(sourceKey(wrapped), "utf8");
+  const name = source.indexOf("add!(x)");
+  const paren = name + "add!".length;
+  for (const [at, end, what] of [[name, name + "add".length, "object"], [paren, paren + 1, "receiver"]] as const) {
+    const claims = readClaims(wrapped);
+    const fn = must(claims.functions.find(f => f.name === "asserted"), "asserted's claims");
+    const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === end), `the saved ${what}'s read`);
+    read.type = [rowOf(claims, "undef")];
+    const forged = writeClaims(wrapped, `forged-wrapped-${what}`, claims);
+    const searched = produceWith(wrapped, forged, `forged-wrapped-${what}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(`[${at},${end})`), searched.stdout + searched.stderr);
+    invoke(forged, join(wrapped, "evidence.json"), wrapped);
+  }
+  process.stdout.write("forged wrapped member call: either read of the saved object claimed at undefined refused\n");
+});
+control(async (): Promise<void> => {
   // A chain read for its truthiness tests its receiver, then reads the
   // receiver again at the `?.` token: that read claimed at the arm the test
   // selects, which the receiver holds only past the test, is refused within the test
