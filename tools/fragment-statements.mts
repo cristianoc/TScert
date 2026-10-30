@@ -1607,16 +1607,40 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
     const read = ts.isArrowFunction(literal) || ts.isFunctionExpression(literal) ? undefined : reads(d.initializer);
     if (read)
       gate.fail(read, `a binding read in its own initializer is outside the fragment: ${self} is bound after its initializer runs`);
+    const early = gate.earlyDecls.has(d);
     return {
       name: gate.local(d.name),
       namePos: gate.span(d.name),
-      annot: d.type ? gate.typeOf(d.type) : null,
+      annot: d.type ? gate.typeOf(d.type)
+        : early && list.flags & ts.NodeFlags.Let ? literalDeclaredType(d.initializer, gate.span(d.initializer)) : null,
       init: gate.expr(d.initializer),
-      early: gate.earlyDecls.has(d),
+      early,
     };
   });
   if (mutable) return { k: "let", pos, bindings };
   return { k: "const", pos, bindings };
+}
+
+/** TypeScript's declared type for a `let` that `e` initializes, where the
+ * source writes `e` as a literal naming nothing, parenthesized or not: a
+ * Boolean, number, string or bigint literal, a template with no
+ * substitution, a number or bigint literal under `-`, or a number literal
+ * under `+`. It is the literal's primitive type, `boolean`, `number`,
+ * `string` or `bigint`; any other initializer, an enum member's read among
+ * them, gives `null`. */
+export function literalDeclaredType(e: Expression, span: Span): TypeTerm | null {
+  while (ts.isParenthesizedExpression(e)) e = e.expression;
+  const atom = (name: "boolean" | "number" | "string" | "bigint"): TypeTerm => ({ k: "atom", name, span });
+  if (e.kind === ts.SyntaxKind.TrueKeyword || e.kind === ts.SyntaxKind.FalseKeyword) return atom("boolean");
+  if (ts.isNumericLiteral(e)) return atom("number");
+  if (ts.isBigIntLiteral(e)) return atom("bigint");
+  if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return atom("string");
+  if (ts.isPrefixUnaryExpression(e)) {
+    if (ts.isNumericLiteral(e.operand) &&
+        (e.operator === ts.SyntaxKind.MinusToken || e.operator === ts.SyntaxKind.PlusToken)) return atom("number");
+    if (ts.isBigIntLiteral(e.operand) && e.operator === ts.SyntaxKind.MinusToken) return atom("bigint");
+  }
+  return null;
 }
 
 /** Whether a `let` list's bindings are all initialized and none is

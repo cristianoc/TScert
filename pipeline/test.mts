@@ -1599,6 +1599,23 @@ control(async (): Promise<void> => {
     refusedAt(good, path, "early-literal-contract", "the early binding 'wanted' needs its type stated");
     invoke(path, join(good, "evidence.json"), good);
   }
+  // An unannotated early `let` of a number literal has the literal's
+  // primitive type, `number`, as its stated contract: `start`'s claimed at
+  // a string, at the literal itself, or at `number | string`, is refused.
+  {
+    const literal = run("early-let-literal");
+    for (const [name, types] of [["early-let-string-contract", ["str"]],
+        ["early-let-literal-contract", [{ numLit: { bits: "13830554455654793216" } }]],
+        ["early-let-broader-contract", ["num", "str"]]] as const) {
+      const claims = readClaims(literal);
+      const fn = must(claims.functions.find(f => f.name === "starts"), "starts");
+      const c = must(fn.contracts.find(x => x.name === "start"), "start's contract");
+      c.type = types.map(t => rowOf(claims, t));
+      const forged = writeClaims(literal, name, claims);
+      refusedAt(literal, forged, name, "claimed storage contract differs from the source annotation for 'start'");
+      invoke(forged, join(literal, "evidence.json"), literal);
+    }
+  }
   // A function declaration a closure bound before it mentions is an early
   // binding whose contract is its own annotations, its receiver's included:
   // dropped, or claimed at a string, refused.

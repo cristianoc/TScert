@@ -2684,8 +2684,21 @@ value, or make an initialization an unchecked write
 (`early-bindings`, `invalid-early-binding-stale`, run under Node; the forged
 claims of `pipeline/test.mts`: a dropped contract, a contract narrower than
 the annotation, a checked access claimed past the contract). The stated
-type $`T`$ is the annotation, or a function literal's parameter and result
-annotations; an early binding with neither is refused, and so are the
+type $`T`$ is the annotation; for a `let` of the source whose initializer
+the source writes as a literal naming nothing (a Boolean, number, string
+or bigint literal, a template with no substitution, a number or bigint
+literal under `-`, a number literal under `+`, parenthesized or not), the
+literal's primitive type, `boolean`, `number`, `string` or `bigint`,
+TypeScript's declared type for it, which the parser states as the
+binding's annotation (`literalDeclaredType`; `early-let-literal`, run
+under Node, a `let` nothing assigns included; a later write at another
+type is refused, `invalid-early-let-literal-write`, run under Node; a
+control of `pipeline/test.mts` claims the contract at a string, at the
+literal itself and at `number | string`); or a function literal's
+parameter and result annotations. A `const` enum member's read, which the
+fragment holds as its value, is no literal of the source: its declared type
+is the enum (`invalid-early-let-enum-member`). An early binding with none
+of these is refused (`invalid-early-let-computed`), and so are the
 compound assignment, update and logical assignment of an early `let`, an
 assignment to one in closure term code, a key-adding write of an object one
 holds, and an initializer other than a function literal that reads its own

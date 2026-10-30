@@ -28,7 +28,7 @@ let early_contract name written (init:Source.expr) = match written,init.node wit
   | None,Lambda (_,[],ps,defaults,false,Some r,_,_) -> arrow (List.mapi (fun i (_,t) ->
       if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
   | _ -> Proposal_diagnostics.unsupported
-      ("the binding " ^ name ^ " may be read before its initialization, which needs its type stated: an annotation, or a function literal's parameter and result annotations")
+      ("the binding " ^ name ^ " may be read before its initialization, which needs its type stated: an annotation, a `let`'s Boolean, number, string or bigint literal, or a function literal's parameter and result annotations")
 module Make (S : Inputs) = struct
 open S
 let transfer (expr:Analysis_state.expression_infer) =

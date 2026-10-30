@@ -147,7 +147,7 @@ reference representation. Every such action is recorded as an opaque region. -/
         -- The stated type: the annotation, or the function literal's
         -- parameter and result annotations, a defaulted parameter optional,
         -- and an ordinary function's receiver annotation.
-        let reason := s!"the early binding '{b.name}' needs its type stated: an annotation, or a function literal's parameter and result annotations"
+        let reason := s!"the early binding '{b.name}' needs its type stated: an annotation, a `let`'s Boolean, number, string or bigint literal, or a function literal's parameter and result annotations"
         match b.annot, b.init with
         | some annotation, _ =>
           let written ← lower (Fragment.translate annotation)

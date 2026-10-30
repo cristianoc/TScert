@@ -1340,6 +1340,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("early-cell-update-order", "JSON.stringify([compound(), logical(), postfix(), local()])"),
     `[6,"vvvfalse3",607,21]`,
     "early-cell-update-order: each update reads before its right side, each logical assignment runs its right side only where it writes");
+  assert.equal(runExample("early-let-literal", "JSON.stringify([starts([3, 5]), unassigned(), families()])"), `[[6,10],-1,"ab:false:-6"]`,
+    "early-let-literal: the closures read the cells once initialized");
+  assert.throws(() => runExample("early-let-literal", "tooEarly()"), /ReferenceError|before initialization/,
+    "early-let-literal: the closure run before the declaration throws");
+  assert.equal(runExample("invalid-early-let-literal-write", "late()"), "late",
+    "invalid-early-let-literal-write: the closure returns the string written to the number literal's cell");
   for (const name of ["invalid-early-const-update", "invalid-early-const-assign"])
     assert.throws(() => runExample(name, "test()"), /TypeError|Assignment to constant/,
       `${name}: the write of the constant throws`);
