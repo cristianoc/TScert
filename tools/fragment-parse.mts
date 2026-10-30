@@ -1081,6 +1081,7 @@ export class Gate {
   token: typeof statements.token = statements.token;
 
   forStmt: typeof statements.forStmt = statements.forStmt;
+  perIterationFor: typeof statements.perIterationFor = statements.perIterationFor;
 
   forInStmt: typeof statements.forInStmt = statements.forInStmt;
 

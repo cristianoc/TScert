@@ -1447,9 +1447,9 @@ A function declaration of $`S_2`$ belongs to the list's scope and is
 [placed](#function-declarations-in-a-body) as any other.
 
 `for (init; cond; update) S` is `{ init; loop }` with a `while (cond)` whose
-body's end and every `continue` run `update`, then go to the head (a closure
-capturing a `for` loop's `let` is refused, since JavaScript copies it per
-iteration):
+body's end and every `continue` run `update`, then go to the head, where no
+closure of `init`, `cond`, `update` or `S` mentions a name a `let` of `init` declares
+([a binding per iteration](#a-binding-per-iteration) otherwise):
 
 ```math
 \frac{\Gamma\vdash_R \mathit{init}:\Gamma'\quad \Gamma_h\ \text{the head's entry claims}\quad
@@ -1522,6 +1522,42 @@ pending completion:
 
 The handler's and finalizer's entries state each cell at its contract, since
 a throw may leave after any part of the body ran.
+
+### A binding per iteration
+
+JavaScript gives a `for` loop's `let` bindings a copy per iteration
+(ForBodyEvaluation and CreatePerIterationEnvironment,
+[ECMA-262](REFERENCES.md#ecma-262)): the head's initializer binds
+$`\bar x`$ once, each iteration's bindings are fresh ones holding the values the
+last iteration's held at its end, and the update runs on the new
+iteration's bindings, before its test. A closure created in an iteration
+holds that iteration's bindings. Where a closure of the initializer, the
+test, the update or the body mentions one of the names, the loop is
+
+```math
+\begin{aligned}
+&\mathtt{for}\ (\mathtt{let}\ \bar x = \bar e;\ c;\ u)\ S\ \rightsquigarrow\
+\{\ \mathtt{let}\ \bar x^{0} = \bar e[\bar x^{0}/\bar x];\ \mathtt{let}\ \bar x^{c} = \bar x^{0},\ \sigma = \mathtt{false};\\
+&\quad \mathtt{while}\ (\mathtt{true})\ \{\ \mathtt{let}\ \bar x = \bar x^{c};\
+\mathtt{if}\ (\sigma)\ u\ \mathtt{else}\ \sigma = \mathtt{true};\
+\mathtt{if}\ (c)\ \{\}\ \mathtt{else}\ \mathtt{break};\
+\ell : \{\ S[\mathtt{break}\ \ell/\mathtt{continue}]\ \}\ \bar x^{c} = \bar x\ \}\ \}
+\end{aligned}
+```
+
+with $`\bar x^{0}`$, $`\bar x^{c}`$, $`\sigma`$ and $`\ell`$ names no source
+spells, $`\sigma`$ present only with an update, and the substitution of
+$`\mathtt{continue}`$ the one of the loop's own (`perIterationFor` in
+`tools/fragment-statements.mts`). $`\bar x^{0}`$ is the bindings $`\bar e`$
+and its closures see, which JavaScript's iterations copy and never write;
+$`\bar x^{c}`$ carries each iteration's values at its end, on the way out of
+the body and of each `continue`, to the next iteration's `let`, which
+allocates fresh cells where closures capture them
+([slot or cell](#slot-or-cell)); each $`\bar x`$ and $`\bar x^{c}`$ has the
+head's annotation. Every statement added is a statement of the fragment,
+lowered and checked as written (`for-let-capture`,
+`for-let-capture-initializer`, `invalid-for-let-capture`,
+`invalid-for-let-capture-initializer`). A pattern in such a head is refused.
 
 ## Guards
 

@@ -11,7 +11,7 @@ import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, Pattern
 import type { Span } from "./span.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
-import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
+import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { isTypeAlias } from "./syntax.mts";
@@ -962,31 +962,17 @@ export function token(this: Gate, from: number, token: string, at: Node): Within
  * statement's is at its start). A `let` declared there is one
  * binding for the whole loop, where
  * JavaScript copies it into each iteration: the two differ only for a
- * closure capturing it, which is refused. */
+ * closure capturing it, where the loop is lowered with a binding per
+ * iteration (`perIterationFor`). */
 export function forStmt(this: Gate, node: ts.ForStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
+  if (capturesLoopLet(node)) return gate.perIterationFor(node);
   const open = gate.token(node.getStart(gate.file) + "for".length, "(", node);
   const init = node.initializer;
   const first = gate.token(init ? init.end : open + 1, ";", node);
   const second = gate.token(node.condition ? node.condition.end : first + 1, ";", node);
   let initial: Stmt | null = null;
   if (init && ts.isVariableDeclarationList(init)) {
-    if (init.flags & ts.NodeFlags.Let) {
-      const names = new Set<string>();
-      const collect = (n: Node): void => {
-        if (ts.isIdentifier(n)) names.add(n.text);
-        else n.forEachChild(collect);
-      };
-      for (const d of init.declarations) collect(d.name);
-      const refers = (n: Node): Node | undefined =>
-        ts.isIdentifier(n) && names.has(n.text) ? n : n.forEachChild(refers);
-      const captures = (n: Node): Node | undefined =>
-        ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? refers(n) : n.forEachChild(captures);
-      for (const part of [node.condition, node.incrementor, node.statement]) {
-        const at = part && captures(part);
-        if (at) gate.fail(at, "a closure capturing a `for` loop's `let` binding is outside the fragment");
-      }
-    }
     initial = gate.declarations(init, init);
   } else if (init && ts.isExpression(init)) initial = { k: "effect", pos: gate.span(init), e: gate.expr(init) };
   else if (init) gate.fail(init, "a `for` initializer is a declaration or an expression");
@@ -1002,6 +988,85 @@ export function forStmt(this: Gate, node: ts.ForStatement): Within<{ value: "any
       : [],
   };
   return initial ? { k: "block", pos: gate.span(node), label: null, body: [initial, loop] } : loop;
+}
+
+/** `for (let x̄ = ē; c; u) s` with a binding per iteration, as JavaScript's
+ * ForBodyEvaluation runs it (CreatePerIterationEnvironment): the head's
+ * bindings `x̄⁰`, which `ē` and its closures see; carriers `x̄ᶜ` holding
+ * their values between iterations; and in each iteration fresh bindings
+ * `x̄` initialized from the carriers, the update run on them from the
+ * second iteration on, then the test, then the body in a block a
+ * `continue` of the loop leaves, then the carriers set from them:
+ *
+ *     { let x̄⁰ = ē; let x̄ᶜ = x̄⁰, %stepped = false;
+ *       while (true) {
+ *         let x̄ = x̄ᶜ;
+ *         if (%stepped) u; else %stepped = true;
+ *         if (c) {} else break;
+ *         ℓ: { s }
+ *         x̄ᶜ = x̄;
+ *       } }
+ *
+ * `%stepped` is present only with an update. `x̄⁰` and `x̄ᶜ` are names no
+ * source spells; the mentions of the head's names in `ē` read `x̄⁰`, and
+ * those in `c`, `u` and `s` read `x̄`. The added statements' sites are the
+ * free offsets of the head (`sites`). */
+export function perIterationFor(this: Gate, node: ts.ForStatement): Within<{ value: "any"; store: "grow" }, Stmt> {
+  const gate: Gate = this;
+  const init = node.initializer;
+  if (!init || !ts.isVariableDeclarationList(init)) return gate.fail(node, "internal: a `for` head with a binding per iteration and no `let`");
+  const s = node.getStart(gate.file);
+  const names: string[] = [];
+  for (const d of init.declarations) {
+    if (!ts.isIdentifier(d.name))
+      gate.fail(d.name, "a `let` pattern in a `for` head a closure captures is outside the fragment");
+    names.push(gate.local(d.name));
+  }
+  const declared = new Set(names);
+  const initial = (n: string): string => `%initial@${s}%${n}`;
+  const carrier = (n: string): string => `%carrier@${s}%${n}`;
+  const stepped = `%stepped@${s}`;
+  const rename = (n: Node): void => {
+    if (ts.isTypeNode(n)) return;
+    if (ts.isIdentifier(n) && !nameSlot(n)) {
+      const local = gate.local(n);
+      if (declared.has(local)) gate.renames.set(`${n.getStart(gate.file)}:${n.end}`, initial(local));
+    }
+    n.forEachChild(rename);
+  };
+  rename(init);
+  const head = gate.declarations(init, init);
+  if (head.k !== "let") return gate.fail(init, "internal: a `for` head's `let` lowered to another declaration");
+  const annots = new Map(head.bindings.map((b) => [b.name, b.annot]));
+  const site = gate.sites(node, node.statement.getStart(gate.file));
+  const entry = (): Span => {
+    const e = site.entry();
+    return [e, e + 1];
+  };
+  const id = (name: string): Expr => ({ k: "id", pos: site.span(), name });
+  const lit = (v: "true" | "false"): Expr => ({ k: "lit", pos: site.span(), lit: { a: "booleanlit", v } });
+  const assign = (name: string, rhs: Expr): Stmt =>
+    ({ k: "effect", pos: entry(), e: { k: "assign", pos: site.span(), name, namePos: site.span(), rhs } });
+  const binding = (name: string, annot: TypeTerm | null, init: Expr): BindingAst =>
+    ({ early: false, name, namePos: site.span(), annot, init });
+  const carriers: Stmt = { k: "let", pos: entry(), bindings: [
+    ...names.map((n) => binding(carrier(n), annots.get(initial(n)) ?? null, id(initial(n)))),
+    ...(node.incrementor ? [binding(stepped, null, lit("false"))] : [])] };
+  const loopPos = entry();
+  const iteration: Stmt[] = [
+    { k: "let", pos: entry(), bindings: names.map((n) => binding(n, annots.get(initial(n)) ?? null, id(carrier(n)))) },
+  ];
+  if (node.incrementor)
+    iteration.push({ k: "if", pos: entry(), cond: id(stepped),
+      then: [{ k: "effect", pos: gate.span(node.incrementor), e: gate.expr(node.incrementor) }],
+      else_: [assign(stepped, lit("true"))] });
+  if (node.condition)
+    iteration.push({ k: "if", pos: entry(), cond: gate.expr(node.condition), then: [],
+      else_: [{ k: "break", pos: entry(), label: null }] });
+  iteration.push({ k: "block", pos: entry(), label: iterationLabel(node, gate.file), body: gate.block(node.statement) });
+  for (const n of names) iteration.push(assign(carrier(n), id(n)));
+  const loop: Stmt = { k: "while", pos: loopPos, cond: lit("true"), body: iteration, update: [] };
+  return { k: "block", pos: gate.span(node), label: null, body: [head, carriers, loop] };
 }
 
 /** `for (const k in o) body` is `for (const k of %ForIn%(o)) body`: the
@@ -1163,13 +1228,15 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
  * the offsets from its start up to the next token after it at which no node
  * of it starts and that lie in no function nested in it, whose statements
  * have sites of their own. Each is an entry once (`entry`), and the spans
- * from them are expression sites (`span`); none is a source node's site. */
-export function sites(this: Gate, within: Node): Within<{ value: "any"; store: "grow" }, { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }> {
+ * from them are expression sites (`span`); none is a source node's site.
+ * With `until`, only the offsets before it are entries and starts of
+ * spans. */
+export function sites(this: Gate, within: Node, until?: number): Within<{ value: "any"; store: "grow" }, { entry(): Within<{ value: "any"; store: "grow" }, number>; span(): Within<{ value: "any"; store: "grow" }, Span> }> {
   const gate: Gate = this;
   const text = gate.file.text;
   let to = within.end;
   while (to < text.length && /\s/.test(text[to] ?? "")) to++;
-  const free = freeOffsets(within, gate.file);
+  const free = freeOffsets(within, gate.file).filter((o) => until === undefined || o < until);
   let entries = 0, from = 0, end = 0;
   return {
     entry: () => {
@@ -1429,6 +1496,10 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
     if (ts.isBreakStatement(node))
       return { k: "break", pos: gate.span(node),
         label: ts.isSwitchStatement(target) ? switchLabel(target, gate.file) : null };
+    // A `continue` of a loop with a binding per iteration leaves the block
+    // its body runs in (`forStmt`).
+    if (ts.isForStatement(target) && capturesLoopLet(target))
+      return { k: "break", pos: gate.span(node), label: iterationLabel(target, gate.file) };
     return { k: "continue", pos: gate.span(node) };
   }
   return gate.controlStmt(node);

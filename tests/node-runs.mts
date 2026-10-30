@@ -2489,3 +2489,21 @@ for (const [file, call] of [
     rmSync(directory, { recursive: true, force: true });
   }
 }
+
+// Per-iteration binding identities and transfer destinations in JavaScript.
+{
+  for (const [call, expected] of [
+    ["JSON.stringify(values(3))", "[0,1,2]"],
+    ["fixpoint([1, 3])", 3],
+    ["JSON.stringify(skips(4))", "[0,0,3]"],
+    ["JSON.stringify(steps(3))", "[0,1,2]"],
+    ["JSON.stringify(updateClosures())", "[2,3]"],
+    ["JSON.stringify(testClosures())", "[1,3,4]"],
+    ["JSON.stringify(nested())", "[1,11]"],
+    ["JSON.stringify(finalizerTransfers())", "[1,3]"],
+  ] as const)
+    assert.equal(runExample("for-let-capture", call), expected, `for-let-capture: ${call}`);
+  assert.equal(runExample("for-let-capture-initializer", "probe()"), 0);
+  assert.equal(runExample("invalid-for-let-capture", "cleared()"), null);
+  assert.equal(runExample("invalid-for-let-capture-initializer", "wrong()"), null);
+}

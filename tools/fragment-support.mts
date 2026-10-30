@@ -277,6 +277,30 @@ export function patternNames(t: PatternAst): Within<{ value: "any"; store: "grow
  * spell. */
 export const switchLabel = (node: ts.SwitchStatement, file: SourceFile): Within<{ value: "any"; store: "grow" }, string> => `%switch@${node.getStart(file)}%`;
 
+/** Whether a closure of a `for` loop's initializer, test, update or body mentions a
+ * name its `let` head declares, by spelling: the loop is then lowered with
+ * a binding per iteration (`forStmt`). */
+export function capturesLoopLet(node: ts.ForStatement): Within<{ value: "any"; store: "grow" }, boolean> {
+  const init = node.initializer;
+  if (!init || !ts.isVariableDeclarationList(init) || !(init.flags & ts.NodeFlags.Let)) return false;
+  const names = new Set<string>();
+  const collect = (n: Node): void => {
+    if (ts.isIdentifier(n)) names.add(n.text);
+    else n.forEachChild(collect);
+  };
+  for (const d of init.declarations) collect(d.name);
+  const refers = (n: Node): boolean => ts.isIdentifier(n) ? names.has(n.text) : !!n.forEachChild(refers);
+  const captures = (n: Node): boolean =>
+    ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? refers(n) : !!n.forEachChild(captures);
+  return [init, node.condition, node.incrementor, node.statement].some((part) => !!part && captures(part));
+}
+
+/** The label of the block a `for` loop with a binding per iteration runs
+ * its body in, which a `continue` of the loop leaves (`forStmt`): a name no
+ * source can spell. */
+export const iterationLabel = (node: ts.ForStatement, file: SourceFile): Within<{ value: "any"; store: "grow" }, string> =>
+  `%iteration@${node.getStart(file)}%`;
+
 /** The statement a `break` leaves or a `continue` repeats: the nearest
  * enclosing loop, or for a `break` also `switch`, not crossing into another
  * function. */
