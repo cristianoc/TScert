@@ -263,9 +263,8 @@ reference representation. Every such action is recorded as an opaque region. -/
         let predicate ← LoweringExecution.compileExpr recursive fc ds K tested branch
         LoweringExecution.compileExpr recursive fc scope Γ read predicate
       | none =>
-        let yes ← successor yesId scope
-        let no ← successor noId scope
-        LoweringExecution.compileCondition recursive fc scope Γ cond yes no
+        LoweringExecution.compileCondition recursive fc scope Γ cond
+          (successor yesId scope) (successor noId scope)
     | .iteratorStart (.forOf pos _ _ iterate iterable _) descriptor next =>
       let some (iterateSlot, _) := resolve scope iterate
         | throw "internal flow error: missing iteration intrinsic"

@@ -5,5 +5,4 @@ export function wrong(): string {
     x = "body";
     return get();
   }
-  return "";
 }

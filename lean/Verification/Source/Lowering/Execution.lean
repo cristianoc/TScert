@@ -969,10 +969,13 @@ prepared predicate without replaying an effectful source operand. -/
       emitAt source (.var 0) continuation Δ A "expression-dispatch" (scope := scope')
 
 /-- A statement condition follows the same operand plan as a value expression.
-The final pure predicate uses the retained operands to justify refinements. -/
+The final pure predicate uses the retained operands to justify refinements.
+Each destination is elaborated only when the test's claimed type admits its
+answer: a test always truthy (`for (;;)`, `while (true)`) has no edge to the
+statement after its loop, which is then no point of the graph. -/
 @[nospecialize] partial def compileCondition (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (cond : Fragment.Expr)
-    (yes no : Target) : Compiler Target :=
+    (yes no : Compiler Target) : Compiler Target :=
   executePlanTail recursive fc scope Γ (SourceExecution.buildCondition cond) fun inner Δ origin => do
     let offset := Δ.length - Γ.length
     let adapt := fun (target : Target) =>
@@ -981,9 +984,11 @@ The final pure predicate uses the retained operands to justify refinements. -/
     let A := Δ.headD []
     let G := SourceTypes.graph (← table)
     if decide (Answers G A .truthy true) then
-      return ← emitAt cond.span (.var 0) (.effect (adapt yes)) Δ A (scope := inner)
+      return ← emitAt cond.span (.var 0) (.effect (adapt (← yes))) Δ A (scope := inner)
     if decide (Answers G A .truthy false) then
-      return ← emitAt cond.span (.var 0) (.effect (adapt no)) Δ A (scope := inner)
+      return ← emitAt cond.span (.var 0) (.effect (adapt (← no))) Δ A (scope := inner)
+    let yes ← yes
+    let no ← no
     let unsettled := !(BranchRefinement.tagSlice G A .truthy true).isEmpty &&
       !(BranchRefinement.tagSlice G A .truthy false).isEmpty
     if unsettled && readOnly predicate && !predicate.freeNames.contains "" then

@@ -1518,13 +1518,22 @@ lowering is exact ([as graphs](PROGRAM-TYPING.md#statement-forms-as-graphs)). $`
 reads "the statements $`S`$ are safe under $`\Gamma`$ in a function whose result
 is $`R`$". An unbraced arm is the block holding it and `else if (c) S` is
 `else { if (c) S }`; `return;` is `return undefined`, and a block closure that
-does not return on every terminal arm ends with `return undefined`:
+does not return on every terminal arm ends with `return undefined`. A loop
+whose test is the literal `true` (`for (;;)`, `while (true)`) returns on
+every terminal arm unless a `break` in its body, outside a nested loop and
+to no label its body declares, a `finally` among them, leaves it. A test
+whose claimed type is only truthy has no false edge: the statements after
+the loop are a point of the graph only where a `break` leaving the loop
+reaches them, and with no such `break` they carry no obligation:
 
 ```math
 \frac{\mathsf{undefined}\le R}{\Gamma\vdash_R\ \mathsf{return};}\ \textsf{return-bare}
 \qquad
 \frac{\Gamma\vdash_R S_1\quad S_1\ \text{always jumps}\quad \mathit{names}(S_2)\ \text{free in no live statement, no}\ \mathtt{var}}
      {\Gamma\vdash_R S_1;S_2}\ \textsf{dead}
+\qquad
+\frac{\Gamma\le\Gamma_h\quad \Gamma_h\vdash c:A\quad \text{every value of}\ A\ \text{truthy}\quad \Gamma_h\vdash_R S\ \text{back to}\ \Gamma_h\quad \text{no}\ \mathtt{break}\ \text{of}\ S\ \text{leaves the loop}}
+     {\Gamma\vdash_R\ \mathsf{while}\ (c)\ S;\ S'}\ \textsf{loop-no-exit}
 ```
 
 A function declaration of $`S_2`$ belongs to the list's scope and is
