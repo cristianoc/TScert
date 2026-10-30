@@ -116,7 +116,7 @@ def CoveredCallUsing [DecidableEq ι] (G : NormalGraph ι)
     (c : MethodArrow (Ty ι)) : Prop :=
   q.arguments.length = c.arguments.length ∧
     (∀ x ∈ q.arguments.zip c.arguments, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.bindCovers 0 q.effect = true
 
 /-- Parameters each within the member's, as families. -/
 theorem CoveredCallUsing.params [DecidableEq ι] {G : NormalGraph ι}
@@ -144,7 +144,7 @@ def CoveredRestUsing [DecidableEq ι] (G : NormalGraph ι)
   q.arguments.1.length = c.arguments.1.length ∧
     (∀ x ∈ q.arguments.1.zip c.arguments.1, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
     (∃ p, PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.bindCovers 0 q.effect = true
 
 /-- A checked proof is an inclusion of argument lists too: the argument
 component of the two types' meanings. -/
@@ -448,7 +448,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind true) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
+  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hbind := hb s hsm j U r hr
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hsm
@@ -572,14 +572,14 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
   intro W hvs
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha
+  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha _
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
       graph_invoke_at (ho p (List.mem_append_left _ hp)) (henv.withSelfAt hlen hself hF)
         (Values.withSelf hvalues rfl) hu hh hrr ha⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha
+  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha _
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1

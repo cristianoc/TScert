@@ -1944,10 +1944,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have hb := CallEffects.callsT_bound (Ps := []) (pre := []) (oid := oid) (fs := [])
             (Rc := meaning G y.receiver) hRadm (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
-            (Effect.keeps_zero _) ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
+            (Effect.bindCovers_keeps heff) ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
           refine ⟨hb.1, fun p hp => ?_⟩
           cases List.mem_singleton.mp hp
-          exact (hb.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
+          exact (hb.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound (Effect.bindCovers_covers heff)) (fun _ _ _ r h => h)
             (fun _ _ _ args ha => by simpa [Arrow.map, Contract.map] using ha) (fun _ _ _ w hw => hw)
         have hrests : CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
@@ -1965,7 +1965,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := []) (oid := oid)
             hRadm
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
-            (argMeaning_adm G _) (Effect.keeps_zero _)
+            (argMeaning_adm G _) (Effect.bindCovers_keeps heff)
             (show CallEffects.restsT (excOf G) [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, c.effect⟩] (q + 2) U u from ht)
             hvalρ hscope hhost (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
@@ -1976,7 +1976,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           exact ((by simpa using hb.2 _ (List.mem_singleton_self _)) :
             PromiseWith (excOf G) (c.effect.drop 0) (ArgsRest (y.arguments.1.map (meaning G)) (argMeaning G y.arguments.2))
               (meaning G y.receiver) (meaning G y.result) (q + 2) U _).weaken
-            (Effect.covers_sound heff) (fun _ _ _ r h => h) (fun _ _ _ args ha => ha) (fun _ _ _ w hw => hw)
+            (Effect.covers_sound (Effect.bindCovers_covers heff)) (fun _ _ _ r h => h) (fun _ _ _ args ha => ha) (fun _ _ _ w hw => hw)
         exact represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
   | @bindScheme Γ F O i k m hi hmo hF _ =>
     intro n W h ρ he hw hh

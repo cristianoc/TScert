@@ -60,7 +60,8 @@ instance : FromJson Effect := ⟨fun j => do
     | .null => pure none
     | p => some <$> fromJson? p
   let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
-    ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject"⟩
+    ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject",
+    none, none⟩
   if toJson e != j then
     throw "an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn and freshObject"
   pure e⟩

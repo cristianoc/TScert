@@ -1507,7 +1507,7 @@ private theorem witness_calls (b : Bool) (fs : List (PropKey × Nat)) (oid : Nat
   · intro s hs
     simp only [List.mem_singleton] at hs
     subst s
-    intro j hj U hx hu heap hh r hr hrc args hv ha
+    intro j hj U hx hu heap hh r hr hrc args hv ha _
     refine ⟨_, CallArguments.Invoke.graph hr hv rfl, ?_⟩
     cases j with
     | zero => trivial

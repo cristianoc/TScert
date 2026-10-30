@@ -784,7 +784,7 @@ effect, the slot and the promise's type. -/
       | .invoke _ _ args, jf :: jr :: jas =>
         match expand G jf.type with
         | [.arrs L _] => L.findSome? fun s =>
-          if s.receiver = jr.type ∧ s.arguments = jas.map Sequent.type then
+          if s.receiver = jr.type ∧ s.arguments = jas.map Sequent.type ∧ s.effect.requires = none then
             match s.effect.promise with
             | some (.guards p) | some (.asserts p) => match args[p]? with
               | some (.var a) => some (s.effect, a, s.result)
@@ -902,7 +902,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
   split at hsome
   case isFalse => contradiction
   rename_i hsig
-  obtain ⟨hrecv, hargsig⟩ := hsig
+  obtain ⟨hrecv, hargsig, hreq⟩ := hsig
   have context : ∀ p ∈ jf::jr::jas, p.context = Γ := by
     intro p hp
     simp only [List.mem_cons] at hp
@@ -953,6 +953,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
       (meaning_adm G jr.type) (by simpa [List.map_map, Function.comp_def] using hpw) hr hrval hvs ha hw hh
+      (CallEffects.Effect.requires_none hreq _ _)
     have hterm : instantiate 0 ρ (.invoke f rv args) = .invoke (instantiate 0 ρ jf.term)
         (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) := by
       simp [instantiate, instantiateArgs_eq_map, htf, htr]
@@ -1121,7 +1122,7 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       obtain ⟨hkeep, hfo⟩ := hsel
       refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
-      have hfresh := hq.2.2 hfo
+      have hfresh := hq.2.2.1 hfo
       obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
       have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
       refine ⟨?_, hshift.2.1, hshift.2.2.1,

@@ -853,7 +853,7 @@ result is established node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool !c.row.effect.freshObject).bind fun _ =>
+  (ProgramCertificates.CheckResult.ofBool (!c.row.effect.freshObject && c.row.effect.elementFree)).bind fun _ =>
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
@@ -867,19 +867,19 @@ result is established node by node whatever the footprint. -/
 theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked G images sums c C = (!c.row.effect.freshObject && (
+    effectChecked G images sums c C = (!c.row.effect.freshObject && c.row.effect.elementFree && (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
     ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
       compositionalChecked G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
         (program c.exprs c.conts) C)
   )) := by
-  cases hfo : c.row.effect.freshObject
+  cases hfo : (!c.row.effect.freshObject && c.row.effect.elementFree)
+  · simp only [effectChecked, effectCheckedResult, hfo, ProgramCertificates.CheckResult.accepted_ofBool,
+      ProgramCertificates.CheckResult.accepted_bind, Bool.false_and]
   · by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false <;>
       simp [effectChecked, effectCheckedResult, hfo, h, ProgramCertificates.CheckResult.accepted_orElse,
         ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_bind,
         compositionalChecked] <;> rfl
-  · simp [effectChecked, effectCheckedResult, hfo, ProgramCertificates.CheckResult.accepted_ofBool,
-      ProgramCertificates.CheckResult.accepted_bind]
 
 /-- What a code entry's graph is checked to return: its signature's result,
 or its signature's promise about the parameter it names, at that parameter's
@@ -962,13 +962,17 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       (.goto c.exprs c.conts c.start L .nul) := hres ▸ hs
   rw [effectChecked_eq] at heff
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at heff
-  obtain ⟨hfo, heff⟩ := heff
+  obtain ⟨⟨hfo, hel⟩, heff⟩ := heff
+  have hnel : ∀ R, c.row.effect.elements = some R → False := by
+    intro R hR
+    simp only [CallEffects.Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at hel
+    rw [hel.2] at hR; cases hR
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
   · -- No footprint on a throw: the throw's postcondition is vacuous.
     apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [htop.2.2]))
     refine HeapObservations.weaken (fun h' v hp r => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
-      fun hf => (by rw [hfo] at hf; cases hf)⟩
+      fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim⟩
     rw [htop.1]
     exact hp
   · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
@@ -980,7 +984,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
             ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
-          fun hf => (by rw [hfo] at hf; cases hf)⟩)
+          fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim⟩)
         (fun h' hq r _ => CallEffects.Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
         (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues rfl) hsafe)
@@ -994,7 +998,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hb := goto_bounded hc ht hs' (nodes_of_checked hgraph ht hs' hp.2) hp.1 n W heap L .nul he hw hh
       rw [hres] at hb
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf)⟩)
+        (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
+          fun R hR => (hnel R hR).elim⟩)
         (fun h' hq r ho => CallEffects.Effect.within_of_holds (hq ho)) hb
 
 /-- Check codes in order, each against the table of those before it. -/

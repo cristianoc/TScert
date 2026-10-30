@@ -601,7 +601,7 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
       (.objAt fs (.graph arity E K start vs kind) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
+  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha _
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   exact ⟨_, .graph hrv hvals (hb p hp j U r hr), graph_invoke (hs p hp) (hvs.withSelf hlen hself)
     (Values.withSelf hvalues rfl) hj hx hu hh hr ha⟩
@@ -618,7 +618,7 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha
+  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hspec := hs s hsm
   have hle : arity ≤ s.arguments.1.length := hspec.1

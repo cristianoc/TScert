@@ -560,7 +560,7 @@ parameter within the member's, then the member's result within the claimed. -/
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : Prop :=
   q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
     (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
-    PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ (c.effect.drop 0).covers q.effect = true
+    PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ c.effect.bindCovers 0 q.effect = true
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (q c ps) : Decidable (CallProofsUsing G images q c ps) := by
@@ -584,7 +584,7 @@ member's, then the member's result within the claimed. -/
   q.arguments.1.length = c.arguments.1.length ∧ ps.1.length = c.arguments.1.length ∧
     (∀ x ∈ (q.arguments.1.zip c.arguments.1).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
     PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 ps.2.1 = true ∧
-    PositiveCertificates.checkUsing G images c.result q.result ps.2.2 = true ∧ (c.effect.drop 0).covers q.effect = true
+    PositiveCertificates.checkUsing G images c.result q.result ps.2.2 = true ∧ c.effect.bindCovers 0 q.effect = true
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (q c ps) : Decidable (RestProofsUsing G images q c ps) := by
@@ -604,7 +604,7 @@ theorem RestProofsUsing.covered [DecidableEq ι] {G : NormalGraph ι}
     (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι)) (c : MethodArrow (Ty ι))
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (q.arguments.length = c.arguments.length ∧
-    ps.1.length = c.arguments.length) && (c.effect.drop 0).covers q.effect)).bind fun _ =>
+    ps.1.length = c.arguments.length) && c.effect.bindCovers 0 q.effect)).bind fun _ =>
     (CheckResult.all ((q.arguments.zip c.arguments).zip ps.1) fun x =>
       checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
       checkSubtypeUsing G images c.result q.result ps.2
@@ -627,7 +627,7 @@ theorem checkCallProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
       PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (q.arguments.1.length = c.arguments.1.length ∧
-    ps.1.length = c.arguments.1.length) && (c.effect.drop 0).covers q.effect)).bind fun _ =>
+    ps.1.length = c.arguments.1.length) && c.effect.bindCovers 0 q.effect)).bind fun _ =>
     (CheckResult.all ((q.arguments.1.zip c.arguments.1).zip ps.1) fun x =>
       checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
     (checkSubtypeUsing G images q.arguments.2 c.arguments.2 ps.2.1).bind fun _ =>

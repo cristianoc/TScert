@@ -292,6 +292,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
         (meaning_adm G jr.type) hp hr hrval hvals ha hw hh
+        (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain) _ _)
       rw [CallEffects.Effect.result_plain hplain] at hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr, receiverOf,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
@@ -621,6 +622,7 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (meaning_adm G jr.type)
       (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
       hr hrval hvals hacc hw hh
+      (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain) _ _)
     rw [CallEffects.Effect.result_plain hplain] at hs
     simpa [htf, htr, hargs, vals, receiverOf, instantiate, instantiateArgs_eq_map, List.map_map,
       Function.comp_def] using hs
@@ -805,6 +807,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (meaning_adm G jr.type)
       (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
       hrU hrv hvals hacc hU hh'
+      (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain) _ _)
     rw [CallEffects.Effect.result_plain hplain] at hs
     exact hs
 
