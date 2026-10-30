@@ -1,15 +1,17 @@
-# Draft: a current-heap fact about all elements of an array
+# Draft: the elements fact, one more instance of footprints
 
 The design of the route chosen for `blocker-every-promise`; its status is
 the Guard overloads row of [WORK](../../WORK.md#status), its motivation the
-paragraph on [guard overloads](../../WORK.md#guard-overloads). Claims are
-labelled **proved** (with a Lean name that exists), **to prove** (a
-statement this design adds, with its proposed name), **audited** (a native
-contract, stated as a row of
-[native footprints](../SOURCE-CONTRACTS.md#native-footprints)) or
-**cited**.
+paragraph on [guard overloads](../../WORK.md#guard-overloads). It is an
+instance of the four-part mechanism of [footprints](../FOOTPRINTS.md): a
+fact with the locations it reads, the stable operations stated as closed
+footprints, a contract Lean checks node by node, and the construct's rule
+that ignores side effects. Claims are labelled **proved** (with a Lean name
+that exists), **to prove** (a statement this design adds, with its
+proposed name) or **audited** (a native's behaviour, as a row of
+[native footprints](../SOURCE-CONTRACTS.md#native-footprints)).
 
-## 1. The case
+## 1. The case and the census sites
 
 ```ts
 export function use(parts: (string | null)[]): string[] | null {
@@ -21,20 +23,231 @@ export function use(parts: (string | null)[]): string[] | null {
 
 TypeScript reads `every`'s guard overload,
 `every<S extends T>(pred: (v: T, i: number, a: readonly T[]) => v is S): this is readonly S[]`,
-and types `parts` as a `readonly string[]` in the `true` arm, so the
-closure passed to `map` takes `p: string`. TScert refuses that closure: the
-only `map` signatures at the receiver `(string | null)[]` pass
-`string | null`. The census functions this case stands for
-(`shadow-contracts.mts`'s `print`, `printSignature`, `statedSignatures`,
-and `prelude` and `shadowText`, which the census attributes to the same
-cause) use the same pattern.
+and types `parts` as `readonly string[]` in the `true` arm, so the closure
+passed to `map` takes `p: string`. TScert refuses that closure ("closure
+signature claim is outside the source annotation"): `map` passes the
+receiver's element type, `string | null`.
 
-The overload states a fact about the heap at `every`'s return, at a
-callback that changes no element and no store. It is no type of the
-receiver: the receiver's store keeps its contract `T`, and a later write
-through any reference to the array may store a `T` outside `S`. TypeScript
-accepts the following, and Node throws at the last line
-(`Cannot read properties of null`):
+The sites in `tools/shadow-contracts.mts` the census attributes to this
+cause all test a local array at a guard that only reads (`p !== null`):
+
+| Line | Array tested | Between the test and the use | Use |
+| --- | --- | --- | --- |
+| 122 (`print`) | `terms.map(print)` | nothing | `parts.map((p) => …)` reads `p` at `string` |
+| 137 (`print`) | a spread literal | the test's array is not used again | none |
+| 180 (`print`) | `term.args.map(print)` | reads and string natives | `args.join(", ")` |
+| 195 (`printSignature`) | `stated.params.map(print)` | a closure, a `let` and a loop writing it | `params.map((p, i) => …)` reads `p` at `string` |
+| 215 (`statedSignatures`) | `[…].map(printSignature)` | nothing | `return printed` at `string[]` |
+
+`prelude` and `shadowText` reach these through their calls.
+
+## 2. The fact
+
+The **elements fact** $`\mathrm{elems}(x,R)`$ says that every present
+element of the array slot $`x`$ holds currently satisfies $`R`$, a
+predicate of the
+[primitive predicate grammar](../POSITIVE-TYPES.md#state-assertion-grammar)
+(the literals, `string`, `number`, `boolean`, null, undefined and the
+nullish exclusions, which apply to values of any shape). Like density
+(`Dense`, `FootprintProvenance.lean`), it requires the store to exist in
+the heap, so that a heap extension cannot fill a store location the fact
+held of vacuously:
+
+```math
+\mathrm{elems}(x,R)(\rho,h)\iff\exists\,\ell\ ls.\ \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land\forall l.\ \mathsf{some}\,l\in ls\Rightarrow\exists v.\ h[l]=v\land v\in R
+```
+
+where $`\mathrm{store}(v)`$ is the location of $`v`$'s field `[]`
+(`storeOf`).
+
+It is a new kind of the facts the stability check is generic in
+(`FootprintStability.FactKind`, beside `cell`, `link`, `value` and
+`dense`), and its support is the store's location and the element
+locations, each kept:
+
+```math
+\mathrm{support}(\mathrm{elems}(x,R))=[(\mathsf{field}(x,\mathtt{[]}),\mathsf{keep}),\ (\mathsf{elems}(x),\mathsf{keep})]
+```
+
+The regions are the existing `Region.field` and `Region.elems`. To prove:
+`FactKind.support_sound` for the new kind: a heap change within the
+support keeps the fact, since the store's location keeps its list and each
+listed location its value.
+
+**Why a predicate and not a type.** $`R`$ reads no world, so the fact
+holds of a heap alone, as every atom of heap knowledge does
+(`HeapKnowledge.Holds`): it is kept by heap extension, compared along edges
+and met at joins by the existing knowledge rules, and a call's
+postcondition stating it reads only the heap, as the effect postconditions
+do. The guard's type $`S`$ gives its predicate $`\mathrm{pred}(S)`$: the
+primitive union $`S`$ denotes, or the strongest nullish exclusion it
+implies, the lookup the knowledge's value facts already use
+(`valuesAt`; proved: `HeapKnowledge.atoms_sem` for an exact primitive
+union, `nullishAtoms_sound` and `typeValues_sound` for the exclusions). Every census
+guard is `p !== null` at `string | null`, whose predicate is `string`. A
+guard narrowing a union of records by a field's literal has no predicate
+here, and gives no fact.
+
+**Presence.** The fact is about present elements: a hole lists no
+location. Density stays its own fact, $`\mathrm{dense}(x,n)`$, and the
+store's contract states it as before.
+
+## 3. The stable set
+
+A closed footprint keeps the fact where the stability check passes for its
+support (`stable`; proved: `stable_sound`), which, both entries being
+`keep`, is exactly where every change it allows is `keep`: the empty
+footprint `{value: keep, store: keep}` alone. To prove:
+`elemsCheck_stable` (the empty footprint passes, as `denseCheck_stable`
+shows for density's four), and controls in `FootprintControls.lean`, one
+heap per other footprint on which a change it allows falsifies the fact
+(`{value: any, store: keep}` replaces an element, `{value: keep, store: grow}`
+lists a fresh location holding a value outside $`R`$).
+
+The check also takes separation knowledge (`SepKnowledge`): a write to
+locations known apart from the array's store and elements keeps the fact.
+The graph checker states no separation of element locations, so that use
+waits for [regional footprints](../FOOTPRINTS.md#deferred-extra-precision).
+
+## 4. The checked contract
+
+Three pieces of code must run within the empty footprint, and each is
+certified node by node by the existing rules
+([the checked callback contract](../FOOTPRINTS.md#the-checked-callback-contract)):
+
+- **The guard.** A guard closure states its promise at its body's
+  footprint (`declaration-effect`; proved: `codeChecked_sound`), so
+  `(p): p is string => p !== null`, an inspection, is a guard within the
+  empty footprint; a guard read as a value states its own footprint.
+- **The callbacks of the uses.** The template callback of line 122 reads
+  and allocates;
+  line 195's callback also reads the `let`'s cell.
+- **The caller's nodes between the test and the use.** The elements fact
+  is an atom of the node's heap knowledge, and the knowledge's rules keep
+  an atom exactly at the nodes whose step is within the empty footprint:
+  inspections (proved: `inspect_safe`), allocations (proved:
+  `HeapKnowledge.alloc_frames`), and calls at a signature within the empty
+  footprint stating no change of its receiver's store (`call-keep`; proved:
+  `PromiseCalls.keepsCall_sound`). Every other node drops it: a write, a
+  call beyond the empty footprint, and a handler's edge (a throw keeps
+  nothing).
+
+The atom is about the slot's alias class, as every atom is
+([stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)).
+An edge establishes a target's atom $`\mathrm{elems}(i,R)`$ from a source
+atom $`\mathrm{elems}(j,R')`$ with $`j`$ in the class of the mapped slot
+and $`R'\subseteq R`$, as it establishes a cell fact (`knowledge-edge`;
+proved for cells: `HeapKnowledge.check_sound`, `checkIn_sound`); a merge
+keeps an atom every incoming edge states, at the join of the predicates;
+a cut states it where a further round of the search proposes it, and every
+edge into the cut, the back edges included, is checked by the same rule.
+So a loop body within the empty footprint keeps it, and a body that
+re-tests the array may establish it again.
+
+## 5. The construct's rules
+
+**`every` at a guard.** The overlay states `every`'s guard overload at the
+empty footprint, with a promise about the receiver's elements:
+
+```math
+\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} S\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{every}(f):\mathsf{boolean}\,[\mathsf{true}\Rightarrow\mathrm{elems}(\mathit{xs},\mathrm{pred}(S))]\;!\;\emptyset}\ \textsf{native-guard-every}
+```
+
+Its postcondition, for receiver $`r`$, conjoins the empty footprint's with
+the fact on a `true` result:
+
+```math
+Q(r,h)(h',v)=\mathsf{Post}_{\emptyset}(h,h')\land\bigl(v=\mathsf{true}\Rightarrow\mathrm{elems}(r,\mathrm{pred}(S))(h')\bigr)
+```
+
+It reads the heap and the value only, the form of every effect
+postcondition (`Effect.post`), so the existing combination of two
+signatures' runs (`cross_upto`, `Effect.cross_result`) applies to it
+unchanged.
+
+Audited: `every` reads the receiver's length once, then for each index
+below it tests presence and calls $`f`$ with the element where it is
+present, returning `false` at the first answer converting to `false`
+([ECMA-262](../REFERENCES.md#ecma-262), `Array.prototype.every`). At a
+callback within the empty footprint, the store and every listed location
+keep their contents from the call's start to its return
+(`Closed.holds_empty`), so every listed location is visited, its value is
+the one the callback was given, and the callback's `true` leaves that value
+in $`S`$, so in $`\mathrm{pred}(S)`$. The call is within the empty
+footprint, so it keeps the caller's knowledge.
+
+The call's output carries the atom conditionally on its result slot $`r`$,
+$`r=\mathsf{true}\Rightarrow\mathrm{elems}(x,R)`$; a branch on $`r`$ keeps
+it unconditionally on its `true` edge, as a Boolean observation refines
+knowledge on its edge (proved for cells: `observeBoolean_holds`), and a
+negated test takes the edges swapped.
+
+**`map` at the fact.** `map` relies on the fact between callbacks, as it
+relies on density. The overlay states `map`'s two signatures at the empty
+footprint (dense and sparse receiver) once more with a precondition on the
+heap the call starts in: the receiver's elements satisfy $`R`$; the
+callback then takes the element type filtered by $`R`$,
+$`T\setminus_R`$, the labels of $`T`$ that $`R`$ does not exclude
+([refinement by a fact](../PROGRAM-TYPING.md#refinement-by-a-fact)):
+
+```math
+\frac{\mathrm{elems}(\mathit{xs},R)\ \text{at the call}\qquad f:(T\setminus_R,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} U}
+     {\mathit{xs}.\mathsf{map}(f):U[\,]\;!\;\emptyset}\ \textsf{native-map-elems}
+```
+
+the result as `map`'s signature at the empty footprint states it, at
+either presence. Audited: at a callback within the empty footprint, `map`
+reads the length once and passes each present element; the fact holds at
+every visit (to prove: `elems_rely`, the instance of `rely_chain` at the
+new kind, as `map_rely` is at density), and an element of the store's
+contract $`T`$ satisfying $`R`$ is in $`T\setminus_R`$ (to prove:
+`predFilter_sound`, from `factFilter_sound`). Holes are skipped, so a
+sparse receiver needs nothing more. The result's elements are the
+callback's, at $`U`$.
+
+**Instances.** Both rules are instances, at a predicate $`R`$, of a
+signature the overlay states once. The effect gains two fields of data, no
+type operand: `requires`, an optional predicate the receiver's elements
+satisfy in the heap the call starts in, and the promise form
+`guards elements R`. A signature's guarantee quantifies over the entry
+heaps meeting its `requires`, which keeps it a value type, the predicate
+reading no world (`PromiseWith`; to prove: `callsT_adm` with the
+precondition). An overlay member flagged as an elements instance is
+trusted to meet, beside its stated signatures, every instance Lean
+derives from them:
+
+- for `every`, at the guard signature whose callback promises $`S`$: the
+  same signature with the promise `guards elements pred(S)`;
+- for `map`, at each of its two signatures at the empty footprint, and
+  each predicate $`R`$: the signature whose callback's first parameter
+  type $`A`$ becomes $`A\setminus_R`$ and whose `requires` is $`R`$.
+
+The derivation is a Lean function of the stated signature and $`R`$ after
+the member's binders are instantiated, so substitution never meets $`R`$.
+At a call Lean derives the instance at the predicate of the receiver
+class's atom and checks the node against it (to prove: `mapElems_sound`,
+connecting the atom, the instance's `requires` and the callback's
+parameter through `predFilter_sound`, a bridge from a predicate to
+`factFilter_sound`'s type premise).
+
+**The operations on signatures.** One signature covers another where both
+state the same `requires` and promise (`Effect.covers`); two signatures of
+one call combine where both state the same `requires`, each entry
+precondition then justified by the one atom (`PromiseWith.combine`), and
+the elements promise combines by `cross_upto`, its postcondition reading
+the heap only. Erasing a signature stating `requires` to an ordinary arrow
+(`PromiseWith.erase`, whose premise `effect.plain` is extended to require
+no `requires`), binding its receiver (`Effect.drop`) and every elimination
+through `keeps` are refused for both new fields: a bound `map` keeping the
+filtered callback without its precondition would run after a later
+`push(null)` and throw. Lean refuses a code entry or a declaration stating
+either field, as it refuses `freshObject` on code (`effectChecked`).
+
+**Where the fact is not used.** No rule gives the slot $`x`$ a type from
+the fact: a type's meaning is independent of the heap, and the array,
+returned or stored at `readonly S[]`, would keep that type after a later
+write. TypeScript accepts the following, and Node throws at its last line:
 
 ```ts
 function view(xs: (string | null)[]): readonly string[] {
@@ -46,521 +259,143 @@ a.push(null);
 v[1].length;
 ```
 
-So the design is a fact of the current heap, established by `every`, kept
-by the steps that cannot change the array's elements, and read by the
-operations that read elements while it holds.
+## 6. The sites
 
-## 2. The fact
+- **122** (`print`) and the case: the fact from the test's `true` edge,
+  `map` at it. Closed.
+- **137**: no use relies on the fact; the call needs `every` at a guard
+  closure, which its plain signatures take.
+- **180**: `join` converts each element by the conversion contract, which
+  `string | null` meets, so its plain signature applies at the receiver's
+  declared type; the producer claims the receiver there rather than at
+  TypeScript's narrowed `readonly string[]`.
+- **195** (`printSignature`): between the test and the use the loop writes
+  the `let required` cell, a write outside the empty footprint, so the fact
+  is dropped. The loop reads only `stated`, so the route is a
+  [reordering](../SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for):
+  compute `required` before the test; then only reads lie between. Keeping
+  the fact across the write needs the separation of the cell from the
+  elements (§3), with regional footprints.
+- **215** (`statedSignatures`): `return printed` at `string[]` is an
+  escape (§5); the route is the rewrite to `filter` at its guard overload
+  compared by length.
 
-Write $`\sigma`$ for the store key, $`\mathsf{own}(o)`$ for the own
-locations of an object $`o`$ (the locations its fields name, $`\sigma`$'s
-included), and $`\mathsf{locs}(ls)`$ for the locations a store list
-$`ls`$ lists. The **element fact** $`x \mapsto^{\ast} S\,[C]`$ about slot
-$`x`$, at a type $`S`$ and an apart set $`C`$ of slots, holds at level
-$`n`$, world $`W`$, heap $`h`$ and environment $`\rho`$ when $`\rho(x)`$ is
-an array whose store and listed elements are locations of $`h`$, every
-listed element holds a value of $`S`$, and no own location of an object a
-slot of $`C`$ holds is one of them:
+## 7. What the existing lemmas give, and what is new
 
-```math
-\begin{aligned}
-\mathrm{Elems}_n(W,h,\rho)(x,S,C) \iff{} & \exists\,\mathit{flds}\ \ell\ ls.\ \rho(x)=\mathsf{obj}(\mathit{flds},\_)\land \mathit{flds}(\sigma)=\ell\land \ell<|h|\land h[\ell]=\mathsf{arr}\,ls\\
-& \land\ \forall l.\ \mathsf{some}\,l\in ls\Rightarrow l<|h|\land h[l]\in S_n(W)\\
-& \land\ \forall c\in C.\ \mathsf{own}(\rho(c))\cap(\{\ell\}\cup\mathsf{locs}(ls))=\varnothing
-\end{aligned}
-```
+Existing, used unchanged: the guard closure's footprint and promise
+(`codeChecked_sound`); the stability check and its soundness
+(`stable_sound`, `FactKind.support_sound` for the other kinds); the rely
+along callbacks (`rely_chain`); the empty footprint as heap extension
+(`Closed.holds_empty`) and the knowledge kept by it (`alloc_frames`,
+`keepsCall_sound`, `inspect_safe`); the edge, merge and cut rules of heap
+knowledge (`check_sound`, `checkIn_sound`, `shift_holds`,
+`dropResult_holds`); the combination of two signatures' runs
+(`cross_upto`, `Effect.cross_result`); the fact filter
+(`factFilter_sound`).
 
-It reads the store's location and the listed element locations, and no
-other location of the heap. $`S`$ is a type of the graph, judged at the
-state's world: membership of a type is kept by world extension and holds at
-every lower level ([Types.lean](../../lean/Verification/Types/Types.lean),
-`Adm`'s `mono` and `down`), so the fact transfers from a state to its
-successor as the environment's types do (to prove: `Elems.transfer`).
+New:
 
-**Presence.** The fact is about the present elements alone: a hole holds no
-location, so it holds no value of $`S`$, and a read at a hole gives
-`undefined`. Density stays a separate fact, $`D_n`$ of
-[the fact](../FOOTPRINTS.md#the-fact), and stays what the store's contract
-and `map`'s dense signatures state; the element fact neither implies nor
-requires it.
+- `FactKind.elems`, its support and `support_sound` case;
+  `elemsCheck_stable`; the footprint controls.
+- The atom in `HeapKnowledge.Knowledge` (a list of slot and predicate
+  pairs, unconditional or on a Boolean slot), with its cases of `Holds`,
+  `alloc_frame`, `shift`, `check`, `meet`, `project`, `dropResult` and
+  `observeBoolean`.
+- The effect's `requires` and elements promise, in `Effect.post`,
+  `PromiseWith`, `Effect.covers`, `PromiseWith.combine`, `.erase`,
+  `.weaken`, `Effect.drop` and the application rules, each quantifying over
+  effects and so taking a case or a refusal; `effectChecked`'s refusal of
+  both on code; the instance derivation for flagged members.
+- `everyCall_sound` (the conditional atom from the promise), `elems_rely`,
+  `predFilter_sound`, `mapElems_sound` (the precondition discharged by the
+  node's knowledge).
+- The search (`CertificateProducer`): the atom carried forward by the
+  knowledge rules, met at merges, proposed at cuts, and `map`'s signature
+  at the precondition tried where the receiver's class has an atom.
 
-**The apart set.** $`C`$ lists slots holding objects allocated while the
-fact held, each therefore disjoint from the array's store and elements. A
-write to one of their fields keeps the fact (§4). This is a provenance
-stamp ([deferred precision](../FOOTPRINTS.md#deferred-extra-precision))
-local to one fact: it is claimed only while the fact holds, so the fact's
-locations are fixed while it is.
+`checkJson_safe` keeps its premise and conclusion.
 
-**Alias classes.** A node's knowledge states each element fact about the
-slot's alias class ([stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)),
-and $`C`$ by classes too: two slots of one class hold one object.
+## 8. Producer, overlay and wire
 
-## 3. The footprints that keep it
-
-Of the six closed footprints
-([changes and footprints](../FOOTPRINTS.md#changes-and-footprints)), only
-the empty one keeps the fact:
-
-| Footprint | Keeps the element fact | Why |
-| --- | --- | --- |
-| `{value: keep, store: keep}` | yes | every old location's contents are unchanged |
-| `{value: any, store: keep}` | no | an element location is of `class(value)`: it may get a value outside $`S`$ |
-| `{value: keep, store: grow}` | no | the store may list a fresh location holding a value outside $`S`$ |
-| `{value: any, store: grow}`, `{value: keep, store: any}`, `{value: any, store: any}` | no | both of the above |
-
-```math
-\frac{\mathrm{Elems}_n(W,h,\rho)(x,S,C)\qquad \emptyset.\mathrm{Holds}(h,h')\qquad j\le n\qquad W'\sqsupseteq W|_j}
-     {\mathrm{Elems}_j(W',h',\rho)(x,S,C)}\ \textsf{elems-keep}
-```
-
-To prove: `Elems.keep` (the rule, from `Closed.holds_empty`: $`h'`$
-extends $`h`$, and every location the fact reads lies below $`|h|`$), and
-`Elems.stable_exact`, a one-array heap per other footprint on which the fact
-holds before and fails after, the controls added to
-`FootprintControls.lean`. A footprint that keeps the fact keeps density
-(the empty footprint is in `stableDenseClosed`, proved:
-`stableDenseClosed_sound`).
-
-A callback writing a captured counter is within `{value: any, store: keep}`
-and so keeps no element fact through a native's traversal; separating the
-counter's cell from the elements needs footprints over regions
-([deferred](../FOOTPRINTS.md#deferred-extra-precision)). Within the
-caller's own graph, a write to a cell of $`C`$ keeps the fact (§4).
-
-## 4. Where the fact comes from, and what keeps it
-
-A node's state gains a list $`\Theta`$ of element facts, each
-unconditional or conditional on a Boolean slot,
-$`b = \mathsf{true} \Rightarrow x \mapsto^{\ast} S\,[C]`$, beside the
-implications between immutable slots
-([promises between slots](../PROGRAM-TYPING.md#refinement-by-a-fact)).
-$`\Theta`$ is interpreted at the state's level, world and heap; the node's
-`StateOk` gains the conjunct $`\mathrm{ElemsOk}_n(W,h,\rho)(\Theta)`$.
-
-**An indexed postcondition.** A node's evaluation is stated by
-$`\mathrm{SafePost}(T,Q,n,W,h,t)`$, whose postcondition $`Q(h',v)`$ reads
-the final heap and value, and a call's guarantee by $`\mathrm{SafePostExc}`$
-with the effect's $`Q_\epsilon(r,h)`$
-([effect-qualified call contracts](../SEMANTICS.md#effect-qualified-call-contracts));
-a result family reads the world and no heap. $`\mathrm{Elems}`$ reads all
-three, so neither the `every` promise nor the `.eval` case of `StateOk` can
-state it through them. The design adds an indexed postcondition
-$`Q(j,U,h',v)`$, read at the level $`j`$ and world $`U`$ the value is
-produced at, closed under lower levels and world extension:
-
-```math
-\mathrm{SafePost}^{\mathsf{ix}}_\Xi(T,Q)(n{+}1,W,h,t)\iff
-\bigl(t\in T(n{+}1,W)\land Q(n{+}1,W,h,t)\bigr)\lor\bigl(\exists v.\ t\ \text{raises}\ v\land v\in\Xi(n{+}1,W)\bigr)\lor
-\exists W',h',t'.\ h,t\to h',t'\land\cdots\land\mathrm{SafePost}^{\mathsf{ix}}_\Xi(T,Q)(n,W',h',t')
-```
-
-with its step, consequence and bind rules, and its embedding of
-$`\mathrm{SafePost}`$, a $`Q`$ reading neither $`j`$ nor $`U`$ (to prove:
-`SafePostIx.ofSafePost`, `.bind`, `.consequence`, `.erase`). `PromiseWith`
-states an effect's postcondition in it, the elements promise being its one
-indexed conjunct, and `StateOk`'s `.eval` case states $`\Theta`$'s output
-in it. The overload combination transports a postcondition between the
-runs of two signatures of one call (`cross_upto`), which holds of a
-postcondition that reads no world. Two runs may end in worlds with no
-common extension, giving one fresh location different contracts, so an
-indexed postcondition is transported only where it is proved compatible
-across the two worlds. The elements promise is: it reads the contents of
-locations below the call's entry heap, whose contracts both worlds keep,
-and the membership of those contents in $`S`$, which reads the world only
-through those contracts (to prove: `elemsPromise_cross`). A combination of
-signatures whose indexed postconditions have no such proof is refused. This is the
-design's first stage, prototyped before the graph rules (§10).
-
-**`every` at a guard.** The overlay states `every`'s guard overload at the
-empty footprint, its promise about the receiver's elements:
-
-```math
-\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} S\,[\mathsf{guards}\ 0]}
-     {\mathit{xs}.\mathsf{every}(f):S\,[\mathsf{guards\ elements}]\;!\;\emptyset}\ \textsf{native-guard-every}
-```
-
-As a guard's signature states its promise's type as its result, the result
-$`S`$ here is the promise's type, the value `true` or `false`. The promise's
-meaning, at the world and heap the call returns in, with $`r`$ the
-receiver:
-
-```math
-R^{\mathsf{guards\ elements}}(v) = (v=\mathsf{true}\land \mathrm{Elems}(r,S,\varnothing))\lor v=\mathsf{false}
-```
-
-Audited: `every` reads the receiver's length $`len`$ once, then for each
-$`k<len`$ tests whether index $`k`$ is present, and calls $`f`$ with the
-element, $`k`$ and the receiver where it is, returning `false` at the first
-answer converting to `false` and `true` after the last index
-([ECMA-262](../REFERENCES.md#ecma-262), `Array.prototype.every`). At a
-callback within the empty footprint, every location's contents stay as
-they were from the call's start to its return, so the store and its listed
-locations stay the same, every present index below $`len`$ is visited, and
-each listed location still holds the value the callback was given; the
-callback's `true` leaves that value in $`S`$, kept by world extension. On a
-`true` result each listed element is in $`S`$ in the return's heap. At any
-other footprint `every` keeps the plain signatures, whose result is
-`boolean`. A guard closure states its promise at its body's footprint
-(the rule `declaration-effect` of [the checked callback contract](../FOOTPRINTS.md#the-checked-callback-contract),
-proved: `codeChecked_sound`), so a closure such as
-`(p): p is string => p !== null`, an inspection, meets the signature; a
-guard read as a value meets it at its own footprint.
-
-The call node's output carries the conditional fact on its result slot:
-
-```math
-\frac{\Gamma\vdash_G r\leftarrow\mathrm{invoke}(\mathit{every},x,f):A\ \text{at}\ \textsf{native-guard-every}\ \text{at}\ S}
-     {\Theta \leadsto \Theta,\ (r=\mathsf{true}\Rightarrow x\mapsto^{\ast}S\,[\varnothing])}\ \textsf{every-elements}
-```
-
-and keeps $`\Theta`$, by `call-keep`'s condition (its footprint within the
-empty one). A branch on $`r`$ makes the fact unconditional on its `true`
-edge; a negation $`u \leftarrow\ !r`$ restates it on $`u`$ at `false`, as an
-`onFalse` yield does. To prove: `everyCall_sound`, from `selectedCall_sound`
-with the promise's meaning, and `elemsBranch_sound`.
-
-**What keeps it.** Each node rule states what it does to $`\Theta`$;
-every rule not listed drops it.
-
-- *Inspections* (reads, tests, arithmetic, an array literal's spreads) keep
-  $`\Theta`$: the heap is unchanged (`inspect_safe`, proved).
-- *Allocation* of $`r`$ keeps $`\Theta`$ and adds $`r`$ to each fact's
-  apart set: every own location of the fresh object lies at or past the old
-  heap's length, and every location a fact reads lies below it (to prove:
-  `Elems.alloc_apart`). A closure, an object or array literal and a `let`'s
-  cell are allocations.
-- *A call keeping the heap* (`call-keep`: footprint within the empty one,
-  no receiver store excepted) keeps $`\Theta`$; one stating `freshObject`
-  (`call-fresh`) adds $`r`$ to each apart set as allocation does (to prove:
-  `Elems.call_keep`, `Elems.call_fresh`).
-- *A call changing only its receiver* $`y`$ (`call-own`: within the empty
-  footprint on every old location but $`y`$'s own ones) keeps each fact
-  whose apart set holds $`y`$'s class: none of the locations it may change
-  is one the fact reads (to prove: `Elems.call_own`). A signature excepting
-  its receiver's store (`pop`, `shift`, `reverse`, `splice`) states
-  `{value: any, store: keep}` outside that store, which lets any element
-  location change, so it drops $`\Theta`$ like every call outside the empty
-  footprint.
-- *A field write* $`\mathrm{write}_f(y,v)`$ keeps each fact whose apart set
-  holds $`y`$'s class: the written location is an own location of
-  $`\rho(y)`$ (to prove: `Elems.write_apart`). A cell's write is one.
-- *An element write*, `a[b] = v`, drops $`\Theta`$: its location is an
-  element location of some array, which may be one a fact reads.
-- *Every other node*, a call at a footprint outside the empty one included,
-  drops $`\Theta`$; so does a handler's edge, the throw having left its
-  expression midway.
-
-```math
-\frac{\Gamma\vdash_G r\leftarrow\mathrm{write}_f(y,v):\mathsf{Null}\qquad [y]\in C}
-     {x\mapsto^{\ast}S\,[C]\ \text{kept}}\ \textsf{elems-write-apart}
-\qquad
-\frac{\Gamma\vdash_G r\leftarrow\mathrm{alloc}(\ldots):A}
-     {x\mapsto^{\ast}S\,[C]\ \leadsto\ x\mapsto^{\ast}S\,[C\cup\{r\}]}\ \textsf{elems-alloc}
-```
-
-**Edges, joins, cuts and back edges.** An edge from a state $`a`$ to a
-target stating $`\Theta_b`$, under slot map $`m`$, establishes each target
-fact from a source fact about the mapped slot's class at a type within the
-target's, whose apart set covers the target's:
-
-```math
-\frac{\forall (i,S,C)\in\Theta_b.\ \exists (j,S',C')\in\Theta_a.\ j\in[m(i)]_a\land S'\le S\land \forall c\in C.\ [m(c)]_a\in[C']_a}
-     {\mathrm{ElemsOk}(\Theta_a)(\rho)\Longrightarrow\mathrm{ElemsOk}(\Theta_b)(\mathrm{mapEnv}(m,\rho))}\ \textsf{elems-edge}
-```
-
-and a conditional target fact from a conditional source fact on the mapped
-test slot, or from an unconditional one. $`S'\le S`$ is the subtype
-decision the edges already use for slot types. To prove: `elemsCheck_sound`.
-A merge that is not a cut keeps a fact where every incoming edge states one
-about the same class, at the union of their types and the intersection of
-their apart sets; the meet is untrusted, every edge checked. A cut states
-its facts as its implications are stated: a further round of Lean's search
-proposes them where a round fails and the edges into the cut meet new ones.
-A back edge establishes a cut's fact only if the loop's body keeps it, so a
-loop writing an element of any array, or calling at a footprint beyond the
-empty one, holds no element fact at its head.
-
-## 5. Where the fact is used
-
-**Native traversals at the element view.** A contract gains an optional
-precondition, its **element view** $`S`$: the call requires the
-receiver's present elements to be in $`S`$ in the heap it starts in. Its
-meaning restricts the entry heaps the arrow's guarantee quantifies over
-([effect-qualified call contracts](../SEMANTICS.md#effect-qualified-call-contracts)):
-
-```math
-\mathcal F^{\,S}_\epsilon(R_c,\mathcal A,R)\ \text{holds of}\ f \iff
-\forall j\ W'\ h\ r\ \vec v.\ \ldots\land \mathrm{Elems}_j(W',h)(r,S,\varnothing)\Rightarrow \exists t.\ \mathrm{Invoke}(f,r,\vec v,t)\land\mathrm{SafePostExc}(\ldots)
-```
-
-It stays a value type: the precondition is kept by world extension and holds
-at lower levels, so the family is admissible (to prove: `callsT_adm` and
-`restsT_adm` extended, `PromiseWith.weaken` with the precondition). One
-signature covers another where its view is none or the other's view is
-within its own (`Effect.covers` extended).
-
-Each `ArrayProto` member below is stated, beside its signatures, at the
-empty footprint with a binder $`S`$ as its element view, its element
-positions at $`S`$ and its receiver positions (the receiver, and the
-callback's `array` parameter) at $`T`$:
-
-| Member | At the element view |
-| --- | --- |
-| `map` (dense and sparse) | callback `(S, number, ReadonlyArray<T>) => U` within $`\emptyset`$; result as the plain signature at $`\emptyset`$ |
-| `forEach`, `some`, `every` | callback at `S` within $`\emptyset`$ |
-| `findIndex` | callback at `S` (dense receiver) or `S \| undefined` within $`\emptyset`$ |
-| `filter` | callback at `S` within $`\emptyset`$; result `S[]`, fresh |
-| `find` | callback at `S` (dense receiver) or `S \| undefined` within $`\emptyset`$; result `S \| undefined` |
-| `flatMap` | callback at `S` within $`\emptyset`$ |
-| `slice` | result `S[]` at the receiver's presence, fresh |
-| `at` | result `S \| undefined` |
-
-A member that visits every index below the length (`find`, `findIndex`)
-passes `undefined` at a hole, so its callback takes $`S`$ where the
-receiver's contract is dense, and $`S\cup\mathtt{undefined}`$ otherwise;
-`slice` keeps the receiver's holes, so its result has the receiver's
-presence mode; `at` gives $`S\cup\mathtt{undefined}`$ whatever the
-presence. The members skipping holes (`map`, `forEach`, `filter`, `some`,
-`every`, `flatMap`) pass $`S`$ at either presence; `map`'s result keeps the
-presence its plain signature at the empty footprint states.
-
-Audited, one row each: at the empty footprint the member reads the
-receiver's length and present elements, passes the receiver itself only as
-the callback's `array`, allocates only its result, and runs no client code
-but callbacks within the empty footprint; so from the call's start to its
-return the store and every listed location keep their contents, and every
-element it reads, passes or returns is one the precondition states in
-$`S`$. A member that writes its receiver (`push`, `pop`, `sort`, `splice`,
-...) has no element view.
-
-The call node is checked where its state's $`\Theta`$ holds an
-unconditional fact about the receiver's class at a type within the view:
-
-```math
-\frac{\Gamma\vdash_G r\leftarrow\mathrm{invoke}(m,x,\vec u):A\ \text{at a signature with element view}\ S\qquad (x,S',C)\in\Theta\qquad S'\le S}
-     {\Gamma;\Theta\vdash_G r\leftarrow\mathrm{invoke}(m,x,\vec u):A\dashv \Theta}\ \textsf{native-element-view}
-```
-
-The node keeps $`\Theta`$ by `call-keep`. To prove: `viewCall_sound`, from
-`selectedCall_sound` with the precondition discharged by
-`ElemsOk`. Lean refuses a code entry or a declaration stating an element
-view or the elements promise, as it refuses one stating `freshObject`
-(`effectChecked`; to prove: `effectChecked_noElements`): only an
-intrinsic's declaration states them.
-
-**Element reads at a literal index.** A read `x[k]`, $`k`$ a literal array
-index, at a state holding $`(x,S,C)\in\Theta`$, yields $`r : S\cup
-\mathtt{undefined}`$, filtered by the read's type
-([refinement by a fact](../PROGRAM-TYPING.md#refinement-by-a-fact)): at an
-array index the read takes the store's element, or `undefined` at a hole
-or past the end. A read at a computed index stays at the store's contract:
-a number that is no array index reads an own numeric field, which
-`every` never visits (`numericOwn`, [the array invariant](../SEMANTICS.md#the-array-invariant)).
-To prove: `elemsRead_sound`.
-
-**`for...of`.** The array iterator's step reads the iterated array's store
-at the iterator's index. At a state holding the fact about the iterated
-array, the step's yield is in $`S`$ where the array is the one the
-iterator was created from and its contract is dense, and in
-$`S\cup\mathtt{undefined}`$ otherwise, since the iterator reads a hole as
-`undefined`. That needs a link from the iterator to its
-array, kept across the loop's steps, and the step stated at an element
-view of that array: the last stage (§10), after the native traversals and the
-literal reads.
-
-**No type view.** No rule gives the slot $`x`$ a type from $`\Theta`$. A
-type's meaning is independent of the heap, so a value of
-`readonly S[]` stays one after any write, while the fact is about the
-current heap only: returning the array at `readonly S[]`, storing it in a
-field, or passing it to a function at such a parameter would let a later
-read through that reference see an element written after the fact lapsed
-(`view` in §1). Where an expression's type requires `S[]` of the array
-itself, the claim stays refused.
-
-## 6. What this closes
-
-- `print` (`all`: `parts.every(g) ? parts.map(...)`) and the case: the
-  `map` call at its element view, the callback at `string`.
-- `printSignature`: the fact holds from the edge where `params.every(g)`
-  answered `true` (the `||` condition's fall-through), across the
-  allocation of `admitsUndefined` and of the `let required` cell, which
-  join its apart set, the `while` loop writing that cell and calling the
-  closure, itself certified at the empty footprint (its body reads, tests
-  and calls `some` with itself), to `params.map(...)`. The loop's
-  cut states the fact with `required` in its apart set.
-- `prelude` calls `print`.
-- `statedSignatures` returns `printed` at `string[]`: an escape (§5, no
-  type view), outside what the fact gives. Its route is a repair of the
-  source, `printed.filter((p): p is string => p !== null)` compared by
-  length, at `filter`'s guard overload ([the deciding rules](../SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for));
-  `shadowText`, which the census attributes to this cause, calls it.
-  Whether `shadowText`'s slice verifies with its callees is measured by
-  the slices of the change, not predicted here.
-
-## 7. Lean changes
-
-- `Semantics/HeapElements.lean` (new): `Elems`, `ElemsOk`, `Elems.transfer`,
-  `Elems.keep`, `Elems.stable_exact`, `Elems.alloc_apart`, `Elems.write_apart`,
-  `Elems.call_own`; controls in `FootprintControls.lean`.
-- `Semantics/HeapObservations.lean`, `ExceptionalPosts.lean`: the indexed
-  postcondition of §4 and its rules.
-- `Semantics/CallEffects.lean`: the promise form `guards elements`
-  (`TypePromise`), the contract's `elementView : Option Result`, their
-  meanings in `PromiseWith` through the indexed postcondition;
-  `callsT_adm`, `restsT_adm`, `Effect.covers_sound`, `cross_upto`,
-  `call_safe` and `construct_safe` carried through. The contract operations
-  refuse the two forms where they cannot keep them: erasing a signature
-  with an element view to an ordinary arrow, and binding a receiver
-  (`Effect.drop`), after which the elements promise would be about the
-  bound call's receiver. `Contract` is read by
-  most modules, so adding the field rebuilds them; it has a default
-  (`none`), and pattern matches on the structure name its fields.
-- `Programs/PromiseCalls.lean`, `ControlFlow.lean`: `NodeEvidence.elements`
-  ($`\Theta`$ at the entry) and its output; `StateOk`'s conjunct;
-  `elemsCheck` and `elemsCheck_sound` in `carries`; `everyCall_sound`,
-  `elemsBranch_sound`, `viewCall_sound`, `elemsRead_sound`. The node rules
-  that drop $`\Theta`$ discharge the conjunct by `ElemsOk []`; only the
-  rules of §4 and §5 need proofs of their own.
-- `Programs/CertificateProducer.lean` (untrusted search): $`\Theta`$
-  inferred forward from each `every` call and carried by the rules of §4;
-  the merge's meet; cut facts by the round that proposes cut implications;
-  the element-view signature tried at a call whose receiver's class has a
-  fact.
-- `Programs/GraphCode.lean`: `effectChecked` refuses the two new forms on
-  code.
-
-`checkJson_safe` keeps its premise and conclusion; its proof threads the
-new conjunct through `StateOk`. The axiom check covers the new theorems.
-
-## 8. Producer, wire and overlay
-
-- **Overlay** (`tools/`'s globals overlay): `every`'s guard signature at
-  the empty footprint, and the element-view signatures of §5, each with its
-  audited row in [native footprints](../SOURCE-CONTRACTS.md#native-footprints).
-- **Wire.** The declaration document's effect gains the promise
-  `{"guards":{"elements":true}}`, beside `{"guards":{"param":i}}`, and a
-  signature gains `"elementView"`, `null` or a type's labels
-  ([source claims](../SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)).
-  `tools/source-claims.mts`, the Lean decoder and the producer's reader
-  change together; `tests/json-field-names.mts` checks the names. The
-  claims document is unchanged: $`\Theta`$ is evidence Lean's search
-  infers.
-- **Producer** (`ocaml-producer/`): the closures and calls after an
-  `every` guard are claimed at TypeScript's narrowed element type, which
-  the producer reads already; it proposes the element-view signature where
-  TypeScript's receiver is the narrowed `readonly S[]`, and the empty
-  footprint for the guard closure (an inspection). An escape (§5) keeps
-  the claim TypeScript gives, which Lean refuses.
+- **Overlay**: `every`'s guard signature at the empty footprint and `map`'s
+  two signatures at the precondition, with their audited rows.
+- **Wire** (the declaration document's effect,
+  [source claims](../SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)):
+  an overlay member's flag `"elementsInstances"`, `false` or `true`,
+  marking `every` and `map` as meeting the instances Lean derives (§5).
+  The predicates are not on the wire: Lean computes them. Typed in
+  `tools/source-claims.mts`, decoded in Lean and OCaml, checked by
+  `tests/json-field-names.mts`. The claims document is unchanged.
+- **Producer**: the closures after the test are claimed at TypeScript's
+  narrowed element type, as now; a receiver is claimed at its declared
+  type, never at the narrowed `readonly S[]`.
 
 ## 9. Cases and controls
 
-Positive (pipeline cases):
+Positive: `blocker-every-promise` (gap → verified);
+`every-elements-negated` (`if (!xs.every(g)) return null;` then
+`xs.map(…)`); `every-elements-guard-value` (a module guard read as a
+value); `every-elements-loop-reads` (a loop of reads between the test and
+the use); `every-elements-nullish` (`Node | undefined` at a guard
+excluding `undefined`, the callback reading a field).
 
-- `blocker-every-promise`: gap → verified.
-- `every-elements-record-guard`: a guard narrowing a union of records,
-  `nodes.every((n): n is Leaf => n.k === "leaf") ? nodes.map((n) => n.v) : []`.
-- `every-elements-negated`: `if (!xs.every(g)) return null;` then
-  `xs.filter(...)` at `S[]` and `xs.find(...)` at `S | undefined`.
-- `every-elements-cell-loop`: `printSignature`'s shape, a captured `let`
-  written in a loop between the test and the `map`.
-- `every-elements-guard-value`: a module guard read as a value,
-  `xs.every(isName)`.
-- `every-elements-sparse-find`: `find` over a receiver whose contract
-  admits holes, its callback at `S | undefined` testing for `undefined`.
+Negative, each run under Node in `tests/node-runs.mts`, where it throws a
+`TypeError` TypeScript does not predict: `invalid-every-elements-element-write`
+(`xs[0] = null` between); `invalid-every-elements-alias-write` (the same
+through `const ys = xs`); `invalid-every-elements-push`;
+`invalid-every-elements-call` (an unknown function given `xs`);
+`invalid-every-elements-guard-mutates` (the guard writes `xs[1] = null`);
+`invalid-every-elements-map-callback-writes` (the `map` callback writes
+`xs[i + 1] = null`); `invalid-every-elements-escape` (`view` of §5).
 
-Negative (refused; each run under Node in `tests/node-runs.mts`, where it
-throws a `TypeError` TypeScript does not predict):
-
-- `invalid-every-elements-element-write`: `xs[0] = null` between the test
-  and `xs.map((p) => p.length)`.
-- `invalid-every-elements-alias-write`: the same write through
-  `const ys = xs`.
-- `invalid-every-elements-push`: `xs.push(null)` between them.
-- `invalid-every-elements-call`: a call of an unknown function given `xs`.
-- `invalid-every-elements-guard-mutates`: an `every` callback that sets
-  `xs[1] = null` after testing index 0: only the plain signatures apply.
-- `invalid-every-elements-map-callback-writes`: a `map` callback writing
-  `xs[i + 1] = null`: the element view needs a callback within the empty
-  footprint.
-- `invalid-every-elements-loop`: a loop between the test and the use whose
-  body writes an element.
-- `invalid-every-elements-escape`: `view` of §1.
-- `invalid-every-elements-hole-find`: `[, "ok"]` at `(string | undefined)[]`,
-  `every` at `typeof x === "string"`, then `find((x) => x.length > 0)`:
-  `find` passes the hole.
-
-Forged-claim controls (`pipeline/test.mts`, through evidence production and
-consumption): an element fact stated at a node after an element write; an
-apart set naming a slot allocated before the fact; the conditional fact
-used on the `false` edge; an `every` call selected at the elements promise
-with a callback outside the empty footprint; an element-view call at a
-receiver with no fact; a closure's code entry claiming an element view or
-the elements promise.
+Forged-claim controls (`pipeline/test.mts`, through evidence production
+and consumption): an atom stated after an element write; an atom about the
+other of two swapped slots; the conditional atom used on the `false` edge;
+a bound `map` at the precondition, and its erasure to an ordinary arrow;
+a cut atom justified only by its own back edge through a body that writes
+an element; a stale atom across a loop iteration that pushes; a callback
+that writes an element and throws before restoring it, its caller catching
+the throw; `every` selected at the elements promise with a callback beyond
+the empty footprint; `map` at the precondition with no atom; a closure's
+code entry claiming the promise or the precondition.
 
 ## 10. Cost and risks
 
-Estimated, by the size of comparable work
-([fresh array storage](../FOOTPRINTS.md#fresh-array-storage),
-[separation facts](heap-freshness.md)), in stages:
+Estimated by the size of the density instance and the knowledge atoms:
+Lean 2,000–3,000 lines (the fact kind, its stability and controls 250;
+the knowledge atom 400; the effect's two fields through every operation
+quantifying over effects, and the instance derivation, 900–1,500; the
+call rules 400; the search 200), the effect part the least certain and
+prototyped first; the producer 100–200; overlay, wire and decoders 150;
+docs 200; 12 cases and 9 controls; the two source rewrites of §6.
 
-1. The indexed postcondition and the contract's two forms
-   (`HeapObservations`, `ExceptionalPosts`, `CallEffects`): Lean
-   1,500–2,500 lines. It is prototyped first, and the later estimates are
-   revised from its size.
-2. The fact, its keeping rules and edges, `every`, and `map`, `forEach`,
-   `filter`, `some` and `every` at the element view: Lean 1,500–2,000
-   lines, the search 400; the producer 200–400; overlay, wire and decoders
-   250; docs 300. This stage closes `print` and `printSignature`.
-3. `find`, `findIndex`, `slice`, `at` and literal-index reads: Lean about
-   500.
-4. `for...of`: not estimated.
+Risks: the effect's two new fields touch every module reading `Effect`,
+and every lemma quantifying over effects (`erase`, binding, weakening,
+combination, application) takes a case for them or refuses them.
+The audits are two rows, `every` and `map`.
 
-Altogether 4,000–5,500 Lean lines for stages 1–3, 15 cases and 6
-controls.
+## 11. Deferred
 
-Risks:
+- The other natives at the precondition (`forEach`, `filter`, `some`,
+  `find`, `findIndex`, `slice`, `at`), element reads at a literal index and
+  `for...of`: each another construct over the same fact, with its audit;
+  `find`, `findIndex` and the iterator visit holes, so they read
+  $`T\setminus_R`$ or `undefined`; `slice` skips them and keeps them as
+  holes in its result.
+- Guards whose type has no predicate (a union of records by a field's
+  literal): a fact about a type needs a postcondition reading the world.
+- Writes between the test and the use: regional footprints and separation
+  of element locations (§3).
 
-- **The indexed postcondition.** Every composition lemma of `SafePost`
-  has its indexed twin; where a lemma reads the postcondition's
-  independence of the world, its twin needs admissibility instead.
-- **Rebuild time.** `Contract`'s new field touches most modules; the
-  default value keeps proofs that construct contracts unchanged, but
-  `DecidableEq` and structure-eta proofs rebuild.
-- **The native audits.** Eleven rows of §5 and `every`'s; each rests on the
-  member running no client code but its callback, the same host premise as
-  [ordinary array construction](../SOURCE-MODEL.md#exact-contracts-and-native-effects).
-- **Search cost.** Each `every` call adds facts the search carries to every
-  later node; a fact is dropped at the first node outside §4's list, so in
-  the census functions it lives across a few nodes. The cut round runs only
-  where a round fails.
-- **Coverage.** A callback writing a captured cell keeps no fact through a
-  traversal (§3); `statedSignatures` needs its repair (§6).
-
-## 11. Alternatives considered
+## 12. Alternatives considered
 
 - **A footprint-keeping callback alone** gives the fact at `every`'s
   return and nothing after it ([guard overloads](../../WORK.md#guard-overloads)).
 - **Narrowing the store's contract** to `S`: a location's contract is
-  fixed by its allocation and a world never replaces one
-  ([the array invariant](../SEMANTICS.md#the-array-invariant)), and the
-  other references to the array keep `T`.
-- **A view type for the slot** (the slot typed `readonly S[]` for a
-  region): unsound at every escape (§5, `view`).
-- **A primitive predicate in place of $`S`$**, a cell fact of
-  [current-content assertions](../SEMANTICS.md#current-content-assertions-and-postconditions):
-  heap knowledge stays world-free and cheaper, and the census's guards
-  (`string` from `string | null`) fit, but a guard narrowing a union of
-  records or of compiler nodes does not.
-- **Regional footprints** (`own(x)`, `store(x)`, `elems(x)`,
-  [deferred](../FOOTPRINTS.md#deferred-extra-precision)) would subsume the
-  apart set and admit callbacks writing captured cells; they are the larger
-  general mechanism, which this fact's rules fit into later.
-- **Rewriting the five functions** (`filter` at its guard overload with a
-  length comparison) needs no model change and is the route for
-  `statedSignatures` alone.
-
-## 12. Decisions
-
-- **D1.** $`S`$ is a type of the graph (§2), over a primitive predicate.
-- **D2.** `statedSignatures` takes the repair of §6.
-- **D3.** `for...of` at the element view is the last stage (§10).
+  fixed at its allocation ([the array invariant](../SEMANTICS.md#the-array-invariant)).
+- **A view type for the slot**: unsound at an escape (§5).
+- **The fact at a type $`S`$**, with a postcondition reading the level and
+  the world, an apart set per fact and a precondition on many natives:
+  more general, and several times the size; no census site needs it.
+- **Rewriting all five sites** to `filter` with a length comparison: no
+  model change, and the route for line 215 alone.
