@@ -55,6 +55,9 @@ structure Function (ι : Type) where
   footprint : Footprints.Closed := .top
   /-- Whether the footprint is proposed on a throw too. -/
   onThrow : Bool := false
+  /-- At a flow node's entry, the execution points of the nodes reachable
+  from it; `none` where the lowering states none. -/
+  reachable : Option (List String) := none
 
 /-- Select one execution point for expression elaboration. A missing point has
 no claims, so an obligation there fails instead of borrowing another copy's. -/

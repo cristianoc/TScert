@@ -72,6 +72,34 @@ reference representation. Every such action is recorded as an opaque region. -/
     emitAt node.source .undef (.branch yes no) Γ [Labels.tru, Labels.fls]
       "diagnostic-branch-hole" (scope := scope)
 
+/-- The execution points of the nodes the flow reaches from `id` by one or
+more steps: an action's destinations and a node's handler. -/
+private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String := Id.run do
+  let next := fun (n : Nat) => match graph.nodes[n]? with
+    | none => []
+    | some node =>
+      let own := match node.action with
+        | .finish | .returnValue _ | .returnHeld _ | .rethrow _ => []
+        | .jump m | .statement _ m | .declaration _ _ _ m | .early _ m
+        | .saveReturn _ _ m | .discardThrow _ m | .iteratorStart _ _ m => [m]
+        | .branch _ yes no | .iteratorStep _ _ _ yes no => [yes, no]
+      own ++ (node.handler.map (·.target)).toList
+  let mut seen : Array Bool := Array.replicate graph.nodes.size false
+  let mut work := next id
+  let mut found : List Nat := []
+  for _ in [0:graph.nodes.size + 1] do
+    match work with
+    | [] => break
+    | _ =>
+      let mut later : List Nat := []
+      for n in work do
+        if !(seen[n]?.getD true) then
+          seen := seen.set! n true
+          found := n :: found
+          later := next n ++ later
+      work := later
+  return found.reverse.map (SourceFlow.pointId graph.owner)
+
 /-- Elaborate one immutable control-flow action. Reserved entries permit
     cyclic edges; every entry retains the context required of its predecessors. -/
 @[nospecialize] private partial def flowNode (recursive : RecursiveLowering) (graph : SourceFlow.Graph)
@@ -81,7 +109,7 @@ reference representation. Every such action is recorded as an opaque region. -/
   let scope ← flowScope ambient incoming node
   if let some target := (← flowTarget id) then
     return ← jumpTo incoming target scope
-  let fc := base.atPoint (SourceFlow.pointId graph.owner id)
+  let fc := { base.atPoint (SourceFlow.pointId graph.owner id) with reachable := some (reachablePoints graph id) }
   let Γ ← env fc node.source scope
   let reserved ← withHandler none (emitAt node.source .nul .ret Γ [Labels.nul]
     "flow-entry" (some node.source.1) scope)

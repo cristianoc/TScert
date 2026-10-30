@@ -123,7 +123,13 @@ within (a tag refinement of the root whose arms state the member required,
 say). The entry keeps its witness, at the asserted type, so that a later
 entry whose root claim no longer implies it (a loop's update after the
 branches rejoin) receives the read link: each edge of a path's chain carries
-the link from the test that read it (HOST-FAMILIES.md, "Entries"). -/
+the link from the test that read it (HOST-FAMILIES.md, "Entries"). It is
+kept only where an entry the flow reaches from this one has its own witness
+of the path or of a longer path it begins, whose chain of links includes
+this one's, the entry the link is carried to (`reachable`); elsewhere the entry
+asserts the field's contents, which the declared read
+establishes, and an edge after a step that may change the field (a call
+whose footprint changes any value) need not carry the link. -/
 @[nospecialize] def impliedWitnessWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
     (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
     m (Option (Ty Tree)) := do
@@ -131,8 +137,15 @@ the link from the test that read it (HOST-FAMILIES.md, "Entries"). -/
   let some field := path.getLast? | return none
   if (HeapKnowledge.atoms (SourceTypes.graph T) A).isSome then return none
   let some C := pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field) | return none
-  if ← wi C A then return some A
-  return none
+  if !(← wi C A) then return none
+  let some reachable := fc.reachable | return some A
+  let carried ← reachable.anyM fun point => do
+    let g := fc.atPoint point
+    g.entryCurrent.anyM fun (q, roots) =>
+      ((roots.lookup root).getD []).anyM fun (longer, _) => do
+        if !(path.length ≤ longer.length && longer.take path.length == path) then return false
+        return (← ownWitnessWith T wi g q root longer).isSome
+  return if carried then some A else none
 
 /-- The type a statement entry's witness of `root.path` holds: its own
 refinement, and, for a proper prefix of a path that has one, the prefix's

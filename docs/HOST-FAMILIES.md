@@ -1170,7 +1170,13 @@ through a key the object may lack: the entry passes on the link of the
 test that read the path, which a later entry whose root claim no longer
 implies the refinement needs (a loop's update after a guarded branch
 rejoins, `blocker-compiler-api-parent-loop`; a write of the root in the
-branch ends the link, `invalid-compiler-api-parent-loop-write`). Every incoming edge,
+branch ends the link, `invalid-compiler-api-parent-loop-write`). The entry
+keeps that witness only where an entry the flow reaches from it, by one or
+more steps of the function's control-flow graph, has its own witness of
+the path or of a longer path it begins, whose chain of links includes the
+path's (`blocker-compiler-api-grandparent-loop`); elsewhere it asserts the field's contents, which the declared
+read establishes, and an edge after a call that discards the link need not
+carry it (`compiler-api-optional-field-join`). Every incoming edge,
 including a loop backedge, checks each mapped witness's type and each link's
 receiver and field, segment by segment. The rule is
 [witness-edge](PROGRAM-TYPING.md#witness-edges), proved by
