@@ -89,7 +89,9 @@ export type GlobalEntry = {
    * the result. */
   stated?: Stated | ((library: LibraryReference, view: CollectionViewReference) => Stated);
   /** Several signatures read instead of the declared one, each as `stated`
-   * reads one: construct signatures, under binders every form names alike. */
+   * reads one, under binders every form names alike: construct signatures,
+   * or the overloads of a member, each the host's steps at the arguments it
+   * states. */
   forms?: Stated[] | ((library: LibraryReference, view: CollectionViewReference) => Stated[]);
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
@@ -710,10 +712,19 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // host's, reading the current length at each step: a fresh dense array of
   // its elements, a hole read as `undefined`, which a readable `T[]` holds
   // only where `undefined` meets `T`. It writes nothing else.
+  //
+  // `Array.from(s)` of a string steps the string's iterator,
+  // `String.prototype[Symbol.iterator]`, whose `next` yields each code point
+  // of `s` as a string of one or two code units (a lone surrogate as itself),
+  // and defines each on a fresh array: a dense `string[]`. The string is a
+  // primitive, so no step runs client code; it writes nothing else. Both
+  // forms are stated at either declaration, since the host takes the same
+  // steps whichever TypeScript resolves.
   ...["from<T>(arrayLike: ArrayLike<T>): T[];", "from<T>(iterable: Iterable<T> | ArrayLike<T>): T[];"].map(
     (signature): GlobalEntry => ({ host: transparent("the array's store: a node list's table"), global: "Array",
       member: "from", signature, effect: emptyEffect,
-      stated: { binders: ["T"], params: [readonlyArray(binder("T"))], result: array(binder("T")) } })),
+      forms: [{ binders: ["T"], params: [readonlyArray(binder("T"))], result: array(binder("T")) },
+        { binders: ["T"], params: [atom("string")], result: array(atom("string")) }] })),
   // `Array.from(items, f)` reads `items[Symbol.iterator]`: where `items`
   // has one, it steps that iterator, and otherwise reads `items.length`
   // (ToLength, no code on a number) and each index; it calls `f` with each
@@ -722,16 +733,26 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // of its own, client code yielding any value: `f` takes `unknown`, and the
   // call states no effect, as `f` and that code may change anything. The
   // result is a fresh dense array of `f`'s results.
+  //
+  // `Array.from(s, f)` of a string steps the string's iterator, as without
+  // `f`, and calls `f` with each code point, a string, and its index: `f`
+  // takes a string. `f` may change anything but the string, a primitive,
+  // so the traversal yields every code point; the result, a fresh array `f`
+  // never receives, is dense. The call states no effect, as `f` states none.
   ...["from<T, U>(arrayLike: ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];",
     "from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];"].map(
     (signature): GlobalEntry => ({ host: transparent("the record's length or its iterator, whose values the callback takes at unknown"),
       global: "Array", member: "from", signature,
-      stated: { binders: ["U"], params: [
+      forms: [{ binders: ["U"], params: [
         { k: "object", stringIndex: null, calls: [], span: at,
           fields: [{ name: "length", optional: false, readonly: true, type: atom("number"), span: at }] },
         { k: "function", effect: ordinaryEffect, receiver: null, params: [atom("unknown"), atom("number")], rest: null,
           result: binder("U"), span: at }],
-        result: array(binder("U")) } })),
+        result: array(binder("U")) },
+      { binders: ["U"], params: [atom("string"),
+        { k: "function", effect: ordinaryEffect, receiver: null, params: [atom("string"), atom("number")], rest: null,
+          result: binder("U"), span: at }],
+        result: array(binder("U")) }] })),
   // `new RegExp(pattern, flags)` of strings compiles the pattern, a
   // SyntaxError where the pattern or the flags are invalid, an outcome. A
   // regex `pattern` would be read by its `Symbol.match`, `source` and

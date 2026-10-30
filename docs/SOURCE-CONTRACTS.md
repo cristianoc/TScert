@@ -3025,7 +3025,15 @@ Node), as is every other function of `Reflect`
 
 - `Array.from(xs)` of an array copies it through the host's iterator,
   a hole read as `undefined`: $`\forall T.\ (\mathtt{readonly}\ T[\,])\Rightarrow T[\,]`$
-  within the empty footprint (`array-from-copy`). `Array.from(items, f)` of a
+  within the empty footprint (`array-from-copy`). Of a string it steps
+  `String.prototype[Symbol.iterator]`, which yields each code point as a
+  string of one or two code units, a lone surrogate as itself, and runs no
+  client code: $`(\mathtt{string})\Rightarrow\mathtt{string}[\,]`$ within the
+  empty footprint; with a callback, $`\forall U.\ (\mathtt{string},\ (\mathtt{string},\ \mathtt{number})\Rightarrow U)\Rightarrow U[\,]`$,
+  stating no effect, as the callback may write anything but the string, a
+  primitive (`array-from-string`; `invalid-array-from-string-callback`, run
+  under Node). Both are stated at each declaration of `Array.from` as
+  overloads beside the array's and the record's. `Array.from(items, f)` of a
   length record steps the record's own iterator where it holds one, client
   code yielding any value, and else reads its length and indices; it calls
   `f` with each value and index:

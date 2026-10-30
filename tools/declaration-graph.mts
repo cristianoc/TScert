@@ -4874,9 +4874,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // declared (the standard library, an installed package such as Node's
   // `process`, a declaration file of the project): a member or signature it
   // does not list, with exactly the text reviewed, is refused.
-  // An entry stating several forms states construct signatures: each form is
-  // one, under the entry's binders, which every form names alike. Read
-  // anywhere else, or empty, the list is refused rather than an arm dropped.
+  // An entry stating several forms states construct signatures or a
+  // member's overloads: each form is one, under the entry's binders, which
+  // every form names alike. Read anywhere else, or empty, the list is
+  // refused rather than an arm dropped.
   const reviewedForms = (member: string | undefined, node: Node, what: string):
       (Omit<GlobalEntry, "stated" | "forms"> & { forms?: Stated[] }) | undefined => {
     const text = node.getText(node.getSourceFile()).trim();
@@ -5064,8 +5065,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if (!overload) throw Error(`TypeScript resolves the call of ${what} to no overload it declares`);
         chosen.set(overload, [...chosen.get(overload) ?? [], call]);
       }
-      const selected = [...chosen].flatMap(([overload, calls]) => {
-        const entry = reviewed(key, overload, what);
+      const selected = [...chosen].flatMap(([overload, calls]): (FunctionTerm | Extract<TypeTerm, { k: "scheme" }>)[] => {
+        const entry = reviewedForms(key, overload, what);
         if (entry?.prototypeTest) throw Error(`${what} is read only compared with ${name}.prototype`);
         // A test of the calculus: each call is reported, and the member
         // joins no value.
@@ -5090,20 +5091,23 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           }
           return [];
         }
-        // A signature the overlay states instead of the declared one: its
-        // parameters bound the arguments, as for a construct.
-        if (entry?.stated) {
-          const stated = entry.stated;
-          for (const call of calls) boundedArguments(call, stated, what);
+        // Signatures the overlay states instead of the declared one: each
+        // one's parameters bound the arguments, as for a construct. Several
+        // are overloads of the one declaration, each the host's steps at the
+        // arguments it states (`Array.from` of an array and of a string).
+        if (entry?.forms) {
+          const stated = entry.forms;
+          for (const call of calls) for (const form of stated) boundedArguments(call, form, what);
           const at = spanOf(overload);
-          const form: FunctionTerm = { k: "function", effect: entry.effect ?? ordinaryEffect, receiver: { k: "self", span: at }, params: stated.params,
-            rest: stated.rest ?? null, result: stated.result, span: at };
-          // A generic statement is a scheme over its binders, as a generic
-          // interface method is.
-          return [stated.binders.length
-            ? { k: "scheme", binders: stated.binders.map(name => ({ name, bound: null, resolution: null, default: null, span: at })),
-                signatures: [form], span: at } satisfies TypeTerm
-            : form];
+          const signatures: FunctionTerm[] = stated.map(form => ({ k: "function", effect: entry.effect ?? ordinaryEffect,
+            receiver: { k: "self", span: at }, params: form.params, rest: form.rest ?? null, result: form.result, span: at }));
+          // A generic statement is a scheme over its binders, which every
+          // form names alike, as a generic interface method is.
+          const binders = stated[0]?.binders ?? [];
+          if (!binders.length) return signatures;
+          const scheme: Extract<TypeTerm, { k: "scheme" }> = { k: "scheme", signatures, span: at,
+            binders: binders.map(name => ({ name, bound: null, resolution: null, default: null, span: at })) };
+          return [scheme];
         }
         return forms(overload, key, what, entry).map(form => {
           if (form.receiver) throw Error(`the method ${what} states its receiver`);
