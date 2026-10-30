@@ -361,6 +361,27 @@ let index_for (shape:shape) name =
     (match (if canonical_numeric s then find Numeric else None) with
      | Some i -> Some i | None -> find Strings)
   | Key _ -> find Symbols
+(* Whether an intersection's operands hold no value in common: two disjoint
+   primitives, or two objects stating one required field at disjoint sets
+   of number or string literals (`{ k: "id" } & { k: "optional" }`), a
+   declared one read at its definition: the field's one location would hold
+   both contracts (Lean's `conflicting`). *)
+let empty_meet declarations parts =
+  let literal = function StrLit _ | NumLit _ -> true | _ -> false in
+  let rec required unfolded = function
+    | Atoms [Shape {fields;_}] | Atoms [Exact fields] ->
+      List.filter_map (fun (f:Semantic.field) -> match f.read with
+        | Atoms (_::_ as xs) when not f.optional && List.for_all literal xs -> Some (f.name,xs)
+        | _ -> None) fields
+    | Atoms [Named (id,args)] when not (List.mem id unfolded) ->
+      (try required (id::unfolded) (definition declarations id args) with Json.Error _ -> [])
+    | _ -> [] in
+  let disjoint x y = Inference.meet_atom x y = Some [] in
+  let apart xs ys = List.for_all (fun x -> List.for_all (disjoint x) ys) xs in
+  List.exists (fun a -> List.exists (fun b -> match a,b with
+    | Atoms [x],Atoms [y] when disjoint x y -> true
+    | _ -> List.exists (fun (n,xs) -> List.exists (fun (m,ys) -> n=m && apart xs ys) (required [] b))
+             (required [] a)) parts) parts
 let rec field_type bounds declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
@@ -410,7 +431,34 @@ let rec field_type bounds declarations seen t name = match t with
   | Union ts -> combine (List.map (fun t -> field_type bounds declarations seen t name) ts)
   (* A value of an intersection is one of each operand: read as the first
      operand that has the field, a hint Lean checks. *)
-  | Meet (t,ts) -> first_part (fun t -> field_type bounds declarations seen t name) (t::ts)
+  | Meet (t,ts) ->
+    (* An intersection with a union operand, a declared one included, is the
+       union of its intersections with each arm, `(A | B) & C` is
+       `(A & C) | (B & C)`: read at each arm no two of whose operands state
+       one required field at disjoint literals, `E & { k: "optional" }` at
+       the arm whose `k` is `"optional"` alone. *)
+    let rec arms unfolded = function
+      | Union ts -> List.concat_map (arms unfolded) ts
+      | Atoms (_::_::_ as atoms) -> List.concat_map (fun a -> arms unfolded (Atoms [a])) atoms
+      | Atoms [Named (id,args)] as t when not (List.mem id unfolded) ->
+        (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+         | Some (Union _ | Atoms (_::_::_) as d) -> arms (id::unfolded) d
+         | _ -> [t])
+      | t -> [t] in
+    (* At most 256 choices are enumerated, a declared union of the front
+       end's (`Expr`) meeting one arm's discriminant among them. *)
+    let operands = List.map (arms []) (t::ts) in
+    let n = List.fold_left (fun n arms -> min 257 (n * List.length arms)) 1 operands in
+    let choices () = List.fold_right (fun arms acc ->
+      List.concat_map (fun arm -> List.map (fun rest -> arm :: rest) acc) arms) operands [[]] in
+    let empty = empty_meet declarations in
+    let read parts = first_part (fun t -> field_type bounds declarations seen t name) parts in
+    if n > 1 && n <= 256 then
+      let choices = choices () in
+      (match List.filter (fun parts -> not (empty parts)) choices with
+       | [] -> read (t::ts)
+       | live -> combine (List.map read live))
+    else read (t::ts)
   | Rigid r -> (match List.assoc_opt r bounds with
     | Some b -> field_type bounds declarations seen b name
     | None -> unsupported "field read on rigid parameter")

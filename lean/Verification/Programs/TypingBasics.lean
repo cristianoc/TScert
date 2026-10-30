@@ -923,26 +923,179 @@ theorem mapM_mem {f : α → Option β} : ∀ {xs : List α} {ys : List β}, xs.
     · obtain ⟨z, hz, hfz⟩ := mapM_mem hys x hx
       exact ⟨z, List.mem_cons_of_mem _ hz, hfz⟩
 
+/-- The literals a clause holds: a number's or a string's, or a tag set's. -/
+def litsOf : Clause α → Option (List LitKey)
+  | .numLit b => some [.num b]
+  | .strLit s => some [.str s]
+  | .numIn bs => some (bs.map .num)
+  | .strIn ss => some (ss.map .str)
+  | _ => none
+
+/-- A literal's one value. -/
+def litVal : LitKey → Val
+  | .num b => .num b
+  | .str s => .str s
+
+theorem litVal_inj {x y : LitKey} (h : litVal x = litVal y) : x = y := by
+  cases x <;> cases y <;> simp_all [litVal]
+
+theorem litsOf_sem {c : Clause α} {ks : List LitKey} (h : litsOf c = some ks) {Ξ : Fam} {X : α → Fam}
+    {P : α → ArgFam} {n W v} : semWithArgs Ξ X P c n W v ↔ ∃ x ∈ ks, v = litVal x := by
+  cases c <;> simp [litsOf] at h <;> subst h <;> simp only [semWithArgs, List.mem_map,
+    List.mem_singleton, exists_eq_left, litVal]
+  · exact ⟨fun ⟨b, hb, hv⟩ => ⟨.num b, ⟨b, hb, rfl⟩, hv⟩, fun ⟨_, ⟨b, hb, rfl⟩, hv⟩ => ⟨b, hb, hv⟩⟩
+  · exact ⟨fun ⟨b, hb, hv⟩ => ⟨.str b, ⟨b, hb, rfl⟩, hv⟩, fun ⟨_, ⟨b, hb, rfl⟩, hv⟩ => ⟨b, hb, hv⟩⟩
+
+theorem litsOf_carries {c : Clause α} {ks : List LitKey} (h : litsOf c = some ks) :
+    c.carriesInvariant = false := by
+  cases c <;> simp [litsOf] at h <;> rfl
+
+/-- The literals of a list of clauses, where each is `litsOf`'s. -/
+def litsAll : List (Clause α) → Option (List LitKey)
+  | [] => some []
+  | c :: cs => do
+    let ks ← litsOf c
+    let rest ← litsAll cs
+    pure (ks ++ rest)
+
+theorem litsAll_sem {G : NormalGraph ι} : ∀ {cs : List (Clause (List ι))} {ks : List LitKey},
+    litsAll cs = some ks → ∀ {n W v}, setSem (clauseSem G) cs n W v ↔ ∃ x ∈ ks, v = litVal x
+  | [], ks, h, n, W, v => by
+    simp only [litsAll, Option.some.injEq] at h
+    subst h
+    simp [setSem]
+  | c :: cs, ks, h, n, W, v => by
+    simp only [litsAll, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨k1, h1, rest, h2, rfl⟩ := h
+    have ih := litsAll_sem (G := G) h2 (n := n) (W := W) (v := v)
+    have hc : clauseSem G c n W v ↔ ∃ x ∈ k1, v = litVal x :=
+      ⟨fun hv => (litsOf_sem h1).mp hv.1,
+       fun hv => ⟨(litsOf_sem h1).mpr hv, builtinInvariant_of_withoutInvariant (litsOf_carries h1) n W v⟩⟩
+    simp only [setSem, List.mem_cons, exists_eq_or_imp, List.mem_append] at ih hc ⊢
+    rw [hc]
+    constructor
+    · rintro (⟨x, hx, rfl⟩ | hr)
+      · exact ⟨x, .inl hx, rfl⟩
+      · obtain ⟨x, hx, rfl⟩ := ih.mp hr
+        exact ⟨x, .inr hx, rfl⟩
+    · rintro ⟨x, hx | hx, rfl⟩
+      · exact .inl ⟨x, hx, rfl⟩
+      · exact .inr (ih.mpr ⟨x, hx, rfl⟩)
+
+/-- The literals a type of clause rows holds, where each of its clauses is
+a literal or a tag set. -/
+def fieldLits (G : NormalGraph ι) (A : Ty ι) : Option (List LitKey) :=
+  if G.plainTy A then litsAll (expand G A) else none
+
+/-- A type `fieldLits` reads means exactly its literals' values, at every
+level. -/
+theorem fieldLits_sem {G : NormalGraph ι} {A : Ty ι} {ks : List LitKey} (h : fieldLits G A = some ks)
+    (n W v) : meaning G A n W v ↔ ∃ x ∈ ks, v = litVal x := by
+  unfold fieldLits at h
+  split at h
+  · rename_i hp
+    rw [expand_sem G A hp]
+    exact litsAll_sem h
+  · cases h
+
+/-- The fields of a clause of one record operand: a record's or a
+dictionary's. -/
+def recordFields : Clause α → Option (List (PropKey × α))
+  | .refs fs [] _ _ _ _ _ => some fs
+  | .dict fs [] _ _ _ _ _ _ _ => some fs
+  | _ => none
+
+theorem recordFields_rec {c : Clause α} {fs : List (PropKey × α)} (h : recordFields c = some fs)
+    {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {n W v} (hs : semWithArgs Ξ X P c n W v) :
+    recT (ReferenceConjunctions.famsOf X fs) n W v := by
+  match c, h with
+  | .refs _ [] _ _ _ _ _, rfl => exact hs.1.1
+  | .dict _ [] _ _ _ _ _ _ _, rfl => exact hs.1.1
+
+/-- Whether a list of fields names one key at two disjoint literal sets,
+the first nonempty. -/
+def litClash (G : NormalGraph ι) (fs : List (PropKey × Ty ι)) : Bool :=
+  fs.any fun p => fs.any fun q => decide (p.1 = q.1) && match fieldLits G p.2, fieldLits G q.2 with
+    | some (x :: xs), some ys => (x :: xs).all fun z => !ys.contains z
+    | _, _ => false
+
+/-- **A record clause no value meets.** One field named twice, at two
+disjoint literal sets (the meet `{ k: "id" } & { k: "optional" }`): the
+field's one location holds one contract, which would have to agree with
+both at every lower level, so no object at a level above `0` meets it. -/
+def conflicting (G : NormalGraph ι) (c : Clause (Ty ι)) : Bool :=
+  match recordFields c with
+  | some fs => litClash G fs
+  | none => false
+
+theorem conflicting_empty {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
+    (hc : conflicting G c = true) (hr : Represents G A c) {k W v} : ¬ meaning G A (k + 1) W v := by
+  intro hv
+  have hs := represents_raw hr (k + 1) W v hv
+  unfold conflicting at hc
+  split at hc
+  · rename_i fs hfs
+    have hrec := recordFields_rec hfs hs
+    obtain ⟨⟨f, B⟩, hp, hany⟩ := List.any_eq_true.mp hc
+    obtain ⟨⟨f', C⟩, hq, hpq⟩ := List.any_eq_true.mp hany
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hpq
+    obtain ⟨rfl, hlit⟩ := hpq
+    split at hlit
+    · rename_i x xs ys hx hy
+      have hxy : x ∉ ys := by
+        have := (List.all_eq_true.mp hlit) x List.mem_cons_self
+        simpa using this
+      obtain ⟨flds, l, c1, oid, rfl, hf, hl, hag⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨B, hp, rfl⟩) hrec
+      obtain ⟨flds', l', c2, oid', he, hf', hl', hag'⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨C, hq, rfl⟩) hrec
+      cases he
+      have hll : l = l' := Option.some.inj (hf.symm.trans hf')
+      subst hll
+      have hcc : c1 = c2 := Option.some.inj (hl.symm.trans hl')
+      subst hcc
+      let W0 : WorldT 0 := trunc 0 (by omega) W
+      have h1 : c1 0 (by omega) W0 (litVal x) :=
+        (hag 0 (by omega) W0 (litVal x)).mpr ((fieldLits_sem hx 0 W0 _).mpr ⟨x, List.mem_cons_self, rfl⟩)
+      obtain ⟨y, hy', he⟩ := (fieldLits_sem hy 0 W0 _).mp ((hag' 0 (by omega) W0 (litVal x)).mp h1)
+      exact hxy (litVal_inj he ▸ hy')
+    · simp at hlit
+  · cases hc
+
 /-- The labels a union eliminates into (`unionVar`): each label, a tag set
 split into its elements' labels where the graph holds a label for each
-(HOST-FAMILIES.md, "Tag sets"). -/
+(HOST-FAMILIES.md, "Tag sets"); none for a label whose one clause is
+`conflicting`, which holds no value a step can still reach. -/
 def labelMembers (G : NormalGraph ι) (a : ι) : List ι :=
   match G a with
-  | [c] => if c.elements.length == 1 then [a] else (c.elements.mapM (elementLabel G)).getD [a]
+  | [c] => if conflicting G c then [] else
+    if c.elements.length == 1 then [a] else (c.elements.mapM (elementLabel G)).getD [a]
   | _ => [a]
 
 def members (G : NormalGraph ι) (C : Ty ι) : Ty ι := C.flatMap (labelMembers G)
 
-/-- A member of a union is a member of one of its members. -/
-theorem members_sound {G : NormalGraph ι} {C : Ty ι} {n W v} (hv : meaning G C n W v) :
-    ∃ a ∈ members G C, meaning G [a] n W v := by
+/-- A member of a union is a member of one of its members, at every level
+above `0`, where a `conflicting` label holds no value. -/
+theorem members_sound {G : NormalGraph ι} {C : Ty ι} {n W v} (hv : meaning G C (n + 1) W v) :
+    ∃ a ∈ members G C, meaning G [a] (n + 1) W v := by
   obtain ⟨a, ha, hav⟩ := hv
   unfold members
+  by_cases hconf : ∃ c, G a = [c] ∧ conflicting G c = true
+  · obtain ⟨c, hrow, hc⟩ := hconf
+    have hplain : G.plain a = true := NormalGraph.plain_of_clauses (c := c) (by simp [hrow])
+    have hr : Represents G [a] c := by
+      simp [Represents, expand, NormalGraph.plainTy, hplain, clausesOf, hrow]
+    exact absurd ⟨a, by simp, hav⟩ (conflicting_empty hc hr)
+  have hnc : ∀ c, G a = [c] → conflicting G c = false := fun c hrow => by
+    cases h : conflicting G c
+    · rfl
+    · exact absurd ⟨c, hrow, h⟩ hconf
   by_cases hsplit : ∃ c ls, G a = [c] ∧ (c.elements.length == 1) = false ∧ c.elements.mapM (elementLabel G) = some ls
   · obtain ⟨c, ls, hrow, hlen, hls⟩ := hsplit
     have hplain : G.plain a = true := NormalGraph.plain_of_clauses (c := c) (by simp [hrow])
     have hpt : G.plainTy [a] = true := by simp [NormalGraph.plainTy, hplain]
-    obtain ⟨c', hc', hcv⟩ := (expand_sem G [a] hpt n W v).mp ⟨a, by simp, hav⟩
+    obtain ⟨c', hc', hcv⟩ := (expand_sem G [a] hpt (n + 1) W v).mp ⟨a, by simp, hav⟩
     have hcc : c' = c := by simpa [expand, hpt, clausesOf, hrow] using hc'
     subst hcc
     obtain ⟨e, he, hev⟩ := rowSem_elements G _ _ _ hcv
@@ -951,12 +1104,13 @@ theorem members_sound {G : NormalGraph ι} {C : Ty ι} {n W v} (hv : meaning G C
     have hlp : G.plain l = true :=
       NormalGraph.plain_of_clauses (c := e) (show e ∈ G l by rw [hlr]; exact List.mem_singleton_self e)
     have hlt : G.plainTy [l] = true := by simp [NormalGraph.plainTy, hlp]
-    refine ⟨l, List.mem_flatMap.mpr ⟨a, ha, by simp [labelMembers, hrow, hlen, hls, hl]⟩, ?_⟩
-    exact (expand_sem G [l] hlt n W v).mpr ⟨e, by simp [expand, hlt, clausesOf, hlr], hev⟩
+    refine ⟨l, List.mem_flatMap.mpr ⟨a, ha, by simp [labelMembers, hrow, hnc c' hrow, hlen, hls, hl]⟩, ?_⟩
+    exact (expand_sem G [l] hlt (n + 1) W v).mpr ⟨e, by simp [expand, hlt, clausesOf, hlr], hev⟩
   · refine ⟨a, List.mem_flatMap.mpr ⟨a, ha, ?_⟩, ⟨a, by simp, hav⟩⟩
     unfold labelMembers
     split
     · rename_i c hrow
+      rw [if_neg (by simp [hnc c hrow])]
       split
       · simp
       · rename_i hlen

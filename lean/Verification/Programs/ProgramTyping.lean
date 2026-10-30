@@ -1625,8 +1625,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             (WorldAdm_trunc _ hw) (by simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh))
   | @unionVar Γ i C t A hi ht ih =>
     intro n W h ρ henv hw hh
-    obtain ⟨a, ha, hv⟩ := members_sound (henv.2 i C hi)
-    exact ih a ha n W h ρ (henv.refine hi hv) hw hh
+    cases n with
+    | zero => trivial
+    | succ n =>
+      obtain ⟨a, ha, hv⟩ := members_sound (henv.2 i C hi)
+      exact ih a ha (n + 1) W h ρ (henv.refine hi hv) hw hh
   | @arrParts Γ T E ro presence parts hp hparts hr ih =>
     intro n W h ρ he hw hh
     have hterm : instantiate 0 ρ (.arrLit (parts.map fun p => spreadTerm (p.1, p.2.2)))

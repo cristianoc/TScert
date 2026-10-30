@@ -740,8 +740,11 @@ came from a different context. No execution budget is inspected. -/
     -- it neither evaluates the operation twice nor inserts a runtime tag test.
     let splitReceiver := fun receiver => do
       let .var i := receiver | none
-      let B := ProgramTyping.members G (← Γ[i]?)
-      if B.length ≤ 1 then none else do
+      let C ← Γ[i]?
+      let B := ProgramTyping.members G C
+      -- One member left of several labels splits too: the others hold no
+      -- value a step can reach (`conflicting`).
+      if B.length ≤ 1 && B.length == C.length then none else do
         let ps ← B.mapM fun b => recur (Γ.set i [b]) t A
         pure (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) ps)
     -- The types an operand may be read at as a string: a slot's own, then

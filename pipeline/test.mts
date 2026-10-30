@@ -2351,6 +2351,34 @@ control(async (): Promise<void> => {
   process.stdout.write("a guard on a field, then a middle disjunct claimed to change everything: the reread refused\n");
 });
 
+control(async (): Promise<void> => {
+  // The producer refuses `invalid-intersection-discriminant-overlap` at the
+  // read of `at`. Given its twin's claims, the annotation's discriminant
+  // claimed at `"callback"` as the refused source writes it, the arm
+  // `"call" | "callback"` stays a member of the parameter: search refuses
+  // the read, and the checker refuses the twin's evidence, whose split of
+  // the parameter omits that arm.
+  const real = run("invalid-intersection-discriminant-overlap");
+  const twin = run("intersection-discriminant-overlap-twin");
+  const claims = readClaims(twin);
+  const key = sourceKey(real);
+  const source = readFileSync(key, "utf8");
+  const optional = rowOf(claims, { strLit: { value: "optional" } });
+  const callback = rowOf(claims, { strLit: { value: "callback" } });
+  const discriminant = rowOf(claims, { refs: { first: [["k", [optional]]], rest: [], views: [] } });
+  claims.types[discriminant] = [{ refs: { first: [["k", [callback]]], rest: [], views: [] } }];
+  claims.file = key;
+  claims.sourceSha256 = createHash("sha256").update(source).digest("hex");
+  const read = source.indexOf("chain.at");
+  assert.ok(read >= 0, "the read of at");
+  const at = `source expression obligation at [${read},${read + "chain.at".length})`;
+  const forged = writeClaims(real, "forged-intersection-discriminant-overlap", claims);
+  refusedAt(real, forged, "forged-intersection-discriminant-overlap", at);
+  assert.ok(invoke(forged, join(twin, "evidence.json"), real).includes(
+    `source evidence refusal at [${read},${read + "chain.at".length}): the evidence does not establish this node's typing`));
+  process.stdout.write("an intersection's discriminant another arm's tag set meets: that arm's missing field refused in search and check\n");
+});
+
 /** A twin's claims given to a negative of the same spans that declares
  * `name` with `let` where the twin has `const`, and assigns it (`assignment`,
  * `name = literal`) where the twin reads it: `name` gets its storage

@@ -1759,12 +1759,35 @@ result; all other bindings retain their original types:
 
 $`\mathrm{members}(C)`$ is the labels of $`C`$, a tag set's split into its
 elements' labels where the graph holds a label for each
-([tag sets](HOST-FAMILIES.md#tag-sets)). `unionVar i` carries one premise for
+([tag sets](HOST-FAMILIES.md#tag-sets)), without the conflicting labels
+below. `unionVar i` carries one premise for
 each member, in list order. The checker
 rejects missing alternatives, changed terms/results, and changes to unrelated
 bindings. An empty union needs no premises because that input environment has
 no inhabitants. Soundness chooses the member containing the actual immutable
 value and applies that premise's existing world-indexed soundness theorem.
+
+A label is *conflicting* when its row is one record clause whose required
+fields, each held invariantly at its own location, name one key $`f`$ twice,
+at types $`L_1`$ and $`L_2`$ whose clauses are number or string literals and
+tag sets, their literal sets disjoint and $`L_1`$'s nonempty; optional fields
+and readonly views are outside this test. One such label is
+the meet `{ k: "id" } & { k: "optional" }`, one arm of
+`E & { k: "optional" }` distributed over `E`'s arms
+([its meet label](RECURSIVE-EQUATIONS.md#8-mechanization)).
+Writing $`\mathrm{lits}(L)`$ for the literals $`L`$ holds,
+
+```math
+\mathrm{conflicting}(a) \iff G(a)=\{\{\ldots, f:L_1, \ldots, f:L_2, \ldots\}\}
+\;\wedge\; \mathrm{lits}(L_1)\neq\emptyset \;\wedge\; \mathrm{lits}(L_1)\cap\mathrm{lits}(L_2)=\emptyset .
+```
+
+No value meets a conflicting label at a level above $`0`$: an object holds
+$`f`$ at one location under one contract, which agrees with both $`L_1`$
+and $`L_2`$ at level $`0`$, where a literal of $`L_1`$ is in one and not the
+other. At level $`0`$ every term is safe. So `unionVar` leaves the label out
+of $`\mathrm{members}(C)`$, and search splits a slot even where one member is
+left (`TypingBasics.conflicting_empty`, `members_sound`).
 There is no runtime case split added by this rule and no join computation.
 
 Combined with `ifTag`, this checks a term such as
