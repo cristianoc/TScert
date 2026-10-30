@@ -4307,7 +4307,22 @@ control(async (): Promise<void> => {
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
     assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
-  process.stdout.write("forged field contents: an arm excluded before its field failed every value refused in search and in checking\n");
+  // The numeric field alike: after `op` failed 1, `{ op: 1 | 2 }` may still
+  // hold 2. The arm claimed excluded at the test for 2 is refused.
+  const numericClaims = readClaims(artifacts);
+  const numbered = must(numericClaims.functions.find(f => f.name === "numbered"), "numbered's claims");
+  const second = source.indexOf("if (o.op === 2)", source.indexOf("function numbered"));
+  const secondEntry = must(numbered.entries.find(e => e.start === second), "the entry of the test for 2");
+  const returned = must(numbered.entries.find(e => e.start === source.indexOf("return o.b", second)), "the entry of the return");
+  must(secondEntry.bindings.find(b => b.name === "o"), "o at the test for 2").type =
+    must(returned.bindings.find(b => b.name === "o"), "o at the return").type;
+  const numericInput = writeClaims(artifacts, "forged-numeric-field-contents-exclusion", numericClaims);
+  const numericProduce = produceWith(artifacts, numericInput, "forged-numeric-field-contents-exclusion");
+  assert.ifError(numericProduce.error);
+  assert.equal(numericProduce.status, 1, numericProduce.stdout + numericProduce.stderr);
+  for (const detail of [numericProduce.stdout + numericProduce.stderr, invoke(numericInput, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
+  process.stdout.write("forged field contents: an arm excluded before its field failed every value, a string's or a number's, refused in search and in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -7356,11 +7371,12 @@ mutationControl(async (): Promise<void> => {
   // result presently since `Node` states `kind`, and the guard's true edge
   // narrows the node through that link. The test-only verifier withholding
   // it (`absent`: the read's link optional whatever the receiver's type
-  // states) refuses the same claims in search at the guard's true edge and
-  // the honest evidence at the guard; without the mutation it accepts both.
+  // states) refuses the honest evidence at the guard; without the mutation
+  // it accepts it. Its search finds other evidence: the guard's true edge
+  // excludes every arm but the guarded one by the fact its answer leaves of
+  // `kind`, a numeric literal (PROGRAM-TYPING.md's field-contents exclusion).
   const artifacts = run("compiler-api-guard-after-kind-tests");
   const source = readFileSync(sourceKey(artifacts), "utf8");
-  const ret = source.indexOf("return literal(node.expression);");
   const guard = source.indexOf("ts.isParenthesizedExpression(node)");
   const claims = join(artifacts, "claims.json");
   const call = (args: string[], mutations: string): Invoked =>
@@ -7373,16 +7389,14 @@ mutationControl(async (): Promise<void> => {
   const plain = search("");
   assert.equal(plain.status, 0, words(plain));
   const withheld = search("absent");
-  assert.equal(withheld.status, 1, words(withheld));
-  assert.ok(words(withheld).includes(
-    `source incoming edge obligation at [${ret},${ret + "return literal(node.expression);".length})`), words(withheld));
+  assert.equal(withheld.status, 0, words(withheld));
   const accepted = check("");
   assert.equal(accepted.status, 0, words(accepted));
   const refused = check("absent");
   assert.equal(refused.status, 1, words(refused));
   assert.ok(words(refused).includes(
     `source evidence refusal at [${guard},${guard + "ts.isParenthesizedExpression(node)".length})`), words(refused));
-  process.stdout.write("guard after kind tests: the observed read's present link withheld, search refused at the guard's true edge and the honest evidence at the guard; both accepted with it\n");
+  process.stdout.write("guard after kind tests: the observed read's present link withheld, the honest evidence refused at the guard and accepted with it; search finds evidence through kind's facts either way\n");
 });
 
 control(async (): Promise<void> => {

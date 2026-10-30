@@ -261,8 +261,14 @@ with the witness's context type. -/
         let some _ ← witnessClaimHere fc pos root path.dropLast | return none
         return scope.findIdx? (·.witness == some (root, path.dropLast)) : Compiler (Option Nat))
       | return none
+    -- A witness the root's claim implies asks for the link through a key
+    -- the object may lack, which the test's read, made before the root was
+    -- refined, recorded where the root's type then admitted the key absent.
+    let (T, gen) ← tableAt
+    let implied := (← ownWitnessWith T (withinAt T gen) fc pos root path).isNone &&
+      (← impliedWitnessWith T (withinAt T gen) fc pos root path).isSome
     return some ⟨r,j,false,field,
-      !(HeapExpressionRules.fieldOperand (PositiveRules.expand G (Γ[r]?.getD [])) field)⟩
+      implied || !(HeapExpressionRules.fieldOperand (PositiveRules.expand G (Γ[r]?.getD [])) field)⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims

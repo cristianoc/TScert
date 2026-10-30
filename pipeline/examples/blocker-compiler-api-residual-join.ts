@@ -1,5 +1,7 @@
-// Host tag refinements need compatible recursive claims when guard branches
-// rejoin.
+// Guard branches rejoining after `parent.operator` failed `++` and `--`:
+// the facts the two tests leave of the readonly `operator` exclude the
+// postfix update's arm, whose operator is one of the two, so `parent`
+// enters the return without it (PROGRAM-TYPING.md, field contents).
 // Census functions:
 // fragment-expressions.mts#letWrites, fragment-expressions.mts#localValues,
 // fragment-support.mts#writtenElement.

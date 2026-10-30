@@ -3898,10 +3898,12 @@ in `pipeline/test.mts`).
 
 The facts also exclude semantic type labels of the object they are about.
 A fact $`x.f\mapsto R`$ is covered by atoms $`\mathsf{cover}(R)`$ (`ValueSet.atomsView`): a
-literal for each string it lists, the family of each other primitive kind it
-admits, and `defined` for objects and the kinds no primitive atom names.
-Each atom of a primitive family or singleton is a tag's passing answer
-(`atomTag`: `strLit s` is `strEq s`, `str` is `isStr`, and so on). A label
+literal for each string and each number of a finite set it lists, the family
+of each other primitive kind it admits, and `defined` for objects and the
+kinds no primitive atom names. Each atom of a primitive family or singleton
+is a tag's passing answer (`atomTag`: `strLit s` is `strEq s`, `numLit b` is
+`numEq b` for a `b` other than NaN, which fails the equality with itself,
+`str` is `isStr`, and so on). A label
 of $`\Gamma(x)`$ is dropped (`factSlice`) when, for every atom $`r`$ of the
 cover, every clause of its expansion fixes $`f`$, as an invariant field or a
 readonly view, at a type answering that atom's tag `false`:
@@ -3926,7 +3928,9 @@ value's type, so it survives later writes and calls, as the edge's field
 slice does; the observed contents it came from do not, as a call discards
 them. Successive tests leave contents that only shrink, so the exclusion
 combines them: after `k.kind` fails `"a"` and `"b"`, the label
-`{ kind: "a" | "b" }` is dropped (`field-contents-exclusion`); after a call
+`{ kind: "a" | "b" }` is dropped, and after `k.op` fails `1` and `2` the
+label `{ op: 1 | 2 }` (`field-contents-exclusion`; a host node's readonly
+`operator`, `blocker-compiler-api-residual-join`); after a call
 between the tests it is not (`invalid-field-contents-call`, run under
 Node), and an arm claimed excluded before every failed test rules it out is
 refused where evidence is produced and where it is checked (the forged field

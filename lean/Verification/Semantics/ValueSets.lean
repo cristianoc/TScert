@@ -1036,12 +1036,12 @@ theorem ValueSet.normIn_congr {C V W : ValueSet} (h : ∀ v, C.mem v = true → 
   · rcases hobj with ho | ho <;> cases hc : C.obj <;> simp_all
 
 /-- Atoms covering a value set: each value of the set meets one. Strings
-keep their literals; every other kind is covered by its family or, for
-kinds no primitive atom names, by `defined`. -/
+and finitely many numbers keep their literals; every other kind is covered
+by its family or, for kinds no primitive atom names, by `defined`. -/
 def ValueSet.atomsView (V : ValueSet) : List Atom :=
   (if V.nul then [.nul] else []) ++ (if V.undef then [.undef] else []) ++
   (if V.tru then [.tru] else []) ++ (if V.fls then [.fls] else []) ++
-  (if V.num = .none then [] else [.num]) ++
+  (match V.num with | .these bs => bs.map .numLit | .allBut _ => [.num]) ++
   (match V.str with | .these ss => ss.map .strLit | .allBut _ => [.str]) ++
   (if V.big = .none && !V.sym && !V.arr && V.obj = none then [] else [.defined])
 
@@ -1053,13 +1053,16 @@ theorem ValueSet.atomsView_holds {V : ValueSet} {v : Tm} (h : V.mem v = true) :
   case tru => exact ⟨.tru, by simp [atomsView, h], rfl⟩
   case fls => exact ⟨.fls, by simp [atomsView, h], rfl⟩
   case num b =>
-    have : V.num ≠ .none := fun e => by simp [e] at h
-    exact ⟨.num, by simp [atomsView, this], b, rfl⟩
+    cases hn : V.num with
+    | these bs =>
+      rw [hn] at h
+      exact ⟨.numLit b, by simp [atomsView, hn]; exact Or.inl (by simpa [Lit.mem_these] using h), rfl⟩
+    | allBut _ => exact ⟨.num, by simp [atomsView, hn], b, rfl⟩
   case str s =>
     cases hs : V.str with
     | these ss =>
       rw [hs] at h
-      exact ⟨.strLit s, by simp [atomsView, hs]; simpa [Lit.mem_these] using h, rfl⟩
+      exact ⟨.strLit s, by simp [atomsView, hs]; exact Or.inr (by simpa [Lit.mem_these] using h), rfl⟩
     | allBut _ => exact ⟨.str, by simp [atomsView, hs], s, rfl⟩
   all_goals first
     | contradiction

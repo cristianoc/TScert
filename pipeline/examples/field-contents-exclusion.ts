@@ -2,7 +2,8 @@
 // hold: an arm whose field holds none of what they admit is no arm of the
 // object. `{ kind: "a" | "b" }` is excluded once `kind` failed both, in a
 // switch, in an `if` chain and through an alias of the field's type, and a
-// default reached by no arm receives `never`.
+// default reached by no arm receives `never`; `{ op: 1 | 2 }` likewise once
+// `op` failed `1` and `2`.
 type Pair = "a" | "b";
 type Kind =
   | { kind: Pair }
@@ -30,4 +31,12 @@ export function chained(k: Kind): string {
   if (k.kind === "b") return "b";
   if (k.kind === "c") return k.v;
   return `${k.n}`;
+}
+type Op =
+  | { readonly op: 1 | 2; readonly a: string }
+  | { readonly op: 1 | 2 | 3; readonly b: number };
+export function numbered(o: Op): number {
+  if (o.op === 1) return 1;
+  if (o.op === 2) return 2;
+  return o.b;
 }

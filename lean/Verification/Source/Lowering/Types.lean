@@ -116,6 +116,24 @@ from its answers (`withinAt`). -/
     if ← wi C A then return none
     return some A
 
+/-- A path's refinement at a statement entry that the root's claim there
+implies: asserted at a type outside the primitive predicates that the
+declared read of its last member from what the entry states of its prefix is
+within (a tag refinement of the root whose arms state the member required,
+say). The entry keeps its witness, at the asserted type, so that a later
+entry whose root claim no longer implies it (a loop's update after the
+branches rejoin) receives the read link: each edge of a path's chain carries
+the link from the test that read it (HOST-FAMILIES.md, "Entries"). -/
+@[nospecialize] def impliedWitnessWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
+    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    m (Option (Ty Tree)) := do
+  let some A := ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path) | return none
+  let some field := path.getLast? | return none
+  if (HeapKnowledge.atoms (SourceTypes.graph T) A).isSome then return none
+  let some C := pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field) | return none
+  if ← wi C A then return some A
+  return none
+
 /-- The type a statement entry's witness of `root.path` holds: its own
 refinement, and, for a proper prefix of a path that has one, the prefix's
 asserted type or declared read, so that each segment's read link has its
@@ -127,6 +145,7 @@ declared contracts retain their own entry checks. -/
   if let some A ← ownWitnessWith T wi fc pos root path then return some A
   if path.isEmpty then return none
   let asserted := (((fc.entryCurrent.lookup pos).getD []).lookup root).getD []
+  if let some A ← impliedWitnessWith T wi fc pos root path then return some A
   let prefixed ← asserted.anyM fun (q, _) => do
     if path.length < q.length && q.take path.length == path then
       return (← ownWitnessWith T wi fc pos root q).isSome

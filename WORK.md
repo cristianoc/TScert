@@ -33,8 +33,8 @@ each item's design and evidence, not its progress.
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
-| [Investigation of a field's equality past a guard disjunction](#field-equality-past-guard-disjunction) | open: an investigation, cause unknown | the cause of the `else if` edge's refusal after `(ts.isPrefixUnaryExpression(h) \|\| ts.isPostfixUnaryExpression(h)) && (h.operator === A \|\| h.operator === B)` is established, with a concrete repair obligation |
 | [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
+| [A re-tested operand of a negated guard's disjunction](#retested-disjunction-operand) | open: cause established (2026-10-30) | `blocker-compiler-api-optional-path-join` verifies |
 | [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
@@ -349,19 +349,20 @@ with `if (d.initializer) return 1;`, or with `d` read before the test
 over a compiler node (`ts.VariableDeclarationList`'s first declaration).
 Which receiver type the negation's lowering hands the read is unknown.
 
-<a id="field-equality-past-guard-disjunction"></a>
-**A field's equality past a guard disjunction.** With `h: ts.Node`,
-`if ((ts.isPrefixUnaryExpression(h) || ts.isPostfixUnaryExpression(h)) &&
-(h.operator === ts.SyntaxKind.PlusPlusToken || h.operator ===
-ts.SyntaxKind.MinusMinusToken)) return true; else if
-((ts.isForOfStatement(h) || ts.isForInStatement(h)) && h.initializer === n)
-return true;` is refused at the `else if`'s incoming edge, whose claim of
-the saved `operator` read is the operators but the two tested (2026-10-24).
-It is the first refusal of the slices of `fragment-expressions.mts`'s
-`letWrites` and `localValues` (300 s, 2026-10-24), once their guards on a
-`parent` that may be absent pass
-([undefined arguments](docs/HOST-FAMILIES.md#undefined-arguments)). Which
-edge the claim mismatches, and why, is unknown.
+<a id="retested-disjunction-operand"></a>
+**A re-tested operand of a negated guard's disjunction.** In
+`if (!ts.isMethodSignatureDeclaration(m) || m.typeParameters?.length ||
+m.postfixToken) throw …`, the negated guard is a test, so
+`ExpressionPlan.logicalTruth` lowers the regrouped `!g(m) || (b || c)` as a
+value and the `if` tests it. Where `b`, a number, passed its truthy test, the
+value is `b`'s and is tested again; the truthy slice of `number` is `number`,
+so the re-test's failing edge, which the run never takes, reaches the next
+statement without the fact `m.postfixToken` undefined that its entry claims.
+The same condition verifies with a Boolean in place of the guard, without
+the negation, or without `b` (2026-10-30). A repair either dispatches such a
+disjunction on its operands' truth, the producer claiming the negation's
+literal wherever the lowering evaluates it, or states the passed test as a
+fact of the value that makes the re-test's failing edge vacuous.
 
 <a id="literal-guard-json-read"></a>
 **A literal guard over `JsonValue | undefined`.**

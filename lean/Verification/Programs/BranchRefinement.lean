@@ -801,12 +801,26 @@ def atomTag : HeapFacts.Atom → Option Tag
   | .str => some .isStr
   | .strLit s => some (.strEq s)
   | .num => some .isNum
+  -- A number other than NaN passes the strict equality with itself.
+  | .numLit b => if numberEqual b b then some (.numEq b) else none
   | _ => none
 
 theorem atomTag_sound {a : HeapFacts.Atom} {t : Tag} {v : Tm} (ht : atomTag a = some t)
     (hv : a.holds v) : tagHolds t v = true := by
-  cases a <;> simp only [atomTag, Option.some.injEq, reduceCtorEq] at ht <;> subst ht <;>
-    simp only [HeapFacts.Atom.holds] at hv
+  cases a
+  case numLit b =>
+    simp only [atomTag] at ht
+    split at ht
+    · rename_i hb
+      simp only [Option.some.injEq] at ht
+      subst ht
+      simp only [HeapFacts.Atom.holds] at hv
+      subst hv
+      simpa [tagHolds] using hb
+    · cases ht
+  all_goals simp only [atomTag, Option.some.injEq, reduceCtorEq] at ht
+  all_goals subst ht
+  all_goals simp only [HeapFacts.Atom.holds] at hv
   all_goals first
     | (subst hv; simp [tagHolds])
     | (obtain ⟨_, rfl⟩ := hv; simp [tagHolds])

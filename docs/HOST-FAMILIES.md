@@ -1153,7 +1153,15 @@ receiver $`r`$ is the root binding's slot for $`n = 1`$ and the witness slot
 of the prefix $`p' = x.f_1\cdots f_{n-1}`$ otherwise. An entry holding a
 witness of $`p`$ holds one of each of its prefixes, at the prefix's asserted
 type or, where none is asserted, at its declared read from its own prefix's
-type, so a path is a chain of links, one per segment. Every incoming edge,
+type, so a path is a chain of links, one per segment. An asserted
+refinement outside the primitive predicates that the declared read already
+implies, where a tag refinement of the root leaves arms stating the member
+required, also has its witness at the asserted type, with a read link
+through a key the object may lack: the entry passes on the link of the
+test that read the path, which a later entry whose root claim no longer
+implies the refinement needs (a loop's update after a guarded branch
+rejoins, `blocker-compiler-api-parent-loop`; a write of the root in the
+branch ends the link, `invalid-compiler-api-parent-loop-write`). Every incoming edge,
 including a loop backedge, checks each mapped witness's type and each link's
 receiver and field, segment by segment. The rule is
 [witness-edge](PROGRAM-TYPING.md#witness-edges), proved by
