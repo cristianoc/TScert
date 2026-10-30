@@ -1373,11 +1373,9 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
       (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand)) ||
       enumLabel(u);
   };
-  // A member of a program's enum, `E.M` or `ns.E.M`: a read of a data field
-  // of the enum's object, which writes nothing. A host family's tag enum
-  // (`ts.SyntaxKind`) is left to the single evaluation: narrowing a host
-  // node through its tests meets the producer's refusal of
-  // `compiler-api-tag-join-element`.
+  // A member of an enum, `E.M` or `ns.E.M`, a host family's tag enum
+  // (`ts.SyntaxKind`) included: a read of a data field of the enum's object,
+  // which writes nothing.
   const enumLabel = (u: Expression): boolean => {
     if (!ts.isPropertyAccessExpression(u) || u.questionDotToken) return false;
     if (gate.constEnumReads.has(gate.span(u).join(":"))) return true;
@@ -1386,8 +1384,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
     if (enumName === undefined) return false;
     const member = u.name.text;
     return (gate.enums.has(enumName) && gate.enumMembers(enumName).some((m) => m.name === member)) ||
-      (gate.importedEnums.get(enumName)?.host === false &&
-        !!gate.importedEnums.get(enumName)?.members.some((m) => m.name === member));
+      !!gate.importedEnums.get(enumName)?.members.some((m) => m.name === member);
   };
   const outer = unwrap(node.expression);
   // `switch (typeof x)`: each test is the `typeof` test of `x` read again.

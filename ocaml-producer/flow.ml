@@ -83,19 +83,38 @@ let decode j =
   {owner=Json.field "owner" j;body_spans=Json.list (Json.field "bodySpans" j);entry;nodes;prologue=Execution.optional_binding (Json.field "prologue" j);
    cells=bindings (Json.field "cells" j)}
 
+(* The nodes in reverse postorder from the entry: outside a loop, every
+   predecessor of a node comes before it. *)
+let reverse_postorder graph =
+  let n=Array.length graph.nodes in
+  let order=Array.make n n and seen=Array.make n false and next=ref n in
+  let rec visit id = if not seen.(id) then begin
+    seen.(id) <- true;
+    List.iter visit (successors graph.nodes.(id));
+    decr next; order.(id) <- !next
+  end in
+  visit graph.entry;
+  order
 (* Transfer proposes states on the graph's edges. Repeated visits compute a
-   fixed point; callers publish claims only after the result settles. *)
+   fixed point; callers publish claims only after the result settles. The
+   queued node first in reverse postorder is visited next, so a node outside
+   a loop is visited once every edge into it carries its state: a state
+   only some of its incoming paths reached (a join's arm the other arms
+   would widen) is never transferred. *)
 let solve ~join ~transfer ~widen graph initial =
   let states=Array.make (Array.length graph.nodes) None in
   let queued=Array.make (Array.length graph.nodes) false in
   let visits=Array.make (Array.length graph.nodes) 0 in
-  let work=Queue.create () in
+  let order=reverse_postorder graph in
+  let module Work = Set.Make (struct type t = int * int let compare = compare end) in
+  let work=ref Work.empty in
   let enqueue id = if not queued.(id) then begin
-    queued.(id) <- true; Queue.add id work
+    queued.(id) <- true; work := Work.add (order.(id),id) !work
   end in
   states.(graph.entry) <- Some initial; enqueue graph.entry;
-  while not (Queue.is_empty work) do
-    let id=Queue.take work in
+  while not (Work.is_empty !work) do
+    let (_,id) as first=Work.min_elt !work in
+    work := Work.remove first !work;
     queued.(id) <- false;
     match states.(id) with
     | None -> ()

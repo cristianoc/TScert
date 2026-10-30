@@ -1560,9 +1560,8 @@ sequencing. The discriminant is evaluated once into a slot no source names,
 before any clause, as JavaScript evaluates it before the case block (where a
 name read before its initialization throws). It is instead re-read at each
 test when it is a name or a field of a name, the switch has a `case` test,
-and every label is a literal, a name or a member `E.M` of an enum no host
-family's installation declares (a host family's tag enum keeps the single evaluation,
-[WORK.md](../WORK.md#tag-join-element)): the first
+and every label is a literal, a name or a member `E.M` of an enum, a host
+family's tag enum included: the first
 test then reads it where the single evaluation would, and evaluating such
 labels writes nothing, an enum's members being data fields of its object
 ([enums](SOURCE-CONTRACTS.md#enums); an imported or declared enum's object

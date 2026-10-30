@@ -26,7 +26,6 @@ each item's design and evidence, not its progress.
 | [The search of `protocolPattern`](#fragment-statements-search-meets) | done: in the census of 6a3a864 the slice `protocolPattern` and `patternStmt` share searches in 25.7 s of CPU, `abrupt`'s in 26.0 s (2026-10-24); 73 s of CPU alone on dca7c93's artifacts; in the census of both slices at a 600 s limit each search takes 73 s (2026-10-22); in the census of 4d29662 the search of `patternStmt`'s and `abrupt`'s slices takes 247 s of CPU each and of `forOfPattern`'s 123 s, together 52% of the census's executed search CPU, each ending in the refusal of a source expression obligation (2026-10-23) | `fragment-statements.mts#protocolPattern` and `#patternStmt` finish their search within 30 s alone |
 | [The sync API's checking wrapper](#sync-api-checking-wrapper) | open | `make suite` runs the front end's sync-API calls through the wrapper C5 describes |
 | [The compiler API's full shape check](#compiler-api-shape-check) | open | C3 checks every member and child kind over the corpus it names, the absent required members exactly the corrections |
-| [Investigation: a boolean receiver after joined tag tests](#tag-join-element) | open: cause unknown | `compiler-api-tag-join-element` verifies, and a `switch` on a host family's tag enum reads its discriminant at each test |
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review, on an object no type states the key of (`blocker-in-name-object`) and where a passed `in` test makes the read syntactically eligible on a union with an arm stating no key, at `body` and `type` only on receivers each arm of which states the key or is of the host package (`compiler-api-in-union-read`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`), and a guard closure meets `find`'s by its promise signature at its body's footprint (`blocker-compiler-api-find-promise`); open: `every`'s | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies |
@@ -193,18 +192,6 @@ members are exactly the corrections
 ([binding the contract](docs/COMPILER-API.md#binding-the-contract-to-the-implementation)).
 
 ### Guards and narrowing
-
-<a id="tag-join-element"></a>
-**A boolean receiver after joined tag tests.** Tag tests on a host node
-whose outcomes join (`node.kind !== K.A` around three `===` tests of other
-kinds), then a guard and a read of a node list's last element
-(`node.parameters[node.parameters.length - 1]`), are refused by the
-producer: it types a receiver as holding a boolean where TypeScript gives it
-none (`compiler-api-tag-join-element`). With two inner tests, or with the
-element at index 0, the function verifies. A `switch` whose labels are
-members of a host family's tag enum tests the same way, so it keeps the
-single evaluation of its discriminant (`switchStmt`), which leaves
-`type-term.mts#readTypeTerm` at its search refusal.
 
 <a id="universe-slices"></a>
 **Slices of the value universe.** A tag test on a value at `unknown`

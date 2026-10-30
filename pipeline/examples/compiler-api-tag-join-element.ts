@@ -1,8 +1,8 @@
-// Tag tests on a host node, joined, then a guard and the last element of a
-// node list: the producer types a receiver as holding a boolean where
-// TypeScript gives it none, and refuses. A `switch (node.kind)` on the tag
-// enum written with `case` labels tests the same way (type-term.mts#readTypeTerm,
-// behind type-term.mts#typeParts in the census).
+// Tag tests on a host node whose outcomes join, then a guard and the last
+// element of a node list: the guard's `true` edge holds the node at the join
+// of every path into it. A `switch (node.kind)` on the tag enum written with
+// `case` labels tests the node at each label as the `===` test does
+// (type-term.mts#readTypeTerm, behind type-term.mts#typeParts in the census).
 import * as ts from "typescript/unstable/ast";
 
 export function rest(node: ts.TypeNode): number {
@@ -16,4 +16,18 @@ export function rest(node: ts.TypeNode): number {
     if (last && last.dotDotDotToken) return 1;
   }
   return 2;
+}
+
+export function arity(node: ts.TypeNode): number {
+  switch (node.kind) {
+    case ts.SyntaxKind.AnyKeyword:
+    case ts.SyntaxKind.NeverKeyword:
+      return 0;
+    case ts.SyntaxKind.FunctionType:
+      return node.parameters.length;
+    case ts.SyntaxKind.TupleType:
+      return node.elements.length;
+    default:
+      return -1;
+  }
 }
