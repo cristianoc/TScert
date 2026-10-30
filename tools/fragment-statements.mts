@@ -24,10 +24,11 @@ export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, m
   const gate: Gate = this;
   if (mutable)
     gate.fail(node, "a `let` pattern whose bindings are assigned in a `for` head is outside the fragment: its bindings are cells, which only a statement of a block lowers them to (one never assigned is a `const` pattern)");
-  if (d.type) gate.fail(d, "an annotated pattern is outside the fragment");
   if (!d.initializer) gate.fail(d, "a `const` needs an initializer");
   const kind = gate.iterations.get(gate.span(d.initializer).join(":"));
   if (ts.isArrayBindingPattern(d.name) && kind?.startsWith("client")) {
+    if (d.type)
+      gate.fail(d, "an annotated array pattern over a program's iterable is outside the fragment: its steps read the iterator, which the annotation does not state");
     if (kind === "client-unclosable" && !d.name.elements.some((e) => ts.isBindingElement(e) && e.dotDotDotToken))
       gate.fail(d.initializer, UNCLOSABLE);
     return gate.protocolPattern(d.name, d.initializer, node, kind === "client-method", pos);
@@ -39,8 +40,23 @@ export function patternStmt(this: Gate, d: ts.VariableDeclaration, node: Node, m
     pos,
     target,
     default_: null,
-    init: gate.expr(d.initializer),
+    init: gate.patternInit(d, d.initializer),
   };
+}
+
+/** The value the declarator `d`, a pattern, destructures, its initializer
+ * `init`: under an annotation `T`, `init as T`, the declarator's span: the
+ * initializer must meet `T`, which it is typed against, and the pattern
+ * reads its parts at `T`. A default under an annotation is refused: the
+ * annotation states the type of the binding it replaces `undefined` for,
+ * which the default must meet and the lowering states no type for. */
+export function patternInit(this: Gate, d: ts.VariableDeclaration, init: Expression): Within<{ value: "any"; store: "grow" }, Expr> {
+  const gate: Gate = this;
+  if (!d.type) return gate.expr(init);
+  const [fallback] = gate.patternDefaults(d.name);
+  if (fallback)
+    gate.fail(fallback, "a default in an annotated pattern is outside the fragment: the annotation states the binding's type, which the default must meet, and the lowering states no type for one binding of a pattern");
+  return { k: "cast", pos: gate.span(d), cast: "as", annot: gate.typeOf(d.type), e: gate.expr(init) };
 }
 
 /** `const [a, , b, ...r] = e` over a program's iterable, as ECMA-262's
@@ -870,7 +886,8 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Within<{ value:
  * a program's iterable. */
 export function letPatternOf(this: Gate, d: ts.VariableDeclaration, pos: Span): Within<{ value: "any"; store: "grow" }, Stmt[] | null> {
   const gate: Gate = this;
-  if (d.type) gate.fail(d, "an annotated pattern is outside the fragment");
+  if (d.type)
+    gate.fail(d, "an annotated `let` pattern whose bindings are assigned is outside the fragment: each binding's contract is the part of the annotation it reads, which the lowering does not state");
   if (!d.initializer) gate.fail(d, "a `let` pattern needs an initializer");
   // Over a program's iterable, an array pattern is the iterator's steps
   // (`protocolPattern`), which bind no cells.

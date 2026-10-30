@@ -2162,6 +2162,18 @@ array runs after one of its steps and before a later one
 is not an array is refused; one over an iterable the program defines is the
 iterator protocol's steps ([loops](#loops-and-spreads-over-iterables)).
 
+A declaration's pattern under an annotation $`T`$, `const p: T = e` (a `let`
+none of whose bindings is assigned too), binds $`p`$ from
+$`e\ \mathsf{as}\ T`$, the cast at the declarator's span (`patternInit` in
+`fragment-statements.mts`): $`e`$ is typed against $`T`$, the cast's
+obligation is that $`e`$ meets $`T`$, and the pattern reads its parts at
+$`T`$. A cast is its operand's value, so the lowering runs what JavaScript
+runs. Each binding's type is then the read rules' type of its part of
+$`T`$; the lowering states no type for one binding, so a pattern under an
+annotation with a default, which must meet its binding's part of $`T`$, or
+with an assigned binding, whose contract is that part, is refused
+([model limits](SOURCE-FRAGMENT.md#model-limits)).
+
 A pattern binding a `for...of` binds each element, then reads it, before the
 body, as JavaScript binds it per iteration:
 

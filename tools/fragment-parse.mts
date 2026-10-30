@@ -1003,6 +1003,7 @@ export class Gate {
      nested, with identifier keys, defaults, holes and an array rest: what the
      lowering states. */
   patternStmt: typeof statements.patternStmt = statements.patternStmt;
+  patternInit: typeof statements.patternInit = statements.patternInit;
 
   protocolPattern: typeof statements.protocolPattern = statements.protocolPattern;
 

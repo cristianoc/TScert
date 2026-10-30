@@ -380,6 +380,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       `(() => { const b = { k: "b" }; return written(b, (x) => { x.k = "a"; }) ? b.k : ""; })()`, "a"],
   ])
     assert.equal(runExample(file, call), found, `${file}: the guard answers true of a value outside its promise`);
+  // Annotated patterns: a tuple annotation over reads past an empty array's
+  // end binds `undefined` (their sum is NaN), an assigned binding leaves
+  // its annotation `1`, and a default under an annotation stating `number`
+  // binds `undefined`.
+  assert.ok(Number.isNaN(runExample("invalid-annotated-pattern", "sum([])")));
+  assert.equal(runExample("invalid-annotated-pattern-let-written", "f()"), 2);
+  assert.equal(runExample("invalid-annotated-pattern-default", "f([])"), true);
   // `Reflect.get` calls an accessor's getter, which empties the caller's
   // array.
   assert.equal(runExample("invalid-reflect-get-getter",
