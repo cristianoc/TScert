@@ -1075,6 +1075,31 @@ control(async (): Promise<void> => {
   process.stdout.write("forged thenable instances: await, async return, Promise.resolve and new Promise at a callable then, and an allocation claimed as a promise, refused\n");
 });
 control(async (): Promise<void> => {
+  // An async return of a literal owning a callable `then`, its allocation
+  // and the return's instance claimed at a record owning no key, which the
+  // stable descriptor admits: the verifier's search refuses the own-key
+  // bound at the allocation. The case is refused, so it has no evidence to
+  // check against the forged claims.
+  const artifacts = run("invalid-async-return-literal-thenable");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("{\n    then(");
+  const fn = must(claims.functions.find(f => f.name === "adopt"), "adopt's claims");
+  const allocation = must(fn.expressions.find(e => e.pos[0] === start), "the allocation's claim");
+  const site = must(fn.expressions.find(e => e.instantiate?.length), "the async return's instance");
+  claims.types.push([{ refs: { first: [], rest: [], views: [], bounds: [{ among: true, keys: [] }] } }]);
+  const empty = claims.types.length - 1;
+  allocation.type = [empty];
+  for (const image of site.instantiate ?? []) image.type = [empty];
+  const forged = writeClaims(artifacts, "forged-async-literal-keys", claims);
+  const at = `at [${allocation.pos[0]},${allocation.pos[1]})`;
+  const searched = produceWith(artifacts, forged, "forged-async-literal-keys");
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  assert.ok(detail.includes(at), detail);
+  process.stdout.write("forged async literal: a returned literal with a callable then claimed as owning no key, refused at the allocation\n");
+});
+control(async (): Promise<void> => {
   // A key-adding write's key claimed at `symbol` in place of `string`: it
   // may be `Symbol.toStringTag`, which no object the program makes holds, so
   // the write is refused where evidence is produced; checking refuses the

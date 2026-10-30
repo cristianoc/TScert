@@ -723,6 +723,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | _ -> None in
         (* A spread's actuals are its tuple's positions, which Lean reads
            and checks each at its parameter. *)
+        (* An object literal an async body returns is claimed with its exact
+           keys: the resolution reads its `then` when it returns, and the
+           own-key bound states the literal owns none, which the stable
+           descriptor requires (SOURCE-CONTRACTS.md, "Async functions and
+           await"). A proposal: Lean checks the bound at the allocation. *)
+        (match target.node,args with
+         | Id "%AsyncReturn%",[arg] -> mark_exact arg
+         | _ -> ());
         let actuals=List.concat (List.mapi (fun i (arg:expr) ->
           if List.mem i spreads then begin
             (match arg.node with Id _ -> ignore (expr env arg) | _ -> ());

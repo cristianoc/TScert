@@ -4452,7 +4452,17 @@ inputs. Its resulting promise may then be used at a wider result annotation,
 including `Promise<unknown>`, while the instance's certificate is still
 checked. A bounded numeric parameter and a generic array retain their
 precise types. An open record without the lifetime `then` contract has no
-classification.
+classification. An object literal an async body returns, through the
+positions of $`\mathrm{returned}(f)`$
+([literals a spread copies](SOURCE-ELABORATION.md#literals-a-spread-copies)),
+is claimed with its exact keys, the own-key bound
+$`\mathsf{among}\ \vec k`$ over the keys it writes. With `then` outside
+$`\vec k`$, or written at a primitive, the literal is in the record arm of
+$`N`$: its prototype is `Object.prototype`, which has no `then`
+([exact contracts](SOURCE-MODEL.md#exact-contracts-and-native-effects), a host assumption).
+The claim is a proposal, and Lean checks the bound at the allocation
+(`async-object-result`; `invalid-async-return-literal-thenable`, run under
+Node).
 
 `Promise.resolve(value)` and `await` require an observation only: a stable
 value, a native promise of any payload, or a union of those. Consequently a
