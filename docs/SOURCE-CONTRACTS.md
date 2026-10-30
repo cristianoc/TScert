@@ -757,7 +757,11 @@ Three sources give a value of such a type:
 
 and the scheme an annotation or a declaration states. A closure without a
 result annotation is claimed at its body's type, widened as TypeScript
-widens an inferred result, the object literals it returns with their exact
+widens an inferred result's fresh literals (a body returning only calls'
+and fields' values keeps the literals their declared types state, and a
+generic call's binder whose every candidate type comes from a callback's
+result keeps them too),
+the object literals it returns with their exact
 keys ([literals a spread copies](SOURCE-ELABORATION.md#literals-a-spread-copies)),
 which the closure's code is then checked at
 ([generic closures](CALLABLES.md#overloads-polymorphism-and-binding)). In

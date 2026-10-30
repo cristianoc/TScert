@@ -227,16 +227,23 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         | Some (observation,result) when observation = r || result = Some r -> Some q.identity
         | _ -> None) signature.quantified
     | Atoms _ | Union _ | Meet _ -> None in
-  let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) left right =
+  (* Lower bounds met at a callback's result: a closure's result is already
+     widened where its body returns a fresh literal, and a declared one keeps
+     its literals, as TypeScript widens only a fresh literal candidate. *)
+  let returned_lowers = ref [] in
+  let rec constrain ?(depth=0) ?(output=false) ?(contextual=false) ?(returned=false) left right =
     let contextual_reverse = constrain ~depth:(depth+1) ~output ~contextual:output in
-    let constrain = constrain ~depth:(depth+1) ~output ~contextual in
+    let constrain_result = constrain ~depth:(depth+1) ~output ~contextual ~returned:true in
+    let constrain = constrain ~depth:(depth+1) ~output ~contextual ~returned in
     Option.iter (fun owner -> if output && local right = None then
       result_uppers := (owner,right) :: !result_uppers) (result_owner left);
     match local left,local right with
     | Some x,Some y -> edges := (x,y)::!edges
     | None,Some y ->
-      if not (alien left) && not (contextual && List.mem y.identity !actual_candidates) then
-        y.lower <- add y.lower left
+      if not (alien left) && not (contextual && List.mem y.identity !actual_candidates) then begin
+        y.lower <- add y.lower left;
+        if returned then returned_lowers := (y.identity,left) :: !returned_lowers
+      end
     | Some x,None -> if not (alien right) then x.upper <- add x.upper right
     | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
@@ -302,7 +309,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
           && a.call_effect.promise=e.call_effect.promise) calls in
         constrain e.receiver a.receiver;
         List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
-        constrain a.result e.result) expected
+        constrain_result a.result e.result) expected
       (* Two generic methods binding as many parameters, `then` of
          `Promise<number>` at `then` of `PromiseLike<T>`: compared with the
          source's binders renamed to the target's, parameters contravariant
@@ -585,6 +592,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
           if owner = v.identity then Some u else None) !result_uppers) in
     let candidate = match candidate with
       | Some t when unbounded && candidate = join v.lower && not (bare signature.result)
+                    && not (List.for_all (fun l -> List.mem (v.identity,l) !returned_lowers) v.lower)
                     && admitted (widen t) -> Some (widen t)
       | c -> c in
     (* With no candidate at all, TypeScript infers `unknown`. *)

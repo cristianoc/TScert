@@ -245,9 +245,18 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | Atoms [Named (i,xs)],Atoms [Named (j,ys)] ->
           i=j && List.length xs = List.length ys && List.for_all2 fits xs ys
         | _ -> false in
+      (* A literal a declared type states (a call's result, a field's) is
+         not a fresh literal: TypeScript keeps it in an inferred return type
+         (`(n) => read(n)` with `read` returning `boolean | "absent"`), so
+         a body returning only such reads keeps its literals. *)
+      let declared (e:Source.expr) = match e.node with
+        | Call _ | Invoke _ | Read _ | Cast ("const",_,_) -> true
+        | _ -> false in
+      let returned = Source.returned body in
       let result = match written,contextual with
         | Some result,_ -> result
         | None,Some r when not (Support.mentions_hole r) && fits body_type r -> r
+        | None,_ when returned <> [] && List.for_all declared returned -> body_type
         | None,_ -> widen body_type in
       let params = List.mapi (fun i (_,t) ->
         if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in

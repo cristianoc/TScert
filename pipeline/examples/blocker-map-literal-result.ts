@@ -1,5 +1,5 @@
-// Generic map result inference needs to retain a literal in a callback result
-// union before a later every call.
+// A map whose callback returns a call's declared literal union keeps the
+// literal in its element type for a later every call.
 // Census functions:
 // fragment-expressions.mts#binary, fragment-expressions.mts#chainLink,
 // fragment-expressions.mts#expr, fragment-expressions.mts#knownLocal,
