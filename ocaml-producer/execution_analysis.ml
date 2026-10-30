@@ -26,8 +26,17 @@ open S
     | None -> Json.fail ("missing expression execution plan at " ^ current_point () ^
         " for " ^ Json.encode e.pos)
 
-  let join before left right =
-    List.filter_map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+  (* An environment's lookup, answering for each name what `List.assoc_opt`
+     answers, the first binding of the name, in time independent of the
+     environment's length: a join looks up every binding of one state in the
+     others. *)
+  let index env =
+    let table = Hashtbl.create (2 * List.length env + 1) in
+    List.iter (fun (n,b) -> if not (Hashtbl.mem table n) then Hashtbl.add table n b) env;
+    Hashtbl.find_opt table
+
+  let join_indexed before left in_left in_right =
+    List.filter_map (fun (n,b) -> match b,in_left n,in_right n with
       | Storage (contract,_),Some (Storage (_,l)),Some (Storage (_,r)) -> Some (n,holding contract (union l r))
       | Local (contract,_),Some (Local (_,l)),Some (Local (_,r)) -> Some (n,Local (contract,union l r))
       (* A local an arm added a key to holds the object either arm left. *)
@@ -36,10 +45,11 @@ open S
       | _ when is_field n -> None
       | _ -> Some (n,b)) before
     (* A field's contents are known after both arms where each knows them. *)
-    @ List.filter_map (fun (n,b) -> match b,List.assoc_opt n right with
+    @ List.filter_map (fun (n,b) -> match b,in_right n with
       | Value l,Some (Value r) when is_field n && List.mem_assoc (owner n) before ->
         Some (n,Value (union l r))
       | _ -> None) left
+  let join before left right = join_indexed before left (index left) (index right)
 
   let refine_test env condition test truth =
     match expression_hint condition with
@@ -66,8 +76,9 @@ open S
      paths are a condition's (`refine`), an immutable value holds what either
      path refined it to. *)
   let merge ~refine base left right =
-    let joined = join (List.map (fun (n,b) -> n,Option.value (List.assoc_opt n base) ~default:b) left) left right in
-    if not refine then joined else List.map (fun (n,b) -> match b,List.assoc_opt n left,List.assoc_opt n right with
+    let in_base = index base and in_left = index left and in_right = index right in
+    let joined = join_indexed (List.map (fun (n,b) -> n,Option.value (in_base n) ~default:b) left) left in_left in_right in
+    if not refine then joined else List.map (fun (n,b) -> match b,in_left n,in_right n with
       | Value _,Some (Value l),Some (Value r) when not (is_field n) -> n,Value (if l = r then l else union l r)
       | _ -> n,b) joined
   let either ~refine base a b = match a,b with

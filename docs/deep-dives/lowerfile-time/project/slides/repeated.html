@@ -1,0 +1,12 @@
+<section id="repeated" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
+<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap"><p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: a timing build on the slice</p><p style="font-size:24px;color:#5b6662">the producer with counters and timers added; the same claims</p></div>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">What the remaining 29 s repeat</h2>
+<table style="font-size:24px;color:#1d2422">
+<tr><th style="width:52%;text-align:left;font-weight:600">Repetition</th><th style="width:26%;text-align:left;font-weight:600">Count</th><th style="width:22%;text-align:left;font-weight:600">Time</th></tr>
+<tr><td><b>Entry environments recomputed.</b> To type a sub-expression, the producer reruns the evaluation of its whole statement from the start, to find the environment where that sub-expression begins.</td><td>50,972 reruns over 1,879 statements (a statement at one graph node), 27 each</td><td>19.1 of 29.4 s, 65%</td></tr>
+<tr><td><b>Passes over <span style="color:#2b5b9c">lowerFile</span>.</b> The producer assumes what each function's calls may change (its effect), types every function, and repeats until no assumption grows: 2 effect rounds. In each, <span style="color:#2b5b9c">lowerFile</span> is typed twice, the second time because the first found calls passing one of its closures more arguments than it declares, which the closure's type must then state.</td><td>4 passes of <span style="color:#2b5b9c">lowerFile</span></td><td>6.6 s outside the reruns, over the 4</td></tr>
+<tr><td><b>Types compared in full.</b> Two equal types built separately are compared part by part; the types here are unions of hundreds of TypeScript syntax-node types.</td><td>12.2 million unions of two types</td><td>not timed apart</td></tr>
+</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li>In the modules the reruns take 0.8 of 6.6 s (type-probe), 2.6 of 7.0 s (type-term), 2.0 of 5.5 s (fragment-support) and 5.7 of 5.9 s (library-modules: 3,300 reruns over 61 statements, 2.44 million evaluation steps).</li>
+</ul>
+</section>

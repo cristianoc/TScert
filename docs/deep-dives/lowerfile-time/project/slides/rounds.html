@@ -1,0 +1,10 @@
+<section id="rounds" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured: census of ee0ed0e5, empty store</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Import rounds: one import dropped per round</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Certified imports:</b> the slice may type a call of an imported function by what TScert proves of that function in its own module, instead of by its declared type alone. It may do so only where the slice and the module give the function the same signature. Before proposing the slice, the plan checks each such import; where it refuses one, the import is dropped, and the round starts again.</li>
+<li><b style="font-weight:600">This slice:</b> 14 rounds each drop one import; the 15th plan passes, the slice is proposed, and the search stage runs the plan once more to divide its work: 16 plans of 0.6–0.9 s, 11.0 s. Each plan reads the whole 30 MB syntax document.</li>
+<li><b style="font-weight:600">Modules proposed again:</b> a module's proposal depends on which of its own calls of other modules are still typed by certified imports, so a dropped import can change it; each round proposes again each module so changed: 27 proposals of 21 modules, tools/declaration-graph.mts five times at 1.8 s.</li>
+<li><b style="font-weight:600">Avoidable:</b> a plan that reports every import it refuses lets one round drop them all: an estimated 16 → 3 plans (−9 s), and about −5.5 s of the 8.8 s of repeated module proposals, since each changed module is still proposed once more. The outcome stays the same only if no refusal depends on another import being dropped, which the change would have to show.</li>
+</ul>
+</section>

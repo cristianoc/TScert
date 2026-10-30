@@ -240,8 +240,23 @@ let unknown_slice keeps =
   let kept = List.filter keeps unknown_kinds in
   let kept = if List.mem True kept || List.mem False kept then True :: False :: kept else kept in
   if List.for_all (fun k -> List.mem k kept) unknown_kinds then Atoms [Top] else ground kept
+(* Whether atoms are strictly increasing, as `ground` leaves them. *)
+let rec strictly_increasing = function
+  | a :: (b :: _ as rest) -> compare a b < 0 && strictly_increasing rest
+  | _ -> true
+(* Two strictly increasing lists of atoms merged in one pass: what `ground`
+   makes of their concatenation, since atoms compare equal only when they
+   are equal. *)
+let rec merge_increasing xs ys = match xs,ys with
+  | [],l | l,[] -> l
+  | x :: xs',y :: ys' ->
+    let c = compare x y in
+    if c < 0 then x :: merge_increasing xs' ys
+    else if c > 0 then y :: merge_increasing xs ys'
+    else x :: merge_increasing xs' ys'
 let union a b = match a,b with
   | Atoms [], t | t, Atoms [] -> t
+  | Atoms xs, Atoms ys when strictly_increasing xs && strictly_increasing ys -> Atoms (merge_increasing xs ys)
   | Atoms xs, Atoms ys -> ground (xs @ ys)
   | _ when a=b -> a
   | _ -> let parts = function Union ts -> ts | t -> [t] in
