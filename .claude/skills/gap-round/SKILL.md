@@ -78,7 +78,11 @@ When an agent reports:
 
 1. Review the branch. For new nontrivial rules, models of external code,
    or changes of trust, Astra reviews `git diff main...HEAD` with the goal
-   stated (see the memories on Astra). On blocking findings, Astra
+   stated (see the memories on Astra). Its first question is whether the
+   change is an instance of an existing mechanism, and which, or what it
+   duplicates ([designs start from an existing
+   mechanism](../../../CLAUDE.md#designs-start-from-an-existing-mechanism)).
+   On blocking findings, Astra
    implements its fixes and a fresh Astra reviews the result.
 2. Check that the change is general and principled, and that it does not
    restrict TScert to fit the mechanism.

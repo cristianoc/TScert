@@ -287,6 +287,18 @@ for every extracted function. Preserve this by construction:
 
 ## Source and host soundness boundaries
 
+### Designs start from an existing mechanism
+
+A design draft (`docs/drafts/`) opens with a section **The existing
+mechanism this extends**, citing the document that owns it (for a fact a
+construct relies on across code, [footprints](docs/FOOTPRINTS.md): the
+fact, its stable operations, the checked contract, the construct's rule).
+[The general mechanisms](docs/DESIGN.md#general-mechanisms) lists each
+concern's mechanism. Where no mechanism fits, that section lists the mechanisms considered and
+why each falls short; no new machinery is proposed before it is written.
+Every review of a design or of a new rule asks first: is this an instance
+of an existing mechanism, and which; what does it duplicate?
+
 ### Engineering trade-offs
 
 [Utility justifies complexity](docs/DESIGN.md#principles): an explicit,

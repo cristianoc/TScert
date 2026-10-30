@@ -624,6 +624,27 @@ One line each; the reason is the one the design keeps.
   assignments satisfying the signature’s descriptor constraints
   (`RequestJson.verify_qualified_safe_at`).
 
+## General mechanisms
+
+Each concern below has one mechanism, owned by the linked section. A new rule
+or design extends the mechanism of its concern
+([designs start from an existing mechanism](../AGENTS.md#designs-start-from-an-existing-mechanism)).
+
+| Concern | Mechanism | Owner |
+| --- | --- | --- |
+| A fact a construct relies on while other code runs (an array's density during `map`'s callback, a fact kept across a call) | The fact, its stable operations stated as closed footprints, Lean certifying the code within them, and the construct's simple rule | [Footprints](FOOTPRINTS.md) |
+| What a call may change | Effect-qualified signatures, proposed by the producer and proved from the callee's code | [Inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification) |
+| What holds at a program point (narrowing, field and cell facts, facts at cuts and joins) | Heap state assertions, checked on every incoming edge | [Heap state and assertions](PROGRAM-TYPING.md#heap-state-and-assertions) |
+| A test that narrows a value (`typeof`, `===`, `in`, `instanceof`, a type guard's promise) | Guards lowered to tests whose answers are typed | [Guards](SOURCE-ELABORATION.md#guards) |
+| Comparing types and choosing a union's arm | Structure-directed comparison: shapes, cells and the catalogue of selection rules | [Union shapes](UNION-SHAPES.md) |
+| Generic and recursive declarations | Parameterized equations: unfolding, substitution, family subtyping | [Recursive equations](RECURSIVE-EQUATIONS.md) |
+| Library objects of one family tagged by a field (compiler nodes) | Host families: tag sets, guards as tag tests, stable members | [Host families](HOST-FAMILIES.md) |
+| External code's behaviour (natives, library globals, prototypes) | Contracts audited against the implementation, with the trust each states | [Prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts), [library types](SOURCE-CONTRACTS.md#library-types) |
+| Code of another module the program imports | Certified imports: the module's own claims checked, its effects read at the import | [Certified imports](SOURCE-CONTRACTS.md#certified-imports) |
+| A construct outside the fragment | An explicit, enforced restriction with its reason and its control | [The refusal index](SOURCE-FRAGMENT.md) |
+| TScert's own code that does not verify | The routes: support, runtime check, repair, avoidance, host boundary, trusted unit, proof, refusal | [Source rewrites](SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for) |
+| Repeated work of the pipeline | Stage results keyed by content and replayed | [Stage store](STAGE-STORE.md) |
+
 ## Documentation map
 
 Each document owns one layer. Keep definitions and detailed examples in that

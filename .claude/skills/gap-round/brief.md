@@ -42,6 +42,8 @@ a host boundary in SOURCE-REWRITES.md in the same commit.
   - controls with forged claims, where claims are involved.
 - A repair of a native contract also runs its negative fixture under Node.
 - Prefer the one general mechanism to a patch for one construct.
+- A new rule or design names first the existing mechanism it extends
+  ([designs start from an existing mechanism](../../../CLAUDE.md#designs-start-from-an-existing-mechanism)).
 
 ## Working rules
 
