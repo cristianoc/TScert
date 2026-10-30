@@ -1221,6 +1221,19 @@ blocks 757 statements of 30 functions.
 - **Commit:** the introducing commit, `visitType builds a scheme's scope in
   an if, so the spread of bound runs first in its statement`.
 
+`leavesLoop` in `tools/fragment-support.mts`, called by `completes`, held
+the labels its blocks declare in a `ReadonlySet` and extended them with
+`s.label === null ? inner : new Set([...inner, s.label])`, the same
+construct, which the census of 945fa80 refuses in `completes`.
+
+- **Equivalent form:** the labels are a `readonly string[]`, extended by
+  `[...inner, s.label]`, a spread of an array, and tested by `includes`.
+  Labels are strings, which `includes` compares as `Set`'s `has` does; no
+  code mutates the labels or reads their identity, and a repeated label
+  changes no test.
+- **Commit:** the introducing commit, `leavesLoop holds a block's labels
+  in an array`.
+
 ### A write at the index `indexOf` finds
 
 `flatten` in `familyTable` (`tools/host-families.mts`) gathered the members

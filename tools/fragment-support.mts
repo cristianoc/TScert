@@ -333,12 +333,12 @@ export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): With
 /** Whether a statement list's `break` leaves the loop whose body it is: an
  * unlabeled one outside a nested loop, or one to a label no block of the
  * list declares. */
-function leavesLoop(ss: Stmt[], inner: ReadonlySet<string>, nested: boolean): Within<{ value: "any"; store: "grow" }, boolean> {
+function leavesLoop(ss: Stmt[], inner: readonly string[], nested: boolean): Within<{ value: "any"; store: "grow" }, boolean> {
   return ss.some((s) => {
     switch (s.k) {
-      case "break": return s.label === null ? !nested : !inner.has(s.label);
+      case "break": return s.label === null ? !nested : !inner.includes(s.label);
       case "if": return leavesLoop(s.then, inner, nested) || (s.else_ !== null && leavesLoop(s.else_, inner, nested));
-      case "block": return leavesLoop(s.body, s.label === null ? inner : new Set([...inner, s.label]), nested);
+      case "block": return leavesLoop(s.body, s.label === null ? inner : [...inner, s.label], nested);
       case "while": return leavesLoop(s.body, inner, true) || leavesLoop(s.update, inner, true);
       case "forOf": return leavesLoop(s.body, inner, true);
       case "closing": return leavesLoop(s.close, inner, nested) || leavesLoop(s.body, inner, nested);
@@ -361,7 +361,7 @@ export function completes(ss: Stmt[]): Within<{ value: "any"; store: "grow" }, b
     case "return": case "throw": case "break": case "continue": return false;
     case "while":
       return !(last.cond.k === "lit" && last.cond.lit.a === "booleanlit" && last.cond.lit.v === "true") ||
-        leavesLoop(last.body, new Set(), false) || leavesLoop(last.update, new Set(), false);
+        leavesLoop(last.body, [], false) || leavesLoop(last.update, [], false);
     case "if": return last.else_ === null || completes(last.then) || completes(last.else_);
     case "block": return last.label !== null || completes(last.body);
     case "try":
