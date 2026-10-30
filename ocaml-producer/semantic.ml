@@ -25,9 +25,14 @@ type promise = Guards of int | Asserts of int
    the footprint excepts the receiver's array store, which the call may
    change arbitrarily. *)
 type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool;
-  receiver_own: bool; fresh_object: bool }
+  receiver_own: bool; fresh_object: bool;
+  (* The kinds the receiver's present elements have where the call starts,
+     and those a normal return of `true` leaves them with (Lean's
+     `Effect.requires` and `Effect.elements`), in the wire's order. *)
+  requires: string list option; elements: string list option }
 let footprint_effect footprint =
-  {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false}
+  {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false;receiver_own=false;fresh_object=false;
+   requires=None;elements=None}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -38,7 +43,11 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
    not the receiver of a call of it, so an exception of the receiver's store
    is an exception of every location. *)
 let bound_effect e = if e.receiver_store || e.receiver_own then
-    {e with footprint=top_footprint; receiver_store=false; receiver_own=false} else e
+    {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None}
+  else {e with elements=None}
+(* Whether binding keeps a signature: one about its receiver's elements is
+   not kept (Lean's `Effect.keeps`). *)
+let bindable_effect e = e.requires = None && e.elements = None
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
@@ -49,7 +58,11 @@ let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.pr
   (not b.fresh || a.fresh) &&
   (not a.receiver_store || (b.receiver_store && not b.receiver_own) || b.footprint = top_footprint) &&
   (not b.on_throw || a.on_throw) &&
-  (not a.receiver_own || b.receiver_own || b.footprint = top_footprint) && (not b.fresh_object || a.fresh_object)
+  (not a.receiver_own || b.receiver_own || b.footprint = top_footprint) && (not b.fresh_object || a.fresh_object) &&
+  (match a.requires, b.requires with
+   | None, _ -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k ka) kb | Some _, None -> false) &&
+  (match a.elements, b.elements with
+   | _, None -> true | Some ka, Some kb -> List.for_all (fun k -> List.mem k kb) ka | None, Some _ -> false)
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"

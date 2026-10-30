@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import type { Json, JsonObject, JsonRead, JsonValue } from "./calculus.mts";
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
@@ -46,7 +46,8 @@ export const closedFootprints: readonly ClosedFootprint[] = [
 ];
 /** A signature with a footprint and no promise. */
 export const footprintEffect = (footprint: ClosedFootprint): Within<{ value: "any"; store: "grow" }, CallEffect> =>
-  ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false });
+  ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false,
+    requires: null, elements: null });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -55,7 +56,7 @@ export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
  * whose code may change every location. */
 export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "any"; store: "grow" }, CallEffect> =>
   ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
-    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false });
+    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
 const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
@@ -65,7 +66,29 @@ const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
   sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
     a.receiverStore === b.receiverStore && a.onThrow === b.onThrow && a.receiverOwn === b.receiverOwn &&
-    a.freshObject === b.freshObject;
+    a.freshObject === b.freshObject && sameKinds(a.requires, b.requires) && sameKinds(a.elements, b.elements);
+/** The kinds an elements predicate lists, each at most once, in this order. */
+const elementKindOrder: readonly ElementKind[] =
+  ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
+const sameKinds = (a: ElementKinds | null, b: ElementKinds | null): boolean =>
+  a === null || b === null ? a === b : a.length === b.length && a.every((k, i) => k === b[i]);
+/** An elements predicate a value states: `null`, or kinds in their order,
+ * each once; `undefined` where the value states neither. */
+function decodeKinds(v: JsonRead): ElementKinds | null | undefined {
+  if (v === null) return null;
+  if (!Array.isArray(v)) return undefined;
+  const kinds: ElementKind[] = [];
+  let last = -1;
+  for (const k of v) {
+    const i = elementKindOrder.findIndex(o => o === k);
+    if (i <= last) return undefined;
+    last = i;
+    const kind = elementKindOrder[i];
+    if (kind === undefined) return undefined;
+    kinds.push(kind);
+  }
+  return kinds;
+}
 const isObject = (v: JsonRead): v is JsonObject =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 /** The closed footprint a value states, as a fresh object of its fields, or
@@ -86,7 +109,10 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
 export function decodeCallEffect(v: JsonRead): CallEffect | undefined {
-  if (!isObject(v) || Object.keys(v).length !== 7) return undefined;
+  if (!isObject(v) || Object.keys(v).length !== 9) return undefined;
+  const requires = decodeKinds(v.requires);
+  const elements = decodeKinds(v.elements);
+  if (requires === undefined || elements === undefined) return undefined;
   const footprint = decodeClosedFootprint(v.footprint);
   const fresh = v.fresh;
   const receiverStore = v.receiverStore;
@@ -107,7 +133,7 @@ export function decodeCallEffect(v: JsonRead): CallEffect | undefined {
     if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
     promise = guards ? { guards: { param } } : { asserts: { param } };
   }
-  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject };
+  return { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires, elements };
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

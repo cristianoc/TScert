@@ -30,7 +30,17 @@ export type CallEffect = {
   /** A normal return's value is an object every own location of which the
    * call allocated. */
   readonly freshObject: boolean;
+  /** A precondition: every present element of the receiver's array has one
+   * of these kinds in the heap the call starts in. */
+  readonly requires: ElementKinds | null;
+  /** A promise: a normal return of `true` leaves every present element of
+   * the receiver's array of one of these kinds. */
+  readonly elements: ElementKinds | null;
 };
+/** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
+ * each at most once, in this order. */
+export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";
+export type ElementKinds = readonly ElementKind[];
 /** The effect a written signature states at its result (`Within<F, T>`,
  * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint and whether
  * it also bounds the heap a throw leaves. */

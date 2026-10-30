@@ -131,7 +131,7 @@ justify its supplied current-heap assertion, including backedges. -/
   let separation := if entry.isSome then separationFacts G scope Γ else {}
   if facts.isEmpty && separation.facts.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [Labels.nul] "heap-observation" entry scope
-  recordAssertion t ⟨facts,[],[],separation⟩
+  recordAssertion t ⟨facts,[],[],separation,[]⟩
   return t
 
 @[nospecialize] def contents (A : Ty Tree) : Compiler (List HeapFacts.Atom) := do

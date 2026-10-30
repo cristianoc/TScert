@@ -53,6 +53,7 @@ structure KnowledgeEntry where
   links : List Nat
   depth : Nat
   separation : List Nat
+  elems : List HeapKnowledge.ElemAtom
   deriving ToJson, FromJson
 
 /-- `OrdinaryEvidence`, its derivation an entry of `proofs`. -/
@@ -184,7 +185,7 @@ structure Tables (ι : Type) where
 @[nospecialize] def knowledge (links : Array HeapLinks.Link) (separations : Array HeapSeparation.Fact)
     (valueSets : Array ValueSets.ValueSet) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
   return ⟨← facts valueSets e.cells, ← facts valueSets e.values, ← entries "link" links e.links,
-    ⟨e.depth, ← entries "separation fact" separations e.separation⟩⟩
+    ⟨e.depth, ← entries "separation fact" separations e.separation⟩, e.elems⟩
 
 @[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
   let types := d.types.toArray
@@ -389,8 +390,8 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
   valueSets : Interned ValueSets.ValueSet ValueSets.ValueSet := {}
   /-- Knowledge by its facts, link positions, depth and separation facts'
   positions. -/
-  knowledge : Interned (List (Nat × Nat × PropKey) × List (Nat × Nat × PropKey) × List Nat × Nat × List Nat)
-    KnowledgeEntry := {}
+  knowledge : Interned (List (Nat × Nat × PropKey) × List (Nat × Nat × PropKey) × List Nat × Nat × List Nat ×
+    List HeapKnowledge.ElemAtom) KnowledgeEntry := {}
   /-- Derivation nodes by their JSON text, whose premises are positions. -/
   proofs : Interned String (ProofEntry ι) := {}
 
@@ -424,9 +425,9 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let cs ← k.cells.mapM internFact
   let vs ← k.values.mapM internFact
   let flat := fun (fs : List FactRef) => fs.map fun f => (f.slot, f.contents, f.field)
-  let key := (flat cs, flat vs, ls, k.separation.depth, ss)
+  let key := (flat cs, flat vs, ls, k.separation.depth, ss, k.elems)
   modifyGet fun s =>
-    let (i, t) := s.knowledge.add key ⟨cs, vs, ls, k.separation.depth, ss⟩
+    let (i, t) := s.knowledge.add key ⟨cs, vs, ls, k.separation.depth, ss, k.elems⟩
     (i, { s with knowledge := t })
 
 @[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do

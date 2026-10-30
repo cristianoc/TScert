@@ -18,6 +18,25 @@ module Make (S : Inputs) = struct
 open S
 module Support = Expression_support.Make(S)
 open Support
+(* A callback's parameter against a closure literal's written one, asked
+   for the same pair at every call of a native at the elements fact: once
+   per pair and declarations. *)
+module Pairs = Hashtbl.Make (struct
+  type t = Semantic.ty * Semantic.ty
+  let equal (a, b) (c, d) = (a == c || a = c) && (b == d || b = d)
+  let hash = Hashtbl.hash_param 256 1024
+end)
+let takes_memo : bool Pairs.t = Pairs.create 64
+let takes_declarations = ref None
+let takes_at declarations passed own =
+  (match !takes_declarations with
+   | Some d when d == declarations -> ()
+   | _ -> Pairs.reset takes_memo; takes_declarations := Some declarations);
+  match Pairs.find_opt takes_memo (passed, own) with
+  | Some r -> r
+  | None ->
+    let r = plausible_subtype_declared declarations passed own in
+    Pairs.replace takes_memo (passed, own) r; r
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   let site = e.pos in
   (* A type mentioning a hole (`contextual_actual`) guides a callback's
@@ -315,6 +334,22 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          differ only in the footprint they state, and the actual's own is
          inferred from its body. The proposal is untrusted; Lean checks the
          instance and every actual. *)
+      (* A closure literal is offered a callback signature only where its
+         parameters take what the signature passes, and its written
+         promise is within the one the signature asks for: Lean checks the
+         claim within the closure's annotation (`map` at the elements
+         fact passes a `string`, `every` at it asks for a guard promising
+         one). *)
+      let literal_takes (arg:expr) p = match arg.node,p with
+        | Lambda (_,_,ps,_,_,_,guard,_),Atoms [Shape {calls=[c];_}] ->
+          List.for_all2 (fun passed (_,own) -> takes_at declarations passed own)
+            (List.filteri (fun i _ -> i < List.length ps) c.params)
+            (List.filteri (fun i _ -> i < List.length c.params) ps)
+          && (match guard with
+              | Some (_,written) when c.call_effect.promise <> None ->
+                plausible_subtype_declared declarations written c.result
+              | _ -> true)
+        | _ -> true in
       let seeded_actuals (candidates:Semantic.signature list) =
         (* A guard closure's written promise is the type a callback
            parameter stating that promise promises: its result operand, as
@@ -420,13 +455,38 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             List.for_all (fun (c:Semantic.signature) -> c.call_effect.promise = promise) calls
           | _ -> promise = None in
         List.mapi (fun i arg ->
-          let params = List.map (fun s -> param_at s i) candidates in
+          (* Signatures stating a precondition are alternatives for a
+             closure literal no other signature's callback takes. *)
+          let plain_candidates = List.filter (fun (s:Semantic.signature) ->
+            s.call_effect.requires = None) candidates in
+          let takes = function Some p -> literal_takes arg p | None -> false in
           let params = match arg.node with
-            | Lambda _ ->
+            | Lambda _ when plain_candidates <> []
+                && not (List.exists takes (List.map (fun s -> param_at s i) plain_candidates)) ->
+              (match List.filter takes (List.map (fun s -> param_at s i) candidates) with
+               | [] -> List.map (fun s -> param_at s i) plain_candidates
+               | kept -> kept)
+            | _ -> List.map (fun s -> param_at s i)
+                (if plain_candidates = [] then candidates else plain_candidates) in
+          let params = match arg.node with
+            | Lambda (_,_,_,_,_,_,guard,_) ->
+              (* Of the callbacks stating the written promise, those promising
+                 a type the written one is within, where any does (`every`
+                 at a guard promising `string`). *)
+              let within_written = function
+                | Some (Atoms [Shape {calls=_::_ as calls;_}]) ->
+                  (match guard with
+                   | Some (_,written) -> List.for_all (fun (c:Semantic.signature) ->
+                       plausible_subtype_declared declarations written c.result) calls
+                   | None -> true)
+                | _ -> true in
               (match List.filter (states (promise_of arg)) params, List.filter (states None) params with
                | [],[] -> params
                | [],plain -> plain
-               | promised,_ -> promised)
+               | promised,_ ->
+                 (match List.filter within_written promised with
+                  | [] -> promised
+                  | kept -> kept))
             (* A function passed by name, at those stating the promise its
                type states, or none. *)
             | Id _ ->
@@ -793,18 +853,42 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       | Atoms [Shape ({calls=(_::_::_ as calls);_} as shape)]
           when not spread && List.for_all (fun (s:Semantic.signature) ->
             s.quantified<>[] && s.variadic=None && s.rest_pack=None) calls ->
-        let usable = List.filter callable calls in
+        (* A signature stating a precondition on the receiver's elements is
+           tried only where the receiver's claimed elements admit a string,
+           a number or a boolean: elsewhere an elements atom at those kinds
+           holds only of an empty array. *)
+        let elements_known = match target.node with
+          | Read (o,_) | Index (o,_) ->
+            (match Option.bind (latest_claim o.pos) (Semantic.spread_element ~readonly:true) with
+             | Some (Atoms atoms) -> List.exists (function
+                 | True | False | Num | Str | NumLit _ | StrLit _ -> true
+                 | _ -> false) atoms
+             | Some (Union arms) -> List.exists (function
+                 | Atoms atoms -> List.exists (function
+                     | True | False | Num | Str | NumLit _ | StrLit _ -> true
+                     | _ -> false) atoms
+                 | _ -> true) arms
+             | Some _ -> true
+             | None -> false)
+          | _ -> false in
+        let usable = List.filter (fun (s:Semantic.signature) ->
+          callable s && (elements_known || s.call_effect.requires = None)) calls in
         let actuals = seeded_actuals usable in
         let proposals = List.filter_map (fun (s:Semantic.signature) ->
           Option.map (fun (substitution,result) -> s,substitution,result)
             (quietly (fun () -> infer_explicit ~receiver:receiver_type ?expected s
               (List.map fst actuals @ List.init (max 0 (List.length s.params - List.length args))
                 (fun _ -> Atoms [Undef]))))) usable in
+        (* Where some signature is about the receiver's elements, a closure
+           literal is matched only at a callback it takes. *)
+        let about_elements = List.exists (fun ((s:Semantic.signature),_,_) ->
+          s.call_effect.requires <> None || s.call_effect.elements <> None) proposals in
         let matches_actuals ((s:Semantic.signature),substitution,_) =
           let at = Inference.substitute substitution in
           List.for_all Fun.id (List.mapi (fun i (arg,(t,_)) ->
             match List.nth_opt s.params i with
-            | Some p -> plausible_subtype_declared declarations t (at p) || offer_to arg (at p) <> None
+            | Some p -> plausible_subtype_declared declarations t (at p)
+                || (offer_to arg (at p) <> None && (not about_elements || literal_takes arg (at p)))
             | None -> false) (List.combine args actuals)) in
         (* A signature requiring an actual's member to state an effect is not
            the call's where that member, as the actual's type states it, has a

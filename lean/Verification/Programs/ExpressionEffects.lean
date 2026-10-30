@@ -223,13 +223,31 @@ theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
     exact ⟨safe_value_mem (hv p (by simp)) ((ht p (by simp)).sound _ _ h ρ he hw hh),
       ih (fun p hp => ht p (by simp [hp])) (fun p hp => hv p (by simp [hp]))⟩
 
-private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
+/-- The local call rule admits a signature with a precondition only where
+asked to. -/
+theorem app_requires_none [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes (sums := sums))
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes (sums := sums)) : e.requires = none := by
+  rcases j with ⟨Γ,t,A⟩
+  cases t <;> try exact (hl : False).elim
+  rcases ps with _ | ⟨jf, _ | ⟨jr, jas⟩⟩
+  · exact (hl : False).elim
+  · exact (hl : False).elim
+  obtain ⟨-, -, -, -, -, -, -, hL⟩ := hl
+  split at hL
+  · exact hL.2.2.resolve_left (by simp)
+  · exact hL.elim
+
+theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {allow : Bool}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes (sums := sums) (allowRequires := allow))
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) h) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
       (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
@@ -286,14 +304,15 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact values p (by simp [List.mem_of_mem_take hp])
       have hr := member jr (by simp)
       have hrval := values jr (by simp)
-      have hplain : e.plain = true := hL.2
+      have hres : e.promise = none := hL.2.1
+      have hq' : e.Requires (instantiate 0 ρ jr.term) h := by
+        simpa [receiverOf, instantiate, htr] using hq
       have hs := CallEffects.call_safe_exc (effect := e)
         (P := ArgsShort (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
-        (meaning_adm G jr.type) hp hr hrval hvals ha hw hh
-        (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain) _ _)
-      rw [CallEffects.Effect.result_plain hplain] at hs
+        (meaning_adm G jr.type) hp hr hrval hvals ha hw hh hq'
+      rw [CallEffects.Effect.result_none hres] at hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr, receiverOf,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
@@ -830,7 +849,8 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh)
+      refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh
+        (CallEffects.Effect.requires_none (app_requires_none ht.1) _ _))
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
@@ -1421,7 +1441,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      apply call_local_sound ht.1 _ _ he hw hh
+      refine call_local_sound ht.1 ?_ ?_ he hw hh (CallEffects.Effect.requires_none (app_requires_none ht.1) _ _)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums

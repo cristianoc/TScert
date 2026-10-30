@@ -65,12 +65,12 @@ def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
 def copy (k : Knowledge) (i : Nat) : Knowledge :=
   ⟨copyFacts k.cells i,copyFacts k.values i,
     ⟨0,i+1,true,valueField,false⟩ :: HeapLinks.pull k.links (copySlots i),
-    HeapSeparation.copy k.separation i⟩
+    HeapSeparation.copy k.separation i, HeapKnowledge.shiftElems k.elems⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
   have shifted := HeapKnowledge.shift_holds (v := ρ i) hk
-  refine ⟨?_,?_,?_,HeapSeparation.copy_holds hk.2.2.2⟩
+  refine ⟨?_,?_,?_,HeapSeparation.copy_holds hk.2.2.2.1,shifted.2.2.2.2⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -216,7 +216,7 @@ theorem includes_sound {G : NormalGraph ι} {A R v} (hc : includes G A R = true)
   · contradiction
 
 def withResult (k : Knowledge) (R : ValueSets.ValueSet) : Knowledge :=
-  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links,k.separation⟩
+  ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links,k.separation,k.elems⟩
 
 theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
     (hr : R.mem v = true) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
@@ -694,7 +694,7 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
 def ordinaryOutput (k : Knowledge) : Knowledge :=
-  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation⟩
+  ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links,HeapSeparation.shift k.separation,[]⟩
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -705,7 +705,7 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   intro _ _ heap v _
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
 
 /-- The named fields, invariant fields and readonly views, of every
 record-typed slot: the locations a fresh allocation is known to differ from,
@@ -739,7 +739,7 @@ whatever it holds: one separation fact (`HeapSeparation.allocate`). -/
 def allocOutput (k : Knowledge) (Rs : List (PropKey × ValueSets.ValueSet)) (n : Nat)
     (others : List (Nat × PropKey)) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
-    (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others⟩
+    (HeapKnowledge.shift k).links, HeapSeparation.allocate k.separation n others, HeapKnowledge.shiftElems k.elems⟩
 
 theorem slots_snd_ge : ∀ {base : Nat} {ns : List PropKey} {l : Nat},
     l ∈ (slots base ns).map Prod.snd → base ≤ l
@@ -863,7 +863,8 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       exact ⟨flds,c,oid,v,hl,(hrd.alloc_frames _).alloc_frames _,hv'⟩
   · simp only [allocOutput]
     exact ⟨HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2.1),
-      HeapSeparation.allocate_holds hk.2.2.2 (fresh_apart he hh)⟩
+      HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
+      HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2)⟩
 
 theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
     (h : (slots base ns).lookup f = some l) : base ≤ l := by
@@ -885,7 +886,8 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
       (push (.objAt (slots h.length ns) code oid) ρ) (h ++ vs ++ [.nul]) := by
   have hshift := HeapKnowledge.shift_holds (v := Tm.objAt (slots h.length ns) code oid) hk
   refine ⟨?_, hshift.2.1, HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2.1),
-    HeapSeparation.allocate_holds hk.2.2.2 (fresh_apart he hh)⟩
+    HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
+    HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2)⟩
   intro f hf
   simp only [allocOutput, List.map_nil, List.nil_append] at hf
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -963,7 +965,7 @@ def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option ValueSets.
       (k.cells.filter fun f => HeapSeparation.apartBy (Partitions.cls (LinkClasses.closure k.links)) k.separation i fld f.slot f.field).map
         (fun f => {f with slot := f.slot + 1}),
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
-    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation⟩
+    HeapLinks.stable (HeapKnowledge.shift k).links, HeapSeparation.shift k.separation, []⟩
 
 theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
@@ -1002,7 +1004,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2.1,
-        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2⟩
+        (HeapKnowledge.shift_holds (v := .nul) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf
         · cases hR : R with
@@ -1023,7 +1025,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             | none => rw [hfd0] at hrd; exact hrd
             | some l0 =>
               rw [hfd0] at hrd
-              have hne : l ≠ l0 := HeapSeparation.apartBy_sound (fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm) hg.2 hk.2.2.2 hl hfd hs0 hfd0
+              have hne : l ≠ l0 := HeapSeparation.apartBy_sound (fun _ _ hy => (LinkClasses.gen_sound hk.2.2.1 (LinkClasses.mem_cls_closure.mp hy)).symm) hg.2 hk.2.2.2.1 hl hfd hs0 hfd0
               simpa only [List.getElem?_set_ne hne] using hrd
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf

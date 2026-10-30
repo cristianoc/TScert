@@ -813,7 +813,7 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
     (v : Tm) (h' : Heap) : HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) (push v ρ) h' :=
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
 
 /-- Whether a signature's effect keeps the contents of every location a
 call starts with on a normal return: the empty footprint, on the receiver's
@@ -851,7 +851,8 @@ theorem promiseOutput_ordinary {effect : Effect} {k : HeapKnowledge.Knowledge} {
     HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) τ h := by
   unfold promiseOutput at hk
   split at hk
-  · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2⟩
+  · exact ⟨HeapFacts.holds_nil _ _, hk.2.1, HeapLinks.stable_holds hk.2.2.1, hk.2.2.2.1,
+      HeapKnowledge.elemsHolds_nil _ _⟩
   · exact hk
 
 /-- **A call at a promise signature** returns where the promise holds: its
@@ -1126,7 +1127,7 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
       have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
       refine ⟨?_, hshift.2.1, hshift.2.2.1,
-        HeapSeparation.allocate_holds hk.2.2.2 (freshObject_apart he hh hfresh)⟩
+        HeapSeparation.allocate_holds hk.2.2.2.1 (freshObject_apart he hh hfresh), hshift.2.2.2.2⟩
       simpa [freshOutput, HeapExpressionRules.allocOutput, HeapKnowledge.shift] using hshift.1
     · cases hsel
   · contradiction
@@ -1167,7 +1168,7 @@ each cell fact and read link about a field separated from every own location
 of `i`, every alias link, every value fact and the separation. -/
 def ownKept (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   ⟨k.cells.filter (fun f => HeapSeparation.apartAll k.separation i f.slot f.field), k.values,
-    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation⟩
+    k.links.filter (fun g => g.alias || HeapSeparation.apartAll k.separation i g.cell g.field), k.separation, []⟩
 
 def ownOutput (k : HeapKnowledge.Knowledge) (i : Nat) : HeapKnowledge.Knowledge :=
   HeapKnowledge.shift (ownKept k i)
@@ -1193,8 +1194,8 @@ theorem ownKept_holds {k : HeapKnowledge.Knowledge} {i : Nat} {ρ : Env} {h h' :
       unfold Footprints.ownOf Footprints.fieldsOf at hm
       unfold HeapSeparation.At
       split at hm <;> simp_all
-    exact HeapSeparation.apartAll_sound ha hk.2.2.2 hat hs hl rfl
-  refine ⟨?_, hk.2.1, ?_, hk.2.2.2⟩
+    exact HeapSeparation.apartAll_sound ha hk.2.2.2.1 hat hs hl rfl
+  refine ⟨?_, hk.2.1, ?_, hk.2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
   · intro f hf
     obtain ⟨hf, ha⟩ := List.mem_filter.mp hf
     obtain ⟨flds,c,oid,u,hs,hr,hm⟩ := hk.1 f hf
@@ -1258,12 +1259,474 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
     · cases hcond
   · cases hc
 
+/-! ### A call promising its receiver's elements (FOOTPRINTS.md, "The elements fact")
+
+A call keeping the heap whose selected signature promises its receiver's
+elements (`elements R`) returns `true` only where every present element of
+the array its receiver slot holds satisfies `R`: its output keeps every fact
+of its entry and adds that atom, conditional on its result
+(`call-elements`). -/
+
+/-- Whether every value of a type is a Boolean. -/
+def onlyBool (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all fun c => match c with | .boolLit _ => true | _ => false
+
+omit [DecidableEq ι] in
+theorem onlyBool_sound {G : NormalGraph ι} {A : Ty ι} {n W v}
+    (h : onlyBool G A = true) (hv : meaning G A n W v) : v = .tru ∨ v = .fls := by
+  simp only [onlyBool, Bool.and_eq_true] at h
+  rw [expand_sem G A h.1] at hv
+  obtain ⟨c, hc, hv, -⟩ := hv
+  have h := List.all_eq_true.mp h.2 c hc
+  cases c <;> simp_all [PositiveNormalization.semWithArgs]
+
+/-- A safe run whose postcondition holds of each value it returns where the
+value meets the result's type. -/
+theorem post_with_type {Ξ T : Fam} {Q Q' : Post} (hq : ∀ k W h v, T k W v → Q h v → Q' h v) :
+    ∀ {n W h t}, SafePost Ξ T Q n W h t → SafePost Ξ T Q' n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs
+    rcases hs with (⟨hv, ht, hq'⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, ht, hq _ _ _ _ ht hq'⟩)
+    · exact .inl (.inr hth)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
+
+theorem receiverSlot_term {t : Tm} {x : Nat} (h : receiverSlot t = some x) :
+    ∃ f args, t = .invoke f (.var x) args := by
+  unfold receiverSlot at h
+  split at h
+  · cases h; exact ⟨_, _, rfl⟩
+  · cases h
+
+/-- The derivation a step's evidence carries beside its kind, for the kinds
+whose check reads it alone: ordinary, pure, reading and created steps. -/
+def stepProof : HeapExpressionRules.StepEvidence ι → Option (Evidence ι)
+  | .ordinary p | .pure p | .reading p | .created p => some p
+  | _ => none
+
+/-- The receiver slot and predicate of an ordinary step's evidence that
+`call-elements` applies to: at the sequent `j`, its operands values, at a
+selected signature keeping the heap and promising its receiver's elements,
+its derivation checked, its receiver a slot. -/
+@[nospecialize] def elementsCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    Option (Nat × CallEffects.ElemPred) :=
+  match stepProof e with
+  | some p =>
+    if decide (claim p = j) && ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums &&
+        onlyBool G j.type then
+      match ExpressionEffects.selectedEffect p, receiverSlot j.term with
+      | some eff, some x => if keepsHeap eff then eff.elements.map fun R => (x, R) else none
+      | _, _ => none
+    else none
+  | _ => none
+
+/-- The knowledge after a call promising its receiver's elements: every fact
+of the entry, and the atom on the receiver's slot, conditional on the result. -/
+def elementsOutput (k : HeapKnowledge.Knowledge) (x : Nat) (R : CallEffects.ElemPred) : HeapKnowledge.Knowledge :=
+  { HeapKnowledge.shift k with elems := ⟨x + 1, R, some 0, false⟩ :: (HeapKnowledge.shift k).elems }
+
+theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {x : Nat} {R : CallEffects.ElemPred}
+    (hc : elementsCall G images j e codes sums = some (x, R)) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums)
+    {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds (elementsOutput k x R) (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold elementsCall at hc
+  split at hc
+  · rename_i p _
+    by_cases hcond : (decide (claim p = j) && ExpressionEffects.selectedOperands p &&
+        checkTreeUsing G images p codes sums && onlyBool G j.type) = true
+    · rw [if_pos hcond] at hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨rfl, hops⟩, ht⟩, hbool⟩ := hcond
+      cases hsel : ExpressionEffects.selectedEffect p with
+      | none => simp [hsel] at hc
+      | some eff =>
+        cases hrs : receiverSlot (claim p).term with
+        | none => simp [hsel, hrs] at hc
+        | some x' =>
+          simp only [hsel, hrs] at hc
+          by_cases hkeep : keepsHeap eff = true
+          · rw [if_pos hkeep] at hc
+            obtain ⟨R', hR', hpair⟩ := Option.map_eq_some_iff.mp hc
+            simp only [Prod.mk.injEq] at hpair
+            obtain ⟨rfl, rfl⟩ := hpair
+            obtain ⟨f, args, hterm⟩ := receiverSlot_term hrs
+            refine post_with_type (fun m U h' v hT hq => ?_)
+              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh)
+            have hb := onlyBool_sound hbool hT
+            obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
+            have hs := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
+            refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_⟩
+            intro a ha hcond
+            rcases List.mem_cons.mp ha with rfl | ha
+            · have hv : v = .tru := by
+                have ht := hcond 0 rfl
+                simp only [push] at ht
+                rcases hb with rfl | rfl
+                · rfl
+                · simp [tagHolds] at ht
+              have hel := hq.2.2.2 _ hR' hv
+              rw [hterm] at hel
+              simpa [ExpressionEffects.receiverOf, instantiate, push] using hel
+            · exact hs.2.2.2.2 a ha hcond
+          · rw [if_neg hkeep] at hc; cases hc
+    · rw [if_neg hcond] at hc; cases hc
+  · cases hc
+
+/-! ### A call at a precondition on its receiver's elements
+
+A call whose selected signature requires its receiver's elements to satisfy
+`R` is safe where its receiver slot's class has an unconditional atom with a
+predicate within `R`: the atom gives the precondition (`call-requires`). -/
+
+/-- Whether the knowledge states, of a slot's class, that its array's present
+elements satisfy a predicate within `R`. -/
+def atomFor (k : HeapKnowledge.Knowledge) (x : Nat) (R : CallEffects.ElemPred) : Bool :=
+  k.elems.any fun a => a.cond.isNone && (HeapLinks.aliases k.links x).contains a.slot && a.pred.le R
+
+theorem atomFor_sound {k : HeapKnowledge.Knowledge} {x R ρ h} (hc : atomFor k x R = true)
+    (hk : HeapKnowledge.Holds k ρ h) : CallEffects.ElemsAt R (ρ x) h := by
+  obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hc
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, List.contains_iff_mem] at hm
+  obtain ⟨⟨hnone, hal⟩, hle⟩ := hm
+  have hat := hk.2.2.2.2 a ha fun b hb => by rw [hnone] at hb; cases hb
+  rw [HeapLinks.aliases_eq hk.2.2.1 hal] at hat
+  exact hat.mono hle
+
+/-- Whether a derivation is a call `call-requires` applies to: the local call
+rule at a selected signature stating a precondition, its operands values, its
+premises' derivations checked, and the precondition's atom on its receiver
+slot. -/
+@[nospecialize] def requiresApp (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    Evidence ι → Bool
+  | .node j (.app eff) ps =>
+    (ps.all fun p => ExpressionEffects.valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term) &&
+    decide (LocalUsing G images j (.app eff) (ps.map claim) codes (sums := sums) (allowRequires := true)) &&
+    ps.attach.all (fun p => checkTreeUsing G images p.val codes sums) &&
+    match eff.requires, receiverSlot j.term with
+    | some R, some x => atomFor k x R
+    | _, _ => false
+  | _ => false
+
+/-- Such a call, or its subsumption. -/
+@[nospecialize] def requiresTree (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    Evidence ι → Bool
+  | .node j (.sub c) [p] =>
+    decide (LocalUsing G images j (.sub c) [claim p] codes (sums := sums)) && requiresApp G images k codes sums p
+  | p => requiresApp G images k codes sums p
+
+theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) {eff : Effect}
+    (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
+    (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G (claim p).type)
+      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (instantiate 0 ρ (claim p).term) := by
+  obtain ⟨j, r, ps⟩ := p
+  cases r with
+  | app eff' =>
+      simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
+      subst hsel
+      simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
+      simp only [claim] at he ⊢
+      cases hR : eff'.requires with
+      | none => simp [hR] at hreq
+      | some R =>
+        cases hx : receiverSlot j.term with
+        | none => simp [hR, hx] at hreq
+        | some x =>
+          simp only [hR, hx] at hreq
+          obtain ⟨f, args, hterm⟩ := receiverSlot_term hx
+          have hq : eff'.Requires (ExpressionEffects.receiverOf (instantiate 0 ρ j.term)) h := by
+            intro R' hR'
+            rw [hR] at hR'
+            cases hR'
+            rw [hterm]
+            simpa [ExpressionEffects.receiverOf, instantiate] using atomFor_sound hreq hk
+          have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
+            intro p hm
+            obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+            exact checkTreeUsing_sound q (List.all_eq_true.mp ht ⟨q, hq⟩ (List.mem_attach _ _)) hcodes hsums
+          have values : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
+              checkScope p.context.length p.term = true := by
+            intro p hm
+            obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
+            simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
+          exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
+  | _ => simp [requiresApp] at hc
+
+theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) :
+    ∃ eff, ExpressionEffects.selectedEffect p = some eff := by
+  obtain ⟨j, r, ps⟩ := p
+  cases r with
+  | app eff' => exact ⟨_, rfl⟩
+  | _ => simp [requiresApp] at hc
+
+theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (p : Evidence ι) (hc : requiresTree G images k codes sums p = true) :
+    ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
+    HeapKnowledge.Holds k ρ h → WorldAdm W → HeapOk n W h →
+    SafePost (excOf G) (meaning G (claim p).type)
+      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (instantiate 0 ρ (claim p).term) := by
+  by_cases hs : ∃ j c q, p = .node j (.sub c) [q]
+  · obtain ⟨j, c, q, rfl⟩ := hs
+    simp only [requiresTree, Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨hl, hc⟩ := hc
+    obtain ⟨eff, hsel⟩ := requiresApp_selected q hc
+    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh => ?_⟩
+    obtain ⟨hctx, hterm, hsub⟩ := hl
+    have ih := requiresApp_sound hcodes hsums q hc hsel (ρ := ρ) (n := n) (W := W) (h := h)
+      (by rw [hctx]; exact he) hk hw hh
+    rw [hterm] at ih
+    exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) (fun _ _ hp => hp) ih
+  · have happ : requiresApp G images k codes sums p = true := by
+      obtain ⟨j, r, ps⟩ := p
+      cases r <;> try (simpa [requiresTree] using hc)
+      rcases ps with _ | ⟨q, _ | ⟨q', qs⟩⟩
+      · simpa [requiresTree] using hc
+      · exact absurd ⟨j, _, q, rfl⟩ hs
+      · simpa [requiresTree] using hc
+    obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
+    exact ⟨eff, hsel, fun he hk hw hh => requiresApp_sound hcodes hsums p happ hsel he hk hw hh⟩
+
+/-- Whether an ordinary step's evidence is a call `call-requires` applies to. -/
+@[nospecialize] def requiresCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
+    (k : HeapKnowledge.Knowledge) (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) : Bool :=
+  match e with
+  | .ordinary p =>
+    decide (claim p = j) && requiresTree G images k codes sums p
+  | _ => false
+
+/-- The knowledge after a call at a precondition: every fact where its
+signature keeps the heap, else those no call changes. -/
+def requiresOutput (e : HeapExpressionRules.StepEvidence ι) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+  match e with
+  | .ordinary p => match ExpressionEffects.selectedEffect p with
+    | some eff => promiseOutput eff k
+    | none => HeapExpressionRules.ordinaryOutput k
+  | _ => HeapExpressionRules.ordinaryOutput k
+
+theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
+    {k : HeapKnowledge.Knowledge} {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)}
+    (hc : requiresCall G images j k e codes sums = true) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds (requiresOutput e k) (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
+  unfold requiresCall at hc
+  split at hc
+  · rename_i p
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    obtain ⟨rfl, hc⟩ := hc
+    obtain ⟨eff, hsel, hs⟩ := requiresTree_sound hcodes hsums p hc
+    have hs := hs he hk hw hh
+    refine consequence (fun _ _ _ hv => hv) (fun h' v hp => ?_) hs
+    simp only [requiresOutput, hsel]
+    exact promiseOutput_holds hk hp
+  · cases hc
+
+/-! ### A negation of a Boolean slot
+
+`if x then false else true` on the slot `x` steps once, in the heap it starts
+in, to the negation of `x`'s Boolean: an atom conditional on `x`'s
+truthiness holds conditional on the result's falsiness (`not-elements`). -/
+
+/-- The slot a term negates, where it is `if x then false else true`, the
+test of `x` a Boolean's or its truthiness. -/
+def negationOf (j : Sequent ι) : Option Nat :=
+  match j.term with
+  | .ite (.var x) .fls .tru | .ite (.test .truthy (.var x)) .fls .tru =>
+    if x < j.context.length then some x else none
+  | _ => none
+
+theorem negation_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
+    ∀ {n W h}, SafePost Ξ T Q n W h (.ite v .fls .tru) →
+      SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ ((v = .tru ∧ u = .fls) ∨ (v = .fls ∧ u = .tru))) n W h
+        (.ite v .fls .tru) := by
+  intro n W h hs
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · simp [isVal] at hval
+    · cases hr with
+      | iteC hr => exact absurd (raises_not_val hr) (by simp [hv])
+    · refine .inr ⟨U, h', t', hx, hu, step, hh, ?_⟩
+      cases step with
+      | iteC s => exact absurd s (value_no_step hv)
+      | iteT =>
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
+          · exact .inl (.inl ⟨hval, ht, hq, rfl, .inl ⟨rfl, rfl⟩⟩)
+          · exact absurd (raises_not_val hr) (by simp [isVal])
+          · exact absurd step' (value_no_step (by simp [isVal]))
+      | iteF =>
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
+          · exact .inl (.inl ⟨hval, ht, hq, rfl, .inr ⟨rfl, rfl⟩⟩)
+          · exact absurd (raises_not_val hr) (by simp [isVal])
+          · exact absurd step' (value_no_step (by simp [isVal]))
+
+theorem negation_test_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
+    ∀ {n W h}, SafePost Ξ T Q n W h (.ite (.test .truthy v) .fls .tru) →
+      SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧
+        ((tagHolds .truthy v = true ∧ u = .fls) ∨ (tagHolds .truthy v = false ∧ u = .tru))) n W h
+        (.ite (.test .truthy v) .fls .tru) := by
+  intro n W h hs
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · simp [isVal] at hval
+    · cases hr with
+      | iteC hr => cases hr with
+        | testC hr => exact absurd (raises_not_val hr) (by simp [hv])
+    · cases step with
+      | iteC step =>
+        cases step with
+        | testC s => exact absurd s (value_no_step hv)
+        | testV _ =>
+          have hb : isVal (if tagHoldsIn h .truthy v then Tm.tru else .fls) = true := by
+            split <;> rfl
+          have hp : tagHoldsIn h .truthy v = tagHolds .truthy v := tagHoldsIn_of_protoFree (by simp [protoFree])
+          refine .inr ⟨U, h, _, hx, hu, .iteC (.testV hv), hh, ?_⟩
+          refine HeapObservations.weaken (fun h'' u hq => ⟨hq.1, hq.2.1, ?_⟩) (negation_run hb hs)
+          rw [hp] at hq
+          cases ht : tagHolds .truthy v
+          · rw [ht] at hq
+            rcases hq.2.2 with ⟨h1, -⟩ | ⟨-, h2⟩
+            · cases h1
+            · exact .inr ⟨rfl, h2⟩
+          · rw [ht] at hq
+            rcases hq.2.2 with ⟨-, h2⟩ | ⟨h1, -⟩
+            · exact .inl ⟨rfl, h2⟩
+            · cases h1
+
+/-- The atoms on the negated slot's class, restated on the result with the
+opposite condition. -/
+def negatedAtoms (k : HeapKnowledge.Knowledge) (x : Nat) : List HeapKnowledge.ElemAtom :=
+  (k.elems.filter fun a => a.cond.any fun c => (HeapLinks.aliases k.links x).contains c).map fun a =>
+    { a with slot := a.slot + 1, cond := some 0, negated := !a.negated }
+
+theorem negatedAtoms_holds {k : HeapKnowledge.Knowledge} {x : Nat} {ρ h u}
+    (hk : HeapKnowledge.Holds k ρ h)
+    (hu : (tagHolds .truthy (ρ x) = true ∧ u = .fls) ∨ (tagHolds .truthy (ρ x) = false ∧ u = .tru)) :
+    HeapKnowledge.ElemsHolds (negatedAtoms k x) (push u ρ) h := by
+  intro a ha hc
+  obtain ⟨b, hb', rfl⟩ := List.mem_map.mp ha
+  obtain ⟨hbm, hbc⟩ := List.mem_filter.mp hb'
+  have hcu := hc 0 rfl
+  simp only [push] at hcu
+  cases hcb : b.cond with
+  | none => rw [hcb] at hbc; simp at hbc
+  | some c =>
+    rw [hcb] at hbc
+    simp only [Option.any_some, List.contains_iff_mem] at hbc
+    have hrc : ρ c = ρ x := HeapLinks.aliases_eq hk.2.2.1 hbc
+    have := hk.2.2.2.2 b hbm fun c' hc' => by
+      rw [hcb] at hc'; cases hc'
+      rw [hrc]
+      rcases hu with ⟨hx, hu⟩ | ⟨hx, hu⟩
+      · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
+      · rw [hu] at hcu; rw [hx]; cases hn : b.negated <;> simp_all [tagHolds]
+    simpa [push] using this
+
+theorem negation_bool {u v : Tm} (h : (v = .tru ∧ u = .fls) ∨ (v = .fls ∧ u = .tru)) :
+    (tagHolds .truthy v = true ∧ u = .fls) ∨ (tagHolds .truthy v = false ∧ u = .tru) := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · exact .inl ⟨rfl, rfl⟩
+  · exact .inr ⟨rfl, rfl⟩
+
 end
 end Verification.PromiseCalls
 
 namespace Verification.HeapExpressionRules
 open ProgramCertificates PositiveGraphs HeapObservations
 open PositiveCertificates (InstanceImageCheck)
+
+/-- A checker whose steps negating a Boolean slot restate the atoms
+conditional on it with the opposite condition (`PromiseCalls.negationOf`);
+every step is otherwise `base`'s. -/
+@[nospecialize] def Checker.negatingSlots [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    match PromiseCalls.negationOf j with
+    | some x => (base.run j k e codes sums).map fun out =>
+        { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x }
+    | none => base.run j k e codes sums
+  select := fun j k e codes sums =>
+    match PromiseCalls.negationOf j with
+    | some x => (base.select j k e codes sums).map fun out =>
+        { out with elems := out.elems ++ PromiseCalls.negatedAtoms k x }
+    | none => base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i x hx
+      simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+      obtain ⟨out0, hrun, rfl⟩ := hc
+      have hs := base.sound hrun hcodes hsums he hk hw hh
+      have hterm : (j.term = .ite (.var x) .fls .tru ∨ j.term = .ite (.test .truthy (.var x)) .fls .tru) ∧
+          x < j.context.length := by
+        unfold PromiseCalls.negationOf at hx
+        split at hx
+        · rename_i y hy
+          split at hx
+          · cases hx; exact ⟨.inl hy, by assumption⟩
+          · cases hx
+        · rename_i y hy
+          split at hx
+          · cases hx; exact ⟨.inr hy, by assumption⟩
+          · cases hx
+        · cases hx
+      have hxv : isVal (ρ x) = true :=
+        (ProgramTyping.meaning_value (he.2 x _ (List.getElem?_eq_getElem hterm.2))).1
+      have finish : ∀ h' u, HeapKnowledge.Holds out0 (push u ρ) h' ∧ h' = h ∧
+          ((tagHolds .truthy (ρ x) = true ∧ u = .fls) ∨ (tagHolds .truthy (ρ x) = false ∧ u = .tru)) →
+          HeapKnowledge.Holds { out0 with elems := out0.elems ++ PromiseCalls.negatedAtoms k x } (push u ρ) h' := by
+        intro h' u hq
+        obtain ⟨hq, rfl, hu⟩ := hq
+        exact ⟨hq.1, hq.2.1, hq.2.2.1, hq.2.2.2.1, fun a ha hc => by
+          rcases List.mem_append.mp ha with ha | ha
+          · exact hq.2.2.2.2 a ha hc
+          · exact PromiseCalls.negatedAtoms_holds hk hu a ha hc⟩
+      rcases hterm.1 with ht | ht
+      · have hinst : instantiate 0 ρ j.term = .ite (ρ x) .fls .tru := by
+          rw [ht]; simp [instantiate]
+        rw [hinst] at hs ⊢
+        exact HeapObservations.weaken (fun h' u hq =>
+          finish h' u ⟨hq.1, hq.2.1, PromiseCalls.negation_bool hq.2.2⟩) (PromiseCalls.negation_run hxv hs)
+      · have hinst : instantiate 0 ρ j.term = .ite (.test .truthy (ρ x)) .fls .tru := by
+          rw [ht]; simp [instantiate]
+        rw [hinst] at hs ⊢
+        exact HeapObservations.weaken (fun h' u hq => finish h' u hq) (PromiseCalls.negation_test_run hxv hs)
+    · exact base.sound hc hcodes hsums he hk hw hh
+
 
 /-- A checker whose ordinary steps that are calls keeping the heap keep every
 heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
@@ -1323,12 +1786,52 @@ receiver's own locations keep the heap facts separated from them
       exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh
     · exact base.sound hc hcodes hsums he hk hw hh
 
+/-- A checker whose ordinary steps that are calls promising their receiver's
+elements add that atom (`PromiseCalls.elementsCall`); every other step is
+`base`'s. -/
+@[nospecialize] def Checker.elementCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    match PromiseCalls.elementsCall G images j e codes sums with
+    | some (x, R) => pure (PromiseCalls.elementsOutput k x R)
+    | none => base.run j k e codes sums
+  select := fun j k e codes sums =>
+    match PromiseCalls.elementsCall G images j e codes sums with
+    | some (x, R) => pure (PromiseCalls.elementsOutput k x R)
+    | none => base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i x R hel
+      cases hc
+      exact PromiseCalls.elementsCall_sound hel hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh
+
+/-- A checker whose ordinary steps that are calls at a precondition on their
+receiver's elements are checked against the entry's atoms
+(`PromiseCalls.requiresCall`); every other step is `base`'s. -/
+@[nospecialize] def Checker.requiringCalls [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes sums =>
+    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
+    else base.run j k e codes sums
+  select := fun j k e codes sums =>
+    if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
+    else base.select j k e codes sums
+  sound := by
+    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    split at hc
+    · rename_i hreq
+      cases hc
+      exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh
+
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own
 locations keeping the facts separated from them, each keeping its input's
 stable links. -/
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images :=
-  (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.keepingStable
+  (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.keepingStable
 
 end Verification.HeapExpressionRules

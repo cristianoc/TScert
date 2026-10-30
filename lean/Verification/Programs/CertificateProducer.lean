@@ -932,7 +932,9 @@ came from a different context. No execution budget is inspected. -/
           | [.arrs L _] => some (L,Rule.app)
           | [.callable _ _ L _ _] => some (L,Rule.callCallable)
           | _ => none
-        L.findSearch? fun p => do
+        -- A signature promising its receiver's elements first: its call keeps
+        -- more of the heap knowledge than a plain one at the same callback.
+        (L.filter (·.effect.elements.isSome) ++ L.filter (·.effect.elements.isNone)).findSearch? fun p => do
           -- Require every operand before searching the premises. A signature
           -- with more positions than the call writes is usable when each
           -- remaining contract admits `undefined`, the value bound there.
@@ -1468,7 +1470,8 @@ def successors : Continuation → List Target
 @[nospecialize] def edgeKnowledge (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
     HeapKnowledge.Knowledge :=
   match cont with
-  | .effect _ | .branch _ _ => HeapKnowledge.dropResult k
+  | .effect _ => HeapKnowledge.dropResult k
+  | .branch _ _ => HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy k 0 (index == 0))
   | .branchBind _ _ => HeapKnowledge.observeTyped G Γ k 0 (.boolean (index == 0))
   | .tagBind t _ _ => HeapKnowledge.observeTyped G Γ k 0 (.tag t (index == 0))
   | _ => k
@@ -1928,6 +1931,8 @@ Every edge is still checked by the independent consumer. -/
   -- goes on with the others, so the cuts after it are met; a successful
   -- round keeps its evidence.
   let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
+  -- A cut's elements atoms: likewise, those every entering edge carries.
+  let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
   let mut result : Option (Array (Option (NodeEvidence ι))) := none
   let mut failure : Option (Failure ι) := none
   for _ in List.range (min (cuts.length + 1) 4) do
@@ -1945,7 +1950,8 @@ Every edge is still checked by the independent consumer. -/
         if (table.getD l none).isSome || failedAt.getD l false then continue
         let some node := nodes[l]? | throw .claimCount
         let some c := claimed[l]? | throw .claimCount
-        let required := (requirements.lookup l).getD {}
+        let stated := (requirements.lookup l).getD {}
+        let required := { stated with elems := stated.elems ++ (elemSeeds.lookup l).getD [] }
         let mut k := required
         let mut implies : List (PromiseCalls.Implication ι) := (seeds.lookup l).getD []
         -- At the entry and at cuts, the argument slots every edge carries.
@@ -1990,7 +1996,7 @@ Every edge is still checked by the independent consumer. -/
           | none => pure ()
         k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
           HeapLinks.dedup (k.links ++ required.links),
-          HeapSeparation.union k.separation required.separation⟩
+          HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups⟩
         -- A handler target is entered by throws too, which carry no
         -- implication, and the argument slots the throwing nodes carry.
         if handlerTargets.contains l then
@@ -2030,14 +2036,30 @@ Every edge is still checked by the independent consumer. -/
           edgeImplicationsOf G previous source.continuation o, target.mapping)
       let xs := meetImplications G carried c.context.length c.context
       if xs.isEmpty then none else some (l, xs)
+    -- What every edge entering each cut establishes of arrays' elements.
+    let metElems := cuts.filterMap fun l => do
+      if l == start || handlerTargets.contains l then none
+      let c ← claimed[l]?
+      let preds := incoming.getD l []
+      if preds.isEmpty then none
+      let projections ← preds.mapM fun (pred,index,target) => do
+        let previous ← table.getD pred none
+        let source ← nodes[pred]?
+        let o := ControlFlow.outFacts G previous
+        pure (HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type ::
+          (claim previous.expression).context) o source.continuation index) target.mapping c.context.length)
+      let es := (HeapKnowledge.meet projections).elems
+      if es.isEmpty then none else some (l, es)
     if failed.isNone then
       result := some table
       failure := none
       break
     let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
+    let grownElems := metElems.filter fun (l, es) => (elemSeeds.lookup l) != some es
     failure := failed
-    if grown.isEmpty then break
+    if grown.isEmpty && grownElems.isEmpty then break
     seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
+    elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
   if let some e := failure then throw e
   let some table := result | throw .rejected
   table.toList.mapM fun c => match c with

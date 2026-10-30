@@ -28,7 +28,7 @@ import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
-import type { DeclarationIdentity, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, ElementKind, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
@@ -118,6 +118,12 @@ const callback = (value: TypeTerm, result: TypeTerm,
 const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
   callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+/** The predicates `every` and `map` state an elements fact at, each with the
+ * type of the values it admits (`CallEffects.ElemPred`). */
+const elementPredicates: readonly { kind: ElementKind; type: TypeTerm }[] = [
+  { kind: "string", type: atomOf("string") }, { kind: "number", type: atomOf("number") },
+  { kind: "boolean", type: atomOf("boolean") },
+];
 const guarded: TypeTerm = { k: "binder", name: "S", span: at };
 /** A destructive member's: within `{value: any, store: keep}` but for its
  * receiver's store, which it may change arbitrarily. */
@@ -166,6 +172,20 @@ export const overlay: readonly OverlayEntry[] = [
         result: arrayOf(mappedElement, false), effect: { ...footprintEffect(footprint), fresh: true } })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
         result: arrayOf(mappedElement, false, "sparse"), effect: { ...ordinaryEffect, fresh: true } },
+      // At a receiver whose present elements all have the predicate's kind
+      // when the call starts (`requires`), and a callback within the empty
+      // footprint, every element `map` passes has it: the callback changes
+      // no location, so the store and each element keep their contents
+      // between visits (`elems_rely`), and `map` passes only present
+      // elements, skipping a hole and leaving it in its fresh result. So the
+      // callback is called at the predicate's type; the result's presence
+      // is the receiver's.
+      ...elementPredicates.flatMap(({ kind, type }) => [
+        { receiver: arrayOf(element, true, "dense"), params: [callback(type, mappedElement, emptyEffect)],
+          result: arrayOf(mappedElement, false), effect: { ...emptyEffect, fresh: true, requires: [kind] } },
+        { params: [callback(type, mappedElement, emptyEffect)],
+          result: arrayOf(mappedElement, false, "sparse"), effect: { ...emptyEffect, fresh: true, requires: [kind] } },
+      ]),
     ] },
   // `flatMap` calls the callback at each position still present when
   // visited, below the length read before the first call, and appends the
@@ -201,10 +221,21 @@ export const overlay: readonly OverlayEntry[] = [
   // construction), whose store its result is: it runs no other client code
   // and writes no existing location. So at a callback within a footprint the
   // member is: a signature per closed footprint; `thisArg` is not stated.
+  // At a guard within the empty footprint promising a predicate's type,
+  // `every` visits every element present when it is called, each keeping
+  // its contents until it returns, and answers `true` only where the guard
+  // answered `true` of each: a guard's answer is a Boolean, which `every`'s
+  // test reads as itself. So a `true` result leaves every present element
+  // of the receiver of the guard's type (`elements`, `native-guard-every`).
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
-      result: atomOf("boolean") })) },
+    stated: [
+      ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+        result: atomOf("boolean") })),
+      ...elementPredicates.map(({ kind, type }) => ({
+        params: [callback(element, type, { ...emptyEffect, promise: { guards: { param: 0 } } })],
+        result: atomOf("boolean"), effect: { ...emptyEffect, elements: [kind] } })),
+    ] },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],

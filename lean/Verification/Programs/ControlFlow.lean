@@ -559,7 +559,7 @@ theorem handlerFacts_holds {k ρ h} (hk : HeapKnowledge.Holds k ρ h) (v : Tm) (
     HeapKnowledge.Holds (handlerFacts k) (push v ρ) h' :=
   ⟨HeapFacts.holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
-    (HeapKnowledge.shift_holds (v := v) hk).2.2.2⟩
+    (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _⟩
 
 /-- A node's handler, when it has one, is a checked target for the thrown
 value at a type admitting every value, under the facts that survive a throw. -/
@@ -614,9 +614,9 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
   | .branch y n, [py,pn] =>
       (CheckResult.ofBool (decide (expand G (result c) = [.bool]))).bind fun _ =>
       (checkTargetResult G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult o).links (yieldFacts c.yields true) 0) 0) y py
-        (HeapKnowledge.dropResult o) c.implies c.arguments).bind fun _ =>
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy o 0 true)) c.implies c.arguments).bind fun _ =>
       checkTargetResult G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult o).links (yieldFacts c.yields false) 0) 0) n pn
-        (HeapKnowledge.dropResult o) c.implies c.arguments
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy o 0 false)) c.implies c.arguments
   | .branchBind y n, [py,pn] =>
       (CheckResult.ofBool (onlyBoolean G (result c))).bind fun _ =>
       (checkBranchTargetResult G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts o.links (yieldFacts c.yields true) 1) 0)
@@ -663,9 +663,9 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       l p (HeapKnowledge.dropResult (outFacts G c)) c.implies c.arguments
   | .branch y n, [py,pn] => decide (expand G (result c) = [.bool]) &&
       checkTargetUsing G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult (outFacts G c)).links (yieldFacts c.yields true) 0) 0) y py
-        (HeapKnowledge.dropResult (outFacts G c)) c.implies c.arguments &&
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy (outFacts G c) 0 true)) c.implies c.arguments &&
       checkTargetUsing G images P C (refineBy G (entry c) (PromiseCalls.aliasFacts (HeapKnowledge.dropResult (outFacts G c)).links (yieldFacts c.yields false) 0) 0) n pn
-        (HeapKnowledge.dropResult (outFacts G c)) c.implies c.arguments
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy (outFacts G c) 0 false)) c.implies c.arguments
   | .branchBind y n, [py,pn] => onlyBoolean G (result c) &&
       checkBranchTargetUsing G images P C (refineBy G (result c :: entry c) (PromiseCalls.aliasFacts (outFacts G c).links (yieldFacts c.yields true) 1) 0)
         (.boolean true) y py (outFacts G c) (edgeImplications c.implies c.yields true)
@@ -838,9 +838,9 @@ def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Ce
       (HeapKnowledge.dropResult facts) xs arg
   | .branch y n => Represents G A .bool ∧
       TargetOk G C (refineBy G Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys true) 0) 0) y
-        (HeapKnowledge.dropResult facts) xs arg ∧
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy facts 0 true)) xs arg ∧
       TargetOk G C (refineBy G Γ (PromiseCalls.aliasFacts (HeapKnowledge.dropResult facts).links (yieldFacts ys false) 0) 0) n
-        (HeapKnowledge.dropResult facts) xs arg
+        (HeapKnowledge.dropResult (HeapKnowledge.promoteTruthy facts 0 false)) xs arg
   | .branchBind y n => onlyBoolean G A = true ∧
       BranchTargetOk G C (refineBy G (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys true) 1) 0) (.boolean true) y facts
         (edgeImplications xs ys true) (pushedSources arg aliased) ∧
@@ -1216,12 +1216,14 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
             (target_state hk.2.1 ((refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha
+              (HeapKnowledge.dropResult_holds (HeapKnowledge.promoteTruthy_holds hf rfl))
               (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
                 (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
         · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
             (target_state hk.2.2 ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
+              (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha
+              (HeapKnowledge.dropResult_holds (HeapKnowledge.promoteTruthy_holds hf rfl))
               (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
                 (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
       | branchBind y no =>

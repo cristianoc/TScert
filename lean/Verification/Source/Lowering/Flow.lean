@@ -315,7 +315,7 @@ reference representation. Every such action is recorded as an opaque region. -/
   let separation := separationFacts (SourceTypes.graph (← table)) scope Γ
   let links ← witnessLinks Γ fc node.source.1 scope
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty then
-    recordAssertion reserved ⟨facts, [], links, separation⟩
+    recordAssertion reserved ⟨facts, [], links, separation, []⟩
   recordCut reserved
   return ← jumpTo incoming reserved scope
 

@@ -39,13 +39,15 @@ let unsupported s = fail ("unsupported: " ^ s)
    obligations when a qualified signature is proposed. *)
 let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"
 let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
+let kinds_json = function None -> Null | Some ks -> Array (List.map (fun k -> String k) ks)
 let effect_json e = Object ["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
     | Some (Guards param) -> Object ["guards",Object ["param",int param]]
     | Some (Asserts param) -> Object ["asserts",Object ["param",int param]]);
   "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store;"onThrow",Bool e.on_throw;
-  "receiverOwn",Bool e.receiver_own;"freshObject",Bool e.fresh_object]
+  "receiverOwn",Bool e.receiver_own;"freshObject",Bool e.fresh_object;
+  "requires",kinds_json e.requires;"elements",kinds_json e.elements]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]

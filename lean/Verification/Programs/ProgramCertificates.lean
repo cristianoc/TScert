@@ -847,7 +847,7 @@ declared bounds. -/
     (codes : CodeEntry ι → Bool := fun _ => false)
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool :=
       PositiveCertificates.checkUsing G images)
-    (sums : List (ReadSummary ι) := []) : Prop :=
+    (sums : List (ReadSummary ι) := []) (allowRequires : Bool := false) : Prop :=
   match r with
   | .var =>
     match j.term, ps with
@@ -960,7 +960,8 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L ∧ effect.plain = true
+      | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L ∧
+          effect.promise = none ∧ (allowRequires = true ∨ effect.requires = none)
       | _ => False
     | _, _ => False
   | .letE =>
@@ -1367,8 +1368,8 @@ instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.In
     (j : Sequent ι) (r : Rule ι) (ps)
     (codes : CodeEntry ι → Bool)
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool)
-    (sums : List (ReadSummary ι)) :
-    Decidable (LocalUsing G images j r ps codes subtype sums) := by
+    (sums : List (ReadSummary ι)) (allowRequires : Bool) :
+    Decidable (LocalUsing G images j r ps codes subtype sums allowRequires) := by
   unfold LocalUsing
   split <;> (try split) <;> try infer_instance
   all_goals try dsimp [Represents, Answers]
@@ -1913,7 +1914,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rw [← List.map_append, List.take_append_drop]
       have h := HasTyUsing.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
-        (by rw [hsplit]; exact hL.1) hrt ha hu hL.2
+        (by rw [hsplit]; exact hL.1) hrt ha hu (CallEffects.Effect.plain_of hL.2.1 (hL.2.2.resolve_left (by simp)))
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a b ja jb

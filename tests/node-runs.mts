@@ -634,6 +634,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     assert.equal(runExample("negated-disjunction-test", call), expected, `negated-disjunction-test: ${call}`);
   assert.equal(runExample("invalid-map-unstable-pop","Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
+  // The elements fact: a callback or a guard beyond the empty footprint
+  // writes null where the test passed, and map's callback is handed it.
+  assert.throws(() => runExample("invalid-every-elements-callback-call",
+    'shout(["a", "b"], (ys) => { ys[1] = null; })'), /Cannot read properties of null/,
+    "invalid-every-elements-callback-call: the second visit reads null");
+  assert.throws(() => runExample("invalid-every-elements-guard-call",
+    '(() => { let n = 0; return shout(["a", "b"], (ys) => { if (++n === 2) ys[0] = null; }); })()'),
+    /Cannot read properties of null/, "invalid-every-elements-guard-call: map's first visit reads null");
+  assert.throws(() => runExample("invalid-every-elements-escape",
+    '(() => { const a = ["a"]; const v = view(a); a.push(null); return v[1].length; })()'),
+    /Cannot read properties of null/, "invalid-every-elements-escape: the view reads the pushed null");
+  assert.equal(runExample("every-elements-sparse", "Object.keys(marks([\"a\", , \"b\"])).join(\",\")"), "0,2",
+    "every-elements-sparse: the result keeps the receiver's hole");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "map-unstable-pop-sparse: the result has three positions, two present");
   assert.equal(runExample("invalid-map-optional-pop", "Object.keys(drained([1, 2, 3], undefined)).length"), 2,

@@ -21,12 +21,16 @@ let promise_of = function
   | _ -> unsupported "unknown callable promise"
 let effect_of j = match j with
   | Object fields when List.sort String.compare (List.map fst fields) =
-      ["footprint";"fresh";"freshObject";"onThrow";"promise";"receiverOwn";"receiverStore"] ->
+      ["elements";"footprint";"fresh";"freshObject";"onThrow";"promise";"receiverOwn";"receiverStore";"requires"] ->
+    let kinds k = match field k j with
+      | Null -> None
+      | Array ks -> Some (List.map str ks)
+      | _ -> unsupported "invalid elements predicate" in
     {footprint=footprint_of (field "footprint" j);
      promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
      fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j);
      on_throw=boolean (field "onThrow" j); receiver_own=boolean (field "receiverOwn" j);
-     fresh_object=boolean (field "freshObject" j)}
+     fresh_object=boolean (field "freshObject" j); requires=kinds "requires"; elements=kinds "elements"}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None

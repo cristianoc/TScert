@@ -469,4 +469,31 @@ theorem map_rely {x n : Nat} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footpri
   rely_chain (F := .dense x n) H Φ (fun _ => denseK x) (fun _ => id) m
     (fun i hi => ⟨(hstep i hi).1, denseCheck_stable (hstep i hi).2, denseK_holds⟩) h0
 
+/-- No separation knowledge: what the elements fact's check needs, its
+support kept by every footprint it is checked under. -/
+def noSep : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+
+theorem noSep_holds (ρ : Env) (h : Heap) : noSep.Holds id ρ h :=
+  ⟨fun _ _ _ _ h => by simp [noSep] at h, ⟨fun _ _ h => by simp [noSep] at h, fun _ _ h => by simp [noSep] at h⟩,
+    fun _ _ h => h, fun _ h => by simp [noSep] at h⟩
+
+/-- **The stable set for the elements fact**: a footprint keeping every
+location it names, the empty footprint among them, passes the stability
+check for it. -/
+theorem elemsCheck_stable {x : Nat} {R : CallEffects.ElemPred} {Φ : Footprint}
+    (hc : Φ.all (·.2 == .keep) = true) : stable noSep (FactKind.elems x R).support Φ = true := by
+  simp only [stable, FactKind.support, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true,
+    List.all_eq_true]
+  have hk : ∀ f ∈ Φ, f.2 = .keep := fun f hf => by simpa using List.all_eq_true.mp hc f hf
+  exact ⟨fun f hf => by simp [hk f hf, Change.le], fun f hf => by simp [hk f hf, Change.le]⟩
+
+/-- **`map`'s rely on the elements fact.** If the receiver's present elements
+satisfy `R` at entry, and every step until the last visit keeps every
+location it names, they satisfy `R` at every visit. -/
+theorem elems_rely {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} (H : Nat → Heap) (Φ : Nat → Footprint)
+    (m : Nat) (hstep : ∀ i, i < m → Post (Φ i) ρ (H i) (H (i + 1)) ∧ (Φ i).all (·.2 == .keep) = true)
+    (h0 : CallEffects.ElemsAt R (ρ x) (H 0)) : ∀ i, i ≤ m → CallEffects.ElemsAt R (ρ x) (H i) :=
+  rely_chain (F := .elems x R) H Φ (fun _ => noSep) (fun _ => id) m
+    (fun i hi => ⟨(hstep i hi).1, elemsCheck_stable (hstep i hi).2, fun _ => noSep_holds ρ (H i)⟩) h0
+
 end Verification.Footprints

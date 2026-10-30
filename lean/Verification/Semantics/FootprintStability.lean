@@ -27,18 +27,50 @@ inductive FactKind where
   | value (f : HeapFacts.Fact)
   /-- The first `n` indices of `x`'s store are present. -/
   | dense (x n : Nat)
+  /-- Every present element of `x`'s store satisfies `R` (`CallEffects.ElemsAt`). -/
+  | elems (x : Nat) (R : CallEffects.ElemPred)
 
 def FactKind.Holds : FactKind → Env → Heap → Prop
   | .cell f, ρ, h => HeapFacts.Holds [f] ρ h
   | .link g, ρ, h => HeapLinks.Holds [g] ρ h
   | .value f, ρ, _ => f.contents.mem (ρ f.slot) = true
   | .dense x n, ρ, h => Dense x n ρ h
+  | .elems x R, ρ, h => CallEffects.ElemsAt R (ρ x) h
 
 def FactKind.support : FactKind → Footprint
   | .cell f => [(.field f.slot f.field, .keep)]
   | .link g => if g.alias then [] else [(.field g.cell g.field, .keep)]
   | .value _ => []
   | .dense x _ => [(.field x arrayStoreKey, .grow)]
+  | .elems x _ => [(.field x arrayStoreKey, .keep), (.elems x, .keep)]
+
+/-- The elements fact survives every change keeping its store's location and
+each element location the store lists. -/
+theorem elems_support {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} {h h' : Heap}
+    (hF : CallEffects.ElemsAt R (ρ x) h)
+    (hs : Supported [(.field x arrayStoreKey, .keep), (.elems x, .keep)] ρ h h') :
+    CallEffects.ElemsAt R (ρ x) h' := by
+  obtain ⟨s, ls, hst, hl, hall⟩ := hF
+  have hkeep : ∀ e ∈ [((Region.field x arrayStoreKey), Change.keep), (Region.elems x, Change.keep)],
+      ∀ l v, e.1.mem ρ h l = true → h[l]? = some v → h'[l]? = some v := by
+    intro e he l v hm hv
+    obtain ⟨v', hv', hk⟩ := hs e he l v hm hv
+    have hk' : e.2 = .keep := by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with rfl | rfl <;> rfl
+    rw [hk'] at hk
+    simp only [Change.Holds] at hk
+    rw [← hk]; exact hv'
+  have hfield : (Region.field x arrayStoreKey).mem ρ h s = true := by
+    simp [Region.mem, Footprints.storeOf] at hst ⊢; exact hst
+  have hstore : storeElems h (ρ x) = ls := by
+    simp only [Footprints.storeOf] at hst
+    simp [storeElems, hst, hl]
+  refine ⟨s, ls, hst, hkeep _ (List.mem_cons_self ..) s _ hfield hl, fun l hm => ?_⟩
+  obtain ⟨v, hv, hr⟩ := hall l hm
+  have hel : (Region.elems x).mem ρ h l = true := by
+    simp only [Region.mem, hstore, List.contains_iff_mem]; exact hm
+  exact ⟨v, hkeep (Region.elems x, .keep) (by simp) l v hel hv, hr⟩
 
 /-- A field's contents are unchanged where the support keeps them. -/
 theorem readGave_support {flds : List (PropKey × Nat)} {k : PropKey} {h h' : Heap} {v : Val}
@@ -61,6 +93,7 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
   cases F with
   | value f => exact hF
   | dense x n => exact dense_support hF hs
+  | elems x R => exact elems_support hF hs
   | cell f =>
     intro f' hf'
     simp only [List.mem_singleton] at hf'

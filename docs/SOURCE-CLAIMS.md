@@ -217,7 +217,8 @@ primitive table above, so the receiver accepts any value. Its claim is:
 
 ```json
 {"scheme": {
-  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null, "fresh": false, "receiverStore": false, "onThrow": false},
+  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null, "fresh": false, "receiverStore": false, "onThrow": false,
+    "receiverOwn": false, "freshObject": false, "requires": null, "elements": null},
   "typeParams": [{"name":"T","bound":null,"resolution":null}],
   "this": [4], "params": [{"param":"T"}],
   "rest": null, "result": {"param":"T"}
@@ -231,7 +232,8 @@ makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
-The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o}`. The footprint `f` is a
+The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
+"freshObject": j, "requires": q, "elements": e}`. The footprint `f` is a
 [closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
 with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
 normal return, the locations of the entry heap holding a value change at most
@@ -244,7 +246,15 @@ allocated; `receiverStore` that the footprint bounds every location but the
 receiver's array store, which the call may change arbitrarily
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
 `onThrow` that the footprint also bounds the heap a throw leaves
-([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
+([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints));
+`receiverOwn` that it bounds every location but the receiver's own and
+`freshObject` that a normal return's value is an object the call allocated
+([a call changing only its receiver](PROGRAM-TYPING.md#a-call-changing-only-its-receiver)).
+`requires` and `elements` are `null` or a list of the kinds
+`"null"`, `"undefined"`, `"boolean"`, `"number"`, `"string"`, `"bigint"`,
+`"symbol"` and `"object"`, each at most once and in this order: a predicate the
+receiver's present elements meet where the call starts, and one they meet
+where it returns `true` ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:

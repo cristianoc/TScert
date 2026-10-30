@@ -182,6 +182,15 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     allocBuiltinsUsing_reassign]
   rfl
 
+theorem LocalRequires_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) (allow : Bool) :
+    LocalUsing (reassign G η) (images.reassign η) j r ps codes (sums := sums) (allowRequires := allow) =
+      LocalUsing G images j r ps codes (sums := sums) (allowRequires := allow) := by
+  unfold LocalUsing MemberProofsUsing
+  simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
+    allocBuiltinsUsing_reassign]
+  rfl
+
 /-- A body's explicit subsumption procedure is held fixed while its
 semantic assignment changes. Its soundness is supplied at that assignment. -/
 theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
@@ -479,12 +488,84 @@ theorem allocatingCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowl
   · rfl
   · exact keepingOwnCalls_value_reassign G η images j k e codes sums
 
+theorem elementsCall_reassign (j : Sequent ι) (e : StepEvidence ι) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) :
+    PromiseCalls.elementsCall (reassign G η) (images.reassign η) j e codes sums =
+      PromiseCalls.elementsCall G images j e codes sums := by
+  unfold PromiseCalls.elementsCall
+  split
+  · rename_i p _
+    rw [checkTree_reassign G η images p codes sums]
+    rfl
+  · rfl
+
+theorem requiresApp_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (p : ProgramCertificates.Evidence ι) :
+    PromiseCalls.requiresApp (reassign G η) (images.reassign η) k codes sums p =
+      PromiseCalls.requiresApp G images k codes sums p := by
+  unfold PromiseCalls.requiresApp
+  split
+  · simp only [LocalRequires_reassign, checkTree_reassign]
+  · rfl
+
+theorem requiresTree_reassign (k : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (p : ProgramCertificates.Evidence ι) :
+    PromiseCalls.requiresTree (reassign G η) (images.reassign η) k codes sums p =
+      PromiseCalls.requiresTree G images k codes sums p := by
+  unfold PromiseCalls.requiresTree
+  split
+  · simp only [Local_reassign, requiresApp_reassign]
+  · exact requiresApp_reassign G η images k codes sums _
+
+theorem requiresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    PromiseCalls.requiresCall (reassign G η) (images.reassign η) j k e codes sums =
+      PromiseCalls.requiresCall G images j k e codes sums := by
+  unfold PromiseCalls.requiresCall
+  split
+  · rename_i p
+    rw [requiresTree_reassign]
+  · rfl
+
+theorem requiringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.run j k e codes sums).value := by
+  simp only [Checker.requiringCalls, requiresCall_reassign]
+  split
+  · rfl
+  · exact allocatingCalls_value_reassign G η images j k e codes sums
+
+theorem elementCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.run
+        j k e codes sums).value := by
+  simp only [Checker.elementCalls, elementsCall_reassign]
+  split
+  · rfl
+  · exact requiringCalls_value_reassign G η images j k e codes sums
+
+theorem negatingSlots_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.run
+        j k e codes sums).value =
+      ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.negatingSlots.run
+        j k e codes sums).value := by
+  simp only [Checker.negatingSlots]
+  split
+  · simp only [CheckResult.map]
+    rw [elementCalls_value_reassign]
+  · exact elementCalls_value_reassign G η images j k e codes sums
+
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
     checkNodeUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing (sums := sums) G images Rty P C node c codes := by
   simp only [checkNodeUsing_eq, Checker.ordinary, Checker.keepingStable, CheckResult.map,
-    withStable_reassign, checkHandler_reassign, allocatingCalls_value_reassign, checkTarget_reassign,
+    withStable_reassign, checkHandler_reassign, negatingSlots_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 

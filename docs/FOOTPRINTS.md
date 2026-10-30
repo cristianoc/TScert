@@ -344,6 +344,96 @@ is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
 required position, through search and checking, and refuse it at an
 optional one.
 
+## The elements fact
+
+A second instance of the mechanism. `xs.every(g)` at a guard `g` promising
+`string` answers `true` only where every present element of `xs` is a
+string, and `xs.map(f)` relies on that between its callbacks as it relies
+on density, so `f` may take its parameter at `string`
+(`blocker-every-promise`, `every-elements-map-join`).
+
+**The fact.** $`\mathrm{elems}(x,R)`$ says that the array slot $`x`$ holds
+has a store, and that every element location the store lists holds a value
+whose kind is in $`R`$, a set of the kinds null, undefined, boolean, number,
+string, bigint, symbol and object (`CallEffects.ElemsAt`,
+`CallEffects.ElemPred`):
+
+```math
+\mathrm{elems}(x,R)(\rho,h)\iff\exists\,\ell\ ls.\ \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land\forall l.\ \mathsf{some}\,l\in ls\Rightarrow\exists v.\ h[l]=v\land v\in R
+```
+
+A hole lists no location, so the fact is about present elements; the store
+exists, so a heap extension keeps it (proved: `HeapKnowledge.elemsAt_extend`).
+It is a fact kind of the stability check (`FactKind.elems`), its support the
+store's location and the element locations, each kept (proved:
+`elems_support`); a footprint keeping every location passes the check
+(`elemsCheck_stable`), so the fact holds at every visit of a native whose
+steps and callbacks keep the heap (proved: `elems_rely`, from `rely_chain`).
+$`R`$ reads no world, so the fact is an atom of heap knowledge, compared along
+edges and kept or dropped by the knowledge rules.
+
+**The signatures' two parts.** A call signature's effect states two more
+optional predicates about its receiver, as `receiverStore` and `receiverOwn`
+are about it: `requires R`, a precondition, $`\mathrm{elems}(r,R)`$ in the
+heap the call starts in; and `elements R`, a promise, $`\mathrm{elems}(r,R)`$
+in the heap a normal return of `true` leaves (`Effect.requires`,
+`Effect.elements`, in `PromiseWith` and `Effect.post`). One signature covers
+another where its precondition is weaker and its promise stronger
+(`Effect.covers`, proved: `covers_sound`); two signatures of one call combine
+only where both state the same parts (`PromiseWith.combine`); an ordinary
+arrow erases only a signature without a precondition (`Effect.plain`,
+`PromiseWith.erase`); binding keeps neither part (`Effect.keeps`), since a
+bound call does not pass the receiver the parts are about; graph code stating
+either is refused (`effectChecked`). `Array.prototype`'s members are invoked
+with the array as their receiver (`xs.every(g)` reads the member and calls it
+with `xs`), so the parts are about the array.
+
+**The natives.** The overlay states, for each predicate of the fixed set
+{`string`, `number`, `boolean`}, `every` at a guard within the empty
+footprint promising the predicate's type, with the elements promise, and
+`map` at a callback within the empty footprint taking the predicate's type,
+with the precondition, at a dense receiver with a dense result and at any
+receiver with a result that may hold holes (`native-guard-every`,
+`native-map-elems`, audited rows of
+[native footprints](SOURCE-CONTRACTS.md#native-footprints)):
+
+```math
+\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} R\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{every}(f):\mathsf{boolean}\,[\mathsf{true}\Rightarrow\mathrm{elems}(\mathit{xs},R)]\;!\;\emptyset}\ \textsf{native-guard-every}
+\qquad
+\frac{\mathit{xs}:\mathsf{ReadonlyArray}^{\pi}(T)\qquad\mathrm{elems}(\mathit{xs},R)\qquad f:(R,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset} U}
+     {\mathit{xs}.\mathsf{map}(f):\mathsf{Array}^{\pi}(U)\;!\;\emptyset}\ \textsf{native-map-elems}
+```
+
+where $`\pi`$ is `dense` for the dense signature and `sparse` for the other.
+
+**The rules.** A call keeping the heap at a signature promising its
+receiver's elements, its result a Boolean, adds the atom on its receiver's
+slot conditional on the result's truthiness (`call-elements`, proved:
+`PromiseCalls.elementsCall_sound`). A truthiness or Boolean answer on a
+branch's edge makes an atom conditional on the tested slot's class
+unconditional (`HeapKnowledge.observe`, `ControlFlow` on `.branch` edges,
+proved: `promoteTruthy_holds`, `observeBoolean_holds`). A negation
+`if x then false else true` restates the atoms conditional on `x` on its
+result with the opposite answer (`not-elements`, proved:
+`Checker.negatingSlots`'s soundness, from `negation_run` and
+`negation_test_run`). A call at a signature stating `requires R` is accepted
+where its receiver slot's class has an unconditional atom with a predicate
+within $`R`$ (`call-requires`, proved: `requiresTree_sound`, through
+`call_local_sound` with the precondition); a write, a call beyond the empty
+footprint and a throw drop every atom, as they drop every heap fact. The
+search carries the atoms along edges, meets them at merges and seeds a cut
+with the atoms every entering edge carries; Lean checks every edge.
+
+**Cases.** Positive: `blocker-every-promise`, `every-elements-map-join`,
+`every-elements-number`, `every-elements-sparse` (a receiver admitting
+holes, its result keeping them, run under Node). Negative, each run under Node: `invalid-every-elements-callback-call` and
+`invalid-every-elements-guard-call` (a callback or a guard beyond the empty
+footprint) and `invalid-every-elements-escape` (the fact gives the array no
+type). Forged controls in `pipeline/test.mts`: the declarations without the
+elements promise or at another predicate, a guard closure's claim stating
+either part, and the atom forged unconditional in the evidence.
+
 ## The rule users see
 
 > `xs.map(f)` has type `U[]` with no holes when `xs` has none and `f`, with

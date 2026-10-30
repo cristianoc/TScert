@@ -509,7 +509,8 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hscope : ProgramCertificates.checkScope (entry c).length t = true)
     (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
-        ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
+        (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+          PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
         selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
@@ -554,8 +555,18 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       · rename_i eff heff
         simp only [Bool.and_eq_true] at hsel
         obtain ⟨hle, hr⟩ := hsel
-        have hs := ExpressionEffects.selected_sound c.expression htree hops heff
-          (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using henv) hworld hheap
+        have hs : HeapObservations.SafePost (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
+            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+            j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
+          simp only [Bool.or_eq_true] at htree
+          rcases htree with htree | htree
+          · exact ExpressionEffects.selected_sound c.expression htree hops heff
+              (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using henv) hworld hheap
+          · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound (ProgramCertificates.codesSound_none _) hsums
+              c.expression htree
+            rw [heff] at heff'
+            cases heff'
+            exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap
         rw [hterm'] at hs
         apply HeapObservations.weaken (fun h'' v hq => ?_) hs
         split at hr
@@ -663,7 +674,8 @@ theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : In
     (hscope : ProgramCertificates.checkScope (entry c).length t = true)
     (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
       (decide ((ProgramCertificates.claim c.expression).term = t) &&
-        ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
+        (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+          PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
         selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hthrows : thr = true → throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
@@ -745,7 +757,8 @@ the independent operational rule, which also covers their handlers. -/
     ((ExpressionEffects.check G (entry c) node.expression ||
       ExpressionEffects.writeWithin G (entry c) Φ node.expression) ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
-        ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) &&
+        (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+          PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
         selectedWithinAt Φ F c.expression) ||
       -- A node typed at a type no value has never returns normally.
       ExpressionEffects.emptyType G (result c))) || unreachableEntry G c
@@ -762,7 +775,9 @@ the independent operational rule, which also covers their handlers. -/
     ((ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
       ExpressionEffects.writeWithin G (entry c) Φ node.expression)).orElse fun _ =>
     (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
-    (ProgramCertificates.checkTreeResult G images c.expression (sums := sums)).bind fun _ =>
+    ((ProgramCertificates.checkTreeResult G images c.expression (sums := sums)).orElse fun _ =>
+      ProgramCertificates.CheckResult.ofBool
+        (PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression)).bind fun _ =>
     ProgramCertificates.CheckResult.ofBool (selectedWithinAt Φ F c.expression)).orElse fun _ =>
     ProgramCertificates.CheckResult.ofBool (ExpressionEffects.emptyType G (result c))).orElse fun _ =>
   ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)
@@ -809,13 +824,16 @@ theorem inferFresh_reassign [DecidableEq ι] (G : NormalGraph ι) (images : Inst
   simp only [inferFresh, callFresh, Parametricity.checkTree_reassign]
   rfl
 
+theorem entryFacts_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (c : NodeEvidence ι) :
+    entryFacts (reassign G η) c = entryFacts G c := rfl
+
 @[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι)) (η : MixedAssignment ι) (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat)
     (P : Program) (C : Certificate ι) :
     compositionalChecked (reassign G η) (images.reassign η) sums Φ ret exc start P C =
       compositionalChecked G images sums Φ ret exc start P C := by
   simp only [compositionalChecked_eq, inferFresh_reassign, nodeChecked, callFresh, throwsWithin,
-    Parametricity.checkTree_reassign]
+    Parametricity.checkTree_reassign, entryFacts_reassign, Parametricity.requiresTree_reassign]
   rfl
 
 /-- The node checks give the premise the bounded run reads. -/

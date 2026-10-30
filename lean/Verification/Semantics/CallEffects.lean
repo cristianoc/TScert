@@ -38,7 +38,7 @@ structure ElemPred where
   big : Bool := false
   sym : Bool := false
   obj : Bool := false
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 def ElemPred.mem (R : ElemPred) : Tm → Bool
   | .nul => R.nul
@@ -298,9 +298,9 @@ theorem Effect.within_top {e : Effect} {r : Tm} {before after : Heap}
   simp [Effect.post, Effect.within, Effect.ofFootprint]
 
 /-- Whether the signature's result operand is the result's type and it
-states no precondition or elements promise: a signature's an ordinary arrow
-can stand for once its footprint is forgotten. -/
-def Effect.plain (e : Effect) : Bool := e.promise.isNone && e.requires.isNone && e.elements.isNone
+states no precondition: a signature an ordinary arrow can stand for once its
+postcondition, an elements promise included, is forgotten. -/
+def Effect.plain (e : Effect) : Bool := e.promise.isNone && e.requires.isNone
 
 /-- Whether a signature states no precondition and no elements promise, the
 two parts of a guarantee about its receiver's elements. -/
@@ -333,12 +333,12 @@ theorem Effect.result_none {e : Effect} (h : e.promise = none) (R : Fam) (a : Tm
     (Effect.ofFootprint c).result R a = R := rfl
 
 theorem Effect.result_plain {e : Effect} (h : e.plain = true) (R : Fam) (a : Tm) : e.result R a = R :=
-  Effect.result_none (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.1) R a
+  Effect.result_none (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1) R a
+
+theorem Effect.plain_of {e : Effect} (hp : e.promise = none) (hr : e.requires = none) : e.plain = true := by
+  simp [Effect.plain, hp, hr]
 
 theorem Effect.plain_requires {e : Effect} (h : e.plain = true) : e.requires = none := by
-  simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.2
-
-theorem Effect.plain_elements {e : Effect} (h : e.plain = true) : e.elements = none := by
   simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.2
 
 theorem Effect.result_mono (e : Effect) {R T : Fam} {a : Tm} {k W u}

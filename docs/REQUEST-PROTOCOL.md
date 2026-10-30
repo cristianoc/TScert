@@ -232,7 +232,8 @@ records in graph rows, scheme rows, code entries and subtype certificates;
 a code entry must discharge both safety and its effect
 ([the definition rules](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 
-The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o}`:
+The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
+"freshObject": j, "requires": q, "elements": e}`:
 
 - `f`, a [closed footprint](FOOTPRINTS.md#changes-and-footprints)
   `{"value": v, "store": s}`, `v` one of `"keep"` and `"any"`, `s` one of
@@ -240,9 +241,13 @@ The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "o
 - `p`, `null`, `{"guards":{"param":i}}` or `{"asserts":{"param":i}}`, the
   last two with the promise's type as the result
   ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
-- `b`, `c` and `o`, Booleans: a fresh result, the receiver's store excepted
-  from the footprint, and the footprint stated on a throw too
-  ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
+- `b`, `c`, `o`, `w` and `j`, Booleans: a fresh result, the receiver's store
+  excepted from the footprint, the footprint stated on a throw too
+  ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)),
+  the receiver's own locations excepted, and a fresh object result;
+- `q` and `e`, `null` or a list of kinds, the predicate the receiver's
+  present elements meet where the call starts and where it returns `true`
+  ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
 
 ## Terms
 

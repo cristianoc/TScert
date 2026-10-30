@@ -335,7 +335,8 @@ function unfoldedEvidence(path: string): JsonValue {
     const knowledge = jsonArray(b.knowledge).map((k): JsonValue => {
       const e = jsonObject(k);
       return { cells: facts(e.cells), values: facts(e.values), links: jsonArray(e.links).map((l) => at(links, l)),
-        separation: { depth: e.depth ?? null, facts: jsonArray(e.separation).map((a) => at(separations, a)) } };
+        separation: { depth: e.depth ?? null, facts: jsonArray(e.separation).map((a) => at(separations, a)) },
+        elems: e.elems ?? [] };
     });
     const sequent = (s: JsonValue): JsonValue => {
       const e = jsonObject(s);
@@ -412,7 +413,7 @@ function tabledEvidence(document: unknown): string {
       const separation = jsonObject(e.separation);
       return add("knowledge", { cells: facts(e.cells), values: facts(e.values),
         links: jsonArray(e.links).map((l) => add("links", l)), depth: separation.depth ?? null,
-        separation: jsonArray(separation.facts).map((a) => add("separations", a)) });
+        separation: jsonArray(separation.facts).map((a) => add("separations", a)), elems: e.elems ?? [] });
     };
     const node = (n: JsonValue): JsonValue => {
       const e = jsonObject(n);
@@ -987,7 +988,8 @@ control(async (): Promise<void> => {
     const fields: unknown[] = prototype.fields;
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
     prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
-      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false }, receiver: null, params: [], rest: null,
+      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null },
+      receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");
   };
@@ -2597,6 +2599,48 @@ control(async (): Promise<void> => {
     assert.match(detail, /obligation/, name);
   }
   process.stdout.write("a field's narrowing across a for...of loop: refused without the iterator's fresh object or own-state step\n");
+});
+
+control(async (): Promise<void> => {
+  // The elements fact (docs/FOOTPRINTS.md, "The elements fact"): every at
+  // a guard promising string states its receiver's elements strings where
+  // it returns true, and map at that fact calls its callback at string.
+  // Bypassing the producer, blocker-every-promise is refused where the
+  // declarations state no elements promise, or one at number; where the
+  // guard closure's claim states the promise or a precondition, which graph
+  // code may not; and where the evidence states the atom unconditionally on
+  // every's result, or conditional on its falsiness.
+  const artifacts = run("blocker-every-promise");
+  const fragmentText = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const claimsText = readFileSync(join(artifacts, "claims.json"), "utf8");
+  const evidenceText = readFileSync(join(artifacts, "evidence.json"), "utf8");
+  const guardEffect = '"promise":{"guards":{"param":0}},"fresh":false,"receiverStore":false,"onThrow":false,' +
+    '"receiverOwn":false,"freshObject":false,"requires":null,"elements":null';
+  const forgeries: [string, string, string, "fragment" | "claims" | "evidence"][] = [
+    ["no-elements-promise", '"elements":["string"]', '"elements":null', "fragment"],
+    ["elements-at-number", '"elements":["string"]', '"elements":["number"]', "fragment"],
+    ["guard-claims-elements", guardEffect, guardEffect.replace('"elements":null', '"elements":["string"]'), "claims"],
+    ["guard-claims-requires", guardEffect, guardEffect.replace('"requires":null', '"requires":["string"]'), "claims"],
+    ["atom-unconditional", '"cond":0,"negated":false', '"cond":null,"negated":false', "evidence"],
+    ["atom-negated", '"cond":0,"negated":false', '"cond":0,"negated":true', "evidence"]];
+  for (const [name, from, to, file] of forgeries) {
+    const text = file === "fragment" ? fragmentText : file === "claims" ? claimsText : evidenceText;
+    assert.ok(text.split(from).length >= 2, `${name}: an occurrence`);
+    const forged = join(artifacts, `every-elements-${name}-${file}.json`);
+    writeFileSync(forged, text.split(from).join(to));
+    if (file === "evidence") {
+      const checked = tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+        join(artifacts, "claims.json"), sourceKey(artifacts), forged]));
+      assert.equal(checked.status, 1, `${name}: ${checked.stdout}${checked.stderr}`);
+      continue;
+    }
+    const searched = file === "fragment"
+      ? produceWith(artifacts, join(artifacts, "claims.json"), `every-elements-${name}`, forged)
+      : produceWith(artifacts, forged, `every-elements-${name}`);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, `${name}: ${detail}`);
+  }
+  process.stdout.write("the elements fact: refused without every's elements promise, at another predicate, on graph code claiming either part, and with the atom forged unconditional or at the other answer\n");
 });
 
 control(async (): Promise<void> => {
@@ -6600,7 +6644,7 @@ control(async (): Promise<void> => {
       jsonArray(b.proofs).push(must(proofs(b)[k], "its derivation"));
       jsonObject(jsonObject(n.ordinary).proof).tree = jsonArray(b.proofs).length - 1;
     }],
-    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [], depth: 0, separation: [] }); }],
+    ["unused", (b) => { jsonArray(b.knowledge).push({ cells: [], values: [], links: [], depth: 0, separation: [], elems: [] }); }],
   ];
   for (const [name, change] of accepted) {
     const checked = check(name, change);
