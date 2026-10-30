@@ -1328,6 +1328,58 @@ export function collectDeclarations(file: string, options: {
         node.forEachChild(visit);
       };
       files.forEach(visit);
+      // A tag set a selected shape's member is read at, a family declaration
+      // applied at a set of literals (`operatorToken: BinaryOperatorToken`,
+      // `Token<BinaryOperator>`), that the selection meets is selected
+      // whole, so the type is within the arms the selection keeps rather
+      // than across an arm and the residual (HOST-FAMILIES.md, "Residuals").
+      const memberSets = (type: TypeNode, out: TagValue[][], seen: Set<Node>): void => {
+        if (ts.isParenthesizedTypeNode(type)) return memberSets(type.type, out, seen);
+        if (ts.isUnionTypeNode(type)) return type.types.forEach(t => memberSets(t, out, seen));
+        if (!ts.isTypeReferenceNode(type)) return;
+        const name = memberName(type.typeName);
+        if (!name) return;
+        for (const d of (targetOf(checker, name)?.declarations ?? []).map(x => x.resolve())) {
+          if (!d || !isHostFile(d.getSourceFile().fileName)) continue;
+          if (isTypeAlias(d) && !d.typeParameters?.length && !seen.has(d)) {
+            seen.add(d);
+            memberSets(d.type, out, seen);
+          }
+          if (!ts.isInterfaceDeclaration(d)) continue;
+          const fam = familyFrom(d);
+          const tag = fam?.table.tagOf(d);
+          const [argument] = type.typeArguments ?? [];
+          const values = fam && tag?.k === "parameter" && argument ? fam.literals(argument) : null;
+          if (values && values.length > 1) out.push([...values]);
+        }
+      };
+      for (const family of families.values()) {
+        const found = foundBy.get(family.table.description.marker);
+        if (!found) continue;
+        // The sets the selected shapes' members are read at, gathered once per
+        // shape; a set not yet met stays open until a later tag meets it,
+        // so the selection reached is the least one closed under the rule.
+        const done = new Set<TagValue>();
+        const open: TagValue[][] = [];
+        const pending = [...found];
+        while (pending.length) {
+          for (let t = pending.pop(); t !== undefined; t = pending.pop()) {
+            if (done.has(t)) continue;
+            done.add(t);
+            const source = family.table.shapes.get(t);
+            if (!source) continue;
+            for (const member of family.table.sourceMembers(source))
+              for (const element of member.members)
+                if (ts.isPropertySignatureDeclaration(element) && element.type) memberSets(element.type, open, new Set());
+          }
+          for (let i = open.length - 1; i >= 0; i--) {
+            const set = open[i];
+            if (!set || !set.some(v => found.has(v))) continue;
+            open.splice(i, 1);
+            for (const v of set) if (!found.has(v)) { found.add(v); pending.push(v); }
+          }
+        }
+      }
       return new Map([...foundBy].map(([marker, values]) => [marker, [...values].sort(compareTags)]));
     };
     let scanned: ReadonlyMap<string, readonly TagValue[]> | null = null;

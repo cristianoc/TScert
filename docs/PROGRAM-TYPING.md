@@ -664,8 +664,12 @@ too. A claim may so name another label for the same type, as a producer's own ro
 for a declared `[number, number]`, or for a declared rest
 `EagerCollection<K, V>[]` at its instance, which the declaration's literal
 head applied to the instance's arguments names too. With
-$`\mathrm{member}_G(O,k)=m`$ the method of key $`k`$ in $`O`$'s one object
-clause (`memberOf`):
+$`\mathrm{member}_G(O,k)=m`$ the method of key $`k`$ in $`O`$'s object
+clauses (`memberOf`): the clause $`O`$ is represented by, or, for a meet row
+$`N\sqcap(c_1\cup\cdots\cup c_n)`$ (a binder refined within a union of
+records, as a node a predicate `n is N` with `N extends Node` refines), the
+member every $`c_j`$ states identically, since every value of the meet is a
+member of one of its clauses (`objectClauses_sem`, from `meet_clause_of`):
 
 ```math
 \frac{\Gamma(i)=O\quad\mathrm{member}_G(O,k)=m

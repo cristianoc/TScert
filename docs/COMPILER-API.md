@@ -417,8 +417,11 @@ corrected shape is outside `Node`'s declared record. Every interface extends
 the kinds whose interfaces extend `ExpressionBase`, and `FunctionLikeBase`
 the kinds whose interfaces extend it. The guard `isExpression` accepts a
 different set (it excludes `JsxText`, which the declarations make an
-expression); the guard's kind set serves the guard and the hierarchy the
-type. A concrete union (`MemberName = Identifier | PrivateIdentifier`) is
+expression), and `isTypeNode` accepts `ExpressionWithTypeArguments`, whose
+interface extends `MemberExpressionBase` and no `TypeNodeBase`; the guard's
+kind set serves the guard and the hierarchy the type, so a node `isTypeNode`
+accepts is no `TypeNode` until its kind excludes 234
+(`blocker-compiler-api-type-node`). A concrete union (`MemberName = Identifier | PrivateIdentifier`) is
 read as declared.
 
 ### Arms per run

@@ -420,6 +420,15 @@ $`⟦A⟧\subseteq⟦A⟧_u`$. The client never produces $`R_u`$. Shapes with th
 same members and different tag values are one arm whose tag is their tag
 set.
 
+A tag set a selected shape's member is read at is selected whole once the
+selection meets it: where a member of $`S_t`$, $`t\in K_u`$, has a type
+reading a family declaration at a set of literals $`T`$ (`operatorToken:
+BinaryOperatorToken`, `Token<BinaryOperator>`) and $`T\cap K_u\neq\varnothing`$,
+$`T\subseteq K_u`$, closed over the members of the shapes it adds. A type
+read at $`T`$ is then within the arms of $`K_u`$ rather than across an arm
+and $`R_u`$. The formula above holds of this $`K_u`$ as of any selection,
+so the reading's meaning, and its trust, are those of any selection.
+
 #### The run's selection
 
 A verification run has one selection $`K`$ for each family, computed in the

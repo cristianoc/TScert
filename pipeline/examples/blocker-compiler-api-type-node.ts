@@ -1,5 +1,6 @@
-// A TypeNode found by the host guard needs its recursive host shape admitted
-// at the declared TypeNode contract.
+// `ts.isTypeNode` accepts ExpressionWithTypeArguments (kind 234), whose
+// declaration extends MemberExpressionBase and no TypeNodeBase: its true edge
+// holds a node outside TypeNode, so returning it at TypeNode is refused.
 // Census functions:
 // declaration-graph.mts#computedAt, declaration-graph.mts#typeNodeAt.
 import * as ts from "typescript/unstable/ast";

@@ -1,4 +1,6 @@
-// A binary operator token needs to meet the Node contract at a call.
+// A binary operator token meets the Node contract at a call, though the run's
+// selection names some of its kinds and leaves the others: the operator
+// token's tag set, which a selected shape's member is read at, is selected whole.
 // Census functions:
 // fragment-expressions.mts#chainComparison.
 import * as ts from "typescript/unstable/ast";

@@ -1315,6 +1315,24 @@ control(async (): Promise<void> => {
   process.stdout.write("forged optional method call in an arrow: the saved receiver claimed at undefined refused\n");
 });
 control(async (): Promise<void> => {
+  // A method of a node refined to a binder bounded by `Node` is read from the
+  // meet's one clause: the node's read, claimed at `undefined`, which states
+  // no member, is refused there where evidence is produced, and checking
+  // refuses the evidence of the original claim for it.
+  const generic = run("blocker-compiler-api-generic-member");
+  const source = readFileSync(sourceKey(generic), "utf8");
+  const at = source.indexOf("node.getStart()");
+  const end = at + "node".length;
+  const claims = readClaims(generic);
+  const read = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === end),
+    "the method's object read");
+  read.type = [rowOf(claims, "undef")];
+  const forged = writeClaims(generic, "forged-meet-member-object", claims);
+  refusedAt(generic, forged, "forged-meet-member-object", `[${at},`);
+  invoke(forged, join(generic, "evidence.json"), generic);
+  process.stdout.write("forged meet member: the method's object claimed at undefined refused\n");
+});
+control(async (): Promise<void> => {
   // An optional call of a method saves its object and reads it twice, the
   // method's object at the method's name and the call's receiver at its
   // `(`: either claimed at `undefined` is refused there where evidence is

@@ -1,5 +1,5 @@
-// A generic host node refined by a predicate needs its Node bound available
-// for a method read.
+// A host node refined by a predicate to a binder bounded by Node calls a method
+// of the bound's one clause, bound to the node.
 // Census functions:
 // type-probe.mts#nodeAt.
 import type { Node } from "typescript/unstable/ast";

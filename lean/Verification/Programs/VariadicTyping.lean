@@ -35,16 +35,76 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
     exact CallEffects.restsT_select hv' (List.mem_map_of_mem hs)
   · cases hs
 
-/-- The member a type's one object clause names by a key: a host-relative
-method, whose contract holds when it is invoked on the object it is read from. -/
-def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
+/-- The clauses a type's values are members of: the clause it is
+represented by, or the clauses of a meet row (`N & C`, a binder within `C`),
+whose values are what the assignment gives the binder, within `C`. -/
+def objectClauses (G : NormalGraph ι) (O : Ty ι) : List (Clause (Ty ι)) :=
   match expand G O with
-  | [.refs _ _ _ _ ms _ _] | [.dict _ _ _ _ _ ms _ _ _] | [.callable _ _ _ _ ms] => ms.find? (·.key == k)
+  | [c] => [c]
+  | _ => match O with
+    | [i] => if G.meetRow i then meetClauses G i else []
+    | _ => []
+
+/-- A value of a type is a member of one of its object clauses, where it has
+any. -/
+theorem objectClauses_sem {G : NormalGraph ι} {O : Ty ι}
+    (hne : objectClauses G O ≠ []) {n W v} (hv : meaning G O n W v) :
+    ∃ c ∈ objectClauses G O, semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v := by
+  unfold objectClauses at hne ⊢
+  split
+  · rename_i c' hO
+    exact ⟨c', List.mem_singleton_self _, represents_raw (show Represents G O c' from hO) n W v hv⟩
+  · rename_i hnot
+    split
+    · rename_i i
+      split
+      · rename_i hmeet
+        obtain ⟨l, hl, hlv⟩ := hv
+        have hli : l = i := List.mem_singleton.mp hl
+        subst hli
+        obtain ⟨c, hc, hv'⟩ := meet_clause_of (η := G.env) hmeet hlv
+        exact ⟨c, hc, hv'.1⟩
+      · rename_i hm
+        simp [hm] at hne
+    · exfalso
+      apply hne
+      split
+      · simp_all
+      · split <;> simp_all
+
+/-- The member a clause names by a key, where it is an object clause. -/
+def clauseMember (c : Clause (Ty ι)) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
+  match c with
+  | .refs _ _ _ _ ms _ _ | .dict _ _ _ _ _ ms _ _ _ | .callable _ _ _ _ ms => ms.find? (·.key == k)
   | _ => none
+
+/-- A member of a clause's value holds of that value. -/
+theorem clauseMember_at {G : NormalGraph ι} {c : Clause (Ty ι)} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
+    (hm : clauseMember c k = some m) {n W v}
+    (hs : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v) :
+    m.key = k ∧ MethodMembers.memberT (excOf G) (MethodMembers.Member.of (meaning G) (argMeaning G) m) n W v := by
+  unfold clauseMember at hm
+  split at hm
+  all_goals try contradiction
+  all_goals
+    rename_i ms
+    have hmem := List.mem_of_find?_eq_some hm
+    have hkey : m.key = k := by simpa using List.find?_some hm
+    exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
+      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1 | exact hs.2)⟩
+
+/-- The member a type's object clauses name by a key, the same in each: a
+host-relative method, whose contract holds when it is invoked on the object it
+is read from. -/
+def memberOf [DecidableEq ι] (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
+  match objectClauses G O with
+  | [] => none
+  | c :: cs => (clauseMember c k).bind fun m =>
+    if cs.all (fun d => clauseMember d k == some m) then some m else none
 
 /-- The quantified signatures of the member of key `k` of `O`: the schemes a
 generic method's member bound to its host meets (`bindScheme`). -/
-def memberSchemes (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : List (Ty ι) :=
+def memberSchemes [DecidableEq ι] (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : List (Ty ι) :=
   ((memberOf G O k).map (·.schemes)).getD []
 
 /-- A fixed signature covered by one of a member's: each claimed parameter
@@ -96,19 +156,24 @@ theorem argsAcceptedUsing [DecidableEq ι] {G : NormalGraph ι}
 
 /-- A member of a host's type is found by the member's key on the host, whose
 contract implies the member's signatures invoked on that host. -/
-theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
+theorem memberOf_at [DecidableEq ι] {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
     (hm : memberOf G O k = some m) {n W v} (hv : meaning G O n W v) :
     m.key = k ∧ MethodMembers.memberT (excOf G) (MethodMembers.Member.of (meaning G) (argMeaning G) m) n W v := by
   unfold memberOf at hm
   split at hm
-  all_goals try contradiction
-  all_goals
-    rename_i ms hO
-    have hmem := List.mem_of_find?_eq_some hm
-    have hkey : m.key = k := by simpa using List.find?_some hm
-    have hs := represents_raw (show Represents G O _ from hO) n W v hv
-    exact ⟨hkey, MethodMembers.methodT_at (List.mem_map_of_mem hmem)
-      (by first | exact hs.2.2.2.1 | exact hs.2.2.2.2.1 | exact hs.2)⟩
+  · cases hm
+  · rename_i c cs hcs
+    obtain ⟨m0, hm0, hrest⟩ := Option.bind_eq_some_iff.mp hm
+    split at hrest
+    · rename_i hall
+      cases hrest
+      obtain ⟨d, hd, hs⟩ := objectClauses_sem (by simp [hcs]) hv
+      rw [hcs] at hd
+      rcases List.mem_cons.mp hd with rfl | hd
+      · exact clauseMember_at hm0 hs
+      · have := List.all_eq_true.mp hall d hd
+        exact clauseMember_at (by simpa using this) hs
+    · cases hrest
 
 /-- **Reading along the chain.** A key held `d` prototypes up is read in `d`
 delegation steps, each one level down, then from its location, whose contract
