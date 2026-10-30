@@ -2234,7 +2234,11 @@ record) and states them as hints. The last merge of an
 object literal is at the literal's claim where the rule admits it: each pair
 of clauses may give a record of the claim's own, so a field written after a
 spread is allocated at the type of the arm each pair gives, as TypeScript
-types the literal per arm of the contextual union.
+types the literal per arm of the contextual union. The producer proposes
+each written field at the type agreed by the arms that the literal-valued
+written fields admit, as TypeScript discriminates a contextual union by a literal's
+properties: `{ k: "alloc", ...s }` at a union whose arms fix `k` builds its
+`k` at `"alloc"`.
 
 For heap knowledge a merge is an allocation, as a literal is
 (`HeapExpressionRules.merge_alloc_sound`): it reads the heap and writes no

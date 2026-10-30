@@ -96,6 +96,21 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let arms = match expected,contract with
         | Some t,None -> (try record_arms declarations [] t with Json.Error _ -> [])
         | _ -> [] in
+      (* The arms are those the written literal-valued fields admit, as
+         TypeScript discriminates a contextual union by a literal's
+         properties ([discriminated_record]): `{ k: "alloc", ...s }` is
+         built at the arms whose `k` admits `"alloc"`, so its `k` holds that
+         literal type. A construction hint only: Lean checks the literal's
+         claim against the expected type. *)
+      let arms = match List.filter (fun (s:shape) ->
+          List.for_all (fun (name,(e:expr)) -> match name,e.node with
+            | Some name,Literal _ ->
+              (match List.find_opt (fun (f:Semantic.field) -> f.name = Name name && not f.host) s.fields with
+               | Some f -> literal_admitted declarations e f.read
+               | None -> index_for s (Name name) <> None)
+            | _ -> true) parts) arms with
+        | [] -> arms
+        | admitted -> admitted in
       let field_of (name,e) =
         let hint = Option.bind contract (fun s ->
           List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
