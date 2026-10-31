@@ -108,6 +108,21 @@ const enumMember = (name: string): string => {
   assert.ok(member, `a member of ${name} the control reads`);
   return member;
 };
+control(async (): Promise<void> => {
+  const artifacts = run("blocker-gap-round-scheme-binder-map");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "scheme"), "scheme's claims");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("null", source.indexOf("bound:"));
+  const field = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 4),
+    "the binder's null bound initializer");
+  field.type = [rowOf(claims, "str")];
+  const forged = writeClaims(artifacts, "forged-intersection-binder-bound", claims);
+  refusedAt(artifacts, forged, "forged-intersection-binder-bound",
+    `source expression obligation at [${start},${start + 4})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  process.stdout.write("forged intersection binder: null claimed as string at a field initializer, refused in search and checking\n");
+});
 for (const reexport of [false, true]) for (const mismatched of [false, true]) control(async (): Promise<void> => {
   const audited = resolve(here, "../tools/node_modules/typescript");
   const dir = runDirectory("tscert-compiler-enum-binding-");

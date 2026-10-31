@@ -742,7 +742,21 @@ let rec object_hint declarations seen = function
   | Union parts ->
     (match List.filter_map (object_hint declarations seen) parts with
     | [shape] -> Some shape | _ -> None)
-  | Rigid _ | Meet _ -> None
+  | Meet (first,rest) ->
+    (* Disjoint record members jointly describe the allocation contract.
+       Each field keeps its complete read and write types. Overlapping
+       members and index signatures need their own intersection handling;
+       no allocation hint is offered for those shapes. *)
+    let merge left right = match left,right with
+      | Some ({indexes=[];calls=[];elements=None;_} as left),
+        Some ({indexes=[];calls=[];elements=None;_} as right)
+        when not (List.exists (fun (f:field) ->
+          List.exists (fun (g:field) -> f.name = g.name) right.fields) left.fields) ->
+        Some {left with fields=left.fields @ right.fields}
+      | _ -> None in
+    List.fold_left (fun shape part -> merge shape (object_hint declarations seen part))
+      (object_hint declarations seen first) rest
+  | Rigid _ -> None
 
 (* Where the expected type is a union of several records or several arrays,
    a fresh literal is built at the one arm its own keys (or length) and its

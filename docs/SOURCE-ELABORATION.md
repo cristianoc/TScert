@@ -81,6 +81,19 @@ resulting table and all arrow evidence. This search is deliberately incomplete:
 it does not enumerate arbitrary intermediate types, transitivity derivations,
 or arbitrary nested arrow-combination proofs.
 
+For a fresh object literal expected at an intersection of records with
+pairwise disjoint fields, the producer uses every member's field contract
+as an allocation hint. Each initializer must meet its field's full type,
+and the resulting record must meet the complete intersection through the
+existing [allocation rules](SOURCE-MODEL.md#object-literals).
+This hint lookup requires each member to have no index signatures, call
+signatures or array store. Overlapping fields receive no intersection hint.
+`blocker-gap-round-scheme-binder-map` exercises a binder whose bound and
+resolution fields belong to one member and whose default and span belong
+to another. `invalid-gap-round-scheme-binder-map` keeps the object in a
+local inferred at narrower writable fields before returning it; widening
+that stored object's contract is refused.
+
 The semantic coverage rule `CallArrow` admits ordered parameter lists.
 Source selection checks inclusion contravariantly at every argument position,
 with equal actual counts. A union may split at any position while preserving
