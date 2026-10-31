@@ -407,23 +407,25 @@ if (eligible) {
   const pids = join(dir, "runner-pids");
   const spinning = script("runner-timeout.sh", `/bin/sleep 30 & echo $! > ${pids}; while :; do :; done`,
     ["/bin/sleep"]);
-  const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 600, true);
+  // Each limit leaves the shell time to start and write its pid file under
+  // load; every program runs far past it.
+  const timed = invoke(lower(spinning, file("runner-timeout.json", "")), 2_000, true);
   runnerTimeout("spinning", timed);
   assert.ok("userMs" in timed.record.cpu && timed.record.cpu.userMs > 10, JSON.stringify(timed.record.cpu));
   assert.ok(await ends(pidOf(pids)), "a descendant of a timed-out stage survived");
   // The limit holds against a program ignoring SIGTERM, a stopped one and
   // one that left the group: each is killed by its process id 250 ms past it.
   const left = join(dir, "runner-setsid-pid");
-  const held: { name: string; body: string; dependencies: string[] }[] = [
-    { name: "ignoring", body: 'trap "" TERM; /bin/sleep 5; exit 7', dependencies: ["/bin/sleep"] },
-    { name: "stopped", body: "kill -STOP $$", dependencies: [] },
-    { name: "setsid", dependencies: ["/usr/bin/perl"],
+  const held: { name: string; body: string; dependencies: string[]; limit: number }[] = [
+    { name: "ignoring", body: 'trap "" TERM; /bin/sleep 5; exit 7', dependencies: ["/bin/sleep"], limit: 300 },
+    { name: "stopped", body: "kill -STOP $$", dependencies: [], limit: 300 },
+    { name: "setsid", dependencies: ["/usr/bin/perl"], limit: 2_000,
       body: `echo $$ > ${left}; exec /usr/bin/perl -e 'use POSIX; POSIX::setsid() or die "setsid"; sleep 30'` },
   ];
-  for (const { name, body, dependencies } of held) {
+  for (const { name, body, dependencies, limit } of held) {
     if (!dependencies.every((d) => existsSync(d))) continue;
     runnerTimeout(name, invoke(lower(script(`runner-${name}.sh`, body, dependencies), file(`runner-${name}.json`, "")),
-      300, true));
+      limit, true));
   }
   if (existsSync("/usr/bin/perl")) assert.ok(await ends(pidOf(left)), "a program that left its group survived its limit");
   // A descendant holding the output pipes ends with the program.
