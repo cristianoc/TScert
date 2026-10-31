@@ -68,6 +68,10 @@ export const cases: Case[] = [
     /The available claim for \{ client: \[\] \} as unknown is unknown\. This obligation requires \{  \}/), status: "unverified", phase: "search", project: "pipeline/blocker-project" },
   { ...positive("blocker-compiler-api-parse-config", "The reviewed parseConfigFile member, on an API instance read at its default false argument."), project: "pipeline/blocker-project" },
   // Census blocker causes; each source header names the functions it represents.
+  gap("blocker-census-options-default", "An optional field read through a parameter with an empty-object default.", "unsupported", "proposal", /^unsupported: missing field tsconfigPath at \[\d+,\d+\)(?:\n|$)/),
+  gap("blocker-census-rest-result", "A local closure collecting rest arguments needs a result annotation.", "unverified", "search", /^reject: source refusal at \[\d+,\d+\): a closure collecting a rest array needs its result annotation(?:\n|$)/),
+  gap("blocker-census-set-copy", "A Set copied from an optional ReadonlySet is proposed at never, refusing the later add.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at Set<never> from alias: string, aliases\.add:/),
+  { ...gap("blocker-census-import-guard-call", "A compiler import guard admits a node outside the import-only function's parameter.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke[^\n]*importedNames:/), project: "pipeline/blocker-project" },
   // The case project uses the front end's installed Node and compiler declarations.
   // Source contracts and syntax.
   { ...positive("blocker-local-class", "A class extending `Error` declared inside a function, constructed and thrown by a closure and caught at `instanceof`, lowered where it is written."), project: "pipeline/blocker-project" },
