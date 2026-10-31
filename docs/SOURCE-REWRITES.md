@@ -1341,12 +1341,46 @@ writable `type` field are invariant
   contract of its records and retains serialization and deduplication;
   `invalid-census-spread-nested-field` keeps the narrower allocation and
   its refused callback parameter.
-- **JSON obligation:** `blocker-census-nested-field-json` retains the
-  original serialization and deduplication. Its allocation states the
-  record contract, and serialization needs a separate proof that every
-  reachable member meets the
-  [JSON contract](SOURCE-CONTRACTS.md#json-and-error). An open `TypeTerm`
-  annotation alone states no bound on additional keys.
+- **JSON contract:** declaration terms and construct forms retain their
+  [JSON data bounds](#declaration-terms-retained-as-json-data).
+
+### Declaration terms retained as JSON data
+
+`selectGlobal` in `tools/declaration-graph.mts` constructs records containing
+binders and a constructor term. `ConstructForm` retains a readonly string
+index at `JsonValue` and holds its term at `TypeTerm & JsonObject`. Each
+constructor allocation states the constructor arm of `TypeTerm` together
+with that data bound. `CallPromise` in `tools/declaration-types.mts` retains
+the same bound alongside its mutually exclusive guard and assertion fields.
+
+- **Mechanism:** the producer combines disjoint named fields and indexes
+  when proposing a fresh record allocation at an intersection. Every index
+  remains in the hint, and the existing
+  [allocation checks](SOURCE-CLAIMS.md) check its bound against the named
+  fields too. This is a construction hint; an existing object acquires no
+  data bound through it.
+- **Repair:** the annotations retain the data contract of the constructor
+  and form allocations, including the full `TypeTerm` contract. The
+  serialization callback saves the term at the readonly `JsonObject` view
+  before spreading it and states its pair result as
+  `[string, ConstructForm]`. The existing
+  [JSON contract](SOURCE-CONTRACTS.md#json-and-error) establishes the call.
+- **Behaviour:** the readonly view holds the same term reference that the
+  nested spread reads. The annotations are erased, and the local bindings
+  allocate no object. The same maps and spreads allocate the same records
+  and arrays; serialization visits the same members, and `Map` retains the
+  same last form for each key. Constructing the term before reading the
+  form's binder field runs no client code under the existing data-property
+  and standard-object assumptions. Returns, exceptions, mutations,
+  receivers, aliases and asynchronous effects are unchanged.
+- **Scope:** `blocker-census-nested-field-json` exercises recursive term
+  data, the full nested-spread serialization and deduplication.
+  `invalid-census-nested-field-json` checks an existing open record given a
+  data intersection: under Node, an additional `toJSON` returns `undefined`
+  despite the function's string result. This repair adds no external
+  assumption or native contract.
+- **Functions:** `selectGlobal`.
+- **Commit:** the introducing commit.
 
 ### A resolved URL read through URL members
 

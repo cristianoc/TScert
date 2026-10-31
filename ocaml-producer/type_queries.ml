@@ -743,16 +743,17 @@ let rec object_hint declarations seen = function
     (match List.filter_map (object_hint declarations seen) parts with
     | [shape] -> Some shape | _ -> None)
   | Meet (first,rest) ->
-    (* Disjoint record members jointly describe the allocation contract.
-       Each field keeps its complete read and write types. Overlapping
-       members and index signatures need their own intersection handling;
-       no allocation hint is offered for those shapes. *)
+    (* Disjoint named members and indexes jointly describe the allocation
+       contract. Keep every index: the allocation checker must establish
+       its bound for the named fields too. Overlapping named members still
+       need their own intersection handling. *)
     let merge left right = match left,right with
-      | Some ({indexes=[];calls=[];elements=None;_} as left),
-        Some ({indexes=[];calls=[];elements=None;_} as right)
+      | Some ({calls=[];elements=None;_} as left),
+        Some ({calls=[];elements=None;_} as right)
         when not (List.exists (fun (f:field) ->
           List.exists (fun (g:field) -> f.name = g.name) right.fields) left.fields) ->
-        Some {left with fields=left.fields @ right.fields}
+        Some {left with fields=left.fields @ right.fields;
+          indexes=left.indexes @ right.indexes}
       | _ -> None in
     List.fold_left (fun shape part -> merge shape (object_hint declarations seen part))
       (object_hint declarations seen first) rest

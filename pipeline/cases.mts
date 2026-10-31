@@ -97,7 +97,8 @@ export const cases: Case[] = [
   negative("invalid-spread-map-records", "A shrinking map callback cannot justify a readable spread view.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at ReadonlyArray/),
   positive("blocker-census-spread-nested-field", "JSON data records state their writable allocation contracts before a nested spread is serialized and deduplicated."),
   negative("invalid-census-spread-nested-field", "An inferred empty binders array and a narrower writable type field cannot be widened through a callback parameter.", /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation(?:\n|$)/),
-  gap("blocker-census-nested-field-json", "JSON serialization of a nested spread with open record fields.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at string/),
+  positive("blocker-census-nested-field-json", "Construct forms retain their JSON data bounds through nested spreads and deduplication."),
+  negative("invalid-census-nested-field-json", "An existing open record cannot acquire a JSON data bound through an intersection annotation (run under Node).", /no derivation of its binding-annotation claim/),
   // Distinct model-study causes; each source header gives the supplied sample count.
   gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
     /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),

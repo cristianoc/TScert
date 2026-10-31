@@ -1,4 +1,5 @@
 import type { ArrayPresence } from "./type-graph.mts";
+import type { JsonObject } from "./calculus.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -14,8 +15,8 @@ import type { Span } from "./span.mts";
 export type ClosedFootprint = { readonly value: "keep" | "any"; readonly store: "keep" | "grow" | "any" };
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
-export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
-  { readonly asserts: { readonly param: number }; readonly guards?: never };
+export type CallPromise = JsonObject & ({ readonly guards: { readonly param: number }; readonly asserts?: never } |
+  { readonly asserts: { readonly param: number }; readonly guards?: never });
 /** What a signature guarantees beyond its contract: its footprint, an
  * optional promise, whether a normal return's value has an array store the
  * call allocated (`fresh`), and whether the footprint excepts the receiver's
