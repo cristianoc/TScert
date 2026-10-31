@@ -80,6 +80,28 @@ fields twice: it amends callable contracts, then gives prototype slots an
   original inference refusal. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A compiler node's initializer read through its parent
+
+`writtenApplications` excludes another module's executable initializers
+from its type traversal. Its `isInitializer` helper tests the parent's
+kind before comparing its `initializer` child with the node. The existing
+[compiler node contracts](COMPILER-API.md#the-node-invariant) state the
+field at each of those kinds.
+
+- **Repair:** the read retains the compiler's syntax information: variable
+  declarations, parameters, binding elements, enum members, property
+  signatures and declarations, property assignments, JSX attributes, and
+  `for`, `for-in` and `for-of` statements. These are the eleven kinds whose
+  child lists in the installed package's `protocol.generated.js` contain
+  `initializer`; `RemoteNode.getNamedChild` returns `undefined` for that
+  member at every other kind. The kind tests therefore preserve the child
+  comparison for compiler nodes under the existing host contract.
+- **Scope:** `blocker-gap-round-parent-initializer` checks the kind tests;
+  `blocker-gap-round-parent-initializer-open-node` retains the read after
+  an `in` test on open `Node`. The repair uses the existing host-family
+  narrowing and field reads and adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### An array pattern's first element after a length test
 
 The `Object.assign` branch of `expr` in `tools/fragment-expressions.mts`

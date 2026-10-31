@@ -1,11 +1,23 @@
-// initializer read after an in test on a compiler node's parent.
+// Initializer read through the compiler kinds that state the child.
 // Census functions:
 // written-applications.mts#writtenApplications
 import type { Node } from "typescript/unstable/ast";
+import * as ts from "typescript/unstable/ast";
 export function initializer(node: Node): boolean {
+  const owner = node.parent;
   return (
-    !!node.parent &&
-    "initializer" in node.parent &&
-    node.parent.initializer === node
+    !!owner &&
+    (ts.isVariableDeclaration(owner) ||
+      ts.isParameterDeclaration(owner) ||
+      ts.isBindingElement(owner) ||
+      ts.isEnumMember(owner) ||
+      ts.isPropertySignatureDeclaration(owner) ||
+      ts.isPropertyDeclaration(owner) ||
+      ts.isPropertyAssignment(owner) ||
+      ts.isJsxAttribute(owner) ||
+      ts.isForStatement(owner) ||
+      ts.isForInStatement(owner) ||
+      ts.isForOfStatement(owner)) &&
+    owner.initializer === node
   );
 }

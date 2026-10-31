@@ -347,7 +347,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // declaration's type is its annotation (`annotated`).
     // A part `determining` gives is swept itself, wherever it stands.
     if (!client && !root && (ts.isDecorator(node) || isBody(node) || ts.isClassStaticBlockDeclaration(node) ||
-        (node.parent && "initializer" in node.parent && node.parent.initializer === node && !insideType(node.parent))))
+        (isInitializer(node) && node.parent && !insideType(node.parent))))
       return;
     // Every expression in erased syntax is an entity name or a literal key
     // (`admitted`); any other is refused before a type holding it is
@@ -566,6 +566,17 @@ function isBody(node: Node): boolean {
   return !!owner && (ts.isFunctionDeclaration(owner) || ts.isFunctionExpression(owner) || ts.isArrowFunction(owner) ||
     ts.isMethodDeclaration(owner) || ts.isGetAccessorDeclaration(owner) || ts.isSetAccessorDeclaration(owner) ||
     ts.isConstructorDeclaration(owner)) && owner.body === node;
+}
+
+/** Whether `node` is its parent's initializer child, including loop and
+ * JSX initializers. These are the compiler's kinds with that child. */
+function isInitializer(node: Node): boolean {
+  const owner = node.parent;
+  return !!owner && (ts.isVariableDeclaration(owner) || ts.isParameterDeclaration(owner) ||
+    ts.isBindingElement(owner) || ts.isEnumMember(owner) || ts.isPropertySignatureDeclaration(owner) ||
+    ts.isPropertyDeclaration(owner) || ts.isPropertyAssignment(owner) || ts.isJsxAttribute(owner) ||
+    ts.isForStatement(owner) || ts.isForInStatement(owner) || ts.isForOfStatement(owner)) &&
+    owner.initializer === node;
 }
 
 /** Whether a variable is declared `const`. */
