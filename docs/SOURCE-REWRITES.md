@@ -80,6 +80,22 @@ so the destructured value's checked type includes `undefined`.
   rules and adds no external assumption.
 - **Commit:** the introducing commit.
 
+### An early captured function's returned function type
+
+`collectDeclarations` in `tools/declaration-graph.mts` creates closures
+that mention `capturedAt` before its declaration. Its outer arrow states
+the result type `(parameter: ts.TypeParameterDeclaration) => TypeTerm`,
+the signature of the inner arrow it returns.
+
+- **Repair:** the annotation retains the function type at the early
+  binding's storage contract. The existing [early-binding checks](SOURCE-ELABORATION.md#lexical-bindings-before-initialization)
+  check initialization and reads against that contract. The annotation is
+  erased and changes no execution; `blocker-gap-round-early-capture`
+  exercises the same returned-function annotation.
+- **Scope:** the existing function and early-binding mechanisms establish
+  the obligation, with no external assumption.
+- **Commit:** the introducing commit.
+
 ### A part union that leaves its other arm's key unstated
 
 The `build` expression's parts in `tools/fragment.mts` are named fields

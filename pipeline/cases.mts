@@ -48,7 +48,7 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  { ...gap("blocker-gap-round-early-capture", "Early use of capturedAt; outer arrow has no result annotation", "unsupported", "proposal", /^unsupported: the binding capturedAt may be read before its initialization[^\n]*(?:\n|$)/) },
+  positive("blocker-gap-round-early-capture", "An early captured function states the function its outer arrow returns."),
   { ...gap("blocker-gap-round-parent-walk", "Recursive parent walk checked at several signatures", "unverified", "search", /^reject: a closure's body lowers differently under one of its signatures at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-assign-target", "The destructured target is checked for undefined before it is read."),
   { ...gap("blocker-gap-round-assign-target-length-only", "Object.assign target read after argument-array destructuring", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/) },

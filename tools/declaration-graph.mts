@@ -2343,7 +2343,7 @@ export function collectDeclarations(file: string, options: {
     // A block type's captured parameter at a use outside a declaration's
     // body: the binder itself, which TypeScript must resolve its spelling
     // to there.
-    const capturedAt = (use: Node, what: string) => (parameter: ts.TypeParameterDeclaration): TypeTerm => {
+    const capturedAt = (use: Node, what: string): ((parameter: ts.TypeParameterDeclaration) => TypeTerm) => (parameter: ts.TypeParameterDeclaration): TypeTerm => {
       if (!resolvesTo(parameter, use))
         throw Error(`${what} closes over the type parameter ${parameter.name.text}, which a nearer declaration of that name hides here`);
       return { k: "binder", name: parameter.name.text, span: [use.getStart(use.getSourceFile()), use.end] };
