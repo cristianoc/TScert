@@ -486,8 +486,8 @@ increasing trust silently.
   A review of agent work is rendered from records
   (`node dev/commit-records.mts`), never written by hand.
 - Presentations: record pages and deep-dive decks share one style, and a
-  deck reaches the owner only after two independent reviews, against the
-  sources and with zero context ([STYLE.md](docs/STYLE.md)).
+  deck is written for a reader with zero context and reaches the owner only
+  after a review against the sources ([STYLE.md](docs/STYLE.md)).
 - A record uses only the [glossary](docs/GLOSSARY.md)'s terms, plain words
   and the terms of TypeScript and the code, explaining any other term where
   it first appears; before a push, any deep dive the range calls for is

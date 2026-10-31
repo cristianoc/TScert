@@ -82,25 +82,18 @@ A slide is 1920×1080. The page's styles scale to it:
 - **Status:** a status in a table or card uses its pair's text colour and
   its word (verified, refused, gap, trust change), as the pages do.
 
-## Validating a deck
+## Writing and checking a deck
 
-A deck is handed to the owner only after independent validation:
+A deck is written for a reader who knows TypeScript but nothing of TScert,
+reading strictly in order. Each slide explains every token a newcomer meets
+there, on that slide or before it, or says on that slide where it is
+explained: the words of the prose, and also every name, field, keyword,
+literal value and option that appears in code, tables or diagrams.
 
-1. **Against the sources.** An agent with access to the repository checks
-   every claim, number and code excerpt against its source, and that each
-   is labelled as measured, cited or estimated, to the strength the source
-   supports.
-2. **With zero context.** A fresh agent reads only the slides, knowing
-   TypeScript but nothing of TScert, and reports every term used before it
-   is explained and every claim it cannot follow, with its own summary of
-   what the deck says. It reads strictly in order and judges each slide
-   only by what the slides up to it have said: an explanation on a later
-   slide does not count unless the slide itself says where it comes. Every
-   token on a slide is in scope: words of the prose, and also every name,
-   field, keyword, literal value and option that appears in code, tables or
-   diagrams. For each slide it lists the tokens a newcomer meets there
-   without an explanation, or a forward pointer, on that slide or before
-   it.
+A deck is handed to the owner only after an agent with access to the
+repository checks every claim, number and code excerpt against its source,
+and that each is labelled as measured, cited or estimated, to the strength
+the source supports.
 
 ### A revised deck
 

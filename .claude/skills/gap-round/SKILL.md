@@ -110,8 +110,10 @@ Rebuild the
 [gap-priorities deep dive](../../../docs/deep-dives/gap-priorities/deck.mts)
 from the census of the new main (steps 1 and 2 again on its record). Mark it
 since the version last approved
-([a revised deck](../../../docs/STYLE.md#a-revised-deck)). It goes through
-its two independent reviews before it reaches the owner.
+([a revised deck](../../../docs/STYLE.md#a-revised-deck)). It is written
+for a reader with zero context and reviewed against the sources before it
+reaches the owner
+([writing and checking a deck](../../../docs/STYLE.md#writing-and-checking-a-deck)).
 
 ## The report
 

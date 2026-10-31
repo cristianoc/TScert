@@ -339,6 +339,8 @@ ${section(".claude/skills/gap-round/SKILL.md", "## 2.")}
 
 ${section(".claude/skills/gap-round/SKILL.md", "## 6.")}
 
+${section("docs/STYLE.md", "## Writing and checking a deck")}
+
 Mark it since the version last approved (docs/STYLE.md, "A revised deck"). Build and check it with
 make deck NAME=gap-priorities. Commit with a record in the format of .claude/skills/review/SKILL.md.
 ${runNote(r)}`;
@@ -417,10 +419,7 @@ soundness or gaining acceptance by trust added silently.`;
     return [`${goal} Branch ${branchOf(t)} rebuilds the gap-priorities deep dive. Review it against the sources: run
 git diff main...${branchOf(t)} here; check every number and claim of docs/deep-dives/gap-priorities/deck.mts against
 the census record ${r.state.census}, its slices and the cases, and the deck against docs/STYLE.md. Blocking = a
-claim the sources do not support, or a STYLE.md rule broken. Do not edit files.`,
-    `Read docs/deep-dives/gap-priorities/project/ (the slides' HTML) and nothing else: no other file of this
-repository. Review the deck as a reader with zero context: is every slide self-contained, every term explained or
-plain, every claim stated at its strength? Blocking = a slide a reader cannot follow. Do not edit files.`];
+claim the sources do not support, or a STYLE.md rule broken. Do not edit files.`];
   if (t.kind === "row")
     return [`${goal} Branch ${branchOf(t)} records the census movement in WORK.md. Run git diff main...${branchOf(t)}
 here; check the row against ${join(r.run, "census-report.txt")} and CLAUDE.md's "Status" convention. Blocking = a
