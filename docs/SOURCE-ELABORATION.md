@@ -2971,6 +2971,15 @@ and for `.call`, `.apply` and `.bind` alike
 
 ## Source closures and their annotations
 
+A closure collecting an array rest is checked at the source's fixed
+parameter types and rest element type, with the source's result annotation
+or, where it is omitted, the result proposed by its single variadic claim.
+Its graph code must establish that result with the collected rest store;
+the offered signature must be within the claim. Its effect is the source's
+stated effect, or the ordinary effect. `blocker-census-rest-result` shows
+an inferred result; `invalid-closure-rest-result` shows that an empty call
+may return `undefined` when the closure reads its first rest element.
+
 A source closure `(x₁: D₁, …, xₙ: Dₙ): Rₛ => t` is checked at the arrows its
 claim names, by the creation rule of [program typing](PROGRAM-TYPING.md#functions-calls-and-receivers): each claimed
 arrow $`(R,\vec A,B)`$ types the body at its own receiver, its first $`n`$

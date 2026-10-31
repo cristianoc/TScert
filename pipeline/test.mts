@@ -2107,6 +2107,30 @@ control(async (): Promise<void> => {
 
 
 control(async (): Promise<void> => {
+  // A rest closure's inferred result is checked against its body both when
+  // evidence is produced and when evidence is consumed.
+  const artifacts = run("blocker-census-rest-result");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "names"), "names's claims");
+  const closure = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("(...names:")),
+    "the rest closure's claim");
+  assert.ok(Array.isArray(closure.type));
+  const label = closure.type[0];
+  assert.ok(typeof label === "number");
+  const row = must(claims.types[label], "the rest closure's row");
+  const signature = must(row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
+    "the rest closure's variadic signature");
+  signature.result = [rowOf(claims, "nul")];
+  const forged = writeClaims(artifacts, "forged-rest-result", claims);
+  const body = source.indexOf("names.length");
+  refusedAt(artifacts, forged, "forged-rest-result", `source expression obligation at [${body},`);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+  process.stdout.write("forged inferred rest result: refused in search and checking\n");
+});
+
+control(async (): Promise<void> => {
   // Point identities bind claims to executions of the shared graph. Source
   // provenance alone cannot authorize a claim at another graph point.
   const artifacts = run("values");

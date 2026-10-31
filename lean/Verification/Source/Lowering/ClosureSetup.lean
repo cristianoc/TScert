@@ -120,8 +120,9 @@ arrow type or a scheme row, whose binders are then parameter rows (`fn`); a
 class value's construct signatures, with `undefined` for the receiver `new`
 passes (`ctor`); or an annotation's arrows, a callable object's (`annotated`).
 Code collecting an array rest offers its own variadic signature, at the
-source's annotations, which the claim is reached from by subtyping; or a
-scheme row's variadic signatures. -/
+source's parameter and result annotations (an omitted result is proposed
+by the claim and checked against the body), which the claim is reached from
+by subtyping; or a scheme row's variadic signatures. -/
 @[nospecialize] def lambdaSetup (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
@@ -189,10 +190,15 @@ scheme row's variadic signatures. -/
         pure (s.variadic.map (fun sig => (sig.fixed, some sig.arguments.2)), A)
       | none =>
         let E ← lower (Fragment.callableType elementJson)
-        let some ret := ret
-          | throw (locatedRefusal (← table) pos .bindingAnnotation
-              "a closure collecting a rest array needs its result annotation")
-        let R ← lower (Fragment.callableType ret)
+        -- An omitted result is a proposal from the claim. The code request
+        -- checks the body against it, with the source's parameter types and
+        -- rest store, just as it checks a written result.
+        let R ← match ret with
+          | some ret => lower (Fragment.callableType ret)
+          | none => match PositiveRules.expand G A with
+            | [.arrs [] [sig]] => pure sig.result
+            | _ => throw (locatedRefusal (← table) pos .bindingAnnotation
+                "a closure collecting a rest array without a result annotation needs one variadic claim")
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))
         -- Its own signature's effect is its annotation's: the statement, or
         -- none beyond the contract.

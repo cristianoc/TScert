@@ -69,7 +69,9 @@ export const cases: Case[] = [
   { ...positive("blocker-compiler-api-parse-config", "The reviewed parseConfigFile member, on an API instance read at its default false argument."), project: "pipeline/blocker-project" },
   // Census blocker causes; each source header names the functions it represents.
   gap("blocker-census-options-default", "An optional field read through a parameter with an empty-object default.", "unsupported", "proposal", /^unsupported: missing field tsconfigPath at \[\d+,\d+\)(?:\n|$)/),
-  gap("blocker-census-rest-result", "A local closure collecting rest arguments needs a result annotation.", "unverified", "search", /^reject: source refusal at \[\d+,\d+\): a closure collecting a rest array needs its result annotation(?:\n|$)/),
+  positive("blocker-census-rest-result", "A local closure collecting rest arguments infers its checked result."),
+  negative("invalid-closure-rest-result", "An inferred rest closure's first element may be undefined at an empty call.",
+    /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its return-contract claim\nobligation: The available claim for first\(\) is undefined \| string\. This return requires string\./),
   gap("blocker-census-set-copy", "A Set copied from an optional ReadonlySet is proposed at never, refusing the later add.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at Set<never> from alias: string, aliases\.add:/),
   { ...gap("blocker-census-import-guard-call", "A compiler import guard admits a node outside the import-only function's parameter.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke[^\n]*importedNames:/), project: "pipeline/blocker-project" },
   // The case project uses the front end's installed Node and compiler declarations.
