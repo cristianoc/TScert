@@ -1,4 +1,4 @@
-<section id="round" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
+<section id="round" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:10px">
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Cited case expectations · pipeline/cases.mts; measured census comparison · WORK.md</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Cases and the functions they target</h2>
 <table style="font-size:24px;color:#1d2422">
@@ -9,7 +9,7 @@
 <tr><td style="padding:4px 12px">scope-spread <span style="color:#2e7d4f">positive</span></td><td style="padding:4px 12px">A type-reading context record states the function fields it copies</td><td style="padding:4px 12px">readTypeTerm and callers: quantified call for a generic function type</td></tr>
 <tr><td style="padding:4px 12px">indexed-for-of <span style="color:#2e7d4f">positive</span></td><td style="padding:4px 12px">Iteration over an indexed value or an empty array</td><td style="padding:4px 12px">functionPlacement verifies; hoisting and callers reach a Map keys spread</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Measured comparison:</b> 897feac29b75 → aa376e0a92d8: 373/635 → 382/637 functions; 3,584/15,184 → 3,754/15,201 verified statements. Nine functions gained, none lost. files: realOf, findPackage. fragment-expressions: knownLocal, localArrow, memberOf, localValues, letWrites. fragment-statements: functionPlacement. written-applications: isInitializer. Each file name is in tools/ with suffix .mts.</li>
-<li><b style="font-weight:600">Scope:</b> the five rows cite positive expectations. A case’s success does not establish its whole census function. The censuses count functions in their respective sources; the later source has two more functions.</li>
+<li><b style="font-weight:600">Measured comparison:</b> aa376e0a92d8 → f3434c21ffc7: 382/637 → 382/637 verified functions; 3,754/15,201 → 3,754/15,202 verified statements. No function gained or lost. Eight first refusals differ: six type-printing functions reach conversion of a JSON primitive to text; two class-lowering functions reach a base-prototype identifier record. WORK.md records the comparison.</li>
+<li><b style="font-weight:600">Scope:</b> case expectations concern small sources. The optional-parameter helper is positive. The unrestricted captured-arms reduction is negative; its store-preserving variant is positive. The reduction case’s six functions first refuse conversion of a JSON primitive to text. Store-preserving means preserving existing stored values’ contracts. Case success does not establish a whole census function.</li>
 </ul>
 </section>
