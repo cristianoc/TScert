@@ -815,6 +815,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `next`, which runs no client code, and adds each element by
   // `Set.prototype.add`, which it gets from the fresh set, whose prototype
   // is the untampered `Set.prototype`. It reads `s` and allocates.
+  // A further form admits an array or the host view at one element type,
+  // including a host set with an empty-array fallback.
   { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
@@ -822,7 +824,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     forms: (library, view) => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) },
-      { binders: ["T"], params: [view("Set", [binder("T")])], result: library("Set", [binder("T")]) }] },
+      { binders: ["T"], params: [view("Set", [binder("T")])], result: library("Set", [binder("T")]) },
+      { binders: ["T"], params: [{ k: "union", parts: [readonlyArray(binder("T")), view("Set", [binder("T")])], span: at }], result: library("Set", [binder("T")]) }] },
   // Only empty construction: no iterator, entry access or overridden adder runs.
   ...["new <K extends WeakKey = WeakKey, V = any>(entries?: readonly (readonly [K, V])[] | null): WeakMap<K, V>;",
     "new <K extends WeakKey = WeakKey, V = any>(iterable?: Iterable<readonly [K, V]> | null): WeakMap<K, V>;"]

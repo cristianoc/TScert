@@ -58,6 +58,27 @@ of the host's implementation.
 
 ## Rewrites
 
+### The host identity of an alias-expansion set
+
+`TermScope.expandingAliases` in `tools/type-term.mts` holds the set of
+associated-result aliases being expanded. Its sole supplied value is a
+fresh `Set` copied from the enclosing scope and extended with the alias.
+Copying requires the host iterator contract; a structural `ReadonlySet`
+also admits client-defined iterators
+([collection construction](SOURCE-CONTRACTS.md#library-globals)).
+
+- **Repair:** the field states `Set<TypeAliasDeclaration>`, the type of
+  every value supplied to it. Its readers use `has` and copy it with
+  `new Set(scope.expandingAliases ?? [])`. The annotation retains the
+  host identity established by construction; it changes no execution.
+- **Support:** the existing constructor forms state the array and host-set
+  alternatives in one parameter at the same element type. The producer
+  compares union arms through their declarations when selecting a form;
+  Lean checks each argument against that form. The case
+  `blocker-census-set-copy` states the same host identity, while
+  `invalid-set-copy-readonly` exercises the structural input's refusal.
+- **Commit:** the introducing commit.
+
 ### A guard that promises more than its body checks
 
 `isRecordList(v): v is Record<string, unknown>[]` returned

@@ -215,7 +215,7 @@ export type TermScope = {
   associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** A resolved associated-result alias expanded in this lexical scope. */
   associatedAlias?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeAliasDeclaration | null>;
-  expandingAliases?: ReadonlySet<TypeAliasDeclaration>;
+  expandingAliases?: Set<TypeAliasDeclaration>;
   /** An annotation states records as the source fragment always has: named,
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */

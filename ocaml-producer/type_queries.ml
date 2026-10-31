@@ -310,7 +310,18 @@ let rec plausible_subtype_declared declarations actual expected =
   plausible_subtype (Lazy.force unfolded_actual) expected ||
   plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected) ||
   plausible_subtype (unfold ~own:true actual) (unfold ~own:true expected) ||
-  readonly_elements ()
+  readonly_elements () ||
+  (* Each arm can need its own declaration unfolded or readonly array
+     comparison before it fits an arm of the expected union. *)
+  (match actual,expected with
+  | Atoms (_::_::_ as atoms),_ -> List.for_all (fun atom ->
+      plausible_subtype_declared declarations (Atoms [atom]) expected) atoms
+  | Union parts,_ -> List.for_all (fun part ->
+      plausible_subtype_declared declarations part expected) parts
+  | _,Atoms (_::_::_ as atoms) -> List.exists (fun atom ->
+      plausible_subtype_declared declarations actual (Atoms [atom])) atoms
+  | _,Union parts -> List.exists (plausible_subtype_declared declarations actual) parts
+  | _ -> false)
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

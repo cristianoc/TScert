@@ -2868,10 +2868,14 @@ member of the callee's with each argument's premise checked
 Set<T>` and `new (values: string): Set<string>`, both at the empty footprint:
 the host iterates a string by its own iterator, which runs no client code
 (the assumption `%Iterate:String%` makes). It states a third form, `new
-<T>(values: NativeSetView<T>): Set<T>`, and `Map`'s iterable overload, beside
-its array of pairs, `new <K, V>(entries: NativeMapView<K, V>): Map<K, V>`, each
-at a host collection's reading view, which a `Set<T>` and a `Map<K, V>` meet,
-at the empty footprint. The construction gets the argument's
+<T>(values: NativeSetView<T>): Set<T>`, and a fourth form, `new <T>(values:
+readonly T[] | NativeSetView<T>): Set<T>`. Its array arm uses the array
+contract of the first form, so a union of arrays and host sets fixes one
+element type (`blocker-census-set-copy`). `Map`'s iterable overload
+states, beside its array of pairs, `new <K, V>(entries: NativeMapView<K, V>):
+Map<K, V>`. The host arms take a collection's reading view, which a
+`Set<T>` and a `Map<K, V>` meet, at the empty footprint. The construction
+gets the argument's
 `[Symbol.iterator]`, the host's collection iterator by the assumption
 `%Iterate:Set%` and `%Iterate:Map%` make of a value at the view, and steps it
 with the host's `next`, which runs no client code; a `Map`'s iterator yields a

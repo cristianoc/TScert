@@ -72,7 +72,9 @@ export const cases: Case[] = [
   positive("blocker-census-rest-result", "A local closure collecting rest arguments infers its checked result."),
   negative("invalid-closure-rest-result", "An inferred rest closure's first element may be undefined at an empty call.",
     /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its return-contract claim\nobligation: The available claim for first\(\) is undefined \| string\. This return requires string\./),
-  gap("blocker-census-set-copy", "A Set copied from an optional ReadonlySet is proposed at never, refusing the later add.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at Set<never> from alias: string, aliases\.add:/),
+  positive("blocker-census-set-copy", "A Set copied from an optional host Set keeps its element type through the empty-array fallback; a union of host Sets and arrays meets one constructor form."),
+  negative("invalid-set-copy-readonly", "An optional structural ReadonlySet may run client code through its iterator; the array arm of the fallback supplies no host provenance (run under Node).",
+    /no derivation of its node-typing claim/),
   { ...gap("blocker-census-import-guard-call", "A compiler import guard admits a node outside the import-only function's parameter.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke[^\n]*importedNames:/), project: "pipeline/blocker-project" },
   // The case project uses the front end's installed Node and compiler declarations.
   // Source contracts and syntax.

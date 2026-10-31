@@ -3891,6 +3891,24 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Both arms of the constructor's array-or-host-set form must establish
+  // its element type, including a host set with an empty-array fallback.
+  const artifacts = run("blocker-census-set-copy");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const at = (text: string) => must(expressions.find(e => e.pos[0] === source.indexOf(text) &&
+    e.pos[1] === source.indexOf(text) + text.length), `the claim of ${text}`);
+  at("new Set(scope.aliases ?? [])").type = at("new Set(values)").type;
+  const input = writeClaims(artifacts, "forged-set-union-element-type", claims);
+  const produce = produceWith(artifacts, input, "forged-set-union-element-type");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  process.stdout.write("forged union form: a string set's copy claimed at Set<number> refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
   // An optional call's body is claimed at no value only where its receiver
   // is only nullish. The loop's receiver holds the array from the second
   // iteration on: the body's member read and call forged to no value are
