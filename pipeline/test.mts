@@ -1129,6 +1129,17 @@ control(async (): Promise<void> => {
   refusedAt(union, forged, "forged-union-iteration-element", `[${element},${element + 1})`);
   invoke(forged, join(union, "evidence.json"), union);
   process.stdout.write("forged union iteration: the element claimed at a string, refused\n");
+  const indexed = run("blocker-gap-round-indexed-for-of");
+  const indexedSource = readFileSync(sourceKey(indexed), "utf8");
+  const indexedElement = indexedSource.indexOf("f of mentions[i]");
+  const indexedClaims = readClaims(indexed);
+  const indexedFn = must(indexedClaims.functions.find((f) => f.name === "place"), "place's claims");
+  must(indexedFn.expressions.find((e) => e.pos[0] === indexedElement && e.pos[1] === indexedElement + 1), "the indexed element's claim").type =
+    [rowOf(indexedClaims, "num")];
+  const indexedForged = writeClaims(indexed, "forged-indexed-iteration-element", indexedClaims);
+  refusedAt(indexed, indexedForged, "forged-indexed-iteration-element", `[${indexedElement},${indexedElement + 1})`);
+  invoke(indexedForged, join(indexed, "evidence.json"), indexed);
+  process.stdout.write("forged indexed iteration: the element claimed at a number, refused\n");
 });
 control(async (): Promise<void> => {
   // `unknown` under a test is the kinds the test leaves (`sourceSlice`): a

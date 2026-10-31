@@ -1921,6 +1921,13 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \end{array}
 ```
 
+The iterable kinds of a conditional are the kinds of both arms. The kinds
+of `a ?? b` are those of `a` excluding `null` and `undefined`, together with
+those of `b`, also where TypeScript's type of the whole expression omits
+an empty-array fallback. Each operand keeps its evaluation order and
+short-circuit behaviour; the selected intrinsic checks the resulting value
+against its parameter contract (`blocker-gap-round-indexed-for-of`).
+
 A loop over a union of two or more of these kinds, and no program's
 iterable, steps their **union's iteration** `%Iterate:K₁%|…|%Iterate:Kₙ%`
 (`unionIterationName` in `intrinsics.mts`): with

@@ -31,3 +31,14 @@ export function place(mentions: readonly Set<string>[], i: number): void {
     const name = f;
   }
 }
+
+// Nullish values in the indexed array take the same fallback. Parentheses
+// and nested fallbacks keep each possible iterable kind.
+export function lengths(
+  mentions: readonly (Set<string> | null | undefined)[],
+  i: number,
+): number {
+  let total = 0;
+  for (const name of mentions[i] ?? null ?? []) total += name.length;
+  return total;
+}
