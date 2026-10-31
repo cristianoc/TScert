@@ -372,7 +372,7 @@ export function completes(ss: Stmt[]): Within<{ value: "any"; store: "grow" }, b
 }
 
 export function firstOptional(
-  parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
+  parameters: readonly { readonly questionToken?: unknown; readonly initializer?: unknown }[],
 ): Within<{ value: "any"; store: "grow" }, number> {
   const i = parameters.findIndex((p) => !!p.questionToken);
   return i < 0 ? parameters.length : i;

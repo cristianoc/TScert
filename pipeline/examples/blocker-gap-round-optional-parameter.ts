@@ -4,7 +4,10 @@
 // fragment-classes.mts#classBody
 import type { ParameterDeclaration } from "typescript/unstable/ast";
 function firstOptional(
-  params: readonly { questionToken?: unknown; initializer?: unknown }[],
+  params: readonly {
+    readonly questionToken?: unknown;
+    readonly initializer?: unknown;
+  }[],
 ): Within<{ value: "any"; store: "grow" }, number> {
   return params.findIndex((p) => !!p.questionToken || !!p.initializer);
 }

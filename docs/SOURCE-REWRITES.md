@@ -58,6 +58,25 @@ of the host's implementation.
 
 ## Rewrites
 
+### Readonly fields in the optional-parameter helper
+
+`firstOptional` in `tools/fragment-support.mts` reads `questionToken` to
+find the first optional parameter. Its callers pass compiler parameter
+nodes, including the array passed to the constructor-parameter `map`
+callback in `tools/fragment-classes.mts`.
+
+- **Repair:** the helper's element contract states
+  `{ readonly questionToken?: unknown; readonly initializer?: unknown }`.
+  A writable field at `unknown` would permit replacing a compiler node's
+  narrower field with any value. Readonly fields state the access the
+  helper uses and admit the nodes through the existing
+  [record rules](POSITIVE-TYPES.md#records). The annotation changes no
+  execution.
+- **Scope:** `blocker-gap-round-optional-parameter` verifies the call inside
+  `map`; `blocker-gap-round-optional-parameter-writable` retains the
+  writable-field refusal. This repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A cache callback's nullable answer field
 
 `realOf` in `tools/files.mts` supplies `attemptAnswer` with a callback
