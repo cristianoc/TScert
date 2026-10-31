@@ -11,7 +11,7 @@ type Field = {
   span: Span;
 };
 export function native(fields: readonly Field[], span: Span): Field[] {
-  const nativeFields = fields.map((field) => {
+  const nativeFields = fields.map((field): Field => {
     if (field.name !== "finally") return field;
     const updated: TypeTerm = {
       k: "scheme",
@@ -29,13 +29,9 @@ export function native(fields: readonly Field[], span: Span): Field[] {
       )) ||
     (type.k === "function" && type.receiver?.k === "self") ||
     (type.k === "intersection" && type.parts.every(isMethod));
-  return nativeFields.map((field) =>
-    isMethod(field.type)
-      ? {
-          ...field,
-          readonly: true,
-          type: { k: "atom" as const, name: "unknown" as const, span },
-        }
-      : field,
-  );
+  return nativeFields.map((field): Field => {
+    if (!isMethod(field.type)) return field;
+    const type: TypeTerm = { k: "atom", name: "unknown", span };
+    return { ...field, readonly: true, type };
+  });
 }

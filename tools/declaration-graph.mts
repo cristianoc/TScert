@@ -6101,7 +6101,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         type.k === "scheme" ? { ...type, signatures: type.signatures.map(signature => signature.k === "function"
           ? { ...signature, params: signature.params.map(callbackResults) } : signature) }
         : type.k === "function" ? { ...type, params: type.params.map(callbackResults) } : type;
-      const nativeFields = expression.fields.map(declared => {
+      type NativeField = Extract<TypeTerm, { k: "object" }>["fields"][number];
+      const nativeFields = expression.fields.map((declared): NativeField => {
         const field = declared.name === "then" || declared.name === "catch"
           ? { ...declared, type: resolving(declared.type) } : declared;
         if (field.name !== "catch" && field.name !== "finally") return field;
@@ -6147,9 +6148,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         (type.k === "intersection" && type.parts.every(isMethod));
       const methods = nativeFields.filter(field => isMethod(field.type));
       expression = { ...expression, fields: methods,
-        prototype: { ...expression, fields: [...nativeFields.map(field =>
-          isMethod(field.type) ? { ...field, readonly: true,
-            type: { k: "atom" as const, name: "unknown" as const, span } } : field),
+        prototype: { ...expression, fields: [...nativeFields.map((field): NativeField => {
+          if (!isMethod(field.type)) return field;
+          const type: TypeTerm = { k: "atom", name: "unknown", span };
+          return { ...field, readonly: true, type };
+        }),
           { name: "constructor", optional: false, readonly: true,
             type: { k: "atom", name: "unknown", span }, span }] } };
     }

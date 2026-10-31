@@ -58,6 +58,28 @@ of the host's implementation.
 
 ## Rewrites
 
+### Native method maps with writable field contracts
+
+`collect` in `tools/declaration-graph.mts` maps the native Promise
+fields twice: it amends callable contracts, then gives prototype slots an
+`unknown` type. Both callbacks state the existing field type from
+`TypeTerm`, and the replacement atom is allocated as `TypeTerm`.
+
+- **Repair:** these annotations give each fresh writable field its full
+  storage contract. A narrower inferred literal cannot subsequently serve
+  as a writable field of the full union type. The existing allocation and
+  closure checks establish the stated contracts.
+- **Behaviour:** annotations are erased. Each map visits the same fields
+  in the same order, returns the same original fields on its unchanged
+  arms, and allocates the same records on its replacement arms. The
+  replacement atom is evaluated after the method test and before the field
+  copy; both read only local data with no intervening call. The returned
+  keys, values, identities and aliases are the same.
+- **Scope:** `blocker-gap-round-native-method-map` exercises the stated
+  contracts; `blocker-gap-round-native-method-map-inferred` retains the
+  original inference refusal. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### An array pattern's first element after a length test
 
 The `Object.assign` branch of `expr` in `tools/fragment-expressions.mts`
