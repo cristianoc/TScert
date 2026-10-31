@@ -23,10 +23,10 @@
  * the task's gates (`make build`, `make suite`, `make test`, or the docs
  * checks), the reviewer's review of `git diff main...` until it has no
  * blocking finding (the reviewer implementing them, two rounds at most),
- * each commit record checked against the glossary by a fresh run that sees
- * only the record and the glossary (three rounds), and a fast-forward merge
- * into main, one at a time. A gate, review or record left failing makes the
- * task incomplete, with its reason; it closes no case.
+ * and a fast-forward merge into main, one at a time. A gate or review left
+ * failing makes the task incomplete, with its reason; it closes no case.
+ * Authors write each commit record using only the glossary's terms or terms
+ * the record explains.
  *
  * Models: `sol` (codex gpt-6.1-sol), `astra` (codex gpt-6-astra) or
  * `codex:<id>`. An author runs `codex exec --approve-for-me`: its commands
@@ -40,7 +40,7 @@
  * window, or on a usage-limit failure, the command stops, and repeating it
  * resumes from `state.json`. One command runs at a time. */
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync,
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync,
   writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -294,9 +294,13 @@ const runNote = (r: Run): string => `
   stage store.
 - Your worktree is set up: \`lean/.lake\`, the node_modules directories and
   \`make build\` are done.
-- After you finish, the orchestrator checks each commit record against the
-  glossary with a fresh run, runs \`make suite\` and \`make test\`, has the
-  branch reviewed and merges it. Skip the brief's own glossary check.
+- Write each commit record using only the terms of \`docs/GLOSSARY.md\`,
+  plain words, and the names and terms of TypeScript and the code; explain
+  any other term where it first appears, and use no words of process or
+  status ("now", "approved", "reviewed"). Skip the brief's glossary check
+  by a fresh agent.
+- After you finish, the orchestrator runs \`make suite\` and \`make test\`,
+  has the branch reviewed and merges it.
 - Leave the worktree clean: everything committed. Your final message is
   your report.`;
 
@@ -454,60 +458,6 @@ cases you touch.\n\n${blocking.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}\n${
   }
 }
 
-const checkSchema = { type: "object", additionalProperties: false, required: ["ok", "problems"], properties: {
-  ok: { type: "boolean" }, problems: { type: "array", items: { type: "string" } } } };
-
-/** Each commit record checked against the glossary alone by a fresh run,
- * revised by the author's model, three rounds at most, after which the
- * remaining findings go to `record-findings.md` and the commit is made, as
- * the review skill states; the branch rewritten with the revised records. */
-async function records(r: Run, t: Task): Promise<boolean> {
-  const tree = treeOf(r, t), revised = new Map<string, string>();
-  for (const [n, c] of commits(r, t).entries()) {
-    let record = git(tree, "log", "-1", "--format=%B", c), earlier: string[] = [];
-    for (let round = 0; ; round++) {
-      const dir = join(taskDir(r, t), `record-${n}-${round}`);
-      mkdirSync(dir, { recursive: true });
-      cpSync(join(repository, "docs", "GLOSSARY.md"), join(dir, "GLOSSARY.md"));
-      writeFileSync(join(dir, "record.txt"), record);
-      const text = await codex(r, { model: r.o.driver, cwd: dir, write: false, log: logOf(r, t), schema: checkSchema,
-        out: join(dir, "check.json"), prompt: `Check the commit record record.txt against GLOSSARY.md, both in this
-directory, and read nothing else.\n\n${section(".claude/skills/review/SKILL.md", "## Checking a record")}\n\nok is
-true when the record passes; problems lists each problem with the sentence it is in.${earlier.length ? `\n\nThe earlier
-check's findings, of which you report whether each is resolved and whether the changed text adds a blocking one:\n${
-          earlier.map((p) => `- ${p}`).join("\n")}` : ""}` });
-      const v: unknown = JSON.parse(text);
-      if (!(v && typeof v === "object" && "ok" in v && typeof v.ok === "boolean" && "problems" in v && isStrings(v.problems)))
-        throw Error("a record check lacks a field");
-      if (v.ok) break;
-      if (round === 2) {
-        appendFileSync(join(taskDir(r, t), "record-findings.md"), `${c}, after three rounds:\n${
-          v.problems.map((p) => `- ${p}`).join("\n")}\n\n`);
-        break;
-      }
-      earlier = v.problems;
-      record = (await codex(r, { model: t.kind === "case" ? r.o.agent : r.o.driver, cwd: tree, write: false,
-        log: logOf(r, t), out: join(dir, "revised.txt"), prompt: `Revise this commit record so that it resolves the
-problems below, in the format of .claude/skills/review/SKILL.md (prose sections, then the trailers Outcome, Parts and
-Trust). Your final message is the full revised record and nothing else.\n\n${record}\n\nProblems:\n${
-          v.problems.map((p) => `- ${p}`).join("\n")}` })).trim() + "\n";
-      revised.set(c, record);
-    }
-  }
-  if (!revised.size) return true;
-  const list = commits(r, t);
-  git(tree, "checkout", "-q", "--detach", "main");
-  for (const c of list) {
-    git(tree, "cherry-pick", c);
-    const record = revised.get(c);
-    if (record !== undefined) {
-      writeFileSync(join(taskDir(r, t), "message.txt"), record);
-      git(tree, "commit", "-q", "--amend", "-F", join(taskDir(r, t), "message.txt"));
-    }
-  }
-  git(tree, "checkout", "-q", "-B", branchOf(t));
-  return true;
-}
 
 /** Fails unless the main checkout is on main and clean. */
 function mainReady(): void {
@@ -536,8 +486,6 @@ async function runTask(r: Run, t: Task): Promise<void> {
     if (!(await integrate(r, t))) return close(r, t, "incomplete", "main's tip not integrated");
     if (!(await gate(r, t)).passed) return close(r, t, "incomplete", "gates failed on main's tip");
     if (!(await review(r, t))) return close(r, t, "incomplete", "blocking review findings on main's tip");
-    if (!(await records(r, t))) return close(r, t, "incomplete", "a record fails the glossary check after three rounds");
-    if (!(await gate(r, t)).passed) return close(r, t, "incomplete", "gates failed after the records' rewrite");
     git(repository, "merge", "-q", "--ff-only", branchOf(t));
     const built = await locked(heavy(r), () => exec("make", ["build"], { cwd: repository, log: logOf(r, t) }));
     if (built.status !== 0) throw Error(`make build failed on main after merging ${t.id}`);
