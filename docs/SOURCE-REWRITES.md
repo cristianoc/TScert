@@ -1655,7 +1655,9 @@ binding before testing it with `Array.isArray` and visiting its labels.
 The existing [binding narrowing](SOURCE-ELABORATION.md#guards) establishes
 the local array view. Object-valued current contents of a mutable field
 would require extending the [current-content assertions](SOURCE-MODEL.md#current-content-assertions)
-beyond primitive values, for this one census site.
+beyond primitive values. The supplied census of `2db902ca8b7b` has no
+remaining sites for this construct; the saved binding establishes the
+obligation with the existing rules.
 
 - **Equivalent form:** the claim comes from `JSON.parse`, so its context is
   a data property. The local binding holds the same array reference as both
@@ -1667,10 +1669,10 @@ beyond primitive values, for this one census site.
   and receiver. Both traversals visit the same elements in the same order,
   with the same results and exceptions. Saving the reference adds no object
   allocation or asynchronous effect.
-- **Scope:** `blocker-gap-round-optional-for-each` exercises the saved
+- **Scope:** `blocker-gap-round-optional-for-each` and
+  `blocker-gap-round-optional-for-each-field` exercise the saved
   reference, including callbacks with arbitrary effects.
-  `blocker-gap-round-optional-for-each-field` retains the refused field
-  form. Equivalence for the decoder relies on its concrete read-only label
+  Equivalence for the decoder relies on its concrete read-only label
   validation; a caller-supplied callback could replace the field between
   traversals. The rewrite adds no external assumption.
 - **Commit:** the introducing commit.

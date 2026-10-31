@@ -1,6 +1,6 @@
-// forEach through an optional object field after a test.
-// Census functions:
-// diagnostic.mts#readDiagnostic
+// Save an optional context before testing and visiting its labels.
+// The supplied census has no remaining sites for the field-read form.
+// readDiagnostic in tools/diagnostic.mts uses this saved-binding form.
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Fields = { [key: string]: Json };
 function isRecord(v: Json | undefined): v is Fields {
@@ -13,7 +13,9 @@ export function diagnostic(
   labels: (v: Json, ...further: unknown[]) => void,
 ): void {
   const claim = destination.claim;
-  if (!isRecord(claim) || !Array.isArray(claim.context)) return;
+  if (!isRecord(claim)) return;
+  const context = claim.context;
+  if (!Array.isArray(context)) return;
   available.forEach(labels);
-  claim.context.forEach(labels);
+  context.forEach(labels);
 }
