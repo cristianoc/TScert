@@ -150,6 +150,32 @@ and preserves values and array stores.
   assumption.
 - **Commit:** the introducing commit.
 
+### A primitive overlay enumerated through an open record
+
+`primitiveOverlay` in `tools/array-prototype.mts` states both a readonly
+string dictionary of overlay-entry arrays and the required keys
+`string`, `number` and `boolean`. Its initializer supplies those three
+arrays. The dictionary retains the value contract of every own string
+key when `reviewedEntries` enumerates it with `Object.values`.
+
+- **Repair:** the dictionary annotation preserves the initializer’s value
+  contract alongside its required keys. A finite-key record alone leaves
+  other own values unconstrained, so enumeration supplies `unknown`
+  elements to the enclosing `flatMap` callback. The annotation is erased
+  and changes no execution.
+- **Repair:** `interfaceOverlay` states its constructed `Map` type. Its
+  `values()` iterator retains the host identity that the existing spread
+  contract requires; a structural `ReadonlyMap` may supply a client iterator.
+  This annotation also changes no execution.
+  `spread-readonly-map-values-refused` retains the structural iterator’s
+  spread refusal.
+- **Scope:** the existing [dictionary enumeration contract](SOURCE-CONTRACTS.md#library-globals)
+  and closure checks establish the obligation.
+  `blocker-gap-round-nested-filter` exercises the nested callbacks;
+  `invalid-gap-round-nested-filter` retains the finite-key-only refusal.
+  No external assumption is added.
+- **Commit:** the introducing commit.
+
 ### An array pattern's first element after a length test
 
 The `Object.assign` branch of `expr` in `tools/fragment-expressions.mts`

@@ -407,7 +407,8 @@ export const overlay: readonly OverlayEntry[] = [
  * values the host converts, running an object's own `toString`, is dropped,
  * so a call must omit it. A string owns `length` and its indices, which are
  * not the prototype's. */
-const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>> = {
+const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
+  Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>> = {
   string: [
     { name: "toString", from: "String", signature: "toString(): string;" },
     { name: "valueOf", from: "String", signature: "valueOf(): string;" },
@@ -514,7 +515,7 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
  * footprints"). */
 const changesValues = footprintEffect({ value: "any", store: "keep" });
-export const interfaceOverlay: ReadonlyMap<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
+export const interfaceOverlay: Map<string, readonly OverlayEntry[]> = new Map<string, readonly OverlayEntry[]>([
   ["Set", [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
     { name: "clear", from: "Set", signature: "clear(): void;", effect: changesValues },
