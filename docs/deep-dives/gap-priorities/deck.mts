@@ -1,12 +1,12 @@
-/* First refusals of the supplied census of 043267592814 (2026-10-31).
+/* First refusals of the supplied census of 340214a96fca (2026-10-31).
  * Build: make deck NAME=gap-priorities SINCE=f893d8b4.
  * Site audit: session scratchpad, round/ranking.md. */
 import {
-  bullets, card, cards, code, cover, point, slide, stat, status, table,
+  bullets, card, cards, code, cover, point, slide, stat, table,
   type Deck, type Slide,
 } from "../../../dev/deck.mts";
 
-const measured = "Measured 2026-10-31 · census of 043267592814";
+const measured = "Measured 2026-10-31 · census of 340214a96fca";
 
 // These are observed source forms, not assertions of shared implementation defects.
 const first: string[][] = [
@@ -15,30 +15,30 @@ const first: string[][] = [
   ["3", "Object.assign target read after argument-array destructuring", "792", "10"],
   ["4", "Scope spread overriding callbacks and a type alias’s source file", "780", "29"],
   ["5", "for-of over an indexed array with an empty-array fallback", "716", "26"],
-  ["6", "Array literal spreading map results that build field records", "393", "2"],
-  ["7", "Callback making a pair from a nested record spread", "352", "1"],
-  ["8", "Name read on a computed declaration node", "311", "1"],
-  ["9", "find callback calling a function stored in a graph field", "300", "1"],
-  ["10", "map callback recursively printing type arguments", "293", "10"],
+  ["6", "Call finding the first optional constructor parameter inside map", "393", "2"],
+  ["7", "map callback replacing native method types with unknown", "379", "1"],
+  ["8", "map callback allocating a generic signature’s type-parameter record", "352", "1"],
+  ["9", "initializer read after an in test on a compiler node’s parent", "313", "1"],
+  ["10", "find callback calling a function stored in a graph field", "300", "1"],
 ];
 const more: string[][] = [
   ["11", "filter callback inside a function passed to flatMap", "229", "5"],
   ["12", "Spread of unknown after object and null tests", "200", "5"],
   ["13", "Two maps resolving declarations and serializing locations", "197", "1"],
-  ["14", "Template interpolation after printing a nullable receiver field", "175", "5"],
-  ["15", "Async record result may acquire a callable then", "129", "3"],
-  ["16", "Cache callback returning a record whose answer is a real path or null", "124", "9"],
-  ["17", "Recursive visitor fails its stated effect bound", "120", "5"],
-  ["18", "forEach through an optional object field after a test", "106", "1"],
-  ["19", "Decoder asserts a writable result over checked input storage", "101", "1"],
-  ["20", "node field read on a result selected by find", "100", "4"],
+  ["14", "Captured array read before flatMap calls each element’s function", "187", "6"],
+  ["15", "Template interpolation after printing a nullable receiver field", "175", "5"],
+  ["16", "Async record result may acquire a callable then", "129", "3"],
+  ["17", "Cache callback returning a record whose answer is a real path or null", "124", "9"],
+  ["18", "Recursive visitor fails its stated effect bound", "120", "5"],
+  ["19", "JSON.stringify of a field key after string and symbol tests", "106", "4"],
+  ["20", "forEach through an optional object field after a test", "106", "1"],
 ];
 
 const slides: Slide[] = [
   cover("cover", {
     label: "TScert · its own front end",
     title: "Where proofs of TScert’s own code fail",
-    text: "TScert checks type claims about TypeScript programs. This deck explains its first refusals when it checks the functions of its own source-reading code, in tools/. The census of 043267592814 measures 372 of 635 functions verified. The next two slides explain those terms. The ranking describes source constructs at the remaining functions’ first refusals, weighted by the statements they block.",
+    text: "TScert checks type claims about TypeScript programs. This deck explains its first refusals when it checks the functions of its own source-reading code, in tools/. The census of 340214a96fca measures 370 of 635 functions verified. The next two slides explain those terms. The ranking describes source constructs at the remaining functions’ first refusals, weighted by the statements they block.",
   }),
   slide("terms", {
     label: "How to read the result", title: "A checked function, a refusal, and a small case", gap: 26,
@@ -49,39 +49,40 @@ const slides: Slide[] = [
     ]),
   }),
   slide("find", {
-    label: measured, title: "372 of 635 functions verify", gap: 26,
+    label: measured, title: "370 of 635 functions verify", gap: 26,
     body: cards([
-      stat("23.5%", "3,567 of 15,182 census statements belong to verified functions.", "ok"),
-      stat("263", "functions are refused: 223 at search or checking, 40 at source or proposal restrictions."),
+      stat("23.3%", "3,545 of 15,184 census statements belong to verified functions.", "ok"),
+      stat("265", "functions are refused: 232 at search or checking, 33 at source or proposal restrictions."),
       stat("0", "stage timeouts, with a limit of 300 seconds per process stage."),
     ]) + bullets([
       point("A slice", "a copy of one top-level function and its dependencies, run through the pipeline. A refusal can occur in a dependency retained in the copy."),
-      point("The weight", "each refused function contributes its own statements once, to its first refusal: 11,615 blocked statements. Statements include returns, assignments and tests. Later refusals are outside this measurement."),
-      point("The source", "the supplied census-tools-043267592814 record and refusals.json. This is the ordinary census. The earlier deck’s diagnostic census continued past refusals under assumptions and measured something different."),
+      point("The weight", "each refused function contributes its own statements once, to its first refusal: 11,639 blocked statements. Statements include returns, assignments and tests. Later refusals are outside this measurement."),
+      point("The source", "the supplied census-tools-340214a96fca record and refusals.json. This ordinary census stops at each function’s first refusal. The comparison with the preceding ordinary census appears on “Cases and the functions they target”."),
     ]),
   }),
   slide("method", {
     label: measured, title: "One search-failure message contains many source forms", gap: 24,
     body: table(["The record’s group", "Statements", "Functions", "What proof is missing"], [
-      ["Source expression obligation", "3,803", "142", "That an expression meets its claimed type, using the known types and facts"],
-      ["Source direct obligation", "946", "13", "That one type is included in another; here, that each proposed callback signature fits its source annotation"],
-      ["Closure expression claim", "701", "24", "That an expression inside a closure meets its claimed type under that closure’s parameters and captured values"],
-      ["Arrow claims do not match their bodies", "379", "1", "collect in declaration-graph.mts; no location in the record"],
+      ["Source expression obligation", "4,333", "154", "That an expression meets its claimed type, using the known types and facts"],
+      ["Source direct obligation", "973", "13", "That one type is included in another; here, that each proposed callback signature fits its source annotation"],
+      ["Closure expression claim", "578", "19", "That an expression inside a closure meets its claimed type under that closure’s parameters and captured values"],
+      ["Incoming edge obligation", "331", "12", "That an execution step establishes the type claims required at its destination"],
+      ["Effect refusal", "319", "14", "That the body obeys its proposed limits on changes to stored values"],
     ], [28, 12, 12, 48]) + bullets([
       point("Confirmed from source", "each located refusal is read in its supplied slice. Generic groups are split by refused expression and the functions reaching it. A shared expression confirms a source form; the exact failed proof may require investigation."),
-      point("A separate investigation", "the unlocated 379-statement mismatch is outside the construct ranking: collect contains several callbacks. The message does not establish which one fails."),
+      point("Scope", "the ranking names observed constructs. A generic search failure does not identify a shared implementation defect or establish that the source is unsafe."),
     ]),
   }),
   slide("priority", {
     label: measured, title: "The ten heaviest observed constructs", gap: 18,
     body: table(["#", "Construct at the first refusal", "Statements", "Functions"], first, [5, 69, 14, 12], { compact: true }) + bullets([
-      "Counts measure blocked code, not code guaranteed to verify when this refusal is removed. These ten sites have no exact refusal case identified in pipeline/cases.mts. The following slides show the heaviest sites and distinguish related cases.",
+      "Counts measure blocked code, not code guaranteed to verify when this refusal is removed. No exact case for these current refusals is identified in pipeline/cases.mts. The following slides show the heaviest sites and distinguish related cases.",
     ]),
   }),
   slide("priority-more", {
     label: measured, title: "Constructs 11–20", gap: 18,
     body: table(["#", "Construct at the first refusal", "Statements", "Functions"], more, [5, 69, 14, 12], { compact: true }) + bullets([
-      "Construct 15 needs a guarantee that neither the record nor its prototype can acquire a callable then during its lifetime: promise resolution may invoke that method. invalid-async-object is a related negative case. An effect bound states how calls may change locations. Construct 19’s storage issue is explained on “A decoder’s checked contents and its storage”. Other rows have no exact case identified.",
+      "Construct 16 needs a guarantee that neither the record nor its prototype can acquire a callable then during its lifetime: promise resolution may invoke that method. invalid-async-object is a related negative case. An effect bound states how calls may change locations. Construct 21’s storage issue is explained on “A decoder’s checked contents and its storage”. JSON.stringify serializes a value to JSON text. Other rows have no exact case identified.",
     ]),
   }),
   slide("early-binding", {
@@ -114,19 +115,20 @@ const slides: Slide[] = [
     ]),
   }),
   slide("round", {
-    label: "Each case is paired with the census functions it targets · cases.mts and WORK.md", title: "Five positive cases and the census sites beyond them", gap: 18,
-    body: '<div style="width:1656px">' + table(["Positive case", "What it checks", "First refusal in this record"], [
-      ["blocker-census-options-default · " + status("ok", "verified"), "Optional fields retain their annotated type through an empty-object default", "collectDeclarations: early capturedAt binding"],
-      ["blocker-census-rest-result · " + status("ok", "verified"), "A closure collecting rest arguments has an inferred result", "lowerFile and five callers: recursive parent walk"],
-      ["blocker-flat-map-narrow-field · " + status("ok", "verified"), "A fresh array’s allocation states which element types may be written to it", "expr and nine other functions: Object.assign target read"],
-      ["blocker-census-set-copy · " + status("ok", "verified"), "Copying optional built-in Sets retains the element type", "29 functions: scope spread overriding callbacks"],
-      ["blocker-census-import-guard-call · " + status("ok", "verified"), "An exact-kind test selects ordinary import nodes", "Statement slices: loop in functionPlacement"],
-    ], [31, 37, 32], { compact: true }) + '</div>' + bullets([
-      point("The same-function comparison", "WORK.md compares f502699ca098 and 043267592814: 372 of 635 verified in each, zero functions gained or lost. Seventeen first refusals change broad category; this count excludes changed obligations within a category. A case’s positive outcome does not imply its whole census function verifies."),
+    label: "Cited case expectations · pipeline/cases.mts; measured census comparison · WORK.md", title: "Cases and the functions they target", gap: 18,
+    body: table(["Positive case", "What it checks", "Current first refusal in its census functions"], [
+      ["blocker-census-spread-map-records", "Spreading mapped records into an array", "classBody and classStmt: firstOptional(all), finding the first optional constructor parameter"],
+      ["blocker-census-annotated-node-union", "An annotated callback over compiler member arrays", "collect: a proposed callback signature fails its source annotation in nativeFields.map"],
+      ["blocker-census-spread-nested-field", "Nested spreads over stated JSON data", "selectGlobal: allocating a type-parameter record for a generic signature"],
+      ["invalid-in-union-read", "A union arm states an absent spread field", "writtenApplications: initializer read after an in test on a compiler node’s parent"],
+      ["blocker-census-effect-map-result", "A map callback followed by array join", "Four claim-text functions: JSON.stringify(key), serializing a field key"],
+    ], [31, 30, 39], { compact: true }) + bullets([
+      point("Measured comparison", "043267592814 → 340214a96fca: 372 → 370 of 635 functions verified; 3,567 → 3,545 verified statements. Gained: files.treeDigest. Lost: computed-types.parameterMembers (method next read off its object), unchecked.unstated and unchecked.boundary (incoming edge obligations). These names identify functions in the corresponding tools/ files."),
+      point("Scope", "All five cases above have positive expectations; even the name invalid-in-union-read names a positive case. A case’s success does not establish its whole census function. The separate blocker-census-nested-field-json case retains a gap for serializing open nested records."),
     ]),
   }),
   slide("storage", {
-    label: "Construct 19 · 101 statements, 1 function", title: "A decoder’s checked contents and its storage", gap: 22,
+    label: "Construct 21 · 101 statements, 1 function", title: "A decoder’s checked contents and its storage", gap: 22,
     body: code([
       "// decodeFlowDocument checks parsed JSON, then closes with:",
       "const document: unknown = value;",
@@ -134,7 +136,7 @@ const slides: Slide[] = [
     ]) + bullets([
       point("The names", "a decoder checks input and returns a typed value. FlowDocument describes TScert’s graph of execution steps. value is the parsed input; document aliases its storage. unknown supplies no shape, and as asserts the result type."),
       point("The obligation", "checks of current contents alone do not establish the contracts of writable arrays and fields. A different reference may write values the asserted result type excludes. The record refuses the closing assertion."),
-      point("Repair site", "source-flow.mts, decodeFlowDocument, closing assertion. SOURCE-REWRITES.md, “A decoder’s result asserted over parsed storage”, gives the repair: build fresh storage from checked fields. A stronger annotation alone does not establish it. invalid-decoder-closing-assertion demonstrates the related aliasing problem."),
+      point("Repair site", "source-flow.mts, decodeFlowDocument, closing assertion. SOURCE-REWRITES.md, “A decoder’s result asserted over parsed storage”, describes the related repair pattern: build fresh storage from checked fields. A stronger annotation alone does not establish it. invalid-decoder-closing-assertion demonstrates the related aliasing problem."),
     ]),
   }),
   slide("routes", {
@@ -156,10 +158,10 @@ const slides: Slide[] = [
   slide("sources", {
     label: "Evidence and scope", title: "First refusals in one fixed record", gap: 24,
     body: bullets([
-      point("Measured", "census-tools-043267592814-2026-10-31T04-18-35-953Z.json in the supplied census directory 2db902ca8b7b: clean commit 043267592814, tools/, 300-second stage limit. Counts come from function outcomes and the statement inventory."),
+      point("Measured", "census-tools-340214a96fca-2026-10-31T07-12-06-447Z.json in the supplied census directory 2db902ca8b7b: clean commit 340214a96fca, tools/, 300-second stage limit. Counts come from function outcomes and the statement inventory."),
       point("Inspected", "The session’s work/refusals.json lists the refusals; tools/tools/slice-*.mts is in the cited census directory. Each refusal matches the record. Source spans count UTF-16 code units, as TypeScript does. The session’s work/round/ranking.md lists all sites, weights, case matches and repair assessments."),
       point("Source policy", "pipeline/cases.mts owns case expectations. WORK.md owns the census comparison. SOURCE-REWRITES.md owns the routes and decoder storage repair. No new pipeline run supplies a number in this deck."),
-      point("Limits", "Observed source forms are confirmed. Generic search failures leave the exact failed obligation to isolate. Later refusals and future gains are unmeasured. The 379-statement unlocated arrow mismatch is a separate investigation."),
+      point("Limits", "Observed source forms are confirmed. Generic search failures leave the exact failed obligation to isolate. Later refusals and future gains are unmeasured. A function can meet further obligations beyond the first one this record reports."),
     ]),
   }),
 ];

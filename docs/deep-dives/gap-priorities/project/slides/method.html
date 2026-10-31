@@ -1,14 +1,15 @@
 <section id="method" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 043267592814</p>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 340214a96fca</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">One search-failure message contains many source forms</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:28%;text-align:left;font-weight:600">The record’s group</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:12%;text-align:left;font-weight:600">Functions</th><th style="width:48%;text-align:left;font-weight:600">What proof is missing</th></tr>
-<tr><td>Source expression obligation</td><td>3,803</td><td>142</td><td>That an expression meets its claimed type, using the known types and facts</td></tr>
-<tr><td>Source direct obligation</td><td>946</td><td>13</td><td>That one type is included in another; here, that each proposed callback signature fits its source annotation</td></tr>
-<tr><td>Closure expression claim</td><td>701</td><td>24</td><td>That an expression inside a closure meets its claimed type under that closure’s parameters and captured values</td></tr>
-<tr><td>Arrow claims do not match their bodies</td><td>379</td><td>1</td><td>collect in declaration-graph.mts; no location in the record</td></tr>
+<tr><td>Source expression obligation</td><td>4,333</td><td>154</td><td>That an expression meets its claimed type, using the known types and facts</td></tr>
+<tr><td>Source direct obligation</td><td>973</td><td>13</td><td>That one type is included in another; here, that each proposed callback signature fits its source annotation</td></tr>
+<tr><td>Closure expression claim</td><td>578</td><td>19</td><td>That an expression inside a closure meets its claimed type under that closure’s parameters and captured values</td></tr>
+<tr><td>Incoming edge obligation</td><td>331</td><td>12</td><td>That an execution step establishes the type claims required at its destination</td></tr>
+<tr><td>Effect refusal</td><td>319</td><td>14</td><td>That the body obeys its proposed limits on changes to stored values</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
 <li><b style="font-weight:600">Confirmed from source:</b> each located refusal is read in its supplied slice. Generic groups are split by refused expression and the functions reaching it. A shared expression confirms a source form; the exact failed proof may require investigation.</li>
-<li><b style="font-weight:600">A separate investigation:</b> the unlocated 379-statement mismatch is outside the construct ranking: collect contains several callbacks. The message does not establish which one fails.</li>
+<li><b style="font-weight:600">Scope:</b> the ranking names observed constructs. A generic search failure does not identify a shared implementation defect or establish that the source is unsafe.</li>
 </ul>
 </section>

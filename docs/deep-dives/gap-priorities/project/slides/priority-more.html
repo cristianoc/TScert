@@ -1,19 +1,19 @@
 <section id="priority-more" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 043267592814</p>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 340214a96fca</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Constructs 11–20</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:5%;text-align:left;font-weight:600;padding:4px 12px">#</th><th style="width:69%;text-align:left;font-weight:600;padding:4px 12px">Construct at the first refusal</th><th style="width:14%;text-align:left;font-weight:600;padding:4px 12px">Statements</th><th style="width:12%;text-align:left;font-weight:600;padding:4px 12px">Functions</th></tr>
 <tr><td style="padding:4px 12px">11</td><td style="padding:4px 12px">filter callback inside a function passed to flatMap</td><td style="padding:4px 12px">229</td><td style="padding:4px 12px">5</td></tr>
 <tr><td style="padding:4px 12px">12</td><td style="padding:4px 12px">Spread of unknown after object and null tests</td><td style="padding:4px 12px">200</td><td style="padding:4px 12px">5</td></tr>
 <tr><td style="padding:4px 12px">13</td><td style="padding:4px 12px">Two maps resolving declarations and serializing locations</td><td style="padding:4px 12px">197</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">14</td><td style="padding:4px 12px">Template interpolation after printing a nullable receiver field</td><td style="padding:4px 12px">175</td><td style="padding:4px 12px">5</td></tr>
-<tr><td style="padding:4px 12px">15</td><td style="padding:4px 12px">Async record result may acquire a callable then</td><td style="padding:4px 12px">129</td><td style="padding:4px 12px">3</td></tr>
-<tr><td style="padding:4px 12px">16</td><td style="padding:4px 12px">Cache callback returning a record whose answer is a real path or null</td><td style="padding:4px 12px">124</td><td style="padding:4px 12px">9</td></tr>
-<tr><td style="padding:4px 12px">17</td><td style="padding:4px 12px">Recursive visitor fails its stated effect bound</td><td style="padding:4px 12px">120</td><td style="padding:4px 12px">5</td></tr>
-<tr><td style="padding:4px 12px">18</td><td style="padding:4px 12px">forEach through an optional object field after a test</td><td style="padding:4px 12px">106</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">19</td><td style="padding:4px 12px">Decoder asserts a writable result over checked input storage</td><td style="padding:4px 12px">101</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">20</td><td style="padding:4px 12px">node field read on a result selected by find</td><td style="padding:4px 12px">100</td><td style="padding:4px 12px">4</td></tr>
+<tr><td style="padding:4px 12px">14</td><td style="padding:4px 12px">Captured array read before flatMap calls each element’s function</td><td style="padding:4px 12px">187</td><td style="padding:4px 12px">6</td></tr>
+<tr><td style="padding:4px 12px">15</td><td style="padding:4px 12px">Template interpolation after printing a nullable receiver field</td><td style="padding:4px 12px">175</td><td style="padding:4px 12px">5</td></tr>
+<tr><td style="padding:4px 12px">16</td><td style="padding:4px 12px">Async record result may acquire a callable then</td><td style="padding:4px 12px">129</td><td style="padding:4px 12px">3</td></tr>
+<tr><td style="padding:4px 12px">17</td><td style="padding:4px 12px">Cache callback returning a record whose answer is a real path or null</td><td style="padding:4px 12px">124</td><td style="padding:4px 12px">9</td></tr>
+<tr><td style="padding:4px 12px">18</td><td style="padding:4px 12px">Recursive visitor fails its stated effect bound</td><td style="padding:4px 12px">120</td><td style="padding:4px 12px">5</td></tr>
+<tr><td style="padding:4px 12px">19</td><td style="padding:4px 12px">JSON.stringify of a field key after string and symbol tests</td><td style="padding:4px 12px">106</td><td style="padding:4px 12px">4</td></tr>
+<tr><td style="padding:4px 12px">20</td><td style="padding:4px 12px">forEach through an optional object field after a test</td><td style="padding:4px 12px">106</td><td style="padding:4px 12px">1</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Construct 15 needs a guarantee that neither the record nor its prototype can acquire a callable then during its lifetime: promise resolution may invoke that method. invalid-async-object is a related negative case. An effect bound states how calls may change locations. Construct 19’s storage issue is explained on “A decoder’s checked contents and its storage”. Other rows have no exact case identified.</li>
+<li>Construct 16 needs a guarantee that neither the record nor its prototype can acquire a callable then during its lifetime: promise resolution may invoke that method. invalid-async-object is a related negative case. An effect bound states how calls may change locations. Construct 21’s storage issue is explained on “A decoder’s checked contents and its storage”. JSON.stringify serializes a value to JSON text. Other rows have no exact case identified.</li>
 </ul>
 </section>
