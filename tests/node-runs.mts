@@ -186,6 +186,31 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       registerHooks({ load: (u, c, n) => u.endsWith("/b.cjs") ? n(42, c) : n(u, c) });
       module.exports = 1 + require("./b.cjs");`);
     writeFileSync(join(directory, "t.cjs"), "throw 7;");
+    // Copying exports runs only when requested, after load observation.
+    // A symbol getter runs too, although its value is absent from entries.
+    writeFileSync(join(directory, "exports.cjs"), `
+      globalThis.exportReads = [];
+      const value = Object.create({ inherited: 9 });
+      Object.defineProperty(value, "first", { enumerable: true, get() {
+        globalThis.exportReads.push("first"); value.second = 3; return value;
+      } });
+      value.second = 2;
+      Object.defineProperty(value, "hidden", { value: 4 });
+      Object.defineProperty(value, Symbol("export"), { enumerable: true, get() {
+        globalThis.exportReads.push("symbol"); return 5;
+      } });
+      module.exports = value;`);
+    writeFileSync(join(directory, "exports-throw.cjs"), `
+      module.exports = { get bad() { throw 17; } };`);
+    writeFileSync(join(directory, "exports-proxy.cjs"), `
+      globalThis.exportTraps = [];
+      module.exports = new Proxy({ x: 1 }, {
+        ownKeys(target) { globalThis.exportTraps.push("keys"); return Reflect.ownKeys(target); },
+        getOwnPropertyDescriptor(target, key) {
+          globalThis.exportTraps.push("own:" + String(key)); return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+        get(target, key) { globalThis.exportTraps.push("get:" + String(key)); return Reflect.get(target, key); }
+      });`);
     // A hook a loaded module registers keeps the continuation that calls
     // the boundary's load hook and throws; the continuation, called after
     // loadObserved returned, passes the call on and records nothing.
@@ -204,6 +229,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
         conditions: resolutionConditions(), threw: loadObserved(at("t.cjs")), t: digest("t.cjs"), a: digest("a.cjs") };
       registerHooks({ load: (u, c, n) => u === 42 ? { format: "commonjs", source: "module.exports = 40;", shortCircuit: true } : n(u, c) });
       out.loaded = loadObserved(at("a.cjs"));
+      out.primitiveExports = out.loaded.outcome.exports();
+      const exported = loadObserved(at("exports.cjs"));
+      const beforeExports = globalThis.exportReads.length;
+      const namespace = exported.outcome.exports();
+      const again = exported.outcome.exports();
+      out.exports = { before: beforeExports, keys: [...namespace.keys()],
+        second: namespace.get("second"), identity: namespace.get("first") === exported.outcome.value,
+        fresh: namespace !== again, reads: globalThis.exportReads };
+      try { loadObserved(at("exports-throw.cjs")).outcome.exports(); }
+      catch (error) { out.exportsThrown = error; }
+      const proxied = loadObserved(at("exports-proxy.cjs"));
+      globalThis.exportTraps.length = 0;
+      out.exportsProxy = { entries: [...proxied.outcome.exports()], traps: globalThis.exportTraps };
       registerHooks({ resolve: (s, c, n) => s === "./x.mjs" ? { url: "file:///forged", shortCircuit: true }
         : s === "./boom.mjs" ? (() => { throw 9; })() : n(s, c) });
       out.forged = resolveWithNode("./x.mjs", parent);
@@ -232,6 +270,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     assert.deepEqual(reads[1], { url: "node:module", digest: null });
     assert.deepEqual(reads[2], { url: null, digest: createHash("sha256").update("module.exports = 40;").digest("hex") });
     assert.deepEqual(Object.getOwnPropertyDescriptor(loaded, "outcome")?.value, { k: "loaded", value: 41 });
+    assert.equal(field("primitiveExports"), null);
+    assert.deepEqual(field("exports"), { before: 0, keys: ["first", "second"],
+      second: 3, identity: true, fresh: true, reads: ["first", "symbol", "first", "symbol"] });
+    assert.equal(field("exportsThrown"), 17);
+    assert.deepEqual(field("exportsProxy"), { entries: [["x", 1]], traps: ["keys", "own:x", "get:x"] });
     assert.equal(field("forged"), "file:///forged");
     assert.equal(field("thrown"), null);
     assert.deepEqual(field("retained"), { outcome: { k: "threw", thrown: 8 }, grew: 0, late: "string" });

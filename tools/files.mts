@@ -868,8 +868,10 @@ export function runtimeConditions(): readonly string[] {
  * Node loads it (`loadObserved`): the bytes of each module the load reads,
  * as a load hook sees them, and its package scope are observed; a module
  * read outside the installation is not accounted for. What the load threw
- * is thrown once its reads are observed. */
-export function loadModule(root: string, path: string): unknown {
+ * is thrown once its reads are observed. Its own enumerable exports are
+ * then copied to a fresh map by the boundary; a non-object gives null.
+ * Copying runs accessors and Proxy traps and propagates their failures. */
+export function loadModule(root: string, path: string): ReadonlyMap<string, unknown> | null {
   const { reads, outcome } = loadObserved(path);
   for (const { url, digest } of reads) {
     if (url === null) {
@@ -888,5 +890,5 @@ export function loadModule(root: string, path: string): unknown {
     else readAnswer(file, true);
   }
   if (outcome.k === "threw") throw outcome.thrown;
-  return outcome.value;
+  return outcome.exports();
 }

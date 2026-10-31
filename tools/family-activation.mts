@@ -295,10 +295,8 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     const known = modules.get(urlOf(module));
     if (known) return known;
     try {
-      const loaded: unknown = loadModule(realRoot, join(realRoot, module));
-      if (typeof loaded !== "object" || loaded === null) return null;
-      const exported: Record<string, unknown> = { ...loaded };
-      const namespace = new Map(Object.entries(exported));
+      const namespace = loadModule(realRoot, join(realRoot, module));
+      if (namespace === null) return null;
       modules.set(urlOf(module), namespace);
       return namespace;
     } catch {

@@ -1716,7 +1716,9 @@ at states all of that, so the program holds none.
   `resolutionConditions(): string[]` and
   `loadObserved(path): { reads: ModuleRead[]; outcome: LoadOutcome }`, with
   `ModuleRead = { url: string | null; digest: string | null }` and
-  `LoadOutcome = { k: "loaded"; value: unknown } | { k: "threw"; thrown: unknown }`.
+  `LoadOutcome = { k: "loaded"; value: unknown; exports: () => ReadonlyMap<string, unknown> | null } | { k: "threw"; thrown: unknown }`.
+  The loaded outcome's `exports` operation is described under
+  [a loaded module's own exports](#a-loaded-modules-own-exports).
   Each registers its hook and deregisters it before it returns. Node's
   chain of hooks is a chain of continuations built for each resolution or
   load, so a hook registered later may keep the continuation that calls
@@ -1767,6 +1769,47 @@ at states all of that, so the program holds none.
   `nodeResolve`), `files.mts#runtimeConditions` and
   `files.mts#loadModule`, which family activation uses.
 - **Commit:** the introducing commit, `Module customization hooks behind a host boundary; node:os and isBuiltin entries`.
+
+### A loaded module's own exports
+
+The [module customization hooks](#module-customization-hooks) boundary also
+holds the operation that copies a loaded module's own enumerable exports.
+The object and null tests over `unknown` admit host objects; the model's
+copy is stuck on those objects ([host operations](HOST-FAMILIES.md#operations-and-their-obligations)).
+Shape tests cannot establish the copy's domain, and the module's exports
+may include accessors or a Proxy.
+
+- **Boundary:** `tools/module-hooks.mts#loadObserved` supplies a loaded
+  outcome's `exports` function. That function captures only the value
+  returned by the module load. `tools/files.mts#loadModule` calls it after
+  observing the load's reads, and returns `ReadonlyMap<string, unknown> | null`.
+  `family-activation.mts#checkedGuards` holds that map.
+- **Contract:** each invocation returns null for null or a value whose
+  `typeof` is not `"object"`. Otherwise it evaluates `{ ...value }`, then
+  `Object.entries` of that copy, then constructs a fresh `Map` of those
+  entries. Own enumerable string keys and their saved values reach the
+  map, in entry order; inherited and non-enumerable properties do not.
+  Enumerable symbol getters run during the copy, and their values do not
+  enter the map. A getter or Proxy trap can mutate shared state, load
+  modules, throw any JavaScript value, or fail to return. The signature
+  states no preservation effect. Each thrown value propagates unchanged.
+- **Behaviour:** the property copy runs after the load hook is deregistered
+  and the load's reads are observed, at the same point where activation
+  requests the exports. The same spread, `Object.entries` and `Map`
+  construction preserve getter order, saved values and value identities.
+  Module loads that accessors trigger have the same observation scope as
+  accessors in activation's copy. The result map is fresh on each call.
+- **Trust:** the boundary's implementation has the stated contract under
+  the policy that standard objects and prototypes are not tampered with.
+  The contract assumes no shape, data-property guarantee or lack of effects
+  for the loaded value. It is an external contract, outside the calculus
+  proof. `tests/node-runs.mts` checks the operation under Node, including
+  getter effects, symbol getters and a thrown value.
+- **Scope:** `blocker-gap-round-unknown-spread` checks the caller's map
+  result. `blocker-gap-round-unknown-spread-unchecked` retains the direct
+  spread's refusal. General copying of host objects requires semantics for
+  their own-property operations and effects.
+- **Commit:** the introducing commit.
 
 ## Changes for a tool's defect
 

@@ -87,8 +87,19 @@ export function resolutionConditions(): string[] {
  * string's UTF-8 encoding or a `Uint8Array`'s bytes as the load hook saw
  * them, `null` for a source of another kind. */
 export type ModuleRead = { url: string | null; digest: string | null };
-/** What loading a module came to: its value, or what the load threw. */
-export type LoadOutcome = { k: "loaded"; value: unknown } | { k: "threw"; thrown: unknown };
+/** What loading a module came to: its value and a deferred copy of its
+ * exports, or what the load threw. Copying is requested after observation. */
+export type LoadOutcome = { k: "loaded"; value: unknown; exports: () => ReadonlyMap<string, unknown> | null }
+  | { k: "threw"; thrown: unknown };
+
+/** A loaded module's own enumerable exports. Accessors and Proxy traps run
+ * during the spread; their effects and thrown values propagate. Symbol
+ * getters run too, although Object.entries retains only string keys. */
+function moduleExports(value: unknown): ReadonlyMap<string, unknown> | null {
+  if (typeof value !== "object" || value === null) return null;
+  const exported: Record<string, unknown> = { ...value };
+  return new Map(Object.entries(exported));
+}
 
 /** The SHA-256 of a string's UTF-8 encoding or a `Uint8Array`'s bytes, in
  * hexadecimal digits; `null` for another value, or where hashing throws (a
@@ -127,7 +138,8 @@ export function loadObserved(path: string): { reads: ModuleRead[]; outcome: Load
   });
   let outcome: LoadOutcome;
   try {
-    outcome = { k: "loaded", value: requireModule(path) };
+    const value = requireModule(path);
+    outcome = { k: "loaded", value, exports: () => moduleExports(value) };
   } catch (thrown) {
     outcome = { k: "threw", thrown };
   } finally {
