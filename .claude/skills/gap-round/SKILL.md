@@ -61,7 +61,7 @@ For each confirmed reason with no pipeline case, add the case: the
 smallest source with that refusal. Its header names the census functions
 it stands for, and `pipeline/cases.mts` gets its entry as a gap. Check
 that the case reproduces the census refusal (`run-cases.mts <name>`).
-Commit the cases, one record, glossary-checked. These are the round's
+Commit the cases, one record. These are the round's
 step-1 cases.
 
 ## 4. The next 10 cases, at most 5 agents at a time

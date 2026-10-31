@@ -33,7 +33,7 @@
  * run in codex's sandbox, without network, writing its worktree, the run's
  * `work/` directory and the stage and Dune caches; a command that needs more
  * (the pipeline's own sandbox-exec, a commit) runs outside it on codex's
- * automatic approval. Reviews, record checks and the report run read-only.
+ * automatic approval. Reviews and the report run read-only.
  * The script runs every gate, commit rewrite and merge itself, with the
  * owner's permissions, over the authors' code. Before each codex run the
  * newest codex session's usage is read; at `--codex-stop` percent of either

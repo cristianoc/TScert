@@ -70,8 +70,8 @@ a host boundary in SOURCE-REWRITES.md in the same commit.
 - **Committing:**
   - `make suite` and `make test` pass before each commit.
   - Each commit carries a record in the format of
-    `.claude/skills/review/SKILL.md`. A fresh agent checks the record
-    against `docs/GLOSSARY.md` alone, for up to three rounds.
+    `.claude/skills/review/SKILL.md`, in the words its section "The words
+    of a record" states.
   - Commit small green steps, and update WORK.md's row when the work moves
     an item.
   - Never push, and never merge into main.

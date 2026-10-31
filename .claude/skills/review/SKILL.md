@@ -161,30 +161,19 @@ node dev/commit-records.mts --out review.html <base>..<tip>...
 - `--fragment` omits the document skeleton, for publishing with the Artifact
   tool. The page uses no script and no external data.
 
-## Checking a record before the commit
+## The words of a record
 
-Every record is checked before its commit is made, on the candidate message
-written to a file. A fresh agent reads only that file and
-[the glossary](../../../docs/GLOSSARY.md), the project's established terms:
-no diff, no other document, no earlier record. It reports every term that
-is neither in the glossary nor explained in the message, every sentence it
-cannot follow, and every phrase of process or status ("approved", "now",
-"reviewed by"). A draft's labels (`Dn`, `§n`), trust-row labels and rule
-notation count as explained only where the message states what they say.
-Only blocking findings count: a term the reader needs and does not get, a
-sentence that cannot be followed, a phrase of process or status; minor
-notes are listed apart and do not hold the commit. The message is revised by
-cutting before adding. The next check reads the message and the earlier
-findings, and reports only whether each is resolved and whether the changed
-text adds a blocking one; the message is self-contained when that check is
-clear. After three rounds the commit is made with the remaining findings
-named in its report, or held for the owner if one concerns what the change
-does. A term that records keep having to explain, and
-that a document owns, gets a glossary line linking to its owner, in the
-commit that adds the owner's section; a term without an owner gets one
-first. Before a push, every record of the range has passed this check, and
-any deep dive the range calls for ([STYLE.md](../../../docs/STYLE.md)) is
-approved by the owner.
+A record uses only the terms of [the glossary](../../../docs/GLOSSARY.md),
+the project's established terms, plain words, and the names and terms of
+TypeScript and the code. Any other term is explained where it first
+appears; a draft's labels (`Dn`, `§n`), trust-row labels and rule notation
+count as explained only where the message states what they say. A record
+uses no words of process or status ("approved", "now", "reviewed by"). A
+term that records keep having to explain, and that a document owns, gets a
+glossary line linking to its owner, in the commit that adds the owner's
+section; a term without an owner gets one first. Before a push, any deep
+dive the range calls for ([STYLE.md](../../../docs/STYLE.md)) is approved
+by the owner.
 
 ## When to produce a review
 
