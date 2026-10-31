@@ -240,7 +240,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
 
   if (ts.isObjectLiteralExpression(node)) {
     const parts = gate.objectFields(node, new Set<string>());
-    const fields = parts.flatMap((p) => p.spread !== undefined ? [] : [p]);
+    const fields = parts.flatMap<Extract<Expr, { k: "alloc" }>["fields"][number]>((p) => p.spread !== undefined ? [] : [p]);
     if (fields.length === parts.length) return { k: "alloc", pos: gate.span(node), fields };
     // Beside a spread, a key is a string: the copy's keys are compared with
     // the written ones by name.

@@ -1,6 +1,5 @@
-// A record field typed `{…}[]` is given a writable array of a narrower
-// element arm, which is refused as invariant; TypeScript accepts it
-// covariantly.
+// A fresh flatMap result states the writable element contract of its
+// destination field, keeping the input objects and their order.
 // Census functions:
 // fragment-expressions.mts#expr, fragment-expressions.mts#binary.
 type Part =
@@ -12,7 +11,9 @@ type Alloc = {
 };
 
 export function alloc(parts: Part[]): Alloc | null {
-  const fields = parts.flatMap((p) => (p.spread !== undefined ? [] : [p]));
+  const fields = parts.flatMap<Alloc["fields"][number]>((p) =>
+    p.spread !== undefined ? [] : [p],
+  );
   if (fields.length === parts.length) return { k: "alloc", fields };
   return null;
 }

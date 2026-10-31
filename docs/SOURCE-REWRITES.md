@@ -934,6 +934,29 @@ refused, though no caller writes the result: `findIn` only reads it.
 - **Functions:** `typesOf`.
 - **Commit:** the introducing commit.
 
+### A fresh array's writable element contract
+
+`expr` (`tools/fragment-expressions.mts`) keeps the named-field arm of
+`ObjectPart` with `flatMap`. That arm has the optional exclusion
+`spread?: never`; the allocation's writable `fields` array admits fields
+without that exclusion. A writable array's element contract is invariant
+([arrays](POSITIVE-TYPES.md#arrays)): a wider alias could insert a field
+that the narrower element contract excludes.
+
+- **Rewrite:** `flatMap`'s type argument is the allocation's field element
+  type, `Extract<Expr, { k: "alloc" }>["fields"][number]`. Each callback
+  result meets that type when its array is allocated, and the fresh result
+  has the destination's writable element contract. The type argument is
+  erased; the same callbacks return the same objects in the same order,
+  with the same calls, reads and allocations.
+- **Pattern:** state a fresh array's intended writable element contract
+  when creating it, before any alias holds it at a narrower contract.
+- **Cases:** `blocker-flat-map-narrow-field` states that contract;
+  `invalid-flat-map-narrow-field` keeps the inferred narrower array and
+  its refused widening.
+- **Functions:** `expr` and the expression readers that call it.
+- **Commit:** the introducing commit.
+
 ### A resolved URL read through URL members
 
 `resolveObserved` parsed the URL Node's resolver answers with `new URL` and
