@@ -1,4 +1,4 @@
-// An optional host typeParameters list passed after testing its length.
+// A saved optional host typeParameters list passed after testing its length.
 // Census functions:
 // type-term.mts#typeParts
 // type-term.mts#someType
@@ -37,6 +37,7 @@ function consume(xs: readonly TypeParameterDeclaration[]): number {
   return xs.length;
 }
 export function parameters(node: FunctionTypeNode): number {
-  if (!node.typeParameters?.length) return 0;
-  return consume(node.typeParameters);
+  const typeParameters = node.typeParameters;
+  if (!typeParameters?.length) return 0;
+  return consume(typeParameters);
 }

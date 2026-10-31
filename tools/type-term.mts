@@ -506,17 +506,18 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   if (ts.isFunctionTypeNode(node)) {
     // A rest admitting no argument list, `(...args: never) => R`: no call
     // is possible, and the type is every value with call code.
+    const typeParameters = node.typeParameters;
     const last = node.parameters[node.parameters.length - 1];
-    if (!node.typeParameters?.length && last?.dotDotDotToken && last.type) {
+    if (!typeParameters?.length && last?.dotDotDotToken && last.type) {
       const rest = typeTerm(scope, last.type, last);
       if (rest.k === "atom" && rest.name === "never") return atom("function");
     }
-    if (!node.typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
+    if (!typeParameters?.length) return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
     // A generic function type, `<A>(x: A) => R`, in a declaration or an
     // annotation, is a scheme whose signatures take any receiver, or the one
     // a `this` parameter states.
     if (!node.type) scope.fail(node, "generic function types are outside the fragment");
-    const { binders, forms } = quantified(scope, node.typeParameters, node.parameters, node.type, node, span);
+    const { binders, forms } = quantified(scope, typeParameters, node.parameters, node.type, node, span);
     return { k: "scheme", binders,
       signatures: forms.map(m => ({ ...m, receiver: m.receiver ?? { k: "atom", name: "unknown", span } })), span };
   }
@@ -606,8 +607,9 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
   };
   // A generic construct signature, `new <A>(x: A) => C<A>`, is a scheme of
   // construct signatures: a class value meeting each at every instance.
-  if (node.typeParameters?.length) {
-    const { binders, forms } = quantified(scope, node.typeParameters, node.parameters, node.type, node, span);
+  const typeParameters = node.typeParameters;
+  if (typeParameters?.length) {
+    const { binders, forms } = quantified(scope, typeParameters, node.parameters, node.type, node, span);
     return [{ k: "scheme", binders, signatures: forms.map(construct), span }];
   }
   return signatures(scope, node.parameters, node.type, node, span).map(construct);
@@ -1330,6 +1332,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
        ...list.filter(m => !ts.isIndexSignatureDeclaration(m) && !ts.isPropertySignatureDeclaration(m))]
     : list;
   for (const member of ordered) {
+    const typeParameters = ts.isMethodSignatureDeclaration(member) ? member.typeParameters : undefined;
     const memberSpan = spanOf(scope, member);
     if (ts.isPropertySignatureDeclaration(member)) {
       // A `readonly` member is a read capability: its write contract is
@@ -1371,7 +1374,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       constructs.push(...constructorForms(scope, member, memberSpan));
     } else if (scope.annotation && !ts.isMethodSignatureDeclaration(member)) {
       scope.fail(at, "unsupported member in a record type");
-    } else if (ts.isMethodSignatureDeclaration(member) && methods === true && member.typeParameters?.length &&
+    } else if (ts.isMethodSignatureDeclaration(member) && methods === true && typeParameters?.length &&
         !member.postfixToken && !member.modifiers?.length) {
       // A generic method is a readonly member whose type is a scheme: its own
       // type parameters are binders, named by spelling, which shadow the
@@ -1380,7 +1383,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       // contract, and no weaker type is safe for both.
       const name = named(member, "unsupported method signature");
       if (!member.type) scope.fail(member, "unsupported method signature");
-      const { binders, forms } = quantified(scope, member.typeParameters, member.parameters, member.type,
+      const { binders, forms } = quantified(scope, typeParameters, member.parameters, member.type,
         member, memberSpan);
       if (forms.some(m => m.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
       fields.push({ name, optional: false, readonly: true,
@@ -1388,7 +1391,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
           signatures: forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })),
           span: memberSpan }, span: memberSpan });
     } else if (ts.isMethodSignatureDeclaration(member)) {
-      if (!methods || !member.type || member.typeParameters?.length || member.modifiers?.length)
+      if (!methods || !member.type || typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");
       if (methods === "nested" && member.postfixToken)
         scope.fail(member, "an optional method of a nested type literal has no declaration as its receiver");
@@ -1668,12 +1671,13 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
         continue;
       }
       const name = named(member);
-      if (member.typeParameters?.length) {
+      const typeParameters = member.typeParameters;
+      if (typeParameters?.length) {
         // A generic method is a host-relative member with quantified
         // signatures, as an interface's is: its own type parameters are
         // binders, named by spelling, which shadow the class's; its scheme's
         // signatures take the instance as receiver.
-        const own = member.typeParameters.map(p => p.name.text);
+        const own = typeParameters.map(p => p.name.text);
         const inner: TermScope = {
           ...scope,
           named(node, span, read) {
@@ -1684,7 +1688,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
             return scope.named(node, span, read);
           },
         };
-        const binders = member.typeParameters.map(p => ({
+        const binders = typeParameters.map(p => ({
           name: p.name.text,
     resolution: null,
           bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,

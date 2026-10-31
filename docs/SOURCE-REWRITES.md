@@ -1653,6 +1653,37 @@ expression; an explicit receiver test uses the existing branch checks.
 - **Trust:** no external contract or assumption is added.
 - **Commit:** the introducing commit.
 
+### An optional host list tested through a property receiver
+
+`readTypeTerm`, `constructorForms`, `members` and `classInstance` in
+`tools/type-term.mts` save a compiler node's `typeParameters` list in a
+local binding, test that binding's optional `length`, and use that same
+binding for the list argument or traversal.
+
+- **Avoided form:** `if (!node.typeParameters?.length) return …;`
+  followed by `quantified(…, node.typeParameters, …)`, and the corresponding
+  positive tests. The existing [optional-chain test lowering](SOURCE-ELABORATION.md#optional-chains)
+  exposes narrowing for a local receiver. Extending that lowering to repeat
+  a property receiver requires evidence about its reads: an arbitrary getter
+  may return different values or run code on each read. A saved binding uses
+  the existing narrowing rules and retains the identity of the tested list.
+- **Equivalent form:** `const typeParameters = node.typeParameters;`
+  followed by `if (!typeParameters?.length) return …;` and use of
+  `typeParameters`. The [compiler node contract](COMPILER-API.md#trust)
+  gives stable, transparent member reads. The type reader preserves these
+  node members between the test and use. Absent and empty lists select the
+  same branch; a nonempty list supplies the same object to the same calls
+  and traversals. Saving the list changes no return, exception, modeled
+  mutation, allocation, method identity, alias, receiver or asynchronous
+  effect under that contract. Compiler getters' hidden caches fall within
+  its transparency requirement. This equivalence concerns compiler nodes;
+  it does not assert repeated reads of an arbitrary JavaScript property
+  have one value.
+- **Scope:** `blocker-round-optional-host-list` checks the saved-list form
+  with a `FunctionTypeNode` and a readonly array parameter. The rewrite adds
+  no host model or trust assumption.
+- **Commit:** the introducing commit.
+
 ### An array target justified only by length
 
 The `Object.assign` branch uses the [saved-target check](#an-array-patterns-first-element-after-a-length-test).
