@@ -490,7 +490,7 @@ Trust). Your final message is the full revised record and nothing else.\n\n${rec
   const list = commits(r, t);
   git(tree, "checkout", "-q", "--detach", "main");
   for (const c of list) {
-    git(tree, "cherry-pick", "-q", c);
+    git(tree, "cherry-pick", c);
     const record = revised.get(c);
     if (record !== undefined) {
       writeFileSync(join(taskDir(r, t), "message.txt"), record);
@@ -677,6 +677,7 @@ if (!existsSync(join(run, "state.json"))) {
 const state = readState(run);
 if (o.previous && !state.previous) state.previous = o.previous;
 const controller = join(lockRoot, "controller.lock");
+mkdirSync(lockRoot, { recursive: true });
 try { mkdirSync(controller); } catch { throw Error(`another gap iteration runs (${controller})`); }
 const release = (): void => rmSync(controller, { recursive: true, force: true });
 process.on("SIGINT", () => { release(); process.exit(130); });
