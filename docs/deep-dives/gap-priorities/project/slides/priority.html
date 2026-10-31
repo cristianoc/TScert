@@ -1,19 +1,19 @@
 <section id="priority" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:18px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of f3434c21ffc7</p>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 13d2104e09a9</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The ten heaviest observed constructs</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:5%;text-align:left;font-weight:600;padding:4px 12px">#</th><th style="width:69%;text-align:left;font-weight:600;padding:4px 12px">Construct at the first refusal</th><th style="width:14%;text-align:left;font-weight:600;padding:4px 12px">Statements</th><th style="width:12%;text-align:left;font-weight:600;padding:4px 12px">Functions</th></tr>
 <tr><td style="padding:4px 12px">1</td><td style="padding:4px 12px">Identifier text read after resolving interface bases</td><td style="padding:4px 12px">2,941</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">2</td><td style="padding:4px 12px">Reassigned translated-functions array read before filter</td><td style="padding:4px 12px">798</td><td style="padding:4px 12px">6</td></tr>
-<tr><td style="padding:4px 12px">3</td><td style="padding:4px 12px">Callable initialization returned as a withValue record</td><td style="padding:4px 12px">794</td><td style="padding:4px 12px">10</td></tr>
-<tr><td style="padding:4px 12px">4</td><td style="padding:4px 12px">Generic function type passed to quantified</td><td style="padding:4px 12px">780</td><td style="padding:4px 12px">29</td></tr>
+<tr><td style="padding:4px 12px">2</td><td style="padding:4px 12px">Parameter read through a tested optional promise field</td><td style="padding:4px 12px">942</td><td style="padding:4px 12px">45</td></tr>
+<tr><td style="padding:4px 12px">3</td><td style="padding:4px 12px">Reassigned translated-functions array read before filter</td><td style="padding:4px 12px">798</td><td style="padding:4px 12px">6</td></tr>
+<tr><td style="padding:4px 12px">4</td><td style="padding:4px 12px">Callable initialization returned as a withValue record</td><td style="padding:4px 12px">794</td><td style="padding:4px 12px">10</td></tr>
 <tr><td style="padding:4px 12px">5</td><td style="padding:4px 12px">Map keys iterator spread into an array</td><td style="padding:4px 12px">681</td><td style="padding:4px 12px">25</td></tr>
 <tr><td style="padding:4px 12px">6</td><td style="padding:4px 12px">Base-prototype identifier record on a conditional branch</td><td style="padding:4px 12px">393</td><td style="padding:4px 12px">2</td></tr>
 <tr><td style="padding:4px 12px">7</td><td style="padding:4px 12px">Mapped member array read before testing optional fields</td><td style="padding:4px 12px">382</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">8</td><td style="padding:4px 12px">Method overload forms called inside flatMap</td><td style="padding:4px 12px">352</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">9</td><td style="padding:4px 12px">Array length returned as a filter callback result</td><td style="padding:4px 12px">313</td><td style="padding:4px 12px">1</td></tr>
-<tr><td style="padding:4px 12px">10</td><td style="padding:4px 12px">Sorted and mapped result array read before push</td><td style="padding:4px 12px">300</td><td style="padding:4px 12px">1</td></tr>
+<tr><td style="padding:4px 12px">8</td><td style="padding:4px 12px">Method overload forms called inside flatMap</td><td style="padding:4px 12px">356</td><td style="padding:4px 12px">1</td></tr>
+<tr><td style="padding:4px 12px">9</td><td style="padding:4px 12px">Decoded promise assigned through conditional nested records</td><td style="padding:4px 12px">321</td><td style="padding:4px 12px">2</td></tr>
+<tr><td style="padding:4px 12px">10</td><td style="padding:4px 12px">Array length returned as a filter callback result</td><td style="padding:4px 12px">313</td><td style="padding:4px 12px">1</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Names: lowered holds translated functions; withValue describes a function with initial fields; quantified reads a generic function type. Rows 1–5 are explained next. Row 6 is a conditional allocation of a record describing a read of the base class’s prototype. The optional-parameter case verifies an earlier obligation at those functions. Other rows have no exact case identified. Counts measure blocked code; further refusals may follow.</li>
+<li>A promise describes what a guard or assertion function establishes about a parameter. Row 2 reads its parameter number through an optional field; “Optional fields and further obligations” explains it and rows 3–5 and 9. Row 6 allocates a record describing a read of the base class’s prototype. Rows 7–8 concern member collection and overload reading. Row 10 returns a length as a truthy filter result. Counts measure blocked code; further refusals may follow.</li>
 </ul>
 </section>
