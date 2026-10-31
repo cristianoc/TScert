@@ -1434,7 +1434,7 @@ export function letWrites(this: Gate, block: ts.Block, declared: Identifier): Wi
     }
     n.forEachChild(visit);
   };
-  const outermostIs = (top: Node, n: Node): boolean => {
+  const outermostIs: (top: Node, n: Node) => Within<{ value: "any"; store: "keep" }, boolean> = (top, n) => {
     let at: Node = top;
     while (ts.isParenthesizedExpression(at)) at = at.expression;
     return at === n;

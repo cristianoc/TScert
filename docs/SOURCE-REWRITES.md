@@ -77,6 +77,28 @@ the existing [allocation and closure checks](SOURCE-CLAIMS.md).
   refusal. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A forward visitor helper with a store-preserving contract
+
+`letWrites` in `tools/fragment-expressions.mts` captures `outermostIs`
+before that helper is initialized. Its callable binding states
+`(top: Node, n: Node) => Within<{ value: "any"; store: "keep" }, boolean>`.
+The existing [early-binding checks](SOURCE-ELABORATION.md#lexical-bindings-before-initialization)
+check initialization and reads at that storage contract, and the existing
+[closure checks](SOURCE-ELABORATION.md#stated-effects) certify its footprint.
+
+- **Repair:** the written callable contract retains the array-store
+  preservation established by the helper body. A forward capture reads
+  the storage contract; parameter and Boolean result annotations alone
+  give it an unrestricted call effect. The helper assigns its local
+  traversal binding, so its stated footprint permits value writes.
+- **Behaviour:** the annotation is erased. Closure allocation order,
+  capture, traversal, calls, returns, exceptions and mutations are the
+  same for every compiler node admitted by the existing host contract.
+- **Scope:** `blocker-gap-round-visitor-effect` exercises the qualified
+  binding; `blocker-gap-round-visitor-effect-unstated` retains the original
+  refusal. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### Declaration locations retained as JSON data
 
 `makeProbe` in `tools/type-probe.mts` compares declarations by serializing
