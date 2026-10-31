@@ -13,7 +13,9 @@ export function diagnostic(
   labels: (v: Json, ...further: unknown[]) => void,
 ): void {
   const claim = destination.claim;
-  if (!isRecord(claim) || !Array.isArray(claim.context)) return;
+  if (!isRecord(claim)) return;
+  const context = claim.context;
+  if (!Array.isArray(context)) return;
   available.forEach(labels);
-  claim.context.forEach(labels);
+  context.forEach(labels);
 }

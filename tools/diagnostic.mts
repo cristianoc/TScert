@@ -404,8 +404,10 @@ export function readDiagnostic(
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;
       const available = transfer.available;
-      if (!isRecord(claim) || !Array.isArray(available) || !Array.isArray(claim.context)) return undefined;
-      available.forEach(labels); claim.context.forEach(labels);
+      if (!isRecord(claim)) return undefined;
+      const context = claim.context;
+      if (!Array.isArray(available) || !Array.isArray(context)) return undefined;
+      available.forEach(labels); context.forEach(labels);
       if (typeof target.label !== "number" || !Number.isSafeInteger(target.label)) return undefined;
       const mapping = target.mapping;
       if (mapping !== null && (!Array.isArray(mapping) || mapping.some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= available.length))) return undefined;

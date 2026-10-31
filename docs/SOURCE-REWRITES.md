@@ -1515,6 +1515,33 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A decoded context saved before label validation
+
+`readDiagnostic` in `tools/diagnostic.mts` saves `claim.context` in a local
+binding before testing it with `Array.isArray` and visiting its labels.
+The existing [binding narrowing](SOURCE-ELABORATION.md#guards) establishes
+the local array view. Object-valued current contents of a mutable field
+would require extending the [current-content assertions](SOURCE-MODEL.md#current-content-assertions)
+beyond primitive values, for this one census site.
+
+- **Equivalent form:** the claim comes from `JSON.parse`, so its context is
+  a data property. The local binding holds the same array reference as both
+  field reads. Between the test and the context traversal, the only calls
+  are `available.forEach(labels)` and its `decodeLabels` calls.
+  `decodeLabels` tests arrays and integer bounds and maps to a fresh result;
+  it writes neither the claim nor its context. Under the existing standard
+  prototype assumption, the same array supplies the same `forEach` method
+  and receiver. Both traversals visit the same elements in the same order,
+  with the same results and exceptions. Saving the reference adds no object
+  allocation or asynchronous effect.
+- **Scope:** `blocker-gap-round-optional-for-each` exercises the saved
+  reference, including callbacks with arbitrary effects.
+  `blocker-gap-round-optional-for-each-field` retains the refused field
+  form. Equivalence for the decoder relies on its concrete read-only label
+  validation; a caller-supplied callback could replace the field between
+  traversals. The rewrite adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### An array pattern over a `Set`
 
 `parameterIndex` in `makeProbe` (`tools/type-probe.mts`) collected each

@@ -83,7 +83,8 @@ export const cases: Case[] = [
   { ...gap("blocker-gap-round-visitor-effect-unstated", "a forward helper without a stated footprint leaves its recursive visitor without a store bound", "unverified", "search", /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'letWrites' is not established by its body(?:\n|$)/), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-key-stringify", "A missing field key prints as undefined; every serialized key is JSON data."),
   negative("invalid-gap-round-key-stringify", "A missing field key is undefined, outside the JSON data contract.", /No rule derives this invoke at string from key:/),
-  { ...gap("blocker-gap-round-optional-for-each", "forEach through an optional object field after a test", "unsupported", "proposal", /^unsupported: a field read at its contract: a read of forEach through a field holding an object beside null or undefined[^\n]*(?:\n|$)/) },
+  positive("blocker-gap-round-optional-for-each", "A saved context array retains its tested value across label decoding."),
+  { ...gap("blocker-gap-round-optional-for-each-field", "forEach through an optional object field after a test", "unsupported", "proposal", /^unsupported: a field read at its contract: a read of forEach through a field holding an object beside null or undefined[^\n]*(?:\n|$)/), kind: "negative" },
 
   positive("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join, whose receiver admits holes."),
   negative("invalid-sparse-join-coercion", "A sparse map result retains join’s standard conversion bound (run under Node)."),
