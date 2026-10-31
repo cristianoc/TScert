@@ -257,25 +257,8 @@ fields twice: it amends callable contracts, then gives prototype slots an
 
 ### A compiler node's initializer read through its parent
 
-`writtenApplications` excludes another module's executable initializers
-from its type traversal. Its `isInitializer` helper tests the parent's
-kind before comparing its `initializer` child with the node. The existing
-[compiler node contracts](COMPILER-API.md#the-node-invariant) state the
-field at each of those kinds.
-
-- **Repair:** the read retains the compiler's syntax information: variable
-  declarations, parameters, binding elements, enum members, property
-  signatures and declarations, property assignments, JSX attributes, and
-  `for`, `for-in` and `for-of` statements. These are the eleven kinds whose
-  child lists in the installed package's `protocol.generated.js` contain
-  `initializer`; `RemoteNode.getNamedChild` returns `undefined` for that
-  member at every other kind. The kind tests therefore preserve the child
-  comparison for compiler nodes under the existing host contract.
-- **Scope:** `blocker-gap-round-parent-initializer` checks the kind tests;
-  `blocker-gap-round-parent-initializer-open-node` retains the read after
-  an `in` test on open `Node`. The repair uses the existing host-family
-  narrowing and field reads and adds no external assumption.
-- **Commit:** the introducing commit.
+The compiler-kind rewrite is described under
+[constructs avoided](#an-initializer-read-after-an-in-test-on-an-open-compiler-node).
 
 ### A graph field holding a lookup function
 
@@ -1636,6 +1619,34 @@ a recursive visitor capturing that binding cannot establish store preservation.
   the needed property through the existing mechanism at no runtime cost.
 - **Scope:** `blocker-gap-round-visitor-effect-unstated` verifies in this form.
   The production helper uses the same contract. No external assumption is added.
+
+### An initializer read after an `in` test on an open compiler node
+
+`writtenApplications` in `tools/written-applications.mts` excludes another
+module's executable initializers from its type traversal. Its
+`isInitializer` helper saves `node.parent`, tests its compiler kind, and
+compares its `initializer` child with `node`. The avoided form tests
+`"initializer" in node.parent` before reading `node.parent.initializer`.
+An `in` test on open `Node` does not state the field's value contract.
+Supporting that form would require reasoning about an unstated key on an
+open host-family member for a lookup expressible through the existing
+[compiler node contracts](COMPILER-API.md#the-node-invariant).
+
+- **Equivalent form:** the installed package's `protocol.generated.js`
+  lists `initializer` at exactly eleven kinds: variable declarations,
+  parameters, binding elements, enum members, property signatures and
+  declarations, property assignments, JSX attributes, and `for`, `for-in`
+  and `for-of` statements. At these kinds the guards expose the child
+  field. At every other kind `RemoteNode.getNamedChild` yields
+  `undefined`, which cannot equal the input node. Under the existing
+  compiler host contract, parent and child reads are stable and guards
+  only test the kind. Saving the parent and testing these kinds therefore
+  gives the same Boolean, with the same exceptions, mutations, identities,
+  aliases and receivers, and no asynchronous effects.
+- **Scope:** `blocker-gap-round-parent-initializer` and
+  `blocker-gap-round-parent-initializer-open-node` exercise the kind-based
+  lookup. The rewrite adds no external assumption.
+- **Commit:** the introducing commit.
 
 ### A decoded context saved before label validation
 

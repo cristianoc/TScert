@@ -63,7 +63,7 @@ export const cases: Case[] = [
   { ...positive("blocker-gap-round-scheme-binder-map", "A scheme binder allocation states the full writable contract of its fields."), project: "pipeline/blocker-project" },
   { ...negative("invalid-gap-round-scheme-binder-map", "A binder allocated with null-only writable fields cannot be widened to a scheme binder.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its return-contract claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...positive("blocker-gap-round-parent-initializer", "initializer read through compiler kinds that state the child"), project: "pipeline/blocker-project" },
-  { ...gap("blocker-gap-round-parent-initializer-open-node", "initializer read after an in test on a compiler node's parent", "unsupported", "proposal", /^unsupported: missing field initializer at \[\d+,\d+\)(?:\n|$)/), kind: "negative", project: "pipeline/blocker-project" },
+  { ...positive("blocker-gap-round-parent-initializer-open-node", "open-node initializer lookup expressed through compiler kind guards"), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-graph-find", "find calls a graph field whose lookup keeps values and array stores"),
   negative("invalid-graph-find-effect", "an ordinary graph function may shrink the searched array, so find passes number or undefined", /closure signature claim is outside the source annotation/),
   { ...positive("blocker-gap-round-nested-filter", "Object.values retains the primitive overlay dictionary contract inside a nested filter callback."), project: "pipeline/blocker-project" },
