@@ -339,11 +339,10 @@ so the destructured value's checked type includes `undefined`.
   supply nodes at their positions, so the check preserves the accepted
   source programs and their lowering.
 - **Scope:** `blocker-gap-round-assign-target` checks the saved value;
-  `blocker-gap-round-assign-target-length-only` states the length-only
-  refusal. Support for deriving an element's presence from a length test
-  requires relating the store's length and position through the binding
-  schedule and its effects. The direct check uses the existing narrowing
-  rules and adds no external assumption.
+  `blocker-gap-round-assign-target-length-only` checks the equivalent
+  form of the [avoided length-only read](#an-array-target-justified-only-by-length).
+  The direct check uses the existing narrowing rules and adds no external
+  assumption.
 - **Commit:** the introducing commit.
 
 ### An early captured function's returned function type
@@ -1564,6 +1563,31 @@ field's type did not state that.
 Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
+
+### An array target justified only by length
+
+The `Object.assign` branch uses the [saved-target check](#an-array-patterns-first-element-after-a-length-test).
+The avoided form tests only `node.arguments.length` before destructuring
+and passing the first element to `gate.expr`. Supporting that form requires
+relating array length and element presence through the binding schedule and
+its effects. The supplied census has no remaining sites for this construct;
+the existing direct check establishes the obligation with the binding
+narrowing rules.
+
+- **Equivalent form:** keep the length test, spread rejection and array
+  pattern, and test the saved target for `undefined` before using it.
+  For compiler argument arrays, the nonempty array supplies a compiler node
+  at position zero. Destructuring and the saved-value comparison invoke no
+  client code under the existing standard-object assumption, so the added
+  branch is unreachable for those inputs. Empty arrays and spread arguments
+  fail at the same preceding checks. Returns, exceptions, source evaluation
+  order, allocations, mutations, aliases and receivers are the same for every
+  input admitted by that compiler contract. This equivalence is specific to
+  compiler argument arrays; a sparse general JavaScript array can yield
+  `undefined` despite positive length.
+- **Scope:** `blocker-gap-round-assign-target-length-only` uses the checked
+  form. It adds no external assumption or native contract.
+- **Commit:** the introducing commit.
 
 ### A decoded context saved before label validation
 

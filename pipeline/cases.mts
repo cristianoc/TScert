@@ -52,7 +52,7 @@ export const cases: Case[] = [
   { ...positive("blocker-gap-round-parent-walk", "A recursive parent walk retains its declared parameters when offered ignored callback arguments."), project: "pipeline/blocker-project" },
   { ...negative("invalid-gap-round-parent-walk", "A recursive parent walk must meet its written result at every callback signature.", /This return requires string\./), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-assign-target", "The destructured target is checked for undefined before it is read."),
-  { ...gap("blocker-gap-round-assign-target-length-only", "Object.assign target read after argument-array destructuring", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/) },
+  positive("blocker-gap-round-assign-target-length-only", "The length-tested argument array has its saved target checked directly before use."),
   { ...positive("blocker-gap-round-scope-spread", "A scope copies its own function fields and overrides alias hooks and the source file."), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-indexed-for-of", "for-of over an indexed array with an empty-array fallback uses the union of the Set and array iteration contracts"),
   negative("invalid-indexed-for-of-fallback", "an indexed Set with an empty-array fallback yields its string elements, which cannot meet a number return contract", /no derivation of its return-contract claim/),
