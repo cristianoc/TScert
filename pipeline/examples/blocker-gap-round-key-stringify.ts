@@ -14,5 +14,7 @@ export function keyText(field: { [key: string]: Json }): string {
     ? key
     : isObject(key) && typeof key.symbol === "number"
       ? `[symbol ${key.symbol}]`
-      : JSON.stringify(key);
+      : key === undefined
+        ? "undefined"
+        : JSON.stringify(key);
 }

@@ -20,4 +20,11 @@ assert.deepEqual(
     call: "unknown", construct: "unknown", array: "unknown" }),
   { text: "{ (invalid field [1]) }", printable: false },
 );
-process.stdout.write("claim text: malformed index markers, an array atom and an array field shown as they arrived\n");
+// A malformed field lacking a name keeps the enclosing addition's text.
+assert.deepEqual(
+  printed({ a: "record", fields: [{ read: { top: true, atoms: [] }, write: { top: true, atoms: [] } }],
+    indexes: { string: "absent", number: "absent", symbol: "absent" },
+    call: "unknown", construct: "unknown", array: "unknown" }),
+  { text: "{ undefined: unknown }", printable: false },
+);
+process.stdout.write("claim text: malformed index markers, an array atom and malformed fields shown as they arrived\n");

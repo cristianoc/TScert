@@ -175,7 +175,9 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
                 : JSON.stringify(key)
               : isObject(key) && typeof key.symbol === "number"
                 ? `[symbol ${key.symbol}]`
-                : JSON.stringify(key)) + (field.optional ? "?" : "");
+                : key === undefined
+                  ? "undefined"
+                  : JSON.stringify(key)) + (field.optional ? "?" : "");
           const read = typeText(field.read, state);
           const write = typeText(field.write, state);
           // A read type that differs from the write type is an assertion about

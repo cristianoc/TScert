@@ -99,6 +99,29 @@ check initialization and reads at that storage contract, and the existing
   refusal. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A missing field key printed explicitly
+
+`bareAtomText` in `tools/claim-text.mts` prints malformed producer fields
+as well as valid ones. A JSON dictionary read may yield `undefined` for
+an absent `name`. The existing [JSON contract](SOURCE-CONTRACTS.md#json-and-error)
+accepts JSON data and returns a string.
+
+- **Runtime check and repair:** the fallback tests `key === undefined`
+  and supplies the text `"undefined"`; its other arm serializes JSON data.
+  The string and symbol tests retain their order. The existing narrowing
+  and call checks establish the serialization obligation.
+- **Behaviour:** at an absent name, the enclosing string addition converts
+  the original serialization result `undefined` to `"undefined"`. The
+  explicit text gives the same field name and optional suffix. At every
+  other value, the same serialization or symbol formatting runs. The
+  omitted call on `undefined` runs no client code, allocates no object and
+  throws no exception under the existing standard-object assumption.
+- **Scope:** `blocker-gap-round-key-stringify` exercises the explicit
+  missing-name text. `invalid-gap-round-key-stringify` retains the original
+  call on a possibly absent key, whose direct return can be `undefined`
+  despite its `string` annotation. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### Declaration locations retained as JSON data
 
 `makeProbe` in `tools/type-probe.mts` compares declarations by serializing

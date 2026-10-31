@@ -81,7 +81,8 @@ export const cases: Case[] = [
   negative("blocker-gap-round-cache-answer-inferred", "A cache callback inferred with separate string and null writable fields cannot meet the cache record contract.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/),
   { ...positive("blocker-gap-round-visitor-effect", "a recursive visitor captures a forward helper whose written contract preserves array stores"), project: "pipeline/blocker-project" },
   { ...gap("blocker-gap-round-visitor-effect-unstated", "a forward helper without a stated footprint leaves its recursive visitor without a store bound", "unverified", "search", /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'letWrites' is not established by its body(?:\n|$)/), project: "pipeline/blocker-project" },
-  { ...gap("blocker-gap-round-key-stringify", "JSON.stringify of a field key after string and symbol tests", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/) },
+  positive("blocker-gap-round-key-stringify", "A missing field key prints as undefined; every serialized key is JSON data."),
+  negative("invalid-gap-round-key-stringify", "A missing field key is undefined, outside the JSON data contract.", /No rule derives this invoke at string from key:/),
   { ...gap("blocker-gap-round-optional-for-each", "forEach through an optional object field after a test", "unsupported", "proposal", /^unsupported: a field read at its contract: a read of forEach through a field holding an object beside null or undefined[^\n]*(?:\n|$)/) },
 
   positive("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join, whose receiver admits holes."),
