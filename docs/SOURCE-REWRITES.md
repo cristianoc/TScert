@@ -250,8 +250,9 @@ fields twice: it amends callable contracts, then gives prototype slots an
   copy; both read only local data with no intervening call. The returned
   keys, values, identities and aliases are the same.
 - **Scope:** `blocker-gap-round-native-method-map` exercises the stated
-  contracts; `blocker-gap-round-native-method-map-inferred` retains the
-  original inference refusal. The repair adds no external assumption.
+  contracts; `blocker-gap-round-native-method-map-inferred` exercises the
+  [equivalent explicit form](#inferred-writable-fields-in-native-method-maps).
+  The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
 ### A compiler node's initializer read through its parent
@@ -1587,6 +1588,31 @@ narrowing rules.
   `undefined` despite positive length.
 - **Scope:** `blocker-gap-round-assign-target-length-only` uses the checked
   form. It adds no external assumption or native contract.
+- **Commit:** the introducing commit.
+
+### Inferred writable fields in native method maps
+
+`collect` in `tools/declaration-graph.mts` states `NativeField` on both
+native-field map callbacks and `TypeTerm` on the replacement atom, as in
+[the writable field repair](#native-method-maps-with-writable-field-contracts).
+The inferred form gives fresh writable fields narrower literal contracts;
+using those fields at the full union requires broader allocation contracts.
+The supplied census has no remaining sites for this form. Extending
+inference to choose those storage contracts has no additional measured
+reach for this case; explicit annotations use the existing allocation and
+closure checks.
+
+- **Equivalent form:** each callback states its field result type. The
+  replacement atom is bound as `TypeTerm` after the method test and before
+  the field copy. Annotations erase, and the atom allocation reads only
+  local bindings. Between that allocation and the copy, neither form calls
+  code or mutates the input. Both maps visit the same fields in the same
+  order, preserve the original fields on unchanged arms, and allocate the
+  same objects on replacement arms. Returns, exceptions, mutations, method
+  identities, aliases, receivers and asynchronous effects agree under the
+  existing source contracts.
+- **Scope:** `blocker-gap-round-native-method-map-inferred` verifies this
+  equivalent form. The rewrite adds no external assumption.
 - **Commit:** the introducing commit.
 
 ### A decoded context saved before label validation
