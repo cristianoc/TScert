@@ -99,6 +99,24 @@ accepts that receiver and gives the callback a sparse third argument.
   visited entry gives no presence guarantee for other indices. The native
   contract states the existing standard-object assumption.
 - **Commit:** the introducing commit.
+### Decoded records returned by async workers
+
+`tools/unchecked.mts` gives its worker result the type `Result`, whose
+`readonly then?: undefined` member states the lifetime non-thenable
+contract required by [async resolution](SOURCE-CONTRACTS.md#async-functions-and-await).
+`check` and `decodeResult` each allocate the result as a fresh literal
+with only `files` and `found`; `runPart` returns the decoded record.
+
+- **Repair:** the result annotations retain the absence of a callable
+  `then` that these allocations establish. The existing record allocation
+  and async-resolution checks establish the contract at its producers
+  and consume it at the async return.
+- **Behaviour:** annotations are erased. Decoding reads the same members,
+  allocates the same records and arrays, and returns the same object;
+  the worker retains its exceptions, promise resolution and object identity.
+- **Scope:** `invalid-async-object` shows the typed decoder and async return.
+  `invalid-async-open-record` retains the refusal for an unrestricted record.
+  The standard prototype assumptions are those of async resolution.
 
 ### Native method maps with writable field contracts
 

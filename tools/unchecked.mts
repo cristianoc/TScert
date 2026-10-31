@@ -121,6 +121,9 @@ interface Found {
   reason: string | null;
 }
 
+/** A fresh worker result, whose lifetime then contract permits async return. */
+type Result = { files: string[]; found: Found[]; readonly then?: undefined };
+
 const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotated", "uninspected", "tool failure", "as", "!"];
 
 /** A comment directive that silences the checker: `@ts-ignore`,
@@ -428,7 +431,7 @@ const EXPECTED = /\/\/ expected: ([\w !,]+)$/;
  * project is checked twice over: as written, to read the external
  * declarations, and as the shadow program, which reads each external
  * declaration file at its contracts (shadow-contracts.mts). */
-function check(config: string, part: number, parts: number, inputs: ReplacedInput[] = []): { files: string[]; found: Found[] } {
+function check(config: string, part: number, parts: number, inputs: ReplacedInput[] = []): Result {
   // The written program checks the external declarations too.
   const checkingLibraries = (name: string): string | undefined => name === config
     ? fs.readFileSync(name, "utf8").replace(/"skipLibCheck":\s*true/, '"skipLibCheck": false') : undefined;
@@ -476,7 +479,7 @@ function check(config: string, part: number, parts: number, inputs: ReplacedInpu
  * field, or null where it is none: an object holding a list of file names
  * and a list of findings, each an object holding a file, a line, a column, a
  * kind, a text and a reason. Members beyond these are not read. */
-function decodeResult(value: Json | undefined): { files: string[]; found: Found[] } | null {
+function decodeResult(value: Json | undefined): Result | null {
   const files = objectMember(value, "files");
   const found = objectMember(value, "found");
   if (!Array.isArray(files) || !Array.isArray(found)) return null;
@@ -535,7 +538,7 @@ if (workerAt >= 0) {
 const parts = Math.max(1, Math.min(8, availableParallelism() - 1));
 // Each part runs in a process of its own through tools/child-output.mts,
 // which checks what the child delivers.
-const runPart = async (part: number): Promise<{ files: string[]; found: Found[] }> => {
+const runPart = async (part: number): Promise<Result> => {
   const ran = await runChild(process.execPath,
     [fileURLToPath(moduleLocation(import.meta.url)), "--project", projectDir, "--worker", `${part}/${parts}`]);
   const parsed: Json | undefined = ran.code === 0 ? JSON.parse(ran.stdout) : undefined;
