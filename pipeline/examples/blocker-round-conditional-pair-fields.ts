@@ -1,4 +1,4 @@
-// A conditional pair inferred as an array, destructured into required record fields.
+// A conditional pair with a stated tuple contract, destructured into required record fields.
 // Census functions:
 // fragment-expressions.mts#expr
 // fragment-expressions.mts#objectFields
@@ -13,6 +13,8 @@
 type Term = { k: "atom"; name: string };
 type Expr = { k: "withValue"; functionType: Term; bagType: Term };
 export function wrap(flag: boolean, left: Term, right: Term): Expr {
-  const [functionType, bagType] = flag ? [left, right] : [right, left];
+  const [functionType, bagType]: [Term, Term] = flag
+    ? [left, right]
+    : [right, left];
   return { k: "withValue", functionType, bagType };
 }

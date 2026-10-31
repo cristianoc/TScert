@@ -533,7 +533,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       const typeArguments = node.typeArguments;
       const inferred = typeArguments ? null : gate.assignTypes.get(gate.span(node).join(":"));
       if (inferred && !inferred.ok) gate.fail(node, inferred.refused);
-      const [functionType, bagType] = inferred?.ok ? [gate.settled(inferred.value.functionType, node), gate.settled(inferred.value.bagType, node)]
+      const [functionType, bagType]: [TypeTerm, TypeTerm] = inferred?.ok ? [gate.settled(inferred.value.functionType, node), gate.settled(inferred.value.bagType, node)]
         : typeArguments?.length === 2 ? [gate.typeOf(typeArguments[0]), gate.typeOf(typeArguments[1])]
         : gate.fail(node, "Object.assign's callable form needs its two type arguments");
       // The function the call returns owns each key of the literal, as the

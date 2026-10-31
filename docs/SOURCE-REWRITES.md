@@ -60,6 +60,27 @@ of the host's implementation.
 
 ## Rewrites
 
+### A conditional pair's fixed positions
+
+The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`
+states `[TypeTerm, TypeTerm]` on the pattern binding `functionType` and
+`bagType`. Each conditional arm constructs exactly two elements. The existing
+[array and tuple checks](SOURCE-ELABORATION.md) establish both positions
+before the returned `withValue` record consumes them as required fields.
+
+- **Repair:** the tuple annotation retains the fixed positions that the
+  fresh arrays establish. An inferred array contract loses those positions,
+  so its destructured elements may be `undefined` in the model.
+- **Behaviour:** the annotation is erased. The same conditional tests run,
+  and the selected arm evaluates its first call before its second call,
+  allocates the same pair and binds the same values. Calls, exceptions,
+  mutations, aliases, receivers and returned records agree for every input
+  admitted by the existing contracts.
+- **Scope:** `blocker-round-conditional-pair-fields` checks the annotated
+  conditional and required record fields. The repair adds no external
+  assumption.
+- **Commit:** the introducing commit.
+
 ### Readonly fields in the optional-parameter helper
 
 `firstOptional` in `tools/fragment-support.mts` reads `questionToken` to
