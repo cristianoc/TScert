@@ -27,7 +27,7 @@ const more: string[][] = [
   ["13", "Two maps resolving declarations and serializing locations", "197", "1"],
   ["14", "Template interpolation after printing a nullable receiver field", "175", "5"],
   ["15", "Async record result may acquire a callable then", "129", "3"],
-  ["16", "Callback returning a real path or null through a cache helper", "124", "9"],
+  ["16", "Cache callback returning a record whose answer is a real path or null", "124", "9"],
   ["17", "Recursive visitor fails its stated effect bound", "120", "5"],
   ["18", "forEach through an optional object field after a test", "106", "1"],
   ["19", "Decoder asserts a writable result over checked input storage", "101", "1"],
@@ -62,10 +62,10 @@ const slides: Slide[] = [
   }),
   slide("method", {
     label: measured, title: "One search-failure message contains many source forms", gap: 24,
-    body: table(["The record’s group", "Statements", "Functions", "What the source shows"], [
-      ["Source expression obligation", "3,803", "142", "Argument reads, spreads, loops, calls, templates and other forms"],
-      ["Source direct obligation", "946", "13", "Several different callbacks"],
-      ["Closure expression claim", "701", "24", "Recursive maps, assertions and other closure results"],
+    body: table(["The record’s group", "Statements", "Functions", "What proof is missing"], [
+      ["Source expression obligation", "3,803", "142", "That an expression meets its claimed type, using the known types and facts"],
+      ["Source direct obligation", "946", "13", "That one type is included in another; here, that each proposed callback signature fits its source annotation"],
+      ["Closure expression claim", "701", "24", "That an expression inside a closure meets its claimed type under that closure’s parameters and captured values"],
       ["Arrow claims do not match their bodies", "379", "1", "collect in declaration-graph.mts; no location in the record"],
     ], [28, 12, 12, 48]) + bullets([
       point("Confirmed from source", "each located refusal is read in its supplied slice. Generic groups are split by refused expression and the functions reaching it. A shared expression confirms a source form; the exact failed proof may require investigation."),
@@ -108,8 +108,9 @@ const slides: Slide[] = [
       ["4. readTypeTerm: scope spread", "Source expression obligation", "The literal overrides a type alias’s source file and callbacks; the failed member is unestablished"],
       ["5. functionPlacement: for-of over mentions[i] ?? []", "Source expression obligation", "An indexed array or a fresh empty array supplies the loop’s values"],
     ], [32, 25, 43]) + bullets([
-      point("Source expression obligation", "Search cannot prove the type claim attached to this expression from the known types and facts. The message locates the failed claim; it does not identify which fact is missing or show a source bug."),
-      point("Different programs: a related case", "In blocker-every-mixed-closure, node.getSourceFile() is called inside a closure. At its written parameter type, node is either a compiler node or a record holding that function: translation dispatches the call on the object. When passed to every over compiler nodes, it translates as a bound compiler method. The checker requires one program for both signatures. The recursive parent walk’s differing operation is unestablished; none of these four sites has an exact case."),
+      point("Two signatures in a related case", "In blocker-every-mixed-closure, a boolean callback calls node.getSourceFile(). Its written parameter accepts a compiler node or a record holding that function. Passing it to every on an array of compiler nodes also asks for a signature accepting just those nodes."),
+      point("Two translations of that call", "At the written signature: read and call getSourceFile on the object in one step. At every’s signature: obtain the compiler method with node saved as its receiver, then call it. These are different sequences of model operations. One closure needs the same program at both signatures."),
+      point("Scope", "This explains the message using the related case. The parent walk’s differing operation is unestablished; none of these four sites has an exact case."),
     ]),
   }),
   slide("round", {

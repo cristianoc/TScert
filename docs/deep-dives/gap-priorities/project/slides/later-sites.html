@@ -8,7 +8,8 @@
 <tr><td>4. readTypeTerm: scope spread</td><td>Source expression obligation</td><td>The literal overrides a type alias’s source file and callbacks; the failed member is unestablished</td></tr>
 <tr><td>5. functionPlacement: for-of over mentions[i] ?? []</td><td>Source expression obligation</td><td>An indexed array or a fresh empty array supplies the loop’s values</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Source expression obligation:</b> Search cannot prove the type claim attached to this expression from the known types and facts. The message locates the failed claim; it does not identify which fact is missing or show a source bug.</li>
-<li><b style="font-weight:600">Different programs: a related case:</b> In blocker-every-mixed-closure, node.getSourceFile() is called inside a closure. At its written parameter type, node is either a compiler node or a record holding that function: translation dispatches the call on the object. When passed to every over compiler nodes, it translates as a bound compiler method. The checker requires one program for both signatures. The recursive parent walk’s differing operation is unestablished; none of these four sites has an exact case.</li>
+<li><b style="font-weight:600">Two signatures in a related case:</b> In blocker-every-mixed-closure, a boolean callback calls node.getSourceFile(). Its written parameter accepts a compiler node or a record holding that function. Passing it to every on an array of compiler nodes also asks for a signature accepting just those nodes.</li>
+<li><b style="font-weight:600">Two translations of that call:</b> At the written signature: read and call getSourceFile on the object in one step. At every’s signature: obtain the compiler method with node saved as its receiver, then call it. These are different sequences of model operations. One closure needs the same program at both signatures.</li>
+<li><b style="font-weight:600">Scope:</b> This explains the message using the related case. The parent walk’s differing operation is unestablished; none of these four sites has an exact case.</li>
 </ul>
 </section>
