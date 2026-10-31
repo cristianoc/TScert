@@ -746,7 +746,7 @@ function typeStatement(s: Statement): Within<{ value: "any"; store: "grow" }, bo
  * A function literal that is a constant's whole initializer runs only after
  * the constant holds it, so its mentions of the constant are the closure's
  * self entry. A pattern's binding so mentioned is refused. */
-export function markEarly(this: Gate, live: readonly Statement[], placed: ReadonlyMap<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, void> {
+export function markEarly(this: Gate, live: readonly Statement[], placed: Map<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
   const functionLike = (n: Node): boolean => ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n);
   const declared = new Map<string, ts.VariableDeclaration>();

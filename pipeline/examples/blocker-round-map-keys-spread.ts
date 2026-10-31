@@ -1,4 +1,4 @@
-// Array spread of a ReadonlyMap keys iterator.
+// Array spread retains the native Map supplied by functionPlacement.
 // Census functions:
 // fragment-statements.mts#patternStmt
 // fragment-statements.mts#protocolPattern
@@ -25,6 +25,6 @@
 // fragment-statements.mts#declarationsOf
 // fragment-statements.mts#neverAssigned
 // fragment-statements.mts#controlStmt
-export function keys<K, V>(placed: ReadonlyMap<K, V>): K[] {
+export function keys<K, V>(placed: Map<K, V>): K[] {
   return [...placed.keys()];
 }

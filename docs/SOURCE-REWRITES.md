@@ -1599,6 +1599,31 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A native placement Map widened to ReadonlyMap
+
+`tools/fragment-statements.mts#markEarly` accepts
+`Map<FunctionDeclaration, number>`, the result contract of
+`functionPlacement`. Its sole caller, `hoisting`, passes that constructed
+map directly. The [native collection contract](SOURCE-CONTRACTS.md#library-globals)
+retains the native iterator returned by `keys()`, so the existing array
+spread checks establish the fresh array's element contract.
+
+- **Repair:** retain the producer's `Map` contract at the parameter. A
+  structural `ReadonlyMap` admits client implementations whose `keys()`
+  returns a protocol iterator; array spread requires native iteration here.
+- **Avoided form and cost:** widening this native map to `ReadonlyMap`
+  before spreading its keys loses the iterator identity. General protocol
+  spread requires checking iterator calls and their effects during array
+  construction. This site already supplies a native map; retaining its
+  contract uses the existing native spread mechanism.
+- **Behaviour:** the annotation is erased. The same map, `keys` method,
+  iterator and spread execute in the same order. The resulting array has
+  the same keys, order and identities; returns, exceptions, mutations,
+  aliases and receivers are unchanged for every map this caller supplies.
+- **Scope:** `blocker-round-map-keys-spread` states the retained `Map`
+  parameter. This repair adds no external assumption or rule.
+- **Commit:** the introducing commit.
+
 ### An array target justified only by length
 
 The `Object.assign` branch uses the [saved-target check](#an-array-patterns-first-element-after-a-length-test).
