@@ -1,17 +1,17 @@
-<section id="routes" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:16px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Part 2 · how a refusal is decided</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Eight routes, the first that works at acceptable cost</h2>
+<section id="routes" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">How a refusal is answered · SOURCE-REWRITES.md</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The first route that establishes the obligation at acceptable cost</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:22%;text-align:left;font-weight:600">Route</th><th style="width:78%;text-align:left;font-weight:600">When it applies</th></tr>
-<tr><td>1. Support</td><td>a rule or contract admits the construct: it has useful reach in the census and a proportionate implementation</td></tr>
-<tr><td>2. A runtime check</td><td>an executable check establishes the whole property, also after later writes; checking a value's shape says nothing of what code writes</td></tr>
-<tr><td>3. A repair</td><td>the refusal exposes a defect in TScert's code, which changes</td></tr>
-<tr><td>4. Avoidance</td><td>support is costly, the construct rare, and a rewrite is observationally equivalent; the construct stays refused</td></tr>
-<tr><td>5. A host boundary</td><td>a necessary operation on an external package moves to the smallest module, whose functions take only values that package makes</td></tr>
-<tr><td>6. A trusted unit</td><td>the project's owner approves exempting a narrow unit of TScert's code from checking, reported with its contract; never a fallback</td></tr>
-<tr><td>7. A proof</td><td>a proof in Lean, the proof assistant TScert's checker is proved in, where the model of JavaScript it needs exists or has wider value</td></tr>
-<tr><td>8. The refusal stays</td><td>no route works at acceptable cost; the census reports it</td></tr>
+<tr><th style="width:25%;text-align:left;font-weight:600">Route</th><th style="width:75%;text-align:left;font-weight:600">What the route requires</th></tr>
+<tr><td>1. Support</td><td>A rule or external contract admits the construct</td></tr>
+<tr><td>2. A runtime check</td><td>An executable check establishes the whole property</td></tr>
+<tr><td>3. A repair</td><td>The source corrects a defect the refusal reveals</td></tr>
+<tr><td>4. Avoidance</td><td>An equivalent source form avoids costly support</td></tr>
+<tr><td>5. A host boundary</td><td>An external service’s operation has no model. Only values made by that service meet the small module’s signatures. Callers use its audited contract and effects; the module stays refused</td></tr>
+<tr><td>6. A trusted unit</td><td>Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
+<tr><td>7. A proof</td><td>A Lean proof establishes the needed fact in the model</td></tr>
+<tr><td>8. The refusal stays</td><td>No route establishes the obligation at acceptable cost</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Stated in SOURCE-REWRITES.md, “Deciding what a refusal of TScert's code calls for”, which also records each repair, avoidance and host boundary. Of the 22 causes closed this round, 21 took route 1, five of them with a trust change; one closed as a repair.</li>
+<li>Before choosing a route, check whether TScert’s source discards information it already checked. A decoder’s closing assertion also needs scrutiny of storage contracts. This ranking identifies sites and evidence limits; a route requires its own justification.</li>
 </ul>
 </section>
