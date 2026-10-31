@@ -68,7 +68,9 @@ export const cases: Case[] = [
     /The available claim for \{ client: \[\] \} as unknown is unknown\. This obligation requires \{  \}/), status: "unverified", phase: "search", project: "pipeline/blocker-project" },
   { ...positive("blocker-compiler-api-parse-config", "The reviewed parseConfigFile member, on an API instance read at its default false argument."), project: "pipeline/blocker-project" },
   // Census blocker causes; each source header names the functions it represents.
-  gap("blocker-census-options-default", "An optional field read through a parameter with an empty-object default.", "unsupported", "proposal", /^unsupported: missing field tsconfigPath at \[\d+,\d+\)(?:\n|$)/),
+  positive("blocker-census-options-default", "An optional field read through a parameter with an empty-object default."),
+  positive("object-parameter-defaults", "Annotated object defaults retain optional fields through named records, spreads, closures and nested fields."),
+  negative("invalid-object-parameter-default", "An absent optional field remains possibly undefined after an empty-object parameter default.", /This return requires string/),
   positive("blocker-census-rest-result", "A local closure collecting rest arguments infers its checked result."),
   negative("invalid-closure-rest-result", "An inferred rest closure's first element may be undefined at an empty call.",
     /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its return-contract claim\nobligation: The available claim for first\(\) is undefined \| string\. This return requires string\./),

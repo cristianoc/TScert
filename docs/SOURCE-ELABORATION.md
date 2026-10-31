@@ -3957,6 +3957,15 @@ statement `checkJson_safe`'s second conclusion is.
 
 ## Parameter initialization order
 
+For an annotated record parameter with an object-literal default, the
+producer proposes the annotation's defined view for the initialized binding.
+The literal keeps its own expression claim, including its exact keys where
+it omits optional fields. The default dispatch and binding checks establish
+that either the supplied value or the literal meets the proposed view;
+an optional field read retains its `undefined` alternative
+(`blocker-census-options-default`, `object-parameter-defaults`,
+`invalid-object-parameter-default`).
+
 The source adapter also performs acyclic closure conversion for literal
 closures capturing later parameters. `Fragment.parameterOrder` delays only
 closure allocations, until their dependencies are initialized; no executing

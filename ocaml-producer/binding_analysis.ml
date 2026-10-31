@@ -79,11 +79,12 @@ open S
                Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^
                Json.unbound_text name at))
             in
-          (* A closure default is built at the function type the parameter
-             states: the binding holds that type, whichever value it took,
-             and Lean checks the closure against it. *)
+          (* A fresh literal default can be held at the parameter's stated
+             view. Its own expression claim is retained: Lean checks both
+             its construction and the joined binding against that view. *)
           let default=match expression.node,(try declared_head declarations [] present with Json.Error _ -> present) with
             | Lambda _,Atoms [Shape {calls=_::_;elements=None;_}] -> present
+            | (Alloc _ | Build _),Atoms [Shape {calls=[];elements=None;_}] -> present
             | _ -> default in
           let after=run_execution env fallback in
           let after=if present=Atoms [] then after else join env env after in

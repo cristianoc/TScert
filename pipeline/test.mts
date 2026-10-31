@@ -3282,6 +3282,30 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  const artifacts = run("blocker-census-options-default");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const binding = ast.functions[0]?.body[0];
+  assert(binding?.k === "destructure");
+  const fallback = must(binding.default_, "the object default");
+  const returned = ast.functions[0]?.body[1];
+  assert(returned?.k === "return" && returned.e.k === "read");
+  for (const target of ["default", "read"]) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions[0], "config's claims");
+    const str = rowOf(claims, "str");
+    const pos = target === "default" ? fallback.pos : returned.e.pos;
+    const point = fn.expressions.find(e => e.pos[0] === pos[0] && e.pos[1] === pos[1]);
+    must(point, "the forged expression").type = target === "default"
+      ? [rowOf(claims, { refs: { first: [["tsconfigPath", [str]]], rest: [], views: [] } })]
+      : [str];
+    const name = `forged-object-parameter-${target}`;
+    const forged = writeClaims(artifacts, name, claims);
+    refusedAt(artifacts, forged, name, "evidence search failed");
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+});
+
+control(async (): Promise<void> => {
   // An array owns no `toJSON`, whatever the parser and the producer say: a
   // forged parameter type giving `nested`'s array one is refused by the
   // search and by the check of the evidence the original program earned.
