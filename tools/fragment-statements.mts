@@ -14,7 +14,7 @@ import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, it
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { isTypeAlias } from "./syntax.mts";
+import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
  * as a statement of its own at `pos`: the statement's span, or the
@@ -358,7 +358,7 @@ export function readScope(this: Gate, id: ts.Identifier): Within<{ value: "any";
       }
       if ((ts.isClassDeclaration(st) || ts.isEnumDeclaration(st) || ts.isModuleDeclaration(st)) &&
           st.name && ts.isIdentifier(st.name) && st.name.text === id.text) return null;
-      if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return null;
+      if (isImport(st) && importedNames(st).includes(id.text)) return null;
       if (ts.isVariableStatement(st))
         for (const d of st.declarationList.declarations)
           if (bindsName(d.name, id.text)) {

@@ -77,7 +77,7 @@ export const cases: Case[] = [
   positive("blocker-census-set-copy", "A Set copied from an optional host Set keeps its element type through the empty-array fallback; a union of host Sets and arrays meets one constructor form."),
   negative("invalid-set-copy-readonly", "An optional structural ReadonlySet may run client code through its iterator; the array arm of the fallback supplies no host provenance (run under Node).",
     /no derivation of its node-typing claim/),
-  { ...gap("blocker-census-import-guard-call", "A compiler import guard admits a node outside the import-only function's parameter.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke[^\n]*importedNames:/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-census-import-guard-call", "An exact-kind import guard passes only ImportDeclaration nodes to an import-only function."), project: "pipeline/blocker-project" },
   // The case project uses the front end's installed Node and compiler declarations.
   // Source contracts and syntax.
   { ...positive("blocker-local-class", "A class extending `Error` declared inside a function, constructed and thrown by a closure and caught at `instanceof`, lowered where it is written."), project: "pipeline/blocker-project" },
@@ -1698,6 +1698,7 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-guard-argument", "a listed guard's call of a call's result is an ordinary call: the argument evaluated once (run under Node)"),
     project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-import-guard-call", "The compiler import guard admits kind 346, outside an ImportDeclaration-only function's parameter.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke[^\n]*importedNames:/), project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-js-import-guard", "`isImportDeclaration` also accepts a JSDoc `@import`, kind 346: read from its entry, its `true` edge's `n.kind` is no `SyntaxKind.ImportDeclaration` (run under Node)",
     /source expression obligation at \[496,542\): evidence search failed: no derivation of its return-contract claim\nobligation: The available claim for ts\.isImportDeclaration\(n\) \? n\.kind : undefined is undefined \| 273 \| 346\. This return requires undefined \| 273\./),
     project: "pipeline/compiler-api-project" },

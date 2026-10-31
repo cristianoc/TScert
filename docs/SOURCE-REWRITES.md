@@ -704,6 +704,13 @@ TypeScript files, where neither other kind occurs at those points
   value: "keep"; store: "keep" }, ImportDeclaration>` of `tools/syntax.mts`
   tests `node.kind === SyntaxKind.ImportDeclaration`, and the three import
   sites call it.
+- **Call boundary:** `readScope` of `tools/fragment-statements.mts` calls
+  `isImport(st)` before passing `st` to `importedNames`, whose parameter is
+  `ImportDeclaration`. The exact-kind test establishes that parameter's
+  contract; `ts.isImportDeclaration` also admits kind 346. The case
+  `blocker-census-import-guard-call` exercises the exact-kind guard and
+  call, and `invalid-compiler-api-import-guard-call` preserves the broader
+  compiler guard's refused call.
 - **Pattern:** a node is recognised by the kind whose members the code
   reads, where the compiler's guard accepts more kinds than that one (as
   [`isTypeAlias`](#a-type-alias-recognised-by-a-guard-accepting-a-jsdoc-typedef)).
