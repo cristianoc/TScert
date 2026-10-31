@@ -1,11 +1,16 @@
 /* One iteration of gap work (the gap-round skill, .claude/skills/gap-round/)
  * from the command line, each role played by a model given as a parameter:
  *
- *   node dev/gap-iteration.mts rank   --cases N [--census <record>] [--previous <record>] [--run <dir>]
+ *   node dev/gap-iteration.mts rank   --cases N [--census <record>] [--previous <record>] [--causes <file>] [--run <dir>]
  *   node dev/gap-iteration.mts work   --run <dir> [--parallel 5]
  *   node dev/gap-iteration.mts finish --run <dir>
  *   node dev/gap-iteration.mts all    --cases N [...]        # rank, work, finish
  *   common: [--driver sol] [--agent sol] [--reviewer astra] [--codex-stop 85]
+ *
+ * `--causes <file>` gives the round's causes instead of ranking them: a
+ * JSON list of {"reason", "statements", "functions"} and optionally "case",
+ * worked in its order; the driver finds each cause's sites in the census,
+ * adds the case each lacks, and ranks nothing.
  *
  * `rank` takes the census of main (the given record when its commit has
  * main's code, otherwise a new one) and its refusals (`census.mts
@@ -52,7 +57,7 @@ const lockRoot = join(tmpdir(), "tscert-gap");
 // ---------------------------------------------------------------- options
 
 type Options = { driver: string; agent: string; reviewer: string; parallel: number; codexStop: number; cases: number;
-  census: string | null; previous: string | null; run: string | null };
+  census: string | null; previous: string | null; causes: string | null; run: string | null };
 
 function option(args: string[], name: string): string | null {
   const at = args.indexOf(name);
@@ -83,7 +88,7 @@ function options(args: string[]): Options {
     driver: model(option(args, "--driver") ?? "sol"), agent: model(option(args, "--agent") ?? "sol"),
     reviewer: model(option(args, "--reviewer") ?? "astra"), parallel: number("--parallel", 5),
     codexStop: number("--codex-stop", 85), cases: number("--cases", 5), census: option(args, "--census"),
-    previous: option(args, "--previous"), run: option(args, "--run"),
+    previous: option(args, "--previous"), causes: option(args, "--causes"), run: option(args, "--run"),
   };
   if (parsed.parallel > 5) throw Error("--parallel is at most 5");
   if (args.length) throw Error(`unknown arguments: ${args.join(" ")}`);
@@ -310,6 +315,22 @@ function authorPrompt(r: Run, t: Task): string {
     return readFileSync(join(repository, ".claude/skills/gap-round/brief.md"), "utf8")
       .replaceAll("<case>", t.id).replaceAll("<reason>", t.reason).replaceAll("<sites>", t.sites.join("; "))
       .replaceAll("<census record>", record).replaceAll("<scratch>", work(r)) + runNote(r);
+  const given = join(work(r), "causes.json");
+  if (t.kind === "repros" && existsSync(given))
+    return `You prepare one gap iteration of TScert on the census record ${record} (its slices beside it) and its
+refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority. The round's causes are given,
+in order, in ${given}; rank nothing. For each cause: find the census functions it blocks and their refusal sites in
+the refusals and the slices; use the pipeline case it names, or the one that shows it, or add the smallest source
+that reproduces that census refusal, its header naming the census functions it stands for, with its
+pipeline/cases.mts entry as a gap, and check it reproduces the refusal (run-cases.mts <name>). A cause no census
+function meets any more is left out, with the reason, in ${join(work(r), "ranking.md")}.
+
+Write ${join(work(r), "ranking.md")} (each cause, its sites, its case) and ${join(work(r), "ranking.json")}, the
+causes in the given order: {"cases": [{"case": "<name of pipeline/examples/<name>.ts>", "reason": "...",
+"statements": n, "functions": n, "sites": ["file.mts#fn: what is refused", ...]}]}. Heavy runs take the lock
+${heavy(r)} (until mkdir it 2>/dev/null; do sleep 20; done; <command>; rmdir it). Commit the cases you add as one
+commit with a record in the format of .claude/skills/review/SKILL.md.
+${runNote(r)}`;
   if (t.kind === "repros")
     return `You prepare one gap iteration of TScert: steps 2 and 3 of the gap-round skill below, on the census
 record ${record} (its slices beside it) and its refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority.
@@ -623,6 +644,7 @@ const o = options(rest);
 const run = resolve(o.run ?? join(lockRoot, new Date().toISOString().replace(/[:.]/g, "-")));
 mkdirSync(join(run, "work"), { recursive: true });
 mkdirSync(join(run, "tasks"), { recursive: true });
+if (o.causes && !existsSync(join(run, "work", "causes.json"))) writeFileSync(join(run, "work", "causes.json"), readFileSync(o.causes));
 if (!existsSync(join(run, "state.json"))) {
   if (phase !== "rank" && phase !== "all") throw Error(`${run} has no state.json: start with rank or all`);
   mainReady();
