@@ -153,7 +153,6 @@ const slides: Slide[] = [
       ["5. A host boundary", "A small wrapper module performs an external service operation with no model. Its signatures admit only that service’s values. Its functions stay refused; callers assume its audited result and effect contract"],
       ["6. A trusted unit", "Local code is exempt from checking, with the owner accepting its full contract as an assumption"],
       ["7. A proof", "A Lean proof establishes the needed fact in the model"],
-      ["8. The refusal stays", "No route establishes the obligation at acceptable cost"],
     ], [25, 75], { compact: true }) + bullets([
       point("Effect", "a contract may bound how a call changes stored values. A host boundary’s result and effect are assumptions about its code."),
       "Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain. Construct 12’s record-to-index refusal protects keys its named fields do not describe; construct 17’s lookup may find inherited methods.",

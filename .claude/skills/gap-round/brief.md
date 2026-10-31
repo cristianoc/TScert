@@ -23,12 +23,12 @@ sites where TScert's own code discards what it knew. Record a repair, an
 avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
 
 - **Supported:** the case verifies.
-- **Rewritten instead:** the census sites are rewritten so they verify, the
-  rewrite is recorded with its reason, and the case stays as a negative
-  case stating the restriction, in `pipeline/cases.mts`.
-- **The refusal stays:** only where no route establishes the obligation at
-  acceptable cost; the case becomes a negative case and the reason is
-  recorded.
+- **Rewritten instead:** TScert's code takes an equivalent form that
+  verifies; the case is written in that form and verifies, and the avoided
+  form is recorded with its reason under "Constructs avoided" in
+  SOURCE-REWRITES.md.
+- **Unsafe:** only a program that is unsafe, shown by running it under
+  Node, becomes a negative case.
 
 - **A library or host function TScert does not model yet:** write its
   model, stating the trust it takes, and proceed. The owner reviews it
@@ -42,8 +42,8 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   cause from the census sites, and make the case that reproduces it.
 - **A case with no census sites:** TScert's code no longer meets the
   construct, having been rewritten. Decide whether the construct is worth
-  supporting: support it, or keep the rewrite and close the case as a
-  negative case stating the restriction.
+  supporting: support it, or keep the rewrite, write the case in the
+  rewritten form so it verifies, and record the avoided form.
 
 ## Soundness
 

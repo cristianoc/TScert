@@ -10,7 +10,6 @@
 <tr><td style="padding:4px 12px">5. A host boundary</td><td style="padding:4px 12px">A small wrapper module performs an external service operation with no model. Its signatures admit only that service’s values. Its functions stay refused; callers assume its audited result and effect contract</td></tr>
 <tr><td style="padding:4px 12px">6. A trusted unit</td><td style="padding:4px 12px">Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
 <tr><td style="padding:4px 12px">7. A proof</td><td style="padding:4px 12px">A Lean proof establishes the needed fact in the model</td></tr>
-<tr><td style="padding:4px 12px">8. The refusal stays</td><td style="padding:4px 12px">No route establishes the obligation at acceptable cost</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
 <li><b style="font-weight:600">Effect:</b> a contract may bound how a call changes stored values. A host boundary’s result and effect are assumptions about its code.</li>
 <li>Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain. Construct 12’s record-to-index refusal protects keys its named fields do not describe; construct 17’s lookup may find inherited methods.</li>

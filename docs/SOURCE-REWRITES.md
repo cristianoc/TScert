@@ -32,8 +32,8 @@ that establishes what the refusal asks, at acceptable cost:
    the same returns, exceptions, mutations, method identities, aliasing,
    receivers and asynchronous effects, for every input and reachable state
    its callers admit. Passing the verifier shows no equivalence. The
-   construct stays refused, with a control case ([constructs
-   avoided](#constructs-avoided)).
+   avoided form is listed under [constructs avoided](#constructs-avoided),
+   and its case is written in the equivalent form, which verifies.
 5. **A host boundary:** a necessary operation on an external service that
    no rule can model moves to the smallest module performing it, whose
    signatures only the intended host value inhabits and grant no more than
@@ -47,9 +47,11 @@ that establishes what the refusal asks, at acceptable cost:
 7. **A proof:** a Lean proof of the property, where the semantics it needs
    exist or building them has wider value. A proof whose hypotheses state
    the host's behaviour keeps those assumptions.
-8. **The refusal stays,** and the census reports it, where no route above
-   establishes the obligation at acceptable cost. Coverage pressure is
-   evidence of value, not permission to weaken safety.
+Each route answers a correct program. A case is refused, as a negative
+case, only where its program is unsafe, shown by running it under Node. A
+correct program no route answers yet stays a gap, open work in
+[WORK.md](../WORK.md#status) with what each route would need. Coverage
+pressure is evidence of value, not permission to weaken safety.
 
 What TScert verifies of its own front end is its source as it stands: code
 checked, host boundaries and their contracts, trusted units and refused

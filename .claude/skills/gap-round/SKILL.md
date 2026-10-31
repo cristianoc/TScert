@@ -19,9 +19,10 @@ starts the round, and the round runs to the end without asking.
   by Astra. The owner reviews the model before the push. A question goes
   to the owner only when no principle decides it. It then takes one or two
   sentences, naming the missing principle.
-- Every case of the round is closed: verified, or answered by a recorded
-  route. Leaving a case refused is a route only when that route decides
-  it, with its reason recorded.
+- Every case of the round is closed: it verifies, as written or in the
+  equivalent form TScert's code takes, with the avoided form recorded. A
+  case is a negative case only where its program is unsafe, shown under
+  Node.
 - Heavy runs (`make suite`, `make test`, `make census`, `run-cases.mts`
   with no pattern) take the lock `<scratch>/heavy.lock`, where `<scratch>`
   is the session's scratchpad. One census runs at a time.

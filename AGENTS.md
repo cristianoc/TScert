@@ -198,11 +198,12 @@ It prints the outcome and the directory holding what the run wrote: the
 source snapshot, the parser's `fragment.json`, the producer's `claims.json`
 and the verifier's `evidence.json`.
 
-A refusal of TScert's own code is answered by the first of the eight routes
+A refusal of TScert's own code is answered by the first of the seven routes
 [source rewrites](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
 states that establishes the obligation at acceptable cost: support, a runtime
 check, a repair, avoidance, a host boundary, a trusted unit (owner-approved,
-never a fallback), a proof, or the refusal stays. A repair, an avoidance or a
+never a fallback) or a proof. A case is a negative case only where its program
+is unsafe, shown under Node. A repair, an avoidance or a
 host boundary is recorded there in the same commit, with what its kind
 requires.
 
