@@ -1,6 +1,6 @@
 ---
 name: gap-round
-description: One round of gap work on TScert's own code, run on main without stops - diagnostic census, reasons confirmed from its record, a case example for each reason no case shows, then the next 10 cases by priority, at most 5 agents at a time, merged locally, then the census and the deck rebuild. Use when the owner asks for a gap round, for "the next 10 cases", or to "follow the process" on gaps.
+description: One round of gap work on TScert's own code, run on main without stops - the census, reasons confirmed from its first refusals, a case example for each reason no case shows, then the next 10 cases by priority, at most 5 agents at a time, merged locally, then the census and the deck rebuild. Use when the owner asks for a gap round, for "the next 10 cases", or to "follow the process" on gaps.
 ---
 
 # A gap round
@@ -26,20 +26,22 @@ starts the round, and the round runs to the end without asking.
   with no pattern) take the lock `<scratch>/heavy.lock`, where `<scratch>`
   is the session's scratchpad. One census runs at a time.
 
-## 1. The diagnostic census
+## 1. The census
 
 On main, after `df -h` shows room, run under the lock:
 
 ```sh
-make census DIAGNOSTIC=1
+make census
+node dev/census.mts refusals <record>
 ```
 
-It prints the record's path. Its `ranking` groups the refusals by reason,
-with the functions and statements each affects.
+The census prints the record's path. `refusals` groups the refused
+functions by the blocker their first refusal names, with the functions
+and statements each group affects.
 
 ## 2. The reasons, confirmed from the record
 
-Read the record, not a new run. For each of the top reasons by blocked
+Read the record and its refusals, not a new run. For each of the top reasons by blocked
 statements:
 
 - Read the refusal at its site in the census slices
@@ -47,10 +49,6 @@ statements:
 - Confirm that the reason names one construct.
 - Split a reason that stands for several causes (a failed search, an
   expression with no claimed type) by the functions it meets.
-- Count a refusal caused only by an earlier refusal toward that earlier
-  reason.
-- Drop a reason that only the diagnostic traversal produces, with what
-  showed it.
 - Mark the sites where TScert's own code discards what it knew. Those are
   repaired in the code.
 
@@ -110,7 +108,7 @@ movement in WORK.md's status table and commit it.
 
 Rebuild the
 [gap-priorities deep dive](../../../docs/deep-dives/gap-priorities/deck.mts)
-from the diagnostic census of the new main (steps 1 and 2 again). Mark it
+from the census of the new main (steps 1 and 2 again on its record). Mark it
 since the version last approved
 ([a revised deck](../../../docs/STYLE.md#a-revised-deck)). It goes through
 its two independent reviews before it reaches the owner.

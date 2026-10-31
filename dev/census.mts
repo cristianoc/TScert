@@ -13,12 +13,15 @@
 //   node dev/census.mts report <before.json[,shard.json…]> <after.json[,shard.json…]>
 //   node dev/census.mts report <record.json[,shard.json…]> [--per-function]
 //   node dev/census.mts coverage <record.json[,shard.json…]> [--per-function] [--sources checkout|commit]
+//   node dev/census.mts refusals <record.json[,shard.json…]>
 // A record also holds the directory's statement inventory, each statement
 // classified by its function's outcome (statement-coverage.mts); `report`
 // and the end of a run print verified statement coverage, and `coverage`
 // computes it for a record from the sources of the record's commit (of the
 // checkout for a census of a dirty tree, or by `--sources`), without
-// running a slice.
+// running a slice. `refusals` prints, as JSON, the refused slices grouped by
+// the blocker their first refusal names, each group with its functions'
+// census statements, most statements first.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -793,10 +796,32 @@ function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord
     process.stdout.write(`  ${k.padEnd(12)} ${row(ta.get(k))} → ${row(tb.get(k))}\n`);
 }
 
+/** The refused slices grouped by the blocker their first refusal names: each
+ * group's census statements, its functions and each function's detail, most
+ * statements first. */
+function refusals(census: Census): { reason: string; statements: number; functions: number; sites: string[] }[] {
+  const statements = new Map<string, number>();
+  for (const u of classifiedInventory(census).units)
+    if (u.scope === "census") statements.set(`${u.file}#${u.fn}`, (statements.get(`${u.file}#${u.fn}`) ?? 0) + 1);
+  const groups = new Map<string, { reason: string; statements: number; functions: number; sites: string[] }>();
+  for (const [key, s] of census.slices) {
+    if (s.status === "verified") continue;
+    const reason = blocker(s.detail);
+    const group = groups.get(reason) ?? { reason, statements: 0, functions: 0, sites: [] };
+    group.statements += statements.get(key) ?? 0;
+    group.functions++;
+    group.sites.push(`${key}: ${s.detail}`);
+    groups.set(reason, group);
+  }
+  return [...groups.values()].sort((a, b) => b.statements - a.statements || b.functions - a.functions);
+}
+
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
   const args = process.argv.slice(2);
   try {
-    if (args[0] === "report" || args[0] === "coverage") {
+    if (args[0] === "refusals" && args[1] !== undefined && args.length === 2)
+      process.stdout.write(JSON.stringify(refusals(readCensus(args[1])), null, 1) + "\n");
+    else if (args[0] === "report" || args[0] === "coverage") {
       const perFunction = args.includes("--per-function");
       const rest = args.slice(1).filter((a) => a !== "--per-function");
       const sources = option(rest, "--sources");

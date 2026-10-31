@@ -95,19 +95,16 @@ before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
 A round of this work runs in the order of the
 [gap-round skill](.claude/skills/gap-round/SKILL.md), its agents briefed by
 [its brief](.claude/skills/gap-round/brief.md).
-Work on coverage follows two steps, both from the diagnostic census
-(`make census DIAGNOSTIC=1`, [diagnostic traversal](docs/DIAGNOSTIC-MODE.md)),
-run on main with the verified census, which goes past each slice's first
-refusal and reports every refusal it meets:
+Work on coverage follows two steps, both from the census of main
+(`make census`), whose record keeps each refused slice's first refusal:
 
-1. **Where proofs fail:** its record's `ranking` groups the refusals by
-   reason, with the functions and statements each affects. Every reason
+1. **Where proofs fail:** `node dev/census.mts refusals <record>` groups
+   the refused functions by the blocker their first refusal names, with
+   the statements each group blocks. Every reason
    that names one construct counts, whatever stage refuses it, the
    producer's included; a reason that may stand for several causes (a
    failed search, an expression with no claimed type) is first split into
-   its causes by the functions it meets. A refusal that exists only because
-   an earlier refusal made a value `unknown` counts toward that earlier
-   reason, not its own. A reason blocking much code that
+   its causes by the functions it meets. A reason blocking much code that
    no pipeline case shows gets a case example: the smallest source with
    that refusal, its header naming the census functions it stands for.
 2. **Priority:** the gap cases are worked in the order of the reasons they
