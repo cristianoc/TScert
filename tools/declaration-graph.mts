@@ -46,7 +46,7 @@ import { definitionKey, deferredInDocument, identityText, settleDocument, termsT
 import { documentHolds } from "./fragment-parts.mts";
 // files.mts makes every file-system failure a tool failure.
 import { builtinModule, manifestMember, orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
-import type { Json, JsonObject, JsonValue } from "./calculus.mts";
+import type { Json } from "./calculus.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 // declaration-session.mts retains a named project's compiler between collections.
@@ -5288,7 +5288,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const what = `${name}(…)`;
   // A call the overlay reads as the global's construct, `Error(m)`: each is
   // reported, and its statement joins the construct signatures.
-  type ConstructForm = { readonly [key: string]: JsonValue; binders: string[]; type: TypeTerm & JsonObject };
+  type ConstructForm = { binders: string[]; type: TypeTerm };
   const calledConstructs: ConstructForm[] = [];
   const callForms = [...chosen].flatMap(([signature, calls]) => {
     const entry = reviewed(undefined, signature, what);
@@ -5300,7 +5300,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
         context.construct(spanOf(call));
       }
-      const type: Extract<TypeTerm, { k: "constructor" }> & JsonObject = { k: "constructor", effect: entry.effect ?? ordinaryEffect,
+      const type: Extract<TypeTerm, { k: "constructor" }> = { k: "constructor", effect: entry.effect ?? ordinaryEffect,
         params: stated.params, rest: null, result: stated.result, span: spanOf(signature) };
       calledConstructs.push({ binders: stated.binders, type });
       return [];
@@ -5353,7 +5353,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if ((expression.arguments?.length ?? 0) > most || expression.arguments?.some(ts.isSpreadElement))
           throw Error(`${whatNew} is read with at most ${most} argument(s)`);
       return forms.map((stated): ConstructForm => {
-        const type: Extract<TypeTerm, { k: "constructor" }> & JsonObject = { k: "constructor", effect: entry.effect ?? ordinaryEffect,
+        const type: Extract<TypeTerm, { k: "constructor" }> = { k: "constructor", effect: entry.effect ?? ordinaryEffect,
           params: stated.params, rest: null, result: stated.result, span };
         return { binders: stated.binders, type };
       });
@@ -5364,7 +5364,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       .map((form): ConstructForm => {
         if (form.receiver) throw Error(`${whatNew} states its receiver`);
         const binders: string[] = [];
-        const type: Extract<TypeTerm, { k: "constructor" }> & JsonObject = { k: "constructor", effect: form.effect, params: form.params,
+        const type: Extract<TypeTerm, { k: "constructor" }> = { k: "constructor", effect: form.effect, params: form.params,
           rest: form.rest, result: form.result, span };
         return { binders, type };
       });
@@ -5379,8 +5379,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       throw Error(`${name} is both constructed and read through its members or calls`);
     // Overloads the overlay states alike are one signature.
     const distinct = [...new Map(constructForms.map((f): [string, ConstructForm] => {
-      const data: JsonObject = f.type;
-      return [JSON.stringify({ ...f, type: { ...data, span: null } }), f];
+      return [JSON.stringify([f.binders, termText(f.type)]), f];
     })).values()];
     const [only] = distinct;
     if (distinct.length === 1 && only)

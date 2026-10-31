@@ -1324,16 +1324,16 @@ from the overlay and from declarations. Its destination holds
 `{ binders: string[]; type: TypeTerm }`. A callback returning an empty
 `binders` array and a constructor arm has a narrower inferred writable
 record unless its result states that full contract.
-The later callback that replaces `type.span` reads the collected records
-at the destination contract. Both the array element contract and the
+The later callback that computes a key from the type reads the collected
+records at the destination contract. Both the array element contract and the
 writable `type` field are invariant
 ([writable fields](POSITIVE-TYPES.md#records)).
 
 - **Repair:** each callback allocating a construct form states its full
   result contract, `ConstructForm`. The fresh empty array admits strings
   and the fresh `type` field admits `TypeTerm` at allocation. The result
-  annotation supplies the destination contract; `satisfies TypeTerm`
-  checks the term and retains its narrower inferred type. These annotations are erased; calls,
+  annotation supplies the destination contract. Each term allocation states
+  its constructor arm of `TypeTerm`. These annotations are erased; calls,
   reads, allocations and returned objects have the same order and values.
 - **Mechanism:** the existing contextual checks of fresh records and
   arrays establish their declared writable contracts.
@@ -1341,44 +1341,39 @@ writable `type` field are invariant
   contract of its records and retains serialization and deduplication;
   `invalid-census-spread-nested-field` keeps the narrower allocation and
   its refused callback parameter.
-- **JSON contract:** declaration terms and construct forms retain their
-  [JSON data bounds](#declaration-terms-retained-as-json-data).
+- **Comparison:** construct forms use their binder names and
+  [type text](#constructor-forms-compared-by-their-type-text) as their key.
 
-### Declaration terms retained as JSON data
+### Constructor forms compared by their type text
 
-`selectGlobal` in `tools/declaration-graph.mts` constructs records containing
-binders and a constructor term. `ConstructForm` retains a readonly string
-index at `JsonValue` and holds its term at `TypeTerm & JsonObject`. Each
-constructor allocation states the constructor arm of `TypeTerm` together
-with that data bound. `CallPromise` in `tools/declaration-types.mts` retains
-the same bound alongside its mutually exclusive guard and assertion fields.
+`selectGlobal` in `tools/declaration-graph.mts` collects constructor forms
+at `{ binders: string[]; type: TypeTerm }`. Its key is
+`JSON.stringify([f.binders, termText(f.type)])`.
 
-- **Mechanism:** the producer combines disjoint named fields and indexes
-  when proposing a fresh record allocation at an intersection. Every index
-  remains in the hint, and the existing
-  [allocation checks](SOURCE-CLAIMS.md) check its bound against the named
-  fields too. This is a construction hint; an existing object acquires no
-  data bound through it.
-- **Repair:** the annotations retain the data contract of the constructor
-  and form allocations, including the full `TypeTerm` contract. The
-  serialization callback saves the term at the readonly `JsonObject` view
-  before spreading it and states its pair result as
-  `[string, ConstructForm]`. The existing
-  [JSON contract](SOURCE-CONTRACTS.md#json-and-error) establishes the call.
-- **Behaviour:** the readonly view holds the same term reference that the
-  nested spread reads. The annotations are erased, and the local bindings
-  allocate no object. The same maps and spreads allocate the same records
-  and arrays; serialization visits the same members, and `Map` retains the
-  same last form for each key. Constructing the term before reading the
-  form's binder field runs no client code under the existing data-property
-  and standard-object assumptions. Returns, exceptions, mutations,
-  receivers, aliases and asynchronous effects are unchanged.
-- **Scope:** `blocker-census-nested-field-json` exercises recursive term
-  data, the full nested-spread serialization and deduplication.
+- **Mechanism:** the [type text writer](#a-type-terms-text-made-by-a-replacer)
+  writes each kind's fields, including call effects and promises. Its
+  contract preserves the heap. The final serialization visits the binder
+  strings and that text, under the existing
+  [JSON contract](SOURCE-CONTRACTS.md#json-and-error).
+- **Rewrite:** `CallPromise` states its mutually exclusive guard and
+  assertion fields. The constructor form retains the full `TypeTerm`
+  contract. The key reads the term through `termText`.
+- **Behaviour:** forms with equal binder names and equal type text share
+  a key. `Map` retains the last form for each key. Type text omits term
+  spans and reference argument spans, and includes declaration identity
+  spans, as its writer specifies. Thus constructor signatures differing
+  only in term locations share one form. The retained form keeps its
+  original type and source spans. The key changes no contract's fields,
+  bounds or call effects.
+- **JSON data construction:** `blocker-census-nested-field-json` exercises
+  the separate construction mechanism for serializing a nested spread:
+  its form and term annotations retain readonly JSON data bounds. The
+  producer combines disjoint named fields and indexes in a fresh record's
+  allocation hint; the existing [allocation checks](SOURCE-CLAIMS.md)
+  check every index bound against the named fields too.
   `invalid-census-nested-field-json` checks an existing open record given a
   data intersection: under Node, an additional `toJSON` returns `undefined`
-  despite the function's string result. This repair adds no external
-  assumption or native contract.
+  despite the function's string result.
 - **Functions:** `selectGlobal`.
 - **Commit:** the introducing commit.
 
