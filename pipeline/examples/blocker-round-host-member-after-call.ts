@@ -21,3 +21,19 @@ export function base(
     throw Error(base.expression.text);
   return only;
 }
+
+export function restText(
+  node: ts.PrefixUnaryExpression,
+  values: readonly number[],
+): string {
+  if (!ts.isIdentifier(node.operand)) return "";
+  const [, ...tail] = values;
+  return `${node.operand.text}:${tail.length}`;
+}
+
+export function tupleRestText(node: ts.PrefixUnaryExpression): string {
+  if (!ts.isIdentifier(node.operand)) return "";
+  const pair: [number, number] = [1, 2];
+  const [, ...tail] = pair;
+  return `${node.operand.text}:${tail.length}`;
+}

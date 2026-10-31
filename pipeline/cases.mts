@@ -48,8 +48,7 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  { ...gap("blocker-round-host-member-after-call", "Host child text read after declaration resolution and a guard on the resolved declaration.", "unsupported", "proposal",
-    /^unsupported: missing field text at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-host-member-after-call", "Stable compiler child reads after declaration resolution, array destructuring and array or tuple rest."), project: "pipeline/blocker-project" },
   gap("blocker-round-conditional-map-cell", "A conditional map/flatMap result in a mutable local used as a filter receiver.", "unverified", "search",
     /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]*This obligation requires ReadonlyArray</),
   positive("blocker-round-conditional-pair-fields", "A conditional pair with a stated tuple contract, destructured into required record fields."),

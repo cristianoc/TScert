@@ -37,6 +37,10 @@ open S
             else defined_slice truth expanded
           | _ -> restrict Undef truth (Atoms [atom])) atoms)
       | t -> restrict Undef truth t in
+    (* Pattern operations may change the heap. Stable member paths survive
+       those steps, as they survive calls in Execution_analysis and the
+       stable read links retained by the calculus checker. *)
+    let forget_unstable env = forget ~keep:(Refinement.stable_path declarations env) env in
     let rec run ?expected env values = function
       | Execution.Finish -> env
       | Execution.Input (name,_,value,next) ->
@@ -107,7 +111,7 @@ open S
         run env (put values value t) next
       | Execution.ReadPosition (_,array,index,value,next) ->
         let t=S.index_type declarations [] (get values array) (number_literal (string_of_int index)) in
-        run (forget env) (put values value t) next
+        run (forget_unstable env) (put values value t) next
       | Execution.ObjectRest (source,receiver,drop,value,next) ->
         let drop=List.map (fun field -> Name field) drop in
         let alternatives=List.map (fun (a:alternative) ->
@@ -127,7 +131,7 @@ open S
             array_type {required=List.filteri (fun index _ -> index>=start) shape.required;
               optional_elements=[];rest=None;readonly=false;presence=Dense},None
           | _ -> Proposal_diagnostics.unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
-        publish source t instance; run (forget env) (put values value t) next
+        publish source t instance; run (forget_unstable env) (put values value t) next
     and array_type shape = Semantic.array shape in
     run env [] plan
   

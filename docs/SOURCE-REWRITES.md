@@ -2201,6 +2201,22 @@ may include accessors or a Proxy.
 
 ## Changes for a tool's defect
 
+### Stable compiler children across array bindings
+
+The array binding schedule retains refinements through stable member paths
+when reading a position or collecting an array rest. This uses the same
+[stable-member mechanism](HOST-FAMILIES.md#stable-members) as ordinary calls:
+each member along the path must be stable in every arm of its receiver.
+Other field refinements are forgotten. The existing Lean checks validate
+the proposed read claims and the read links across the binding operations.
+
+`baseDeclarations` in `tools/declaration-graph.mts#collectDeclarations`
+resolves a base identifier, destructures the resulting declarations, then
+reads the identifier child's `text` in an error.
+`blocker-round-host-member-after-call` exercises that form and child reads
+after array and tuple rest. The source uses the compiler API's existing
+stable field contract; this producer repair adds no external assumption.
+
 ### A named object in a logical operator's result
 
 `tools/shadow-contracts.mts#print` prints a nullable receiver with
