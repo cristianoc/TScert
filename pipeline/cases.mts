@@ -72,7 +72,7 @@ export const cases: Case[] = [
   negative("blocker-gap-round-unknown-spread-unchecked", "Object and null tests admit host objects, whose own-property copy is refused."),
   { ...positive("blocker-gap-round-locations-map", "Compiler declaration locations retain their JSON result contract through two maps."), project: "pipeline/blocker-project" },
   { ...negative("invalid-gap-round-locations-map", "A location result at unknown cannot justify JSON serialization.", /No rule derives this invoke at string from d: unknown, JSON.stringify/), project: "pipeline/blocker-project" },
-  gap("blocker-gap-round-locations-map-unrestricted", "An unrestricted resolve callback can change the declaration array during map.", "unverified", "search", /^reject: closure expression claim/),
+  negative("invalid-gap-round-locations-map-shrinking", "A resolve callback stating no effect can shrink the declarations array during map, leaving a hole the returned string[] reads as undefined.", /^reject: closure expression claim/),
   positive("blocker-gap-round-captured-arms", "flatMap skips holes in a captured mapped array and returns a readable result"),
   negative("blocker-gap-round-captured-arms-reduction", "an unrestricted map callback can leave holes in arms, so its reduction and iteration require a stronger presence contract", /^reject: closure expression claim at \[\d+,\d+\): evidence search failed(?:\n|$)/),
   positive("blocker-gap-round-captured-arms-reduction-preserving", "a store-preserving map callback supplies readable arms for reduction, iteration and flatMap"),

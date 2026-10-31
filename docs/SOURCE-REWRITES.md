@@ -192,10 +192,11 @@ these values.
 - **Scope:** `blocker-gap-round-locations-map` uses compiler declarations,
   whose existing host contract states the effect of `resolve`.
   `invalid-gap-round-locations-map` retains the unknown-result refusal.
-  `blocker-gap-round-locations-map-unrestricted` retains the supplied
-  structural callback example: its `resolve` field states no effect, so
-  the array need not survive the first map. The repair adds no external
-  assumption.
+  `invalid-gap-round-locations-map-shrinking` is the structural callback
+  example: its `resolve` field states no effect, so it may shrink the
+  array during the first map and leave a hole the returned `string[]`
+  reads as `undefined`, as running it under Node shows. The repair adds no
+  external assumption.
 - **Commit:** the introducing commit.
 
 ### Captured mapped arrays passed to flatMap
