@@ -8,6 +8,7 @@
 <tr><td>4. readTypeTerm: scope spread</td><td>Source expression obligation</td><td>The literal overrides a type alias’s source file and callbacks; the failed member is unestablished</td></tr>
 <tr><td>5. functionPlacement: for-of over mentions[i] ?? []</td><td>Source expression obligation</td><td>An indexed array or a fresh empty array supplies the loop’s values</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Cases:</b> blocker-every-mixed-closure shows a related signature-dependent translation: one closure becomes different programs at different parameter types. No exact case is identified for these four sites. A small source with the same refusal is needed before asserting a shared cause.</li>
+<li><b style="font-weight:600">Source expression obligation:</b> Search cannot prove the type claim attached to this expression from the known types and facts. The message locates the failed claim; it does not identify which fact is missing or show a source bug.</li>
+<li><b style="font-weight:600">Different programs: a related case:</b> In blocker-every-mixed-closure, node.getSourceFile() is called inside a closure. At its written parameter type, node is either a compiler node or a record holding that function: translation dispatches the call on the object. When passed to every over compiler nodes, it translates as a bound compiler method. The checker requires one program for both signatures. The recursive parent walk’s differing operation is unestablished; none of these four sites has an exact case.</li>
 </ul>
 </section>

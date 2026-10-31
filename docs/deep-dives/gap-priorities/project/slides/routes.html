@@ -2,16 +2,17 @@
 <p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">How a refusal is answered · SOURCE-REWRITES.md</p>
 <h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The first route that establishes the obligation at acceptable cost</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:25%;text-align:left;font-weight:600">Route</th><th style="width:75%;text-align:left;font-weight:600">What the route requires</th></tr>
-<tr><td>1. Support</td><td>A rule or external contract admits the construct</td></tr>
-<tr><td>2. A runtime check</td><td>An executable check establishes the whole property</td></tr>
-<tr><td>3. A repair</td><td>The source corrects a defect the refusal reveals</td></tr>
-<tr><td>4. Avoidance</td><td>An equivalent source form avoids costly support</td></tr>
-<tr><td>5. A host boundary</td><td>An external service’s operation has no model. Only values made by that service meet the small module’s signatures. Callers use its audited contract and effects; the module stays refused</td></tr>
-<tr><td>6. A trusted unit</td><td>Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
-<tr><td>7. A proof</td><td>A Lean proof establishes the needed fact in the model</td></tr>
-<tr><td>8. The refusal stays</td><td>No route establishes the obligation at acceptable cost</td></tr>
+<tr><th style="width:25%;text-align:left;font-weight:600;padding:4px 12px">Route</th><th style="width:75%;text-align:left;font-weight:600;padding:4px 12px">What the route requires</th></tr>
+<tr><td style="padding:4px 12px">1. Support</td><td style="padding:4px 12px">A rule or external contract admits the construct</td></tr>
+<tr><td style="padding:4px 12px">2. A runtime check</td><td style="padding:4px 12px">An executable check establishes the whole property</td></tr>
+<tr><td style="padding:4px 12px">3. A repair</td><td style="padding:4px 12px">The source corrects a defect the refusal reveals</td></tr>
+<tr><td style="padding:4px 12px">4. Avoidance</td><td style="padding:4px 12px">An equivalent source form avoids costly support</td></tr>
+<tr><td style="padding:4px 12px">5. A host boundary</td><td style="padding:4px 12px">A small wrapper module performs an external service operation with no model. Its signatures admit only that service’s values. Its functions stay refused; callers assume its audited result and effect contract</td></tr>
+<tr><td style="padding:4px 12px">6. A trusted unit</td><td style="padding:4px 12px">Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
+<tr><td style="padding:4px 12px">7. A proof</td><td style="padding:4px 12px">A Lean proof establishes the needed fact in the model</td></tr>
+<tr><td style="padding:4px 12px">8. The refusal stays</td><td style="padding:4px 12px">No route establishes the obligation at acceptable cost</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Before choosing a route, check whether TScert’s source discards information it already checked. A decoder’s closing assertion also needs scrutiny of storage contracts. This ranking identifies sites and evidence limits; a route requires its own justification.</li>
+<li><b style="font-weight:600">Example of route 5:</b> tools/client-prototype.mts wraps the compiler client’s request methods, reached through its prototype. Only the compiler package can make its API input. Callers assume the wrapper returns the service’s answer or throws, with the stated effects. The wrapper and service remain outside the proof.</li>
+<li>Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain.</li>
 </ul>
 </section>

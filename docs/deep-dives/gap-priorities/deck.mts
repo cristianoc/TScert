@@ -2,7 +2,7 @@
  * Build: make deck NAME=gap-priorities SINCE=f893d8b4.
  * Site audit: session scratchpad, round/ranking.md. */
 import {
-  bullets, card, cards, code, cover, point, slide, stat, table,
+  bullets, card, cards, code, cover, point, slide, stat, status, table,
   type Deck, type Slide,
 } from "../../../dev/deck.mts";
 
@@ -108,19 +108,20 @@ const slides: Slide[] = [
       ["4. readTypeTerm: scope spread", "Source expression obligation", "The literal overrides a type alias’s source file and callbacks; the failed member is unestablished"],
       ["5. functionPlacement: for-of over mentions[i] ?? []", "Source expression obligation", "An indexed array or a fresh empty array supplies the loop’s values"],
     ], [32, 25, 43]) + bullets([
-      point("Cases", "blocker-every-mixed-closure shows a related signature-dependent translation: one closure becomes different programs at different parameter types. No exact case is identified for these four sites. A small source with the same refusal is needed before asserting a shared cause."),
+      point("Source expression obligation", "Search cannot prove the type claim attached to this expression from the known types and facts. The message locates the failed claim; it does not identify which fact is missing or show a source bug."),
+      point("Different programs: a related case", "In blocker-every-mixed-closure, node.getSourceFile() is called inside a closure. At its written parameter type, node is either a compiler node or a record holding that function: translation dispatches the call on the object. When passed to every over compiler nodes, it translates as a bound compiler method. The checker requires one program for both signatures. The recursive parent walk’s differing operation is unestablished; none of these four sites has an exact case."),
     ]),
   }),
   slide("round", {
     label: "Each case is paired with the census functions it targets · cases.mts and WORK.md", title: "Five positive cases and the census sites beyond them", gap: 18,
     body: '<div style="width:1656px">' + table(["Positive case", "What it checks", "First refusal in this record"], [
-      ["blocker-census-options-default", "Optional fields retain their annotated type through an empty-object default", "collectDeclarations: early capturedAt binding"],
-      ["blocker-census-rest-result", "A closure collecting rest arguments has an inferred result", "lowerFile and five callers: recursive parent walk"],
-      ["blocker-flat-map-narrow-field", "A fresh array’s allocation states which element types may be written to it", "expr and nine other functions: Object.assign target read"],
-      ["blocker-census-set-copy", "Copying optional built-in Sets retains the element type", "29 functions: scope spread overriding callbacks"],
-      ["blocker-census-import-guard-call", "An exact-kind test selects ordinary import nodes", "Statement slices: loop in functionPlacement"],
+      ["blocker-census-options-default · " + status("ok", "verified"), "Optional fields retain their annotated type through an empty-object default", "collectDeclarations: early capturedAt binding"],
+      ["blocker-census-rest-result · " + status("ok", "verified"), "A closure collecting rest arguments has an inferred result", "lowerFile and five callers: recursive parent walk"],
+      ["blocker-flat-map-narrow-field · " + status("ok", "verified"), "A fresh array’s allocation states which element types may be written to it", "expr and nine other functions: Object.assign target read"],
+      ["blocker-census-set-copy · " + status("ok", "verified"), "Copying optional built-in Sets retains the element type", "29 functions: scope spread overriding callbacks"],
+      ["blocker-census-import-guard-call · " + status("ok", "verified"), "An exact-kind test selects ordinary import nodes", "Statement slices: loop in functionPlacement"],
     ], [31, 37, 32], { compact: true }) + '</div>' + bullets([
-      point("The same-function comparison", "WORK.md compares f502699ca098 and 043267592814: 372 of 635 verified in each, zero functions gained or lost. Seventeen first-refusal messages differ. A case’s positive outcome does not imply its whole census function verifies."),
+      point("The same-function comparison", "WORK.md compares f502699ca098 and 043267592814: 372 of 635 verified in each, zero functions gained or lost. Seventeen first refusals change broad category; this count excludes changed obligations within a category. A case’s positive outcome does not imply its whole census function verifies."),
     ]),
   }),
   slide("storage", {
@@ -142,19 +143,20 @@ const slides: Slide[] = [
       ["2. A runtime check", "An executable check establishes the whole property"],
       ["3. A repair", "The source corrects a defect the refusal reveals"],
       ["4. Avoidance", "An equivalent source form avoids costly support"],
-      ["5. A host boundary", "An external service’s operation has no model. Only values made by that service meet the small module’s signatures. Callers use its audited contract and effects; the module stays refused"],
+      ["5. A host boundary", "A small wrapper module performs an external service operation with no model. Its signatures admit only that service’s values. Its functions stay refused; callers assume its audited result and effect contract"],
       ["6. A trusted unit", "Local code is exempt from checking, with the owner accepting its full contract as an assumption"],
       ["7. A proof", "A Lean proof establishes the needed fact in the model"],
       ["8. The refusal stays", "No route establishes the obligation at acceptable cost"],
-    ], [25, 75]) + bullets([
-      "Before choosing a route, check whether TScert’s source discards information it already checked. A decoder’s closing assertion also needs scrutiny of storage contracts. This ranking identifies sites and evidence limits; a route requires its own justification.",
+    ], [25, 75], { compact: true }) + bullets([
+      point("Example of route 5", "tools/client-prototype.mts wraps the compiler client’s request methods, reached through its prototype. Only the compiler package can make its API input. Callers assume the wrapper returns the service’s answer or throws, with the stated effects. The wrapper and service remain outside the proof."),
+      "Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain.",
     ]),
   }),
   slide("sources", {
     label: "Evidence and scope", title: "First refusals in one fixed record", gap: 24,
     body: bullets([
       point("Measured", "census-tools-043267592814-2026-10-31T04-18-35-953Z.json in the supplied census directory 2db902ca8b7b: clean commit 043267592814, tools/, 300-second stage limit. Counts come from function outcomes and the statement inventory."),
-      point("Inspected", "refusals.json and tools/tools/slice-*.mts in that directory. Each refusal matches the record. Source spans count UTF-16 code units, as TypeScript does. The session’s round/ranking.md lists all sites, weights, case matches and repair assessments."),
+      point("Inspected", "The session’s work/refusals.json lists the refusals; tools/tools/slice-*.mts is in the cited census directory. Each refusal matches the record. Source spans count UTF-16 code units, as TypeScript does. The session’s work/round/ranking.md lists all sites, weights, case matches and repair assessments."),
       point("Source policy", "pipeline/cases.mts owns case expectations. WORK.md owns the census comparison. SOURCE-REWRITES.md owns the routes and decoder storage repair. No new pipeline run supplies a number in this deck."),
       point("Limits", "Observed source forms are confirmed. Generic search failures leave the exact failed obligation to isolate. Later refusals and future gains are unmeasured. The 379-statement unlocated arrow mismatch is a separate investigation."),
     ]),
