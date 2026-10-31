@@ -58,6 +58,32 @@ of the host's implementation.
 
 ## Rewrites
 
+### Declaration locations retained as JSON data
+
+`makeProbe` in `tools/type-probe.mts` compares declarations by serializing
+locations. Its `where` callback states `readonly (string | number)[] |
+string`: an ordinary location is a fresh array of a file name and two
+offsets, and an inserted location without an original is `"the probe"`.
+The existing [JSON contract](SOURCE-CONTRACTS.md#json-and-error) admits
+these values.
+
+- **Repair:** the result annotation retains the data grammar established
+  by the callback body. A result at `unknown` supplies no JSON data
+  contract to the second map. The allocation,
+  closure and JSON checks establish the stated contract.
+- **Behaviour:** the annotation is erased. Both maps visit the same
+  declarations in order, resolve each declaration once, and serialize the
+  same arrays, strings and null values before sorting. Returns, throws,
+  allocations and aliases are unchanged.
+- **Scope:** `blocker-gap-round-locations-map` uses compiler declarations,
+  whose existing host contract states the effect of `resolve`.
+  `invalid-gap-round-locations-map` retains the unknown-result refusal.
+  `blocker-gap-round-locations-map-unrestricted` retains the supplied
+  structural callback example: its `resolve` field states no effect, so
+  the array need not survive the first map. The repair adds no external
+  assumption.
+- **Commit:** the introducing commit.
+
 ### Native method maps with writable field contracts
 
 `collect` in `tools/declaration-graph.mts` maps the native Promise

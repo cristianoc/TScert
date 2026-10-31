@@ -1,13 +1,13 @@
 // Two maps resolving declarations and serializing locations.
-// Census functions:
-// type-probe.mts#makeProbe
-type Declaration = { resolve: () => { file: string; offset: number } | null };
-type Symbol = { declarations?: readonly Declaration[] };
-export function locations(symbol: Symbol | undefined): string[] {
-  const where = (node: { file: string; offset: number }): unknown => ({
-    file: node.file,
-    offset: node.offset,
-  });
+// Census function: type-probe.mts#makeProbe.
+import type { Symbol } from "typescript/unstable/sync";
+import type { Node } from "typescript/unstable/ast";
+export function locations(symbol: Symbol | undefined, map: boolean): string[] {
+  const where = (node: Node): readonly (string | number)[] | string => {
+    const file = node.getSourceFile();
+    const start = node.getStart(file);
+    return map && start < 0 ? "the probe" : [file.fileName, start, node.end];
+  };
   return (symbol?.declarations ?? [])
     .map((d) => {
       const node = d.resolve();

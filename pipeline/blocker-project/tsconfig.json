@@ -16,6 +16,7 @@
     "../examples/invalid-census-annotated-node-union.ts",
     "../examples/invalid-gap-round-parent-walk.ts",
     "../examples/invalid-gap-round-scheme-binder-map.ts",
+    "../examples/invalid-gap-round-locations-map.ts",
     "../examples/import-meta.ts",
     "../examples/invalid-import-meta-*.ts",
     "../examples/invalid-module-*.ts",

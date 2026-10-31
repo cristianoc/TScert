@@ -200,7 +200,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
       return { file, offset: at };
     };
     const answer = probeProgram(files, (program, checker): TypeTerm | null => {
-      const where = (node: Node, map: boolean): unknown => {
+      const where = (node: Node, map: boolean): readonly (string | number)[] | string => {
         const file = node.getSourceFile();
         const start = node.getStart(file);
         if (!map) return [file.fileName, start, node.end];
