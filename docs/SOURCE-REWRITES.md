@@ -1881,6 +1881,22 @@ may include accessors or a Proxy.
 
 ## Changes for a tool's defect
 
+### A named object in a logical operator's result
+
+`tools/shadow-contracts.mts#print` prints a nullable receiver with
+`term.receiver && print(term.receiver)` and interpolates the returned
+string. The producer uses `truthy_refine` to compute the left operand's
+possible result through its named declaration: every object is truthy,
+so only `null` from that operand can be a result of `&&` here. A named
+union that admits `false` retains that possible result.
+
+This extends the producer's use of its existing declaration-aware
+truthiness query to [logical operators](SOURCE-ELABORATION.md#logical-operators).
+The existing extraction and certificate checks establish the proposed
+expression types. `blocker-gap-round-receiver-template` exercises the
+interpolation, and `invalid-gap-round-receiver-template` requires a string
+where the logical operator can return `false`.
+
 ### A recursive callback offered narrower parameters
 
 The parent walk `topStatement` in `tools/fragment-parse.mts#lowerFile`

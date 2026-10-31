@@ -461,7 +461,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          let mark=Json.Array [Json.Number start;Json.Number (string_of_int (int_of_string start + 1))] in
          publish_expression mark (literal_type (LBool (not conjunction))) None
        | _ -> ()) [a;b];
-      union (truthy_slice (not conjunction) left) right
+      union (truthy_refine declarations (not conjunction) left) right
     (* The operand is built at its const type, which is the cast's. *)
     | Cast ("const",None,e) ->
       (match const_type env e with
