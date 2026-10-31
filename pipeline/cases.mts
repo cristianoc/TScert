@@ -48,6 +48,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  gap("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join.", "unverified", "search", /^reject: closure expression claim at \[\d+,\d+\): evidence search failed(?:\n|$)/),
+  { ...gap("blocker-census-annotated-node-union", "An annotated callback on a union of compiler node arrays.", "unverified", "search", /^reject: per-arrow interior claims do not match the claimed arrows$/), project: "pipeline/blocker-project" },
+  gap("blocker-census-spread-map-records", "An array literal spreading a map that builds records.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this arrLit/),
+  gap("blocker-census-spread-nested-field", "A callback spreading a record and overriding a nested field.", "unverified", "search", /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation(?:\n|$)/),
   // Distinct model-study causes; each source header gives the supplied sample count.
   gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
     /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),
