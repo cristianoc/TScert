@@ -1,4 +1,4 @@
-/* First refusals of the supplied census of 340214a96fca (2026-10-31).
+/* First refusals of the supplied census of aa376e0a92d8 (2026-10-31).
  * Build: make deck NAME=gap-priorities SINCE=f893d8b4.
  * Site audit: session scratchpad, round/ranking.md. */
 import {
@@ -6,39 +6,39 @@ import {
   type Deck, type Slide,
 } from "../../../dev/deck.mts";
 
-const measured = "Measured 2026-10-31 · census of 340214a96fca";
+const measured = "Measured 2026-10-31 · census of aa376e0a92d8";
 
 // These are observed source forms, not assertions of shared implementation defects.
 const first: string[][] = [
-  ["1", "Early use of capturedAt; outer arrow has no result annotation", "2,938", "1"],
-  ["2", "Recursive parent walk checked at several signatures", "798", "6"],
-  ["3", "Object.assign target read after argument-array destructuring", "792", "10"],
-  ["4", "Scope spread overriding callbacks and a type alias’s source file", "780", "29"],
-  ["5", "for-of over an indexed array with an empty-array fallback", "716", "26"],
-  ["6", "Call finding the first optional constructor parameter inside map", "393", "2"],
-  ["7", "map callback replacing native method types with unknown", "379", "1"],
-  ["8", "map callback allocating a generic signature’s type-parameter record", "352", "1"],
-  ["9", "initializer read after an in test on a compiler node’s parent", "313", "1"],
-  ["10", "find callback calling a function stored in a graph field", "300", "1"],
+  ["1", "Identifier text read after resolving interface bases", "2,941", "1"],
+  ["2", "Reassigned translated-functions array read before filter", "798", "6"],
+  ["3", "Callable initialization returned as a withValue record", "794", "10"],
+  ["4", "Generic function type passed to quantified", "780", "29"],
+  ["5", "Map keys iterator spread into an array", "681", "25"],
+  ["6", "First optional constructor parameter found inside map", "393", "2"],
+  ["7", "Mapped member array read before testing optional fields", "382", "1"],
+  ["8", "Method overload forms called inside flatMap", "352", "1"],
+  ["9", "Array length returned as a filter callback result", "313", "1"],
+  ["10", "Sorted and mapped result array read before push", "300", "1"],
 ];
 const more: string[][] = [
-  ["11", "filter callback inside a function passed to flatMap", "229", "5"],
-  ["12", "Spread of unknown after object and null tests", "200", "5"],
-  ["13", "Two maps resolving declarations and serializing locations", "197", "1"],
-  ["14", "Captured array read before flatMap calls each element’s function", "187", "6"],
-  ["15", "Template interpolation after printing a nullable receiver field", "175", "5"],
-  ["16", "Async record result may acquire a callable then", "129", "3"],
-  ["17", "Cache callback returning a record whose answer is a real path or null", "124", "9"],
-  ["18", "Recursive visitor fails its stated effect bound", "120", "5"],
-  ["19", "JSON.stringify of a field key after string and symbol tests", "106", "4"],
-  ["20", "forEach through an optional object field after a test", "106", "1"],
+  ["11", "Named record used where an index signature is required", "248", "8"],
+  ["12", "Compiler node’s end position read after testing for a previous match", "206", "2"],
+  ["13", "Mapped arms array read before reduction", "187", "6"],
+  ["14", "Parameter-string map reads a required-parameter count", "175", "5"],
+  ["15", "Map entries iterator spread for canonicalization", "116", "1"],
+  ["16", "Mapped directory-entry pairs serialized as JSON", "111", "9"],
+  ["17", "Optional dictionary lookup at a possibly inherited key", "109", "3"],
+  ["18", "Decoded diagnostic assembled through an unknown-valued record", "109", "1"],
+  ["19", "Primitive JSON value converted with String", "106", "4"],
+  ["20", "Parsed flow document asserted as a writable graph", "101", "1"],
 ];
 
 const slides: Slide[] = [
   cover("cover", {
     label: "TScert · its own front end",
     title: "Where proofs of TScert’s own code fail",
-    text: "TScert checks type claims about TypeScript programs. This deck explains its first refusals when it checks the functions of its own source-reading code, in tools/. The census of 340214a96fca measures 370 of 635 functions verified. The next two slides explain those terms. The ranking describes source constructs at the remaining functions’ first refusals, weighted by the statements they block.",
+    text: "TScert checks type claims about TypeScript programs. This deck explains its first refusals when it checks the functions of its own source-reading code, in tools/. The census of aa376e0a92d8 measures 382 of 637 functions verified. The next two slides explain those terms. The ranking describes source constructs at the remaining functions’ first refusals, weighted by the statements they block.",
   }),
   slide("terms", {
     label: "How to read the result", title: "A checked function, a refusal, and a small case", gap: 26,
@@ -49,94 +49,98 @@ const slides: Slide[] = [
     ]),
   }),
   slide("find", {
-    label: measured, title: "370 of 635 functions verify", gap: 26,
+    label: measured, title: "382 of 637 functions verify", gap: 26,
     body: cards([
-      stat("23.3%", "3,545 of 15,184 census statements belong to verified functions.", "ok"),
-      stat("265", "functions are refused: 232 at search or checking, 33 at source or proposal restrictions."),
+      stat("24.7%", "3,754 of 15,201 census statements belong to verified functions.", "ok"),
+      stat("255", "functions are refused: 224 at search, 31 at source or proposal restrictions."),
       stat("0", "stage timeouts, with a limit of 300 seconds per process stage."),
     ]) + bullets([
       point("A slice", "a copy of one top-level function and its dependencies, run through the pipeline. A refusal can occur in a dependency retained in the copy."),
-      point("The weight", "each refused function contributes its own statements once, to its first refusal: 11,639 blocked statements. Statements include returns, assignments and tests. Later refusals are outside this measurement."),
-      point("The source", "the supplied census-tools-340214a96fca record and refusals.json. This ordinary census stops at each function’s first refusal. The comparison with the preceding ordinary census appears on “Cases and the functions they target”."),
+      point("The weight", "each refused function contributes its own statements once, to its first refusal: 11,447 blocked statements. Statements include returns, assignments and tests. Later refusals are outside this measurement."),
+      point("The source", "the supplied census-tools-aa376e0a92d8 record and refusals.json. This ordinary census stops at each function’s first refusal. The comparison with the preceding ordinary census appears on “Cases and the functions they target”."),
     ]),
   }),
   slide("method", {
     label: measured, title: "One search-failure message contains many source forms", gap: 24,
     body: table(["The record’s group", "Statements", "Functions", "What proof is missing"], [
-      ["Source expression obligation", "4,333", "154", "That an expression meets its claimed type, using the known types and facts"],
-      ["Source direct obligation", "973", "13", "That one type is included in another; here, that each proposed callback signature fits its source annotation"],
-      ["Closure expression claim", "578", "19", "That an expression inside a closure meets its claimed type under that closure’s parameters and captured values"],
-      ["Incoming edge obligation", "331", "12", "That an execution step establishes the type claims required at its destination"],
-      ["Effect refusal", "319", "14", "That the body obeys its proposed limits on changes to stored values"],
+      ["Source expression obligation", "4,471", "151", "That an expression meets its claimed type, using the known types and facts"],
+      ["Missing field text", "2,941", "1", "The producer cannot read text from the proposed type of an interface base expression"],
+      ["Closure expression claim", "2,012", "28", "That an expression inside a closure meets its claimed type under that closure’s parameters and captured values"],
+      ["Source direct obligation", "378", "7", "That a proposed callback signature fits its source annotation"],
+      ["Incoming edge obligation", "302", "10", "That an execution step establishes the type claims required at its destination"],
     ], [28, 12, 12, 48]) + bullets([
       point("Confirmed from source", "each located refusal is read in its supplied slice. Generic groups are split by refused expression and the functions reaching it. A shared expression confirms a source form; the exact failed proof may require investigation."),
-      point("Scope", "the ranking names observed constructs. A generic search failure does not identify a shared implementation defect or establish that the source is unsafe."),
+      point("Scope", "these are the five heaviest unsplit messages. The next slides rank source constructs. A generic search failure does not identify a shared implementation defect or establish that the source is unsafe."),
     ]),
   }),
   slide("priority", {
     label: measured, title: "The ten heaviest observed constructs", gap: 18,
     body: table(["#", "Construct at the first refusal", "Statements", "Functions"], first, [5, 69, 14, 12], { compact: true }) + bullets([
-      "Counts measure blocked code, not code guaranteed to verify when this refusal is removed. No exact case for these current refusals is identified in pipeline/cases.mts. The following slides show the heaviest sites and distinguish related cases.",
+      "Names: lowered holds translated functions; withValue describes a function with initial fields; quantified reads a generic function type. Rows 1–5 are explained next. Row 6 has the gap case blocker-gap-round-optional-parameter. Other rows have no exact case identified. Counts measure blocked code; further refusals may follow.",
     ]),
   }),
   slide("priority-more", {
     label: measured, title: "Constructs 11–20", gap: 18,
     body: table(["#", "Construct at the first refusal", "Statements", "Functions"], more, [5, 69, 14, 12], { compact: true }) + bullets([
-      "Construct 16 needs a guarantee that neither the record nor its prototype can acquire a callable then during its lifetime: promise resolution may invoke that method. invalid-async-object is a related negative case. An effect bound states how calls may change locations. Construct 21’s storage issue is explained on “A decoder’s checked contents and its storage”. JSON.stringify serializes a value to JSON text. Other rows have no exact case identified.",
+      "An index signature constrains every key of its kind. Row 11 has the negative case named-implicit-index; its record gives no source position. Row 13’s arms hold a count and a function; blocker-gap-round-captured-arms-reduction is its gap case. Canonicalization serializes contracts for comparison, omitting source positions. Row 17 has the negative case index-signature. Rows 18 and 20 are explained on “Decoders and checked storage”. These twenty rows cover 9,202 statements in 117 functions.",
     ]),
   }),
   slide("early-binding", {
-    label: "Construct 1 · 2,938 statements, 1 function", title: "A closure mentions capturedAt before its declaration", gap: 22,
+    label: "Construct 1 · measured 2,941 statements, 1 function", title: "A tested interface base is read again after calls", gap: 22,
     body: code([
-      "// Declaration in collectDeclarations; earlier closures mention capturedAt.",
-      "const capturedAt = (use: Node, what: string) =>",
-      "  (parameter: ts.TypeParameterDeclaration): TypeTerm => {",
-      "    // Check name resolution, then represent the type parameter.",
-      "    …",
-      "  };",
+      "if (!ts.isIdentifier(base.expression) || base.typeArguments?.length)",
+      "  throw Error(…);",
+      "const targets = (targetOf(checker, base.expression)?.declarations ?? [])",
+      "  .map(x => x.resolve());",
+      "const [only] = targets;",
+      "if (!only || targets.length !== 1 || !ts.isInterfaceDeclaration(only))",
+      "  throw Error(`the base ${base.expression.text} of ${d.name.text} is not one interface`);",
     ]) + bullets([
-      point("The names", "Node is a TypeScript compiler node. TypeParameterDeclaration describes a declared type parameter. TypeTerm represents a type. use is the use site, what labels an error, and parameter is the captured type parameter."),
-      point("The refusal", "the binding may be read before initialization and needs its type stated. The inner arrow states TypeTerm; the outer arrow has no result annotation. This confirms the source construct. It does not establish an actual read of an uninitialized value."),
-      point("Case and route", "no exact case. function-declaration-before-initialization is related. An annotation is a candidate source change whose evidence needs checking. No previously checked shape is discarded here."),
+      point("The names", "In collectDeclarations, d is an interface declaration and base is one of its bases. ts is the TypeScript compiler API. isIdentifier tests for a name with text; typeArguments lists generic arguments. targetOf uses checker to find declarations, and resolve obtains each declaration. only is the sole target when one exists. The ellipsis omits the first error’s text."),
+      point("Measured refusal", "the producer reports missing field text at base.expression.text in the error message. The source tests that expression before resolving declarations, then reads it again. This observation does not establish which call or claim loses the fact."),
+      point("Case and repair assessment", "invalid-path-witness-call is related: a call can invalidate a tested field path. No exact case for this base walk is identified. No explicit conversion of a checked shape to unknown occurs here."),
     ]),
-    note: "Source: slice-declaration-graph-collectDeclarations.mts, declaration at line 2248",
+    note: "Source: slice-declaration-graph-collectDeclarations.mts:969–975; excerpt wraps the targets declaration",
   }),
   slide("later-sites", {
-    label: "Constructs 2–5 · inspected in the supplied slices", title: "The first refusal reaches another construct", gap: 20,
+    label: "Constructs 2–5 · cited source sites; measured weights on the ranking", title: "Later obligations occupy the leading sites", gap: 20,
     body: table(["Construct and site", "Recorded refusal", "What the source establishes"], [
-      ["2. lowerFile: topStatement, a walk to a containing statement", "Closure body translates to different programs at its signatures", "The arrow follows a node’s parent; the differing operation needs investigation"],
-      ["3. expr: gate.expr(target) in the Object.assign branch", "Source expression obligation", "Argument count is checked, then the array is destructured; target goes to the expression reader"],
-      ["4. readTypeTerm: scope spread", "Source expression obligation", "The literal overrides a type alias’s source file and callbacks; the failed member is unestablished"],
-      ["5. functionPlacement: for-of over mentions[i] ?? []", "Source expression obligation", "An indexed array or a fresh empty array supplies the loop’s values"],
-    ], [32, 25, 43]) + bullets([
-      point("Two signatures in a related case", "In blocker-every-mixed-closure, a boolean callback calls node.getSourceFile(). Its written parameter accepts a compiler node or a record holding that function. Passing it to every on an array of compiler nodes also asks for a signature accepting just those nodes."),
-      point("Two translations of that call", "At the written signature: read and call getSourceFile on the object in one step. At every’s signature: obtain the compiler method with node saved as its receiver, then call it. These are different sequences of model operations. One closure needs the same program at both signatures."),
-      point("Scope", "This explains the message using the related case. The parent walk’s differing operation is unestablished; none of these four sites has an exact case."),
+      ["2. lowerFile: lowered.filter", "Closure expression claim at the lowered array before filter", "The array holds translated declarations. A filter callback checks references to omitted functions; the enclosing loop reassigns the array"],
+      ["3. expr: callable initialization", "Source expression obligation at the returned withValue record", "The record carries a function, its initial fields and both types; the earlier destructured target check is passed"],
+      ["4. readTypeTerm: quantified call", "Source expression obligation at a call reading a generic function type", "The call supplies type parameters, parameters and result type; the failed argument or result contract is unestablished"],
+      ["5. hoisting: [...placed.keys()]", "Source expression obligation at an iterator spread", "placed is a Map from function declarations to their placement. Its keys are copied into an array in insertion order"],
+    ], [28, 28, 44]) + bullets([
+      point("Names", "lowerFile translates a file, expr reads an expression, readTypeTerm reads a type annotation, and hoisting arranges declarations bound before their statements. These are function names in tools/."),
+      point("Evidence limit", "the sites confirm four distinct source forms. Their generic messages need isolated obligations before a common cause or remedy is asserted. The earlier cases are positive; their census functions face these further refusals."),
     ]),
   }),
   slide("round", {
     label: "Cited case expectations · pipeline/cases.mts; measured census comparison · WORK.md", title: "Cases and the functions they target", gap: 18,
-    body: table(["Positive case", "What it checks", "Current first refusal in its census functions"], [
-      [`blocker-census-spread-map-records ${status("ok", "positive")}`, "Spreading mapped records into an array", "classBody and classStmt: firstOptional(all), finding the first optional constructor parameter"],
-      [`blocker-census-annotated-node-union ${status("ok", "positive")}`, "An annotated callback over compiler member arrays", "collect: a proposed callback signature fails its source annotation in nativeFields.map"],
-      [`blocker-census-spread-nested-field ${status("ok", "positive")}`, "Nested spreads over stated JSON data", "selectGlobal: allocating a type-parameter record for a generic signature"],
-      [`invalid-in-union-read ${status("ok", "positive")}`, "A union arm states an absent spread field", "fragment-parts.mapExprParts and its callers: source-expression obligation"],
-      [`blocker-census-effect-map-result ${status("ok", "positive")}`, "A map callback followed by array join", "Four claim-text functions: JSON.stringify(key), serializing a field key"],
-    ], [31, 30, 39], { compact: true }) + bullets([
-      point("Measured comparison", "043267592814 → 340214a96fca: 372 → 370 of 635 functions verified; 3,567 → 3,545 verified statements. Gained: files.treeDigest. Lost: computed-types.parameterMembers (method next read off its object), unchecked.unstated and unchecked.boundary (incoming edge obligations). These names identify functions in the corresponding tools/ files."),
-      point("Scope", "All five cases above have positive expectations; even the name invalid-in-union-read names a positive case. A case’s success does not establish its whole census function. The separate blocker-census-nested-field-json case retains a gap for serializing open nested records."),
+    body: table(["Positive case (blocker-gap-round- prefix)", "What it checks", "First refusal in its census functions"], [
+      [`early-capture ${status("ok", "positive")}`, "An outer arrow states its returned function type", "collectDeclarations: missing text in an interface base expression"],
+      [`parent-walk ${status("ok", "positive")}`, "Recursive callbacks retain their declared parameters", "lowerFile and callers: lowered array read before filter"],
+      [`assign-target ${status("ok", "positive")}`, "A destructured target is checked for undefined", "expr and callers: returned callable-initialization record"],
+      [`scope-spread ${status("ok", "positive")}`, "A type-reading context record states the function fields it copies", "readTypeTerm and callers: quantified call for a generic function type"],
+      [`indexed-for-of ${status("ok", "positive")}`, "Iteration over an indexed value or an empty array", "functionPlacement verifies; hoisting and callers reach a Map keys spread"],
+    ], [29, 31, 40], { compact: true }) + bullets([
+      point("Measured comparison", "897feac29b75 → aa376e0a92d8: 373/635 → 382/637 functions; 3,584/15,184 → 3,754/15,201 verified statements. Nine functions gained, none lost. files: realOf, findPackage. fragment-expressions: knownLocal, localArrow, memberOf, localValues, letWrites. fragment-statements: functionPlacement. written-applications: isInitializer. Each file name is in tools/ with suffix .mts."),
+      point("Scope", "the five rows cite positive expectations. A case’s success does not establish its whole census function. The censuses count functions in their respective sources; the later source has two more functions."),
     ]),
   }),
   slide("storage", {
-    label: "Construct 21 · 101 statements, 1 function", title: "A decoder’s checked contents and its storage", gap: 22,
+    label: "Constructs 18 and 20 · measured 109 and 101 statements", title: "Decoders and checked storage", gap: 22,
     body: code([
-      "// decodeFlowDocument checks parsed JSON, then closes with:",
+      "// readDiagnostic assembles decoded fields through this dictionary:",
+      "const result: { [key: string]: unknown } = { ...d };",
+      "// Later it assigns decoded parts, then asserts the diagnostic type.",
+      "return result as unknown as ObligationDiagnostic;",
+      "// decodeFlowDocument checks value, then aliases its storage:",
       "const document: unknown = value;",
       "return document as FlowDocument;",
     ]) + bullets([
-      point("The names", "a decoder checks input and returns a typed value. FlowDocument describes TScert’s graph of execution steps. value is the parsed input; document aliases its storage. unknown supplies no shape, and as asserts the result type."),
-      point("The obligation", "checks of current contents alone do not establish the contracts of writable arrays and fields. A different reference may write values the asserted result type excludes. The record refuses the closing assertion."),
-      point("Repair site", "source-flow.mts, decodeFlowDocument, closing assertion. SOURCE-REWRITES.md, “A decoder’s result asserted over parsed storage”, describes the related repair pattern: build fresh storage from checked fields. A stronger annotation alone does not establish it. invalid-decoder-closing-assertion demonstrates the related aliasing problem."),
+      point("The names", "a decoder checks input and returns a typed value. d and value are parsed JSON records. ObligationDiagnostic describes a failed proof obligation; FlowDocument describes a graph of execution steps. unknown gives no shape; as asserts a type."),
+      point("Repair sites", "diagnostic.mts#readDiagnostic stores typed decoded parts in an unknown-valued dictionary. source-flow.mts#decodeFlowDocument asserts a writable graph over checked parsed storage. A test of present contents alone does not constrain future writes through other references. Both closing assertions are refused."),
+      point("Cited repair pattern", "SOURCE-REWRITES.md, “A decoder’s result asserted over parsed storage”: build fresh typed storage from checked fields. invalid-decoder-closing-assertion demonstrates the related aliasing problem. Applying that pattern to these full decoders needs validation; the record alone does not prove the exact cause of either failed search."),
     ]),
   }),
   slide("routes", {
@@ -151,17 +155,18 @@ const slides: Slide[] = [
       ["7. A proof", "A Lean proof establishes the needed fact in the model"],
       ["8. The refusal stays", "No route establishes the obligation at acceptable cost"],
     ], [25, 75], { compact: true }) + bullets([
-      point("Example of route 5", "tools/client-prototype.mts wraps the compiler client’s request methods, reached through its prototype. Only the compiler package can make its API input. Callers assume the wrapper returns the service’s answer or throws, with the stated effects. The wrapper and service remain outside the proof."),
-      "Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain.",
+      point("Effect", "a contract may bound how a call changes stored values. A host boundary’s result and effect are assumptions about its code."),
+      "Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain. Construct 11’s record-to-index refusal protects keys its named fields do not describe; construct 17’s lookup may find inherited methods.",
     ]),
   }),
   slide("sources", {
     label: "Evidence and scope", title: "First refusals in one fixed record", gap: 24,
     body: bullets([
-      point("Measured", "census-tools-340214a96fca-2026-10-31T07-12-06-447Z.json in the supplied census directory 2db902ca8b7b: clean commit 340214a96fca, tools/, 300-second stage limit. Counts come from function outcomes and the statement inventory."),
-      point("Inspected", "The session’s work/refusals.json lists the refusals; tools/tools/slice-*.mts is in the cited census directory. Each refusal matches the record. Source spans count UTF-16 code units, as TypeScript does. The session’s work/round/ranking.md lists all sites, weights, case matches and repair assessments."),
+      point("Measured", "census-tools-aa376e0a92d8-2026-10-31T14-31-26-964Z.json in the supplied census directory 2db902ca8b7b: clean commit aa376e0a92d8, tools/, 300-second stage limit. Counts come from function outcomes and the statement inventory."),
+      point("Inspected", "The session’s work/refusals.json lists the refusals; tools/tools/slice-*.mts is in the cited census directory. All 255 details match the record. Source spans count UTF-16 code units, as TypeScript does. work/round/ranking.md lists every site, its weight, the top twenty case matches and repair assessments."),
       point("Source policy", "pipeline/cases.mts owns case expectations. WORK.md owns the census comparison. SOURCE-REWRITES.md owns the routes and decoder storage repair. No new pipeline run supplies a number in this deck."),
-      point("Limits", "Observed source forms are confirmed. Generic search failures leave the exact failed obligation to isolate. Later refusals and future gains are unmeasured. A function can meet further obligations beyond the first one this record reports."),
+      point("Revision marks", "the marked page compares with deck commit f893d8b4, the base named in the intervening deck records. This is separate from the ordinary census comparison on “Cases and the functions they target”."),
+      point("Limits", "Observed source forms are confirmed. Generic search failures leave the exact failed obligation to isolate. Later refusals and future gains are unmeasured. Construct 11 names one restriction but has no located obligation in this record."),
     ]),
   }),
 ];
