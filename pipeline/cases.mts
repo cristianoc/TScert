@@ -50,7 +50,8 @@ const gap = (
 export const cases: Case[] = [
   positive("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join, whose receiver admits holes."),
   negative("invalid-sparse-join-coercion", "A sparse map result retains join’s standard conversion bound (run under Node)."),
-  { ...gap("blocker-census-annotated-node-union", "An annotated callback on a union of compiler node arrays.", "unverified", "search", /^reject: per-arrow interior claims do not match the claimed arrows$/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-census-annotated-node-union", "An annotated callback on a union of compiler node arrays retains its checked signatures and their body claims."), project: "pipeline/blocker-project" },
+  { ...negative("invalid-census-annotated-node-union", "An annotated callback on a union of compiler node arrays must meet its result annotation.", /This return requires boolean\./), project: "pipeline/blocker-project" },
   positive("blocker-census-spread-map-records", "An array literal spreading a map that builds records."),
   negative("invalid-spread-map-records", "A shrinking map callback cannot justify a readable spread view.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at ReadonlyArray/),
   positive("blocker-census-spread-nested-field", "JSON data records state their writable allocation contracts before a nested spread is serialized and deduplicated."),

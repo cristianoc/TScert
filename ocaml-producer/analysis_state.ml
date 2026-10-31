@@ -253,6 +253,7 @@ module Access (S : sig val state : t end) = struct
     (!local).instantiations <- ((current_point (),source),substitution) :: (!local).instantiations
   let publish_request pos signature = (!local).requests <- (pos,signature) :: (!local).requests
   let publish_arrow pos rows = (!local).arrows <- (pos,rows) :: (!local).arrows
+  let has_arrow_claims pos = List.mem_assoc pos (!local).arrows
   let publish_contract (c:contract) =
     match List.find_opt (fun (other:contract) -> other.pos=c.pos && other.name=c.name) (!local).contracts with
     | None -> (!local).contracts <- c :: (!local).contracts

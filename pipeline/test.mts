@@ -3292,6 +3292,25 @@ control(async (): Promise<void> => {
   invoke(forged, join(artifacts, "evidence.json"), artifacts);
 });
 control(async (): Promise<void> => {
+  const artifacts = run("blocker-census-annotated-node-union");
+  for (const name of ["missing-row", "false-body-type"]) {
+    const claims = readClaims(artifacts);
+    const arrow = must(claims.functions[0]?.arrows?.[0], "the annotated callback's rows");
+    assert.equal(arrow.rows.length, 2);
+    if (name === "missing-row") arrow.rows.pop();
+    else {
+      const row = must(arrow.rows[0], "the callback's first signature");
+      const expression = must(row.expressions[0], "a callback body expression");
+      expression.type = [rowOf(claims, "num")];
+    }
+    const forged = writeClaims(artifacts, `annotated-union-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `annotated-union-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+  process.stdout.write("annotated union callback: missing signature claims and forged body types refused by both entry points\n");
+});
+control(async (): Promise<void> => {
   checkGenericRest(verifier, run("generic-rest"));
   checkRestPackInstance(verifier, run("rest-pack-declared"), "emptyInfer()");
   checkRestPackInstance(verifier, run("class-rest-binder"), "new RestRunner(\n");

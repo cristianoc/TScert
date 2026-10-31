@@ -1646,6 +1646,19 @@ at states all of that, so the program holds none.
 
 ## Changes for a tool's defect
 
+### A callback's signatures and their body claims
+
+An annotated callback passed to `some` on a union of compiler node arrays
+has its own signature and a contextual signature taking the additional
+arguments `some` passes. The producer states body claims at each signature
+([closure claims](SOURCE-CLAIMS.md)). Its call inference retains that claim
+when it has per-signature body claims, contains no generic binders, offers
+the required arity and meets the callback parameter, keeping each signature
+with its body claims. Lean checks every advertised signature and its body.
+`blocker-census-annotated-node-union` exercises this support through the
+existing closure mechanism; `invalid-census-annotated-node-union` requires
+the callback's body to meet its written result type.
+
 ### The compiler API's empty-tuple panic
 
 TypeScript 7.0.2's API panics writing a union that holds an empty array

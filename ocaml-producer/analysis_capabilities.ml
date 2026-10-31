@@ -56,6 +56,7 @@ module type Queries = sig
 end
 
 module type Observations = sig
+  val has_arrow_claims : Json.t -> bool
   val observations : unit -> observations
   val explain : Json.t -> string -> unit
 end

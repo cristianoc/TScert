@@ -13,6 +13,7 @@
   },
   "include": [
     "../examples/blocker-*.ts",
+    "../examples/invalid-census-annotated-node-union.ts",
     "../examples/import-meta.ts",
     "../examples/invalid-import-meta-*.ts",
     "../examples/invalid-module-*.ts",

@@ -224,7 +224,19 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A guard closure is claimed at its own signatures, the promise and
            the ones it is offered among them (`Closures`). *)
         | Lambda (_,[],ps,_,false,_,None,_) ->
-          Option.map (fun (t,_) () -> publish_instance arg.pos t)
+          Option.map (fun (t,offered) () ->
+            (* Closed contextual inference may already offer this signature beside
+               the closure's own, with interior claims for both. Keep that
+               claim when it meets the parameter: replacing its signatures
+               alone would detach those claims from their signatures. *)
+            match latest_claim arg.pos with
+            | Some (Atoms [Shape {calls;_}] as own)
+                when has_arrow_claims arg.pos && not (Semantic.mentions_rigid own)
+                  && List.exists (fun (s:Semantic.signature) ->
+                  s.quantified=[] && s.variadic=offered.variadic && s.rest_pack=offered.rest_pack
+                  && List.length s.params=List.length offered.params) calls
+                  && plausible_subtype_declared declarations own t -> ()
+            | _ -> publish_instance arg.pos t)
             (offered (List.length ps))
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.closures ->
           (match param with
