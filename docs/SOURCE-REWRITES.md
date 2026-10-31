@@ -77,6 +77,35 @@ callback in `tools/fragment-classes.mts`.
   writable-field refusal. This repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### Mapped arms with a store-preserving callback
+
+`liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
+with a `JsonValue` parameter and the result contract
+`Within<{ value: "any"; store: "grow" }, Arm>`, where `Arm` is the record
+holding a count and a deferred lifting function. The existing
+[footprint checks](FOOTPRINTS.md) require preservation evidence for that definition;
+the existing [native map contract](SOURCE-CONTRACTS.md#prototype-contracts)
+uses it to retain readable array presence for reduction and iteration.
+
+- **Repair:** the callback's own signature retains the parameter contract
+  and states the preservation needed by its consumer. The body is checked
+  at that signature before `map` consumes it. Constructing a deferred
+  function does not execute its body; its later invocation has its own call
+  contract.
+- **Behaviour:** the annotation is erased. The same callbacks run in the
+  same order, allocate the same arm records and deferred functions, count
+  the same clauses and lift the same selected arms. Returns, exceptions,
+  mutations, receivers and aliases are unchanged. Allocating the callback
+  before reading `map` runs no client code under the existing stable
+  standard-object assumption.
+- **Scope:** `blocker-gap-round-captured-arms-reduction-preserving` checks
+  the full reduction, bounded iteration and final `flatMap` with a store-preserving
+  splitting function. `blocker-gap-round-captured-arms-reduction` retains the
+  ordinary splitting signature: it permits removing a later input during
+  `map`, leaving a hole that iteration visits as `undefined`. The repair
+  adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A cache callback's nullable answer field
 
 `realOf` in `tools/files.mts` supplies `attemptAnswer` with a callback

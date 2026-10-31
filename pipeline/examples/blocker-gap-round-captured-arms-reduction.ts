@@ -1,4 +1,5 @@
-// Captured array read before flatMap calls each element's function.
+// An unrestricted split can remove labels during map, leaving holes in arms.
+// The captured mapped array cannot supply a readable reduction receiver.
 // Census functions:
 // claim-text.mts#liftClause
 // claim-text.mts#liftSignatures

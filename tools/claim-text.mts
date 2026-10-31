@@ -710,7 +710,7 @@ function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
   const both = trueLabel !== undefined && falseLabel !== undefined;
   // Each label's arms, lifted on demand: below the top, a union shows its
   // first `nestedArms` arms, and the arms past them are counted, not lifted.
-  const arms = labels.map((label): { count: number; lift: (limit?: number) => JsonValue[] } => {
+  const armOf = (label: JsonValue): Within<{ value: "any"; store: "grow" }, { count: number; lift: (limit?: number) => JsonValue[] }> => {
     if (both && label === falseLabel) return { count: 0, lift: () => [] };
     if (both && label === trueLabel)
       return { count: 1, lift: () => [{ a: "boolean" }] };
@@ -728,7 +728,8 @@ function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
       count: clauses.length,
       lift: (limit) => clauses.slice(0, limit).map((clause) => liftClause(types, clause, depth)),
     };
-  });
+  };
+  const arms = labels.map(armOf);
   const total = arms.reduce((n, arm) => n + arm.count, 0);
   if (depth < types.top && total > nestedArms) {
     const atoms: JsonValue[] = [];
