@@ -58,6 +58,31 @@ of the host's implementation.
 
 ## Rewrites
 
+### A part union that leaves its other arm's key unstated
+
+The `build` expression's parts in `tools/fragment.mts` are named fields
+or spread operands. A named field's contract states `spread?: never`, as
+`ObjectPart` in `tools/fragment-support.mts` does. This records the grammar
+its constructors supply: a named field carries `name` and `e`, and a
+spread carries `spread`. The existing record contracts and narrowing on
+`undefined` establish which value the traversal reads.
+
+- **Repair:** `mapExprParts` tests `p.spread !== undefined` before mapping
+  the spread operand. The named arm's stated optional field reads only
+  `undefined`; an arbitrary value or getter at that key does not meet its
+  contract. An `in` test on a union leaving the key unstated cannot
+  establish that read's type or effect. The case `invalid-in-union-read`
+  states the repaired contract; `invalid-in-union-part` retains the
+  unstated-key refusal and `invalid-in-union-getter` exercises the getter
+  under Node.
+- **Repair:** the declaration-name read in `writtenApplications` tests
+  the declaration kinds that terminate its enclosing walk. Each kind
+  states its `name` member in the compiler API contract. The kind tests
+  retain the walk's established fact at the read.
+- **Scope:** these repairs use the existing record and host-family
+  contracts and add no external assumption.
+- **Commit:** the introducing commit.
+
 ### The host identity of an alias-expansion set
 
 `TermScope.expandingAliases` in `tools/type-term.mts` holds the set of

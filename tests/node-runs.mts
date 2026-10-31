@@ -2156,8 +2156,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     `(() => { let n = 0; const o = { get name() { n = n + 1; return n; } }; return [nameOf(o), nameOf(o)]; })()`)), "[1,2]");
   assert.equal(runExample("invalid-compiler-api-open-read-kind", "isNode({ kind: 1 })"), true);
   // An arm stating no `body` carries a getter there, run at each read.
-  assert.equal(runExample("invalid-in-union-read",
+  assert.equal(runExample("invalid-in-union-getter",
     `(() => { let n = 0; const d = { kind: "without", get body() { n = n + 1; return n; } }; bodyOf(d); return bodyOf(d); })()`), 2);
+  assert.equal(runExample("invalid-in-union-part",
+    `(() => { let n = 0; const p = { name: "x", e: 0, get spread() { n = n + 1; return n; } }; partValue(p); return partValue(p); })()`), 2);
+  assert.equal(JSON.stringify(runExample("invalid-in-union-read",
+    `[partValue({ name: "x", e: 4 }), partValue({ spread: 5 })]`)), "[4,5]");
   assert.equal(JSON.stringify(runExample("in-unknown-object", `[anything({ a: 1 }), anything(5), closable({ close() {} }),
     closable(""), named(() => { throw new Error("m"); }), named(() => { throw 5; }), kind(null), kind(() => 0),
     kind(1), kind({ code: 1 }), kind({})]`)), JSON.stringify([true, false, true, false, true, false, "nullish",

@@ -2225,7 +2225,7 @@ the declaration graph finds one of two shapes of syntactic eligibility
   `break` or `continue`, with `t` answering the way that finds $`k`$ in
   `o` (`"k" in o` true, through `!`, a conjunction found true or a
   disjunction found false). TypeScript drops the arm stating no $`k`$,
-  which an open record may own at any type (`invalid-in-union-read`, run
+  which an open record may own at any type (`invalid-in-union-getter`, run
   under Node). Eligibility is syntactic: it does not track a reassignment
   or a call between the test and the read (`in-union-read`), and it
   establishes no presence at the read.
@@ -2240,7 +2240,7 @@ type all of whose declarations, and transitively every base type's, are
 the host package's, whose audit covers the key. Any other arm keeps the
 read refused: one of the program's own types stating no key, which may
 carry a getter at the unstated key (as a value at `ErrorOptions` may at
-`cause`, [`JSON` and `Error`](#json-and-error); `invalid-in-union-read`,
+`cause`, [`JSON` and `Error`](#json-and-error); `invalid-in-union-getter`,
 run under Node), a type extending an external
 one (`interface LocalError extends Error {}`), another library's type,
 `object` or `unknown` (`invalid-in-union-read-receiver`). The open-read

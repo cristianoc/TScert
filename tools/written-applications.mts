@@ -286,7 +286,11 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     while (at && !(isTypeAlias(at) || ts.isInterfaceDeclaration(at) || ts.isClassDeclaration(at) ||
         ts.isFunctionDeclaration(at) || ts.isVariableDeclaration(at)))
       at = at.parent;
-    const name = at && "name" in at && at.name && ts.isIdentifier(at.name) ? at.name.text : "the module";
+    const declaration = at;
+    const written = declaration && (isTypeAlias(declaration) || ts.isInterfaceDeclaration(declaration) ||
+      ts.isClassDeclaration(declaration) || ts.isFunctionDeclaration(declaration) || ts.isVariableDeclaration(declaration))
+      ? declaration.name : undefined;
+    const name = written && ts.isIdentifier(written) ? written.text : "the module";
     return `${context.module(node.getSourceFile())}#${name}`;
   };
   // The application `name<args>` written at `node`.

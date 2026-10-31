@@ -1,16 +1,7 @@
-// At `body` an open read admits an arm stating no `body` only of the host
-// package: an arm of the program's own type stating no `body` may carry a
-// getter there, which external code supplies at an unstated key and which
-// runs code at each read, here counting its reads (run under Node). The
-// read after the passed test stays refused (TypeScript narrows to
-// `WithBody`).
-interface WithBody {
-  kind: "with";
-  body: number | undefined;
-}
-interface WithoutBody {
-  kind: "without";
-}
-export function bodyOf(d: WithBody | WithoutBody): unknown {
-  return "body" in d ? d.body : undefined;
+// Census: fragment-parts.mts#mapExprParts and its callers deepPartMap,
+// directParts, forEachPart, fragmentTypes, moduleHolds and astHolds.
+// A named part states the absence of a spread value, as ObjectPart does.
+type Part = { name: string; e: number; spread?: never } | { spread: number };
+export function partValue(p: Part): number {
+  return p.spread !== undefined ? p.spread : p.e;
 }

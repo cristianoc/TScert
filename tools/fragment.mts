@@ -61,7 +61,7 @@ export type Expr =
      spread's operand copied as soon as it is evaluated: its own enumerable
      properties, the later parts' over the earlier ones' (SOURCE-MODEL.md, "Object
      literals"). A spread of an object literal is its fields, in place. */
-  | { k: "build"; pos: Span; parts: ({ name: string; e: Expr } | { spread: Expr })[]; proto?: Expr }
+  | { k: "build"; pos: Span; parts: ({ name: string; e: Expr; spread?: never } | { spread: Expr })[]; proto?: Expr }
   /* A named read: `e.name`, or `e[k]` with `k` a `unique symbol` constant,
      which reads that symbol's key as a type's computed key names it. */
   | { k: "read"; pos: Span; field: PropertyKey; e: Expr }

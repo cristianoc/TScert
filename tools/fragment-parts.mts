@@ -29,7 +29,7 @@ export function mapExprParts(e: Expr, m: PartMap): Within<{ value: "any"; store:
     case "cast": return { ...e, annot: e.annot && m.type(e.annot), e: m.expr(e.e) };
     case "alloc": return { ...e, fields: e.fields.map(f => ({ ...f, e: m.expr(f.e) })),
       ...(e.proto ? { proto: m.expr(e.proto) } : {}) };
-    case "build": return { ...e, parts: e.parts.map(p => "spread" in p ? { ...p, spread: m.expr(p.spread) } : { ...p, e: m.expr(p.e) }),
+    case "build": return { ...e, parts: e.parts.map(p => p.spread !== undefined ? { ...p, spread: m.expr(p.spread) } : { ...p, e: m.expr(p.e) }),
       ...(e.proto ? { proto: m.expr(e.proto) } : {}) };
     case "index": return { ...e, e: m.expr(e.e), key: m.expr(e.key) };
     case "arrayLit": return { ...e, elems: exprs(e.elems) };
