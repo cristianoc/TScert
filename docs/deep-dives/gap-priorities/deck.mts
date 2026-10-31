@@ -82,7 +82,7 @@ const slides: Slide[] = [
   slide("priority-more", {
     label: measured, title: "Constructs 11–20", gap: 18,
     body: table(["#", "Construct at the first refusal", "Statements", "Functions"], more, [5, 69, 14, 12], { compact: true }) + bullets([
-      "An index signature constrains every key of its kind. Row 11 converts a JSON primitive to text. Row 12 has the gap case named-implicit-index; its record gives no source position. Canonicalization serializes contracts for comparison, omitting source positions. Row 17 has the negative case index-signature. Rows 18 and 19 are explained on “Decoders and checked storage”. Row 20 reads a compiler node from a mapped lookup result after find selects a defined result. These twenty rows cover 9,303 statements in 121 functions.",
+      "An index signature constrains every key of its kind. Row 11 converts a JSON primitive to text. Row 12 has the negative case named-implicit-index; its record gives no source position. Canonicalization serializes contracts for comparison, omitting source positions. Row 17 has the negative case index-signature. Rows 18 and 19 are explained on “Decoders and checked storage”. Row 20 reads a compiler node from a mapped lookup result after find selects a defined result. These twenty rows cover 9,303 statements in 121 functions.",
     ]),
   }),
   slide("early-binding", {
