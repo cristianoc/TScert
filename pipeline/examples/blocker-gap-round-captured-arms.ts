@@ -19,14 +19,5 @@ export function lift(
       lift: (limit) => clauses.slice(0, limit).map((clause) => clause),
     };
   });
-  const total = arms.reduce((n, arm) => n + arm.count, 0);
-  if (total > limit) {
-    const atoms: string[] = [];
-    for (const arm of arms) {
-      if (atoms.length >= limit) break;
-      atoms.push(...arm.lift(limit - atoms.length));
-    }
-    return atoms;
-  }
   return arms.flatMap((arm) => arm.lift());
 }

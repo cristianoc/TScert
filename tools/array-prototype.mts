@@ -106,9 +106,9 @@ const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined"
 const arrayOf = (value: TypeTerm, readonly: boolean, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "array", presence, readonly, element: value, span: at });
 const callback = (value: TypeTerm, result: TypeTerm,
-    effect: CallEffect): TypeTerm =>
+    effect: CallEffect, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "function", effect, receiver: null, rest: null, span: at,
-     params: [value, atomOf("number"), arrayOf(element, true)], result });
+     params: [value, atomOf("number"), arrayOf(element, true, presence)], result });
 /** `find` and `findIndex` visit every index below the length they read
  * first, present or not. At a callback that changes no array store, the
  * receiver's store, and so its length, stays as it was, and each visit reads
@@ -195,15 +195,20 @@ export const overlay: readonly OverlayEntry[] = [
   // so the declared `U | ReadonlyArray<U>` is unsound where `U` admits an
   // array (`U := number[]` with a callback returning `[x]` gives numbers at
   // `number[]`). Stated at a callback returning an array, whose holes are
-  // skipped; `thisArg` is not stated, so a call must omit it.
+  // skipped; `thisArg` is not stated, so a call must omit it. The sparse
+  // receiver signature also passes a sparse array as the callback's third
+  // argument: visiting a present entry does not establish other entries.
   { name: "flatMap", from: "ReadonlyArray",
     signature: "flatMap<U, This = undefined>(\n" +
       "        callback: (this: This, value: T, index: number, array: T[]) => U | ReadonlyArray<U>,\n" +
       "        thisArg?: This,\n" +
       "    ): U[];",
     unbound: ["This"],
-    stated: atEachFootprint((effect) => ({ params: [callback(element, arrayOf(mappedElement, true, "sparse"), effect)],
-      result: arrayOf(mappedElement, false) }), true) },
+    stated: [
+      ...atEachFootprint((effect) => ({ params: [callback(element, arrayOf(mappedElement, true, "sparse"), effect, "sparse")],
+        result: arrayOf(mappedElement, false) }), true).map(signature =>
+          ({ ...signature, receiver: arrayOf(element, true, "sparse") })),
+    ] },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature

@@ -84,6 +84,22 @@ these values.
   assumption.
 - **Commit:** the introducing commit.
 
+### Captured mapped arrays passed to flatMap
+
+`liftLabels` in `tools/claim-text.mts` builds an array of functions and
+passes it to `flatMap`. A map callback with arbitrary effects gives a
+potentially sparse result. The [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
+accepts that receiver and gives the callback a sparse third argument.
+
+- **Support:** the existing native contract and array-presence checks
+  establish the call. The source retains its operations and annotations.
+- **Scope:** `blocker-gap-round-captured-arms` isolates this call;
+  `blocker-gap-round-captured-arms-reduction` contains the full reduction
+  and iteration example. `invalid-flat-map-sparse-callback` checks that a
+  visited entry gives no presence guarantee for other indices. The native
+  contract states the existing standard-object assumption.
+- **Commit:** the introducing commit.
+
 ### Native method maps with writable field contracts
 
 `collect` in `tools/declaration-graph.mts` maps the native Promise

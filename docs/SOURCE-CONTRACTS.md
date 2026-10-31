@@ -2475,8 +2475,21 @@ array, of which only present entries are read, with `thisArg` and its
 binder `This` dropped:
 
 ```math
-\mathsf{flatMap}:\forall U.\ (\mathsf{this}:\mathsf{ReadonlyArray}(T),\ (T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow\mathsf{sparse\ ReadonlyArray}(U))\Rightarrow U[\,]
+\mathsf{flatMap}:\forall U.\ (\mathsf{this}:\mathsf{sparse\ ReadonlyArray}(T),\ (T,\ \mathsf{number},\ \mathsf{sparse\ ReadonlyArray}(T))\Rightarrow\mathsf{sparse\ ReadonlyArray}(U))\Rightarrow U[\,]
 ```
+
+The signature accepts a sparse receiver and passes that same
+sparse array as the callback's third argument. Only present positions are
+visited, so the first argument has type $`T`$; an arbitrary read through
+the third argument can produce `undefined`. The captured initial length,
+presence tests before each visit and each flattened read, and ordinary
+result construction give a readable fresh result even if a callback
+shrinks either array. Each closed callback footprint gives the same
+footprint for the native call. This extends the existing prototype
+contract and its standard-object assumption.
+`invalid-flat-map-sparse-callback` checks the third argument's presence:
+its mapped receiver has a hole, and its unchecked read throws a
+`TypeError` under Node.
 
 `flat()`, at its default depth 1, appends the present elements of each
 present element that is an array (`IsArray`), as they are, and appends any
