@@ -1,11 +1,25 @@
 // find callback calling a function stored in a graph field.
 // Census functions:
 // host-families.mts#familyTable
-type Graph = { constantName: (t: number) => string | null };
+type Graph = {
+  constantName: (
+    t: number,
+  ) => Within<{ value: "keep"; store: "keep" }, string | null>;
+};
 export function find(
   graph: Graph,
   types: readonly number[],
   kind: string,
 ): number | undefined {
   return types.find((t) => graph.constantName(t) === kind);
+}
+
+// The graph supplies a lookup over saved constants, as the declaration reader does.
+export function lookupGraph(
+  constants: readonly { value: number; name: string }[],
+): Graph {
+  return {
+    constantName: (value): Within<{ value: "keep"; store: "keep" }, string> =>
+      constants.find((c) => c.value === value)?.name ?? String(value),
+  };
 }

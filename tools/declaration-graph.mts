@@ -1178,7 +1178,8 @@ export function collectDeclarations(file: string, options: {
         bases: baseDeclarations,
         literals,
         values,
-        constantName: value => constants.find(c => c.value === value)?.name ?? String(value),
+        constantName: (value): Within<{ value: "keep"; store: "keep" }, string> =>
+          constants.find(c => c.value === value)?.name ?? String(value),
         tagParameter: d => {
           const own = d.members.find(m => nameOf(m)?.getText(d.getSourceFile()) === familyDescription.tag.field);
           const type = own && ts.isPropertySignatureDeclaration(own) ? own.type : undefined;

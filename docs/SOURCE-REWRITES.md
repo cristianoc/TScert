@@ -102,6 +102,28 @@ field at each of those kinds.
   narrowing and field reads and adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A graph field holding a lookup function
+
+`FamilyGraph.constantName` in `tools/host-families.mts` states its result
+as `Within<{ value: "keep"; store: "keep" }, string>`. The declaration
+reader supplies a lookup over saved constants, followed by `String` on a
+number or string when no constant matches. The lookup reads its inputs
+and preserves values and array stores.
+
+- **Repair:** the field retains the supplied function's effect, and its
+  definition in `tools/declaration-graph.mts` states the same effect. The
+  existing [stated-effect checks](SOURCE-ELABORATION.md#stated-effects)
+  require a definition to meet that statement. These erased annotations
+  preserve the calls, receivers, results and exceptions.
+- **Scope:** `blocker-gap-round-graph-find` checks the field call in a
+  `find` callback and a supplied lookup definition. Preserving the array
+  store keeps every visited position present. `invalid-graph-find-effect`
+  retains the ordinary-function contract, which permits an alias to shrink
+  the array and requires the callback to accept `undefined`. The repair
+  uses the existing effect and native `find` contracts and adds no external
+  assumption.
+- **Commit:** the introducing commit.
+
 ### An array pattern's first element after a length test
 
 The `Object.assign` branch of `expr` in `tools/fragment-expressions.mts`
