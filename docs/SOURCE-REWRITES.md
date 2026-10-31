@@ -558,6 +558,26 @@ discarded.
   as a case.
 - **Commit:** the introducing commit, `Parsed manifests and worker results keep their JSON type`.
 
+### A scope copied with its hooks
+
+`TermScope` in `tools/type-term.mts` is a record of own function fields.
+Alias expansion, quantified signatures and generic class members copy that
+record with a spread and override the hooks whose bindings change. The
+record contracts and object-copy checks establish which hooks the copy
+holds ([object spread](SOURCE-ELABORATION.md#object-spreads)).
+
+- **Repair:** `fail`, `named`, `stated`, `associated`, `associatedAlias`,
+  `symbol`, `literalKey`, `privateName` and `equation` are function fields.
+  A method contract permits a member on the prototype, which a spread
+  does not copy. The scope constructors in `type-term.mts`,
+  `fragment-parse.mts`, `declaration-graph.mts` and `array-prototype.mts`
+  allocate these hooks as own properties; their bodies use their arguments
+  and closed-over values. Their field types retain each result and stated
+  effect.
+- **Cases:** `blocker-gap-round-scope-spread` copies the scope and overrides
+  the alias hooks and source file. `invalid-object-spread-method` retains
+  the refusal of a copy whose required hook may be inherited.
+
 ### A scope's hook read as an optional method
 
 `TermScope` (`tools/type-term.mts`) declared its hooks `record`,

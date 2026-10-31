@@ -202,19 +202,19 @@ export function restRefusal(type: TypeTerm): Within<{ value: "any"; store: "grow
 
 export type TermScope = {
   source: SourceFile;
-  fail(node: Node | null, message: string): never;
+  fail: (node: Node | null, message: string) => never;
   /** A type reference: a binder in scope or a declaration. */
-  named(node: TypeReferenceNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm>;
+  named: (node: TypeReferenceNode, span: Span, read: (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** Whether a reference names the verifier's `Within` (`resolvable.d.ts`),
    * by the declaration TypeScript binds it to: a signature's statement of
    * its effect (`statedResult`). A scope without it reads no statement. */
-  stated?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, boolean>;
+  stated?: (node: TypeReferenceNode) => Within<{ value: "any"; store: "grow" }, boolean>;
   /** The resolved standard-library Awaited alias. Its associated projection
    * is read only through the enclosing descriptor scope. */
   awaited?: AwaitedHook;
-  associated?(input: TypeTerm, span: Span, node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeTerm>;
+  associated?: (input: TypeTerm, span: Span, node: TypeReferenceNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
   /** A resolved associated-result alias expanded in this lexical scope. */
-  associatedAlias?(node: TypeReferenceNode): Within<{ value: "any"; store: "grow" }, TypeAliasDeclaration | null>;
+  associatedAlias?: (node: TypeReferenceNode) => Within<{ value: "any"; store: "grow" }, TypeAliasDeclaration | null>;
   expandingAliases?: Set<TypeAliasDeclaration>;
   /** An annotation states records as the source fragment always has: named,
    * required fields and at most one readonly string index. A declaration body
@@ -235,15 +235,15 @@ export type TermScope = {
   /** A computed key `[x]` or `[o.x]`: the index of the `unique symbol`
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
-  symbol?(name: Identifier | ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, number>;
+  symbol?: (name: Identifier | ts.PropertyAccessExpression) => Within<{ value: "any"; store: "grow" }, number>;
   /** A computed key `[x]` or `[o.x]` naming an entity of a string or number
    * literal type, as an enum member or a constant is: the key its value
    * names; null for any other. */
-  literalKey?(name: Identifier | ts.PropertyAccessExpression): Within<{ value: "any"; store: "grow" }, string | null>;
+  literalKey?: (name: Identifier | ts.PropertyAccessExpression) => Within<{ value: "any"; store: "grow" }, string | null>;
   /** A class member's private name `#x`: the index of the symbol the
    * declaration document lists for it, a key no code outside the class
    * spells. A scope without it reads no private name. */
-  privateName?(name: ts.PrivateIdentifier): Within<{ value: "any"; store: "grow" }, number>;
+  privateName?: (name: ts.PrivateIdentifier) => Within<{ value: "any"; store: "grow" }, number>;
   /** `E.A` and `typeof E` for one of the file's enums: the member's literal
    * type and the enum's object type (SOURCE-CONTRACTS.md, "Enums"); null for any other
    * such node. A scope without it reads neither. */
@@ -266,7 +266,7 @@ export type TermScope = {
   /** A reference to a declared type alias of an array, a tuple or another
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
-  equation?(reference: Extract<TypeTerm, { k: "reference" }>): Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
+  equation?: (reference: Extract<TypeTerm, { k: "reference" }>) => Within<{ value: "any"; store: "grow" }, TypeTerm | null>;
   /** A named type's outer record shape, where the definitions it reaches
    * are complete (`recordShape`, named-record.mts): the record a mapped type
    * whose value is `X[P]` maps at a named X; null where they are not yet
