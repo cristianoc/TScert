@@ -523,9 +523,9 @@ function recordCommit(record: string): { commit: string; status: string } {
   return { commit: v.source.commit, status: "status" in v && typeof v.status === "string" ? v.status : "" };
 }
 
-/** Whether `commit` has main's code: the directories every stage reads. */
+/** Whether `commit` has main's code: the directories every stage and the census read, this command aside. */
 const mainsCode = (commit: string): boolean =>
-  gitOk(repository, "diff", "--quiet", commit, "main", "--", "tools", "pipeline", "lean", "ocaml-producer", "dev", "tests");
+  gitOk(repository, "diff", "--quiet", commit, "main", "--", "tools", "pipeline", "lean", "ocaml-producer", "dev", ":(exclude)dev/gap-iteration.mts");
 
 async function rank(r: Run): Promise<void> {
   if (!r.state.census) {
