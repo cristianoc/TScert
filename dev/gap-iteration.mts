@@ -458,12 +458,13 @@ const checkSchema = { type: "object", additionalProperties: false, required: ["o
   ok: { type: "boolean" }, problems: { type: "array", items: { type: "string" } } } };
 
 /** Each commit record checked against the glossary alone by a fresh run,
- * revised by the author's model, three rounds at most; the branch rewritten
- * with the revised records. True when every record passes. */
+ * revised by the author's model, three rounds at most, after which the
+ * remaining findings go to `record-findings.md` and the commit is made, as
+ * the review skill states; the branch rewritten with the revised records. */
 async function records(r: Run, t: Task): Promise<boolean> {
   const tree = treeOf(r, t), revised = new Map<string, string>();
   for (const [n, c] of commits(r, t).entries()) {
-    let record = git(tree, "log", "-1", "--format=%B", c);
+    let record = git(tree, "log", "-1", "--format=%B", c), earlier: string[] = [];
     for (let round = 0; ; round++) {
       const dir = join(taskDir(r, t), `record-${n}-${round}`);
       mkdirSync(dir, { recursive: true });
@@ -472,12 +473,19 @@ async function records(r: Run, t: Task): Promise<boolean> {
       const text = await codex(r, { model: r.o.driver, cwd: dir, write: false, log: logOf(r, t), schema: checkSchema,
         out: join(dir, "check.json"), prompt: `Check the commit record record.txt against GLOSSARY.md, both in this
 directory, and read nothing else.\n\n${section(".claude/skills/review/SKILL.md", "## Checking a record")}\n\nok is
-true when the record passes; problems lists each problem with the sentence it is in.` });
+true when the record passes; problems lists each problem with the sentence it is in.${earlier.length ? `\n\nThe earlier
+check's findings, of which you report whether each is resolved and whether the changed text adds a blocking one:\n${
+          earlier.map((p) => `- ${p}`).join("\n")}` : ""}` });
       const v: unknown = JSON.parse(text);
       if (!(v && typeof v === "object" && "ok" in v && typeof v.ok === "boolean" && "problems" in v && isStrings(v.problems)))
         throw Error("a record check lacks a field");
       if (v.ok) break;
-      if (round === 2) return false;
+      if (round === 2) {
+        appendFileSync(join(taskDir(r, t), "record-findings.md"), `${c}, after three rounds:\n${
+          v.problems.map((p) => `- ${p}`).join("\n")}\n\n`);
+        break;
+      }
+      earlier = v.problems;
       record = (await codex(r, { model: t.kind === "case" ? r.o.agent : r.o.driver, cwd: tree, write: false,
         log: logOf(r, t), out: join(dir, "revised.txt"), prompt: `Revise this commit record so that it resolves the
 problems below, in the format of .claude/skills/review/SKILL.md (prose sections, then the trailers Outcome, Parts and
@@ -675,6 +683,8 @@ if (!existsSync(join(run, "state.json"))) {
     verified: "", tasks: [] });
 }
 const state = readState(run);
+// A rerun retries every incomplete task from where it stopped.
+for (const t of state.tasks) if (t.status === "incomplete") Object.assign(t, { status: "pending", note: "" });
 if (o.previous && !state.previous) state.previous = o.previous;
 const controller = join(lockRoot, "controller.lock");
 mkdirSync(lockRoot, { recursive: true });
