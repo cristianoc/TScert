@@ -9,6 +9,7 @@ module type Inputs = sig
   include Analysis_capabilities.Path_queries
   include Analysis_capabilities.Offer_operations
   include Analysis_capabilities.Exact_allocations
+  include Analysis_capabilities.Expression_publication
 end
 module Make (S : Inputs) = struct
 open S
@@ -230,7 +231,16 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         if List.mem i spreads then
           let expected = Option.map (fun t ->
             array {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable}) expected in
-          match elements (expr ?expected env e) with
+          let actual = expr ?expected env e in
+          (* A spread only reads its operand. Propose its contextual element
+             contract through a readonly array view; Lean checks the coercion
+             from the operand's own storage contract, including presence. *)
+          let actual = match expected with
+            | Some target when not (Support.mentions_hole target) ->
+              restate_expression e.pos target;
+              target
+            | _ -> actual in
+          match elements actual with
           | Some t -> t
           | None -> Proposal_diagnostics.unsupported "an array literal spread needs an array operand"
         else expr ?expected env e) es in

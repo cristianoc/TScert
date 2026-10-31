@@ -1780,6 +1780,28 @@ control(async (): Promise<void> => {
   process.stdout.write("spread of an intersection: a copy claimed at a field no operand's field gives refused at the merge, in search and in checking\n");
 });
 control(async (): Promise<void> => {
+  // A contextual readonly view must be derived from the mapped records.
+  const good = run("blocker-census-spread-map-records");
+  const claims = readClaims(good);
+  const source = readFileSync(sourceKey(good), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "build"), "build's claims");
+  const start = source.indexOf("fields.map");
+  const operand = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] > start + 10),
+    "the mapped spread operand");
+  const store = rowOf(claims, { list: { first: { required: [], optional: [],
+    rest: [rowOf(claims, "str")], readonly: true, presence: "readable" }, rest: [] } });
+  operand.type = [{ array: [store], readonly: true }];
+  const forged = writeClaims(good, "mapped-spread-string-view", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+      sourceKey(good), join(good, mode === "--produce-source-claims"
+        ? "mapped-spread-forged-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+});
+control(async (): Promise<void> => {
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.

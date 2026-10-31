@@ -2179,6 +2179,17 @@ source's names are then bound from the cells, which binding names does not
 observe. A default or a nested pattern, which run code between the steps, is
 refused.
 
+An array literal with element contract `E` proposes each array spread
+operand at `readonly E[]`. The existing array subtyping check establishes
+this view from the operand's storage contract, including its presence mode;
+the spread rule copies values at `E` into the literal's fresh store.
+This admits mapped records at a union's element type
+(`blocker-census-spread-map-records`). A map whose callback removes future
+input elements can produce holes, so its sparse result fails a readable
+view excluding `undefined` (`invalid-spread-map-records`). The mapped
+operand's forged string-array view is refused in evidence production and
+checking by a control in `pipeline/test.mts`.
+
 ## Patterns
 
 A pattern binds names from one value, in pattern order, and has no rule of its
