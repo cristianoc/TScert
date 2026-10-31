@@ -144,9 +144,9 @@ check initialization and reads at that storage contract, and the existing
 - **Behaviour:** the annotation is erased. Closure allocation order,
   capture, traversal, calls, returns, exceptions and mutations are the
   same for every compiler node admitted by the existing host contract.
-- **Scope:** `blocker-gap-round-visitor-effect` exercises the qualified
-  binding; `blocker-gap-round-visitor-effect-unstated` retains the original
-  refusal. The repair adds no external assumption.
+- **Scope:** `blocker-gap-round-visitor-effect` and
+  `blocker-gap-round-visitor-effect-unstated` exercise the qualified
+  binding. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
 ### A missing field key printed explicitly
@@ -1614,6 +1614,28 @@ closure checks.
 - **Scope:** `blocker-gap-round-native-method-map-inferred` verifies this
   equivalent form. The rewrite adds no external assumption.
 - **Commit:** the introducing commit.
+
+### A forward-captured helper without a stated effect
+
+The [forward visitor helper](#a-forward-visitor-helper-with-a-store-preserving-contract)
+states its effect on its callable binding. An ordinary arrow signature
+with parameter and result types alone permits arbitrary store changes;
+a recursive visitor capturing that binding cannot establish store preservation.
+
+- **Avoided form:** `const outermostIs = (top: Node, n: Node): boolean => …`
+  captured before initialization by a recursive visitor whose caller requires
+  a store-preserving effect.
+- **Equivalent form:** the binding states
+  `(top: Node, n: Node) => Within<{ value: "any"; store: "keep" }, boolean>`.
+  The existing initialization and closure checks certify the definition.
+  Type annotations erase, so both forms have identical runtime code,
+  including allocation order, receivers, aliases, exceptions and mutations.
+- **Reason:** the supplied census has no sites for the unstated form.
+  Inferring a stronger contract for a forward-captured binding would require
+  extending inference across initialization; the written contract expresses
+  the needed property through the existing mechanism at no runtime cost.
+- **Scope:** `blocker-gap-round-visitor-effect-unstated` verifies in this form.
+  The production helper uses the same contract. No external assumption is added.
 
 ### A decoded context saved before label validation
 

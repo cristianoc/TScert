@@ -1,4 +1,4 @@
-// Recursive visitor fails its stated effect bound.
+// A forward-captured visitor helper states its store-preserving effect.
 // Census functions:
 // fragment-expressions.mts#knownLocal
 // fragment-expressions.mts#localArrow
@@ -16,7 +16,10 @@ export function letWrites(
       values.push(n.right);
     n.forEachChild(visit);
   };
-  const outermostIs = (top: Node, n: Node): boolean => {
+  const outermostIs: (
+    top: Node,
+    n: Node,
+  ) => Within<{ value: "any"; store: "keep" }, boolean> = (top, n) => {
     let at: Node = top;
     while (ts.isParenthesizedExpression(at)) at = at.expression;
     return at === n;
