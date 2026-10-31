@@ -2179,8 +2179,10 @@ source's names are then bound from the cells, which binding names does not
 observe. A default or a nested pattern, which run code between the steps, is
 refused.
 
-An array literal with element contract `E` proposes each array spread
-operand at `readonly E[]`. The existing array subtyping check establishes
+An array literal with element contract `E` keeps a spread operand's own
+claim when its elements fit `E`. For an array whose elements need a view,
+the producer proposes `readonly E[]`; other iterables keep their iterator
+contract. The existing array subtyping check establishes
 this view from the operand's storage contract, including its presence mode;
 the spread rule copies values at `E` into the literal's fresh store.
 This admits mapped records at a union's element type

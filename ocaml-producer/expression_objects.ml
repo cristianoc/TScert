@@ -232,11 +232,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           let expected = Option.map (fun t ->
             array {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable}) expected in
           let actual = expr ?expected env e in
-          (* A spread only reads its operand. Propose its contextual element
-             contract through a readonly array view; Lean checks the coercion
-             from the operand's own storage contract, including presence. *)
-          let actual = match expected with
-            | Some target when not (Support.mentions_hole target) ->
+          (* Keep an operand's own claim where its elements already fit.
+             Only arrays can acquire a readonly array view; an iterable
+             keeps its iterator contract. Lean checks every proposed view,
+             including the operand's presence mode. *)
+          let actual = match expected,Option.bind expected (array_element ~readonly:true),
+              (try spread_element ~readonly:true (declared_head declarations [] actual)
+               with Json.Error _ -> None) with
+            | Some target,Some element,Some held when not (Support.mentions_hole target) &&
+                not (plausible_subtype held element) ->
               restate_expression e.pos target;
               target
             | _ -> actual in

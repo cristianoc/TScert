@@ -53,6 +53,7 @@ export const cases: Case[] = [
   { ...positive("blocker-census-annotated-node-union", "An annotated callback on a union of compiler node arrays retains its checked signatures and their body claims."), project: "pipeline/blocker-project" },
   { ...negative("invalid-census-annotated-node-union", "An annotated callback on a union of compiler node arrays must meet its result annotation.", /This return requires boolean\./), project: "pipeline/blocker-project" },
   positive("blocker-census-spread-map-records", "An array literal spreading a map that builds records."),
+  positive("array-spread-own-claim", "Conditional array spreads retain element claims that fit the destination."),
   negative("invalid-spread-map-records", "A shrinking map callback cannot justify a readable spread view.", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke at ReadonlyArray/),
   positive("blocker-census-spread-nested-field", "JSON data records state their writable allocation contracts before a nested spread is serialized and deduplicated."),
   negative("invalid-census-spread-nested-field", "An inferred empty binders array and a narrower writable type field cannot be widened through a callback parameter.", /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation(?:\n|$)/),
