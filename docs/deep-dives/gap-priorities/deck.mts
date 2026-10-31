@@ -2,7 +2,7 @@
  * Build: make deck NAME=gap-priorities SINCE=f893d8b4.
  * Site audit: session scratchpad, round/ranking.md. */
 import {
-  bullets, card, cards, code, cover, point, slide, stat, table,
+  bullets, card, cards, code, cover, point, slide, stat, status, table,
   type Deck, type Slide,
 } from "../../../dev/deck.mts";
 
@@ -117,11 +117,11 @@ const slides: Slide[] = [
   slide("round", {
     label: "Cited case expectations · pipeline/cases.mts; measured census comparison · WORK.md", title: "Cases and the functions they target", gap: 18,
     body: table(["Positive case", "What it checks", "Current first refusal in its census functions"], [
-      ["blocker-census-spread-map-records", "Spreading mapped records into an array", "classBody and classStmt: firstOptional(all), finding the first optional constructor parameter"],
-      ["blocker-census-annotated-node-union", "An annotated callback over compiler member arrays", "collect: a proposed callback signature fails its source annotation in nativeFields.map"],
-      ["blocker-census-spread-nested-field", "Nested spreads over stated JSON data", "selectGlobal: allocating a type-parameter record for a generic signature"],
-      ["invalid-in-union-read", "A union arm states an absent spread field", "writtenApplications: initializer read after an in test on a compiler node’s parent"],
-      ["blocker-census-effect-map-result", "A map callback followed by array join", "Four claim-text functions: JSON.stringify(key), serializing a field key"],
+      [`blocker-census-spread-map-records ${status("ok", "positive")}`, "Spreading mapped records into an array", "classBody and classStmt: firstOptional(all), finding the first optional constructor parameter"],
+      [`blocker-census-annotated-node-union ${status("ok", "positive")}`, "An annotated callback over compiler member arrays", "collect: a proposed callback signature fails its source annotation in nativeFields.map"],
+      [`blocker-census-spread-nested-field ${status("ok", "positive")}`, "Nested spreads over stated JSON data", "selectGlobal: allocating a type-parameter record for a generic signature"],
+      [`invalid-in-union-read ${status("ok", "positive")}`, "A union arm states an absent spread field", "writtenApplications: initializer read after an in test on a compiler node’s parent"],
+      [`blocker-census-effect-map-result ${status("ok", "positive")}`, "A map callback followed by array join", "Four claim-text functions: JSON.stringify(key), serializing a field key"],
     ], [31, 30, 39], { compact: true }) + bullets([
       point("Measured comparison", "043267592814 → 340214a96fca: 372 → 370 of 635 functions verified; 3,567 → 3,545 verified statements. Gained: files.treeDigest. Lost: computed-types.parameterMembers (method next read off its object), unchecked.unstated and unchecked.boundary (incoming edge obligations). These names identify functions in the corresponding tools/ files."),
       point("Scope", "All five cases above have positive expectations; even the name invalid-in-union-read names a positive case. A case’s success does not establish its whole census function. The separate blocker-census-nested-field-json case retains a gap for serializing open nested records."),
