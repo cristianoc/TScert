@@ -95,129 +95,6 @@ const sessionReuse = serving ? null : beside("tests/session-reuse.mts", []);
 // controls, and given to every control process.
 const mutationBuild = serving ? null : beside("pipeline/evidence-mutations.mts", ["--build"]);
 
-// Diagnostic envelopes have no path through ordinary source acceptance,
-// including an inventory with no refusals over an otherwise verified source.
-control(async (): Promise<void> => {
-  const good = await run("stateful-source/arithmetic");
-  const ast = join(good, "diagnostic-fragment.json");
-  const claims = join(good, "diagnostic-proposal.json");
-  writeFileSync(ast, JSON.stringify({ diagnostic: readFragmentFile(join(good, "fragment.json")),
-    occurrences: [], incomplete: null }));
-  writeFileSync(claims, JSON.stringify({ claims: readClaimsFile(join(good, "claims.json")), occurrences: [] }));
-  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
-  assert.equal(inventory.status, 0, inventory.stderr);
-  const report: unknown = JSON.parse(inventory.stdout);
-  assert.ok(report && typeof report === "object" && "status" in report && report.status === "diagnostic");
-  for (const [fragment, proposal] of [[ast, join(good, "claims.json")], [join(good, "fragment.json"), claims]]) {
-    const checked = tested(verifierCall(verifier, ["--check-source-claims", fragment, proposal,
-      sourceKey(good), join(good, "evidence.json")]));
-    assert.equal(checked.status, 1, "a diagnostic envelope must be refused by source acceptance");
-    assert.ok(!checked.stdout.includes("accept:"));
-  }
-});
-
-// A forged source annotation forces shared equation recovery independently of
-// the parser and producer. The recovered plans must pass aggregate checking.
-control(async (): Promise<void> => {
-  const good = await run("stateful-source/arithmetic");
-  const source = readFragmentFile(join(good, "fragment.json"));
-  const ast = join(good, "diagnostic-bad-annotation.json");
-  const claims = join(good, "diagnostic-bad-annotation-claims.json");
-  const forged = { ...source, functions: source.functions.map(f => ({ ...f,
-    retType: { k: "unsupported-diagnostic-contract", span: f.namePos } })) };
-  writeFileSync(ast, JSON.stringify({ diagnostic: forged, occurrences: [], incomplete: null }));
-  writeFileSync(claims, JSON.stringify({ claims: readClaimsFile(join(good, "claims.json")), occurrences: [] }));
-  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
-  assert.equal(inventory.status, 0, inventory.stderr);
-  const report: unknown = JSON.parse(inventory.stdout);
-  assert.ok(report && typeof report === "object" && "status" in report && report.status === "diagnostic");
-  assert.ok("completed" in report && report.completed === true);
-  assert.ok(inventory.stdout.includes("unsupported-diagnostic-contract"));
-  assert.ok(!inventory.stdout.includes("shared extraction failed"));
-});
-
-// Recovery covers decoder refusals and whole-body planning refusals through
-// the same diagnostic boundary, while ordinary planning rejects each input.
-control(async (): Promise<void> => {
-  const good = await run("stateful-source/arithmetic");
-  const source = readFragmentFile(join(good, "fragment.json"));
-  const fn = source.functions[0];
-  assert.ok(fn);
-  const expression = (k: string, pos: [number, number]): object =>
-    ({ k: "effect", pos, e: { k, pos, op: "invalid", e: { k: "lit", pos, lit: { a: "undefined" } } } });
-  for (const body of [
-    [expression("unary", [1, 3]), expression("typeofTest", [4, 6]), expression("futureExpression", [7, 9]), ...fn.body],
-    [{ k: "break", pos: [1, 3], label: null }],
-  ]) {
-    const ast = join(good, "diagnostic-planning-boundaries.json");
-    writeFileSync(ast, JSON.stringify({ ...source, functions: [{ ...fn, body }] }));
-    const ordinary = tested(verifierCall(verifier, ["--lower-control-flow", ast]));
-    assert.notEqual(ordinary.status, 0);
-    writeFileSync(ast, JSON.stringify({ diagnostic: { ...source, functions: [{ ...fn, body }] }, occurrences: [], incomplete: null }));
-    const diagnostic = tested(verifierCall(verifier, ["--diagnostic-control-flow", ast]));
-    assert.equal(diagnostic.status, 0, diagnostic.stdout + diagnostic.stderr);
-    const report: unknown = JSON.parse(diagnostic.stdout);
-    assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
-    assert.equal(report.occurrences.length, body.length === 1 ? 1 : 3);
-    assert.ok("graph" in report && Array.isArray(report.graph) && report.graph.length === 1);
-  }
-});
-
-// Missing producer environments mark actual statements, so their holes have
-// nonempty overlap with the coverage inventory.
-control(async (): Promise<void> => {
-  const good = await run("stateful-source/arithmetic");
-  const source = readFragmentFile(join(good, "fragment.json"));
-  const proposal = readClaimsFile(join(good, "claims.json"));
-  const ast = join(good, "diagnostic-environment.json");
-  const claims = join(good, "diagnostic-environment-claims.json");
-  writeFileSync(ast, JSON.stringify({ diagnostic: source, occurrences: [], incomplete: null }));
-  writeFileSync(claims, JSON.stringify({ claims: { ...proposal,
-    functions: proposal.functions.map(f => ({ ...f, entries: [] })) }, occurrences: [] }));
-  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
-  assert.equal(inventory.status, 0, inventory.stdout + inventory.stderr);
-  const report: unknown = JSON.parse(inventory.stdout);
-  assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
-  const environments = report.occurrences.filter((o: unknown) => o && typeof o === "object" &&
-    "reason" in o && typeof o.reason === "string" && o.reason.includes("source environment obligation") && "layer" in o && o.layer === "extraction");
-  assert.ok(environments.length > 0);
-  for (const o of environments) {
-    assert.ok(o && typeof o === "object" && "pos" in o && Array.isArray(o.pos));
-    const pos = o.pos;
-    assert.ok(typeof pos[0] === "number" && typeof pos[1] === "number" && pos[0] < pos[1], JSON.stringify(o));
-    assert.ok(source.functions.some(f => f.body.some(s => s.pos[0] === pos[0] && s.pos[1] === pos[1])));
-  }
-});
-
-// A unit whose setup is refused (here a forged claim at a point that does not
-// execute its expression) retries its body at unknown for each quantified
-// module value it reads: `Set` and the iteration intrinsics stay bound, so the
-// retry reports no unbound name.
-control(async (): Promise<void> => {
-  const good = await run("for-of-host-iterables");
-  const source = readFragmentFile(join(good, "fragment.json"));
-  const proposal = readClaimsFile(join(good, "claims.json"));
-  const text = readFileSync(sourceKey(good), "utf8");
-  const at = text.indexOf("new Set<number>([1, 2])");
-  const literal = must(proposal.functions.find(f => f.name === "literal"), "literal's claims");
-  const construction = must(literal.expressions.find(e => e.pos[0] === at), "the construction's claim");
-  const elsewhere = must(literal.entries.find(e => e.point !== construction.point), "another point of literal");
-  const ast = join(good, "diagnostic-setup-generics.json");
-  const claims = join(good, "diagnostic-setup-generics-claims.json");
-  writeFileSync(ast, JSON.stringify({ diagnostic: source, occurrences: [], incomplete: null }));
-  writeFileSync(claims, JSON.stringify({ claims: { ...proposal, functions: proposal.functions.map(f => f !== literal ? f :
-    { ...f, expressions: [...f.expressions, { ...construction, point: elsewhere.point }] }) }, occurrences: [] }));
-  const inventory = tested(verifierCall(verifier, ["--diagnose-source-claims", ast, claims, sourceKey(good), "12"]));
-  assert.equal(inventory.status, 0, inventory.stdout + inventory.stderr);
-  const report: unknown = JSON.parse(inventory.stdout);
-  assert.ok(report && typeof report === "object" && "occurrences" in report && Array.isArray(report.occurrences));
-  const reasons = report.occurrences.map((o: unknown) =>
-    o && typeof o === "object" && "reason" in o && typeof o.reason === "string" ? o.reason : "");
-  assert.ok(reasons.some(r => r.includes("is outside its execution point")), inventory.stdout);
-  assert.ok(!reasons.some(r => /unbound or uninitialized source variable|missing iteration intrinsic/.test(r)),
-    inventory.stdout);
-});
-
 // Every allowed compiler enum uses the same Node binding identity check as
 // family tags, including named program re-exports. TypeScript's paths read
 // the audited declarations while the negative runtime exports other values.
@@ -269,6 +146,25 @@ for (const reexport of [false, true]) for (const mismatched of [false, true]) co
   process.stdout.write(`compiler enum binding, ${reexport ? "re-exported" : "direct"}: all ${hostEnums.length} enums, ${mismatched ? "mismatched bindings refused and counterexamples executed under Node" : "audited bindings verified"}\n`);
 });
 
+
+// Ordinary planning rejects malformed expressions and a break without a target.
+control(async (): Promise<void> => {
+  const good = await run("stateful-source/arithmetic");
+  const source = readFragmentFile(join(good, "fragment.json"));
+  const fn = source.functions[0];
+  assert.ok(fn);
+  const expression = (k: string, pos: [number, number]): object =>
+    ({ k: "effect", pos, e: { k, pos, op: "invalid", e: { k: "lit", pos, lit: { a: "undefined" } } } });
+  for (const body of [
+    [expression("unary", [1, 3]), expression("typeofTest", [4, 6]), expression("futureExpression", [7, 9]), ...fn.body],
+    [{ k: "break", pos: [1, 3], label: null }],
+  ]) {
+    const ast = join(good, "planning-boundaries.json");
+    writeFileSync(ast, JSON.stringify({ ...source, functions: [{ ...fn, body }] }));
+    const ordinary = tested(verifierCall(verifier, ["--lower-control-flow", ast]));
+    assert.notEqual(ordinary.status, 0);
+  }
+});
 
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
@@ -6903,21 +6799,6 @@ control(async (): Promise<void> => {
     chmodSync(path, 0o755);
     return path;
   };
-  // A failed completion stage preserves the preceding diagnostic traversal.
-  const diagnosticVerifier = fake(dir, "diagnostic-verifier.sh", verifier, 1,
-    { FAIL_MODE: "--diagnose-source-claims", FAIL_TEXT: "injected diagnostic completion failure" });
-  const diagnosed = spawnSync(process.execPath, [join(here, "diagnose-source.mts"),
-    join(here, "examples/diagnostic-blockers.ts"), join(here, "examples")],
-    { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: diagnosticVerifier } });
-  assert.equal(diagnosed.status, 0, diagnosed.stderr);
-  const inventory: unknown = JSON.parse(diagnosed.stdout);
-  assert.ok(inventory && typeof inventory === "object" && "status" in inventory && inventory.status === "diagnostic");
-  assert.ok("completed" in inventory && inventory.completed === false);
-  assert.ok("attempted" in inventory && typeof inventory.attempted === "number" && inventory.attempted > 0);
-  assert.ok("error" in inventory && typeof inventory.error === "string" && inventory.error.includes("aggregate retry failed"));
-  assert.ok("artifacts" in inventory && typeof inventory.artifacts === "string");
-  assert.ok(readInvocationLog(join(inventory.artifacts, invocationLog))
-    .some(r => r.stage === "diagnostic-complete" && ranStage(r) && r.key === null));
   let runs = 0;
   const outcomeOf = (source: string, failure: Failure): Outcome => {
     const at = join(dir, `run-${runs++}`);

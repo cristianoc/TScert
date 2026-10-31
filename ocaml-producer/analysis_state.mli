@@ -5,7 +5,6 @@ type expression_infer = ?expected:Semantic.ty -> env -> Source.expr -> Semantic.
 type body_infer = Json.t -> Semantic.ty option -> env -> Source.stmt list -> env * Semantic.ty list
 
 type t
-val recover : t -> (unit -> 'a) -> ('a, string) result
 val create : Proposal_diagnostics.state -> Flow.graph list ->
   (Json.t * Semantic.signature list) list -> Source.declaration list ->
   (string * Semantic.ty Lazy.t) list -> (string * Module_contract.arity) list -> (Semantic.rigid * Semantic.ty) list ->
@@ -32,7 +31,6 @@ module Access (_ : sig val state : t end) : sig
   include Analysis_capabilities.Closure_scope
   include Analysis_capabilities.Statement_operations
   include Analysis_capabilities.Node_scope
-  val diagnostic_recover : Json.t -> (unit -> 'a) -> (unit -> 'a) -> 'a
   val initial_environment : env
   val observe_method_call : Json.t -> unit
   val cache_execution_entries : bool

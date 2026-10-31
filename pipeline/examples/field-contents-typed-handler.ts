@@ -1,5 +1,4 @@
 // A handler recovers the field contract from its unrefined source context.
-// Diagnostic traversal checks the same typed-cell facts as acceptance.
 type Shape =
   | { k: "a"; x: number }
   | { k: "b" | "c"; y: string }

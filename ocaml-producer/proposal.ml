@@ -182,11 +182,7 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
   let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions
     @ List.map (fun (n,_,_,_) -> n,Module_contract.Discards) program.Source.qualified in
   let infer_with module_functions f =
-    try infer_function state flows program.Source.declarations arities module_functions f
-    with Json.Error e when state.Proposal_diagnostics.diagnosing ->
-      Proposal_diagnostics.refusal state f.Source.name_pos (Json.message e);
-      {source=f;contracts=[];entries=[];expressions=[];arrows=[];
-        declared_footprint=top_footprint;declared_on_throw=false} in
+    infer_function state flows program.Source.declarations arities module_functions f in
   (* A class's instance members read the class as its own binding, `C.[[self]]`,
      at its construct signature: a module value of the initialization unit. *)
   let class_selves = List.concat_map (fun (s:Source.stmt) -> match s.statement with

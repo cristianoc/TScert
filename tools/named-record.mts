@@ -218,11 +218,10 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
  * values and applications replaced by its expansion at the complete
  * definitions (`settleTerm`): each definition settled once, before a
  * shape is read from it, so a definition whose settling needs its own shape
- * is refused. `refused` is told a refusal, with where it was met, and gives
- * the term to continue with (a diagnostic run's), or throws. */
+ * is refused. The refusal callback throws with the source location. */
 export function settleDocument(document: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
     record: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>,
-    refused: (where: string, error: unknown) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
+    refused: (where: string, error: unknown) => never): Within<{ value: "any"; store: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
   const byKey = new Map(document.definitions.map(d => [definitionKey(d.declaration), d] as const));
   const settled = new Map<string, TypeDefinition>();
   const settling = new Set<string>();
@@ -262,7 +261,7 @@ export function settleDocument(document: { definitions: TypeDefinition[]; values
  * named type's outer record shape (`recordShape`) at the mapping's
  * modifiers. */
 export function settleTerm(term: TypeTerm, records: NamedRecords, where: string,
-    refused: (where: string, error: unknown) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+    refused: (where: string, error: unknown) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   const go = (t: TypeTerm): TypeTerm => {
     const deferred = deferredOf(t);
     if (!deferred) return mapTypeParts(t, go);

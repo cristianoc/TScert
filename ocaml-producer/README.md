@@ -80,7 +80,7 @@ rigid-parameter bounds; a closure extends them for its body and restores the
 enclosing scope on success or refusal. Expression-bodied closures use a binding
 prologue for defaults; defaults represented as statements follow the body graph.
 
-Analysis state has explicit lifetimes. One producer run owns diagnostic
+Analysis state has explicit lifetimes. One producer run owns explanation
 observations shared by its functions and retries. Each function owns the
 candidate storage contracts passed between inference attempts. Each pass owns
 its environments, active bounds, closure offers and collected claims.
@@ -101,7 +101,7 @@ different lookup semantics.
 Speculative inference copies one record containing collected claims, closure
 offers and path metadata. `Analysis_state.speculate` restores the enclosing
 record on success, refusal and unexpected exceptions, including nested attempts.
-Write proposals and diagnostic observations survive these attempts. A
+Write proposals and explanation observations survive these attempts. A
 `Json.Error` refusal returns `None`; other exceptions propagate after restoration.
 Node execution collects its output in a named record and restores the enclosing
 output and scope-projected path metadata on every exit. Each overload row owns

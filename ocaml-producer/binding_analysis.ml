@@ -4,7 +4,6 @@ open Source
 open Type_queries
 open Object_spread
 module type Inputs = sig
-  val diagnostic_recover : Json.t -> (unit -> 'a) -> (unit -> 'a) -> 'a
   include Analysis_capabilities.Queries
   include Analysis_capabilities.Execution_operations
   include Analysis_capabilities.Expression_publication
@@ -38,36 +37,7 @@ open S
             else defined_slice truth expanded
           | _ -> restrict Undef truth (Atoms [atom])) atoms)
       | t -> restrict Undef truth t in
-    let span = function
-      | Execution.Finish -> Json.Null
-      | Execution.Bind (_,origin,_,_) -> origin
-      | Execution.Evaluate (value,_,_) | Execution.Input (_,_,value,_)
-      | Execution.DefaultValue (_,value,_,_) -> value.Execution.source
-      | Execution.ReadField (source,_,_,_,_) | Execution.ReadPosition (source,_,_,_,_)
-      | Execution.ObjectRest (source,_,_,_,_) | Execution.ArrayRest (source,_,_,_,_,_) -> source in
-    let rec run ?expected env values plan =
-      diagnostic_recover (span plan) (fun () ->
-        let env = widen_locals (forget env) in
-        match plan with
-        | Execution.Finish -> env
-        | Execution.Bind (name,_,_,next) ->
-          let binding = match List.assoc_opt name initial with
-            | Some (Storage (contract,_)) -> cell contract
-            | Some (Local (contract,_)) -> Local (contract,contract)
-            | _ -> Value top in
-          run (extend (List.remove_assoc name env) name binding) values next
-        (* An input and a position read publish no expression claim when
-           they succeed, so their recovery publishes none either. *)
-        | Execution.Input (_,_,value,next) | Execution.ReadPosition (_,_,_,value,next) ->
-          run env (put values value top) next
-        | Execution.Evaluate (value,_,next)
-        | Execution.DefaultValue (_,value,_,next)
-        | Execution.ReadField (_,_,_,value,next)
-        | Execution.ObjectRest (_,_,_,value,next) | Execution.ArrayRest (_,_,_,_,value,next) ->
-          publish value.Execution.source top None;
-          run env (put values value top) next)
-        (fun () -> step ?expected env values plan)
-    and step ?expected env values = function
+    let rec run ?expected env values = function
       | Execution.Finish -> env
       | Execution.Input (name,_,value,next) ->
         run env (put values value (binding_type (lookup ~at:value.Execution.source initial name))) next

@@ -246,13 +246,6 @@ The outcome is one of:
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.
 
-### Diagnostic inventories
-
-[Diagnostic traversal](DIAGNOSTIC-MODE.md) inventories local refusals under
-explicit recovery assumptions. Its result and artifacts are separate from
-verification, and its report records the regions its approximations leave
-unexamined.
-
 ### The stage store
 
 Every stage of the entry point and every operation a control runs goes
@@ -679,7 +672,6 @@ owner; other documents link to them and give only the context their readers need
 | [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
-| [DIAGNOSTIC-MODE](DIAGNOSTIC-MODE.md) | Diagnostic recovery, attribution, conditional coverage and separation from acceptance. |
 | [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
 | [OCaml producer](../ocaml-producer/README.md) | The producer: its inputs and output, how it infers, its implementation map and how to extend it. |
 | [Test index](../tests/README.md) and the [callable examples](../pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |

@@ -4,8 +4,7 @@
 // Census functions:
 // fragment-parse.mts#lowerFile, fragment-parse.mts#lowerModule,
 // fragment-parse.mts#lowerModuleText, fragment-parse.mts#parseFile,
-// fragment-parse.mts#parseFragment, fragment-parse.mts#parseModules,
-// fragment-parse.mts#diagnosticFragment.
+// fragment-parse.mts#parseFragment, fragment-parse.mts#parseModules.
 export function count(xs: Array<number>): number {
   return xs.length;
 }

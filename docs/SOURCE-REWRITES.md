@@ -298,9 +298,7 @@ contents establishes nothing of the storage's contract: the parsed list
 stays a `Json[]` its caller may write a string into, which the asserted
 `number[]` then holds (`invalid-decoder-closing-assertion`, run under Node:
 `typeof first('[1]')` is `"string"`), and a test of a field's value does not
-bound the values written there later. The diagnostic census of 5dd180f
-reports the assertions in `decodeGraph`, `atom`, `decodeClaimType` and
-`decodeLabels` (335 statements).
+bound the values written there later.
 
 - **Rewrite:** each decoder returns fresh storage built from the values it
   checked: a list by `map`, each element tested as `map` visits it; an
@@ -587,8 +585,7 @@ which only separating storage an unknown call cannot reach would show
 `illFormedString` of `tools/wire-strings.mts`, which finds a string of a
 wire document that is not well-formed Unicode, took the document at
 `unknown` and read `value.pos` after `"pos" in value` on an open object
-("field read on non-object"; the diagnostic census of 5dfb065 reports it in
-`illFormedString`, `requireWellFormed` and `wellFormedRefusal`). Its readers
+("field read on non-object"). Its readers
 pass a value `JSON.parse` returned; its writers (`parseFile`,
 `parseFragment` and `lowerModuleText` of `tools/fragment-parse.mts`) pass
 the document they are about to write with `JSON.stringify`, whose strings
@@ -628,8 +625,7 @@ arguments" in `query` and `guardClientRequests`, census of b81675f).
   `new Map<unknown, Map<string, string>>()` and `new Map<string, string>()`.
 - **Pattern:** a construction of a generic class whose type arguments
   TypeScript would read as `any` states them.
-- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
-  traversal keeps their bindings, three sites rewritten`.
+- **Commit:** 467af18b.
 
 ### A type alias recognised by a guard accepting a JSDoc `@typedef`
 
@@ -640,9 +636,7 @@ file's `@typedef` (`JSTypeAliasDeclaration`), and is read by what its code
 accepts ([guard recognition](HOST-FAMILIES.md#guard-recognition)), so its
 true edge holds both kinds: it reads the members both shapes state
 ([audited shapes](COMPILER-API.md#audited-shapes)) and gives no
-`TypeAliasDeclaration` (the diagnostic census of b81675f reports the
-guard's reads in 33 functions, among them `typeTerm`'s callers in
-`tools/type-term.mts`, `computedType`, `makeProbe` and `lowerFile`). The
+`TypeAliasDeclaration`. The
 front end reads TypeScript files only, where the guard and the kind test
 accept the same nodes ([restrictions](COMPILER-API.md#restrictions)).
 
@@ -724,8 +718,7 @@ a declaration document, a lowered file and an imported module's entry),
 and the visit of `presentObligation` (`tools/diagnostic-view.mts`, a
 decoded calculus term). Each read a member after `"k" in v` on an object
 of unknown type, which no rule admits ("missing field k"), and recursed
-through `Object.values`; the diagnostic census of b81675f reports these
-refusals in 24 functions, `lowerFile` among them. The value's type had
+through `Object.values`. The value's type had
 established its grammar, which the parameter's annotation discarded, and a
 node kind added to the grammar was met by whatever key names it happened
 to share.
@@ -757,10 +750,9 @@ to share.
   `deferredInDocument`, `deferredInAst` and `deferredInModule`),
   `namesRead`, `renamedModule`, `presentObligation`, and their callers;
   `typed-tree-fold` is the pattern as a case, and
-  `blocker-in-unknown-walk` the refused walk. Three sites reading an
+  `blocker-in-unknown-walk` the refused walk. Two sites reading an
   object the compiler provides (`privateClient` of
-  `tools/compiler-channel.mts`, `isNode` of `tools/syntax.mts`, `copied` of
-  `tools/diagnostic-gate.mts`) have no grammar of TScert's to walk and keep
+  `tools/compiler-channel.mts`, `isNode` of `tools/syntax.mts`) have no grammar of TScert's to walk and keep
   their refusal.
 - **Commit:** the introducing commit, `Typed trees are walked through their grammar's typed traversal`.
 
@@ -774,10 +766,7 @@ hold `TypeTerm`s, which the parameter type discarded. Over `unknown`, the
 call at an object is the overload at `{}`, whose parameter excludes host
 objects ([excluding host values](HOST-FAMILIES.md#excluding-host-values)),
 and `object` does not; the call at an array, which TypeScript resolves to
-the generic overload, meets no dictionary. The diagnostic census of
-b81675f reports the gate's refusal of the two overloads together
-(`blocker-entries-mixed-overloads`) in 23 functions of
-`tools/type-term.mts`, each reaching `sameIndex` through `readTypeTerm`.
+the generic overload, meets no dictionary.
 
 - **Rewrite:** `sameTerm(a: TypeTerm, b: TypeTerm)` compares two terms by
   their kind, field by field, each `span` left out, and `sameIndex` calls
@@ -821,7 +810,7 @@ having run its constructor (`instanceof-unknown-refused`).
 - **Trust:** these lookups use the audited standard
   [WeakMap contract](SOURCE-CONTRACTS.md#weak-tables), including the assumption
   that standard objects and their methods are not tampered with.
-- **Functions:** `lowerFile`, `diagnosticFragment`, `recoverGate`,
+- **Functions:** `lowerFile`,
   `collectDeclarations`, `orAbsent` and `io` use these payloads.
   `tests/caught-errors.mts` exercises the real gate and I/O helpers, repeated
   handling and caller attribution; `tests/trusted-inputs.mts` checks repeated
@@ -843,9 +832,7 @@ is client code `JSON.stringify` calls on every member, with the holder as
 `this` and the value after its `toJSON`, and its result is serialized in
 turn: the call is refused (`invalid-json-stringify-replacer`), and so is
 `JSON.stringify` of a type term without one, a record type no `JsonValue`
-admits. The diagnostic census of 6be11ce reports the refusal in 4
-functions, 489 statements: `collect` (387), `recordShape`, `settleDocument`
-and `settleTerm`. Supporting a replacer would take the serialization of
+admits. Supporting a replacer would take the serialization of
 the arbitrary value it returns, which is the refusal of a record type
 again. The callers hold `TypeTerm`s, whose grammar the parameter type
 `unknown` discarded.
@@ -899,8 +886,7 @@ copy may lack (`result.source = …`), and returned it after the `try`. A
 write adding a key is typed only on a local's own fresh object, whose
 holders are the binding that allocated it and the constants bound to it
 since ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)); an
-assignment allocates for no holder, so the five writes are refused (the
-diagnostic census of 6be11ce, 107 statements of `readDiagnostic`). The
+assignment allocates for no holder, so the five writes are refused. The
 result is used only inside the `try`, whose `catch` returns `undefined`.
 
 - **Rewrite:** `const result = { ...d }` is declared where it is allocated,
@@ -1153,8 +1139,8 @@ form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 `parameterIndex` in `makeProbe` (`tools/type-probe.mts`) collected each
 declaration's type parameter position into a `Set` and read its first
 element with `const [index] = indexes`. An array pattern over a host
-iterable other than an array is refused at its element read
-(`diagnostic-set-pattern`); support would step the host's iterator in a
+iterable other than an array is refused at its element read;
+support would step the host's iterator in a
 pattern's lowering, for this one site of the census of b81675f.
 
 - **Equivalent form:** the loop keeps the first position and whether every
@@ -1162,8 +1148,7 @@ pattern's lowering, for this one site of the census of b81675f.
   is not negative, as the `Set` of one element did. The loop runs the same
   calls in the same order; positions are integers, which `Set` compares as
   `!==` does.
-- **Commit:** the introducing commit, `Map and Set refusals: the diagnostic
-  traversal keeps their bindings, three sites rewritten`.
+- **Commit:** 467af18b.
 
 ### A method call on the instance under construction
 
@@ -1195,9 +1180,7 @@ declaration is refused where the declaration is read
 `invalid-stated-overload-value-import`,
 `invalid-stated-one-overload-value-import`), and an overloaded declaration
 in the checked file is refused at its overloads
-(`invalid-method-effect-overload`). The diagnostic census of 6be11ce
-reports the refusal in 8 functions of `tools/`, 804 statements, each
-importing `resolutionSlots`; it is the one overloaded function declaration
+(`invalid-method-effect-overload`). It is the one overloaded function declaration
 of `tools/`. Support would certify one body at each overload's signature
 and effect, for this one site.
 

@@ -118,8 +118,6 @@ theorem nullaryOf_modify (heads : Array Draft) (h : Nat) (f : Draft → Draft) :
       simp only [nullaryOf, Array.getElem_ofFn, nullaryRow, Array.getElem?_modify, hi, if_false]
 
 structure State where
-  diagnostic : Bool := false
-  refusals : List (Span × String) := []
   /-- Execution policy; the equation document records only the types. -/
   subtypeBudget : PositiveCertificates.SearchBudget := {}
   doc : Array Definition
@@ -167,16 +165,6 @@ structure State where
   tags : List Nat := []
 
 abbrev M := StateT State (Except String)
-
-/-- A diagnostic transaction preserves the entry store on failure. Its
-replacement has the same role and the refused source region stays explicit. -/
-def recover (pos : Span) (action : M α) (fallback : M α) : M α := fun before =>
-  match action before with
-  | .ok result => .ok result
-  | .error reason =>
-    if before.diagnostic then
-      fallback { before with refusals := before.refusals ++ [(pos, reason)] }
-    else .error reason
 
 /-- The packed parameters of the declaration at `i` (`State.packings`); none
 for an index the document does not hold, as `doc[i]!`'s default expression

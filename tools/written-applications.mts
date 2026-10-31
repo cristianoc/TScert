@@ -11,7 +11,7 @@ import type { Span } from "./span.mts";
 import type { SourceTypeParameter, TypeTerm, WrittenApplication } from "./declaration-types.mts";
 import { visitType } from "./type-term.mts";
 import { childrenOf, nameOf, isTypeAlias } from "./syntax.mts";
-import { messageOf, passToolFailure } from "./thrown.mts";
+import { messageOf } from "./thrown.mts";
 
 /** What a name or a selection denotes, as TypeScript's checker has it: one
  * symbol's declarations (an overload set's, an accessor pair's, a merged
@@ -31,7 +31,6 @@ export type Entity = {
 
 /** What the sweep needs from the declaration graph. */
 export type SweepContext = {
-  diagnostic?: (pos: Span | null, reason: string) => void;
   /** The declarations TypeScript binds a written name to (empty when it
    * binds none). */
   declarationsOf(name: ts.Identifier): readonly Node[];
@@ -334,18 +333,6 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       `${node.getText(file)} in ${site(node)}: ${message}`);
   };
   const visit = (node: Node, env: Env, client: boolean, root = false): void => {
-    try { visitNode(node, env, client, root); }
-    catch (error) {
-      if (!context.diagnostic) throw error;
-      passToolFailure(error);
-      context.diagnostic(error instanceof SweepError ? error.span :
-        node.getSourceFile() === context.client ? spanOf(node) : null, messageOf(error));
-      // The failing node's application is opaque. Its children and declarations
-      // already queued retain their identities and receive independent visits.
-      node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
-    }
-  };
-  const visitNode = (node: Node, env: Env, client: boolean, root: boolean): void => {
     // A client's interface or alias is swept where something names it.
     if (client && node.parent && (ts.isInterfaceDeclaration(node) || isTypeAlias(node)) &&
         node.getSourceFile() === context.client) {

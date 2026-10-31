@@ -1,7 +1,7 @@
 (* analysis_state.mli seals candidate storage and context ownership. *)
 (* analysis_capabilities.ml describes the operation domains supplied to component functors. *)
 (* One inference pass owns its candidate output, lexical metadata and active
-   typing scope. The diagnostic observations belong to the enclosing run. *)
+   typing scope. The explanation observations belong to the enclosing run. *)
 open Semantic
 open Environment
 open Source
@@ -104,34 +104,13 @@ let create diagnostics flows offered declarations module_functions arities bound
       requests=[]; classes=[]; fresh_constructor=false; objects=[]; exact_allocs=[]; holders=[];
       instances=[]; arrows=[]; speculative_typing=false } }
 
-(* Writes and diagnostic observations belong to the pass and run respectively;
+(* Writes and explanation observations belong to the pass and run respectively;
    they survive speculation. Proposal output and path metadata belong to local. *)
 let speculate state f =
   let saved = !(state.local) in
   state.local := { saved with speculative_typing=true };
   Fun.protect ~finally:(fun () -> state.local := saved)
     (fun () -> try Some (f ()) with Json.Error _ -> None)
-
-(* A diagnostic expression is transactional. Persistent lists need only a
-   record copy; mutable indexes and flow arrays are restored on refusal. *)
-let recover state f =
-  let local = { !(state.local) with current_point = (!(state.local)).current_point } in
-  let writes = !(state.writes) and uses = !(state.uses) in
-  let bounds = !(state.rigid_bounds) and roots = !(state.typing_roots) in
-  let result = !(state.block_result) and returned = !(state.block_returned) in
-  let returns = !returned in
-  let executions = Hashtbl.copy state.executions in
-  let hints = Hashtbl.copy state.expression_hints and following = Hashtbl.copy state.following in
-  let flows = List.map (fun g -> g.Flow.nodes,Array.copy g.Flow.nodes) state.flows in
-  let restore table saved = Hashtbl.reset table; Hashtbl.iter (Hashtbl.add table) saved in
-  try Ok (f ()) with Json.Error e ->
-    state.local := local; state.writes := writes; state.uses := uses;
-    state.rigid_bounds := bounds; state.typing_roots := roots;
-    state.block_result := result; state.block_returned := returned; returned := returns;
-    restore state.executions executions; restore state.expression_hints hints;
-    restore state.following following;
-    List.iter (fun (target,saved) -> Array.blit saved 0 target 0 (Array.length saved)) flows;
-    Error (Json.message e)
 
 (* Typing contexts are dynamically scoped around recursive inference. *)
 let with_current_point state point f =
@@ -176,15 +155,6 @@ type candidate_snapshot = {
 module Access (S : sig val state : t end) = struct
   let state = S.state
   let local = state.local
-  (* A speculation's failure is its caller's answer, as outside a diagnostic
-     run: recovery and its refusal apply outside speculation alone. *)
-  let diagnostic_recover pos fallback action =
-    if not state.diagnostics.Proposal_diagnostics.diagnosing || (!local).speculative_typing then action () else
-    match recover state action with
-    | Ok result -> result
-    | Error reason ->
-      Proposal_diagnostics.refusal state.diagnostics pos reason;
-      fallback ()
   let declarations = state.declarations
   let offered = state.offered
   let initial_environment = state.env0
@@ -233,8 +203,7 @@ module Access (S : sig val state : t end) = struct
   let observe_for_in name =
     let observations=state.diagnostics.Proposal_diagnostics.for_in_keys in
     observations := name :: !observations
-  let cache_execution_entries = not state.diagnostics.Proposal_diagnostics.diagnosing &&
-    not !(state.diagnostics.Proposal_diagnostics.explaining)
+  let cache_execution_entries = not !(state.diagnostics.Proposal_diagnostics.explaining)
   let branch_for_execution ~claimed env cond truth = Refinement.branch_with state.diagnostics
     (rigid_bounds ()) declarations ~modules:(fun name ->
       try module_type name with Json.Error _ -> None) ~claimed env cond truth

@@ -4,7 +4,7 @@
 // empty array's none, so the actuals are the node list's elements.
 // Census functions: fragment-parse.mts#lowerFile, fragment-parse.mts#parseModules,
 // fragment-parse.mts#lowerModule, fragment-parse.mts#parseFragment,
-// fragment-parse.mts#diagnosticFragment, fragment-parse.mts#parseFile.
+// fragment-parse.mts#parseFile.
 import * as ts from "typescript/unstable/ast";
 
 export function keys(out: ts.TypeNode[], node: ts.TypeReferenceNode): void {

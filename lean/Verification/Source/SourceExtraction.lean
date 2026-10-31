@@ -103,9 +103,9 @@ abbrev ModuleValue (ι : Type) := String × Span × Except String (ModuleType ι
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
-@[nospecialize] private def extractNormalizedFnCore (diagnostic : Bool) (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
+@[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
     (module : List (ModuleValue Tree) := []) (classes : List String := []) :
-    Except String (SourceRequest EquationStore.State Tree × List (Span × String)) := do
+    Except String (SourceRequest EquationStore.State Tree) := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List (ScopeBinding Tree) := f.params.map (fun p => held ⟨p.name,none⟩)
   -- The module functions this body mentions, outermost: a parameter or local
@@ -122,13 +122,12 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let setupRegion := (f.namePos.1, (f.body.getLast?.map (·.pos.2)).getD f.namePos.2)
-  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (diagnostic := diagnostic) do
+  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
     let bindings ← f.params.mapM (fun (p : Fragment.Param) =>
-      recoverDiagnostic setupRegion (lower (Fragment.translate p.ty)) (pure []))
+      lower (Fragment.translate p.ty))
     -- A sloppy function reading `this` binds its receiver as a sloppy call
     -- does: an object unchanged, any other converted (the global object, a
     -- wrapper), which the model does not have. Its receiver annotation, the
@@ -150,7 +149,7 @@ did not mention grow it, and the request carries the result. -/
     let siblingTypes ← (siblings.zip siblingStorage).mapM fun (value, storage) => do
       let (_, pos, ty) := value
       if let some (_, reference) := storage then return reference
-      recoverDiagnostic setupRegion (do
+      do
         match ty with
         | Except.ok (.cell _) => throw "internal extraction error: a module cell's storage"
         | Except.ok (.written ty) => lower (Fragment.translate ty)
@@ -163,7 +162,7 @@ did not mention grow it, and the request carries the result. -/
             let written ← lower (Fragment.translate ty)
             try lower (EquationStore.meet [written, inferred])
             catch reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
-        | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)) (pure [])
+        | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
     let siblingScope : List (ScopeBinding Tree) :=
       ((siblings.zip siblingTypes).zip siblingStorage).map fun ((value, A), storage) =>
         match storage with
@@ -201,16 +200,14 @@ did not mention grow it, and the request carries the result. -/
     -- caller contract, as it is for arrows (DESIGN.md, "Trust surface").
     for ((p, A), (name, claimed)) in (f.params.zip bindings).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
-      let B ← recoverDiagnostic setupRegion (SourceClaims.resolve (← table) claimed) (pure A)
+      let B ← SourceClaims.resolve (← table) claimed
       let T ← table
-      recoverDiagnostic f.namePos
-        (requireSameMeaning T f.namePos .entryClaim A B
-          s!"claimed parameter type differs from the source annotation for '{name}'") (pure ())
-    let R ← recoverDiagnostic setupRegion (lower (Fragment.translate f.ret)) (pure [])
-    let claimedR ← recoverDiagnostic setupRegion (SourceClaims.resolve (← table) fc.ret) (pure R)
-    recoverDiagnostic f.namePos
-      (requireSameMeaning (← table) f.namePos .returnContract R claimedR
-        "claimed return type differs from the source annotation") (pure ())
+      requireSameMeaning T f.namePos .entryClaim A B
+          s!"claimed parameter type differs from the source annotation for '{name}'"
+    let R ← lower (Fragment.translate f.ret)
+    let claimedR ← SourceClaims.resolve (← table) fc.ret
+    requireSameMeaning (← table) f.namePos .returnContract R claimedR
+        "claimed return type differs from the source annotation"
     -- A guard's promise is about the input its parameter takes; an assertion
     -- function's returns are `undefined`, where they are checked.
     let receiver := f.params.head?.any (·.name == "this")
@@ -276,7 +273,7 @@ did not mention grow it, and the request carries the result. -/
       first := store
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
     return (inputs, R, entry, promise)
-  return ({
+  return {
     toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise⟩
     obligations := built.obligations
     sourceMap := built.source.sourceMap
@@ -288,20 +285,7 @@ did not mention grow it, and the request carries the result. -/
     footprint := fc.footprint
     onThrow := fc.onThrow
     async := f.async
-    stated := f.stated }, built.refusals)
-
-/-- Ordinary extraction propagates every refusal. -/
-@[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
-    (module : List (ModuleValue Tree) := []) (classes : List String := []) :
-    Except String (SourceRequest EquationStore.State Tree) := do
-  let (request, _) ← extractNormalizedFnCore false T f fc module classes
-  return request
-
-/-- Diagnostic extraction returns its holes alongside the retained graph. -/
-@[nospecialize] def diagnoseNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
-    (module : List (ModuleValue Tree) := []) (classes : List String := []) :
-    Except String (SourceRequest EquationStore.State Tree × List (Span × String)) :=
-  extractNormalizedFnCore true T f fc module classes
+    stated := f.stated }
 
 end
 

@@ -46,7 +46,6 @@ Excluded from every key (`unkeyed`), by role:
   lookup, retrying timeouts, publication calls) and the attempt records;
 - `pipeline/stage-store.mts`: the store's lookup, validation, publication and
   cleanup;
-- `pipeline/diagnose-source.mts`: diagnostic-stage orchestration and inventory presentation;
 - `pipeline/verify-source.mts`: the orchestration of one check, passing
   values to the stages' calls, and its outcome;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
@@ -168,7 +167,6 @@ execution of a replay-eligible invocation retains its complete stage key.
 | check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
 | explain | the Fragment and flow passed to the producer's `--explain` mode |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
-| diagnostic search and completion | separate stage identities; exact diagnostic Fragment and proposal envelopes, file identity, search depth and subtype rounds |
 
 ## Observed stages
 
@@ -572,7 +570,7 @@ is excluded from the key. Any other program executes without replay.
 Logs belong to the stage invocation whose paths they describe. Each
 caller receives fresh writable copies of the artifacts under its own run
 root, and its Outcome names that directory. Shared entries are immutable.
-Ordinary programmatic checks and diagnostic runs remove their directories
+Programmatic checks remove their directories
 once their result is assembled. A consumer that reads artifact files requests
 `retainArtifacts` and binds the result with `using`; leaving that scope removes
 the directory, including when the consumer throws. The census reads its logs

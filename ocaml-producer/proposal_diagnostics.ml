@@ -1,14 +1,12 @@
 open Semantic
 open Type_queries
 
-(* Diagnostic observations belong to one producer run. Its function analyses,
+(* Explanation observations belong to one producer run. Its function analyses,
    retries and closure bodies share this state; separate runs receive fresh
    state. These observations explain proposals without changing acceptance. *)
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
 type state = {
-  diagnosing : bool;
-  refusals : (Json.t * string) list ref;
   explaining : bool ref;
   explanations : (Json.t * string) list ref;
   (* Names introduced by for...in steps. *)
@@ -21,8 +19,7 @@ type state = {
   unknown_instance_tests : string list ref;
 }
 
-let create ?(explaining=false) ?(diagnosing=false) () = {
-  diagnosing; refusals = ref [];
+let create ?(explaining=false) () = {
   explaining = ref explaining;
   explanations = ref [];
   for_in_keys = ref [];
@@ -133,7 +130,3 @@ let unknown_instance_reason =
    running (`Object.create(C.prototype)`, `Object.setPrototypeOf`, `Reflect.construct` with C as the new \
    target), so C's prototype on its chain is no evidence of C's fields, and the model assumes it of no value \
    a unit receives"
-
-let refusal state pos reason =
-  if not (List.mem (pos,reason) !(state.refusals)) then
-    state.refusals := (pos,reason) :: !(state.refusals)

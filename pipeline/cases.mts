@@ -20,14 +20,6 @@ export interface Case {
   /** Whether a failed search is named by TypeScript's errors
    * (`verify-source.mts --typescript-errors`). */
   typescriptErrors?: boolean;
-  /** Source fragments at which a diagnostic run must retain a refusal; a
-   * verified case lists none, and its diagnostic run reports no refusal. */
-  diagnosticSites?: string[];
-  diagnosticCompleted?: boolean;
-  /** Source regions excluded from diagnostic coverage. */
-  diagnosticHoles?: string[];
-  /** A reason no occurrence of the diagnostic run may give. */
-  diagnosticAbsent?: RegExp;
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -56,41 +48,6 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  { ...positive("diagnostic-speculation", "A speculative typing query of a diagnostic run records no refusal."),
-    diagnosticSites: [] },
-  { ...negative("diagnostic-closure-effects", "A closure footprint failure makes its enclosing expression opaque."),
-    diagnosticSites: ["cell.value = 1"], diagnosticHoles: ["(): Within<{ value: \"keep\"; store: \"keep\" }, number> =>"], diagnosticCompleted: true },
-  { ...gap("diagnostic-syntax-identity", "Synthetic expression operands have distinct nonempty claim identities.", "unsupported", "source", /global Uint8Array/),
-    diagnosticSites: ["value instanceof Uint8Array"], diagnosticCompleted: true },
-  { ...negative("diagnostic-closure-edge", "An incoming-edge failure inside a closure makes the closure opaque."),
-    diagnosticSites: ["return result;"], diagnosticHoles: ["(): string => {"], diagnosticCompleted: true },
-  { ...gap("diagnostic-syntax-value", "An opaque syntax expression supplies unknown to its enclosing expression.", "unsupported", "source", /MetaProperty/),
-    diagnosticSites: ["new.target"], diagnosticHoles: ["new.target.name"], diagnosticCompleted: true },
-  { ...negative("diagnostic-closure-promise", "A closure promise failure makes its enclosing expression opaque."),
-    diagnosticSites: ["true"], diagnosticHoles: ["(value: unknown): value is string => true"], diagnosticCompleted: true },
-  { ...negative("diagnostic-promise", "A top-level return promise remains required under diagnostic assumptions."),
-    diagnosticSites: ["true"], diagnosticCompleted: false },
-  { ...negative("diagnostic-uninhabitable", "An empty destination contract cannot become a fresh diagnostic input."),
-    diagnosticSites: ["value;"], diagnosticCompleted: false },
-  { ...negative("diagnostic-edge", "Incoming interfaces recover at explicit assumed values; ordinary storage contracts remain required."),
-    diagnosticSites: ["result = value", "return result;"],
-    diagnosticHoles: ["result = value", "return result;"], diagnosticCompleted: true },
-  { ...negative("diagnostic-closure", "Aggregate expression recovery records the enclosing closure as opaque."),
-    diagnosticSites: ["value as string", "value as number"], diagnosticCompleted: true },
-  { ...gap("diagnostic-planning", "Diagnostic planning retains later expression obligations.", "unverified", "search", /`in` on a class value/),
-    diagnosticSites: ['"name" in value', "flag as number", "value as string"] },
-  { ...negative("diagnostic-effects", "Diagnostic footprint checking follows a failed expression."),
-    diagnosticSites: ["flag as number", "cell.value = 1"], diagnosticHoles: ["cell.value = 1"], diagnosticCompleted: true },
-  { ...gap("diagnostic-declarations", "Diagnostic declaration recovery retains imported bindings and sibling bodies.", "unsupported", "source", /unresolved type reference sep/),
-    diagnosticSites: ["import { sep } from \"node:path\";", "value as string", "flag as number"] },
-  { ...gap("diagnostic-bindings", "Diagnostic binding recovery visits sibling reads and the following return.", "unsupported", "proposal", /field read on non-object/),
-    diagnosticSites: ["first", "second", "value as string"] },
-  { ...gap("diagnostic-set-pattern", "An array pattern over a Set is refused at its element; the recovered binding claims no expression, so the unit keeps its setup and its reads of Set and of the iteration intrinsic.", "unsupported", "proposal", /missing field 0/),
-    diagnosticSites: ["first"], diagnosticAbsent: /outside its execution point|unbound or uninitialized source variable|missing iteration intrinsic/ },
-  { ...negative("diagnostic-blockers", "Diagnostic search visits two refusing function bodies."),
-    diagnosticSites: ["x as string", "x as number"], diagnosticCompleted: true },
-  { ...gap("diagnostic-syntax", "Diagnostic syntax recovery retains later refusals.", "unsupported", "source", /statement outside the fragment/),
-    diagnosticSites: ["debugger", "x as string", "this.value = this.value + 1", "x as number"] },
   // Distinct model-study causes; each source header gives the supplied sample count.
   gap("model-bounded-index-read", "A loop bound needs to prove each indexed read in bounds; the readable number-array contract excludes holes at those positions.", "unverified", "search",
     /^reject: source expression obligation at \[268,274\): evidence search failed: no derivation of its cast claim\nobligation: The available claim for xs\[i\] is undefined \| number\. This obligation requires number\.(?:\n|$)/),
@@ -622,8 +579,7 @@ export const cases: Case[] = [
   negative("invalid-map-literal-outside-element", "a `map` callback returning a field literal the element type does not name, at that return type: the literal is no element",
     /no derivation of its node-typing claim/),
   positive("array-spread-named-union", "an array literal of a value of a named union and a spread of an array of it holds that union, so a callback at it keeps `map` dense"),
-  { ...positive("field-contents-typed-handler", "Handler diagnostics recover required field facts from the handler's source context."),
-    diagnosticSites: [] },
+  { ...positive("field-contents-typed-handler", "Handler diagnostics recover required field facts from the handler's source context.") },
   positive("field-contents-typed-join", "grouped switch cases meet at one clause, entered from the case of an arm whose field type is the case's literal: the arm's field type states the fact of the field the clause holds (`typed-cell`)"),
   negative("invalid-field-contents-typed-join", "past a write that may alias the tested field, at grouped switch cases' clause, the arm's field type states `\"b\" | \"c\"`, no `\"a\" | \"b\"` (run under Node)",
     /The available claim for s\.k is "a" \| "b" \| "c"\. This return requires "a" \| "b"\./),

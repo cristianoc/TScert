@@ -23,14 +23,13 @@
 // the blocker their first refusal names, each group with its functions'
 // census statements, most statements first.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { availableParallelism, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts, isTypeAlias } from "../tools/syntax.mts";
-import { readDiagnosticReport, type DiagnosticReport } from "../pipeline/diagnose-source.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
@@ -39,18 +38,6 @@ import { classify, coverageComparison, coverageReport, inventory, type Unit, typ
   from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
-/** A process's standard output, once it exits with status 0, or 1 with an
- * output (`diagnose-source.mts` printing a report whose status is "error"). */
-const outputOf = (file: string, args: string[]): Promise<string> => new Promise((done, fail) => {
-  execFile(file, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
-    if (error && !(error.code === 1 && stdout)) fail(Error(`${basename(args[0] ?? file)} failed: ${error.message}\n${stderr}`));
-    else done(stdout);
-  });
-});
-/** How many slice groups the diagnostic census checks at once, each group's
- * stages running in its own process: `TSCERT_DIAGNOSTIC_JOBS`, or all cores
- * but two, left to the system and to other work. */
-const diagnosticJobs = Math.max(1, Number(process.env["TSCERT_DIAGNOSTIC_JOBS"]) || availableParallelism() - 2);
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** One slice: its file, the function it holds, and its text. */
@@ -267,8 +254,6 @@ function reference(r: AttemptRecord): InvocationReference {
 
 async function census(args: string[]): Promise<void> {
   startEviction();
-  const diagnosticMode = args.includes("--diagnostic");
-  if (diagnosticMode) args.splice(args.indexOf("--diagnostic"), 1);
   const directory = option(args, "--dir") ?? "tools";
   const files = option(args, "--files")?.split(",") ?? null;
   const functions = option(args, "--functions")?.split(",") ?? null;
@@ -324,78 +309,6 @@ async function census(args: string[]): Promise<void> {
   process.stderr.write(`${selected.length} of ${all.length} slices\n`);
 
   const project = join(out, "tools");
-  if (diagnosticMode) {
-    const groups = new Map<string, Slice[]>();
-    for (const slice of selected) groups.set(slice.text, [...(groups.get(slice.text) ?? []), slice]);
-    const detailDirectory = `${recordPath}.slices`;
-    mkdirSync(detailDirectory, { recursive: true });
-    const results: { targets: string[]; report: DiagnosticReport; detail: string; invocations: InvocationReference[];
-      occurrences: { file: string; start: number; end: number; reason: string; layer: string; conditional: boolean }[];
-      holes: { file: string; start: number; end: number; reason: string }[] }[] = [];
-    // Each group is diagnosed in a process of its own, half the cores at a
-    // time; its report is read back, and its run directory removed once its
-    // invocation log is read. Results keep the groups' order.
-    // The processes inherit this one's run root, removed when it exits.
-    runRoot();
-    const ordered = [...groups.values()];
-    const slots: (typeof results[number] | undefined)[] = ordered.map(() => undefined);
-    let next = 0, finishedGroups = 0;
-    const diagnoseApart = async (i: number): Promise<void> => {
-      const group = ordered[i];
-      const first = group?.[0];
-      if (!group || !first) return;
-      const stdout = await outputOf(process.execPath,
-        [join(repository, "pipeline", "diagnose-source.mts"), join(root, first.slice), project]);
-      const printed: unknown = JSON.parse(stdout);
-      const fullReport = readDiagnosticReport(printed);
-      try {
-        const detail = join(detailDirectory, `${i}.json`);
-        writeFileSync(detail, JSON.stringify(fullReport) + "\n");
-        const invocations = readInvocationLog(join(fullReport.artifacts, invocationLog)).map(reference);
-        const report: DiagnosticReport = { ...fullReport,
-          occurrences: fullReport.occurrences.map(o => ({ ...o, reason: o.reason.split("\n")[0] ?? "" })) };
-        const original = (pos: [number, number]): { file: string; start: number; end: number }[] =>
-          first.segments.filter(s => pos[0] < s.end && s.start < pos[1]).map(s => ({ file: first.file,
-            start: s.exact ? s.original + Math.max(0, pos[0] - s.start) : s.original,
-            end: s.exact ? s.original + Math.min(s.end - s.start, pos[1] - s.start) : s.originalEnd }));
-        slots[i] = { targets: group.map(s => `${s.file}#${s.fn}`), report, detail, invocations,
-          occurrences: report.occurrences.flatMap(o => original(o.pos).map(p => ({ ...p,
-            reason: o.reason, layer: o.layer, conditional: o.conditional }))),
-          holes: report.unexamined.flatMap(o => original(o.pos).map(p => ({ ...p, reason: o.reason }))) };
-      } finally {
-        rmSync(fullReport.artifacts, { recursive: true, force: true });
-      }
-      finishedGroups++;
-      process.stderr.write(`${finishedGroups}/${groups.size} diagnostic slice groups: ${slots[i]?.report.occurrences.length ?? 0} refusals · ${first.file}#${first.fn}\n`);
-    };
-    const worker = async (): Promise<void> => {
-      while (next < ordered.length) await diagnoseApart(next++);
-    };
-    await Promise.all(Array.from({ length: Math.min(ordered.length, diagnosticJobs) }, worker));
-    for (const slot of slots) if (slot) results.push(slot);
-    const ranked = new Map<string, Set<string>>();
-    for (const result of results) for (const o of result.occurrences) {
-      const key = `${o.layer}: ${blocker(o.reason.split("\n")[0]).replace(/node \d+/g, "node").replace(/edge \d+/g, "edge")}`;
-      const targets = ranked.get(key) ?? new Set<string>();
-      for (const target of result.targets) targets.add(target);
-      ranked.set(key, targets);
-    }
-    const counted = units.filter(u => u.scope === "census" && selected.some(s => s.file === u.file && s.fn === u.fn));
-    const ranking = [...ranked].map(([reason, targets]) => ({ reason, functions: targets.size,
-      affectedStatements: counted.filter(u => targets.has(`${u.file}#${u.fn}`)).length,
-      targets: [...targets] })).sort((a, b) => b.functions - a.functions || b.affectedStatements - a.affectedStatements);
-    const holes = counted.filter(u => results.some(r => r.targets.includes(`${u.file}#${u.fn}`) &&
-      (!r.report.completed || r.holes.some(h => h.file === u.file && h.start < u.end && u.start < h.end))));
-    const record = { status: "diagnostic", source: { commit, dirty, directory, files, functions },
-      elapsedMs: performance.now() - started, inventory: { files: fileHashes, units },
-      results, ranking, coverage: { counted: counted.length, holes: holes.length,
-        retained: counted.length - holes.length,
-        meaning: "Statements outside reported opaque regions in slices whose retained program passes aggregate checks under diagnostic assumptions. This is not verified coverage." } };
-    writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
-    process.stdout.write(JSON.stringify({ coverage: record.coverage, ranking }, null, 2) + "\n");
-    process.stdout.write(`record: ${recordPath}\n`);
-    return;
-  }
   // Progress: the slices' outcomes and their stages' executions so far.
   let finished = 0;
   const outcomes = new Map<string, number>();
