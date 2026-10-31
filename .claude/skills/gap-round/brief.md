@@ -14,11 +14,21 @@ first. It is the authority, and this brief only fills in the round.
 - The census sites it stands for: `<sites>`. They come from `<census record>`,
   with the slices beside it (`tools/tools/slice-<file>-<fn>.mts`).
 
-The goal is that the case verifies. Answer it by the first route of
+The goal is that the case is closed: decided, never left a gap. Answer it
+by the first route of
 [deciding what a refusal calls for](../../../docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
-that establishes the obligation at acceptable cost. Repair the sites where
-TScert's own code discards what it knew. Record a repair, an avoidance or
-a host boundary in SOURCE-REWRITES.md in the same commit.
+that establishes the obligation at acceptable cost, deciding whether the
+construct is worth supporting or the code is rewritten instead. Repair the
+sites where TScert's own code discards what it knew. Record a repair, an
+avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
+
+- **Supported:** the case verifies.
+- **Rewritten instead:** the census sites are rewritten so they verify, the
+  rewrite is recorded with its reason, and the case stays as a negative
+  case stating the restriction, in `pipeline/cases.mts`.
+- **The refusal stays:** only where no route establishes the obligation at
+  acceptable cost; the case becomes a negative case and the reason is
+  recorded.
 
 - **A library or host function TScert does not model yet:** write its
   model, stating the trust it takes, and proceed. The owner reviews it
