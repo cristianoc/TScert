@@ -3990,12 +3990,10 @@ type names does, and a definition's methods name it as their receiver
   `lib/fs.js`). The four are stated,
   $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{false}\mid\mathtt{undefined};\ \mathtt{signal}^?\colon\mathtt{undefined}\}`$,
   so under the caller contract ([trust surface](DESIGN.md#trust-surface))
-  each is a data property whose reads agree. `recursive: true` walks the
-  subdirectories, calling each entry's `isDirectory` through its prototype,
-  `path.join` and a stat of the joined path to choose what to read next, and
-  collects entries of every depth; that walk is not audited, so it is refused
-  (`invalid-node-readdir-recursive`, run under Node: a replaced test runs
-  during the call; [source fragment](SOURCE-FRAGMENT.md)). The call returns
+  each is a data property whose reads agree. `recursive: true` collects
+  entries from subdirectories; that walk is not audited, so it is refused
+  (`invalid-node-readdir-recursive`, run under Node: a nested file appears in
+  the result; [source fragment](SOURCE-FRAGMENT.md)). The call returns
   a fresh array of entries, whose constructors assign each its `name` and
   `parentPath`, writable strings; a path it cannot read throws, and the call
   states no effect (`node-readdir-dirents`). That the assignments define own

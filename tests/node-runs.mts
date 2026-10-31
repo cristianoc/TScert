@@ -70,7 +70,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-url-unknown-return",
     '(() => { const m = make(); Object.defineProperty(m.leaked, "href", { get: () => 7 }); return read(m); })()'), 7);
   assert.equal(runImporting("invalid-node-url-options", 'windowsPath("file:///C:/x")'), "C:\\x");
-  assert.equal(runImporting("invalid-node-url-program-object", 'pathOf(() => "/callback")'), "/callback");
+  // A percent escape makes fileURLToPath decode the forged pathname.
+  assert.equal(runImporting("invalid-node-url-program-object", 'pathOf(() => "/%63allback")'), "/callback");
   assert.equal(runImporting("invalid-node-url-member", 'pathnameOf(new URL("file:///x?q"))'), "/x");
   assert.equal(runImporting("invalid-node-url-spread", 'copied(new URL("file:///x")) === undefined'), true);
   assert.equal(runImporting("invalid-node-url-write", 'moved()'), "http://example.com/a");
@@ -911,8 +912,17 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "(() => { const fs = process.getBuiltinModule(\"node:fs\"); fs.Dirent.prototype.isDirectory = () => 7; return typeof flags(\".\")[0]; })()"),
     "number", "invalid-node-readdir-test-result: a replaced isDirectory answers a number");
   assert.equal(runImporting("invalid-node-readdir-recursive",
-    "(() => { const fs = process.getBuiltinModule(\"node:fs\"); let ran = 0; const test = fs.Dirent.prototype.isDirectory; fs.Dirent.prototype.isDirectory = function () { ran++; return test.call(this); }; walk(\".\"); return ran > 0; })()"),
-    true, "invalid-node-readdir-recursive: the walk calls each entry's isDirectory through its prototype");
+    `(() => {
+      const fs = process.getBuiltinModule("node:fs");
+      const path = process.getBuiltinModule("node:path");
+      const dir = fs.mkdtempSync(path.join(process.getBuiltinModule("node:os").tmpdir(), "tscert-recursive-"));
+      try {
+        fs.mkdirSync(path.join(dir, "nested"));
+        fs.writeFileSync(path.join(dir, "nested", "leaf"), "");
+        return walk(dir).includes("leaf");
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    })()`),
+    true, "invalid-node-readdir-recursive: the walk returns an entry from a subdirectory");
   assert.equal(runImporting("invalid-node-dirent-name-accessor",
     "(() => { hide(); const fs = process.getBuiltinModule(\"node:fs\"); const e = fs.readdirSync(\".\", { withFileTypes: true })[0]; return [typeof e.name, Object.hasOwn(e, \"name\")].join(); })()"),
     "number,false", "invalid-node-dirent-name-accessor: the entry's name is the accessor's 7, not own");

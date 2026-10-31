@@ -4502,7 +4502,7 @@ export const cases: Case[] = [
   { ...negative("invalid-node-readdir-test-result", "an entry's `isDirectory` dispatches through a replaceable prototype (run under Node: a number): its result is `unknown`, refused as a Boolean",
     /source expression obligation at \[393,424\): evidence search failed: no derivation of its node-typing claim/),
     project: "pipeline/library-project" },
-  { ...negative("invalid-node-readdir-recursive", "`recursive: true` walks the subdirectories through each entry's `isDirectory` and `path.join` (run under Node: a replaced test runs during the call): the reviewed options admit `recursive` false or absent, refused",
+  { ...negative("invalid-node-readdir-recursive", "`recursive: true` collects entries from subdirectories (run under Node: a nested file appears in the result): the reviewed options admit `recursive` false or absent, refused",
     /No rule derives this makeAt at \{ withFileTypes: true, recursive: false \| undefined \}/),
     project: "pipeline/library-project" },
   { file: "invalid-class-prototype-write", area: "a write to a class's `prototype` replaces a method every instance reads (run under Node: the call answers the written function): the class value has no `prototype` field, refused",
