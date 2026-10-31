@@ -262,8 +262,7 @@ let transfer (expr:Analysis_state.expression_infer) =
                            List.assoc_opt init.pos offered with
             | None,Atoms [Shape ({calls=[call];_} as shape)],Some extra ->
               Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
-                (List.sort_uniq compare (List.map (fun (s:Semantic.signature) ->
-                  {s with call_effect=call.call_effect}) extra))}]
+                (List.sort_uniq compare (List.map (discarded_signature call) extra))}]
             | _ -> self in
           let footprint,on_throw = match Hashtbl.find_opt Source.self_effects init.pos with
             | Some assumed -> assumed

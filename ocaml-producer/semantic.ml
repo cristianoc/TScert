@@ -234,6 +234,12 @@ let non_host = Atoms [Nul;Undef;True;False;Num;Str;Bigint;Symbol;
   Shape {fields=[host_mark];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
 let arrow ?(call_effect=ordinary_effect) params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
+(* A longer callback signature keeps the parameters the code reads at its
+   own contracts. The remaining actuals are discarded by fixed-arity code.
+   Both the closure and its use are checked by Lean. *)
+let discarded_signature (own:signature) (offered:signature) =
+  {offered with call_effect=own.call_effect; params=own.params @
+    List.filteri (fun i _ -> i >= List.length own.params) offered.params}
 let quantified_arrow ?(call_effect=ordinary_effect) ?(receiver=top) quantified params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
 let variadic_arrow ?(call_effect=ordinary_effect) ?(quantified=[]) ?(receiver=top) params element result =

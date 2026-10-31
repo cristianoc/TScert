@@ -49,7 +49,8 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   positive("blocker-gap-round-early-capture", "An early captured function states the function its outer arrow returns."),
-  { ...gap("blocker-gap-round-parent-walk", "Recursive parent walk checked at several signatures", "unverified", "search", /^reject: a closure's body lowers differently under one of its signatures at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-gap-round-parent-walk", "A recursive parent walk retains its declared parameters when offered ignored callback arguments."), project: "pipeline/blocker-project" },
+  { ...negative("invalid-gap-round-parent-walk", "A recursive parent walk must meet its written result at every callback signature.", /This return requires string\./), project: "pipeline/blocker-project" },
   positive("blocker-gap-round-assign-target", "The destructured target is checked for undefined before it is read."),
   { ...gap("blocker-gap-round-assign-target-length-only", "Object.assign target read after argument-array destructuring", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/) },
   { ...gap("blocker-gap-round-scope-spread", "Scope spread overriding callbacks and a type alias's source file", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its binding-annotation claim(?:\n|$)/), project: "pipeline/blocker-project" },
@@ -377,8 +378,8 @@ export const cases: Case[] = [
   { ...positive("blocker-instanceof-map-set", "`instanceof Map` and `instanceof Set` on a value of unknown type promise the host collection's reading view, `%InstanceOf:Map%` and `%InstanceOf:Set%`: the collection iterated, the value a key of a map read by `has` and `get` (run under Node)"),
     project: "pipeline/blocker-project" },
   { ...positive("blocker-every-node-closure", "A closure calling a compiler node's method, passed to `every`: its object, a union of nodes at its own signature and one node at `every`'s, gets one bound member call at both."), project: "pipeline/blocker-project" },
-  { ...negative("blocker-every-mixed-closure", "A closure calling a method of a node or a record holding it as a field, passed to `every` over nodes, is dispatched on its object at its own signature and called as one node's bound member at `every`'s: its body lowers to two programs.",
-    /^reject: a closure's body lowers differently under one of its signatures at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...gap("blocker-every-mixed-closure", "A named callback over a compiler node or a record holding its method needs a typing derivation for the mixed method invocation.", "unverified", "search",
+    /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke/), project: "pipeline/blocker-project" },
   { ...negative("blocker-indexed-optional-method", "An optional method of a type literal read as a type through an indexed access is the method's function, received by the declaration: called with no receiver, it is refused at the receiver.",
     /^reject: closure expression claim at \[753,755\): evidence search failed\n[^\n]*"term":"undef","type":\[0\]\}[^\n]*"role":"method-receiver"/), project: "pipeline/blocker-project" },
   { ...gap("blocker-optional-method-bind", "An optional method bound with `.bind` to the object it is read from needs `bind` read on the method.", "unsupported", "proposal",

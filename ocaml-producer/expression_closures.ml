@@ -358,6 +358,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             | Some (stated,promised) when s.call_effect.promise <> None
                 && s.call_effect.promise = stated.promise ->
               {s with call_effect={call_effect with promise=stated.promise};result=promised}
+            | _ when List.mem_assoc e.pos offered -> discarded_signature call s
             | _ -> {s with call_effect} in
           let calls = call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare (List.map at_own extra)) in

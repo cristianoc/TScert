@@ -1684,6 +1684,22 @@ at states all of that, so the program holds none.
 
 ## Changes for a tool's defect
 
+### A recursive callback offered narrower parameters
+
+The parent walk `topStatement` in `tools/fragment-parse.mts#lowerFile`
+accepts `Node` and is passed to `map` over compiler identifiers. The
+callback's longer signature keeps `Node` at its first position and adds
+the index and array arguments that the code discards. Its recursive self
+entry carries the same signatures. This uses the existing
+[closure claims](SOURCE-CLAIMS.md) and checks each signature through the
+same body graph; the call checks that the callback admits its arguments.
+Keeping the declared leading parameters gives the body the same compiler
+node views at each signature. The case `blocker-gap-round-parent-walk`
+exercises the recursive walk, and `invalid-gap-round-parent-walk` requires
+its written result. Forged leading parameters and results are refused by
+evidence production and consumption. This is a producer proposal through
+the existing checks and takes no external assumption.
+
 ### A callback's signatures and their body claims
 
 An annotated callback passed to `some` on a union of compiler node arrays

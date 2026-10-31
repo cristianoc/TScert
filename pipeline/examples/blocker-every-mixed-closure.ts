@@ -1,9 +1,6 @@
-// A closure calling a method of an object that is a compiler node or a
-// record holding the method as a field, passed to `every` over nodes: its
-// body is read and called in one step dispatched on the object at the
-// closure's own signature, where the record's field is no host member, and
-// as one node's bound member at `every`'s, so it lowers differently under
-// the two signatures.
+// A named callback over a compiler node or a record holding its method,
+// passed to `every` over nodes. The mixed method invocation requires a
+// source-expression typing derivation under the declared parameter union.
 import * as ts from "typescript/unstable/ast";
 
 interface Located {

@@ -3311,6 +3311,36 @@ control(async (): Promise<void> => {
   process.stdout.write("annotated union callback: missing signature claims and forged body types refused by both entry points\n");
 });
 control(async (): Promise<void> => {
+  const artifacts = run("blocker-gap-round-parent-walk");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("(n: Node): Node =>");
+  for (const name of ["parameter", "result"]) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions[0], "walk's claims");
+    const literal = must(fn.expressions.find(e => e.pos[0] === start), "the recursive literal");
+    assert.ok(Array.isArray(literal.type));
+    literal.type = literal.type.map(l => {
+      const row = must(typeof l === "number" ? claims.types[l] : undefined, "the closure row");
+      return claims.types.push(row.map(clause => {
+        if (typeof clause !== "object" || !("arrs" in clause)) return clause;
+        assert.equal(clause.arrs.arrows.length, 2);
+        return { arrs: { ...clause.arrs, arrows: clause.arrs.arrows.map(a => {
+          if (a.arguments.length === 1) return a;
+          const copy = structuredClone(a);
+          if (name === "parameter") copy.arguments[0] = [rowOf(claims, "top")];
+          else copy.result = [rowOf(claims, "str")];
+          return copy;
+        }) } };
+      })) - 1;
+    });
+    const forged = writeClaims(artifacts, `parent-walk-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `parent-walk-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+  process.stdout.write("recursive callback: forged leading parameter and result refused in search and checking\n");
+});
+control(async (): Promise<void> => {
   checkGenericRest(verifier, run("generic-rest"));
   checkRestPackInstance(verifier, run("rest-pack-declared"), "emptyInfer()");
   checkRestPackInstance(verifier, run("class-rest-binder"), "new RestRunner(\n");
