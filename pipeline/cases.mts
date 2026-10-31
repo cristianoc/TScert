@@ -48,7 +48,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  gap("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join.", "unverified", "search", /^reject: closure expression claim at \[\d+,\d+\): evidence search failed(?:\n|$)/),
+  positive("blocker-census-effect-map-result", "A map callback with an ordinary effect followed by join, whose receiver admits holes."),
+  negative("invalid-sparse-join-coercion", "A sparse map result retains join’s standard conversion bound (run under Node)."),
   { ...gap("blocker-census-annotated-node-union", "An annotated callback on a union of compiler node arrays.", "unverified", "search", /^reject: per-arrow interior claims do not match the claimed arrows$/), project: "pipeline/blocker-project" },
   gap("blocker-census-spread-map-records", "An array literal spreading a map that builds records.", "unverified", "search", /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this arrLit/),
   gap("blocker-census-spread-nested-field", "A callback spreading a record and overriding a nested field.", "unverified", "search", /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation(?:\n|$)/),

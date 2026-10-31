@@ -357,6 +357,9 @@ Language Specification* as of this writing). Sections relied on by name:
 - [Array iterator objects](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array-iterator-objects)
   (CreateArrayIterator and `%ArrayIteratorPrototype%.next`), for the
   [native footprint](SOURCE-CONTRACTS.md#native-footprints) of `%Iterate%`;
+- [Array.prototype.join](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.join)
+  and `JoinIndexedProperties`, for the sparse receiver and standard conversion
+  in [prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts);
 - [ArraySpeciesCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arrayspeciescreate),
   used by [Array.prototype.map](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.map),
   [filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter)

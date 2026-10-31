@@ -2532,7 +2532,24 @@ is called. Primitives may throw (a symbol, for example); termination is not
 claimed for recursive arrays. Without a library identity for `Symbol.toPrimitive`,
 D conservatively contains primitives only.
 
-`join` and `toString` each quantify `T` with bound `T ≤ D`. For `sort`, let
+`join` and `toString` each quantify `T` with bound `T ≤ D`. `join` takes
+`sparse ReadonlyArray<T>` as its receiver, with either no separator or one
+`string | undefined` separator, and returns `string` within the empty
+footprint. [ECMA-262](REFERENCES.md#ecma-262)'s `Array.prototype.join`
+captures the length, converts the separator, then reads every index in that
+range. A missing own index yields `undefined` under the standard prototype
+assumption and contributes empty text, as does `null`. Each present element
+meets D, so its conversion runs no client code; the separator is a primitive,
+and the result is a string. No array result is constructed and no constructor
+or species lookup occurs. Numeric own properties are data properties, and
+the standard prototypes have no numeric properties or getters. These are
+the existing array and standard-object assumptions, also required of
+external code. `blocker-census-effect-map-result` permits its callback to
+remove source elements; `invalid-sparse-join-coercion` checks the conversion
+bound on the result and, under Node, calls an unsafe element's `toString`
+with `undefined` where its annotation requires a number.
+
+For `sort`, let
 A(T) be the mutable array contract, V(D) its readonly view at D, and C(T) the
 comparator `(T,T) → number`.
 Its one scheme offers the intersection:

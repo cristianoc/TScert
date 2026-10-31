@@ -282,7 +282,13 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
     effect: { ...emptyEffect, fresh: true } },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: stringConvertible }, effect: emptyEffect },
+    bounds: { T: stringConvertible }, effect: emptyEffect,
+    // Get at a missing numeric key yields undefined, converted to empty text.
+    // Present elements meet the same conversion bound as a readable array.
+    stated: [
+      { receiver: arrayOf(element, true, "sparse"), params: [], result: atomOf("string") },
+      { receiver: arrayOf(element, true, "sparse"),
+        params: [{ k: "union", parts: [atomOf("string"), atomOf("undefined")], span: at }], result: atomOf("string") }] },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
     bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "indexOf", from: "ReadonlyArray",

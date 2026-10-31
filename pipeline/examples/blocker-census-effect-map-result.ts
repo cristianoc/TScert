@@ -3,7 +3,17 @@
 // claim-text.mts#liftSignatures, claim-text.mts#liftType, claim-text.mts#liftLabels,
 // claim-text.mts#treeAtom, claim-text.mts#lift; type-probe.mts#makeProbe.
 // A callback with an ordinary effect gives map a result with holes;
-// the following join needs a dense array.
+// join converts each missing element to empty text.
 export function render(xs: string[], text: (x: string) => string): string {
   return xs.map((x) => text(x)).join(", ");
+}
+
+export function defaults(xs: string[], text: (x: string) => string): string {
+  return xs.map((x) => text(x)).join();
+}
+export function explicitUndefined(
+  xs: string[],
+  text: (x: string) => string,
+): string {
+  return xs.map((x) => text(x)).join(undefined);
 }
