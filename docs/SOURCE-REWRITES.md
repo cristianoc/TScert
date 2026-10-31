@@ -1624,6 +1624,35 @@ spread checks establish the fresh array's element contract.
   parameter. This repair adds no external assumption or rule.
 - **Commit:** the introducing commit.
 
+### An optional-chain result tested before a conditional record
+
+`tools/fragment-classes.mts#classBody` tests
+`base && base.proto && baseType` before allocating `baseProto`. The avoided
+form is `base?.proto && baseType`. In that form, the incoming-edge check
+receives a nullable temporary where the selected arm requires a string,
+even with the existing store-preserving contract of `Gate.span`.
+Supporting the form requires carrying the optional-chain result's
+truthiness through the conjunction's temporary claims. The supplied census
+sites are `classBody` and its caller `classStmt`, both containing this one
+expression; an explicit receiver test uses the existing branch checks.
+
+- **Equivalent form:** `base` is a class record or null. For null, both
+  conditions select the null arm without reading `proto` or `baseType`.
+  For a record, both read the same data field once in the condition, test
+  its truthiness, and test `baseType` only when it is truthy. The selected
+  arm evaluates the same fields in the same order, including the call to
+  `gate.span` and the later read of `base.proto`. The extra test of the
+  saved receiver invokes no code. Returns, exceptions, mutations, aliases,
+  receivers and allocations agree under the existing caller contract.
+- **Scope:** `blocker-round-conditional-record-join` states the same
+  preservation contract as `Gate.span` and checks the explicit condition.
+  `invalid-round-conditional-record-call` gives the callback an ordinary
+  signature: under Node, a callback setting `base.proto = null` produces
+  `{ k: "id", pos: 1, name: null }`, outside its result contract. The
+  explicit test alone does not justify preservation across that call.
+- **Trust:** no external contract or assumption is added.
+- **Commit:** the introducing commit.
+
 ### An array target justified only by length
 
 The `Object.assign` branch uses the [saved-target check](#an-array-patterns-first-element-after-a-length-test).

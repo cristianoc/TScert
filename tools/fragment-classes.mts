@@ -674,7 +674,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     let proto: Expr | null = null;
     let protoBinding: string | null = null;
     const baseType = heritage?.types[0];
-    const baseProto: Expr | null = base?.proto && baseType
+    const baseProto: Expr | null = base && base.proto && baseType
       ? { k: "id", pos: gate.span(baseType.expression), name: base.proto } : null;
     const tested = [...this.classTests.values()].includes(name.text);
     if (!prototype.length && !tested && base?.proto) protoBinding = base.proto;

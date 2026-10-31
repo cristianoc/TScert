@@ -48,7 +48,7 @@ each item's design and evidence, not its progress.
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review, on an object no type states the key of (`blocker-in-name-object`) and where a passed `in` test makes the read syntactically eligible on a union with an arm stating no key, at `body` and `type` only on receivers each arm of which states the key or is of the host package (`compiler-api-in-union-read`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`), and a guard closure meets `find`'s by its promise signature at its body's footprint (`blocker-compiler-api-find-promise`); `every` at a guard promising `string`, `number` or `boolean` gives [the elements fact](docs/FOOTPRINTS.md#the-elements-fact), which `map` relies on within one expression (`blocker-every-promise`, `every-elements-map-join`); open: the predicates excluding null or undefined, and the other natives at the fact; `blocker-round-every-map-narrowing` isolates the `map` callback after `every` tests nullable elements | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies; the isolated callback verifies with the element fact preserved for its use |
 | Investigation: the elements fact past a statement | cause unknown: the atom `every` adds reaches the branch on its result but not the `map` after it where the test is a statement (`every-elements-saved`, a constant; `every-elements-negated`, `if (!…) return`) | both cases verify |
-| [A conditional's join past an arm's read](#conditional-optional-field) | open: `blocker-round-conditional-record-join` isolates the incoming-edge refusal for a record that rereads a nullable field after a call in `fragment-classes.mts#classStmt,#classBody` | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify; the isolated record case is answered by a checked derivation or a source rewrite that accounts for mutation during the call |
+| [A conditional's join past an arm's read](#conditional-optional-field) | closed by avoidance: `blocker-round-conditional-record-join` verifies with the [explicit receiver test](docs/SOURCE-REWRITES.md#an-optional-chain-result-tested-before-a-conditional-record) and the existing preservation contract of `Gate.span`; `invalid-round-conditional-record-call` refuses a callback that clears the field, shown under Node; targeted slices `fragment-classes.mts#classBody,#classStmt` advance from the incoming-edge refusal to the prototype-binding allocation's node-typing claim, with 0 of 2 functions and 0 of 393 statements verified before and after, no timeouts (2026-11-01) | the equivalent receiver test answers the supplied census expression without a new rule or trust assumption |
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
@@ -293,9 +293,7 @@ at the footprint its body proposes, its code checked at both
 
 <a id="conditional-optional-field"></a>
 **A conditional's join past an arm's read.**
-Lean's search refuses both functions at the edge from the arm that reads
-`o.v` into the point after the conditional, "the edge from node 2 does not
-establish the claims at this point":
+The existing conditional checks admit both field-reading forms:
 
 ```typescript
 type Opt = { v?: string | null };
@@ -307,19 +305,10 @@ export function loose(o: Opt): string {
 }
 ```
 
-Cause (observed in `loose`'s claims and its refused edge): the producer
-claims the arm's read of `o` at a view of the field, `{ v: null | string }`,
-which states what a read of `v` gives and no contract of the record, and
-the arm's entry holds `o` at that claim (`executionArmContext`). The point
-after the conditional claims `o` at its declared `Opt`, which the view is
-not within; every other slot of the edge is within its claim (the
-diagnostic names another slot). The same test with two returns has no
-point after the read, and `let r = ""; if (o.v != null) r = o.v; return r;`
-verifies, its join claiming `o` at the union of `Opt` and the view; without
-a read of `o` in the arm, `o.v != null ? 1 : 2` verifies. Repair
-obligation: the point after a conditional holds each slot at what every arm
-leaves it, as a statement's join does, or an arm's entry holds a slot at
-its type met with the read's claim.
+The census expression uses the [explicit receiver test](docs/SOURCE-REWRITES.md#an-optional-chain-result-tested-before-a-conditional-record).
+Its call to `Gate.span` has a store-preserving contract. An ordinary
+callback may clear the tested field; `invalid-round-conditional-record-call`
+checks that separate obligation.
 
 ### Investigations
 
