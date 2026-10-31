@@ -323,7 +323,8 @@ in order, in ${given}; rank nothing. For each cause: find the census functions i
 the refusals and the slices; use the pipeline case it names, or the one that shows it, or add the smallest source
 that reproduces that census refusal, its header naming the census functions it stands for, with its
 pipeline/cases.mts entry as a gap, and check it reproduces the refusal (run-cases.mts <name>). A cause no census
-function meets any more is left out, with the reason, in ${join(work(r), "ranking.md")}.
+function meets any more is kept with its case and no sites ("sites": []), with the reason in
+${join(work(r), "ranking.md")}: its agent decides whether the construct is worth supporting or the rewrite stands.
 
 Write ${join(work(r), "ranking.md")} (each cause, its sites, its case) and ${join(work(r), "ranking.json")}, the
 causes in the given order: {"cases": [{"case": "<name of pipeline/examples/<name>.ts>", "reason": "...",

@@ -40,6 +40,10 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   principle in one or two sentences.
 - **If the case does not reproduce the census refusal:** find the real
   cause from the census sites, and make the case that reproduces it.
+- **A case with no census sites:** TScert's code no longer meets the
+  construct, having been rewritten. Decide whether the construct is worth
+  supporting: support it, or keep the rewrite and close the case as a
+  negative case stating the restriction.
 
 ## Soundness
 
