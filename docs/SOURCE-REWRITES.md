@@ -58,6 +58,28 @@ of the host's implementation.
 
 ## Rewrites
 
+### An array pattern's first element after a length test
+
+The `Object.assign` branch of `expr` in `tools/fragment-expressions.mts`
+requires a target, rejects spread arguments, and binds
+`const [target, ...sources] = node.arguments`. Its length test establishes
+that a target is present at run time. The array contract states no lower
+length bound ([index reads](PROGRAM-TYPING.md#reads-at-an-index-from-the-length)),
+so the destructured value's checked type includes `undefined`.
+
+- **Runtime check:** `target === undefined` calls `gate.fail` before
+  `gate.expr(target)`. Narrowing the saved value establishes its argument
+  type independently of subsequent reads or calls. Compiler node arrays
+  supply nodes at their positions, so the check preserves the accepted
+  source programs and their lowering.
+- **Scope:** `blocker-gap-round-assign-target` checks the saved value;
+  `blocker-gap-round-assign-target-length-only` states the length-only
+  refusal. Support for deriving an element's presence from a length test
+  requires relating the store's length and position through the binding
+  schedule and its effects. The direct check uses the existing narrowing
+  rules and adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A part union that leaves its other arm's key unstated
 
 The `build` expression's parts in `tools/fragment.mts` are named fields

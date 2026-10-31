@@ -16,5 +16,6 @@ export function lower(
 ): number {
   if (args.length === 0) throw Error("target required");
   const [target, ...sources] = args;
+  if (target === undefined) throw Error("target required");
   return read(target);
 }

@@ -520,6 +520,8 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
         if (node.arguments.length === 0 || node.arguments.some(ts.isSpreadElement))
           gate.fail(node, "Object.assign needs its target and its sources written as arguments");
         const [target, ...sources] = node.arguments;
+        if (target === undefined)
+          gate.fail(node, "Object.assign needs its target written as an argument");
         return {
           k: "objectAssign",
           pos: gate.span(node),
