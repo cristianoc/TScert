@@ -58,6 +58,25 @@ of the host's implementation.
 
 ## Rewrites
 
+### A cache callback's nullable answer field
+
+`realOf` in `tools/files.mts` supplies `attemptAnswer` with a callback
+whose result is `{ answer: string | null }`. The annotation gives both
+fresh records the writable field contract that the cache holds. This uses
+the existing [allocation and closure checks](SOURCE-CLAIMS.md).
+
+- **Repair:** the result annotation retains the cache's full storage
+  contract at allocation. Separate inferred string and null writable
+  fields cannot supply that invariant contract.
+- **Behaviour:** the annotation is erased. The callback resolves the same
+  path, handles the same errors, allocates the same records and returns
+  the same answer. Cache operations, observations, aliases and exceptions
+  are unchanged.
+- **Scope:** `blocker-gap-round-cache-answer` checks the annotated callback;
+  `blocker-gap-round-cache-answer-inferred` retains the inferred-field
+  refusal. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### Declaration locations retained as JSON data
 
 `makeProbe` in `tools/type-probe.mts` compares declarations by serializing

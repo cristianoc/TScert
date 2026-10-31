@@ -407,7 +407,7 @@ function kindOf(path: string, node: boolean): Kind {
 }
 /** A path's real path, every link resolved, or null. */
 function realOf(path: string, node: boolean): string | null {
-  return attemptAnswer((a) => a.real, "real", path, node, () => {
+  return attemptAnswer((a) => a.real, "real", path, node, (): { answer: string | null } => {
     try {
       return { answer: realpathSync(path) };
     } catch (error) {

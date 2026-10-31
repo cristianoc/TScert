@@ -23,7 +23,7 @@ export function real(
   answers: Map<string, { answer: string | null }>,
   path: string,
 ): string | null {
-  return cached(answers, path, () => {
+  return cached(answers, path, (): { answer: string | null } => {
     try {
       return { answer: path };
     } catch {
