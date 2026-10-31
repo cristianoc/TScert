@@ -5284,7 +5284,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const what = `${name}(…)`;
   // A call the overlay reads as the global's construct, `Error(m)`: each is
   // reported, and its statement joins the construct signatures.
-  const calledConstructs: { binders: string[]; type: TypeTerm }[] = [];
+  type ConstructForm = { binders: string[]; type: TypeTerm };
+  const calledConstructs: ConstructForm[] = [];
   const callForms = [...chosen].flatMap(([signature, calls]) => {
     const entry = reviewed(undefined, signature, what);
     if (entry?.construct) {
@@ -5346,19 +5347,19 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       for (const expression of expressions)
         if ((expression.arguments?.length ?? 0) > most || expression.arguments?.some(ts.isSpreadElement))
           throw Error(`${whatNew} is read with at most ${most} argument(s)`);
-      return forms.map(stated => ({ binders: stated.binders,
+      return forms.map((stated): ConstructForm => ({ binders: stated.binders,
         type: { k: "constructor", effect: entry.effect ?? ordinaryEffect, params: stated.params, rest: null,
-          result: stated.result, span } satisfies TypeTerm }));
+          result: stated.result, span } }));
     }
     if (signature.typeParameters?.length) throw Error(`${whatNew} is generic`);
     context.clean(signature, where(signature, name));
     return signatures(scopeOf(signature, whatNew), signature.parameters, signature.type, signature, span, false)
-      .map(form => {
+      .map((form): ConstructForm => {
         if (form.receiver) throw Error(`${whatNew} states its receiver`);
         const binders: string[] = [];
         return { binders,
           type: { k: "constructor", effect: form.effect, params: form.params, rest: form.rest, result: form.result,
-            span } satisfies TypeTerm };
+            span } };
       });
   })];
   if (valueUses.length && constructForms.length)

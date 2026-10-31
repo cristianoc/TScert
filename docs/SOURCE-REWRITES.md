@@ -985,6 +985,37 @@ that the narrower element contract excludes.
 - **Functions:** `expr` and the expression readers that call it.
 - **Commit:** the introducing commit.
 
+### Construct signatures collected at one writable record contract
+
+`selectGlobal` (`tools/declaration-graph.mts`) collects construct signatures
+from the overlay and from declarations. Its destination holds
+`{ binders: string[]; type: TypeTerm }`. A callback returning an empty
+`binders` array and a constructor arm has a narrower inferred writable
+record unless its result states that full contract.
+The later callback that replaces `type.span` reads the collected records
+at the destination contract. Both the array element contract and the
+writable `type` field are invariant
+([writable fields](POSITIVE-TYPES.md#records)).
+
+- **Repair:** each callback allocating a construct form states its full
+  result contract, `ConstructForm`. The fresh empty array admits strings
+  and the fresh `type` field admits `TypeTerm` at allocation. The result
+  annotation supplies the destination contract; `satisfies TypeTerm`
+  checks the term and retains its narrower inferred type. These annotations are erased; calls,
+  reads, allocations and returned objects have the same order and values.
+- **Mechanism:** the existing contextual checks of fresh records and
+  arrays establish their declared writable contracts.
+- **Cases:** `blocker-census-spread-nested-field` states the JSON data
+  contract of its records and retains serialization and deduplication;
+  `invalid-census-spread-nested-field` keeps the narrower allocation and
+  its refused callback parameter.
+- **JSON obligation:** `blocker-census-nested-field-json` retains the
+  original serialization and deduplication. Its allocation states the
+  record contract, and serialization needs a separate proof that every
+  reachable member meets the
+  [JSON contract](SOURCE-CONTRACTS.md#json-and-error). An open `TypeTerm`
+  annotation alone states no bound on additional keys.
+
 ### A resolved URL read through URL members
 
 `resolveObserved` parsed the URL Node's resolver answers with `new URL` and

@@ -1,14 +1,26 @@
 // Census function: declaration-graph.mts#selectGlobal.
-// A map callback replaces a nested field while retaining the outer record.
-type Term = { k: "a"; span: number } | { k: "b"; span: number; value: string };
-type Form = { type: Term; binders: string[] };
+// Construct forms are JSON data. Fresh mapped records state their full
+// writable contracts before serialization and deduplication.
+type Json =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly Json[]
+  | { readonly [key: string]: Json };
+type Term =
+  | { readonly [key: string]: Json; k: "a"; span: number }
+  | { readonly [key: string]: Json; k: "b"; span: number; value: string };
+type Form = { readonly [key: string]: Json; type: Term; binders: string[] };
 export function keys(given: Form[], inputs: string[]): Form[] {
   const forms = [
     ...given,
-    ...inputs.map((value) => ({
-      binders: [],
-      type: { k: "b", span: 0, value } satisfies Term,
-    })),
+    ...inputs.map(
+      (value): Form => ({
+        binders: [],
+        type: { k: "b", span: 0, value },
+      }),
+    ),
   ];
   const distinct = [
     ...new Map(
