@@ -13,7 +13,6 @@
   },
   "include": [
     "../examples/blocker-*.ts",
-    "../examples/invalid-set-mapped-paths.ts",
     "../examples/invalid-census-annotated-node-union.ts",
     "../examples/invalid-round-imported-find-shape.ts",
     "../examples/invalid-gap-round-parent-walk.ts",

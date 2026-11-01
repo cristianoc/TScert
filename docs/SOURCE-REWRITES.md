@@ -1924,42 +1924,6 @@ result's writable element contract.
   avoidance adds no external assumption.
 - **Commit:** the introducing commit.
 
-### Mapping a private path inventory into a Set
-
-`checkInventory` in `tools/family-activation.mts` builds its path array in
-an explicit loop over `inventory`, appending `join(root, ...file.split("/"))`
-to a fresh `string[]`, and passes that array to `new Set(paths)`. The
-existing [array and loop checks](SOURCE-ELABORATION.md) and
-[`Set` constructor contract](SOURCE-CONTRACTS.md#library-globals) establish
-the dense element contract and the returned `Set<string>`.
-
-- **Avoided form:** `new Set(inventory.map(file => join(root, ...file.split("/"))))`.
-  `join` in `node:path` delegates to `posix.normalize`, a writable method on
-  `path.posix`, so the callback's effect is unrestricted and `map` yields a
-  possibly sparse array. `new Set` requires a dense readonly array because
-  array iteration visits every index below `length` and yields `undefined`
-  at a hole. The nine supplied census slices share this one expression in
-  `checkInventory`. Establishing that an unrestricted call cannot reach the
-  private `inventory` array requires [reachability tracking for fresh arrays](FOOTPRINTS.md#deferred-extra-precision);
-  the explicit loop uses the existing array allocation, `push` and `Set`
-  construction rules.
-- **Equivalence:** `inventory` is a fresh private `string[]` returned by
-  `declarationInventory(root)` and held only inside `checkInventory`. Both
-  forms iterate `inventory` in index order, call `file.split("/")` and
-  `join(root, ...)` with the same arguments in the same order, propagate the
-  first exception from any call, and pass a fresh dense array of the
-  returned strings to `new Set` after all `join` calls complete. Under the
-  existing stable standard-object assumption, array allocation, iteration,
-  `push` and `new Set` invoke the same standard operations and produce a
-  `Set<string>` with the same elements in the same insertion order.
-- **Scope:** `blocker-prep-set-mapped-paths` populates a fresh `string[]` in
-  a loop before calling `new Set`. `invalid-set-mapped-paths` retains
-  `new Set(inventory.map(...))` on a shared array parameter: when a replaced
-  `posix.normalize` pops the two-element input during the first callback,
-  `map` leaves a hole at index 1 and `new Set` inserts `undefined`, observed
-  under Node. This avoidance adds no external assumption.
-- **Commit:** the introducing commit.
-
 ### A named record widened to a JSON dictionary
 
 `tools/files.mts#entriesRead` retains a readonly string index of readonly

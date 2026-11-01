@@ -151,9 +151,7 @@ function checkInventory(description: FamilyDescription, root: string): ReadonlyS
   if (digest !== description.installation.digest)
     throw Error(`the package at ${root} is not the one the family ${description.marker} was reviewed against: ` +
       `its declarations' digest is ${digest}, the description's ${description.installation.digest}`);
-  const paths: string[] = [];
-  for (const file of inventory) paths.push(join(root, ...file.split("/")));
-  return new Set(paths);
+  return new Set(inventory.map(file => join(root, ...file.split("/"))));
 }
 
 /** The active descriptions with their installations' roots, each marker and

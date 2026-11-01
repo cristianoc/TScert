@@ -50,9 +50,8 @@ const gap = (
 export const cases: Case[] = [
   // Supplied census first refusals; source headers name the functions each case represents.
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
-  { ...positive("blocker-prep-set-mapped-paths", "Set construction from an array populated in a loop through node:path join"), project: "pipeline/blocker-project" },
-  { ...negative("invalid-set-mapped-paths", "A replaced posix.normalize can shrink the shared map receiver, leaving a hole that Set iterates as undefined",
-    /^reject: source expression obligation at \[228,292\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this construct at Set<string>/), project: "pipeline/blocker-project" },
+  { ...gap("blocker-prep-set-mapped-paths", "Set construction from an array mapped through node:path join", "unverified", "search",
+    /^reject: source expression obligation at \[503,567\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-prep-optional-part-spread", "Spreading an optional-never union arm after testing its optional discriminant", "unverified", "search",
     /^reject: source expression obligation at \[469,470\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-flat-map-module-function", "flatMap with a module arrow returning an array through Set deduplication"), project: "pipeline/blocker-project" },

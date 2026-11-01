@@ -10,7 +10,5 @@
 // family-activation.mts#tagEnumMatches
 import { join } from "node:path";
 export function paths(root: string, inventory: string[]): Set<string> {
-  const joined: string[] = [];
-  for (const file of inventory) joined.push(join(root, ...file.split("/")));
-  return new Set(joined);
+  return new Set(inventory.map((file) => join(root, ...file.split("/"))));
 }
