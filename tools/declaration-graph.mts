@@ -36,7 +36,7 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, 
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, isInstanceReference, literalUnion, type ComputedContext } from "./computed-types.mts";
-import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
@@ -4639,16 +4639,23 @@ function promisedNames(type: TypeTerm): Set<string> {
   return names;
 }
 /** Each binder a promise argument names, bounded by `nonThenable` as well. */
-function promisedBinders<B extends { name: string; bound: TypeTerm | null }>(binders: B[], type: TypeTerm): B[] {
+function promisedBinders(binders: SourceTypeParameter<TypeTerm>[], type: TypeTerm): SourceTypeParameter<TypeTerm>[] {
   const promised = promisedNames(type);
-  return binders.map(b => !promised.has(b.name) ? b : { ...b, bound: b.bound === null ? nonThenable
+  return binders.map((b): SourceTypeParameter<TypeTerm> => !promised.has(b.name) ? b : { ...b, bound: b.bound === null ? nonThenable
+    : { k: "intersection", span: b.bound.span, parts: [b.bound, nonThenable] } });
+}
+type SchemeBinder = Extract<TypeTerm, { k: "scheme" }>["binders"][number];
+/** Scheme binders retain their defaults and source spans when a bound grows. */
+function promisedSchemeBinders(binders: SchemeBinder[], type: TypeTerm): SchemeBinder[] {
+  const promised = promisedNames(type);
+  return binders.map((b): SchemeBinder => !promised.has(b.name) ? b : { ...b, bound: b.bound === null ? nonThenable
     : { k: "intersection", span: b.bound.span, parts: [b.bound, nonThenable] } });
 }
 /** The generic methods of a type, each binder a promise argument names
  * bounded by `nonThenable`. */
 function promisedMethods(type: TypeTerm): TypeTerm {
   const mapped = mapTypeParts(type, promisedMethods);
-  return mapped.k === "scheme" ? { ...mapped, binders: promisedBinders(mapped.binders, mapped) } : mapped;
+  return mapped.k === "scheme" ? { ...mapped, binders: promisedSchemeBinders(mapped.binders, mapped) } : mapped;
 }
 
 /** The specifier of a primitive wrapper's prototype: the built-ins', which no

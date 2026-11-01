@@ -14,6 +14,7 @@
   "include": [
     "../examples/blocker-*.ts",
     "../examples/invalid-census-annotated-node-union.ts",
+    "../examples/invalid-prep-generic-binder-map.ts",
     "../examples/invalid-round-imported-find-shape.ts",
     "../examples/invalid-gap-round-parent-walk.ts",
     "../examples/invalid-gap-round-scheme-binder-map.ts",

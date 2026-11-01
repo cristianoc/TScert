@@ -126,6 +126,30 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### Promise binder maps with concrete writable bounds
+
+`tools/declaration-graph.mts#promisedBinders` maps value binders with the
+`SourceTypeParameter<TypeTerm>` contract. `promisedMethods` maps scheme
+binders with their complete contract, including `default` and `span`.
+Each callback states its result contract. The existing
+[allocation checks](SOURCE-CLAIMS.md) check the replacement bound as
+`TypeTerm | null` and retain the other fields through object spread.
+
+The generic signature `B extends { name: string; bound: TypeTerm | null }`
+with result `B[]` promises more than replacing `bound` establishes. `B`
+can require an atom bound with a `name` field. The generic helper in
+`invalid-prep-generic-binder-map` returns an intersection bound for that
+input. Under Node, an input bound with `k: "atom"` and `name: "string"`
+produces a returned bound with `k: "intersection"` and `name === undefined`.
+Reading that bound's `name.length` throws `TypeError`. The written `B[]`
+contract therefore fails.
+
+The concrete contracts describe the two callers' actual storage. The map
+retains unselected binder identities and allocates the same spread records
+for selected binders, preserving resolution slots and scheme metadata.
+The bound test, intersection parts and span reads keep their evaluation
+order. This repair adds no external assumption.
+
 ### Numeric literal text checked before conversion
 
 `tools/claim-text.mts#bareAtomText` prints `numberlit` and `numlit` atoms
