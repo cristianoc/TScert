@@ -2462,22 +2462,33 @@ statements of 17 functions in the census of 6be11ce.
 
 ### A spread of a record of readonly fields
 
-`requestReading` in `tools/compiler-api.mts` gave a request's signature its
-effect as `{ ...effect, fresh: … }`, a spread of a local typed `CallEffect`,
-whose fields are all readonly. A merge reads only operands whose type
-excludes host values, and a record of readonly fields alone excludes none
-([excluding host values](HOST-FAMILIES.md#excluding-host-values),
-`invalid-compiler-api-node-spread`). Support would track that the local
-holds a fresh literal through its annotation, for this one site, which
-a8cba50 introduced into a function the census of 6be11ce verified.
+`requestReading` in `tools/compiler-api.mts` copies `CallEffect` fields
+explicitly and supplies `fresh` from the request result. `footprintReading`
+in `tools/host-families.mts`, `pathEffect` and the `execFileSync` entry in
+`tools/library-modules.mts` copy `emptyEffect` explicitly with `onThrow: true`.
+The [record checks](POSITIVE-TYPES.md#records) establish each field read
+and the fresh result contract.
 
-- **Equivalent form:** a literal reads `effect`'s five fields in the order
-  the spread copies them, with `fresh` at its place, as the spread's later
-  field overwrites it. `effect` is a local literal no code writes, owning
-  exactly these five data properties, so the copy holds the same values
-  under the same keys in the same order, and is fresh as the spread's was.
-- **Commit:** the introducing commit, `requestReading builds a request's
-  effect field by field`.
+- **Avoided form:** `{ ...effect, fresh: … }` or
+  `{ ...emptyEffect, onThrow: true }`, spreading a `CallEffect` whose fields
+  are readonly. A merge requires operands whose type excludes host values;
+  readonly fields alone supply no such exclusion
+  ([excluding host values](HOST-FAMILIES.md#excluding-host-values),
+  `invalid-compiler-api-node-spread`). Support requires retaining the
+  operand’s allocation through its readonly annotation. These sites have
+  a fixed set of fields, so explicit reads use the existing mechanism at
+  smaller cost.
+- **Equivalent form:** a literal reads all nine fields in their allocation
+  order, with the overridden field at its original position. `effect` and
+  `emptyEffect` hold literals with exactly those own enumerable data
+  properties; no code writes them. Both forms allocate a fresh record with
+  the same keys, property order and field values, including the same nested
+  object identities. Reads invoke no callbacks. Returns, exceptions,
+  mutations, method identities, aliases, receivers and asynchronous effects
+  agree for every admitted input and reachable state.
+- **Scope:** `blocker-prep-effect-spread` checks the explicit `emptyEffect`
+  copy. The rewrite adds no external assumption.
+- **Commit:** the introducing commits.
 
 ### A parameter type computed from a compiler-API method
 
