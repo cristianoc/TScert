@@ -42,8 +42,8 @@ and statements each group affects.
 
 ## 2. The reasons, confirmed from the record
 
-Read the record and its refusals, not a new run. For each of the top reasons by blocked
-statements:
+Read the record and its refusals, not a new run. For each of the top
+reasons, in the order of step 4:
 
 - Read the refusal at its site in the census slices
   (`<census dir>/tools/tools/slice-<file>-<fn>.mts`).
@@ -67,11 +67,14 @@ step-1 cases.
 
 ## 4. The next 10 cases, at most 5 agents at a time
 
-Take the 10 open cases of the ranking, in order of the statements they
-block. For each, start a background agent in its own worktree
-(`isolation: "worktree"`) with [brief.md](brief.md), the case's name,
-its reason and its sites from `ranking.md`. When an agent finishes, start
-the next case, keeping at most 5 running.
+Take the 10 open cases of the ranking, in its order: by the census
+functions they block, most first, a tie going to the cause whose
+functions are smaller (fewer statements each); a cause blocking one
+function of more than 500 statements goes after every other. For each,
+start a background agent in its own worktree (`isolation: "worktree"`)
+with [brief.md](brief.md), the case's name, its reason and its sites
+from `ranking.md`. When an agent finishes, start the next case, keeping
+at most 5 running.
 
 When an agent reports:
 

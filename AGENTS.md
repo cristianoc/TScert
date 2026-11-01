@@ -108,7 +108,11 @@ Work on coverage follows two steps, both from the census of main
    no pipeline case shows gets a case example: the smallest source with
    that refusal, its header naming the census functions it stands for.
 2. **Priority:** the gap cases are worked in the order of the reasons they
-   show, by the code those block; each is answered by the routes of
+   show, by the census functions those block, most first, a tie going to
+   the reason whose functions are smaller; a reason blocking one function
+   of more than 500 statements goes after every other. A small function
+   has fewer refusals behind its first, so closing its reason verifies
+   functions sooner. Each is answered by the routes of
    [deciding what a refusal calls for](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for).
    Before a route is chosen, a reason's sites are split by whether
    TScert's own code discards what it already knew (a parsed JSON value
