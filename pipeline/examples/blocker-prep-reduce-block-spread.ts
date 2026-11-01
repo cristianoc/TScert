@@ -29,8 +29,9 @@ export function blocks(
   clauses: number[],
   statements: (n: number) => Stmt[],
 ): Stmt[] {
+  const initial: Stmt[] = [];
   return clauses.reduce<Stmt[]>(
-    (inner, c) => [{ k: "block", body: inner }, ...statements(c)],
-    [],
+    (inner, c): Stmt[] => [{ k: "block", body: inner }, ...statements(c)],
+    initial,
   );
 }

@@ -1437,7 +1437,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
   }
   const open = node.caseBlock.getStart(gate.file);
   dispatch.push(fallback ?? { k: "break", pos: [open, open + 1], label: end });
-  const body = clauses.reduce<Stmt[]>((inner, c) =>
+  const body = clauses.reduce<Stmt[]>((inner, c): Stmt[] =>
     [{ k: "block", pos: gate.span(c), label: label(c), body: inner }, ...this.statements(c.statements)], dispatch);
   return { k: "block", pos: gate.span(node), label: end, body: [...bound, ...body] };
 }

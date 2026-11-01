@@ -84,6 +84,31 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### A reduce callback returning a writable statement array
+
+`tools/fragment-statements.mts#switchStmt` states `Stmt[]` on the
+callback that wraps the accumulator in a block and spreads the next
+clause’s statements. Its initial accumulator, `dispatch`, also states
+`Stmt[]`. The existing [allocation and closure checks](SOURCE-CLAIMS.md)
+establish those writable contracts.
+
+- **Repair:** the callback result annotation supplies the element contract
+  to the fresh array and its block record. The array admits the complete
+  `Stmt` union, including statements returned by `this.statements`; the
+  block’s body retains its `Stmt[]` contract. The initial array carries
+  the same writable element
+  contract into `reduce`.
+- **Behaviour:** the annotation is erased. Both forms invoke `reduce`
+  with the same receiver, callback and initial accumulator. Each callback
+  allocates the same block record, evaluates `gate.span(c)` and `label(c)`
+  before `this.statements(c.statements)`, and spreads the same array in
+  the same order. Returns, exceptions, mutations, method identities,
+  receivers, aliases and asynchronous effects agree for every admitted
+  input and reachable state.
+- **Scope:** `blocker-prep-reduce-block-spread` states the callback result
+  and initial accumulator contracts. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A flow document assembled from decoded values
 
 `decodeFlowDocument` in `tools/source-flow.mts` uses the existing
