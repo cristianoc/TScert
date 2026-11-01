@@ -580,6 +580,9 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       )
         gate.refuseReceiverForm(node,
           ".apply requires a known local function, an explicit receiver and at most one argument list");
+      const receiver = node.arguments[0];
+      if (receiver === undefined)
+        gate.refuseReceiverForm(node, ".apply requires an explicit receiver");
       const list = node.arguments[1];
       // A fresh array literal as the list is its elements: its allocation
       // is unobservable, and `apply` reads back exactly the values it was
@@ -592,14 +595,14 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
           k: "callWithReceiver",
           pos: gate.span(node),
           callee: gate.expr(node.expression.expression),
-          receiver: gate.expr(node.arguments[0]),
+          receiver: gate.expr(receiver),
           args: written.elements.map((e) => gate.expr(e)),
         };
       return {
         k: "applyWithReceiver",
         pos: gate.span(node),
         callee: gate.expr(node.expression.expression),
-        receiver: gate.expr(node.arguments[0]),
+        receiver: gate.expr(receiver),
         list: list ? gate.expr(list) : null,
       };
     }
@@ -618,6 +621,9 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       )
         gate.refuseReceiverForm(node,
           `.${node.expression.name.text} requires a known local function, an explicit receiver and ordinary arguments`);
+      const receiver = node.arguments[0];
+      if (receiver === undefined)
+        gate.refuseReceiverForm(node, "a receiver call requires an explicit receiver");
       return {
         k:
           node.expression.name.text === "bind"
@@ -625,7 +631,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
             : "callWithReceiver",
         pos: gate.span(node),
         callee: gate.expr(node.expression.expression),
-        receiver: gate.expr(node.arguments[0]),
+        receiver: gate.expr(receiver),
         args: node.arguments.slice(1).map((arg) => gate.expr(arg)),
       };
     }

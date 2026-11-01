@@ -1822,6 +1822,33 @@ generic value and the observed result record.
   assumption or native contract.
 - **Commit:** the introducing commit.
 
+### A compiler call's first argument justified only by length
+
+The `.apply`, `.call` and `.bind` branches of
+`tools/fragment-expressions.mts#expr` save `node.arguments[0]`, reject
+`undefined`, and pass the saved receiver to `gate.expr`. This uses the
+existing [saved-target check](#an-array-patterns-first-element-after-a-length-test)
+and binding narrowing rules. The length-only form requires a relation
+between array length and element presence through intervening calls;
+the array types state no lower length bound.
+
+- **Equivalent form:** retain the length, spread and receiver-form checks,
+  then check the saved first argument before constructing the lowered call.
+  The compiler's [node-list contract](COMPILER-API.md#node-lists) supplies a
+  fixed dense list of compiler nodes. A nonempty list therefore supplies a
+  node at index zero, and the added rejection is unreachable for admitted
+  inputs. Saving that node before the span and expression readers preserves
+  the value: those calls cannot change the compiler list or its elements.
+  The checks and binding invoke no client code. Both forms have the same
+  returns, exceptions, mutations, method identities, aliases, receivers and
+  asynchronous effects under that contract. The preceding checks reject
+  empty lists and spread arguments in the same order.
+- **Scope:** `blocker-prep-host-first-argument` exercises the saved receiver
+  across the span and expression-reader calls. The runtime check adds no
+  external assumption. The three indexed reads in `expr` share this form;
+  the other census functions include it through their dependency on `expr`.
+- **Commit:** the introducing commit.
+
 ### String keys retained through mapped-type collection
 
 `tools/type-term.mts#expandIdentity` collects the keys of a mapped identity

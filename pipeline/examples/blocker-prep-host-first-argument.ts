@@ -31,7 +31,9 @@ export function receiver(
     throw Error(
       "expected a known local function, an explicit receiver and ordinary arguments",
     );
+  const receiver = node.arguments[0];
+  if (receiver === undefined) throw Error("expected an explicit receiver");
   span(node);
   expr(node.expression.expression);
-  return expr(node.arguments[0]);
+  return expr(receiver);
 }
