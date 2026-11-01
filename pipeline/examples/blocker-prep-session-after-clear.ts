@@ -8,7 +8,7 @@ function close(s: Session): void {
 }
 export function settle(ledger: object): void {
   const s = retained;
-  if (s?.ledger === ledger) {
+  if (s !== null && s.ledger === ledger) {
     retained = null;
     close(s);
   }

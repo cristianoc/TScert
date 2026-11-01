@@ -1876,6 +1876,33 @@ it selects the original type. `computedType` and
   over the same union of compiler arrays. This rewrite adds no host contract
   or external assumption.
 
+### A saved nullable session tested before its ledger
+
+`tools/declaration-session.mts#settleDeclarationSession` tests
+`s !== null && s.ledger === ledger` before clearing `retained` and calling
+`close(s)`. `inDeclarationAttempt` calls this function at an attempt's end.
+The existing [guard checks](SOURCE-ELABORATION.md#guards) establish that the
+saved local `s` holds a session through the writes to module state.
+
+- **Avoided form and cost:** `s?.ledger === ledger` requires carrying the
+  correlation between the optional-chain result and its receiver to the
+  call after `retained = null`. The supplied census names one test shared
+  by two slices. An explicit receiver test uses the existing narrowing
+  checks; extending correlation inference for this single test has little
+  reach relative to that rewrite.
+- **Equivalence:** `s` is a saved local of type `Session | null`, and
+  `ledger` is an object. For null, the optional chain yields `undefined`,
+  whose strict equality with `ledger` is false; the explicit null test
+  also skips the body. For a session, both forms read `s.ledger` once and
+  compare it with the same object. The receiver test calls no code and
+  writes no state. The body keeps its order: clear `retained`, update the
+  telemetry, then close the same saved session. Returns, exceptions,
+  mutations, method identities, aliases, receivers and asynchronous
+  effects agree for every admitted input and reachable state.
+- **Scope:** `blocker-prep-session-after-clear` checks the saved local
+  through the module-cell write and close call. This rewrite adds no
+  external assumption.
+
 ### A mapped array replaced by filtered arrays in a loop
 
 `tools/fragment-parse.mts#lowerFile` keeps its conditional map/flatMap

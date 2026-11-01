@@ -361,7 +361,7 @@ export function settleDeclarationSession(ledgers: readonly Ledger[]): void {
     if (reason === null) continue;
     unobservable(`a declaration session's ledger does not hold at the attempt's end: ${reason}`);
     const s = retained;
-    if (s?.ledger === ledger) {
+    if (s !== null && s.ledger === ledger) {
       retained = null;
       telemetry.discarded++;
       telemetry.lastDiscard = reason;
