@@ -58,6 +58,30 @@ checked, host boundaries and their contracts, trusted units and refused
 functions are reported apart, and a result under a host contract is no proof
 of the host's implementation.
 
+## Unsafe examples
+
+### An inferred map result with an unrestricted callback
+
+`blocker-round-inferred-map-result` takes `read: (x: number) => Form`,
+uses `xs.map((x) => read(x))` as an inferred local function result, then
+maps that result and returns it as `Form[]`.
+
+For `xs = [1, 2]`, a `read` callback that calls `xs.pop()` and returns
+`{ receiver: null }` meets its written contract. The first map captures
+length 2, invokes `read` at index 0, and skips the removed index 1. The
+second map preserves that hole. Execution of the fixture under Node gives
+length 2, `1 in result === false`, and `result[1] === undefined`;
+`result[1].receiver` throws `TypeError`. The returned array therefore fails
+its readable `Form[]` contract.
+
+The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
+holes for unrestricted callbacks. The receiver refusal prevents consuming
+that sparse result as a readable array. This is a negative case under the
+[route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for): its
+written result contract is unsafe. The separate
+[overlay field repair](#overlay-fields-consumed-by-the-signature-helper)
+establishes the helper argument contract in `selectGlobal`.
+
 ## Rewrites
 
 ### A flow document assembled from decoded values

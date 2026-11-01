@@ -61,7 +61,7 @@ export const cases: Case[] = [
     /^reject: source expression obligation at \[\d+,\d+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this makeAt[^\n]*base\.proto: null \| string\./),
   positive("blocker-round-mapped-array-some", "A mapped array used as a some receiver, retaining sparse presence in the callback array."),
   negative("invalid-some-sparse-callback", "some passes its potentially sparse receiver as the callback array"),
-  gap("blocker-round-inferred-map-result", "An inferred function result from map used as another map receiver.", "unverified", "search",
+  negative("blocker-round-inferred-map-result", "An unrestricted callback can shrink the first map receiver, leaving holes in the returned Form array.",
     /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]*This obligation requires ReadonlyArray</),
   positive("blocker-round-resolved-overlay-map-result", "A resolved overlay passed to a map helper through its consumed effect field."),
   gap("blocker-round-mapped-filter-length", "A filter callback over arrays of inferred writable records.", "unverified", "search",

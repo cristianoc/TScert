@@ -1,4 +1,8 @@
-// An inferred function result from map used as another map receiver.
+// An unrestricted callback can shrink xs during the first map. Both maps
+// retain the resulting hole, violating the Form[] result contract.
+// Node counterexample: select([1, 2], read), with read closing over that
+// same array and calling xs.pop() before returning { receiver: null }.
+// The result has length 2, lacks index 1, and result[1].receiver throws.
 // Census functions:
 // declaration-graph.mts#selectGlobal
 type Form = { receiver: string | null };
