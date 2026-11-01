@@ -60,6 +60,26 @@ of the host's implementation.
 
 ## Unsafe examples
 
+### Installation records mapped through an unrestricted callback
+
+`blocker-prep-captured-map-records` maps `active` through a callback
+`root: (s: string) => string`, then compares pairs through `entries()`
+and `slice(i + 1)`. For `active = ["a", "b"]`, a root callback that
+executes `active.pop()` and returns its argument meets that contract.
+The map captures length 2, visits index 0 and skips the removed index 1,
+leaving a hole. The first pairwise comparison reads `b.root` where `b`
+is `undefined`; execution of this fixture under Node throws `TypeError`.
+
+The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
+holes with unrestricted callbacks. This original example is a negative
+case under the [route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
+`blocker-prep-captured-map-records-preserving` states a callback with
+`Within<{ value: "any"; store: "grow" }, string>` as its result.
+The existing [effect checks](FOOTPRINTS.md) establish readable presence
+from that requirement, and the complete iteration verifies with the
+inferred `found` binding. This is a checked function contract and adds
+no external assumption.
+
 ### An inferred map result with an unrestricted callback
 
 `blocker-round-inferred-map-result` takes `read: (x: number) => Form`,
