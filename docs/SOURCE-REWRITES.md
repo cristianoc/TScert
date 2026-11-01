@@ -1793,6 +1793,35 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A generic observed value assigned across try/finally
+
+`tools/files.mts#observedNoting` initializes `value` with an immediately
+invoked arrow whose `try` returns `run()` and whose `finally` removes the
+recording and clears the attempt where it began one. The existing
+[closure and allocation checks](SOURCE-CLAIMS.md) establish the returned
+generic value and the observed result record.
+
+- **Avoided form and cost:** `let value: T; try { value = run(); } finally
+  { cleanup(); }` followed by record allocation needs the assignment's
+  generic type to survive the cleanup and subsequent calls. The supplied
+  census names this one allocation through five callers. In the isolated
+  case, an explicit result-record annotation also leaves the allocation
+  refused with a possibly undefined value. The returning initializer uses
+  the existing checks without extending assignment inference for this site.
+- **Behaviour:** the arrow is invoked once, immediately, and cannot escape.
+  Both forms call the same `run` once, then execute the same cleanup before
+  collecting and sorting observations or reading recording fields. Normal
+  cleanup preserves the returned value or propagates the original throw;
+  throwing cleanup replaces either completion with its throw. The extra
+  arrow holds only the existing bindings and has no observable identity.
+  Returns, exceptions, mutations, aliases, receivers and asynchronous effects
+  agree for every admitted input and reachable state.
+- **Scope:** `blocker-prep-observed-generic-record` uses the returning
+  initializer. `observed`, `remembered`, `nodeResolve` and `resolveObserved`
+  reach the same `observedNoting` allocation. The rewrite adds no external
+  assumption or native contract.
+- **Commit:** the introducing commit.
+
 ### String keys retained through mapped-type collection
 
 `tools/type-term.mts#expandIdentity` collects the keys of a mapped identity

@@ -176,13 +176,14 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
   // the ledger's answers determine.
   if (inherit) for (const kept of recordings) if (kept.ledger) inheritLedger(recording, kept);
   recordings.push(recording);
-  let value: T;
-  try {
-    value = run();
-  } finally {
-    recordings.splice(recordings.indexOf(recording), 1);
-    if (begins) attempt = null;
-  }
+  const value = (() => {
+    try {
+      return run();
+    } finally {
+      recordings.splice(recordings.indexOf(recording), 1);
+      if (begins) attempt = null;
+    }
+  })();
   const noted = [...recording.answers.values()].sort((a, b) => {
     const [x, y] = [a.observation, b.observation];
     return x[0] === y[0] ? byBytes(x[1], y[1]) : x[0] < y[0] ? -1 : 1;
