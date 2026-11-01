@@ -100,7 +100,8 @@ function nodeAt<N extends Node>(file: SourceFile, start: number, end: number, te
   let found: N | undefined;
   const visit = (n: Node): void => {
     if (found || n.end < start || n.pos > end) return;
-    if (test(n) && n.getStart(file) === start && n.end === end) found = n;
+    const node: Node = n;
+    if (test(n) && node.getStart(file) === start && node.end === end) found = n;
     else n.forEachChild(visit);
   };
   visit(file);
@@ -222,7 +223,8 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
         let found: N | undefined;
         const visit = (n: Node): void => {
           if (found || n.end <= at.at || n.pos > at.at) return;
-          if (test(n) && n.getStart(file) === at.at) found = n;
+          const node: Node = n;
+          if (test(n) && node.getStart(file) === at.at) found = n;
           else n.forEachChild(visit);
         };
         visit(file);

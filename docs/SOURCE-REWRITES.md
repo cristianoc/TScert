@@ -1652,6 +1652,33 @@ These tests establish the primitive domain of the existing [conversion contract]
   for conversion hooks and their effects. This rewrite adds no trust.
 - **Commit:** the introducing commit.
 
+### Host member reads after a generic guard
+
+`tools/type-probe.mts#nodeAt` and the `marked` visitor in `makeProbe`
+save `const node: Node = n` before testing `test(n)`. The guard narrows
+`n` through an intersection with the generic parameter `N`; the member reads
+use `node`, and the assignment to `found` uses the guarded `n`.
+
+- **Avoided form and cost:** reading `n.end` after the generic guard and
+  `n.getStart(file)` asks evidence search to read a union of host kinds
+  through an intersection with `N`. The existing read summaries consume
+  the receiver's named members; generic intersections require a derivation
+  exposing their clause restriction before those summaries apply. The two
+  supplied census sites need only the existing `Node` member view, which
+  the alias retains through the existing
+  [read checks](HOST-FAMILIES.md#stable-members).
+- **Behaviour:** binding an immutable local to `n` runs no client code and
+  retains the same object. The guard runs before `getStart`, which uses
+  the same receiver and file argument; `end` is read only if both preceding
+  tests succeed. The alias saves no property value, so mutations by the
+  guard or method are seen by subsequent reads. The same guarded object is
+  assigned to `found`, and the same `forEachChild` runs in the other arm.
+  Returns, exceptions, mutations, method identities and aliases agree for
+  every input admitted by the existing contracts.
+- **Scope:** `blocker-round-generic-host-guard` verifies the aliased form.
+  The rewrite adds no rule or external assumption.
+- **Commit:** the introducing commit.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts
