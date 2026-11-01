@@ -12,7 +12,26 @@
 import * as ts from "typescript/unstable/ast";
 export function receiver(
   node: ts.CallExpression,
-  expr: (e: ts.Expression) => number,
+  expr: (e: ts.Expression) => Within<{ value: "any"; store: "grow" }, number>,
+  span: (n: ts.Node) => Within<{ value: "keep"; store: "keep" }, number>,
+  knownLocal: (
+    e: ts.Expression,
+  ) => Within<{ value: "any"; store: "grow" }, boolean>,
 ): number {
+  if (!ts.isPropertyAccessExpression(node.expression))
+    throw Error("expected a method call");
+  if (
+    node.questionDotToken ||
+    node.expression.questionDotToken ||
+    node.typeArguments?.length ||
+    node.arguments.length === 0 ||
+    node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
+    !knownLocal(node.expression.expression)
+  )
+    throw Error(
+      "expected a known local function, an explicit receiver and ordinary arguments",
+    );
+  span(node);
+  expr(node.expression.expression);
   return expr(node.arguments[0]);
 }
