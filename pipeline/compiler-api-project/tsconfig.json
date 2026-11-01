@@ -23,5 +23,10 @@
       "@fixture/node-types": ["./node-types.ts"]
     }
   },
-  "include": ["../examples/*compiler-api*.ts", "./node-names.ts", "./node-types.ts"]
+  "include": [
+    "../examples/*compiler-api*.ts",
+    "../examples/invalid-reflect-get-getter.ts",
+    "./node-names.ts",
+    "./node-types.ts"
+  ]
 }

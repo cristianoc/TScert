@@ -1020,9 +1020,7 @@ whose list has no `typeArguments`. The nine kinds whose list has it
   represents, as for [an import phase](#an-import-phase-read-through-an-undeclared-host-field).
 - **Functions:** `argumentsOf`, which `typeArgumentsOf` replaces, and
   `makeProbe`, which calls it.
-  `childOf` and `childrenOf` (`tools/syntax.mts`) read nine other child
-  fields of any node, which up to 43 kinds carry, and keep `Reflect.get`
-  and its refusal.
+  The other child fields use [their declared kinds](#compiler-children-read-at-their-declared-kinds).
 - **Commit:** the introducing commit, `Reflect.ownKeys and a prototype compared with Object.prototype are read; a node's type arguments by their declared member`.
 
 ### A host test whose result its contract leaves unknown
@@ -1393,7 +1391,8 @@ to share.
   `blocker-in-unknown-walk` the refused walk. Two sites reading an
   object the compiler provides have no grammar of TScert's to walk:
   `privateClient` uses [the compiler-client boundary](#the-compiler-client-and-its-child-process),
-  and `isNode` of `tools/syntax.mts` requires the compiler node contract.
+  and the [syntax child readers](#compiler-children-read-at-their-declared-kinds)
+  use the compiler node contract.
 - **Commit:** the introducing commit, `Typed trees are walked through their grammar's typed traversal`.
 
 ### Type terms compared as untyped data
@@ -1894,6 +1893,43 @@ changed branch also supplies `fileChanges.changed`. `openText` and
   admitted input and reachable state.
 - **Scope:** `blocker-prep-snapshot-conditional-spread` checks both request
   branches. The rewrite adds no external assumption.
+- **Commit:** the introducing commit.
+
+### Compiler children read at their declared kinds
+
+`tools/syntax.mts#childOf` and `#childrenOf` use the existing
+[compiler family contracts](COMPILER-API.md#the-node-invariant) and
+[kind guards](COMPILER-API.md#guards). Each key selects guards for the
+kinds whose `childProperties` entry in the installed package's
+`dist/api/node/protocol.generated.js` contains that key. A successful
+guard supplies the declared member; the other kinds return `undefined`
+or an empty list.
+
+- **Repair:** a compiler child's declaration supplies its node type or
+  node-list type. Reading it through `Reflect.get` into `unknown` discards
+  that contract, then attempts to reconstruct a compiler node from its
+  `kind` field. The kind guards retain the host identity and field type.
+- **Avoided form and cost:** `Reflect.get(node, key)` runs the target's
+  `[[Get]]`, including arbitrary getters and a supplied receiver in the
+  general operation. The supplied 2026-11-01 census names two functions
+  using this form. Their fixed child keys already have contracts in the compiler
+  family, so the direct reads use existing checks.
+- **Behaviour:** `RemoteNode`'s shared child getters call `getNamedChild`
+  (`dist/api/node/node.generated.js`). It returns `undefined` for a key
+  absent from that kind's child list. For a listed key, the direct read
+  invokes the same getter with the same receiver once. The child contracts
+  supply nodes, whose numeric `kind` passes the original `isNode` test.
+  Compiler node lists are fixed and dense; `filter(() => true)` returns
+  the same elements in the same order in a fresh ordinary array, as the
+  original filter does. The kind reads are stable and run no client code.
+  Returns, throws, mutations, receivers, element identities and list
+  aliases therefore agree for admitted compiler nodes.
+- **Scope:** `invalid-reflect-get-getter` exercises representative single-child
+  and child-list reads in the rewritten form. `invalid-reflect-get-array`
+  retains the general getter counterexample: under Node its getter removes
+  the element the function promises to return as a number, so it returns
+  `undefined`.
+  The rewrite adds no host contract or external assumption.
 - **Commit:** the introducing commit.
 
 ### A generic observed value assigned across try/finally

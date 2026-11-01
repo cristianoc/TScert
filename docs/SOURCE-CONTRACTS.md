@@ -3189,7 +3189,7 @@ symbols; no value of the object is read, and a primitive is a TypeError
 ```
 
 `Reflect.get(o, k)` runs [[Get]], which calls an accessor's getter, code no
-type of `o` states: it is refused (`invalid-reflect-get-getter`, run under
+type of `o` states: it is refused (`invalid-reflect-get-array`, run under
 Node), as is every other function of `Reflect`
 (`invalid-node-dirent-test-replaced`).
 

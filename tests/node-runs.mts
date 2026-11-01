@@ -462,9 +462,9 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runExample("invalid-annotated-pattern-default", "f([])"), true);
   // `Reflect.get` calls an accessor's getter, which empties the caller's
   // array.
-  assert.equal(runExample("invalid-reflect-get-getter",
-    "(() => { const xs = [1]; read({ get x() { xs.pop(); return 0; } }); return xs.length; })()"), 0,
-    "invalid-reflect-get-getter: the getter runs at Reflect.get");
+  assert.equal(runExample("invalid-reflect-get-array",
+    "(() => { const xs = [1]; return read(xs, { get x() { xs.pop(); return 0; } }); })()"), undefined,
+    "invalid-reflect-get-array: the getter removes the declared number result");
   // A `switch` evaluates its discriminant before any clause: before the
   // name's initialization it throws, also with no `case` test.
   assert.equal(runExample("invalid-switch-discriminant-evaluated", "defaultOnly()"), 1);

@@ -113,7 +113,7 @@ fragment.
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
 | `String(o)`, `Number(o)`, `Math.max(o)`, `Math.min(o)`, `String.fromCodePoint(o)`, `String.fromCharCode(o)`, `Object.getOwnPropertyDescriptor(x, o)`, `o + ""`, `new Date(o)`, `new Set(it)` or `new Map(it)` of an iterable that is no array, string or host collection, `JSON.parse` with a reviver, `JSON.stringify` with a replacer function, of an array or open record; a relational comparison with an object operand | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`) | [library globals](SOURCE-CONTRACTS.md#library-globals) | — |
-| `Reflect`'s functions but `ownKeys` | `Reflect.get` runs [[Get]], which calls a getter no type of the object states | [library globals](SOURCE-CONTRACTS.md#library-globals) | `invalid-reflect-get-getter` |
+| `Reflect`'s functions but `ownKeys` | `Reflect.get` runs [[Get]], which calls a getter no type of the object states | [library globals](SOURCE-CONTRACTS.md#library-globals) | `invalid-reflect-get-array` |
 | `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation; a relational comparison of a string with a number | TypeScript refuses these operations | [throws](SOURCE-MODEL.md#throws) | — |
 | `==` or `!=` that may convert an object, an array included, to a primitive | Conversion may run client hooks; only a union reaches it, too rare to justify a `valueOf` restriction ([utility](DESIGN.md#principles)) | [tag tests](SOURCE-MODEL.md#tag-tests) | — |
 | `key in o` on an operand with a primitive arm or `unknown` | JavaScript throws on a primitive, and TypeScript rejects both | [`in`](SOURCE-ELABORATION.md#in) | — |
