@@ -94,14 +94,15 @@ export type TypeTerm =
    * construct code. `nonHost`, which no source spells and only the library
    * overlay states, is every value but a host object (COMPILER-API.md,
    * "Restricted values"): a primitive, a callable or an ordinary object.
-   * `function` is every value with call code, of which no signature is
+   * `nonHostObject` is its ordinary-object arm, used for native allocation
+   * results. `function` is every value with call code, of which no signature is
    * known, which no class value meets: a function type whose rest admits no
    * argument list, `(...args: never) => R`, through which nothing may be
    * called. `class` is every class value, of which no construct signature is
    * known: a constructor type whose rest admits no argument list,
    * `abstract new (...args: never) => R`, through which nothing may be
    * constructed. */
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object" | "nonHost" | "function" | "class"; span: Span }
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object" | "nonHost" | "nonHostObject" | "function" | "class"; span: Span }
   /* A number's `text` is its decimal spelling, a bigint's its canonical
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }

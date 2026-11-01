@@ -37,6 +37,18 @@ def extractPlans (ast claims : Json) (fileKey : String)
     | some (.arr ds) => ds.any fun d =>
         EquationLowering.ImplicitDependency.arrayProto.selects (d.getObjValD "declaration")
     | _ => false
+  -- The standard Error contract allocates an unpublished object identity.
+  -- Own-location freshness alone permits a shared object with no own keys.
+  let freshConstructors : List (String × Span) := (((ast.getObjVal? "declarations").toOption.bind
+      (fun doc => (doc.getObjVal? "values").toOption.bind (·.getArr?.toOption))).getD #[]).toList.filterMap fun value => do
+    let binding ← (value.getObjVal? "binding").toOption
+    let declaration ← (value.getObjVal? "declaration").toOption
+    if (binding.getObjValAs? String "specifier").toOption != some "global" ||
+        (binding.getObjValAs? String "imported").toOption != some "Error" ||
+        (declaration.getObjValAs? String "module").toOption != some "typescript/lib/lib.es5.d.ts" ||
+        (declaration.getObjValAs? String "name").toOption != some "Error" then none else
+      some (← (binding.getObjValAs? String "local").toOption,
+        ← (fromJson? (binding.getObjValD "span") : Except String Span).toOption)
   let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
@@ -285,7 +297,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
             module := bindings
             c := claims
           | .error reason => throw reason
-        let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init)
+        let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init) freshConstructors
         return .graph f.name f.namePos { request with sourceScheme }
       -- A generic unit's graph extraction reports where it stops as a
       -- located refusal at the function, as the direct checker's do.

@@ -122,7 +122,7 @@ function print(term: TypeTerm): string | null {
     return parts.every((part): part is string => part !== null) ? parts.map((p) => `(${p})`).join(separator) : null;
   };
   switch (term.k) {
-    case "atom": return term.name === "nonHost" ? "unknown" : term.name === "function" ? "((...args: never) => unknown)"
+    case "atom": return term.name === "nonHost" ? "unknown" : term.name === "nonHostObject" ? "object" : term.name === "function" ? "((...args: never) => unknown)"
       : term.name === "class" ? "(abstract new (...args: never) => unknown)" : term.name;
     case "literal": return term.text;
     case "union": return term.parts.length ? all(term.parts, " | ") : "never";

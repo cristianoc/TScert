@@ -3539,6 +3539,32 @@ is ([reserved writes](SOURCE-ELABORATION.md#reserved-writes)). The host is
 trusted to follow ECMA-262's description of the `Error` constructor
 (`error-options`, `map-stable-json-error`).
 
+The constructor's normal result also states `nonHostObject`, the ordinary
+object arm of [host exclusion](HOST-FAMILIES.md#excluding-host-values), and
+the existing `freshObject` effect: each own location belongs to the
+allocation. `OrdinaryCreateFromConstructor` allocates that object before
+installing its message and cause. The allocation has a fresh identity and
+reaches no client code before the constructor returns. String messages and
+the checked options run no client code. This contract uses the standard-object assumption
+of the [trust surface](DESIGN.md#trust-surface). The library's structural
+`Error` interface retains its existing contract.
+
+The existing [merge checks](PROGRAM-TYPING.md#allocation-from-parts) validate
+`Object.assign` onto a constructed target at an audited native constructor
+binding whose contract allocates an unpublished identity. The standard global
+`Error` is such a binding; a local or parameter of the same name has a
+different declaration descriptor. Every constructor signature must also
+state both `freshObject` and the empty footprint with no receiver exception.
+Own-location freshness alone permits a shared object with no own keys, so it
+does not establish this source requirement. In the copy,
+the target's prototype value is retained and source properties are copied
+in order. `blocker-prep-assign-error-value` covers called and constructed
+Errors with a code field and an optional cause. A constructor returning a
+shared object needs a stronger contract (`invalid-assign-constructor-alias`).
+`ObjectMerge.merge_values_safe` proves the modeled copy's safety; the native
+allocation and its correspondence with this lowering are source-contract
+obligations under the stated trust.
+
 `TypeError` is read, with `new`, at the same two statements: ECMA-262's
 `NativeError ( message [ , options ] )` runs `Error`'s steps, with
 `TypeError.prototype` as the error's prototype, an object whose `name` is

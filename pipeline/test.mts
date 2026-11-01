@@ -1078,6 +1078,37 @@ control(async (): Promise<void> => {
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 });
 control(async (): Promise<void> => {
+  const artifacts = run("blocker-prep-assign-error-value");
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  for (const [name, from, to] of [
+    ["error-not-fresh", '"freshObject":true', '"freshObject":false'],
+    ["error-may-write", '"footprint":{"value":"keep","store":"keep"}', '"footprint":{"value":"any","store":"any"}'],
+    ["error-may-be-host", '"name":"nonHostObject"', '"name":"object"'],
+    ["error-not-native", '"specifier":"global"', '"specifier":"external"'],
+  ]) {
+    assert.ok(name && from && to);
+    assert.ok(fragment.includes(from));
+    const ast = join(artifacts, `${name}-fragment.json`);
+    writeFileSync(ast, fragment.replaceAll(from, to));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, ast);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast);
+  }
+  const claims = readClaims(artifacts);
+  const unit = must(claims.functions.find(f => f.name === "coded"), "coded");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("Object.assign(new Error");
+  const copy = must(unit.expressions.find(e => e.pos[0] === start), "copy claim");
+  copy.type = [rowOf(claims, { refs: { first: [["code", [rowOf(claims, "num")]]], rest: [], views: [] } })];
+  const forged = writeClaims(artifacts, "error-number-code", claims);
+  refusedAt(artifacts, forged, "error-number-code", `[${start},`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  assert.equal(runExample("invalid-assign-constructor-alias",
+    '(() => { const shared = {}; return changed(class { constructor() { return shared; } }); })()'), "ENOENT");
+  process.stdout.write("Error copy: freshness, preservation, ordinary objects and copied field claims checked independently\n");
+});
+
+control(async (): Promise<void> => {
   // An `Error`-derived instance holds its message on its first link, and no
   // `stack`: `new Decline()` claimed at a record owning `message`, or
   // holding `stack` beside it, is refused where evidence is produced, and

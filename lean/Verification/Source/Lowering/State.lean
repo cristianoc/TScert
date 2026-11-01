@@ -214,6 +214,9 @@ private structure Built extends GraphFrame where
   /-- The key-adding write sites of the body (`growSites`): the writes that
   may add a key, by copying their owned object, and the bindings holding it. -/
   grows : List GrowSite := []
+  /-- Native constructor bindings whose audited contract allocates an
+  unpublished object identity, beyond own-location freshness. -/
+  freshConstructors : List (String × Span) := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -492,10 +495,19 @@ structure LoweringResult extends LoweredGraph where
   codeSources : List CodeSource
   nodePlans : List (DirectProof.Plan Tree)
 
+/-- Whether the callee resolves to an audited native allocation binding.
+Shadowing locals and parameters have different declaration descriptors. -/
+def freshNativeConstructor (scope : List (ScopeBinding Tree)) (callee : Fragment.Expr) : Compiler Bool := do
+  let .var _ name := callee | return false
+  let some (i, _) := resolve scope name | return false
+  let some binding := scope[i]? | return false
+  readBuilt fun s => s.freshConstructors.any fun (n, p) => binding.source == ⟨n, some p⟩
+
 /-- Run one source unit with its equation table and admitted ownership sites. -/
-def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α) :
+def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α)
+    (freshConstructors : List (String × Span) := []) :
     Except String (α × LoweringResult) := do
-  let (value,s) ← action.run { types := types, grows := grows }
+  let (value,s) ← action.run { types := types, grows := grows, freshConstructors := freshConstructors }
   return (value,{
     toLoweredGraph := graphOutput s
     types := s.types

@@ -135,6 +135,7 @@ let rec source_type ctx j =
        with call or construct code. *)
     | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
     | "nonHost" -> non_host
+    | "nonHostObject" -> Atoms [Shape {fields=[host_mark];indexes=[];calls=[];elements=None}]
     (* `function`, every value with call code: no signature is known, and no
        class value meets it. *)
     | "function" -> Atoms [Callable]

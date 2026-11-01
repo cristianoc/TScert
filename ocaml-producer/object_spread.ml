@@ -132,14 +132,14 @@ let rec alternatives_of ~target ~bound declarations seen t =
         [empty_alternative]
       (* A copy takes no symbol-keyed property, a private slot's included
          (SOURCE-MODEL.md, "Object literals"). *)
-      | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> f.name <> Name proto_key && string_key f) fs;
+      | Exact fs -> [{afields=List.filter (fun (f:Semantic.field) -> (target || f.name <> Name proto_key) && string_key f) fs;
                       exact=true;index=None;symbols=None;numeric=None}]
       | Shape {fields;indexes;calls=[];elements=None} ->
         (* The string index states every own string key's type; a number
            index states only the canonical numeric ones', so a key it covers
            is left unstated, as an open record's is. *)
         [{afields=List.filter (fun (f:Semantic.field) ->
-            not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;
+            not (method_field f) && (target || f.name <> Name proto_key) && string_key f) fields;exact=false;
           index=Option.map (fun (i:index_signature) -> i.value)
             (List.find_opt (fun (i:index_signature) -> i.keys=Strings) indexes);
           symbols=Option.map (fun (i:index_signature) -> i.value)
@@ -208,6 +208,10 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
     if List.mem f.name ns then ns else ns @ [f.name]) [] (a.afields @ b.afields) in
   let field name optional t = ({name;optional;read=t;write=Some t;host=false;receivers=[];stable=false} : Semantic.field) in
   let fields = List.filter_map (fun k ->
+    (* The accumulator's prototype value is retained by merge in a fresh
+       location; a source never copies its prototype link. *)
+    if k = Name proto_key then Option.map (fun (f:Semantic.field) ->
+        {f with write=Some f.read}) (find a.afields k) else
     match find b.afields k with
     | Some f when not f.optional -> Some (field k false f.read)
     | bf ->

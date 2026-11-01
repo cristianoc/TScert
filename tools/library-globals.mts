@@ -629,13 +629,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // options ] )"), so the call is read as the construct, at the same
   // statement. It converts a string message with no code of the client's
   // and writes nothing it did not allocate: the empty footprint, on a throw
-  // too.
+  // too. Its normal result is an ordinary object whose own locations are
+  // freshly allocated (`nonHostObject` and `freshObject`).
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
-      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
+      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true, freshObject: true },
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
-        result: errorInstance(at) } })),
+        result: { k: "intersection", span: at, parts: [errorInstance(at), atom("nonHostObject")] } } })),
   // `new TypeError(m)` with a string is ECMA-262's NativeError constructor
   // ("NativeError ( message [ , options ] )") at a string message without
   // options, or with options read as `Error`'s: the steps of `Error`'s,

@@ -104,7 +104,8 @@ abbrev ModuleValue (ι : Type) := String × Span × Except String (ModuleType ι
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
 @[nospecialize] def extractNormalizedFn (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
-    (module : List (ModuleValue Tree) := []) (classes : List String := []) :
+    (module : List (ModuleValue Tree) := []) (classes : List String := [])
+    (freshConstructors : List (String × Span) := []) :
     Except String (SourceRequest EquationStore.State Tree) := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List (ScopeBinding Tree) := f.params.map (fun p => held ⟨p.name,none⟩)
@@ -122,7 +123,7 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) do
+  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.

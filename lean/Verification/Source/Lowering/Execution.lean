@@ -466,6 +466,15 @@ one for an increment), and the slot of the old value. -/
   if let .objectAssign _ target _ := original then
     match target with
     | .alloc .. | .build .. => pure ()
+    | .construct _ callee _ _ _ =>
+      let G := SourceTypes.graph (← table)
+      let fresh := match PositiveRules.expand G (← exprType fc callee) with
+        | [.ctors signatures _ _ _ _] => !signatures.isEmpty &&
+          signatures.all (fun s => PromiseCalls.keepsHeap s.effect && s.effect.freshObject)
+        | _ => false
+      unless fresh && (← freshNativeConstructor scope callee) do
+        throw (locatedRefusal (← table) original.span .expressionClaim
+          "Object.assign onto a constructed target needs a constructor contract stating a fresh object")
     | .var .. =>
       if (← ownedWrite) != some original.span then
         throw (locatedRefusal (← table) original.span .expressionClaim
