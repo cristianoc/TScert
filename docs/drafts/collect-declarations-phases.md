@@ -49,10 +49,10 @@ declaration does not become a root.
 
 | Phase | Inputs | Owned state | Result passed onward |
 | --- | --- | --- | --- |
-| Resolve declarations and identities | Compiler snapshot, source requests, family selection, library policy | Resolution and identity tables, merged declaration groups (`partners`), alias declarations, brands, symbol identities, diagnostics already observed | Resolved roots and uses, declaration identities and groups, ordered diagnostic observations |
+| Resolve declarations and identities | Compiler snapshot, source requests, family selection, library policy | Resolution and identity tables, merged declaration groups (`partners`), alias declarations, brands, symbol identities, diagnostics already observed, family tables and lazy selection state | Resolved roots and uses, declaration identities and groups, ordered diagnostic observations |
 | Elaborate into type terms | Resolved declaration or use, binder environment, optional-property mode, explicit owner and external-value context | Temporary term construction, parameter and library-query caches, computed-type probes | Terms and equations, dependencies with source spans, requested instances and contracts, record and statement facts, client answers |
-| Dependency closure | Resolved roots, elaboration results and on-demand resolution | Queues, visited keys, active definitions, instance identities, accumulated definitions and facts | Complete definitions, values, symbols, applications, provenance and validation facts |
-| Validate and finalize | Complete graph and facts | Local settlement and final result construction | `DeclarationDocument`, or the existing located refusal or tool failure |
+| Dependency closure | Resolved roots, elaboration results and on-demand resolution | Existing per-start queues and shared visited keys, instance identities, guard promises, accumulated definitions and facts | Complete definitions, values, symbols, applications, provenance and validation facts |
+| Validate and finalize | Complete graph and facts | Local settlement and result construction; explicit access to lazy selection reporting | `DeclarationDocument`, or the existing located refusal or tool failure |
 
 Proposed internal data names in this draft name TypeScript interfaces, not
 new wire formats:
@@ -69,10 +69,10 @@ new wire formats:
 - `CollectedDeclarations`: all document parts and the facts finalization
   consumes, with their source spans. Its construction belongs to closure.
 
-Every boundary states ordinary parameter and return types. Requests are a
-discriminated union with a span and, where needed, an owner. Their variants
-cover declaration collection, value-type dependencies, closed instances and
-prototype or overlay contracts. Each consumer matches the whole union.
+Every boundary states ordinary parameter and return types. Extract the
+existing request lists and consumers directly, retaining spans and owners.
+A general request union and a general queue are deferred until a specific
+invariant requires them.
 Existing `Answered<T>` results keep the distinction between an answered
 query and a located unsupported query; tool failures retain their causes.
 
@@ -80,15 +80,46 @@ The principal interfaces are `resolveDeclaration(context, resolutionState,
 request): ResolvedDeclaration`, `elaborateDeclaration(context, declaration,
 elaborationContext, instanceState): ElaboratedDeclaration`,
 `closeDeclarations(context, resolutionState, initialRequests):
-CollectedDeclarations`, and `finalizeDeclarations(collected, observations):
+CollectedDeclarations`, and `finalizeDeclarations(collected, selectionService, observations):
 DeclarationDocument`. These are proposed signatures; the narrow query inputs
 of each helper replace `context` as each family is extracted. The resolution
 state is initialized before closure begins. Closure creates `instanceState`
 before calling elaboration. A small allocation operation reserves an instance
 identity synchronously, so elaboration can return a reference immediately;
-the corresponding body request goes back to the driver's queue. That
-operation receives the instance table explicitly and owns its writes. There
+the existing instance sweep consumes the recorded body at its current point.
+The allocation operation receives the instance table explicitly and owns its writes. There
 is no callback into a partially initialized driver.
+
+### Shared state and dynamic contexts
+
+Each owner exposes narrow operations to the named readers and writers.
+A selection query can resolve a family and run diagnostic checks.
+
+| State | Owner and lifetime | Writers and dependencies | Readers and dependencies |
+| --- | --- | --- | --- |
+| `families` | Resolution's family service, per collection and compiler snapshot | `familyFrom` reads descriptions, resolved roots, bases, files, enums and members; runs existing checks; inserts the constructed family | `familyFrom`, `guardConstants`, `scanSelection` and `familyOf` read tables, members, enums and literals; scanning can call `familyFrom` and extend the table |
+| `guardPromises` | Closure's accumulated family facts, per collection | Guard elaboration records named node-guard tag values through an explicit operation after reading the guard entry and `guardConstants`; tag guards keep their direct terms | `collect` reads promises when constructing a family's root equation; the explicit state argument preserves write/read order |
+| `scanned` | Resolution's selection service, per collection | `scan` initializes it on first demand using `scanSelection(closure())`; this reads the client import closure, compiler queries, descriptions and `families`, can populate `families`, and runs existing diagnostic checks | `selected` reads it only without a supplied `familySelection` query; final `familySelected` reporting reads `scan()` even with that query supplied |
+| `selectionSets` | Resolution's selection service, per collection | `familyOf` resolves the family, then stores the existing set or constructs one from `selected(marker)`, preserving first-use query or scan evaluation | `familyOf` supplies the set to collection and family type reading; later uses retain the cached selection |
+| `typesRead` | One contextual type-reading invocation's recursion-path state | `readContextualTerm` adds a type ID on entry to structural reading and removes it in `finally`; recursive readers receive the same explicit path | `readContextualTerm` checks for recursion at the existing point after primitive and literal handling; sibling and later reads see the path after removal |
+| `closureBinders` | Contextual parameter elaboration's explicit binder environment | The contextual-closure loop owns `closureBinderNames`, keyed by closure span; each parameter request selects its environment from that table | `contextualTerm`, `readContextualTerm` and recursive signature/member readers receive the environment explicitly for symbol and spelling checks; `renameFree` receives its spelling-to-fresh-name map |
+
+Pass contextual binders and recursion-path state through every recursive
+contextual reader and hook with the source span. Other contextual entry
+points supply an empty binder environment and a fresh path. Preserve the
+add/remove scope, including exceptions: the path records active structural
+reads, not completed types. Other traversal-local `seen` sets, such as
+`rootOf` and recursive class checks, also receive explicit arguments with
+their existing lifetimes. Collection's shared visited keys have a separate
+lifetime and purpose.
+
+Selection remains lazy at its existing execution points. Finalization invokes
+the selection service only inside `if (options.familySelected)`, after promise
+transformations and before document construction and `deferredInDocument`.
+That service may build family tables or fail before delivering the callback.
+Its inputs include family and selection state, compiler queries and the
+diagnostic destination. An eagerly computed observation would change this
+execution order.
 
 ### Resolve declarations and identities
 
@@ -151,13 +182,14 @@ additional request that requires collection. It concerns reachable
 declarations and instances; `settleDocument` continues to own expansion of
 deferred mapped types.
 
-The driver owns ordered queues and separate queued, active and completed
-keys. A declaration key uses the existing definition identity; an instance
-key uses the existing identity and argument data from `termsText`. Allocation
-retains the current instance naming order and budget of 256. The active set
-permits references to a recursive equation while its body is being read.
-Completion follows successful equation construction. Failure preserves the
-request's responsible source span and aborts that collection.
+Extract `collect`'s per-start traversal directly: an ordered queue initialized
+with the start, an indexed cursor and the existing shared `seen` set. Preserve
+when each key is marked, each dependency appended, and each equation and
+observation produced. The initial instance applies only at cursor zero.
+Preserve definition identity keys, `termsText` instance data, instance naming
+order and the budget of 256, including the responsible span on failure.
+Additional queued, active or completed sets require a specific invariant and
+separate justification; they are outside the first extraction.
 
 The first extraction preserves the present scheduling: initial starts,
 instances to exhaustion, each newly discovered batch of value starts followed
@@ -193,9 +225,10 @@ construct the document; reject `deferredInDocument`.
 The inputs state which definitions are records, which are program classes,
 which read a stated effect, which values are external, and which instance
 identities belong to the client. Finalization reads these facts directly.
-It owns its result arrays; it does not mutate resolution tables or add
-dependencies. A missing dependency is a collection error, with no weakening
-of its annotation. Checks needed to interpret a declaration safely remain
+It owns its result arrays. Lazy selection reporting calls the resolution
+service described above, which owns family-table writes and checks at that
+point. Document assembly adds no dependencies. A missing dependency is a
+collection error, with no weakening of its annotation. Checks needed to interpret a declaration safely remain
 at that read; final validation does not postpone their refusals past other
 observable operations.
 
@@ -330,15 +363,36 @@ plus system CPU for Node and the compiler processes attributed to parse.
 A replay contributes the producing execution's CPU, not replay lookup time.
 Changed tools code changes stage keys. Compare common slices separately from
 new extracted slices: additional slices add parse work even if each becomes
-cheaper. Use the `collectDeclarations` slice as a common named comparison
-and report its P separately. A first refusal that moves later can
+cheaper. Report the `collectDeclarations` slice's P separately as a named
+comparison whose source changes during extraction. Fixed-source speed tests
+are specified below. A first refusal that moves later can
 increase parse CPU by reaching more work; interpret P with outcomes and V.
+
+For speed work, retain fixed source files, project configuration, dependencies
+and request options from before the change, with their content hashes in the
+measurement record. Run both implementations on those same inputs. Keep
+separate workloads for repeated span queries, merged parameters and library
+queries, repeated computed members, repeated class checks, and reviewed
+interface probes. Include repeated collections with automatic project
+discovery, covering both the same owning project and different owning
+projects: the census supplies an explicit project and cannot measure
+`withOwnProject` reuse.
+
+For each workload record at least five executed CPU measurements before and
+after, their individual values and median, and peak process memory including
+the compiler. Measure cold sessions separately from repeated collections in
+a retained session. Record retained index/cache size and memory after each
+collection, plus session disposal, so retained state has a visible cost.
+Stage replay is not an executed performance sample. Keep installation,
+source inputs and limits equal, and report outcomes and document/trace
+comparisons with the measurements. V/U/P describe the extraction; acceptance
+of a speed change additionally requires these fixed-source measurements.
 
 | Step | Small behavior-preserving boundary | Expected first verification benefit | Performance point addressed | Required numbers |
 | --- | --- | --- | --- | --- |
 | 1 | Extract the binder-term predicate and other independent term or identity helpers with explicit types; preserve the surrounding callers | Small data-only functions can verify independently of the collector's captured state | Serialized binder detection | V, U/total, P |
 | 2 | Extract final assembly in pieces and check its existing helpers: document parts, external statement checks, promise transformations, settlement and final refusal | Typed traversals and result builders have bounded inputs and no resolution cycle; each extracted piece has its own slice | Makes final traversal cost visible; no caching claim | V, U/total, P |
-| 3 | Name the option interfaces and add their adapter; pass current owner and external-read context explicitly through one hook family at a time | Removes captured bindings and unrelated callback effects from those helpers; adapter gain may be zero | Locates query ownership for later caches | V, U/total, P |
+| 3 | Name the option interfaces and add their adapter; pass current owner, external-read context, contextual binders and recursion path explicitly through one hook family at a time | Removes captured bindings and unrelated callback effects from those helpers; adapter gain may be zero | Locates query ownership for later caches | V, U/total, P |
 | 4 | Extract resolution and merged-group services; isolate compatibility queries, keeping query order | Independent identity and declaration-part functions precede recursive readers; compiler-dependent slices can retain host-contract refusals | `parametersOf`, `library()`, compiler flag/path/text assumptions | V, U/total, P |
 | 5 | Extract elaboration of one declaration or use and its dependency output; move the scope-hook cycle together where necessary | Fully initialized explicit contexts remove forward-captured bindings; small readers are measured separately from the recursive group | `computedMembers` and reviewed-probe ownership | V, U/total, P |
 | 6 | Extract the existing closure loops into the explicit staged driver, preserving insertion and refusal order | Queue operations and single-request transitions have small contracts; the whole driver depends on the extracted readers | Repeated instance-map copying becomes visible; no scheduling optimization | V, U/total, P |
@@ -346,12 +400,30 @@ increase parse CPU by reaching more work; interpret P with outcomes and V.
 | 8 | Cache full-file class checks and escape answers; adapt automatic-project sessions; finally assess probe reuse, as separate changes | Compiler lifetime and native effects remain explicit; speed work need not increase V | `checkedClass`, `withOwnProject`, reviewed-interface probes | V, U/total, P per change |
 
 Each row is a sequence of small commits when it contains several extractions.
-Measure after each such commit as well. Preserve document contents and row
-order, identities, symbols, callback delivery and refusal messages and spans;
-temporary before/after document comparisons supplement suite outcomes where
-an internal ordering change could be invisible to the verdict. Retire those
-research checks once pipeline coverage carries their signal. Keep a control
-only for a boundary or speed property the pipeline cannot show.
+At every numbered boundary and every constituent extraction or cache change,
+require temporary before/after comparisons against the preceding implementation
+on identical sources and options. Compare the complete declaration document
+field by field, preserving array order, identities, symbols, provenance and
+spans. Instrument the affected phase boundaries and the public adapter to
+compare ordered callback/query traces: destination, arguments, answer or
+refusal, return or exception, and position relative to collection operations.
+Preserve synchronous delivery and callback-presence work selection.
+
+The required inputs exercise each moved boundary, including merged
+declarations, recursive instances, late prototype discovery, contextual
+binders and recursive contextual reads, and lazy family selection with and
+without supplied queries or report callbacks. Include success and refusal
+paths at those boundaries. A refusal compares its exact message, span and
+cause, the partial document state available there, and the callback trace
+prefix before it; absence of a returned document does not waive comparison.
+Include callbacks that throw to check exception order. Retain inputs and
+comparison results beside each measurement record; resolve any difference
+before treating the step as behavior preserving.
+
+These temporary research checks supplement the required suites. Retire them
+once pipeline coverage carries their signal; keep a control only for a
+boundary or speed property the pipeline cannot show. Measure V/U/P after
+each constituent commit as well as each numbered step.
 
 ### Baseline measurement
 
@@ -430,10 +502,13 @@ renaming a parameter is justified only by the located cause.
 
 The extraction order is a conjecture about which obligations become small
 enough to discharge first. Each step uses its measured refusals to select a
-source rewrite. A new external contract follows the existing audit and trust
-rules; an extraction never marks an unsupported dependency trusted merely to
-make a slice verify. Function safety for an extracted helper and faithful
-annotation interpretation remain separate obligations.
+source rewrite within existing contracts. Contract additions or changes,
+including external, compiler, library and effect contracts, are excluded from
+all numbered steps. Record a verification blocker requiring such work as its
+own item in the WORK status table, with the refused obligation and the
+contract it would need; any contract proposal belongs to separate work.
+Function safety for an extracted helper and faithful annotation interpretation
+remain separate obligations.
 
 ## Scope
 
