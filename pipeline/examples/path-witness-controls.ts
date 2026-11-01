@@ -3,6 +3,22 @@ type Value =
   | { readonly kind: "empty" };
 type Holder = { value: Value; other: Value };
 
+export function primitiveBefore(holder: { value: { flag?: boolean } }): number {
+  if (holder.value.flag) return 1;
+  return 0;
+}
+
+export function primitiveAfterCall(
+  holder: { value: { flag?: boolean } },
+  replace: () => void,
+): number {
+  if (holder.value.flag) {
+    replace();
+    return 0;
+  }
+  return 0;
+}
+
 export function before(holder: Holder): number {
   if (holder.value.kind === "text") return 1;
   return 0;

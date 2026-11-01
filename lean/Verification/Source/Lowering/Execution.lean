@@ -654,7 +654,12 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
     (origins : List (String × Fragment.Expr)) (e : Fragment.Expr) : Fragment.Expr :=
   let witness := fun e => do
     let i ← pathWitness scope e
-    if (HeapKnowledge.atoms G (Γ[i]?.getD [])).isSome then none else some i
+    -- A primitive field of the root is tested through its receiver, retaining
+    -- the root's discriminant refinement. A nested path's entry instead
+    -- requires its saved witness and the chain of links to that value.
+    let nested := ((scope[i]?).bind fun b => b.witness).any
+      (fun (p : String × List PropKey) => p.2.length > 1)
+    if !nested && (HeapKnowledge.atoms G (Γ[i]?.getD [])).isSome then none else some i
   let operand : Fragment.Expr → Fragment.Expr := fun (e : Fragment.Expr) =>
     let read := match e with
       | .var _ name => (originEntry name [] origins).map (fun (x : Fragment.Expr × List (String × Fragment.Expr) × List String) => x.1)

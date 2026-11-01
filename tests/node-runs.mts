@@ -9,6 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+assert.equal(runExample("invalid-project-after-check-write",
+  '(() => { const project = { options: { strict: true } }; return use(project, p => { p.options.strict = false; }); })()'), false,
+  "a callback can invalidate the nested strict flag before its true result annotation");
+
 assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a: 1, extra: "text" })["extra"]'),
   "string", "an open record admits an extra key outside the number dictionary contract");
 

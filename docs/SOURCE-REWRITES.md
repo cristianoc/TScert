@@ -2873,6 +2873,27 @@ may include accessors or a Proxy.
 
 ## Changes for a tool's defect
 
+### A primitive member read's saved witness
+
+`tools/declaration-graph.mts#useProject` tests an optional project's
+`configFileName` and `compilerOptions.strict` before calling `check(project)`.
+The lowering dispatches on the saved witness of a nested primitive member
+read through the existing [path witnesses](HOST-FAMILIES.md#entries).
+The branch maps the refined witness and its read links to the next entry.
+Reading the primitive field again would refine a different slot while that
+entry requires the saved witness's type and link.
+A single primitive field of the root is tested through its receiver,
+retaining the root's discriminant refinement and its field facts.
+
+`blocker-prep-project-after-check` exercises the compiler project guard.
+`invalid-project-after-check-write` checks that a call invalidates a mutable
+nested primitive field's narrowing; under Node a callback setting `strict`
+to `false` makes the fixture return `false` despite its `true` result
+annotation. The forged claims and evidence of `path-witness-controls`
+require a primitive field narrowing before its test and after a call;
+the existing incoming-edge checks refuse them. This lowering uses the
+existing checks and soundness theorems and adds no external assumption.
+
 ### A module arrow's result and rest in callback overload selection
 
 `named` in `tools/compiler-channel.mts` is a module constant holding a

@@ -7187,6 +7187,10 @@ mutationControl(async (): Promise<void> => {
   const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "refined entry");
   const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "witness type");
   const type = must(current.find(([[field]]) => field === "value"), "value field")[1];
+  const primitive = must(honest.functions.find(f => f.name === "primitiveBefore"), "primitive witness");
+  const primitiveEntry = must(primitive.entries.find(e => source.startsWith("return 1;", e.start)), "primitive entry");
+  const primitiveCurrent = must(must(primitiveEntry.bindings.find(b => b.name === "holder"), "primitive holder").current, "primitive current");
+  const primitiveType = must(primitiveCurrent.find(([path]) => path.length === 2 && path[0] === "value" && path[1] === "flag"), "primitive value")[1];
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   for (const [name, functionName, marker, failure] of [
@@ -7197,11 +7201,14 @@ mutationControl(async (): Promise<void> => {
     ["caught", "caught", "return /* caught */ 0;", "heap knowledge"],
     ["predecessor", "before", "return 0;", "type coverage"],
     ["read", "afterCallRead", "return holder.value;", "heap knowledge"],
+    ["primitiveBefore", "primitiveBefore", "if (holder.value", "type coverage"],
+    ["primitiveAfterCall", "primitiveAfterCall", "return 0;", "heap knowledge"],
   ]) {
     const claims = structuredClone(honest);
     const fn = must(claims.functions.find(f => f.name === functionName), name);
     const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged entry`);
-    must(at.bindings.find(b => b.name === "holder"), "holder").current = [[["value"], type]];
+    must(at.bindings.find(b => b.name === "holder"), "holder").current = name.startsWith("primitive")
+      ? [[["value", "flag"], primitiveType]] : [[["value"], type]];
     if (name === "read") {
       const expression = must(fn.expressions.find(e => e.pos[0] === at.start + "return ".length &&
         e.pos[1] === at.start + "return holder.value".length), "read past call");
@@ -7211,7 +7218,7 @@ mutationControl(async (): Promise<void> => {
     const obligation = `source incoming edge obligation at [${at.start},${name === "backEdge" ? source.indexOf("}", at.start) + 1 : source.indexOf(";", at.start) + 1})`;
     refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
     const checked = invoke(input, forgedEvidence(artifacts, input, `forged-witness-${name}`,
-      name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" ? "links" :
+      name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" || name === "primitiveAfterCall" ? "links" :
         name === "afterRoot" ? "links" : "coverage,links"), artifacts);
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
