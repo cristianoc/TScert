@@ -186,6 +186,15 @@ every `pipeline/*/` one, `pipeline/library-project/node_modules` included. A
 symbolic link resolves type declarations from the main checkout's path, and
 the cases reading `@types/node` then fail.
 
+Check the copied declaration file before running the suites:
+
+```sh
+test -s pipeline/library-project/node_modules/@types/node/index.d.ts
+```
+
+An empty directory tree does not provide Node's declarations. Copy the
+installation's files as well as its directories.
+
 `make suite` includes the pipeline cases, including those importing from
 `pipeline/imports-project/` and `pipeline/library-project/`. Install OCaml and
 Dune as described in [the producer guide](ocaml-producer/README.md#try-it)
