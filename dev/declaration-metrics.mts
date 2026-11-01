@@ -248,8 +248,25 @@ function syntaxMetrics(path: string): object {
   const options = collector.parameters.find(
     (p) => ts.isIdentifier(p.name) && p.name.text === "options",
   );
-  if (!options?.type || !ts.isTypeLiteralNode(options.type))
-    throw Error("options is not a type literal");
+  const interfaceMembers = (name: string): readonly ts.TypeElement[] => {
+    const declaration = tree.statements.find(
+      (s): s is ts.InterfaceDeclaration =>
+        ts.isInterfaceDeclaration(s) && s.name.text === name,
+    );
+    if (!declaration) throw Error(`option interface missing: ${name}`);
+    return [
+      ...(declaration.heritageClauses ?? []).flatMap((clause) =>
+        clause.types.flatMap((base) => interfaceMembers(base.expression.getText(tree))),
+      ),
+      ...declaration.members,
+    ];
+  };
+  const optionMembers = options?.type && ts.isTypeLiteralNode(options.type)
+    ? options.type.members
+    : options?.type && ts.isTypeReferenceNode(options.type)
+      ? interfaceMembers(options.type.typeName.getText(tree))
+      : null;
+  if (!optionMembers) throw Error("options is not a type literal or named interface");
   const topLevel: FunctionNode[] = [];
   for (const statement of tree.statements) {
     if (ts.isFunctionDeclaration(statement) && statement.body)
@@ -287,12 +304,12 @@ function syntaxMetrics(path: string): object {
       mutatedConstStorage: bindings
         .filter((b) => !b.mutable && mutations.has(b) && b.captures.size)
         .map(captured),
-      options: options.type.members.map((m) => ({
+      options: optionMembers.map((m) => ({
         name: nameOf(m)?.getText(tree),
         optional: !!childOf(m, "questionToken"),
         type: childOf(m, "type")?.getText(tree),
       })),
-      optionsCount: options.type.members.length,
+      optionsCount: optionMembers.length,
     },
     topLevelFunctions: topLevel.map(label),
     topLevelFunctionCount: topLevel.length,

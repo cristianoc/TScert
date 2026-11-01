@@ -529,15 +529,31 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
   return [...named, ...namespaced];
 }
 
-/**
- * The declaration graph of `file`: one root per named import and per local
- * declaration at a span in `locals`, and every declaration reachable from them.
- * `client`, when given, is the parser's tree of the same file; TypeScript must
- * have read the same bytes, so the spans of both trees agree.
- */
-export function collectDeclarations(file: string, options: {
+/** The equation owner and the nesting depth of external value reads. */
+interface DeclarationReading {
+  owner: string | null;
+  externalReads: number;
+}
+const emptyDeclarationReading: DeclarationReading = { owner: null, externalReads: 0 };
+type ClosureBinders = ReadonlyMap<number, { spelled: string; fresh: string }>;
+
+export interface DeclarationInput {
   tsconfigPath?: string;
   client?: SourceFile;
+}
+
+export interface DeclarationPolicy {
+  /** The overlay `Array.prototype` is read through; tests vary it. */
+  arrayOverlay?: readonly OverlayEntry[];
+  /** The run's tag selection of a host family, by its marker
+   * (HOST-FAMILIES.md, "Residuals"), when an imported module of the run is
+   * lowered: the one read of the selection, made by family; otherwise it is
+   * computed over the modules the checked file reaches and reported to
+   * `familySelected`. */
+  familySelection?: (marker: string) => readonly TagValue[] | undefined;
+}
+
+export interface RootRequests {
   /** The members the client reads through its namespace imports
    * (`namespace-members.mts`): each joins as a named import of its export
    * would, under its own binding; a call of one whose signatures state a
@@ -549,16 +565,248 @@ export function collectDeclarations(file: string, options: {
    * declarations: each that TypeScript binds to a global declaration becomes
    * a root. A type parameter is not one. */
   globals?: readonly Span[];
+  /** The client's value references to names it neither imports nor binds:
+   * each that TypeScript binds to a global variable, such as Node's
+   * `process` or the standard library's `BigInt`, joins its values, read at
+   * the members and call signatures those references select
+   * (`selectGlobal`). The first reference locates it. */
+  globalValues?: readonly Span[];
+  /** The client's references to `import.meta`, each a member read the
+   * overlay reads as a call of an intrinsic (`selectImportMeta`), reported
+   * through `globalIntrinsic`. */
+  importMeta?: readonly Span[];
+  /** The names the client's ambient declarations bind, `declare function f`,
+   * `declare const x: T`, `declare class C`, one span per name (overloads
+   * once): each joins its values at the type its declarations state. */
+  ambient?: readonly Span[];
+  /** The first construct of the client that reaches the graph, where a
+   * declaration merging into `Object` or `Function` is refused. */
+  root?: Span;
+  /** The client uses arrays: `Array.prototype`'s contract joins the graph
+   * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
+  arrays?: Span;
+  /** The client uses `async`, `await` or `for...of`: the intrinsics that
+   * stand for them (`intrinsics.mts`) join its values, located at the first
+   * such construct. */
+  intrinsics?: { span: Span; names: string[] };
+}
+
+export interface BindingRequests {
+  /** The client's element keys that are identifiers, `e[k]`: each that
+   * TypeScript binds to a `unique symbol` constant joins the symbols and is
+   * reported to `symbolKey` with its index. */
+  symbolKeys?: readonly Span[];
+  /** The client's private names `#x` (a member's, or one a read, a write or
+   * a call names): each joins the symbols as the key of the member that
+   * declares it and is reported to `privateName` with its index. */
+  privateNames?: readonly Span[];
+  /** The client's member names of reads `X.y` with `X` an identifier: each
+   * that TypeScript binds to a static member of a class the client declares
+   * at its top level, `X` naming that class, is reported to `staticMember`
+   * with the class's name. */
+  staticReads?: readonly Span[];
+  /** Identifiers spelling a class of the client by name: `instanceof` right
+   * operands, and a class's own name in its body. */
+  classTests?: readonly Span[];
+  /** `instanceof` right operands naming other values: each whose type
+   * TypeScript gives states `[Symbol.hasInstance]`, in a
+   * declaration of the program, is reported to `hookTest`. */
+  hookTests?: readonly Span[];
+  /** Identifiers of the client that may name one of its local bindings: each
+   * that TypeScript binds to a value declaration in the client is reported
+   * to `bindingRead` with the span of that declaration's name. A shorthand
+   * property `{ x }` names the binding its value reads. */
+  bindingReads?: readonly Span[];
+}
+
+export interface OperationRequests {
+  /** The iterables of the client's `for...of` loops: each that TypeScript
+   * types as a string, a `Set`, a `Map` or a host collection iterator is
+   * reported to `iterable` with the iteration intrinsic that steps it
+   * (`iterationIntrinsic`), which then joins the values; one it types as an
+   * object with a `[Symbol.iterator]` that is none of these nor an array,
+   * with `client`, which runs the iterator protocol, or `client-unclosable`
+   * where the iterator's type states no `return`. Any other is left to
+   * `%Iterate%`. */
+  iterables?: readonly Span[];
+  /** Likewise the operands of the client's argument spreads, `f(...x)`: one
+   * of these kinds is reported with its spread intrinsic (`spreadName`). */
+  spreads?: readonly Span[];
+  /** The targets of the client's array pattern rests, each with the number of
+   * positions before it: each TypeScript types as no one tuple of required
+   * positions is a slice, reported to `restSlice`, and `%RestFrom:k%`
+   * (`restFromIntrinsic`) joins the values. */
+  restTargets?: readonly { span: Span; index: number }[];
+  /** The keys of the client's `k in o` tests: each TypeScript types as other
+   * than string literals is reported to `hostIn`, and the intrinsics, among
+   * them `%HasProperty%`, which answers such a test, join the values. */
+  inKeys?: readonly Span[];
+  /** The member names `m` of the client's `o.m.call(…)`, `.apply` and
+   * `.bind` targets: each TypeScript resolves to a method is reported to
+   * `methodTarget`. */
+  receiverTargets?: readonly Span[];
+  /** Names the parser lowers specially where they are the standard
+   * library's (`Object` of `Object.assign`, the member `call`, `apply` or
+   * `bind` of a function): each TypeScript binds to declarations of the
+   * standard library alone is reported to `libraryName`. */
+  libraryNames?: readonly Span[];
+  /** Names the file declares nowhere: each TypeScript binds to the standard
+   * library's `var` or function declarations alone, whose read runs no code
+   * and cannot throw, is reported to `libraryValue`. */
+  libraryValues?: readonly Span[];
+  /** The client's element reads `e[k]`: each whose object TypeScript types
+   * as arrays, tuples and node lists only and whose key as `number`, no literal, is
+   * reported to `hostElement`, and the intrinsics, among them
+   * `%ElementAt%`, which reads it, join the values. */
+  elementReads?: readonly Span[];
+  /** The client's reads `e.length`. Each of these and of the element reads
+   * whose object TypeScript types as views of bytes only
+   * (`library-types.mts`), at a number key for an element, is reported to
+   * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
+   * which joins the values. */
+  lengthReads?: readonly Span[];
+  /** The client's reads `e.k` at a key some `"k" in o` test writes: each
+   * whose object TypeScript types as `object` narrowed by such tests alone
+   * (every part of an intersection `object` or the standard library's
+   * `Record<"k'", unknown>`, `k` among the `k'`) is reported to `openRead`
+   * with its intrinsic, `%Read:k%`, which joins the values. */
+  openReads?: readonly Span[];
+  /** The client's regular expression literals: each is reported to
+   * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
+   * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
+   * (`regexp.mts`). */
+  regexps?: readonly Span[];
+  /** The client's calls `s.m(o, …)` of a `String.prototype` method that
+   * dispatches to its argument (`dispatchMethods`): each whose receiver
+   * TypeScript types as a string and whose first argument as an object is
+   * reported to `dispatch` with `%Dispatch:m%`, which joins the values
+   * (`dispatchIntrinsic`). */
+  dispatchCalls?: readonly Span[];
+  /** The receivers of the client's member reads, `e.k` and `e[k]`: each
+   * that TypeScript types as a string, number, bigint or boolean, or a union
+   * holding one, reads that primitive's members through its wrapper's
+   * prototype, whose contract (`array-prototype.mts`) then joins the graph
+   * and whose built-in value joins the values, located at the first such
+   * receiver. */
+  memberReceivers?: readonly Span[];
+}
+
+export interface TypeRequests {
+  /** The names of the client's closure parameters written without a type:
+   * each is reported to `contextualParam` with the type TypeScript gives it
+   * from its context, as a type term (`contextualTerm`), or the reason none
+   * states it. */
+  /** The names of the client's static fields written without an
+   * annotation: each is reported to `staticType` with the type TypeScript
+   * gives it, as a term (`contextualTerm`), or why none. */
+  staticTypes?: readonly Span[];
+  contextualParams?: readonly Span[];
+  /** The client's arrows and function expressions written without type
+   * parameters and with a parameter written without a type: each is reported to
+   * `contextualBinders` with fresh names for the type parameters of the
+   * signature TypeScript gives it, which it takes from a generic context
+   * signature, or the reason none states them (a bounded one); its
+   * parameters' contextual types name them by these names. */
+  contextualClosures?: readonly Span[];
+  /** The client's calls `Object.assign(arrow, literal)` written without type
+   * arguments: each is reported to `assignTypes` with the two TypeScript
+   * infers, the arrow's function type and the literal's record, as the
+   * callable form's annotations, or the reason no term states them. */
+  assignCalls?: readonly Span[];
+  /** The client's computed types (`computedForm`) outside its type
+  * declarations, each outermost one: each is evaluated
+  * (`computed-types.mts`) and reported to `computedType` with its term, or
+  * with the reason it has none. */
+  computed?: readonly Span[];
+  /** The client's type references spelling a name some type declared in
+   * one of its blocks has: each TypeScript binds to such a declaration is
+   * reported to `blockType` with that declaration, which joins the graph,
+   * its own arity and the spellings of the type parameters it closes over,
+   * each the binder TypeScript resolves at the reference; or with the
+   * reason it is refused (SOURCE-CONTRACTS.md, "Block-scoped type
+   * declarations"). */
+  blockTypes?: readonly Span[];
+  /** Type nodes of the client's annotations that may be a mapped type's keys:
+   * each is reported to `keyType` with the union of literals and primitives
+   * TypeScript computes for it, or null. */
+  keyTypes?: readonly Span[];
+  /** The client's mapped types over `keyof`: each is reported to
+   * `mappedType` with its members as TypeScript resolves them, or null. */
+  mappedTypes?: readonly Span[];
+  /** The computed keys `[k]` and `[S.k]` of the client's annotations' type
+   * literals: each that names a `unique symbol` constant or readonly property
+   * joins the symbols and is reported to `symbolName` with its index, any
+   * other with the reason it names none. */
+  symbolNames?: readonly Span[];
+}
+
+export interface EnumRequests {
+  /** The client's top-level enum declarations: each must be one TypeScript
+   * accepts, and each member, by its span, is reported to `enumMember` with
+   * the value TypeScript computes for it, which is the value its emit writes
+   * (SOURCE-CONTRACTS.md, "Enums"), or undefined where it computes none. */
+  enums?: readonly Span[];
+  /** The client's reads `X.y` and `X["y"]` with `X` an identifier: each that
+   * TypeScript binds to a member of a `const enum` the client declares is
+   * reported to `constEnumRead` with the member's value, which TypeScript
+   * writes in place of the read. */
+  constEnumReads?: readonly Span[];
+}
+
+export interface BindingAnswers {
+  symbolKey?: (span: Span, symbol: number) => void;
+  privateName?: (span: Span, symbol: number) => void;
+  staticMember?: (span: Span, cls: string) => void;
+  /** Those `X.m` reads whose static member is declared by a class `X`
+   * extends, which `X` reaches through its prototype. */
+  inheritedStatic?: (span: Span) => void;
+  /** Called for each of them TypeScript binds to a class declared at the
+   * client's top level, with the class's name. */
+  classTest?: (span: Span, cls: string) => void;
+  hookTest?: (span: Span) => void;
+  /** Those of them whose type states no `[Symbol.hasInstance]` and which
+   * TypeScript binds to an import of a checked class declaration
+   * (`checkedClass`), reported to `importedClassTest`. */
+  importedClassTest?: (span: Span) => void;
+  bindingRead?: (span: Span, declaration: Span) => void;
+}
+
+export interface OperationAnswers {
+  /** A statement call of `node:assert/strict`'s `assert` or `ok` read as the
+   * calculus's own test (`ModuleEntry.lowering`), by the call's span. */
+  assertionCall?: (span: Span) => void;
+  /** Told each call of a global that the reviewed overlay reads as a test
+   * of the calculus, such as `Array.isArray(e)`, by the call's span. */
+  globalTest?: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
+  /** Told each call of a global that the reviewed overlay reads as a call of
+   * an intrinsic, such as `Promise.resolve(v)`, by the call's span, with the
+   * intrinsic's name; the intrinsics then join the values. */
+  globalIntrinsic?: (span: Span, name: string) => void;
+  /** Told each call of a global that the reviewed overlay reads as its
+   * construct, such as `Error(m)`, by the call's span. */
+  globalConstruct?: (span: Span) => void;
+  /** A program iterable is reported with the well-known `Symbol.iterator`'s index
+   * among the symbols, which its protocol reads the iterator method by. */
+  iterable?: (span: Span, intrinsic: string, iteratorSymbol: number | null) => void;
+  restSlice?: (span: Span) => void;
+  hostIn?: (span: Span) => void;
+  methodTarget?: (span: Span) => void;
+  libraryName?: (span: Span) => void;
+  libraryValue?: (span: Span) => void;
+  hostElement?: (span: Span) => void;
+  byteRead?: (span: Span, intrinsic: string) => void;
+  openRead?: (span: Span, intrinsic: string) => void;
+  regexp?: (span: Span, intrinsic: string) => void;
+  dispatch?: (span: Span, intrinsic: string) => void;
+}
+
+export interface TypeAnswers {
   /** Told each of the client's global type names, at its first reference
    * (`globals`), that TypeScript binds to a library type read at its meaning
    * rather than joining the graph (`LibraryType`), and each imported one the
    * overlay of library types states, at its import declaration: its local
    * name and its meaning. */
   library?: (span: Span, library: LibraryType, local: string) => void;
-  /** Told each definition that is a record written as one: an interface or
-   * a type alias read as its declared body, outside a class and a host
-   * type (`NamedRecords`, named-record.mts). */
-  record?: (declaration: DeclarationIdentity) => void;
   /** The standard associated-result alias, resolved at a source name. */
   awaited?: (span: Span) => void;
   /** The verifier's resolution-qualification bound (`resolvable.d.ts`),
@@ -572,200 +820,26 @@ export function collectDeclarations(file: string, options: {
   within?: (span: Span) => void;
   /** A local alias whose complete body is expanded in the qualified scope. */
   associatedAlias?: (name: string, declaration: DeclarationIdentity) => void;
-  /** The client uses arrays: `Array.prototype`'s contract joins the graph
-   * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
-  arrays?: Span;
-  /** A statement call of `node:assert/strict`'s `assert` or `ok` read as the
-   * calculus's own test (`ModuleEntry.lowering`), by the call's span. */
-  assertionCall?: (span: Span) => void;
-  /** The first construct of the client that reaches the graph, where a
-   * declaration merging into `Object` or `Function` is refused. */
-  root?: Span;
-  /** The overlay `Array.prototype` is read through; tests vary it. */
-  arrayOverlay?: readonly OverlayEntry[];
-  /** The client uses `async`, `await` or `for...of`: the intrinsics that
-   * stand for them (`intrinsics.mts`) join its values, located at the first
-   * such construct. */
-  intrinsics?: { span: Span; names: string[] };
-  /** The client's value references to names it neither imports nor binds:
-   * each that TypeScript binds to a global variable, such as Node's
-   * `process` or the standard library's `BigInt`, joins its values, read at
-   * the members and call signatures those references select
-   * (`selectGlobal`). The first reference locates it. */
-  globalValues?: readonly Span[];
-  /** The client's references to `import.meta`, each a member read the
-   * overlay reads as a call of an intrinsic (`selectImportMeta`), reported
-   * through `globalIntrinsic`. */
-  importMeta?: readonly Span[];
-  /** Told each call of a global that the reviewed overlay reads as a test
-   * of the calculus, such as `Array.isArray(e)`, by the call's span. */
-  globalTest?: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
-  /** Told each call of a global that the reviewed overlay reads as a call of
-   * an intrinsic, such as `Promise.resolve(v)`, by the call's span, with the
-   * intrinsic's name; the intrinsics then join the values. */
-  globalIntrinsic?: (span: Span, name: string) => void;
-  /** Told each call of a global that the reviewed overlay reads as its
-   * construct, such as `Error(m)`, by the call's span. */
-  globalConstruct?: (span: Span) => void;
-  /** The names the client's ambient declarations bind, `declare function f`,
-   * `declare const x: T`, `declare class C`, one span per name (overloads
-   * once): each joins its values at the type its declarations state. */
-  ambient?: readonly Span[];
-  /** The client's element keys that are identifiers, `e[k]`: each that
-   * TypeScript binds to a `unique symbol` constant joins the symbols and is
-   * reported to `symbolKey` with its index. */
-  symbolKeys?: readonly Span[];
-  symbolKey?: (span: Span, symbol: number) => void;
-  /** The client's private names `#x` (a member's, or one a read, a write or
-   * a call names): each joins the symbols as the key of the member that
-   * declares it and is reported to `privateName` with its index. */
-  privateNames?: readonly Span[];
-  privateName?: (span: Span, symbol: number) => void;
-  /** The client's member names of reads `X.y` with `X` an identifier: each
-   * that TypeScript binds to a static member of a class the client declares
-   * at its top level, `X` naming that class, is reported to `staticMember`
-   * with the class's name. */
-  staticReads?: readonly Span[];
-  staticMember?: (span: Span, cls: string) => void;
-  /** Those `X.m` reads whose static member is declared by a class `X`
-   * extends, which `X` reaches through its prototype. */
-  inheritedStatic?: (span: Span) => void;
-  /** Identifiers spelling a class of the client by name: `instanceof` right
-   * operands, and a class's own name in its body. */
-  classTests?: readonly Span[];
-  /** Called for each of them TypeScript binds to a class declared at the
-   * client's top level, with the class's name. */
-  classTest?: (span: Span, cls: string) => void;
-  /** `instanceof` right operands naming other values: each whose type
-   * TypeScript gives states `[Symbol.hasInstance]`, in a
-   * declaration of the program, is reported to `hookTest`. */
-  hookTests?: readonly Span[];
-  hookTest?: (span: Span) => void;
-  /** Those of them whose type states no `[Symbol.hasInstance]` and which
-   * TypeScript binds to an import of a checked class declaration
-   * (`checkedClass`), reported to `importedClassTest`. */
-  importedClassTest?: (span: Span) => void;
-  /** The iterables of the client's `for...of` loops: each that TypeScript
-   * types as a string, a `Set`, a `Map` or a host collection iterator is
-   * reported to `iterable` with the iteration intrinsic that steps it
-   * (`iterationIntrinsic`), which then joins the values; one it types as an
-   * object with a `[Symbol.iterator]` that is none of these nor an array,
-   * with `client`, which runs the iterator protocol, or `client-unclosable`
-   * where the iterator's type states no `return`. Any other is left to
-   * `%Iterate%`. */
-  iterables?: readonly Span[];
-  /** Likewise the operands of the client's argument spreads, `f(...x)`: one
-   * of these kinds is reported with its spread intrinsic (`spreadName`). */
-  spreads?: readonly Span[];
-  /** A program iterable is reported with the well-known `Symbol.iterator`'s index
-   * among the symbols, which its protocol reads the iterator method by. */
-  iterable?: (span: Span, intrinsic: string, iteratorSymbol: number | null) => void;
-  /** The targets of the client's array pattern rests, each with the number of
-   * positions before it: each TypeScript types as no one tuple of required
-   * positions is a slice, reported to `restSlice`, and `%RestFrom:k%`
-   * (`restFromIntrinsic`) joins the values. */
-  restTargets?: readonly { span: Span; index: number }[];
-  restSlice?: (span: Span) => void;
-  /** The keys of the client's `k in o` tests: each TypeScript types as other
-   * than string literals is reported to `hostIn`, and the intrinsics, among
-   * them `%HasProperty%`, which answers such a test, join the values. */
-  inKeys?: readonly Span[];
-  hostIn?: (span: Span) => void;
-  /** The member names `m` of the client's `o.m.call(…)`, `.apply` and
-   * `.bind` targets: each TypeScript resolves to a method is reported to
-   * `methodTarget`. */
-  receiverTargets?: readonly Span[];
-  methodTarget?: (span: Span) => void;
-  /** Names the parser lowers specially where they are the standard
-   * library's (`Object` of `Object.assign`, the member `call`, `apply` or
-   * `bind` of a function): each TypeScript binds to declarations of the
-   * standard library alone is reported to `libraryName`. */
-  libraryNames?: readonly Span[];
-  libraryName?: (span: Span) => void;
-  /** Names the file declares nowhere: each TypeScript binds to the standard
-   * library's `var` or function declarations alone, whose read runs no code
-   * and cannot throw, is reported to `libraryValue`. */
-  libraryValues?: readonly Span[];
-  libraryValue?: (span: Span) => void;
-  /** The client's element reads `e[k]`: each whose object TypeScript types
-   * as arrays, tuples and node lists only and whose key as `number`, no literal, is
-   * reported to `hostElement`, and the intrinsics, among them
-   * `%ElementAt%`, which reads it, join the values. */
-  elementReads?: readonly Span[];
-  hostElement?: (span: Span) => void;
-  /** The client's reads `e.length`. Each of these and of the element reads
-   * whose object TypeScript types as views of bytes only
-   * (`library-types.mts`), at a number key for an element, is reported to
-   * `byteRead` with the intrinsic reading it, `%ByteAt%` or `%ByteLength%`,
-   * which joins the values. */
-  lengthReads?: readonly Span[];
-  byteRead?: (span: Span, intrinsic: string) => void;
-  /** The client's reads `e.k` at a key some `"k" in o` test writes: each
-   * whose object TypeScript types as `object` narrowed by such tests alone
-   * (every part of an intersection `object` or the standard library's
-   * `Record<"k'", unknown>`, `k` among the `k'`) is reported to `openRead`
-   * with its intrinsic, `%Read:k%`, which joins the values. */
-  openReads?: readonly Span[];
-  openRead?: (span: Span, intrinsic: string) => void;
-  /** The client's regular expression literals: each is reported to
-   * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
-   * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
-   * (`regexp.mts`). */
-  regexps?: readonly Span[];
-  regexp?: (span: Span, intrinsic: string) => void;
-  /** The client's calls `s.m(o, …)` of a `String.prototype` method that
-   * dispatches to its argument (`dispatchMethods`): each whose receiver
-   * TypeScript types as a string and whose first argument as an object is
-   * reported to `dispatch` with `%Dispatch:m%`, which joins the values
-   * (`dispatchIntrinsic`). */
-  dispatchCalls?: readonly Span[];
-  dispatch?: (span: Span, intrinsic: string) => void;
-  /** Identifiers of the client that may name one of its local bindings: each
-   * that TypeScript binds to a value declaration in the client is reported
-   * to `bindingRead` with the span of that declaration's name. A shorthand
-   * property `{ x }` names the binding its value reads. */
-  bindingReads?: readonly Span[];
-  bindingRead?: (span: Span, declaration: Span) => void;
-  /** The names of the client's closure parameters written without a type:
-   * each is reported to `contextualParam` with the type TypeScript gives it
-   * from its context, as a type term (`contextualTerm`), or the reason none
-   * states it. */
-  /** The names of the client's static fields written without an
-   * annotation: each is reported to `staticType` with the type TypeScript
-   * gives it, as a term (`contextualTerm`), or why none. */
-  staticTypes?: readonly Span[];
   staticType?: (span: Span, result: Answered<TypeTerm>) => void;
-  contextualParams?: readonly Span[];
   contextualParam?: (span: Span, result: Answered<TypeTerm>) => void;
-  /** The client's arrows and function expressions written without type
-   * parameters and with a parameter written without a type: each is reported to
-   * `contextualBinders` with fresh names for the type parameters of the
-   * signature TypeScript gives it, which it takes from a generic context
-   * signature, or the reason none states them (a bounded one); its
-   * parameters' contextual types name them by these names. */
-  contextualClosures?: readonly Span[];
   contextualBinders?: (span: Span, result: Answered<string[]>) => void;
-  /** The client's calls `Object.assign(arrow, literal)` written without type
-   * arguments: each is reported to `assignTypes` with the two TypeScript
-   * infers, the arrow's function type and the literal's record, as the
-   * callable form's annotations, or the reason no term states them. */
-  assignCalls?: readonly Span[];
   assignTypes?: (span: Span, result: Answered<{ functionType: TypeTerm; bagType: TypeTerm }>) => void;
-  /** The client's top-level enum declarations: each must be one TypeScript
-   * accepts, and each member, by its span, is reported to `enumMember` with
-   * the value TypeScript computes for it, which is the value its emit writes
-   * (SOURCE-CONTRACTS.md, "Enums"), or undefined where it computes none. */
-  enums?: readonly Span[];
+  computedType?: (span: Span, result: Answered<TypeTerm>) => void;
+  blockType?: (span: Span, result: Answered<BlockType>) => void;
+  /** Told, for each client reference omitting arguments of a declaration,
+   * the omitted arguments: each parameter's default at the arguments before
+   * it, or the reason it has none. */
+  completion?: (span: Span, result: Answered<TypeTerm[]>) => void;
+  keyType?: (span: Span, keys: TypeTerm | null) => void;
+  mappedType?: (span: Span, members: readonly MappedMember[] | null) => void;
+  symbolName?: (span: Span, result: Answered<number | { literal: string; value: string | number }>) => void;
+}
+
+export interface EnumAnswers {
   enumMember?: (span: Span, value: string | number | undefined) => void;
   /** Told each imported enum's local name and members: the client's
    * annotations read its type and its members' literal types. */
   importedEnum?: (local: string, members: readonly EnumMemberValue[], reverse: EnumReverse) => void;
-  /** Told each import binding of a listed guard of the compiler API's family
-   * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
-   * declared parameter states, the field a node guard tests (the family's
-   * tag), and the values of its tag set, the family's constants. */
-  hostGuard?: (local: string, entry: GuardEntry, domain: TypeTerm, field: string | null,
-    tags: readonly (number | string)[]) => void;
   /** An ambient enum (`declare enum`, not `const`) joins the values as the
    * environment's object, at its members' object type (`enumMembersTerm`).
    * An enum with a member TypeScript computes no value for joins the
@@ -773,72 +847,186 @@ export function collectDeclarations(file: string, options: {
    * read of one of its members in such a member's initializer, bare or
    * `E.M`, `E["M"]`, is reported to `enumMemberRead` with the member's span. */
   enumMemberRead?: (span: Span, member: Span) => void;
-  /** The client's reads `X.y` and `X["y"]` with `X` an identifier: each that
-   * TypeScript binds to a member of a `const enum` the client declares is
-   * reported to `constEnumRead` with the member's value, which TypeScript
-   * writes in place of the read. */
-  constEnumReads?: readonly Span[];
   constEnumRead?: (span: Span, value: string | number) => void;
-  /** The receivers of the client's member reads, `e.k` and `e[k]`: each
-   * that TypeScript types as a string, number, bigint or boolean, or a union
-   * holding one, reads that primitive's members through its wrapper's
-   * prototype, whose contract (`array-prototype.mts`) then joins the graph
-   * and whose built-in value joins the values, located at the first such
-   * receiver. */
-  memberReceivers?: readonly Span[];
-  /** The client's computed types (`computedForm`) outside its type
-  * declarations, each outermost one: each is evaluated
-  * (`computed-types.mts`) and reported to `computedType` with its term, or
-  * with the reason it has none. */
-  computed?: readonly Span[];
-  computedType?: (span: Span, result: Answered<TypeTerm>) => void;
-  /** The client's type references spelling a name some type declared in
-   * one of its blocks has: each TypeScript binds to such a declaration is
-   * reported to `blockType` with that declaration, which joins the graph,
-   * its own arity and the spellings of the type parameters it closes over,
-   * each the binder TypeScript resolves at the reference; or with the
-   * reason it is refused (SOURCE-CONTRACTS.md, "Block-scoped type
-   * declarations"). */
-  blockTypes?: readonly Span[];
-  blockType?: (span: Span, result: Answered<BlockType>) => void;
-  /** Told, for each client reference omitting arguments of a declaration,
-   * the omitted arguments: each parameter's default at the arguments before
-   * it, or the reason it has none. */
-  completion?: (span: Span, result: Answered<TypeTerm[]>) => void;
-  /** Type nodes of the client's annotations that may be a mapped type's keys:
-   * each is reported to `keyType` with the union of literals and primitives
-   * TypeScript computes for it, or null. */
-  keyTypes?: readonly Span[];
-  keyType?: (span: Span, keys: TypeTerm | null) => void;
-  /** The client's mapped types over `keyof`: each is reported to
-   * `mappedType` with its members as TypeScript resolves them, or null. */
-  mappedTypes?: readonly Span[];
-  mappedType?: (span: Span, members: readonly MappedMember[] | null) => void;
-  /** The computed keys `[k]` and `[S.k]` of the client's annotations' type
-   * literals: each that names a `unique symbol` constant or readonly property
-   * joins the symbols and is reported to `symbolName` with its index, any
-   * other with the reason it names none. */
-  symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: Answered<number | { literal: string; value: string | number }>) => void;
+}
+
+export interface DeclarationObservations {
+  /** Told each definition that is a record written as one: an interface or
+   * a type alias read as its declared body, outside a class and a host
+   * type (`NamedRecords`, named-record.mts). */
+  record?: (declaration: DeclarationIdentity) => void;
+  /** Told each import binding of a listed guard of the compiler API's family
+   * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
+   * declared parameter states, the field a node guard tests (the family's
+   * tag), and the values of its tag set, the family's constants. */
+  hostGuard?: (local: string, entry: GuardEntry, domain: TypeTerm, field: string | null,
+    tags: readonly (number | string)[]) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
   seen?: (diagnostic: SeenDiagnostic) => void;
-  /** The run's tag selection of a host family, by its marker
-   * (HOST-FAMILIES.md, "Residuals"), when an imported module of the run is
-   * lowered: the one read of the selection, made by family; otherwise it is
-   * computed over the modules the checked file reaches and reported to
-   * `familySelected`. */
-  familySelection?: (marker: string) => readonly TagValue[] | undefined;
   familySelected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void;
-} = {}): DeclarationDocument {
+}
+
+export interface DeclarationOptions extends DeclarationInput, DeclarationPolicy, RootRequests, BindingRequests, OperationRequests, TypeRequests, EnumRequests, BindingAnswers, OperationAnswers, TypeAnswers, EnumAnswers, DeclarationObservations {}
+
+interface DeclarationServices {
+  input: DeclarationInput;
+  policy: DeclarationPolicy;
+  rootsRequested: RootRequests;
+  bindingsRequested: BindingRequests;
+  operationsRequested: OperationRequests;
+  typesRequested: TypeRequests & { completionRequested: boolean };
+  enumsRequested: EnumRequests;
+  bindingAnswers: BindingAnswers;
+  operationAnswers: OperationAnswers;
+  typeAnswers: TypeAnswers;
+  enumAnswers: EnumAnswers;
+  observations: DeclarationObservations;
+}
+
+/** Deliver a synchronous answer with the public options as its receiver. */
+function declarationAnswer<A extends readonly unknown[], R>(options: DeclarationOptions,
+    answer: ((...args: A) => R) | undefined): ((...args: A) => R) | undefined {
+  return answer == null ? undefined : (...args: A): R => Reflect.apply(answer, options, args);
+}
+
+/** Group requests and synchronous answer destinations by their owner. */
+function declarationServices(options: DeclarationOptions): DeclarationServices {
+  return {
+    input: {
+      get tsconfigPath() { return options.tsconfigPath; },
+      get client() { return options.client; },
+    },
+    policy: {
+      get arrayOverlay() { return options.arrayOverlay; },
+      get familySelection() { return options.familySelection; },
+    },
+    rootsRequested: {
+      get namespaceMembers() { return options.namespaceMembers ?? []; },
+      get locals() { return options.locals ?? []; },
+      get globals() { return options.globals ?? []; },
+      get globalValues() { return options.globalValues ?? []; },
+      get importMeta() { return options.importMeta ?? []; },
+      get ambient() { return options.ambient ?? []; },
+      get root() { return options.root; },
+      get arrays() { return options.arrays; },
+      get intrinsics() { return options.intrinsics; },
+    },
+    bindingsRequested: {
+      get symbolKeys() { return options.symbolKeys ?? []; },
+      get privateNames() { return options.privateNames ?? []; },
+      get staticReads() { return options.staticReads ?? []; },
+      get classTests() { return options.classTests ?? []; },
+      get hookTests() { return options.hookTests ?? []; },
+      get bindingReads() { return options.bindingReads ?? []; },
+    },
+    operationsRequested: {
+      get iterables() { return options.iterables ?? []; },
+      get spreads() { return options.spreads ?? []; },
+      get restTargets() { return options.restTargets ?? []; },
+      get inKeys() { return options.inKeys ?? []; },
+      get receiverTargets() { return options.receiverTargets ?? []; },
+      get libraryNames() { return options.libraryNames ?? []; },
+      get libraryValues() { return options.libraryValues ?? []; },
+      get elementReads() { return options.elementReads ?? []; },
+      get lengthReads() { return options.lengthReads ?? []; },
+      get openReads() { return options.openReads ?? []; },
+      get regexps() { return options.regexps ?? []; },
+      get dispatchCalls() { return options.dispatchCalls ?? []; },
+      get memberReceivers() { return options.memberReceivers ?? []; },
+    },
+    typesRequested: {
+      get staticTypes() { return options.staticTypes ?? []; },
+      get contextualParams() { return options.contextualParams ?? []; },
+      get contextualClosures() { return options.contextualClosures ?? []; },
+      get assignCalls() { return options.assignCalls ?? []; },
+      get computed() { return options.computed ?? []; },
+      get blockTypes() { return options.blockTypes ?? []; },
+      get keyTypes() { return options.keyTypes ?? []; },
+      get mappedTypes() { return options.mappedTypes ?? []; },
+      get symbolNames() { return options.symbolNames ?? []; },
+      get completionRequested() { return !!options.completion; },
+    },
+    enumsRequested: {
+      get enums() { return options.enums ?? []; },
+      get constEnumReads() { return options.constEnumReads ?? []; },
+    },
+    bindingAnswers: {
+      get symbolKey() { return declarationAnswer(options, options.symbolKey); },
+      get privateName() { return declarationAnswer(options, options.privateName); },
+      get staticMember() { return declarationAnswer(options, options.staticMember); },
+      get inheritedStatic() { return declarationAnswer(options, options.inheritedStatic); },
+      get classTest() { return declarationAnswer(options, options.classTest); },
+      get hookTest() { return declarationAnswer(options, options.hookTest); },
+      get importedClassTest() { return declarationAnswer(options, options.importedClassTest); },
+      get bindingRead() { return declarationAnswer(options, options.bindingRead); },
+    },
+    operationAnswers: {
+      get assertionCall() { return declarationAnswer(options, options.assertionCall); },
+      get globalTest() { return declarationAnswer(options, options.globalTest); },
+      get globalIntrinsic() { return declarationAnswer(options, options.globalIntrinsic); },
+      get globalConstruct() { return declarationAnswer(options, options.globalConstruct); },
+      get iterable() { return declarationAnswer(options, options.iterable); },
+      get restSlice() { return declarationAnswer(options, options.restSlice); },
+      get hostIn() { return declarationAnswer(options, options.hostIn); },
+      get methodTarget() { return declarationAnswer(options, options.methodTarget); },
+      get libraryName() { return declarationAnswer(options, options.libraryName); },
+      get libraryValue() { return declarationAnswer(options, options.libraryValue); },
+      get hostElement() { return declarationAnswer(options, options.hostElement); },
+      get byteRead() { return declarationAnswer(options, options.byteRead); },
+      get openRead() { return declarationAnswer(options, options.openRead); },
+      get regexp() { return declarationAnswer(options, options.regexp); },
+      get dispatch() { return declarationAnswer(options, options.dispatch); },
+    },
+    typeAnswers: {
+      get library() { return declarationAnswer(options, options.library); },
+      get awaited() { return declarationAnswer(options, options.awaited); },
+      get resolvable() { return declarationAnswer(options, options.resolvable); },
+      get awaitable() { return declarationAnswer(options, options.awaitable); },
+      get within() { return declarationAnswer(options, options.within); },
+      get associatedAlias() { return declarationAnswer(options, options.associatedAlias); },
+      get staticType() { return declarationAnswer(options, options.staticType); },
+      get contextualParam() { return declarationAnswer(options, options.contextualParam); },
+      get contextualBinders() { return declarationAnswer(options, options.contextualBinders); },
+      get assignTypes() { return declarationAnswer(options, options.assignTypes); },
+      get computedType() { return declarationAnswer(options, options.computedType); },
+      get blockType() { return declarationAnswer(options, options.blockType); },
+      get completion() { return declarationAnswer(options, options.completion); },
+      get keyType() { return declarationAnswer(options, options.keyType); },
+      get mappedType() { return declarationAnswer(options, options.mappedType); },
+      get symbolName() { return declarationAnswer(options, options.symbolName); },
+    },
+    enumAnswers: {
+      get enumMember() { return declarationAnswer(options, options.enumMember); },
+      get importedEnum() { return declarationAnswer(options, options.importedEnum); },
+      get enumMemberRead() { return declarationAnswer(options, options.enumMemberRead); },
+      get constEnumRead() { return declarationAnswer(options, options.constEnumRead); },
+    },
+    observations: {
+      get record() { return declarationAnswer(options, options.record); },
+      get hostGuard() { return declarationAnswer(options, options.hostGuard); },
+      get seen() { return declarationAnswer(options, options.seen); },
+      get familySelected() { return declarationAnswer(options, options.familySelected); },
+    },
+  };
+}
+
+/**
+ * The declaration graph of `file`: one root per named import and per local
+ * declaration at a span in `locals`, and every declaration reachable from them.
+ * `client`, when given, is the parser's tree of the same file; TypeScript must
+ * have read the same bytes, so the spans of both trees agree.
+ */
+export function collectDeclarations(file: string, options: DeclarationOptions = {}): DeclarationDocument {
+  const { input, policy, rootsRequested, bindingsRequested, operationsRequested, typesRequested, enumsRequested, bindingAnswers, operationAnswers, typeAnswers, enumAnswers, observations } = declarationServices(options);
   function refuseAt(pos: Span, error: unknown): never {
     if (error instanceof DeclarationError) throw error;
     throw declarationError(pos, messageOf(error), error);
   }
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram, exactOptional) => {
-    if (options.client && options.client.getFullText() !== client.getFullText())
+  return withProject(clientFile, input.tsconfigPath, (checker, client, root, program, probeProgram, exactOptional) => {
+    if (input.client && input.client.getFullText() !== client.getFullText())
       throw declarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // A module of the program: a source file outside the standard library,
@@ -872,20 +1060,17 @@ export function collectDeclarations(file: string, options: {
         if (at.flags & ts.NodeFlags.Ambient) return true;
       return false;
     };
-    let externalReads = 0;
     const statedDefinitions = new Set<string>();
     const programClasses = new Set<string>();
-    // The definition whose equation is being read (`collect`): a statement
-    // read meanwhile, through a computed type its equation names included,
-    // is its.
-    let collecting: string | null = null;
-    const statement = (reference: ts.TypeReferenceNode, owner: string | null): boolean => {
+    // A statement belongs to its explicit owner, including one reached
+    // through a computed type in that owner's equation.
+    const statement = (reading: DeclarationReading, reference: ts.TypeReferenceNode, owner: string | null): boolean => {
       if (!ts.isIdentifier(reference.typeName) || verifierAlias(reference.typeName) !== "Within") return false;
       if (!programFile(reference.getSourceFile()) || ambient(reference))
         throw Error("`Within` outside the program's sources, or in an ambient declaration, states an effect of code no run checks");
-      if (externalReads > 0)
+      if (reading.externalReads > 0)
         throw Error("a value declared outside the program's sources is typed by a statement (`Within`), an effect of code no run checks");
-      const at = owner ?? collecting;
+      const at = owner ?? reading.owner;
       if (at !== null) statedDefinitions.add(at);
       return true;
     };
@@ -934,7 +1119,7 @@ export function collectDeclarations(file: string, options: {
           .filter(d => d.category === DiagnosticCategory.Error && !untypedAmbientField(file, d));
         errors.set(file.fileName, found);
         for (const d of found)
-          options.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
+          observations.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
             start: file.getLineAndCharacterOfPosition(d.pos),
             end: file.getLineAndCharacterOfPosition(d.end), text: d.text });
       }
@@ -1402,7 +1587,7 @@ export function collectDeclarations(file: string, options: {
     };
     let scanned: ReadonlyMap<string, readonly TagValue[]> | null = null;
     const scan = (): ReadonlyMap<string, readonly TagValue[]> => scanned ??= scanSelection(closure());
-    const given = options.familySelection;
+    const given = policy.familySelection;
     // The selection is read here alone, by family.
     const selected = (marker: string): readonly TagValue[] | undefined => given ? given(marker) : scan().get(marker);
     const selectionSets = new Map<string, ReadonlySet<TagValue>>();
@@ -1635,7 +1820,7 @@ export function collectDeclarations(file: string, options: {
     // and nothing more is known. Its declared members are dropped, which is a
     // supertype of TypeScript's `Function`; TypeScript's own special case,
     // that every callable meets it, is the equation.
-    const equation = (node: TypeDeclaration): TypeTerm | null => {
+    const equation = (reading: DeclarationReading, node: TypeDeclaration): TypeTerm | null => {
       const source = node.getSourceFile();
       const parts = partners.get(node) ?? [node];
       const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
@@ -1651,26 +1836,26 @@ export function collectDeclarations(file: string, options: {
           throw Error(`the library's Error declares a member not reviewed: ${members.filter(m => !reviewedErrorMembers.includes(m)).join(" ")}`);
         return errorInstance([node.getStart(source), node.end]);
       }
-      return library ? libraryRegExp(node.name.text, parts) : null;
+      return library ? libraryRegExp(reading, node.name.text, parts) : null;
     };
     // The library's `RegExp`, `RegExpExecArray` and `RegExpMatchArray`, read
     // as `regexp.mts` states them; `RegExp`'s members it states must be
     // declared as reviewed.
-    const libraryRegExp = (name: string, parts: readonly TypeDeclaration[]): TypeTerm | null => {
+    const libraryRegExp = (reading: DeclarationReading, name: string, parts: readonly TypeDeclaration[]): TypeTerm | null => {
       if (name === "RegExp") {
         const members = parts.flatMap(part => ts.isInterfaceDeclaration(part)
           ? part.members.map(m => m.getText(part.getSourceFile()).trim()) : []);
         for (const { name: member, text } of reviewedRegExpMembers)
           if (!members.includes(text)) throw Error(`RegExp.${member} is not declared as reviewed: ${text}`);
       }
-      return libraryRegExpTerm(name, () => regexpKeys());
+      return libraryRegExpTerm(name, () => regexpKeys(reading));
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
     // A mapped type's keys as TypeScript computes them, where they are a
     // union of literals and primitives.
     const keyTypeOf = (node: TypeNode): TypeTerm | null => {
-      computedContext.captures(node);
+      computedContext(emptyDeclarationReading).captures(node);
       const type = checker.getTypeFromTypeNode(node);
       return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
@@ -1678,7 +1863,7 @@ export function collectDeclarations(file: string, options: {
     // with its modifiers, readonly where the mapping makes it so
     // (`checkFlags & 8`), or null where it resolves to no property.
     const mappedModifiersOf = (node: ts.MappedTypeNode): MappedMember[] | null => {
-      computedContext.captures(node);
+      computedContext(emptyDeclarationReading).captures(node);
       const type = checker.getTypeFromTypeNode(node);
       const members = type ? checker.getPropertiesOfType(type).map(p => ({ name: p.name,
         optional: (p.flags & SymbolFlags.Optional) !== 0, readonly: (p.checkFlags & 8) !== 0 })) : [];
@@ -1829,14 +2014,14 @@ export function collectDeclarations(file: string, options: {
     const valueDeclarations: Node[] = [];
     // `captured` states a block type's captured parameter at a reference;
     // by default the binder of its spelling, which `binders` must hold.
-    const valueScope = (node: Node, what: string, binders: string[] = [],
+    const valueScope = (reading: DeclarationReading, node: Node, what: string, binders: string[] = [],
         captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm): TermScope => {
       const source = node.getSourceFile();
       return {
         source,
         annotation: false,
         awaited,
-        stated: part => statement(part, null),
+        stated: part => statement(reading, part, null),
         associatedAlias: part => {
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
           return target && isTypeAlias(target) && associatedAlias(target) ? target : null;
@@ -1851,11 +2036,11 @@ export function collectDeclarations(file: string, options: {
           if (!(ts.isArrayTypeNode(body) || ts.isTupleTypeNode(body) || ts.isTypeReferenceNode(body) ||
               (ts.isTypeOperatorNode(body) && body.operator === ts.SyntaxKind.ReadonlyKeyword)))
             return null;
-          return instantiateAt(alias, reference.args, null)(body);
+          return instantiateAt(reading, alias, reference.args, null)(body);
         },
         symbol: symbolOf,
         literalKey: literalKeyOf,
-        computed: (part, pos, read) => computedType(computedContext, part, pos, read),
+        computed: (part, pos, read) => computedType(computedContext(reading), part, pos, read),
         keys: keyTypeOf,
         modifiers: mappedModifiersOf,
         enumerated,
@@ -1881,10 +2066,10 @@ export function collectDeclarations(file: string, options: {
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
           // An alias TypeScript computes from its parameters is the type it
           // computes at this reference's arguments.
-          if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
+          if (computedAlias(targetNode, aliasOf)) return computedType(computedContext(reading), part, pos, read);
           const args = part.typeArguments ?? [];
           const target = `${identityOf(targetNode).module}#${name.text}`;
-          const completed = completeArguments(targetNode, args.map(read), part, target, captured ?? (parameter => {
+          const completed = completeArguments(reading, targetNode, args.map(read), part, target, captured ?? (parameter => {
             if (!binders.includes(parameter.name.text))
               throw Error(`${target} closes over the type parameter ${parameter.name.text}, which ${what} does not bind`);
             return capturedAt(part, target)(parameter);
@@ -1899,11 +2084,11 @@ export function collectDeclarations(file: string, options: {
     };
     // A generic declaration's binders, each bounded by what it extends; the
     // bound may name earlier binders.
-    const bindersOf = (parameters: readonly ts.TypeParameterDeclaration[] | undefined, node: Node, what: string) => {
+    const bindersOf = (reading: DeclarationReading, parameters: readonly ts.TypeParameterDeclaration[] | undefined, node: Node, what: string) => {
       const names: string[] = [];
       const typeParams = (parameters ?? []).map(p => {
         if (p.defaultType) throw Error(`a type parameter default of an imported value is outside the fragment: ${what}`);
-        const bound = p.constraint ? typeTerm(valueScope(node, what, [...names]), p.constraint, p) : null;
+        const bound = p.constraint ? typeTerm(valueScope(reading, node, what, [...names]), p.constraint, p) : null;
         names.push(p.name.text);
         return { name: p.name.text, bound, resolution: null };
       });
@@ -1920,15 +2105,10 @@ export function collectDeclarations(file: string, options: {
     // them (reading rule 5).
     const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     // `guard` is the listed guard a client's import binds to (`bindingGuard`).
-    const valueOf = (declared: readonly Node[], what: string, guard: GuardEntry | null = null, bound: boolean = false): Omit<ValueRoot, "binding"> => {
+    const valueOf = (reading: DeclarationReading, declared: readonly Node[], what: string, guard: GuardEntry | null = null, bound: boolean = false): Omit<ValueRoot, "binding"> => {
       const external = declared.some(n => !programFile(n.getSourceFile()) || ambient(n));
-      if (external) externalReads++;
-      let read: Omit<ValueRoot, "binding">;
-      try {
-        read = valueRead(declared, what, bound);
-      } finally {
-        if (external) externalReads--;
-      }
+      const nested = { ...reading, externalReads: reading.externalReads + (external ? 1 : 0) };
+      const read = valueRead(nested, declared, what, bound);
       if (external) externalTypes.push({ what, type: read.type });
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
         ? { ...read, type: guardReading(declared, hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }), guard) }
@@ -1996,7 +2176,7 @@ export function collectDeclarations(file: string, options: {
       const promiseForm = { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised };
       return { k: "intersection", span, parts: [plainForm, promiseForm, { ...plainForm, rest }, { ...promiseForm, rest }] };
     };
-    const valueRead = (declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
+    const valueRead = (reading: DeclarationReading, declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !isTypeAlias(n));
       valueDeclarations.push(...nodes);
       const [node] = nodes;
@@ -2030,7 +2210,7 @@ export function collectDeclarations(file: string, options: {
         // A declaration's unit is certified at one signature: a statement on
         // an overload, or on the implementation, has no check, one overload
         // beside its implementation included.
-        if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(n, what), n.type, n).stated))
+        if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
           if (overloads.some(o => o.typeParameters?.length))
@@ -2039,21 +2219,21 @@ export function collectDeclarations(file: string, options: {
             const at: Span = [o.getStart(source), o.end];
             for (const part of [...o.parameters, ...(o.type ? [o.type] : [])])
               clean(part, `${idOf(source)}#${o.name?.text ?? what}`);
-            return signatures(valueScope(o, what), o.parameters, o.type, o, at, true);
+            return signatures(valueScope(reading, o, what), o.parameters, o.type, o, at, true);
           });
           return { declaration: { module: idOf(source), name: overloads[0]?.name?.text ?? what, span },
             construct: false, typeParams: [], type: oneTerm(forms, span) };
         }
-        return valueOf(overloads, what);
+        return valueOf(reading, overloads, what);
       }
       if (ts.isFunctionDeclaration(node) && node.name) {
         // Only the signature is the contract; the body is what is assumed,
         // so an error inside it is not the graph's.
         for (const part of [...(node.typeParameters ?? []), ...node.parameters, ...(node.type ? [node.type] : [])])
           clean(part, `${idOf(source)}#${node.name.text}`);
-        const { names, typeParams } = bindersOf(node.typeParameters, node, what);
+        const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
-          type: oneTerm(signature(valueScope(node, what, names), node.parameters, node.type, node, span, true), span) };
+          type: oneTerm(signature(valueScope(reading, node, what, names), node.parameters, node.type, node, span, true), span) };
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
@@ -2081,9 +2261,9 @@ export function collectDeclarations(file: string, options: {
             fn.parameters.every(p => !!p.type)) {
           for (const part of [...(fn.typeParameters ?? []), ...fn.parameters, fn.type])
             clean(part, `${idOf(source)}#${node.name.text}`);
-          const { names, typeParams } = bindersOf(fn.typeParameters, fn, what);
+          const { names, typeParams } = bindersOf(reading, fn.typeParameters, fn, what);
           return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
-            type: oneTerm(signature(valueScope(fn, what, names), fn.parameters, fn.type, fn, span, true), span) };
+            type: oneTerm(signature(valueScope(reading, fn, what, names), fn.parameters, fn.type, fn, span, true), span) };
         }
         if (!constant || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
@@ -2097,7 +2277,7 @@ export function collectDeclarations(file: string, options: {
           type.type.kind === ts.SyntaxKind.SymbolKeyword;
         const symbol = unique ? (() => { try { return symbolOf(node.name); } catch (error) { passToolFailure(error); return null; } })() : null;
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
-          typeParams: [], type: symbol === null ? typeTerm(valueScope(node, what), type, node)
+          typeParams: [], type: symbol === null ? typeTerm(valueScope(reading, node, what), type, node)
             : { k: "unique", symbol, span: [type.getStart(source), type.end] } };
       }
       // A class of the compiler API is read through its named view (reading
@@ -2110,8 +2290,8 @@ export function collectDeclarations(file: string, options: {
           type: { k: "object", fields: [], stringIndex: null, calls: [], span } };
       if (ts.isClassDeclaration(node) && node.name) {
         clean(node, `${idOf(source)}#${node.name.text}`);
-        const { names, typeParams } = bindersOf(node.typeParameters, node, what);
-        const scope = valueScope(node, what, names);
+        const { names, typeParams } = bindersOf(reading, node.typeParameters, node, what);
+        const scope = valueScope(reading, node, what, names);
         const constructor = node.members.find(ts.isConstructorDeclaration);
         // A defaulted parameter may be omitted: `undefined` is what a short
         // call binds there, and the default replaces it.
@@ -2207,19 +2387,19 @@ export function collectDeclarations(file: string, options: {
     };
     // Computed types (`computed-types.mts`): an annotation they reach is read
     // where it is declared, as an imported value's is, and must be clean.
-    const computedContext: ComputedContext = {
+    const computedContext = (reading: DeclarationReading): ComputedContext => ({
       checker,
       annotation: (type, at, binders) => {
         const what = `${idOf(at.getSourceFile())}#${type.getText(at.getSourceFile())}`;
         clean(type, what);
-        return typeTerm(valueScope(at, what, binders), type, at);
+        return typeTerm(valueScope(reading, at, what, binders), type, at);
       },
       body: alias => {
         const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
         clean(alias.type, what);
         let body = alias.type;
         while (ts.isParenthesizedTypeNode(body)) body = body.type;
-        return typeTerm({ ...valueScope(alias, what), body }, alias.type, alias);
+        return typeTerm({ ...valueScope(reading, alias, what), body }, alias.type, alias);
       },
       method: node => {
         const source = node.getSourceFile();
@@ -2233,18 +2413,18 @@ export function collectDeclarations(file: string, options: {
           throw Error(`${what} is a method of a standard library interface, read through its overlay`);
         clean(node, what);
         const span: Span = [node.getStart(source), node.end];
-        const forms = signatures(valueScope(node, what), node.parameters, node.type, node, span);
+        const forms = signatures(valueScope(reading, node, what), node.parameters, node.type, node, span);
         if (!node.type || forms.some(f => f.receiver))
           throw Error(`${what}: an optional method with a \`this\` parameter or no result type is outside the fragment`);
         return oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span } })), span);
       },
-      value: (nodes, what) => valueOf(nodes, what),
+      value: (nodes, what) => valueOf(reading, nodes, what),
       alias: aliasOf,
       referenceAlias: reference => aliasNodes.get(aliasKey(reference.reference.target)) ?? null,
       // A block alias's captured arguments are the binders at the use.
-      applied: (alias, args, use) => instantiateAt(alias, [...capturedOf(alias).map(capturedAt(use,
+      applied: (alias, args, use) => instantiateAt(reading, alias, [...capturedOf(alias).map(capturedAt(use,
         `${idOf(alias.getSourceFile())}#${alias.name.text}`)), ...args], use),
-      equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
+      equation: reference => valueScope(reading, client, "an alias's equation").equation?.(reference) ?? null,
       // Each block type the form names, at the binders it closes over.
       captures: node => {
         const visit = (n: Node): void => {
@@ -2267,7 +2447,7 @@ export function collectDeclarations(file: string, options: {
           throw Error(`the unique symbol ${checker.typeToString(type)} is declared by no one constant`);
         return symbolOf(name);
       },
-    };
+    });
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
     const typeDeclarationsOf = (name: Identifier): Node[] =>
@@ -2364,7 +2544,7 @@ export function collectDeclarations(file: string, options: {
     // or a computed alias's application naming them, what TypeScript
     // computes for it at the application `use`; any other computed form
     // what TypeScript computes for it where it is written.
-    const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode, bound?: boolean) => TypeTerm => {
+    const instantiateAt = (reading: DeclarationReading, declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode, bound?: boolean) => TypeTerm => {
       const source = declaration.getSourceFile();
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
       const merged = parametersOf(declaration);
@@ -2378,19 +2558,19 @@ export function collectDeclarations(file: string, options: {
       const namesParameter = (n: Node): boolean =>
         (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
         (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
-      const outer = valueScope(declaration, what, [], parameter => {
+      const outer = valueScope(reading, declaration, what, [], parameter => {
         const index = merged.findIndex(p => p.name.parent && nodeKey(p.name.parent) === nodeKey(parameter));
         const argument = args[index];
         if (!argument) throw Error(`${what} has no argument for the captured type parameter ${parameter.name.text}`);
         return argument;
       });
       const evaluate: ComputedHook = (part, pos, read) => {
-        if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
+        if (!namesParameter(part)) return computedType(computedContext(reading), part, pos, read);
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
           "and is evaluated only at an application written in source");
         if (merged.some(p => p.captured)) throw Error(`${what}: ${part.getText(source)} names the parameters of ` +
           "a type declared in a block, which TypeScript evaluates only where it closes over no type parameter");
-        computedContext.captures(part);
+        computedContext(reading).captures(part);
         return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
       };
       const scope: TermScope = { ...outer,
@@ -2412,7 +2592,7 @@ export function collectDeclarations(file: string, options: {
     // before it (`instantiateAt`).
     // A block type's captured arguments come first, each the reader's
     // (`captured`); a reader stating none refuses such a type.
-    const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
+    const completeArguments = (reading: DeclarationReading, declaration: Node, written: readonly TypeTerm[], use: Node | null,
         what: string, captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm): TypeTerm[] => {
       const parameters = parametersOf(declaration);
       const closed = parameters.flatMap(p => {
@@ -2426,7 +2606,7 @@ export function collectDeclarations(file: string, options: {
       const completed = [...closed, ...written];
       for (const parameter of parameters.slice(completed.length)) {
         if (!parameter.default) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
-        completed.push(instantiateAt(declaration, completed, use)(parameter.default));
+        completed.push(instantiateAt(reading, declaration, completed, use)(parameter.default));
       }
       return completed;
     };
@@ -2455,7 +2635,7 @@ export function collectDeclarations(file: string, options: {
       };
       if (member === undefined) find(client);
       else
-        for (const use of (options.namespaceMembers ?? []).find(m => m.local === binding.name)?.uses ?? []) {
+        for (const use of (rootsRequested.namespaceMembers ?? []).find(m => m.local === binding.name)?.uses ?? []) {
           const access = expressionAt(client, use.span);
           const call = access?.parent;
           if (!access || !call || !ts.isCallExpression(call) || call.expression !== access)
@@ -2487,7 +2667,7 @@ export function collectDeclarations(file: string, options: {
         chosen.set(entry, span);
         if (entry.lowering === "test" && lowered(call)) {
           assertionSpans.push(span);
-          options.assertionCall?.(span);
+          operationAnswers.assertionCall?.(span);
         }
       }
       // An entry's forms: its statement, and where it states a promise, the
@@ -2564,7 +2744,7 @@ export function collectDeclarations(file: string, options: {
       const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
       return !!description && !!bound && bound.description === description && bound.value !== undefined && bound.value === hostEnumObject(description, first?.name.text ?? "");
     };
-    for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
+    for (const binding of importBindings(client, rootsRequested.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
         // name must have one.
@@ -2590,10 +2770,10 @@ export function collectDeclarations(file: string, options: {
         const enums = enumsOf(binding.at);
         if (enums && value && (direct || origin !== null)) throw unreviewed();
         if (enums) {
-          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name));
+          enumAnswers.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
-              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });
+              specifier: binding.specifier, span: binding.span }, ...valueOf(emptyDeclarationReading, nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });
           continue;
         }
         const reviewed = direct ? moduleEntries(binding.specifier, binding.imported)
@@ -2636,7 +2816,7 @@ export function collectDeclarations(file: string, options: {
           // declaration is no guard.
           const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name &&
             familyOfGuard(guard) === familyOfFile(node.getSourceFile().fileName) ? guard : null;
-          const value = valueOf(nodes, binding.name, entry);
+          const value = valueOf(emptyDeclarationReading, nodes, binding.name, entry);
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...value });
           const forms = value.type.k === "intersection" ? value.type.parts : [value.type];
@@ -2649,7 +2829,7 @@ export function collectDeclarations(file: string, options: {
               if (value === undefined) throw Error(`the family's constants hold no ${name}, a tag of ${entry.name}`);
               return value;
             });
-            options.hostGuard?.(binding.name, entry, domain,
+            observations.hostGuard?.(binding.name, entry, domain,
               entry.kind === "node" ? familyOfGuard(entry).tag.field : null, tags);
           }
         }
@@ -2658,7 +2838,7 @@ export function collectDeclarations(file: string, options: {
         // that statement, as a library type is.
         const known = library(binding.at, binding.name);
         if (known?.k === "stated") {
-          options.library?.(binding.span, known, binding.name);
+          typeAnswers.library?.(binding.span, known, binding.name);
           continue;
         }
         const declaration = lookup(binding.at, binding.name);
@@ -2676,7 +2856,7 @@ export function collectDeclarations(file: string, options: {
     // receiver, where a call of the binding it reads passes `undefined`: the
     // two agree for a callee whose contract states no receiver, and the
     // call of one that states its receiver is refused where it is written.
-    for (const member of options.namespaceMembers ?? [])
+    for (const member of rootsRequested.namespaceMembers ?? [])
       for (const use of member.uses.filter(u => u.callee)) {
         const name = identifierAt(client, use.name);
         const type = name ? checker.getTypeAtLocation(name) : undefined;
@@ -2688,20 +2868,20 @@ export function collectDeclarations(file: string, options: {
     // "Imported, ambient and global values"):
     // each name joins the values like an import of the client's own
     // declaration, at the type it states. Nothing runs them.
-    for (const span of options.ambient ?? []) {
+    for (const span of rootsRequested.ambient ?? []) {
       const identifier = identifierAt(client, span);
       if (!identifier) throw declarationError(span, "TypeScript ambient declaration missing");
       const statement = client.statements.find(s => s.pos <= identifier.pos && identifier.end <= s.end);
       const at: Span = statement ? [statement.getStart(client), statement.end] : span;
       try {
         values.push({ binding: { local: identifier.text, imported: identifier.text, specifier: ambientSpecifier,
-          span: at }, ...valueOf(resolveDeclarations(identifier, identifier.text), identifier.text) });
+          span: at }, ...valueOf(emptyDeclarationReading, resolveDeclarations(identifier, identifier.text), identifier.text) });
       } catch (error) {
         refuseAt(at, error);
       }
     }
     let resolutionContextAt: Span | undefined;
-    for (const span of options.locals ?? []) {
+    for (const span of rootsRequested.locals ?? []) {
       // A class a block declares is a root as a top-level one is (the
       // parser's local classes).
       const declaration = client.statements.find(statement =>
@@ -2713,7 +2893,7 @@ export function collectDeclarations(file: string, options: {
         const node = lookup(declaration.name, declaration.name.text);
         if (isTypeAlias(node) && associatedAlias(node)) {
           resolutionContextAt ??= span;
-          options.associatedAlias?.(declaration.name.text, identityOf(node));
+          typeAnswers.associatedAlias?.(declaration.name.text, identityOf(node));
           continue;
         }
         // A merged interface's later declarations are the same root. An
@@ -2726,7 +2906,7 @@ export function collectDeclarations(file: string, options: {
         refuseAt(span, error);
       }
     }
-    for (const span of options.globals ?? []) {
+    for (const span of rootsRequested.globals ?? []) {
       const identifier = identifierAt(client, span);
       if (!identifier) throw declarationError(span, "TypeScript global reference missing");
       if (roots.some(r => r.root.binding.local === identifier.text)) continue;
@@ -2737,24 +2917,24 @@ export function collectDeclarations(file: string, options: {
         if (isTypeAlias(declaration) && declaration.name.text === "Awaited" &&
             libraryFile(declaration.getSourceFile())) {
           resolutionContextAt ??= span;
-          options.awaited?.(span);
+          typeAnswers.awaited?.(span);
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             declaration.name.text === "Within") {
-          options.within?.(span);
+          typeAnswers.within?.(span);
           continue;
         }
         if (isTypeAlias(declaration) && verifierFile(declaration.getSourceFile()) &&
             (declaration.name.text === "Resolvable" || declaration.name.text === "Awaitable")) {
           resolutionContextAt ??= span;
-          if (declaration.name.text === "Resolvable") options.resolvable?.(span);
-          else options.awaitable?.(span);
+          if (declaration.name.text === "Resolvable") typeAnswers.resolvable?.(span);
+          else typeAnswers.awaitable?.(span);
           continue;
         }
         const known = library(identifier, identifier.text);
         if (known) {
-          options.library?.(span, known, identifier.text);
+          typeAnswers.library?.(span, known, identifier.text);
           continue;
         }
         const node = lookup(identifier, identifier.text);
@@ -2785,12 +2965,12 @@ export function collectDeclarations(file: string, options: {
     };
     // A reference to one, at `args`, from a statement of the overlay of
     // library globals: the interface joins the graph.
-    const libraryReference = (name: string, args: TypeTerm[]): TypeTerm => {
+    const libraryReference = (reading: DeclarationReading, name: string, args: TypeTerm[]): TypeTerm => {
       const node = libraryInterface(name);
       valueStarts.push(node);
       const target = identityOf(node);
       return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
-        args: completeArguments(node, args, null, name), span: [0, 0] };
+        args: completeArguments(reading, node, args, null, name), span: [0, 0] };
     };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
@@ -2815,7 +2995,7 @@ export function collectDeclarations(file: string, options: {
         valueStarts.push(node);
         const target = identityOf(node);
         return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
-          target }, args: completeArguments(node, args, null, target.name), span };
+          target }, args: completeArguments(emptyDeclarationReading, node, args, null, target.name), span };
       },
       libraryFile,
       // The reviewed text as an interface appended to the client, in a probe
@@ -2853,46 +3033,47 @@ export function collectDeclarations(file: string, options: {
     // The native collection iterator a `Set`'s or a `Map`'s members return,
     // its declaration listed with its first use (`array-prototype.mts`).
     const collectionDefinitions: TypeDefinition[] = [];
-    const collectionIterator = (element: TypeTerm): TypeTerm => {
+    const collectionIterator = (reading: DeclarationReading, element: TypeTerm): TypeTerm => {
       if (!collectionDefinitions.length) collectionDefinitions.push(nativeCollectionIteratorDefinition(
-        markOf(collectionIteratorMark), argument => libraryReference("IterableIterator", [argument])));
+        markOf(collectionIteratorMark), argument => libraryReference(reading, "IterableIterator", [argument])));
       return nativeCollectionIterator(element);
     };
     // A host collection's reading view, its declaration listed with its
     // first use, keyed by the well-known symbols its members are.
     const viewsListed = new Set<CollectionKind>();
-    const collectionView = (kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
+    const collectionView = (reading: DeclarationReading, kind: CollectionKind, args: TypeTerm[]): TypeTerm => {
       if (!viewsListed.has(kind)) {
         const iterator = overlayLibrary.wellKnownSymbol("iterator");
         const toStringTag = overlayLibrary.wellKnownSymbol("toStringTag");
         if (iterator === null || toStringTag === null)
           throw Error(`the standard library declares no Symbol.iterator or Symbol.toStringTag, which a ${kind} is read by`);
-        collectionDefinitions.push(nativeCollectionViewDefinition(kind, { iterator, toStringTag }, collectionIterator));
+        collectionDefinitions.push(nativeCollectionViewDefinition(kind, { iterator, toStringTag }, element => collectionIterator(reading, element)));
         viewsListed.add(kind);
       }
       return nativeCollectionView(kind, args);
     };
     // Read once; the native match iterator's declaration joins the
     // definitions with them.
-    let keysRead: RegExpKeys | undefined;
+    let keysRead: Omit<RegExpKeys, "iterator"> | undefined;
     const regexpDefinitions: TypeDefinition[] = [];
-    const regexpKeys = (): RegExpKeys => {
-      if (keysRead) return keysRead;
-      const known = (name: string): number => {
-        const symbol = overlayLibrary.wellKnownSymbol(name);
-        if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
-        return symbol;
-      };
-      keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
-        search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
-        stringIterator: markOf(marks.stringIterator), iterator: element => libraryReference("Iterator", [element]) };
-      return keysRead;
+    const regexpKeys = (reading: DeclarationReading): RegExpKeys => {
+      if (!keysRead) {
+        const known = (name: string): number => {
+          const symbol = overlayLibrary.wellKnownSymbol(name);
+          if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
+          return symbol;
+        };
+        keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
+          search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
+          stringIterator: markOf(marks.stringIterator) };
+      }
+      return { ...keysRead, iterator: element => libraryReference(reading, "Iterator", [element]) };
     };
     // The native match iterator's declaration, which names the library's
     // `Iterator`: listed where a native regex or its iteration is, before
     // the graph is collected.
     const nativeMatches = (): RegExpKeys => {
-      const keys = regexpKeys();
+      const keys = regexpKeys(emptyDeclarationReading);
       if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
       return keys;
     };
@@ -2908,7 +3089,7 @@ export function collectDeclarations(file: string, options: {
     // function; the program's functions own no `toString`, so a write of
     // one on such a receiver is refused.
     let functionToString: Span | undefined;
-    for (const span of options.memberReceivers ?? []) {
+    for (const span of operationsRequested.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
       if (!receiver) throw declarationError(span, "TypeScript member receiver missing");
       const type = checker.getTypeAtLocation(receiver);
@@ -2934,13 +3115,13 @@ export function collectDeclarations(file: string, options: {
       const parts = (checker.resolveName(name, SymbolFlags.Interface, client, false)?.declarations ?? [])
         .map(d => d.resolve()).filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       const { refusal } = mergeRefusal(checker, libraryFile, parts, overlayLibrary.reviewed);
-      if (refusal) throw declarationError(options.root ?? [0, 0], mergeMessage(name, refusal));
+      if (refusal) throw declarationError(rootsRequested.root ?? [0, 0], mergeMessage(name, refusal));
     }
     let arrayProto: TypeDefinition[] = [];
-    const arraysAt = options.arrays ?? stringSplit;
+    const arraysAt = rootsRequested.arrays ?? stringSplit;
     if (arraysAt) {
       try {
-        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, policy.arrayOverlay ?? overlay);
       } catch (error) {
         throw declarationError(arraysAt, messageOf(error), error);
       }
@@ -3036,8 +3217,8 @@ export function collectDeclarations(file: string, options: {
     };
     let iteratorSymbol: number | null = null;
     const listedIterations = new Set<string>();
-    const iterated = [...(options.iterables ?? []).map(span => ({ span, spread: false })),
-      ...(options.spreads ?? []).map(span => ({ span, spread: true }))];
+    const iterated = [...(operationsRequested.iterables ?? []).map(span => ({ span, spread: false })),
+      ...(operationsRequested.spreads ?? []).map(span => ({ span, spread: true }))];
     for (const { span, spread } of iterated) {
       const iterable = expressionAt(client, span);
       if (!iterable) throw declarationError(span, "TypeScript iterable missing");
@@ -3104,8 +3285,8 @@ export function collectDeclarations(file: string, options: {
       if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
-          const intrinsic = iterationIntrinsic(listed, collectionView,
-            element => { nativeMatches(); return nativeIterator(element); }, collectionIterator);
+          const intrinsic = iterationIntrinsic(listed, (kind, args) => collectionView(emptyDeclarationReading, kind, args),
+            element => { nativeMatches(); return nativeIterator(element); }, element => collectionIterator(emptyDeclarationReading, element));
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
@@ -3114,13 +3295,13 @@ export function collectDeclarations(file: string, options: {
           refuseAt(span, error);
         }
       }
-      options.iterable?.(span, listed, program ? iteratorSymbol : null);
+      operationAnswers.iterable?.(span, listed, program ? iteratorSymbol : null);
     }
     // An array pattern's rest over what is no one tuple of required
     // positions (an array, a union of tuples, a tuple with optional or rest
     // elements) is a slice, which `%RestFrom:k%` collects.
     const listedRests = new Set<number>();
-    for (const { span, index } of options.restTargets ?? []) {
+    for (const { span, index } of operationsRequested.restTargets ?? []) {
       const target = expressionAt(client, span);
       if (!target) throw declarationError(span, "TypeScript rest source missing");
       const type = checker.getTypeAtLocation(target);
@@ -3135,7 +3316,7 @@ export function collectDeclarations(file: string, options: {
           declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
           construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
       }
-      options.restSlice?.(span);
+      operationAnswers.restSlice?.(span);
     }
     // `async`, `await` and `for...of`, as the intrinsics that stand for them
     // (`intrinsics.mts`): trusted steps at their signatures, listed as values
@@ -3171,7 +3352,7 @@ export function collectDeclarations(file: string, options: {
       if (!needed.size) return;
       if ([...needed].some(name => resolutionIntrinsics.includes(name))) listStable(at);
       try {
-        for (const intrinsic of intrinsics(promiseType, needed, collectionView))
+        for (const intrinsic of intrinsics(promiseType, needed, (kind, args) => collectionView(emptyDeclarationReading, kind, args)))
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span: at },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
@@ -3181,20 +3362,20 @@ export function collectDeclarations(file: string, options: {
         refuseAt(at, error);
       }
     };
-    if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
+    if (rootsRequested.intrinsics) listIntrinsics(rootsRequested.intrinsics.span, rootsRequested.intrinsics.names);
     for (const span of assertionSpans) listIntrinsics(span, [assertionFailureName]);
     if (resolutionContextAt) listStable(resolutionContextAt);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
     // or a string known only at run time, is the host's `%HasProperty%`.
-    for (const span of options.inKeys ?? []) {
+    for (const span of operationsRequested.inKeys ?? []) {
       const key = expressionAt(client, span);
       if (!key) throw declarationError(span, "TypeScript `in` key missing");
       const type = checker.getTypeAtLocation(key);
       const parts = type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
       if (parts.length && parts.every(t => !!(t.flags & TypeFlags.StringLiteral))) continue;
       listIntrinsics(span, [hasPropertyName]);
-      options.hostIn?.(span);
+      operationAnswers.hostIn?.(span);
     }
     // A value TypeScript types as views of bytes only (`TypeEntry.view`):
     // each part's symbol a name the overlay of library types states as one.
@@ -3203,9 +3384,9 @@ export function collectDeclarations(file: string, options: {
     const viewRead = (span: Span, name: string): void => {
       listIntrinsics(span, [name]);
       defineOverlay(typeDefinitions.bytes);
-      options.byteRead?.(span, name);
+      operationAnswers.byteRead?.(span, name);
     };
-    for (const span of options.elementReads ?? []) {
+    for (const span of operationsRequested.elementReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isElementAccessExpression(read)) throw declarationError(span, "TypeScript element read missing");
       const object = checker.getTypeAtLocation(read.expression);
@@ -3226,11 +3407,11 @@ export function collectDeclarations(file: string, options: {
       if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t)) &&
           keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
         listIntrinsics(span, [elementAtName]);
-        options.hostElement?.(span);
+        operationAnswers.hostElement?.(span);
       }
     }
     // `b.length` of a view of bytes.
-    for (const span of options.lengthReads ?? []) {
+    for (const span of operationsRequested.lengthReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isPropertyAccessExpression(read)) throw declarationError(span, "TypeScript length read missing");
       const object = checker.getTypeAtLocation(read.expression);
@@ -3343,7 +3524,7 @@ export function collectDeclarations(file: string, options: {
         return parts.length > 0 && (parts.some(part => !!(part.flags & TypeFlags.Object) && !!checker.getPropertyOfType(part, key)) ||
           parts.every(part => hostDeclared(part, new Set())));
       });
-    for (const span of options.openReads ?? []) {
+    for (const span of operationsRequested.openReads ?? []) {
       const read = expressionAt(client, span);
       if (!read || !ts.isPropertyAccessExpression(read) || !ts.isIdentifier(read.name))
         throw declarationError(span, "TypeScript member read missing");
@@ -3370,11 +3551,11 @@ export function collectDeclarations(file: string, options: {
           construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
         intrinsicsListed.add(intrinsic.name);
       }
-      options.openRead?.(span, intrinsic.name);
+      operationAnswers.openRead?.(span, intrinsic.name);
     }
     // A regular expression literal is a call of the intrinsic of its shape,
     // listed once per shape at the first literal of it.
-    for (const span of options.regexps ?? []) {
+    for (const span of operationsRequested.regexps ?? []) {
       const literal = expressionAt(client, span);
       if (!literal || literal.kind !== ts.SyntaxKind.RegularExpressionLiteral)
         throw declarationError(span, "TypeScript regular expression literal missing");
@@ -3411,9 +3592,9 @@ export function collectDeclarations(file: string, options: {
         }
         intrinsicsListed.add(name);
       }
-      options.regexp?.(span, name);
+      operationAnswers.regexp?.(span, name);
     }
-    for (const span of options.dispatchCalls ?? []) {
+    for (const span of operationsRequested.dispatchCalls ?? []) {
       const call = expressionAt(client, span);
       if (!call || !ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression))
         throw declarationError(span, "TypeScript string method call missing");
@@ -3429,7 +3610,7 @@ export function collectDeclarations(file: string, options: {
       const name = dispatchName(method);
       if (!intrinsicsListed.has(name)) {
         try {
-          const intrinsic = dispatchIntrinsic(method, regexpKeys());
+          const intrinsic = dispatchIntrinsic(method, regexpKeys(emptyDeclarationReading));
           values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false,
             typeParams: intrinsic.typeParams, type: intrinsic.type });
@@ -3438,9 +3619,9 @@ export function collectDeclarations(file: string, options: {
         }
         intrinsicsListed.add(name);
       }
-      options.dispatch?.(span, name);
+      operationAnswers.dispatch?.(span, name);
     }
-    for (const span of options.libraryNames ?? []) {
+    for (const span of operationsRequested.libraryNames ?? []) {
       const name = identifierAt(client, span);
       if (!name) continue;
       // A member name is the property its object's type has under it; any
@@ -3454,9 +3635,9 @@ export function collectDeclarations(file: string, options: {
       if (symbol.declarations.every(d => {
         const node = d.resolve();
         return !!node && libraryFile(node.getSourceFile());
-      })) options.libraryName?.(span);
+      })) operationAnswers.libraryName?.(span);
     }
-    for (const span of options.libraryValues ?? []) {
+    for (const span of operationsRequested.libraryValues ?? []) {
       const name = identifierAt(client, span);
       const symbol = name && checker.getSymbolAtLocation(name);
       if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
@@ -3469,12 +3650,12 @@ export function collectDeclarations(file: string, options: {
         const list = node.parent;
         return ts.isVariableDeclaration(node) && !!list && ts.isVariableDeclarationList(list) &&
           !(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const));
-      })) options.libraryValue?.(span);
+      })) operationAnswers.libraryValue?.(span);
     }
-    for (const span of options.receiverTargets ?? []) {
+    for (const span of operationsRequested.receiverTargets ?? []) {
       const name = identifierAt(client, span);
       const symbol = name && checker.getSymbolAtLocation(name);
-      if (symbol && symbol.flags & SymbolFlags.Method) options.methodTarget?.(span);
+      if (symbol && symbol.flags & SymbolFlags.Method) operationAnswers.methodTarget?.(span);
     }
     // Global variables the client reads, such as Node's `process` (SOURCE-CONTRACTS.md,
     // "Imported, ambient and global values"): each joins the values like an import, at a definition
@@ -3482,7 +3663,7 @@ export function collectDeclarations(file: string, options: {
     // members and call signatures the client's references select.
     const selections: TypeDefinition[] = [];
     const groups = new Map<number, Identifier[]>();
-    for (const span of options.globalValues ?? []) {
+    for (const span of rootsRequested.globalValues ?? []) {
       const identifier = identifierAt(client, span);
       if (!identifier) throw declarationError(span, "TypeScript global value reference missing");
       const symbol = checker.getSymbolAtLocation(identifier);
@@ -3499,14 +3680,14 @@ export function collectDeclarations(file: string, options: {
       if (!first) continue;
       const at: Span = [first.getStart(client), first.end];
       try {
-        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, libraryFile, clean, valueScope, partners,
-          overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test),
+        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, libraryFile, clean, valueScope: (node, what) => valueScope(emptyDeclarationReading, node, what), partners,
+          overlay: globalsOverlay, test: (span, test) => operationAnswers.globalTest?.(span, test),
           intrinsic: (span, name) => {
             listIntrinsics(span, [name]);
-            options.globalIntrinsic?.(span, name);
+            operationAnswers.globalIntrinsic?.(span, name);
           },
-          construct: span => options.globalConstruct?.(span),
-          library: libraryReference, view: collectionView,
+          construct: span => operationAnswers.globalConstruct?.(span),
+          library: (name, args) => libraryReference(emptyDeclarationReading, name, args), view: (kind, args) => collectionView(emptyDeclarationReading, kind, args),
           define: defineOverlay });
         if (!selection) continue;
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
@@ -3527,7 +3708,7 @@ export function collectDeclarations(file: string, options: {
     }
     // The module's `import.meta`, each member read a call of an intrinsic
     // (SOURCE-CONTRACTS.md, "Module metadata").
-    const metaUses = (options.importMeta ?? []).map(span => {
+    const metaUses = (rootsRequested.importMeta ?? []).map(span => {
       const node = expressionAt(client, span);
       if (!node || !ts.isMetaProperty(node)) throw declarationError(span, "TypeScript import.meta missing");
       return node;
@@ -3539,25 +3720,25 @@ export function collectDeclarations(file: string, options: {
         selectImportMeta(checker, metaUses, { identityOf: idOf, libraryFile, clean, overlay: globalsOverlay,
           intrinsic: (span, name) => {
             listIntrinsics(span, [name]);
-            options.globalIntrinsic?.(span, name);
+            operationAnswers.globalIntrinsic?.(span, name);
           } });
       } catch (error) {
         refuseAt(at, error);
       }
     }
     // A private name reads the key of the member TypeScript binds it to.
-    for (const span of options.privateNames ?? []) {
+    for (const span of bindingsRequested.privateNames ?? []) {
       const name = expressionAt(client, span);
       if (!name || !ts.isPrivateIdentifier(name)) throw declarationError(span, "TypeScript private name missing");
       try {
-        options.privateName?.(span, privateNameOf(name));
+        bindingAnswers.privateName?.(span, privateNameOf(name));
       } catch (error) {
         refuseAt(span, error);
       }
     }
     // An element key naming a `unique symbol` constant reads that symbol's
     // key; any other is an ordinary index, left to the expression.
-    for (const span of options.symbolKeys ?? []) {
+    for (const span of bindingsRequested.symbolKeys ?? []) {
       // `S.k`: a readonly `unique symbol` property, such as the well-known
       // `Symbol.iterator`.
       const access = expressionAt(client, span);
@@ -3568,7 +3749,7 @@ export function collectDeclarations(file: string, options: {
             !ts.isTypeOperatorNode(member.type) || member.type.operator !== ts.SyntaxKind.UniqueKeyword)
           continue;
         try {
-          options.symbolKey?.(span, symbolOf(access));
+          bindingAnswers.symbolKey?.(span, symbolOf(access));
         } catch (error) {
           refuseAt(span, error);
         }
@@ -3582,12 +3763,12 @@ export function collectDeclarations(file: string, options: {
           !ts.isTypeOperatorNode(node.type) || node.type.operator !== ts.SyntaxKind.UniqueKeyword)
         continue;
       try {
-        options.symbolKey?.(span, symbolOf(identifier));
+        bindingAnswers.symbolKey?.(span, symbolOf(identifier));
       } catch (error) {
         refuseAt(span, error);
       }
     }
-    for (const span of options.staticReads ?? []) {
+    for (const span of bindingsRequested.staticReads ?? []) {
       const name = identifierAt(client, span);
       const access = name?.parent;
       if (!name || !access || !ts.isPropertyAccessExpression(access) || !ts.isIdentifier(access.expression))
@@ -3599,21 +3780,21 @@ export function collectDeclarations(file: string, options: {
           ts.isClassDeclaration(owner) && owner.name && owner.parent === client && member.parent === owner &&
           (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
           member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
-        options.staticMember?.(span, owner.name.text);
+        bindingAnswers.staticMember?.(span, owner.name.text);
       else if (members.length === 1 && owners.length === 1 && member && owner &&
           ts.isClassDeclaration(owner) && member.parent !== owner && ts.isClassDeclaration(member.parent) &&
           (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
           member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
-        options.inheritedStatic?.(span);
+        bindingAnswers.inheritedStatic?.(span);
     }
-    for (const span of options.classTests ?? []) {
+    for (const span of bindingsRequested.classTests ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw declarationError(span, "TypeScript `instanceof` operand missing");
       const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
       const [owner] = owners;
       if (owners.length === 1 && owner && ts.isClassDeclaration(owner) && owner.name &&
           owner.getSourceFile() === client && owner.name.text === name.text)
-        options.classTest?.(span, owner.name.text);
+        bindingAnswers.classTest?.(span, owner.name.text);
     }
     // Whether `file` uses the class `owner` declares as a value other than
     // by name in these positions: the callee of `new`, the right operand of
@@ -3707,12 +3888,12 @@ export function collectDeclarations(file: string, options: {
       const owners = targetOf(checker, name)?.declarations.map(d => d.resolve()) ?? [];
       return owners.length === 1 && checkedClass(owners[0], new Set());
     };
-    for (const span of options.hookTests ?? []) {
+    for (const span of bindingsRequested.hookTests ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw declarationError(span, "TypeScript `instanceof` operand missing");
       const type = checker.getTypeAtLocation(name);
       const hook = type ? checker.getPropertiesOfType(type).find(p => p.name.startsWith("__@hasInstance@")) : undefined;
-      if (!hook && importedClass(name)) options.importedClassTest?.(span);
+      if (!hook && importedClass(name)) bindingAnswers.importedClassTest?.(span);
       // A hook the program's types state, not the one `Function.prototype`
       // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();
@@ -3721,9 +3902,9 @@ export function collectDeclarations(file: string, options: {
       const target = key && ts.isComputedPropertyName(key) && ts.isPropertyAccessExpression(key.expression) &&
         ts.isIdentifier(key.expression.name) ? targetOf(checker, key.expression.name) : undefined;
       if (target?.declarations.some(d => libraryFile(d.resolve()?.getSourceFile() ?? client)))
-        options.hookTest?.(span);
+        bindingAnswers.hookTest?.(span);
     }
-    for (const span of options.bindingReads ?? []) {
+    for (const span of bindingsRequested.bindingReads ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw declarationError(span, "TypeScript binding reference missing");
       const parent = name.parent;
@@ -3734,14 +3915,14 @@ export function collectDeclarations(file: string, options: {
       const declared = declaration && nameOf(declaration);
       if (declarations.length === 1 && declaration && declared && ts.isIdentifier(declared) &&
           declaration.getSourceFile().fileName === client.fileName)
-        options.bindingRead?.(span, [declared.getStart(client), declared.end]);
+        bindingAnswers.bindingRead?.(span, [declared.getStart(client), declared.end]);
     }
     // A closure parameter without a type is at the type TypeScript gives it
     // from its context: a source type term whose names enter the same
     // declaration graph as written references.
     const contextualStarts: { node: TypeDeclaration; span: Span }[] = [];
-    const contextualTerm = (type: Type, span: Span): TypeTerm => {
-      const term = readContextualTerm(type, span);
+    const contextualTerm = (closureBinders: ClosureBinders, typesRead: Set<number>, type: Type, span: Span): TypeTerm => {
+      const term = readContextualTerm(closureBinders, typesRead, type, span);
       validateAnnotation(term, (_span, message) => { throw Error(message); });
       return term;
     };
@@ -3779,7 +3960,7 @@ export function collectDeclarations(file: string, options: {
     // read at its key's kind and capability. A member no object contract
     // states (a method, an accessor, a symbol key, an index
     // of another key) is refused.
-    const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
+    const contextualRecord = (closureBinders: ClosureBinders, typesRead: Set<number>, type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
       const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
       if (!declarations.length || !declarations.every(d => !!d &&
@@ -3790,7 +3971,7 @@ export function collectDeclarations(file: string, options: {
           !libraryFile(only.getSourceFile())) {
         const binders = enclosingBinders(only);
         if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
-          return computedContext.annotation(only, only, binders);
+          return computedContext(emptyDeclarationReading).annotation(only, only, binders);
       }
       if (checker.getSignaturesOfType(type, SignatureKind.Call).length ||
           checker.getSignaturesOfType(type, SignatureKind.Construct).length)
@@ -3830,7 +4011,7 @@ export function collectDeclarations(file: string, options: {
             !(literalMember && member.flags & TypeFlags.Undefined && !isUnionType(member)))
           throw Error(`the contextual record ${text} is an instance of an anonymous record, whose instantiation the compiler's API does not give, and its optional member ${p.name} is at a type with the \`undefined\` optionality adds, from which its written contract is not recovered; an annotation states it`);
         const memberType = writtenType && node && declaration
-          ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
+          ? computedContext(emptyDeclarationReading).annotation(node, declaration, binders) : contextualTerm(closureBinders, typesRead, member, span);
         const readonly = own
           ? !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)
           : (p.checkFlags & 8) !== 0;
@@ -3840,7 +4021,7 @@ export function collectDeclarations(file: string, options: {
       let numberIndex: Extract<TypeTerm, { k: "object" }>["numberIndex"];
       let symbolIndex: Extract<TypeTerm, { k: "object" }>["symbolIndex"];
       for (const info of checker.getIndexInfosOfType(type)) {
-        const index = { readonly: info.isReadonly, value: contextualTerm(info.valueType, span), span };
+        const index = { readonly: info.isReadonly, value: contextualTerm(closureBinders, typesRead, info.valueType, span), span };
         const key = info.keyType.flags;
         if (key & TypeFlags.String) stringIndex = index;
         else if (key & TypeFlags.Number) numberIndex = index;
@@ -3865,7 +4046,7 @@ export function collectDeclarations(file: string, options: {
     // recovers: type parameters, a promise about the receiver or without a
     // type, a rest of another type, a construct signature, a second
     // signature, a member beside the call signature.
-    const contextualCallable = (type: Type, span: Span): TypeTerm | null => {
+    const contextualCallable = (closureBinders: ClosureBinders, typesRead: Set<number>, type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
       const calls = checker.getSignaturesOfType(type, SignatureKind.Call);
       if (!calls.length) return null;
@@ -3876,7 +4057,7 @@ export function collectDeclarations(file: string, options: {
           !libraryFile(only.getSourceFile())) {
         const binders = enclosingBinders(only);
         if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
-          return computedContext.annotation(only, only, binders);
+          return computedContext(emptyDeclarationReading).annotation(only, only, binders);
       }
       const refuse = (what: string): never => {
         throw Error(`TypeScript types this unannotated closure parameter from its context as ${text}, ${what}, which an annotation states`);
@@ -3890,7 +4071,7 @@ export function collectDeclarations(file: string, options: {
       const self = signature.getThisParameter();
       const selfType = self && checker.getTypeOfSymbol(self);
       if (self && !selfType) return refuse("a signature whose receiver has no type");
-      const receiver = selfType ? contextualTerm(selfType, span) : null;
+      const receiver = selfType ? contextualTerm(closureBinders, typesRead, selfType, span) : null;
       const parameters = signature.getParameters();
       const params: TypeTerm[] = [];
       let rest: TypeTerm | null = null;
@@ -3903,13 +4084,13 @@ export function collectDeclarations(file: string, options: {
           ? checker.getTypeOfSymbol(p) : checker.getParameterType(signature, index);
         if (p.declarations.length !== 1 || !declaration || !ts.isParameterDeclaration(declaration) || !parameter)
           return refuse("a signature with a parameter no declaration states");
-        const term = contextualTerm(parameter, span);
+        const term = contextualTerm(closureBinders, typesRead, parameter, span);
         if (!declaration.dotDotDotToken) {
           params.push(term);
           continue;
         }
         const positions = index === parameters.length - 1
-          ? restPositions(restTerm(valueScope(declaration, text), term)) : null;
+          ? restPositions(restTerm(valueScope(emptyDeclarationReading, declaration, text), term)) : null;
         if (!positions) return refuse("a signature with a rest that is not an array or a tuple of required positions");
         if (positions.k === "positions") params.push(...positions.positions);
         else rest = positions.element;
@@ -3917,7 +4098,7 @@ export function collectDeclarations(file: string, options: {
       const returned = checker.getReturnTypeOfSignature(signature);
       if (!returned) return refuse("a signature of no result type");
       const plain: FunctionTerm = { k: "function", effect: ordinaryEffect, receiver, params, rest,
-        result: contextualTerm(returned, span), span };
+        result: contextualTerm(closureBinders, typesRead, returned, span), span };
       const predicate = checker.getTypePredicateOfSignature(signature);
       if (!predicate) return plain;
       // A predicate's index is read where its kind states one: a predicate
@@ -3932,13 +4113,8 @@ export function collectDeclarations(file: string, options: {
       if (!promised || !declared || !ts.isParameterDeclaration(declared) || declared.dotDotDotToken)
         return refuse("a promise about the receiver, a rest or no type");
       return oneTerm([plain, { ...plain, effect: promiseEffect(asserts, about),
-        result: contextualTerm(promised, span) }], span);
+        result: contextualTerm(closureBinders, typesRead, promised, span) }], span);
     };
-    const typesRead = new Set<number>();
-    // The type parameters a closure takes from its context signature, by
-    // their symbol, at the fresh names it binds them under, while one of its
-    // parameters' contextual types is read.
-    let closureBinders: ReadonlyMap<number, { spelled: string; fresh: string }> = new Map();
     // A contextual type read for a closure's parameter names the closure's
     // type parameters as spelled; each free occurrence becomes its fresh
     // name, a scheme's own binders hiding it.
@@ -3955,7 +4131,7 @@ export function collectDeclarations(file: string, options: {
       }
       return mapTypeParts(term, part => renameFree(part, names));
     };
-    const readContextualTerm = (type: Type, span: Span): TypeTerm => {
+    const readContextualTerm = (closureBinders: ClosureBinders, typesRead: Set<number>, type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
         throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
       const member = contextualEnumMember(type, span);
@@ -3981,7 +4157,7 @@ export function collectDeclarations(file: string, options: {
         if (stated) {
           const actuals = isTypeReference(type) ? checker.getTypeArguments(type) : [];
           if (stated.arguments && actuals.length && (actuals.length !== stated.arguments.length ||
-              actuals.some((a, i) => termText(contextualTerm(a, span)) !== termText(stated.arguments?.[i] ?? { k: "atom", name: "never", span }))))
+              actuals.some((a, i) => termText(contextualTerm(closureBinders, typesRead, a, span)) !== termText(stated.arguments?.[i] ?? { k: "atom", name: "never", span }))))
             throw Error(`the contextual type ${text()} is read at the type the overlay of library types states, which holds at ${stated.name}'s default arguments alone`);
           defineOverlay(stated.definition);
           const id = stated.definition.declaration;
@@ -4002,7 +4178,7 @@ export function collectDeclarations(file: string, options: {
             !libraryRegExpNames.includes(symbol.name) && symbol.name !== "Array" && symbol.name !== "ReadonlyArray") {
           const declared = declarationOf(libraryInterfaces, text());
           const actuals = isTypeReference(type) ? checker.getTypeArguments(type) : [];
-          const args = actuals.map(argument => contextualTerm(argument, span));
+          const args = actuals.map(argument => contextualTerm(closureBinders, typesRead, argument, span));
           if (args.length !== parametersOf(declared).length)
             throw Error(`the contextual type ${text()} does not state every declaration argument`);
           contextualStarts.push({ node: declared, span });
@@ -4017,7 +4193,7 @@ export function collectDeclarations(file: string, options: {
           // reference's otherwise.
           const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
             : isTypeReference(type) ? checker.getTypeArguments(type) : [];
-          const args = actuals.map(argument => contextualTerm(argument, span));
+          const args = actuals.map(argument => contextualTerm(closureBinders, typesRead, argument, span));
           // A type declared in a block closing over a type parameter has
           // arguments TypeScript's type does not state.
           if (args.length !== parametersOf(node).length)
@@ -4029,7 +4205,7 @@ export function collectDeclarations(file: string, options: {
             args, span };
         }
         if (isUnionType(type) || isIntersectionType(type)) {
-          const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
+          const parts = (type.getTypes() ?? []).map(part => contextualTerm(closureBinders, typesRead, part, span));
           const [only] = parts;
           return parts.length === 1 && only ? only : { k: isUnionType(type) ? "union" : "intersection", parts, span };
         }
@@ -4043,7 +4219,7 @@ export function collectDeclarations(file: string, options: {
         if (checker.isArrayType(type) && isTypeReference(type)) {
           const [element] = checker.getTypeArguments(type);
           if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
-            element: contextualTerm(element, span), span };
+            element: contextualTerm(closureBinders, typesRead, element, span), span };
         }
         // A tuple of required positions and a rest, as its annotation reads,
         // readonly as TypeScript says. An optional position's type TypeScript
@@ -4057,23 +4233,23 @@ export function collectDeclarations(file: string, options: {
           for (const [i, flag] of tuple.elementFlags.entries()) {
             const element = elements[i];
             if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
-            if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(element, span));
-            else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(element, span);
+            if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(closureBinders, typesRead, element, span));
+            else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(closureBinders, typesRead, element, span);
             else throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, ` +
               "a tuple with an optional or variadic position, which an annotation states");
           }
           return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
         }
-        const callable = contextualCallable(type, span);
+        const callable = contextualCallable(closureBinders, typesRead, type, span);
         if (callable) return callable;
-        const record = contextualRecord(type, span);
+        const record = contextualRecord(closureBinders, typesRead, type, span);
         if (record) return record;
         // A library regex type (`RegExpExecArray` for a match's callback), as
         // `regexp.mts` reads it.
         const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
         if (symbol && library.length && library.length === nodes.length &&
             library.every(n => libraryFile(n.getSourceFile()))) {
-          const stated = libraryRegExp(symbol.name, library);
+          const stated = libraryRegExp(emptyDeclarationReading, symbol.name, library);
           if (stated) return stated;
         }
         throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
@@ -4089,16 +4265,16 @@ export function collectDeclarations(file: string, options: {
       };
       return visit(client);
     };
-    for (const span of options.staticTypes ?? []) {
+    for (const span of typesRequested.staticTypes ?? []) {
       const name = identifierAt(client, span);
       if (!name) throw declarationError(span, "TypeScript static field missing");
       const symbol = checker.getSymbolAtLocation(name);
       const type = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this static field no type");
-        options.staticType?.(span, { ok: true, value: contextualTerm(type, span) });
+        typeAnswers.staticType?.(span, { ok: true, value: contextualTerm(new Map(), new Set(), type, span) });
       } catch (error) {
-        options.staticType?.(span, { ok: false, refused: refusalAt(span, error) });
+        typeAnswers.staticType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // A closure TypeScript types at a generic context signature takes that
@@ -4117,7 +4293,7 @@ export function collectDeclarations(file: string, options: {
       };
       return visit(client);
     };
-    for (const span of options.contextualClosures ?? []) {
+    for (const span of typesRequested.contextualClosures ?? []) {
       const closure = closureAt(span);
       if (!closure) throw declarationError(span, "TypeScript closure missing");
       try {
@@ -4137,24 +4313,22 @@ export function collectDeclarations(file: string, options: {
         if (new Set(names.map(n => n.spelled)).size !== names.length)
           throw Error("TypeScript gives this closure two type parameters of one spelling");
         closureBinderNames.set(span.join(":"), new Map(names.map(n => [n.id, { spelled: n.spelled, fresh: n.fresh }])));
-        options.contextualBinders?.(span, { ok: true, value: names.map(n => n.fresh) });
+        typeAnswers.contextualBinders?.(span, { ok: true, value: names.map(n => n.fresh) });
       } catch (error) {
-        options.contextualBinders?.(span, { ok: false, refused: refusalAt(span, error) });
+        typeAnswers.contextualBinders?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
-    for (const span of options.contextualParams ?? []) {
+    for (const span of typesRequested.contextualParams ?? []) {
       const parameter = parameterAt(span);
       if (!parameter) throw declarationError(span, "TypeScript parameter missing");
       const type = checker.getTypeAtLocation(parameter.name);
-      closureBinders = closureBinderNames.get(`${parameter.parent.getStart(client)}:${parameter.parent.end}`) ?? new Map();
+      const closureBinders = closureBinderNames.get(`${parameter.parent.getStart(client)}:${parameter.parent.end}`) ?? new Map();
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
         const renames = new Map([...closureBinders.values()].map(b => [b.spelled, b.fresh]));
-        options.contextualParam?.(span, { ok: true, value: renameFree(contextualTerm(type, span), renames) });
+        typeAnswers.contextualParam?.(span, { ok: true, value: renameFree(contextualTerm(closureBinders, new Set(), type, span), renames) });
       } catch (error) {
-        options.contextualParam?.(span, { ok: false, refused: refusalAt(span, error) });
-      } finally {
-        closureBinders = new Map();
+        typeAnswers.contextualParam?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // `Object.assign(arrow, literal)` without type arguments: the two
@@ -4162,7 +4336,7 @@ export function collectDeclarations(file: string, options: {
     // `contextualTerm` states, and `U` the literal's record (`inferredTerm`).
     // Both are annotations the callable form checks the arrow and the
     // literal at.
-    for (const span of options.assignCalls ?? []) {
+    for (const span of typesRequested.assignCalls ?? []) {
       const call = expressionAt(client, span);
       if (!call || !ts.isCallExpression(call)) throw declarationError(span, "TypeScript Object.assign call missing");
       try {
@@ -4179,7 +4353,7 @@ export function collectDeclarations(file: string, options: {
         const params = signature.getParameters().map(p => {
           const type = checker.getTypeOfSymbol(p);
           if (!type) throw Error("TypeScript gives an Object.assign target's parameter no type");
-          return contextualTerm(type, span);
+          return contextualTerm(new Map(), new Set(), type, span);
         });
         const returned = checker.getReturnTypeOfSignature(signature);
         if (!returned) throw Error("TypeScript gives an Object.assign target no result type");
@@ -4187,15 +4361,15 @@ export function collectDeclarations(file: string, options: {
         if (!bagType || bagType.k !== "object")
           throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
             "literal's record of literals and primitives");
-        options.assignTypes?.(span, { ok: true, value: { bagType, functionType: { k: "function", effect: ordinaryEffect,
-          receiver: null, params, rest: null, result: contextualTerm(returned, span), span } } });
+        typeAnswers.assignTypes?.(span, { ok: true, value: { bagType, functionType: { k: "function", effect: ordinaryEffect,
+          receiver: null, params, rest: null, result: contextualTerm(new Map(), new Set(), returned, span), span } } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.assignTypes?.(span, { ok: false, refused: "the type arguments TypeScript infers for this Object.assign: " +
+        typeAnswers.assignTypes?.(span, { ok: false, refused: "the type arguments TypeScript infers for this Object.assign: " +
           refusalAt(span, error) });
       }
     }
-    for (const span of options.enums ?? []) {
+    for (const span of enumsRequested.enums ?? []) {
       const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);
       if (!statement || !ts.isEnumDeclaration(statement))
         throw declarationError(span, "TypeScript enum declaration missing");
@@ -4206,7 +4380,7 @@ export function collectDeclarations(file: string, options: {
       }
       const members = statement.members.map(member => {
         const value = checker.getConstantValue(member);
-        options.enumMember?.([member.getStart(client), member.end], value);
+        enumAnswers.enumMember?.([member.getStart(client), member.end], value);
         return { node: member, name: ts.isIdentifier(member.name) || ts.isStringLiteral(member.name) ? member.name.text : "", value };
       });
       const modifier = (kind: ts.SyntaxKind) => !!statement.modifiers?.some(m => m.kind === kind);
@@ -4236,7 +4410,7 @@ export function collectDeclarations(file: string, options: {
         !!targetOf(checker, node)?.declarations.some(d => same(d.resolve(), statement));
       const memberNamed = (name: string): Node | undefined => members.find(m => m.name === name)?.node;
       const report = (read: Node, member: Node): void => {
-        options.enumMemberRead?.([read.getStart(client), read.end], [member.getStart(client), member.end]);
+        enumAnswers.enumMemberRead?.([read.getStart(client), read.end], [member.getStart(client), member.end]);
       };
       // `forEachChild` stops at a callback's truthy result: `visit` has none.
       const visit = (node: Node): void => {
@@ -4259,7 +4433,7 @@ export function collectDeclarations(file: string, options: {
       };
       for (const m of members) if (m.value === undefined && m.node.initializer) visit(m.node.initializer);
     }
-    for (const span of options.constEnumReads ?? []) {
+    for (const span of enumsRequested.constEnumReads ?? []) {
       const access = expressionAt(client, span);
       if (!access || !(ts.isPropertyAccessExpression(access) || ts.isElementAccessExpression(access)) ||
           !ts.isIdentifier(access.expression))
@@ -4269,43 +4443,43 @@ export function collectDeclarations(file: string, options: {
       const value = checker.getConstantValue(access);
       if (owners.length === 1 && owner && ts.isEnumDeclaration(owner) && owner.parent === client &&
           owner.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword) && value !== undefined)
-        options.constEnumRead?.(span, value);
+        enumAnswers.constEnumRead?.(span, value);
     }
-    for (const span of options.keyTypes ?? []) {
+    for (const span of typesRequested.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
       try {
-        options.keyType?.(span, node ? keyTypeOf(node) : null);
+        typeAnswers.keyType?.(span, node ? keyTypeOf(node) : null);
       } catch (error) {
         refuseAt(span, error);
       }
     }
-    for (const span of options.mappedTypes ?? []) {
+    for (const span of typesRequested.mappedTypes ?? []) {
       const node = typeNodeAt(client, span);
       try {
-        options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
+        typeAnswers.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
       } catch (error) {
         refuseAt(span, error);
       }
     }
-    for (const span of options.symbolNames ?? []) {
+    for (const span of typesRequested.symbolNames ?? []) {
       const node = expressionAt(client, span);
       if (!node || !(ts.isIdentifier(node) || ts.isPropertyAccessExpression(node))) {
-        options.symbolName?.(span, { ok: false, refused: "a computed key names a symbol constant" });
+        typeAnswers.symbolName?.(span, { ok: false, refused: "a computed key names a symbol constant" });
         continue;
       }
       try {
         const literal = literalKeyOf(node);
         const type = checker.getTypeAtLocation(node);
         const value = type && (isStringLiteralType(type) || isNumberLiteralType(type)) ? type.value : null;
-        options.symbolName?.(span, { ok: true, value: literal !== null && value !== null ? { literal, value } : symbolOf(node) });
+        typeAnswers.symbolName?.(span, { ok: true, value: literal !== null && value !== null ? { literal, value } : symbolOf(node) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.symbolName?.(span, { ok: false, refused: refusalAt(span, error) });
+        typeAnswers.symbolName?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's computed types: each evaluated where it is written, with
     // the binders of the functions around it, or refused with the reason.
-    for (const span of options.computed ?? []) {
+    for (const span of typesRequested.computed ?? []) {
       const node = computedAt(client, span);
       if (!node) throw declarationError(span, "TypeScript computed type missing");
       // A global or an imported type's application is computed when the alias it names is.
@@ -4315,20 +4489,20 @@ export function collectDeclarations(file: string, options: {
         ? lookup(node.typeName, node.typeName.text) : null;
       if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf)) && !(aggregate && computedMembers(aggregate))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
-      const scope = valueScope(node, what, enclosingBinders(node));
+      const scope = valueScope(emptyDeclarationReading, node, what, enclosingBinders(node));
       try {
-        options.computedType?.(span, { ok: true, value: aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
-          : computedType(computedContext, node, span, part => typeTerm(scope, part)) });
+        typeAnswers.computedType?.(span, { ok: true, value: aggregate && computedMembers(aggregate) ? typeTerm(scope, node)
+          : computedType(computedContext(emptyDeclarationReading), node, span, part => typeTerm(scope, part)) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.computedType?.(span, { ok: false, refused: refusalAt(span, error) });
+        typeAnswers.computedType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's references to types declared in its blocks, each the
     // declaration TypeScript binds it to; one TypeScript computes from its
     // parameters is a computed type above.
     const blockStarts: { node: TypeDeclaration; span: Span }[] = [];
-    for (const span of options.blockTypes ?? []) {
+    for (const span of typesRequested.blockTypes ?? []) {
       const node = typeNodeAt(client, span);
       if (!node || !ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName))
         throw declarationError(span, "TypeScript type reference missing");
@@ -4347,11 +4521,11 @@ export function collectDeclarations(file: string, options: {
         for (const parameter of captured) capturedAt(node, what)(parameter);
         const own = parametersOf(target).filter(p => !p.captured);
         if (!computed) blockStarts.push({ node: target, span });
-        options.blockType?.(span, { ok: true, value: { computed, declaration: identityOf(target),
+        typeAnswers.blockType?.(span, { ok: true, value: { computed, declaration: identityOf(target),
           captured: captured.map(p => p.name.text), required: own.filter(p => !p.default).length, total: own.length } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.blockType?.(span, { ok: false, refused: refusalAt(span, error) });
+        typeAnswers.blockType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's references that omit arguments of a declaration: the
@@ -4368,27 +4542,27 @@ export function collectDeclarations(file: string, options: {
           try {
             const target = lookup(name, name.text);
             if (!computedAlias(target, aliasOf)) {
-              const scope = valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
+              const scope = valueScope(emptyDeclarationReading, node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
               const closed = capturedOf(target).length;
-              const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text,
+              const completed = completeArguments(emptyDeclarationReading, target, written.map(arg => typeTerm(scope, arg)), node, name.text,
                 capturedAt(node, name.text));
-              options.completion?.(span, { ok: true, value: completed.slice(closed + written.length) });
+              typeAnswers.completion?.(span, { ok: true, value: completed.slice(closed + written.length) });
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
-            options.completion?.(span, { ok: false, refused: refusalAt(span, error) });
+            typeAnswers.completion?.(span, { ok: false, refused: refusalAt(span, error) });
           }
         }
       }
       node.forEachChild(completing);
     };
-    if (options.completion) completing(client);
+    if (typesRequested.completionRequested) completing(client);
     // The applications written in the client file and in the declarations it
     // reaches (`written-applications.mts`), each target joining the graph for
     // its bounds; a library one is stated for its bounds only.
     const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
       const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
-      const base = valueScope(at, what, [], parameter => {
+      const base = valueScope(emptyDeclarationReading, at, what, [], parameter => {
         const name = binder(parameter);
         if (name === undefined)
           throw Error(`a type declared in a block closes over ${parameter.name.text}, which the written application's scope in ${what} does not bind`);
@@ -4471,9 +4645,9 @@ export function collectDeclarations(file: string, options: {
           return { name: name.text, span: [name.getStart(source), name.end],
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
-        instantiate: instantiateAt,
+        instantiate: (node, args, use) => instantiateAt(emptyDeclarationReading, node, args, use),
         parameters: parametersOf,
-        complete: completeArguments,
+        complete: (node, args, use, what, captured) => completeArguments(emptyDeclarationReading, node, args, use, what, captured),
         resolve: name => {
           // The declarations a name denotes: TypeScript's symbol at its
           // location, or, for a step of a member path TypeScript gives no
@@ -4535,25 +4709,22 @@ export function collectDeclarations(file: string, options: {
     const collectFrom = (list: readonly { node: TypeDeclaration; span: Span; instance?: DeclarationInstance }[]): void => {
       for (const { node: start, span, instance } of list) {
         try {
-          collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            computedMembers, instanceOf, instantiate: instantiateAt,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
-            libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
+          collect(start, seen, definitions, { complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup,
+            computedMembers, instanceOf, instantiate: (owner, node, args, use) => instantiateAt({ owner, externalReads: 0 }, node, args, use),
+            enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation: (owner, node) => equation({ owner, externalReads: 0 }, node),
+            libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
             guardPromises,
-            keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: statement,
+            keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
             record: identity => {
               records.add(definitionKey(identity));
-              options.record?.(identity);
+              observations.record?.(identity);
             },
             collecting: (node, key) => {
-              collecting = key;
               if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
                 programClasses.add(key);
             } }, instance);
         } catch (error) {
           throw declarationError(span, messageOf(error), error);
-        } finally {
-          collecting = null;
         }
       }
     };
@@ -4588,7 +4759,7 @@ export function collectDeclarations(file: string, options: {
       const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
       const from = valueStarts.length;
       try {
-        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, policy.arrayOverlay ?? overlay);
       } catch (error) {
         throw declarationError(at, messageOf(error), error);
       }
@@ -4612,7 +4783,7 @@ export function collectDeclarations(file: string, options: {
     const trustedValues = promisedValues(values);
     const localInstances = new Set([...instances.values()].filter(i => idOf(i.node.getSourceFile()) === clientModule).map(i => i.identity.module));
     const trustedDefinitions = promisedDefinitions(definitions, clientModule, localInstances);
-    if (options.familySelected) options.familySelected(scan());
+    if (observations.familySelected) observations.familySelected(scan());
     return finalizeDeclarations(roots.map(r => r.root), trustedDefinitions, trustedValues, symbols, applications, settledAt);
   });
 }
@@ -5648,7 +5819,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   computedMembers: (node: TypeDeclaration) => boolean;
   instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
-  instantiate: (node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
+  instantiate: (owner: string, node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether an identity is a branded string of the host (reading rule 5). */
   isBrand: (id: DeclarationIdentity) => boolean;
@@ -5662,13 +5833,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   library: (identifier: Identifier, what: string) => LibraryType | null;
   /** A declaration's equation where it is not its declared body. */
-  equation: (node: TypeDeclaration) => TypeTerm | null;
+  equation: (owner: string, node: TypeDeclaration) => TypeTerm | null;
   /** The standard library interface of this name, such as `Iterator`. */
   libraryInterface: (name: string) => TypeDeclaration;
   /** The native collection iterator over an element type. */
-  collectionIterator: (element: TypeTerm) => TypeTerm;
+  collectionIterator: (owner: string, element: TypeTerm) => TypeTerm;
   /** A computed type's term (`computed-types.mts`). */
-  computed: ComputedHook;
+  computed: (owner: string, ...args: Parameters<ComputedHook>) => TypeTerm;
   /** The type alias a reference names, if any. */
   alias: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null;
   awaited: AwaitedHook;
@@ -5676,8 +5847,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
   /** Told each declaration collected, under its key, before its equation
-   * is read, and null once collection ends: the program's classes and the
-   * definitions reading a statement are recorded (`externalStatements`). */
+   * is read: the program's classes are recorded (`externalStatements`). */
   collecting: (node: TypeDeclaration | null, key: string | null) => void;
   /** A mapped type's keys as TypeScript computes them. */
   keys: KeysHook;
@@ -5688,7 +5858,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** A declaration's type parameters, its merged declarations together. */
   parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
-  complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string,
+  complete: (owner: string, declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string,
     captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm) => TypeTerm[];
   /** The type an enum's name denotes where a file writes it, or null for a
    * name that is no enum's. */
@@ -5716,7 +5886,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     if (seen.has(key)) continue;
     seen.add(key);
     context.collecting(node, key);
-    const stated = equation(node);
+    const stated = equation(key, node);
     if (stated) {
       definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
       continue;
@@ -5776,7 +5946,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
-      const completed = context.complete(targetNode, arguments_.map(read), written ?? null,
+      const completed = context.complete(key, targetNode, arguments_.map(read), written ?? null,
         `${target.module}#${target.name}`, capturedHere);
       if (context.computedMembers(targetNode)) {
         if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
@@ -5796,7 +5966,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A declaration's own parameters are positional: a computed type that
     // reaches a function's binder has no reading in its equation.
     const computed: ComputedHook = (part, pos, read) => {
-      const term = applied ? context.instantiate(node, applied.args, applied.use)(part) : context.computed(part, pos, read);
+      const term = applied ? context.instantiate(key, node, applied.args, applied.use)(part) : context.computed(key, part, pos, read);
       if (hasBinderTerm(term))
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
       return term;
@@ -5868,12 +6038,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           identityOf, symbol, (name, span) => {
           if (name === "NativeIterator") return ([element]: TypeTerm[]): TypeTerm => {
             if (!element) throw Error("a collection iterator states its element");
-            return context.collectionIterator(element);
+            return context.collectionIterator(key, element);
           };
           const target = context.libraryInterface(name);
           queue.push(target);
           return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
-            args: context.complete(target, args, null, name),
+            args: context.complete(key, target, args, null, name),
             reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
         }) });
       continue;
@@ -5942,7 +6112,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
         queue.push(target);
         const id = identityOf(target);
-        return { k: "reference", span, args: context.complete(target, args, null, `${id.module}#${id.name}`),
+        return { k: "reference", span, args: context.complete(key, target, args, null, `${id.module}#${id.name}`),
           reference: { name: id.name, span, arguments: args.map(() => span), target: id } };
       };
       const synthetic = (name: string): { id: DeclarationIdentity; fresh: boolean; term: TypeTerm } => {
