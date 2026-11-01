@@ -1491,6 +1491,12 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runImporting("invalid-node-path-join-callback",
     `(() => { const xs = ["a", "b", "c"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { return 2 in parents(xs); } finally { path.posix.normalize = normalize; } })()`),
     false, "invalid-node-path-join-callback: a replaced posix.normalize shrinks the array map visits, leaving a hole");
+  assert.equal(runImporting("invalid-set-mapped-paths",
+    `(() => { const xs = ["a", "b"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { return paths("/r", xs).has(undefined); } finally { path.posix.normalize = normalize; } })()`),
+    true, "invalid-set-mapped-paths: a replaced posix.normalize shrinks the array map visits, and Set iterates the hole as undefined");
+  assert.equal(runImporting("blocker-prep-set-mapped-paths",
+    `(() => { const xs = ["a", "b"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { const s = paths("/r", xs); return !s.has(undefined) && [...s].join(); } finally { path.posix.normalize = normalize; } })()`),
+    "/r/a", "blocker-prep-set-mapped-paths: the loop builds a dense array before constructing Set");
   // `crypto.fips`, declared `boolean`, is a deprecated accessor answering a
   // number on the module's object, and no named export holds it.
   assert.equal(runImporting("invalid-node-default-import-unreviewed",
