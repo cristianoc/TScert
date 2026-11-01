@@ -809,7 +809,7 @@ may lack an optional key, so the write may add a key to the object, which
 the gate's other holders see; the calculus types a key-adding write only as
 the copy of a local's own fresh object
 ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)), so the write is
-refused on principle (`optional-write-refused`).
+refused on principle (`invalid-optional-write-alias`).
 
 - **Rewrite:** the field is always owned, `bindings: Map<Node, Map<string,
   Node>> | null = null`, and `resolve` reads it into a local, building and
@@ -1902,6 +1902,36 @@ saved local `s` holds a session through the writes to module state.
 - **Scope:** `blocker-prep-session-after-clear` checks the saved local
   through the module-cell write and close call. This rewrite adds no
   external assumption.
+
+### A recording flag written through a shared reference
+
+`tools/files.mts#inputRead`, also called by `noteInput`, marks every active
+non-stage, non-ledger recording as dependent on a named input. `Recording`
+requires `readsInput: boolean`; `observedNoting` and `newLedger` initialize
+it to `false`. The assignment `r.readsInput = true` uses the existing
+[write rule](PROGRAM-TYPING.md#key-adding-writes) for a field already
+present. `optional-write-refused` shows the required field and an alias
+reading it after the write.
+
+- **Avoided form:** `readsInput?: true`, initially omitted, makes the write
+  add a key through a shared reference. Supporting it requires proving that
+  every alias permits the added key, beyond the existing local fresh-object
+  mechanism. The census sites are `inputRead` and its caller `noteInput`.
+- **Behaviour:** the flag records a two-state fact. Its consumer in
+  `observedNoting` tests `recording.readsInput === true`; both an omitted
+  flag and `false` give `false`, and marking gives `true`. Recordings keep
+  their identities and all other fields; reads and writes keep their order.
+  TScert's callers use ledger operations; they do not enumerate or test
+  presence of this flag. The required field makes this internal state
+  explicit at construction, including on ledgers, which `inputRead` skips.
+  Returns, failures, cache retention and observation propagation agree for
+  those callers. The named-input controls in `tests/observed-stages.mts`
+  exercise caches inside and around stages, including replay.
+- **Scope:** this rewrite uses no new rule or external assumption.
+  `invalid-optional-write-alias` retains the refusal's safety example:
+  two references to `{}` permit optional number and string fields;
+  adding the number makes the string reference's `toUpperCase()` throw
+  `TypeError` under Node.
 
 ### A mapped array replaced by filtered arrays in a loop
 

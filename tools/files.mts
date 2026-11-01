@@ -72,7 +72,7 @@ export type Noted = { observation: Observation; node: boolean };
  * values whose observations it holds, why it is incomplete, if it is, and
  * why Node's caches may disagree with the file system, if they may. */
 export type Recording = { answers: Map<string, Noted>; holding: Set<object>; incomplete: string | null; ledger: boolean;
-  inconsistent: string | null; stage?: true; readsInput?: true };
+  inconsistent: string | null; stage?: true; readsInput: boolean };
 const recordings: Recording[] = [];
 /** The outermost records made in this process so far. */
 let epoch: number = 0;
@@ -167,7 +167,7 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
     { value: T; noted: Noted[]; incomplete: string | null; inconsistent: string | null; readsInput: boolean } {
   if (stage && recordings.length === 0) epoch++;
   const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
-    ledger: false, ...(stage ? { stage: true } : {}) };
+    ledger: false, readsInput: false, ...(stage ? { stage: true } : {}) };
   // The outermost stage's record bounds the attempt's answers.
   const begins = stage && attempt === null;
   if (begins) attempt = attemptOf(recording);
@@ -279,7 +279,8 @@ export function observationsHold(observations: readonly Observation[]): boolean 
  * disagree with the file system, if they may. */
 export type Ledger = { readonly recording: Recording };
 export const newLedger = (): Ledger =>
-  ({ recording: { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess, ledger: true } });
+  ({ recording: { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
+    ledger: true, readsInput: false } });
 /** The number of answers a ledger holds, and its state. */
 export const ledgerState = (ledger: Ledger): { answers: number; incomplete: string | null; inconsistent: string | null } =>
   ({ answers: ledger.recording.answers.size, incomplete: ledger.recording.incomplete,
