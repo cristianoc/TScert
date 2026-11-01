@@ -1943,11 +1943,16 @@ it, and TypeScript then takes the false arm
 constructor declarations or a constructor with a rest parameter, as the
 reader of a class value states one constructor without a rest
 (`blocker-returntype-typeof`, `returntype-overloads`, `parameters-typeof`).
+A written function type supplies its parameter list directly, including
+optional and rest positions. Each position retains its complete annotation,
+including a callback's `Within` effect. The enclosing function's result
+and effect do not qualify the extracted parameters.
+
 A guard's result is its Boolean, which TypeScript computes as a union of
 literals (`returntype-guard`); a generic function's `typeof` is refused, as
 its instantiation at its bounds states a value type no reader states
-(`returntype-generic-refused`), as is a member other than a `typeof`
-(an indexed access of a method, `blocker-api-indexed-method`).
+(`returntype-generic-refused`). An indexed access of a method is refused
+(`blocker-api-indexed-method`).
 
 Each rule above gives what a computed type denotes. That replaces the
 applications written in it, which keep their obligations by

@@ -334,7 +334,9 @@ function inferredResult(context: ComputedContext, alias: TypeAliasDeclaration, b
       : declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d));
     if (declared.some(f => f.type && ts.isTypePredicateNode(f.type)))
       throw Error(`${alias.name.text} of ${written}: a guard's result is its Boolean, which its signatures state beside its promise`);
-    const signatures = declared.some(f => !f.body) ? declared.filter(f => !f.body) : declared;
+    const signatures: readonly (ts.FunctionDeclaration | ts.ConstructorDeclaration | ts.FunctionTypeNode)[] =
+      !construct && ts.isFunctionTypeNode(query) ? [query]
+        : declared.some(f => !f.body) ? declared.filter(f => !f.body) : declared;
     const term = member.read(member.node);
     const kind = construct ? "constructor" : "function";
     const forms = term.k === kind ? [term]

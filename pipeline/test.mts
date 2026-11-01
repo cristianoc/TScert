@@ -5325,6 +5325,22 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
 };
 control(async (): Promise<void> => {
+  // Parameters retains the callback's effect. Claims and evidence made
+  // against a tuple with that requirement erased fail against the source.
+  const artifacts = run("invalid-parameters-qualified-hook");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("argumentsFor");
+  bypassed(artifacts, "forged-parameters-callback-effect", [start, start + "argumentsFor".length], (fragment) => {
+    const fn = must(fragment.functions.find(f => f.name === "argumentsFor"), "argumentsFor");
+    assert.ok(fn.retType.k === "tuple");
+    const callback = must(fn.retType.required[1], "the callback parameter");
+    assert.ok(callback.k === "function");
+    assert.deepEqual(callback.effect.footprint, { value: "any", store: "grow" });
+    callback.effect = ordinaryEffect;
+  });
+  process.stdout.write("Parameters callback effect: forged claims refused in evidence production and consumption\n");
+});
+control(async (): Promise<void> => {
   // Forge the narrowing an unlisted sync predicate cannot promise. The
   // original parsed declaration remains the authority for both Lean paths.
   const artifacts = run("invalid-compiler-api-sync-guard");
