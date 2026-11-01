@@ -60,6 +60,28 @@ of the host's implementation.
 
 ## Unsafe examples
 
+### Reference arguments mapped through an unrestricted callback
+
+`blocker-prep-reference-args-map` returns `{ ...t, args: t.args.map(a => go(a)) }`
+as `TypeTerm`, whose reference arm requires a readable `TypeTerm[]` in `args`.
+For two arguments, a `go` callback that calls `t.args.pop()` and returns its
+argument meets the written callback contract. The map captures length 2,
+visits index 0 and skips the removed index 1. The returned reference holds
+an array of length 2 with a hole at index 1; reading `result.args[1].k`
+throws `TypeError` under Node.
+
+The [native map contract](SOURCE-CONTRACTS.md#prototype-contracts) permits
+holes with unrestricted callbacks. This is a negative case under the
+[route criteria](#deciding-what-a-refusal-of-tscerts-code-calls-for).
+`blocker-prep-reference-args-map-preserving` requires
+`Within<{ value: "any"; store: "grow" }, TypeTerm>` from `go`; the existing
+[effect checks](FOOTPRINTS.md) and native map contract establish the readable
+result, and the reference construction verifies. This adds no external
+assumption. The census functions `compiler-api.mts#hostBrands`,
+`#hostBrandsConstructor` and `#hostBrandsFunction` share the recursive
+`hostBrands` call, whose `brand` and `fail` parameters carry ordinary
+function contracts. Those signatures supply no store-preservation guarantee.
+
 ### Installation records mapped through an unrestricted callback
 
 `blocker-prep-captured-map-records` maps `active` through a callback

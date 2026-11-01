@@ -13,6 +13,10 @@ assert.equal(runExample("invalid-project-after-check-write",
   '(() => { const project = { options: { strict: true } }; return use(project, p => { p.options.strict = false; }); })()'), false,
   "a callback can invalidate the nested strict flag before its true result annotation");
 
+assert.equal(runExample("blocker-prep-reference-args-map",
+  '(() => { const span = [0, 0]; const leaf = { k: "atom", name: "string", span }; const reference = { name: "R", span, arguments: [], target: { module: "fixture", name: "R", span } }; const t = { k: "reference", reference, args: [leaf, leaf], span }; const result = mapped(t, a => { t.args.pop(); return a; }); try { result.args[1].k; return false; } catch (error) { return result.args.length === 2 && !(1 in result.args) && error instanceof TypeError; } })()'), true,
+  "an unrestricted callback can leave a hole in the returned reference's argument array");
+
 assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a: 1, extra: "text" })["extra"]'),
   "string", "an open record admits an extra key outside the number dictionary contract");
 
