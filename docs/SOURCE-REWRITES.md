@@ -2672,6 +2672,26 @@ may include accessors or a Proxy.
 
 ## Changes for a tool's defect
 
+### A module arrow's result and rest in callback overload selection
+
+`named` in `tools/compiler-channel.mts` is a module constant holding a
+one-parameter arrow that deduplicates two paths through a `Set` and
+returns `string[]`. Its closure claim includes the signature extended by a
+rest of `unknown` at the footprint `{ value: "any", store: "keep" }`, and
+`[launcher, directory].flatMap(named)` passes it where `flatMap`'s
+callback parameter expects a `sparse readonly string[]` result at each
+closed footprint ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
+The producer's signature plausibility query compares the receiver and
+leading parameters contravariantly, extra target parameters against the
+source's variadic rest element, and the result covariantly, matching
+[function and class coverage](POSITIVE-TYPES.md#function-and-class-coverage),
+so call overload selection picks the `flatMap` signature at
+`{ value: "any", store: "keep" }`. Lean checks the selected invocation and
+the closure's advertised signatures through the existing certificates.
+`blocker-prep-flat-map-module-function` exercises the deduplicating module
+arrow in `flatMap`, and `invalid-flat-map-module-function` requires a
+field written by the arrow to lose its narrowing across `flatMap`.
+
 ### Stable compiler children across array bindings
 
 The array binding schedule retains refinements through stable member paths

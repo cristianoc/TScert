@@ -64,33 +64,34 @@ let rec plausible_subtype_with excludes actual expected =
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
-           (* A promise signature promising a larger type is met by one
-              promising a smaller type: its `true` leaves the actual in the
-              larger type too. *)
-           (not (Semantic.plain_effect q.call_effect) &&
-            {p with call_effect=q.call_effect;result=q.result}=q &&
-            plausible_subtype_with excludes p.result q.result) ||
-           (* A function taking fewer parameters meets a signature passing
-              more: a call discards the actuals past its parameters. A
-              promise at the longer signature is met only by code checked
-              there, a closure claimed at it (`Closures`). *)
-           (p.variadic=None && p.rest_pack=None && q.variadic=None && q.rest_pack=None &&
-            Semantic.plain_effect q.call_effect &&
-            List.length p.params < List.length q.params &&
-            {p with call_effect=q.call_effect}
-              = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params}) ||
-           (* A function taking further actuals at its rest meets a fixed
-              signature passing them there, as Lean's `rest` derivation
-              takes the target's extra parameters into the source's rest. *)
-           (match p.variadic with
-            | Some element when p.rest_pack=None && q.variadic=None && q.rest_pack=None &&
-                Semantic.plain_effect q.call_effect &&
-                List.length p.params <= List.length q.params ->
-              {p with call_effect=q.call_effect;variadic=None}
-                = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params} &&
+           (p.quantified=[] && q.quantified=[] && p.rest_pack=None && q.rest_pack=None &&
+            List.length p.params <= List.length q.params &&
+            plausible_subtype_with excludes q.receiver p.receiver &&
+            List.for_all2 (plausible_subtype_with excludes)
+              (List.filteri (fun i _ -> i < List.length p.params) q.params) p.params &&
+            plausible_subtype_with excludes p.result q.result &&
+            match p.variadic, q.variadic with
+            | None, None ->
+              List.length p.params = List.length q.params ||
+              (* A function taking fewer parameters meets a signature passing
+                 more: a call discards the actuals past its parameters. A
+                 promise at the longer signature is met only by code checked
+                 there, a closure claimed at it (`Closures`). *)
+              Semantic.plain_effect q.call_effect
+            (* A function taking further actuals at its rest meets a fixed
+               signature passing them there, as Lean's `rest` derivation
+               takes the target's extra parameters into the source's rest,
+               or a variadic one whose rest is within its rest. *)
+            | Some element, None ->
+              Semantic.plain_effect q.call_effect &&
               List.for_all (fun t -> plausible_subtype_with excludes t element)
                 (List.filteri (fun i _ -> i >= List.length p.params) q.params)
-            | _ -> false))) a.calls) b.calls
+            | Some element, Some target_element ->
+              Semantic.plain_effect q.call_effect &&
+              List.for_all (fun t -> plausible_subtype_with excludes t element)
+                (List.filteri (fun i _ -> i >= List.length p.params) q.params) &&
+              plausible_subtype_with excludes target_element element
+            | None, Some _ -> false))) a.calls) b.calls
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype_with excludes part expected) parts
   | _,Union parts -> List.exists (plausible_subtype_with excludes actual) parts
