@@ -70,6 +70,11 @@ const mutationControl = (body: () => Promise<void>): void => {
 /** Whether this process is a control process of the pool. */
 const serving: boolean = process.argv[2] === "--controls";
 
+control(async (): Promise<void> => {
+  assert.equal(runExample("invalid-string-object-hook",
+    '(() => { const cell = { value: "kept" }; return kept(cell, { a: 1, toString() { cell.value = undefined; return "object"; } }); })()'), undefined);
+});
+
 /** A Node process of this run beside the suite's own work: its status and
  * output. It writes under this run's root, which outlives it. */
 const beside = (module: string, args: readonly string[]): Promise<{ status: number | null; stdout: string; stderr: string }> =>
