@@ -5,7 +5,10 @@
  *   node dev/gap-iteration.mts work   --run <dir> [--parallel 5]
  *   node dev/gap-iteration.mts finish --run <dir>
  *   node dev/gap-iteration.mts all    --cases N [...]        # rank, work, finish
- *   common: [--driver sol] [--agent sol] [--reviewer astra] [--codex-stop 85]
+ *   common: [--driver sol] [--agent sol[,argon,…]] [--reviewer astra] [--codex-stop 85]
+ *
+ * `--agent` lists the case authors' models, taken in turn: the ranking's
+ * first case goes to the first, the next to the second, and round again.
  *
  * `--causes <file>` gives the round's causes instead of ranking them: a
  * JSON list of {"reason", "statements", "functions"} and optionally "case",
@@ -33,8 +36,14 @@
  * Authors write each commit record using only the glossary's terms or terms
  * the record explains.
  *
- * Models: `sol` (codex gpt-6.1-sol), `astra` (codex gpt-6-astra) or
- * `codex:<id>`. An author runs `codex exec --approve-for-me`: its commands
+ * Models: `sol` (codex gpt-6.1-sol), `astra` (codex gpt-6-astra), `argon`
+ * (agy gemini-4-argon-medium), `codex:<id>` or `agy:<id>`. An agy author
+ * runs `agy -p --mode accept-edits` with every tool allowed and its
+ * workspace widened to the run's `work/` and the census directory, with
+ * pushes sent to `/dev/null`; agy reads run read-only, in `--mode plan`.
+ * Commands that open the compiler need agy outside Claude Code's sandbox:
+ * the command runs from the owner's terminal. A codex author runs
+ * `codex exec --approve-for-me`: its commands
  * run in codex's sandbox, without network, writing its worktree, the run's
  * `work/` directory and the stage and Dune caches; a command that needs more
  * (the pipeline's own sandbox-exec, a commit) runs outside it on codex's
@@ -48,7 +57,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, statfsSync,
   writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -56,7 +65,8 @@ const lockRoot = join(tmpdir(), "tscert-gap");
 
 // ---------------------------------------------------------------- options
 
-type Options = { driver: string; agent: string; reviewer: string; parallel: number; codexStop: number; cases: number;
+type Model = { tool: "codex" | "agy"; id: string; name: string };
+type Options = { driver: Model; agents: Model[]; reviewer: Model; parallel: number; codexStop: number; cases: number;
   census: string | null; previous: string | null; causes: string | null; run: string | null };
 
 function option(args: string[], name: string): string | null {
@@ -68,13 +78,15 @@ function option(args: string[], name: string): string | null {
   return value;
 }
 
-/** A role's codex model: an alias or `codex:<id>`. */
-function model(name: string): string {
-  const aliases: { [alias: string]: string } = { sol: "gpt-6.1-sol", astra: "gpt-6-astra" };
+/** A role's model: an alias, `codex:<id>` or `agy:<id>`. */
+function model(name: string): Model {
+  const aliases: { [alias: string]: Model } = { sol: { tool: "codex", id: "gpt-6.1-sol", name },
+    astra: { tool: "codex", id: "gpt-6-astra", name }, argon: { tool: "agy", id: "gemini-4-argon-medium", name } };
   const alias = aliases[name];
   if (alias !== undefined) return alias;
-  if (name.startsWith("codex:")) return name.slice("codex:".length);
-  throw Error(`model ${name}: this command runs codex roles (sol, astra, codex:<id>)`);
+  if (name.startsWith("codex:")) return { tool: "codex", id: name.slice("codex:".length), name };
+  if (name.startsWith("agy:")) return { tool: "agy", id: name.slice("agy:".length), name };
+  throw Error(`model ${name}: sol, astra, argon, codex:<id> or agy:<id>`);
 }
 
 function options(args: string[]): Options {
@@ -85,7 +97,7 @@ function options(args: string[]): Options {
     return value;
   };
   const parsed: Options = {
-    driver: model(option(args, "--driver") ?? "sol"), agent: model(option(args, "--agent") ?? "sol"),
+    driver: model(option(args, "--driver") ?? "sol"), agents: (option(args, "--agent") ?? "sol").split(",").map(model),
     reviewer: model(option(args, "--reviewer") ?? "astra"), parallel: number("--parallel", 5),
     codexStop: number("--codex-stop", 85), cases: number("--cases", 5), census: option(args, "--census"),
     previous: option(args, "--previous"), causes: option(args, "--causes"), run: option(args, "--run"),
@@ -102,7 +114,7 @@ type Status = "pending" | "merged" | "incomplete";
 /** A task: one branch of work and how far it went. `gated` is the tree
  * whose gates passed, `reviewed` the patch id the review approved. */
 type Task = { id: string; kind: Kind; status: Status; note: string; reason: string; sites: string[]; statements: number;
-  functions: number; authored: boolean; gated: string; reviewed: string };
+  functions: number; authored: boolean; gated: string; reviewed: string; agent: string };
 type State = { repository: string; base: string; census: string; previous: string; verified: string; tasks: Task[] };
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
@@ -114,7 +126,8 @@ function decodeTask(v: unknown): Task {
     statuses.includes(v.status) && "note" in v && typeof v.note === "string" && "reason" in v && typeof v.reason === "string" &&
     "sites" in v && isStrings(v.sites) && "statements" in v && typeof v.statements === "number" && "functions" in v &&
     typeof v.functions === "number" && "authored" in v && typeof v.authored === "boolean" && "gated" in v &&
-    typeof v.gated === "string" && "reviewed" in v && typeof v.reviewed === "string"))
+    typeof v.gated === "string" && "reviewed" in v && typeof v.reviewed === "string" && "agent" in v &&
+    typeof v.agent === "string"))
     throw Error("state: a task lacks a field");
   return v as Task; // asserted: every field of Task checked above
 }
@@ -214,13 +227,17 @@ type Run = { run: string; o: Options; state: State };
 
 /** A codex run's final message. An author (`write`) runs in codex's sandbox
  * with automatic approval of what needs more; every other run is read-only. */
-async function codex(r: Run, c: { model: string; cwd: string; prompt: string; out: string; log: string; write: boolean;
-  schema?: object }): Promise<string> {
+type Ask = { model: Model; cwd: string; prompt: string; out: string; log: string; write: boolean; schema?: object };
+
+/** A role's run, by its model's tool. */
+const ask = (r: Run, c: Ask): Promise<string> => c.model.tool === "codex" ? codex(r, c) : agy(r, c);
+
+async function codex(r: Run, c: Ask): Promise<string> {
   const used = codexUsage();
   if (used !== null && used >= r.o.codexStop) throw new Paused(`codex usage at ${used}% (stop at ${r.o.codexStop}%)`);
   const tmp = join(r.run, "work", "tmp");
   mkdirSync(tmp, { recursive: true });
-  const args = ["exec", "-m", c.model, "--skip-git-repo-check", "-C", c.cwd, "-o", c.out];
+  const args = ["exec", "-m", c.model.id, "--skip-git-repo-check", "-C", c.cwd, "-o", c.out];
   if (c.write) {
     const roots = [join(r.run, "work"), join(homedir(), ".cache", "tscert"), join(homedir(), ".cache", "dune")];
     args.push("--approve-for-me", "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
@@ -234,8 +251,32 @@ async function codex(r: Run, c: { model: string; cwd: string; prompt: string; ou
   rmSync(c.out, { force: true });
   const ran = await exec("codex", [...args, c.prompt], { cwd: c.cwd, log: c.log, env: { TMPDIR: tmp } });
   if (/usage limit|rate limit/i.test(ran.output) && ran.status !== 0) throw new Paused(`codex usage limit (${c.log})`);
-  if (ran.status !== 0 || !existsSync(c.out)) throw Error(`codex ${c.model} failed, status ${ran.status} (${c.log})`);
+  if (ran.status !== 0 || !existsSync(c.out)) throw Error(`codex ${c.model.id} failed, status ${ran.status} (${c.log})`);
   return readFileSync(c.out, "utf8");
+}
+
+/** An agy run's final message: an author in accept-edits mode with every
+ * tool allowed, every other run in plan mode; pushes go to /dev/null. */
+async function agy(r: Run, c: Ask): Promise<string> {
+  const settings = { permissions: { allow: ["command(*)", "read_file(*)", "write_file(*)"] } };
+  const dirs = [work(r), ...(r.state.census ? [dirname(r.state.census)] : [])];
+  const args = ["-p", c.prompt, "--model", c.model.id, "--mode", c.write ? "accept-edits" : "plan",
+    "--settings", JSON.stringify(settings), "--output-format", "json", "--log-file", c.out + ".agy.log",
+    ...dirs.flatMap((d) => ["--add-dir", d])];
+  if (c.schema) args.push("--json-schema", JSON.stringify(c.schema));
+  rmSync(c.out, { force: true });
+  const ran = await exec("agy", args, { cwd: c.cwd, log: c.log,
+    env: { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "remote.origin.pushurl", GIT_CONFIG_VALUE_0: "/dev/null/no-push" } });
+  const line = ran.output.split("\n").reverse().find((l) => l.startsWith("{\"conversation_id\""));
+  const v: unknown = line ? JSON.parse(line) : null;
+  const response = v && typeof v === "object" && "status" in v && v.status === "SUCCESS" && "response" in v &&
+    typeof v.response === "string" ? v.response : null;
+  if (response === null) {
+    if (/quota|rate limit|RESOURCE_EXHAUSTED/i.test(ran.output)) throw new Paused(`agy usage limit (${c.log})`);
+    throw Error(`agy ${c.model.id} failed, status ${ran.status} (${c.log})`);
+  }
+  writeFileSync(c.out, response);
+  return response;
 }
 
 /** A markdown file's section under `heading`, to the next heading of its
@@ -294,13 +335,14 @@ async function setUp(r: Run, t: Task): Promise<void> {
   writeFileSync(done, "");
 }
 
-const runNote = (r: Run): string => `
+const runNote = (r: Run, m: Model): string => `
 ## This run
 
-- You run under codex: your commands run in a sandbox without network. A
+${m.tool === "codex" ? `- You run under codex: your commands run in a sandbox without network. A
   command that opens the TypeScript compiler (\`run-cases.mts\`,
   \`verify-source.mts\`, \`make suite\`, \`make test\`, \`make census\`) and
-  every git commit need escalated permissions: request them. Never push or
+  every git commit need escalated permissions: request them.` : `- You run under agy, every tool allowed. Produce no review pages and open
+  no browser.`} Never push or
   fetch, and write nothing outside your worktree, \`${work(r)}\` and the
   stage store.
 - Your worktree is set up: \`lean/.lake\`, the node_modules directories and
@@ -315,12 +357,12 @@ const runNote = (r: Run): string => `
 - Leave the worktree clean: everything committed. Your final message is
   your report.`;
 
-function authorPrompt(r: Run, t: Task): string {
+function authorPrompt(r: Run, t: Task, m: Model): string {
   const record = r.state.census;
   if (t.kind === "case")
     return readFileSync(join(repository, ".claude/skills/gap-round/brief.md"), "utf8")
       .replaceAll("<case>", t.id).replaceAll("<reason>", t.reason).replaceAll("<sites>", t.sites.join("; "))
-      .replaceAll("<census record>", record).replaceAll("<scratch>", work(r)) + runNote(r);
+      .replaceAll("<census record>", record).replaceAll("<scratch>", work(r)) + runNote(r, m);
   const given = join(work(r), "causes.json");
   if (t.kind === "repros" && existsSync(given))
     return `You prepare one gap iteration of TScert on the census record ${record} (its slices beside it) and its
@@ -337,7 +379,7 @@ causes in the given order: {"cases": [{"case": "<name of pipeline/examples/<name
 "statements": n, "functions": n, "sites": ["file.mts#fn: what is refused", ...]}]}. Heavy runs take the lock
 ${heavy(r)} (until mkdir it 2>/dev/null; do sleep 20; done; <command>; rmdir it). Commit the cases you add as one
 commit with a record in the format of .claude/skills/review/SKILL.md.
-${runNote(r)}`;
+${runNote(r, m)}`;
   if (t.kind === "repros")
     return `You prepare one gap iteration of TScert: steps 2 and 3 of the gap-round skill below, on the census
 record ${record} (its slices beside it) and its refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority.
@@ -352,13 +394,13 @@ ${join(work(r), "ranking.json")}: {"cases": [{"case": "<name of pipeline/example
 "statements": n, "functions": n, "sites": ["file.mts#fn: what is refused", ...]}]}. Heavy runs take the lock
 ${heavy(r)} (until mkdir it 2>/dev/null; do sleep 20; done; <command>; rmdir it). Commit the cases you add as one
 commit with a record in the format of .claude/skills/review/SKILL.md; add none when every cause has its case.
-${runNote(r)}`;
+${runNote(r, m)}`;
   if (t.kind === "row")
     return `The verified census of main moved; record its movement in WORK.md's status table, in the row of
 coverage of the front end, as CLAUDE.md's "Status" convention states. The census report is
 ${join(r.run, "census-report.txt")}, the records ${r.state.previous} (before) and ${r.state.verified} (after).
 Commit with a record in the format of .claude/skills/review/SKILL.md; run node tests/docs.mts before.
-${runNote(r)}`;
+${runNote(r, m)}`;
   return `Rebuild the gap-priorities deep dive (docs/deep-dives/gap-priorities/deck.mts) from the census
 record ${record} and its refusals, ${join(work(r), "refusals.json")}, as the gap-round skill's step 6 states, step 2
 of the skill done again on that record.
@@ -371,14 +413,15 @@ ${section("docs/STYLE.md", "## Writing and checking a deck")}
 
 Mark it since the version last approved (docs/STYLE.md, "A revised deck"). Build and check it with
 make deck NAME=gap-priorities. Commit with a record in the format of .claude/skills/review/SKILL.md.
-${runNote(r)}`;
+${runNote(r, m)}`;
 }
 
 /** The author's run, once, or again with `extra` appended. */
 async function author(r: Run, t: Task, extra: string = ""): Promise<void> {
   const round = readdirSync(taskDir(r, t)).filter((n) => n.startsWith("report")).length;
-  await codex(r, { model: t.kind === "case" ? r.o.agent : r.o.driver, cwd: treeOf(r, t), write: true, log: logOf(r, t),
-    out: join(taskDir(r, t), round ? `report-${round}.md` : "report.md"), prompt: authorPrompt(r, t) + extra });
+  const m = t.kind === "case" ? model(t.agent) : r.o.driver;
+  await ask(r, { model: m, cwd: treeOf(r, t), write: true, log: logOf(r, t),
+    out: join(taskDir(r, t), round ? `report-${round}.md` : "report.md"), prompt: authorPrompt(r, t, m) + extra });
   t.authored = true;
   save(r);
 }
@@ -471,16 +514,16 @@ async function review(r: Run, t: Task): Promise<boolean> {
     if (t.reviewed === patch) return true;
     const blocking: string[] = [];
     for (const [i, prompt] of reviewPrompts(r, t).entries()) {
-      const text = await codex(r, { model: r.o.reviewer, cwd: treeOf(r, t), write: false, log: logOf(r, t), prompt,
+      const text = await ask(r, { model: r.o.reviewer, cwd: treeOf(r, t), write: false, log: logOf(r, t), prompt,
         schema: reviewSchema, out: join(taskDir(r, t), `review-${round}-${i}.json`) });
       blocking.push(...decodeReview(text).findings.filter((f) => f.blocking).map((f) => f.text));
     }
     if (!blocking.length) { t.reviewed = patch; save(r); return true; }
     if (round === 2) return false;
-    await codex(r, { model: r.o.reviewer, cwd: treeOf(r, t), write: true, log: logOf(r, t),
+    await ask(r, { model: r.o.reviewer, cwd: treeOf(r, t), write: true, log: logOf(r, t),
       out: join(taskDir(r, t), `fix-${round}.md`), prompt: `Implement these blocking review findings on branch
 ${branchOf(t)} in this worktree, and commit with records in the format of .claude/skills/review/SKILL.md. Run the
-cases you touch.\n\n${blocking.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}\n${runNote(r)}` });
+cases you touch.\n\n${blocking.map((b, i) => `${i + 1}. ${b}`).join("\n\n")}\n${runNote(r, r.o.reviewer)}` });
     if (!clean(r, t) || !(await integrate(r, t)) || !(await gate(r, t)).passed) return false;
   }
 }
@@ -523,7 +566,7 @@ async function runTask(r: Run, t: Task): Promise<void> {
 // ---------------------------------------------------------------- phases
 
 const newTask = (id: string, kind: Kind, o: Partial<Task> = {}): Task => ({ id, kind, status: "pending", note: "",
-  reason: "", sites: [], statements: 0, functions: 0, authored: false, gated: "", reviewed: "", ...o });
+  reason: "", sites: [], statements: 0, functions: 0, authored: false, gated: "", reviewed: "", agent: "", ...o });
 
 /** A census on main under the heavy lock; its record's path. */
 async function census(r: Run): Promise<string> {
@@ -577,14 +620,14 @@ async function rank(r: Run): Promise<void> {
   if (r.state.tasks.some((t) => t.kind === "case")) return;
   const v: unknown = JSON.parse(readFileSync(join(work(r), "ranking.json"), "utf8"));
   if (!(v && typeof v === "object" && "cases" in v && Array.isArray(v.cases))) throw Error("ranking.json has no cases");
-  for (const c of v.cases.slice(0, r.o.cases)) {
+  for (const [i, c] of v.cases.slice(0, r.o.cases).entries()) {
     if (!(c && typeof c === "object" && "case" in c && typeof c.case === "string" && /^[a-z0-9-]+$/.test(c.case) &&
       "reason" in c && typeof c.reason === "string" && "statements" in c && typeof c.statements === "number" &&
       "functions" in c && typeof c.functions === "number" && "sites" in c && isStrings(c.sites)))
       throw Error("a case of ranking.json lacks a field");
     if (!existsSync(join(repository, "pipeline", "examples", `${c.case}.ts`))) throw Error(`no case ${c.case} on main`);
     r.state.tasks.push(newTask(c.case, "case", { reason: c.reason, statements: c.statements, functions: c.functions,
-      sites: c.sites }));
+      sites: c.sites, agent: r.o.agents[i % r.o.agents.length]?.name ?? "sol" }));
   }
   save(r);
 }
@@ -633,11 +676,11 @@ async function finish(r: Run): Promise<void> {
   const lines = r.state.tasks.map((t) => {
     const reports = existsSync(taskDir(r, t)) ? readdirSync(taskDir(r, t)).filter((n) => n.startsWith("report")).sort() : [];
     const last = reports.at(-1);
-    return `### ${t.id} (${t.kind}): ${t.status}${t.note ? `, ${t.note}` : ""}\n\n${
+    return `### ${t.id} (${t.kind}${t.agent ? `, ${t.agent}` : ""}): ${t.status}${t.note ? `, ${t.note}` : ""}\n\n${
       last ? readFileSync(join(taskDir(r, t), last), "utf8") : ""}`;
   }).join("\n\n");
   writeFileSync(join(r.run, "inputs.md"), `${readFileSync(join(r.run, "census-report.txt"), "utf8")}\n\n${lines}\n`);
-  await codex(r, { model: r.o.driver, cwd: r.run, write: false, log: join(r.run, "report.log"), out: join(r.run, "report.md"),
+  await ask(r, { model: r.o.driver, cwd: r.run, write: false, log: join(r.run, "report.log"), out: join(r.run, "report.md"),
     prompt: `Write the report of this gap iteration from inputs.md in this directory, in the form below. Every
 number comes from inputs.md. End with: nothing is pushed.\n\n${section(".claude/skills/gap-round/SKILL.md", "## The report")}` });
 }
