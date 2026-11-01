@@ -1335,24 +1335,6 @@ again. The callers hold `TypeTerm`s, whose grammar the parameter type
   `invalid-json-stringify-replacer` the refused call.
 - **Commit:** the introducing commit, `A type term's text is written kind by kind from its type`.
 
-### A result declared before the block that allocates it
-
-`readDiagnostic` (`tools/diagnostic.mts`) declared `let result` before its
-`try`, assigned it `{ ...d }` inside, wrote the decoded parts at keys the
-copy may lack (`result.source = …`), and returned it after the `try`. A
-write adding a key is typed only on a local's own fresh object, whose
-holders are the binding that allocated it and the constants bound to it
-since ([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)); an
-assignment allocates for no holder, so the five writes are refused. The
-result is used only inside the `try`, whose `catch` returns `undefined`.
-
-- **Rewrite:** `const result = { ...d }` is declared where it is allocated,
-  in the `try`, and returned at the `try`'s end.
-- **Pattern:** a local is declared at its allocation, in the block that uses
-  it.
-- **Functions:** `readDiagnostic`.
-- **Commit:** the introducing commit.
-
 ### Optional fields added to an annotated local
 
 `inferredTerm` (`tools/computed-types.mts`) collected an object type's index
@@ -1674,6 +1656,43 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A decoder's result asserted through unknown
+
+`tools/diagnostic.mts#readDiagnostic` returns a diagnostic variant built
+from typed decoded values, using the existing
+[fresh decoder storage](#a-decoders-result-asserted-over-parsed-storage)
+pattern. Its field decoders return their checked
+contracts: outcome, span, source map, heap knowledge and node. Each variant's
+fresh record states its complete writable contract through the existing
+[allocation checks](SOURCE-CLAIMS.md).
+
+- **Route:** a repair. A decoder that validates fields and discards the
+  decoded values loses the contracts it needs to construct its result.
+  Saving those values and allocating each variant retains those contracts.
+  The decoder requires a source map for expression claims, direct
+  obligations and source refusals, and a source node for node typing.
+  Null values at these required fields yield `undefined`. Heap observation
+  tags carry the decoded tag representation that their result type states.
+- **Avoided form and cost:** a mutable dictionary of `unknown` values,
+  followed by `as unknown as ObligationDiagnostic`. Assertions are
+  obligations, so the intermediate `unknown` supplies no evidence for the
+  record. Proving such an assertion requires the same field and variant
+  contracts that direct construction states. A successful field test also
+  cannot strengthen the storage contract of a writable alias.
+- **Behaviour:** the input is parsed inside the decoder; its objects have
+  no outside holders. The decoder returns fresh records and arrays from
+  the saved checked values. Required-field checks enforce the stated
+  result contract on malformed metadata. All diagnostic variants retain
+  their fields, optional names and required-result labels. Metadata remains
+  explanatory and does not decide certificate acceptance.
+- **Scope:** `blocker-round-decoder-record-assertion` constructs a fresh
+  result from a saved string. `invalid-decoder-record-alias` retains the
+  double assertion on an input with an outside writable holder: writing a
+  number through that holder makes the returned string read fail under
+  Node. The wire controls in `tests/diagnostic.mts` cover every variant and
+  malformed required fields. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A negative object guard before primitive conversion
 
 `tools/claim-text.mts#bareAtomText` prints malformed JSON atoms. After its
@@ -1949,14 +1968,13 @@ binding before testing it with `Array.isArray` and visiting its labels.
 The existing [binding narrowing](SOURCE-ELABORATION.md#guards) establishes
 the local array view. Object-valued current contents of a mutable field
 would require extending the [current-content assertions](SOURCE-MODEL.md#current-content-assertions)
-beyond primitive values. The supplied census of `2db902ca8b7b` has no
-remaining sites for this construct; the saved binding establishes the
-obligation with the existing rules.
+beyond primitive values. The saved binding establishes the obligation
+with the existing rules.
 
 - **Equivalent form:** the claim comes from `JSON.parse`, so its context is
   a data property. The local binding holds the same array reference as both
   field reads. Between the test and the context traversal, the only calls
-  are `available.forEach(labels)` and its `decodeLabels` calls.
+  decode `available`'s labels into fresh arrays through `decodeLabels`.
   `decodeLabels` tests arrays and integer bounds and maps to a fresh result;
   it writes neither the claim nor its context. Under the existing standard
   prototype assumption, the same array supplies the same `forEach` method

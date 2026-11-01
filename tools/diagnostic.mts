@@ -39,24 +39,26 @@ type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" | "n
   Extract<Clause, {numLit: unknown} | {strLit: unknown}> |
   /** A test's observed answer. */
   {tag: {test: Tag; answer: boolean}};
-const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
-  nul: true, undef: true, tru: true, fls: true, num: true, str: true, defined: true, nonNull: true, nonNullish: true,
-};
-const heapAtoms: readonly Json[] = Object.keys(HEAP_ATOMS);
-function heapAtom(v: Json): void {
-  if (heapAtoms.includes(v)) return;
+function heapAtom(v: Json): HeapAtom {
+  if (v === "nul" || v === "undef" || v === "tru" || v === "fls" || v === "num" || v === "str" || v === "defined" || v === "nonNull" || v === "nonNullish") return v;
   // Singleton payloads use the graph language's existing decoder.
   if (isRecord(v) && "strLit" in v) {
     decodeGraph([[record(v,["strLit"])]]);
-    return;
+    const value = record(v.strLit,["value"]).value;
+    if (typeof value !== "string") throw Error("invalid string atom");
+    return { strLit: { value } };
   }
   if (isRecord(v) && "tag" in v) {
     const t = record(record(v,["tag"]).tag,["test","answer"]);
-    decodeTag(t.test);
+    const test = decodeTag(t.test);
     if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
-    return;
+    return { tag: { test, answer: t.answer } };
   }
-  decodeGraph([[record(v,["numLit"])]]);
+  const n = record(v,["numLit"]);
+  decodeGraph([[n]]);
+  const bits = record(n.numLit,["bits"]).bits;
+  if (typeof bits !== "string") throw Error("invalid number atom");
+  return { numLit: { bits } };
 }
 interface HeapFact {
   slot: number;
@@ -103,17 +105,17 @@ export type DiagnosticOutcome =
       kind: "subtype-frontier"; limit: number; rounds: number; visited: number;
     } };
 
-function diagnosticOutcome(value: Json | undefined): void {
+function diagnosticOutcome(value: Json | undefined): DiagnosticOutcome {
   if (!isRecord(value)) throw Error("invalid diagnostic outcome");
   switch (value.kind) {
-    case "not-established": record(value, ["kind"]); return;
+    case "not-established": record(value, ["kind"]); return { kind: "not-established" };
     case "exhausted": {
       const outcome = record(value, ["kind", "resource"]);
       const resource = record(outcome.resource, ["kind", "limit", "rounds", "visited"]);
       if (resource.kind !== "subtype-frontier") throw Error("unknown search resource");
-      nat(resource.limit); nat(resource.rounds); nat(resource.visited);
-      if (Number(resource.rounds) > Number(resource.limit)) throw Error("resource counts exceed budget");
-      return;
+      const limit = nat(resource.limit), rounds = nat(resource.rounds), visited = nat(resource.visited);
+      if (rounds > limit) throw Error("resource counts exceed budget");
+      return { kind: "exhausted", resource: { kind: "subtype-frontier", limit, rounds, visited } };
     }
     default: throw Error("unknown diagnostic outcome");
   }
@@ -249,79 +251,108 @@ function record(v: Json | undefined, required: string[], optional: string[] = []
   if (!isRecord(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
   return v;
 }
-function nat(v: Json | undefined): void { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
-function span(v: Json | undefined): asserts v is Span {
+function nat(v: Json | undefined): number { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); return v; }
+function span(v: Json | undefined): Span {
   if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span");
-  const [start, end] = v;
-  nat(start); nat(end);
-  if (typeof start !== "number" || typeof end !== "number" || end < start) throw Error("reversed span");
+  const start = nat(v[0]), end = nat(v[1]);
+  if (end < start) throw Error("reversed span");
+  return [start, end];
 }
-function sourceMap(v: Json | undefined): void {
-  if (v === null) return;
+
+function sourceMap(v: Json | undefined): SourceMapEntry | null {
+  if (v === null) return null;
   const m = record(v,["pos","role","environmentStart","context"]);
-  span(m.pos); if (typeof m.role !== "string") throw Error("invalid role");
-  if (m.environmentStart !== null) nat(m.environmentStart);
+  const pos = span(m.pos);
+  const role = m.role;
+  if (typeof role !== "string") throw Error("invalid role");
+  const environmentStart = m.environmentStart === null ? null : nat(m.environmentStart);
   if (!Array.isArray(m.context)) throw Error("invalid source context");
+  const context: SourceMapEntry["context"] = [];
   for (const entry of m.context) {
     const d = record(entry,["name","span"]);
-    if (typeof d.name !== "string") throw Error("invalid binding name");
-    if (d.span !== null) span(d.span);
+    const name = d.name;
+    if (typeof name !== "string") throw Error("invalid binding name");
+    const at = d.span === null ? null : span(d.span);
+    context.push({ name, span: at });
   }
+  return { pos, role, environmentStart, context };
 }
 
 function directJudgment(v: Json | undefined, size: number): DirectJudgment {
   const j = record(v,["kind","subject","actual","expected"]);
   if (j.kind !== "subtyping") throw Error("unknown direct-obligation judgment");
-  const subject = j.subject;
-  span(subject);
+  const subject = span(j.subject);
   return {kind:"subtyping",subject,
     actual:decodeLabels(j.actual,size),expected:decodeLabels(j.expected,size)};
 }
-function knowledge(v: Json | undefined): void {
-  if (v === null) return;
+function knowledge(v: Json | undefined): HeapKnowledge | null {
+  if (v === null) return null;
   const k = record(v,["cells","values","links","separation"]);
-  for (const facts of [k.cells, k.values]) {
+  const factsOf = (facts: Json | undefined): HeapFact[] => {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
+    const result: HeapFact[] = [];
     for (const fact of facts) {
-      const f = record(fact,["slot","contents","field"]); nat(f.slot);
-      if (typeof f.field !== "string") throw Error("invalid heap fact field");
+      const f = record(fact,["slot","contents","field"]); const slot = nat(f.slot);
+      const field = f.field;
+      if (typeof field !== "string") throw Error("invalid heap fact field");
       if (!Array.isArray(f.contents)) throw Error("invalid heap contents");
-      f.contents.forEach(heapAtom);
+      const contents: HeapAtom[] = [];
+      for (const atom of f.contents) contents.push(heapAtom(atom));
+      result.push({ slot, field, contents });
     }
-  }
+    return result;
+  };
+  const cells = factsOf(k.cells), values = factsOf(k.values);
   if (!Array.isArray(k.links)) throw Error("invalid heap links");
+  const links: HeapKnowledge["links"] = [];
   for (const link of k.links) {
-    const l = record(link,["cell","value","alias","field","optional"]); nat(l.cell); nat(l.value);
+    const l = record(link,["cell","value","alias","field","optional"]);
+    const cell = nat(l.cell), value = nat(l.value);
     if (typeof l.optional !== "boolean") throw Error("invalid optional flag");
     if (typeof l.field !== "string") throw Error("invalid heap link field");
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
+    links.push({ cell, value, optional: l.optional, field: l.field, alias: l.alias });
   }
-  const keys = (v: Json | undefined): void => {
-    if (!Array.isArray(v) || v.some((f) => typeof f !== "string")) throw Error("invalid separation fields");
+  const keys = (v: Json | undefined): string[] => {
+    if (!Array.isArray(v)) throw Error("invalid separation fields");
+    const result: string[] = [];
+    for (const f of v) {
+      if (typeof f !== "string") throw Error("invalid separation fields");
+      result.push(f);
+    }
+    return result;
   };
-  const s = record(k.separation,["depth","facts"]); nat(s.depth);
+  const s = record(k.separation,["depth","facts"]); const depth = nat(s.depth);
   if (!Array.isArray(s.facts)) throw Error("invalid separation facts");
+  const facts: HeapKnowledge["separation"]["facts"] = [];
   for (const fact of s.facts) {
-    const f = record(fact,["slot","fields","partners"]); nat(f.slot);
-    if (f.fields !== null) keys(f.fields);
+    const f = record(fact,["slot","fields","partners"]); const slot = nat(f.slot);
+    const fields = f.fields === null ? null : keys(f.fields);
     if (!Array.isArray(f.partners)) throw Error("invalid separation partners");
+    const partners: [number, string[]][] = [];
     for (const p of f.partners) {
       if (!Array.isArray(p) || p.length !== 2) throw Error("invalid separation partner");
-      nat(p[0]); keys(p[1]);
+      partners.push([nat(p[0]), keys(p[1])]);
     }
+    facts.push({ slot, fields, partners });
   }
+  return { cells, values, links, separation: { depth, facts } };
 }
+
 /** A node record with its node decoded in place of its wire form, as the
  * term and tag below are. */
-function diagnosticNode(v: Json | undefined, size: number): { node: ProgramNode | null } {
+function diagnosticNode(v: Json | undefined, size: number): DiagnosticNode {
   const n = record(v,["label","sourceMap","node","claim","requiredKnowledge"]);
-  nat(n.label); sourceMap(n.sourceMap); knowledge(n.requiredKnowledge);
+  const label = nat(n.label), map = sourceMap(n.sourceMap), requiredKnowledge = knowledge(n.requiredKnowledge);
+  let claim: DiagnosticNode["claim"] = null;
   if (n.claim !== null) {
     const c = record(n.claim,["context","type"]);
     if (!Array.isArray(c.context)) throw Error("invalid context");
-    c.context.forEach(t => decodeLabels(t,size)); decodeLabels(c.type,size);
+    const context: Labels[] = [];
+    for (const t of c.context) context.push(decodeLabels(t,size));
+    claim = { context, type: decodeLabels(c.type,size) };
   }
-  return { ...n, node: n.node === null ? null : decodeNode(n.node) };
+  return { label, sourceMap: map, requiredKnowledge, claim, node: n.node === null ? null : decodeNode(n.node) };
 }
 
 export function readDiagnostic(
@@ -346,29 +377,33 @@ export function readDiagnostic(
     const fields = variants.get(kind);
     if (!fields) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names"]);
-    diagnosticOutcome(d.outcome);
+    const outcome = diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
-    const types = decodeGraph(d.types);
+    const wireTypes = d.types;
+    const types = decodeGraph(wireTypes);
+    const names: [number, string][] = [];
     if (d.names !== undefined) {
       if (!Array.isArray(d.names) || !d.names.length) return undefined;
       let previous = -1;
       for (const entry of d.names) {
-        if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[1] !== "string" || !entry[1]) return undefined;
-        const [row] = entry;
+        if (!Array.isArray(entry) || entry.length !== 2) return undefined;
+        const [row, name] = entry;
+        if (typeof name !== "string" || !name) return undefined;
         if (typeof row !== "number") return undefined;
         nat(row);
         if (row <= previous || row >= types.length) return undefined;
         previous = row;
+        names.push([row, name]);
       }
     }
     // The decoded parts replace their wire forms in the result.
-    const result: { [key: string]: unknown } = { ...d };
-    if (d.source !== undefined) result.source = diagnosticNode(d.source,types.length);
-    if (d.destination !== undefined) result.destination = diagnosticNode(d.destination,types.length);
-    if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
+    const source = d.source === undefined ? undefined : diagnosticNode(d.source,types.length);
+    const destinationNode = d.destination === undefined ? undefined : diagnosticNode(d.destination,types.length);
+    const map = d.sourceMap === undefined ? undefined : sourceMap(d.sourceMap);
+    let judgment: DirectJudgment | undefined;
     if (kind === "direct-obligation") {
-      const judgment = directJudgment(d.judgment,types.length);
+      judgment = directJudgment(d.judgment,types.length);
       const at = judgment.subject;
       const map = d.sourceMap;
       if (!isRecord(map)) return undefined;
@@ -376,30 +411,33 @@ export function readDiagnostic(
       if (!Array.isArray(pos) || !Array.isArray(context) ||
           pos[0] !== at[0] || pos[1] !== at[1] || context.length !== 0)
         return undefined;
-      result.judgment = judgment;
     }
     if (kind === "source-refusal" && typeof d.reason !== "string") return undefined;
     if (kind === "production-failure" && typeof d.failure !== "string") return undefined;
     const labels = (v: Json) => decodeLabels(v,types.length);
-    if (d.requiredResult !== undefined) labels(d.requiredResult);
+    const requiredResult = d.requiredResult === undefined ? undefined : labels(d.requiredResult);
+    let sequent: Sequent | undefined;
     if (kind === "node-typing" || kind === "expression-claim") {
       const q = d.sequent;
       if (!isRecord(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
-      q.context.forEach(labels);
+      const context: Labels[] = [];
+      for (const t of q.context) context.push(labels(t));
       const type = q.type;
       if (type === undefined) return undefined;
-      labels(type);
-      result.sequent = { ...q, term: decodeTerm(q.term) };
+      const decodedType = labels(type);
+      sequent = { context, type: decodedType, term: decodeTerm(q.term) };
     }
+    let decodedTransfer: DiagnosticTransfer | undefined;
     if (kind === "edge-coverage") {
       nat(d.edgeIndex);
       const transfer = record(d.transfer,["available","target","booleanObservation","tagObservation"]);
       const target = record(transfer.target,["label","mapping"]);
+      let tagObservation: DiagnosticTransfer["tagObservation"] = null;
       if (transfer.tagObservation !== null) {
         const tag = record(transfer.tagObservation,["test","answer","slot"]);
-        nat(tag.slot);
+        const slot = nat(tag.slot);
         if (typeof tag.answer !== "boolean") return undefined;
-        result.transfer = { ...transfer, tagObservation: { ...tag, test: decodeTag(tag.test) } };
+        tagObservation = { slot, answer: tag.answer, test: decodeTag(tag.test) };
       }
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;
@@ -407,18 +445,34 @@ export function readDiagnostic(
       if (!isRecord(claim)) return undefined;
       const context = claim.context;
       if (!Array.isArray(available) || !Array.isArray(context)) return undefined;
-      available.forEach(labels); context.forEach(labels);
-      if (typeof target.label !== "number" || !Number.isSafeInteger(target.label)) return undefined;
+      const decodedAvailable: Labels[] = [];
+      for (const t of available) decodedAvailable.push(labels(t));
+      context.forEach(labels);
+      const targetLabel = target.label;
+      if (typeof targetLabel !== "number" || !Number.isSafeInteger(targetLabel)) return undefined;
       const mapping = target.mapping;
-      if (mapping !== null && (!Array.isArray(mapping) || mapping.some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= available.length))) return undefined;
+      let decodedMapping: number[] | null = null;
+      if (mapping !== null) {
+        if (!Array.isArray(mapping)) return undefined;
+        const indices: number[] = [];
+        for (const i of mapping) {
+          if (typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= available.length) return undefined;
+          indices.push(i);
+        }
+        decodedMapping = indices;
+      }
       if (transfer.booleanObservation !== null && typeof transfer.booleanObservation !== "boolean") return undefined;
+      decodedTransfer = { available: decodedAvailable,
+        target: { label: targetLabel, mapping: decodedMapping },
+        booleanObservation: transfer.booleanObservation, tagObservation };
     }
+    const fuel = d.fuel;
     if (
       !PHASES.includes(d.phase) ||
-      !Array.isArray(d.types) ||
-      typeof d.fuel !== "number" ||
-      !Number.isSafeInteger(d.fuel) ||
-      d.fuel < 0
+      !Array.isArray(wireTypes) ||
+      typeof fuel !== "number" ||
+      !Number.isSafeInteger(fuel) ||
+      fuel < 0
     )
       return undefined;
     if (!KINDS.includes(kind)) return undefined;
@@ -428,8 +482,39 @@ export function readDiagnostic(
       return undefined;
     if ((kind === "node-typing" || kind === "expression-claim") && !d.sequent)
       return undefined;
-    // asserted: the decoder's result, checked field by field and variant by variant above
-    return result as unknown as ObligationDiagnostic;
+    const phase: Phase = d.phase === "proof-search" ? "proof-search" :
+      d.phase === "certificate-check" ? "certificate-check" : "request-validation";
+    const common: Common = { phase, outcome, fuel, types: wireTypes,
+      ...(d.names === undefined ? {} : { names }),
+      ...(requiredResult === undefined ? {} : { requiredResult }) };
+    if (kind === "production-failure" && typeof d.failure === "string") {
+      const result: ProductionFailure = { ...common, kind: "production-failure", failure: d.failure };
+      return result;
+    }
+    const id = d.id;
+    if (typeof id !== "string") return undefined;
+    if (kind === "node-typing" && source && sequent) {
+      const result: NodeTyping = { ...common, kind: "node-typing", id, source, sequent };
+      return result;
+    }
+    if (kind === "expression-claim" && map && sequent) {
+      const result: ExpressionClaimFailure = { ...common, kind: "expression-claim", id, sourceMap: map, sequent };
+      return result;
+    }
+    if (kind === "direct-obligation" && map && judgment) {
+      const result: DirectObligationFailure = { ...common, kind: "direct-obligation", id, sourceMap: map, judgment };
+      return result;
+    }
+    if (kind === "source-refusal" && map && typeof d.reason === "string") {
+      const result: SourceRefusal = { ...common, kind: "source-refusal", id, sourceMap: map, reason: d.reason };
+      return result;
+    }
+    if (kind === "edge-coverage" && source && destinationNode && decodedTransfer) {
+      const result: EdgeCoverage = { ...common, kind: "edge-coverage", id, edgeIndex: nat(d.edgeIndex), source,
+        destination: destinationNode, transfer: decodedTransfer };
+      return result;
+    }
+    return undefined;
   } catch (error) {
     passToolFailure(error);
     return undefined;

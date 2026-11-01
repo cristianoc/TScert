@@ -1,7 +1,9 @@
-// A decoder closing with a double assertion through unknown.
+// A decoder allocates a result with its checked writable field contract.
 // Census functions:
 // diagnostic.mts#readDiagnostic
 export function decode(value: { id: unknown }): { id: string } | undefined {
-  if (typeof value.id !== "string") return undefined;
-  return value as unknown as { id: string };
+  const parsed: { id: unknown } = { id: value.id };
+  const id = parsed.id;
+  if (typeof id !== "string") return undefined;
+  return { id };
 }

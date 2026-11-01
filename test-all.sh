@@ -135,6 +135,8 @@ run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts
 # tests/claim-text.mts checks the claim printer on malformed producer output.
+run_test "Diagnostic decoder" node tests/diagnostic.mts
+
 run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts

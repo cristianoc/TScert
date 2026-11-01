@@ -10,6 +10,15 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
 {
+  assert.equal(runExample("invalid-decoder-record-alias",
+    '(() => { const input = { id: "checked" }; const output = decode(input); input.id = 0; try { output.id.toUpperCase(); return false; } catch (error) { return error instanceof TypeError; } })()'), true,
+    "a checked writable field remains writable through its original alias");
+  assert.equal(runExample("blocker-round-decoder-record-assertion",
+    '(() => { const input = { id: "checked" }; const output = decode(input); input.id = 0; return output.id.toUpperCase(); })()'), "CHECKED",
+    "the decoder result holds the saved checked value");
+}
+
+{
   assert.equal(runExample("invalid-some-sparse-callback",
     '(() => { try { run(); return "returned"; } catch (error) { return error instanceof TypeError; } })()'), true,
     "some's third callback argument retains the mapped hole");
