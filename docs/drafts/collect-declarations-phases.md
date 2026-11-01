@@ -1,0 +1,449 @@
+## The existing mechanism this extends
+
+This design restructures the declaration reader around its existing
+[one equation per declaration](../SOURCE-CONTRACTS.md#one-equation-per-declaration).
+TypeScript resolves names; `type-term.mts` reads their types;
+`collect` follows dependencies; `settleDocument` expands mapped types against
+the collected definitions. `DeclarationDocument` in `declaration-types.mts`
+remains the result. These are the mechanisms for resolution, type reading,
+dependency collection and settlement that the four phases below extend.
+
+For TScert's own functions, the existing mechanism is
+[source rewrites](../SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for):
+give each function explicit inputs, results and effects, and check its slice.
+[Footprints](../FOOTPRINTS.md) own facts preserved across calls;
+[inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+own their certification. A `readonly` parameter alone does not establish
+preservation through other aliases. Extracted functions use those mechanisms
+for their actual effects.
+
+Compiler assumptions belong to the
+[compiler API contract](../COMPILER-API.md), an instance of
+[host families](../HOST-FAMILIES.md). Library assumptions belong to the
+[overlay](../SOURCE-CONTRACTS.md#the-overlay). Compiler lifetime and reuse
+belong to [retained declaration sessions](../STAGE-STORE.md#retained-declaration-sessions).
+The [general mechanisms](../DESIGN.md#general-mechanisms) therefore cover the
+concerns here. The explicit dependency driver is an internal organization of
+`collect` and its surrounding loops; it introduces no additional typing or
+trust mechanism.
+
+This is a design proposal. Its expected verification and performance gains
+are conjectures to measure, rather than proved properties of the proposed
+organization. The source locations below refer to `tools/declaration-graph.mts`
+at the baseline commit recorded below.
+
+## Phase boundaries and ownership
+
+The public entry remains `collectDeclarations(file, options)` during
+extraction. It acquires one compiler session and passes an initialized
+context to top-level functions. Mutable state has one owner per table or
+queue. Functions receive the data they read and the particular state they
+write; a context holding every service and every mutable table would retain
+the present coupling.
+
+The phases describe operations, rather than four complete traversals of the
+program. Resolve the initial requests, elaborate them, and let dependency
+closure resolve and elaborate further requests on demand. Finish only when
+that work ends. This preserves collection on use: a dependency of an unused
+declaration does not become a root.
+
+| Phase | Inputs | Owned state | Result passed onward |
+| --- | --- | --- | --- |
+| Resolve declarations and identities | Compiler snapshot, source requests, family selection, library policy | Resolution and identity tables, merged declaration groups (`partners`), alias declarations, brands, symbol identities, diagnostics already observed | Resolved roots and uses, declaration identities and groups, ordered diagnostic observations |
+| Elaborate into type terms | Resolved declaration or use, binder environment, optional-property mode, explicit owner and external-value context | Temporary term construction, parameter and library-query caches, computed-type probes | Terms and equations, dependencies with source spans, requested instances and contracts, record and statement facts, client answers |
+| Dependency closure | Resolved roots, elaboration results and on-demand resolution | Queues, visited keys, active definitions, instance identities, accumulated definitions and facts | Complete definitions, values, symbols, applications, provenance and validation facts |
+| Validate and finalize | Complete graph and facts | Local settlement and final result construction | `DeclarationDocument`, or the existing located refusal or tool failure |
+
+Proposed internal data names in this draft name TypeScript interfaces, not
+new wire formats:
+
+- `DeclarationContext`: the live checker, program, client, root and effective
+  optional-property mode. Its lifetime is the compiler snapshot's lifetime.
+- `ResolvedDeclaration`: canonical identity, ordered merged parts, origin,
+  captured parameters and the source use responsible for collection.
+- `ElaborationContext`: binder names and substitutions, current definition
+  identity, external-value depth and the narrowly required compiler queries.
+- `ElaboratedDeclaration`: equation or existing refused result, ordered
+  dependency requests, instance requests and contract requests, plus record,
+  program-class and stated-effect facts.
+- `CollectedDeclarations`: all document parts and the facts finalization
+  consumes, with their source spans. Its construction belongs to closure.
+
+Every boundary states ordinary parameter and return types. Requests are a
+discriminated union with a span and, where needed, an owner. Their variants
+cover declaration collection, value-type dependencies, closed instances and
+prototype or overlay contracts. Each consumer matches the whole union.
+Existing `Answered<T>` results keep the distinction between an answered
+query and a located unsupported query; tool failures retain their causes.
+
+The principal interfaces are `resolveDeclaration(context, resolutionState,
+request): ResolvedDeclaration`, `elaborateDeclaration(context, declaration,
+elaborationContext, instanceState): ElaboratedDeclaration`,
+`closeDeclarations(context, resolutionState, initialRequests):
+CollectedDeclarations`, and `finalizeDeclarations(collected, observations):
+DeclarationDocument`. These are proposed signatures; the narrow query inputs
+of each helper replace `context` as each family is extracted. The resolution
+state is initialized before closure begins. Closure creates `instanceState`
+before calling elaboration. A small allocation operation reserves an instance
+identity synchronously, so elaboration can return a reference immediately;
+the corresponding body request goes back to the driver's queue. That
+operation receives the instance table explicitly and owns its writes. There
+is no callback into a partially initialized driver.
+
+### Resolve declarations and identities
+
+Extract `resolveDeclarations`, `declarationOf`, `lookup`, `identityOf`,
+`aliasOf`, symbol allocation and their supporting queries. Identity retains
+the existing module, name and span. Merged groups retain the class-first or
+longest-parameter-list choice and the ordered parts. Symbol indices retain
+first-use order. Paths through imports and reexports receive the same
+clean-declaration checks as their targets.
+
+This phase owns `partners`, `aliasNodes`, `brands`, the symbol index and the
+diagnostics table. It can extend them for a newly reached dependency; a caller
+receives a resolved result rather than permission to edit the tables.
+`clean` reports each diagnostic once per file in its existing order. The
+full-file error check used by `checkedClass` remains distinct from `clean`'s
+overlap check and ambient-field exception.
+
+Resolution supplies identities to elaboration. It does not call back into
+term construction to manufacture them. Requests that need computed types
+carry the unresolved computation to elaboration. This breaks the service
+cycle between `valueScope`, library recognition, lookup and instances at the
+point where a reference can name a dependency without collecting its body.
+
+### Elaborate into type terms
+
+Use the existing `typeTerm`, `computedType`, signature readers and
+`TermScope` hooks. Extract one family of scope hooks at a time. Binder lookup,
+merged parameters and argument completion have explicit inputs and results;
+the part of a hook that discovers dependencies returns or records a request
+in state owned by this operation.
+
+In particular, `valueStarts` becomes dependency output rather than an array
+unrelated closures append to. `overlayDefinitions`, `primitiveProtos`,
+`regexpDefinitions` and `collectionDefinitions` become contract contributions
+owned by closure. `statedDefinitions`, `externalTypes`, `programClasses` and
+`records` become explicit facts attached to their owning definition or value.
+The `collecting` variable becomes the current owner argument. The
+`externalReads` counter becomes a nested elaboration context whose child
+records the increased depth. Exceptions cannot leave a later operation with
+another operation's owner or depth.
+
+Mutually recursive term readers can remain mutually recursive top-level
+functions with typed arguments. A scope adapter may expose the existing hook
+types to `typeTerm`; each hook receives initialized state and states the
+effect it really has. Extracting a cycle as one group is useful engineering,
+but its shared census slice gives no coverage gain until that group verifies.
+Prefer small independent functions around that group first.
+
+Preserve the whole contract of each admitted declaration, including effects,
+own-key bounds, array presence, heritage, parameter bounds and defaults.
+An unsupported part retains its refusal. Type reading remains the
+[annotation mechanism](../SOURCE-CONTRACTS.md#types-stated-by-annotations).
+
+### Dependency closure to a fixed point
+
+Introduce a top-level `closeDeclarations` operation around the work already
+performed by `collectFrom`, `collectInstances` and the `valueStarts` loop.
+The fixed point means that processing the pending requests produces no
+additional request that requires collection. It concerns reachable
+declarations and instances; `settleDocument` continues to own expansion of
+deferred mapped types.
+
+The driver owns ordered queues and separate queued, active and completed
+keys. A declaration key uses the existing definition identity; an instance
+key uses the existing identity and argument data from `termsText`. Allocation
+retains the current instance naming order and budget of 256. The active set
+permits references to a recursive equation while its body is being read.
+Completion follows successful equation construction. Failure preserves the
+request's responsible source span and aborts that collection.
+
+The first extraction preserves the present scheduling: initial starts,
+instances to exhaustion, each newly discovered batch of value starts followed
+by instances, then the conditional array-prototype contribution and its value
+dependencies. It preserves the current fallback span choices as well as
+definition order. Model these as explicit driver stages before considering
+one general queue. A change that processes a previously undrained kind of
+work after array-prototype discovery is a separate correctness change with
+its own case and review; it cannot be hidden in extraction.
+
+The target driver sends every dependency contribution through its owner,
+including ones arising while a library contract is read. A result contains
+every discovered reachable equation or a located failure. Duplicate work
+preserves any required per-use answer and provenance. Prototype contributions
+remain demand-driven, and array-prototype rows retain their leading position.
+
+For safety checking, the driver needs explicit queue element types, checked
+indexed reads and initialized state, with each transition preserving the
+storage contracts of its tables. TScert's function safety theorem does not
+prove that this algorithm computes all reachable declarations or terminates.
+Those are additional correctness obligations. Ordinary recursive references
+are finite by visited identity; growth of computed instances retains the
+existing budget refusal. No new claim of termination accompanies extraction.
+
+### Validate and finalize
+
+Extract final assembly with the order visible at the end of the function:
+append the selected and demanded definitions; prepend `arrayProto`; run
+`settleDocument`; run `externalStatements`; apply `promisedBinders` and
+`promisedMethods` to the existing external positions; report family selection;
+construct the document; reject `deferredInDocument`.
+
+The inputs state which definitions are records, which are program classes,
+which read a stated effect, which values are external, and which instance
+identities belong to the client. Finalization reads these facts directly.
+It owns its result arrays; it does not mutate resolution tables or add
+dependencies. A missing dependency is a collection error, with no weakening
+of its annotation. Checks needed to interpret a declaration safely remain
+at that read; final validation does not postpone their refusals past other
+observable operations.
+
+## Split the options by responsibility
+
+The baseline signature has 90 optional properties. Keep a temporary adapter
+at `collectDeclarations` that normalizes absent request lists and exposes the
+following coherent interfaces. Each property has one owner.
+
+| Interface | Existing properties |
+| --- | --- |
+| `DeclarationInput` | `tsconfigPath`, `client` |
+| `DeclarationPolicy` | `arrayOverlay`, `familySelection` |
+| `RootRequests` | `namespaceMembers`, `locals`, `globals`, `globalValues`, `importMeta`, `ambient`, `root`, `arrays`, `intrinsics` |
+| `BindingRequests` | `symbolKeys`, `privateNames`, `staticReads`, `classTests`, `hookTests`, `bindingReads` |
+| `OperationRequests` | `iterables`, `spreads`, `restTargets`, `inKeys`, `receiverTargets`, `libraryNames`, `libraryValues`, `elementReads`, `lengthReads`, `openReads`, `regexps`, `dispatchCalls`, `memberReceivers` |
+| `TypeRequests` | `staticTypes`, `contextualParams`, `contextualClosures`, `assignCalls`, `computed`, `blockTypes`, `keyTypes`, `mappedTypes`, `symbolNames` |
+| `EnumRequests` | `enums`, `constEnumReads` |
+| `BindingAnswers` | `symbolKey`, `privateName`, `staticMember`, `inheritedStatic`, `classTest`, `hookTest`, `importedClassTest`, `bindingRead` |
+| `OperationAnswers` | `assertionCall`, `globalTest`, `globalIntrinsic`, `globalConstruct`, `iterable`, `restSlice`, `hostIn`, `methodTarget`, `libraryName`, `libraryValue`, `hostElement`, `byteRead`, `openRead`, `regexp`, `dispatch` |
+| `TypeAnswers` | `library`, `awaited`, `resolvable`, `awaitable`, `within`, `associatedAlias`, `staticType`, `contextualParam`, `contextualBinders`, `assignTypes`, `computedType`, `blockType`, `completion`, `keyType`, `mappedType`, `symbolName` |
+| `EnumAnswers` | `enumMember`, `importedEnum`, `enumMemberRead`, `constEnumRead` |
+| `DeclarationObservations` | `record`, `hostGuard`, `seen`, `familySelected` |
+
+`familySelection` is a query whose result affects collection, whereas
+`familySelected` reports a result. `completion` also controls whether the
+client application sweep runs: the adapter must carry that request explicitly
+alongside its answer destination. These two properties cannot be treated as
+interchangeable events. Likewise, optional answer callbacks retain any work
+selection their presence currently controls.
+
+The target internal results carry typed answer data and ordered observations.
+The adapter delivers them to the existing `fragment-parse.mts` callbacks at
+their existing execution points, including observations before a refusal.
+Each phase receives only its required answer and observation destinations;
+`observations` in finalization is its narrow part of `DeclarationObservations`.
+First preserve synchronous delivery through small typed answer interfaces;
+replace individual callbacks with data only after checking their consumers'
+reads, writes, exceptions and order. Buffering every callback until success
+would change behavior. The adapter is a migration boundary for callers; the
+document wire keeps its single declared shape.
+
+## Compiler compatibility and repeated queries
+
+Put version-sensitive queries in a small internal compatibility module using
+the existing compiler API contract and overlay data as its authority. Its
+operations cover installed-package and library origin recognition, matching
+reviewed declaration text, synthesized mapped-member flags (including the
+two `checkFlags & 8` reads), and reading an appended reviewed interface from
+a probe snapshot. Return typed answers or the existing failure. Each
+operation names the assumption in its contract owner; package changes require
+the existing [binding checks](../COMPILER-API.md#binding-the-contract-to-the-implementation).
+The module preserves text checks and path recognition. It carries no second
+table of library signatures and admits no alternative declaration shape.
+
+Caches belong to the snapshot or collection whose answers they describe.
+They hold data rather than closures over the whole collector. Probe nodes
+belong to their probe snapshot and cannot enter the base snapshot's cache.
+Keys include the declaration group and any binder, arguments, mode, policy or
+family selection on which an answer depends. Failed queries preserve their
+per-use diagnostic spans and observation behavior.
+
+The review's performance points have these destinations:
+
+- **Compiler per automatic project:** adapt `withOwnProject` through the
+  existing session mechanism, retaining strict project discovery, file-read
+  observation and snapshot release. Discovery and reuse need separate tests
+  for files with different owning projects and changed configurations.
+- **Root search per span:** build a per-source-file index with candidate
+  nodes in the original traversal order. Separate expression, identifier,
+  type-node and computed-node queries preserve each predicate, outermost
+  match, `getStart` behavior and excluded `SourceFile` or heritage nodes.
+  Build lazily when a request needs it. This replaces repeated searches by
+  one walk and lookups, at the cost of retaining the index for that snapshot.
+- **Repeated `computedMembers`:** memoize by canonical merged declaration
+  group once that group is established, including alias resolution's
+  snapshot. A cycle-in-progress entry has a distinct state from a negative
+  answer.
+- **Repeated `checkedClass`:** retain separate full-file diagnostics and
+  class escape results keyed by file and owner; then consider one file walk
+  that classifies all relevant owners. A recursive base-class check's
+  path-local `seen` is not a globally cached negative result.
+- **Repeated `parametersOf` and `library()`:** cache merged parameter data
+  and library classification or mapped templates per snapshot and policy.
+  Captured-parameter lookup and application completion keep their use-site
+  inputs. Diagnostic delivery remains once per observed file.
+- **Serialized binder detection:** replace
+  `JSON.stringify(term).includes('"k":"binder"')` in `collect` with a
+  typed traversal using `visitType`, preserving the exact binder predicate
+  and its refusal. Prove preservation of the visited term with the existing
+  effect mechanism, or use direct recursion over the term union.
+- **One probe per reviewed interface:** first isolate probe construction and
+  lifetime. Cache reusable parsed results only with complete snapshot,
+  policy and body keys. Batching probes requires checking interface names,
+  spans, merging, diagnostics and disposal, so it follows extraction as a
+  separate measured change.
+
+These are hypotheses about avoidable work, not measured speedups. A cache
+with no parse CPU benefit on the relevant slices does not justify extra state.
+
+## Extraction order and measurements
+
+For every numbered step, record three numbers beside the commit record:
+
+1. **V:** verified statements in `declaration-graph.mts`, from
+   `make census FILES=declaration-graph.mts`, with verified/countable totals.
+2. **U:** pipeline cases whose actual outcomes and expected refusal reasons
+   agree with the previous step, from `make suite`, as `U/total`; retain the
+   full case results to identify a changed case. The requirement is every
+   case unchanged, including gaps and refusals.
+3. **P:** parse CPU seconds summed over the census slice invocations, from
+   the census record. Report attempted parses, unavailable readings and
+   executed/replayed counts alongside it.
+
+Use the same shared heavy lock as the baseline for those runs. This design's
+file census is explicitly requested by the owner; the ordinary branch rule
+continues to favor targeted before/after slices during iteration. Run the
+targeted helper and a caller while extracting, then the file census and suite
+at each numbered boundary. Code changes also run the front-end type check,
+wire-name check and `make test` according to
+[the test tiers](../../AGENTS.md#iterating-run-what-the-change-touches).
+
+Keep extracted top-level function declarations in `declaration-graph.mts`
+through these measurements, so V measures verification rather than code
+movement. If later file separation is useful, count the destination modules
+as well and report the combined total. Retain both the statement denominator
+and individual function outcomes: making a refused function smaller is not a
+verified-statement gain.
+
+Parse CPU uses the [existing timing measure](../STAGE-STORE.md#timing), user
+plus system CPU for Node and the compiler processes attributed to parse.
+A replay contributes the producing execution's CPU, not replay lookup time.
+Changed tools code changes stage keys. Compare common slices separately from
+new extracted slices: additional slices add parse work even if each becomes
+cheaper. Use the `collectDeclarations` slice as a common named comparison
+and report its P separately. A first refusal that moves later can
+increase parse CPU by reaching more work; interpret P with outcomes and V.
+
+| Step | Small behavior-preserving boundary | Expected first verification benefit | Performance point addressed | Required numbers |
+| --- | --- | --- | --- | --- |
+| 1 | Extract the binder-term predicate and other independent term or identity helpers with explicit types; preserve the surrounding callers | Small data-only functions can verify independently of the collector's captured state | Serialized binder detection | V, U/total, P |
+| 2 | Extract final assembly in pieces and check its existing helpers: document parts, external statement checks, promise transformations, settlement and final refusal | Typed traversals and result builders have bounded inputs and no resolution cycle; each extracted piece has its own slice | Makes final traversal cost visible; no caching claim | V, U/total, P |
+| 3 | Name the option interfaces and add their adapter; pass current owner and external-read context explicitly through one hook family at a time | Removes captured bindings and unrelated callback effects from those helpers; adapter gain may be zero | Locates query ownership for later caches | V, U/total, P |
+| 4 | Extract resolution and merged-group services; isolate compatibility queries, keeping query order | Independent identity and declaration-part functions precede recursive readers; compiler-dependent slices can retain host-contract refusals | `parametersOf`, `library()`, compiler flag/path/text assumptions | V, U/total, P |
+| 5 | Extract elaboration of one declaration or use and its dependency output; move the scope-hook cycle together where necessary | Fully initialized explicit contexts remove forward-captured bindings; small readers are measured separately from the recursive group | `computedMembers` and reviewed-probe ownership | V, U/total, P |
+| 6 | Extract the existing closure loops into the explicit staged driver, preserving insertion and refusal order | Queue operations and single-request transitions have small contracts; the whole driver depends on the extracted readers | Repeated instance-map copying becomes visible; no scheduling optimization | V, U/total, P |
+| 7 | Add the span index, then merged-parameter, library and computed-member caches, one commit per cache | Checked lookups have independent slices; cache mutations retain explicit storage contracts | Root searches, `parametersOf`, `library()`, `computedMembers` | V, U/total, P per change |
+| 8 | Cache full-file class checks and escape answers; adapt automatic-project sessions; finally assess probe reuse, as separate changes | Compiler lifetime and native effects remain explicit; speed work need not increase V | `checkedClass`, `withOwnProject`, reviewed-interface probes | V, U/total, P per change |
+
+Each row is a sequence of small commits when it contains several extractions.
+Measure after each such commit as well. Preserve document contents and row
+order, identities, symbols, callback delivery and refusal messages and spans;
+temporary before/after document comparisons supplement suite outcomes where
+an internal ordering change could be invisible to the verdict. Retire those
+research checks once pipeline coverage carries their signal. Keep a control
+only for a boundary or speed property the pipeline cannot show.
+
+### Baseline measurement
+
+Measured on 2026-11-01 at commit
+`62ce88743b5b3e604054843f56d45d7dcdfbde8e`, branch
+`refactor/collect-declarations`, with clean tools and pipeline sources.
+The command is `make census FILES=declaration-graph.mts`, run once under
+`/var/folders/gx/wxqwh_fx6zl3y19s4gvwccjw0000gn/T/tscert-gap/2026-10-31T21-48-18-002Z/work/heavy.lock`
+using `until mkdir ... 2>/dev/null; do sleep 20; done`, with an exit trap
+to release the lock. It uses the default stage store and the census's 300 s
+step limit.
+
+| Measure | Baseline |
+| --- | --- |
+| V: verified statements | **410 / 4,247 (9.7%)**, 31 / 45 functions verified |
+| U: pipeline case baseline | **2,752 / 2,752** cases as expected (`make suite`, same sources); comparison starts from these outcomes |
+| P: parse CPU | **74.847290 s**, 45 executed parses, 0 replayed, 0 unavailable CPU readings |
+| Common collector slice's parse CPU | **13.365444 s** |
+| Collector's statements | **0 / 2,941** verified |
+| Other refused statements | **896**, across 13 `unverified/search` functions |
+| Census wall time | **138.837 s** |
+
+The inventory excludes 11 module statements and 8 statements in 4 other
+functions from the counted total. Across all stages there are 494 executed
+and 215 replayed invocations. The census record retains the outcomes and
+producing executions' measurements at:
+
+```text
+/private/tmp/claude-501/-Users-cristianocalcagno-GitHub-TScert/75ad4d56-5055-4c0a-99ba-5190005ab04d/scratchpad/refactor/tmp/tscert-census/8f4c28523e7f/census-tools-62ce88743b5b-2026-11-01T01-54-48-788Z.json
+```
+
+`node dev/census.mts refusals <record>` supplies the sites in the table below.
+The baseline is an observation of these sources, installation and stage
+policy; it predicts neither additional refusals behind the first one nor a
+speedup from extraction.
+
+The suite baseline is also measured on 2026-11-01 under the same lock.
+Its full per-case output is `/tmp/collect-declarations-suite-baseline.log`;
+the census output is `/tmp/collect-declarations-baseline.log`. These are
+session artifacts. The suite reports 3,455 functions verified, 1,458 negative
+controls and 210 named gaps. Its case outcomes include those gaps; the
+2,752 figure counts agreement with expectations, rather than acceptance of
+every source.
+
+### Refusals and the earliest expected gains
+
+| Function or group | Counted statements | Observed first refusal | Implication for extraction |
+| --- | --- | --- | --- |
+| `collectDeclarations` | 2,941 | `unsupported: shadowing parameter 1` at proposal | The whole function contributes zero until it verifies; the first observation here is a producer limitation. Extraction gives independent functions their own chances to verify. |
+| `withProject`, `useProject`, `withOwnProject`, `clientErrors` | 50 | Incoming edge at `check(project)` | Project helpers share this refusal; compiler-session extraction alone gives no evidence that these slices verify. |
+| `promisedBinders`, `promisedMethods` | 5 | Return-contract claim for the conditional binder result | Small existing helpers are near the finalization boundary; inspect the inferred writable result contract and preserve the input's full shape. |
+| `namesArray` | 3 | Node-typing claim at `documentHolds(...)` | A small finalization helper is a candidate for an explicit predicate and call contract. |
+| `nodeOrigin` | 8 | Closure expression claim at `origins` | Explicitly passing the origin data is an early candidate; the message alone does not establish the cause. |
+| `importBindings` | 20 | Closure signature claim outside the source annotation | A named top-level import mapper with its full return type is an early candidate. |
+| `externalStatements` | 21 | Node-typing claim at `visitType(...)` | An explicit worklist and a correctly stated visitor effect are candidates; the first refusal does not itself prove an effect is the cause. |
+| `overlaidInterface` | 52 | Incoming edge at the local `nameOf` function | Extract the small parameter-name query before the larger overlay reader; inspect the edge claims rather than assuming the helper's syntax is the cause. |
+| `selectGlobal` | 355 | Node-typing claim at `forms(overload, key, what, entry)` | The nested readers need their own inputs and call contracts; moving the whole function yields no verification gain. |
+| `collect` | 382 | Closure expression claim at `nativeFields` | Explicit state and smaller term readers also apply to the existing dependency collector. |
+
+These observations support beginning with small term functions and the
+finalization boundary, then origin, import and parameter helpers around
+resolution. Existing `mergedParameters`, the four span-query functions,
+`promisedNames`, `mergeMembers` and `mergedClass` already verify in this
+census; they give concrete examples of independently checkable functions
+near these boundaries. The span index is primarily a performance step,
+since its existing query functions already verify.
+
+The owner's reported earlier refusals involving captured closure signatures,
+bindings read before set and callback effects motivate explicit contexts and
+initialized state. This measurement records the refusals above. It does not
+establish those earlier messages as the collector's current first refusal.
+Removing `shadowing parameter 1` alone cannot establish that the remaining
+2,941 statements verify. More refusals can appear behind it. Locate and
+examine that producer failure in its own small step if extraction meets it;
+renaming a parameter is justified only by the located cause.
+
+The extraction order is a conjecture about which obligations become small
+enough to discharge first. Each step uses its measured refusals to select a
+source rewrite. A new external contract follows the existing audit and trust
+rules; an extraction never marks an unsupported dependency trusted merely to
+make a slice verify. Function safety for an extracted helper and faithful
+annotation interpretation remain separate obligations.
+
+## Scope
+
+The design covers organization, explicit state and interfaces, compatibility
+queries, and measured removal of repeated work. It preserves the admitted
+source fragment, the declaration and claims wire formats, library contracts,
+family selection, budgets and the successful CLI condition. New typing rules,
+new host assumptions, changes to closure effects, wider language support,
+different refusal policy and new cache infrastructure belong to separate
+designs. Parallel elaboration and new scheduling are outside this extraction;
+identity allocation, probes and diagnostics depend on order. Full correctness
+or termination proofs of declaration collection are additional work beyond
+making its top-level functions verify for safety.
