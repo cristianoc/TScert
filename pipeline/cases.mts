@@ -1031,7 +1031,7 @@ export const cases: Case[] = [
   negative("invalid-mixed-arithmetic", "row number-bigint arithmetic: a bigint plus a number, a TypeError in JavaScript and refused by TypeScript"),
   negative("invalid-unary-plus-bigint", "row `+` on a bigint: unary + on a bigint, refused at the source; JavaScript throws a TypeError", /unary \+ on a bigint/),
   negative("invalid-mixed-comparison", "row a relational comparison of a string with a number: the string would be converted"),
-  negative("invalid-string-object", "`String` of an object runs its `toString`: only primitives are admitted"),
+  positive("invalid-string-object", "mapped-type key collection retains its string element contract for conversion"),
   negative("invalid-object-values", "an interface may own further keys: `Object.values` of one is no `number[]`, though TypeScript's `any[]` lets it be claimed so"),
   negative("invalid-object-values-record", "a record type may own further keys: the generic `Object.values` TypeScript selects for it is read at a dictionary it is not"),
   { ...gap("array-length-refused", "`new Array(n)` makes an array of holes, which an array type does not admit: the overlay reads the no-argument constructor only", "unsupported", "source",

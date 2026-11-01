@@ -1749,6 +1749,32 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### String keys retained through mapped-type collection
+
+`tools/type-term.mts#expandIdentity` collects the keys of a mapped identity
+into a fresh `string[]`. String literals contribute their text, numeric
+literals contribute `numericKey`'s string result, unions recurse, and
+`never` contributes no key. Every other key form is refused.
+
+- **Repair:** the collection retains the string contract its insertions
+  establish. `PropertyKey` also admits the `{ symbol: number }` encoding;
+  widening the element contract to that union loses the primitive domain
+  required by the existing [conversion contract](SOURCE-CONTRACTS.md#library-globals)
+  at `String(n)` in the missing-field diagnostic.
+- **Avoided form and cost:** converting an element read through
+  `PropertyKey[]` requires a contract for object coercion and its callbacks.
+  The collection's inputs require only primitive conversion, which its
+  `string[]` contract states directly.
+- **Behaviour:** the local collection has the same elements and order.
+  Its callers receive the same fields or exceptions; the annotation
+  changes no execution. Symbol keys remain subject to the collector's
+  existing refusal.
+- **Scope:** `invalid-string-object` collects a string and converts its
+  mapped elements. Its header names `expandIdentity` and `typeParts`, a
+  caller in the same recursive group. The repair adds no external
+  assumption.
+- **Commit:** the introducing commit.
+
 ### A decoder's result asserted through unknown
 
 `tools/diagnostic.mts#readDiagnostic` returns a diagnostic variant built

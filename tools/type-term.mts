@@ -842,8 +842,8 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
       ...(x.numberIndex ? { numberIndex: { ...x.numberIndex, readonly: readonly(x.numberIndex.readonly) } } : {}),
       ...(x.symbolIndex ? { symbolIndex: { ...x.symbolIndex, readonly: readonly(x.symbolIndex.readonly) } } : {}), span };
   }
-  // A key union: each literal names a field of X.
-  const names: PropertyKey[] = [];
+  // A key union: each literal names a string field of X.
+  const names: string[] = [];
   const collect = (k: TypeTerm): void => {
     if (k.k === "union") k.parts.forEach(collect);
     else if (k.k === "literal" && k.name === "string") names.push(k.text);

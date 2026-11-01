@@ -1,5 +1,8 @@
-// `String(o)` of an object runs its `toString`, which may throw: only a
-// primitive is admitted, though TypeScript's declaration takes `any`.
-function describe(o: { a: number }): string {
-  return String(o);
+// Census: tools/type-term.mts#expandIdentity and its callers, including typeParts.
+// The collected mapped-type keys are strings; the symbol-record arm of the
+// property-key encoding is outside this collection's domain.
+function describe(key: string): string[] {
+  const names: string[] = [];
+  names.push(key);
+  return names.map((n) => String(n));
 }
