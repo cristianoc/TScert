@@ -1793,6 +1793,34 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A mapped array replaced by filtered arrays in a loop
+
+`tools/fragment-parse.mts#lowerFile` keeps its conditional map/flatMap
+result in `initial`, runs the first filter, and initializes `lowered` with
+that filter's result. Further rounds replace `lowered` with another filter
+result. The existing [filter contract](SOURCE-CONTRACTS.md#prototype-contracts)
+establishes the same presence mode at initialization and every assignment;
+the final projection uses the existing [closure checks](SOURCE-CLAIMS.md).
+
+- **Avoided form and cost:** initializing the mutable loop binding with a
+  potentially sparse map result and replacing it with filter results
+  requires different array-presence alternatives at the loop and a
+  stronger fact at its exit. The six census sites share one loop. Splitting
+  its first round uses the existing checks without extending loop inference.
+- **Equivalent form:** the first filter runs unconditionally after the same
+  initial map or flatMap. Its result length is compared with `initial.length`,
+  exactly the receiver length used by the original first round. Each further
+  round computes the absent names, filters, compares lengths and saves the
+  result in the same order. Holes in the initial array therefore cause the
+  same further rounds, including every callback's effects. The same fresh
+  arrays and records reach the final map; field reads, returned values,
+  aliases, mutations, exceptions and nontermination are unchanged. The
+  private local bindings expose no additional value to callbacks. Later enum
+  and module initialization lowering retains its order.
+- **Scope:** `blocker-prep-captured-filter-map` exercises the first-round
+  split and the final projection. This rewrite adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A generic observed value assigned across try/finally
 
 `tools/files.mts#observedNoting` initializes `value` with an immediately

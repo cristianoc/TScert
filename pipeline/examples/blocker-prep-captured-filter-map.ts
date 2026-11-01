@@ -10,8 +10,9 @@ export function lower(
   make: (n: number) => string,
   keep: (n: number) => boolean,
 ): string[] {
-  let lowered = input.map((s) => ({ s, fn: make(s) }));
-  for (let changed = true; changed; ) {
+  const initial = input.map((s) => ({ s, fn: make(s) }));
+  let lowered = initial.filter(({ s }) => keep(s));
+  for (let changed = lowered.length < initial.length; changed; ) {
     const kept = lowered.filter(({ s }) => keep(s));
     changed = kept.length < lowered.length;
     lowered = kept;

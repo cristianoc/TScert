@@ -2236,7 +2236,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const leftOut = (s: FunctionDeclaration, reason: string): void => {
     absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s), reason });
   };
-  let lowered = location === null ? declared.map((s) => ({ s, fn: gate.functionDecl(s) }))
+  const initial = location === null ? declared.map((s) => ({ s, fn: gate.functionDecl(s) }))
     : declared.flatMap((s) => {
       try {
         return [{ s, fn: gate.functionDecl(s) }];
@@ -2250,7 +2250,13 @@ function lowerFile(file: string, carriesContext: boolean,
   // reading one is left out with it, until no kept function reads one.
   const absentNames = (): Set<string> => new Set(absent.flatMap((a) => a.name ? [a.name] : []));
   const local = (id: Identifier): string => gate.local(id);
-  for (let changed = true; changed;) {
+  const firstNames = absentNames();
+  let lowered = initial.filter(({ s }) => {
+    const read = readOf(s, firstNames, local);
+    if (read) leftOut(s, gate.refusal(read, `a read of ${read.text}, a function of its module left out`));
+    return !read;
+  });
+  for (let changed = lowered.length < initial.length; changed;) {
     const names = absentNames();
     const kept = lowered.filter(({ s }) => {
       const read = readOf(s, names, local);
