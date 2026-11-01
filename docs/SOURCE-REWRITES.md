@@ -158,6 +158,28 @@ either an array or a function producing one.
   result is used by a second map. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### Mapped binder records with their writable contract
+
+`pruned` in `tools/written-applications.mts#writtenApplications` states
+`SourceTypeParameter<TypeTerm>` on the callback that allocates each binder
+record. The `bound` field holds a type term or null, and `resolution` holds
+resolution slots or null. The existing [allocation and closure checks](SOURCE-CLAIMS.md)
+establish that full writable contract before the enclosing array reaches
+`filter` and the function's return.
+
+- **Repair:** the callback's result annotation retains the writable field
+  contracts required by the returned binder groups. Inference from the
+  literal `resolution: null` alone supplies a narrower writable field.
+- **Behaviour:** the annotation is erased. The same filters and maps run
+  in the same order, read the same names and bounds, allocate the same
+  records and arrays, and discard the same empty groups. Returns,
+  exceptions, mutations, receivers and aliases agree for every input
+  admitted by the existing contracts.
+- **Scope:** `blocker-round-mapped-filter-length` checks nested maps and
+  the final length filter with a nullable writable field. The repair adds
+  no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`

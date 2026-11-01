@@ -5,6 +5,11 @@ export function levels(
   xs: number[][],
 ): { name: number; bound: number | null }[][] {
   return xs
-    .map((level) => level.map((name) => ({ name, bound: null })))
+    .map((level) =>
+      level.map((name): { name: number; bound: number | null } => ({
+        name,
+        bound: null,
+      })),
+    )
     .filter((level) => level.length);
 }

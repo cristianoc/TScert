@@ -485,7 +485,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     });
     args.forEach(mention);
     return env.levels.map(level => level.filter(b => kept.has(b.name))
-      .map(b => ({ name: b.name, bound: bounds.get(b.name) ?? null, resolution: null })))
+      .map((b): SourceTypeParameter<TypeTerm> => ({ name: b.name, bound: bounds.get(b.name) ?? null, resolution: null })))
       .filter(level => level.length);
   };
   const empty: Env = { names: new Map<Node, string>(), levels: [] };
