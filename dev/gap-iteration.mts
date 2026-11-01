@@ -269,23 +269,29 @@ function close(r: Run, t: Task, status: Status, note: string): void {
 /** The task's worktree on its branch from main, with the main checkout's
  * Lake cache, node_modules and a build. */
 async function setUp(r: Run, t: Task): Promise<void> {
-  const tree = treeOf(r, t);
+  const tree = treeOf(r, t), done = join(taskDir(r, t), "setup-done");
   mkdirSync(taskDir(r, t), { recursive: true });
-  if (existsSync(tree)) return;
+  // A setup is complete once its marker is written; one interrupted before
+  // that copies every cache and dependency again, so none is left partial.
+  if (existsSync(done)) return;
   mkdirSync(join(r.run, "trees"), { recursive: true });
-  if (gitOk(repository, "rev-parse", "--verify", "-q", `refs/heads/${branchOf(t)}`))
-    git(repository, "worktree", "add", "-q", tree, branchOf(t));
-  else git(repository, "worktree", "add", "-q", "-b", branchOf(t), tree, "main");
+  if (!existsSync(tree)) {
+    if (gitOk(repository, "rev-parse", "--verify", "-q", `refs/heads/${branchOf(t)}`))
+      git(repository, "worktree", "add", "-q", tree, branchOf(t));
+    else git(repository, "worktree", "add", "-q", "-b", branchOf(t), tree, "main");
+  }
+  rmSync(join(tree, "lean", ".lake"), { recursive: true, force: true });
   execFileSync("cp", ["-c", "-R", join(repository, "lean", ".lake"), join(tree, "lean", ".lake")]);
   rmSync(join(tree, "lean", ".lake", "build", "bin", "verifier"), { force: true });
   const modules = ["node_modules", "tools/node_modules",
     ...readdirSync(join(repository, "pipeline")).map((d) => `pipeline/${d}/node_modules`)];
   for (const m of modules) {
-    if (existsSync(join(repository, m)) && !existsSync(join(tree, m)))
-      execFileSync("cp", ["-c", "-R", join(repository, m), join(tree, m)]);
+    rmSync(join(tree, m), { recursive: true, force: true });
+    if (existsSync(join(repository, m))) execFileSync("cp", ["-c", "-R", join(repository, m), join(tree, m)]);
   }
   const built = await exec("make", ["build"], { cwd: tree, log: logOf(r, t) });
   if (built.status !== 0) throw Error(`${t.id}: make build failed in ${tree}`);
+  writeFileSync(done, "");
 }
 
 const runNote = (r: Run): string => `
