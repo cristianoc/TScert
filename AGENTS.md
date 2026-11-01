@@ -186,14 +186,16 @@ every `pipeline/*/` one, `pipeline/library-project/node_modules` included. A
 symbolic link resolves type declarations from the main checkout's path, and
 the cases reading `@types/node` then fail.
 
-Check the copied declaration file before running the suites:
+Check the library fixture's copied declarations before running the suites:
 
 ```sh
 test -s pipeline/library-project/node_modules/@types/node/index.d.ts
+test -s pipeline/library-project/node_modules/undici-types/index.d.ts
 ```
 
-An empty directory tree does not provide Node's declarations. Copy the
-installation's files as well as its directories.
+Empty package directories do not provide declarations. If either check fails,
+copy the complete `pipeline/library-project/node_modules` from the main
+checkout with `cp -c -R` before running the compiler.
 
 `make suite` includes the pipeline cases, including those importing from
 `pipeline/imports-project/` and `pipeline/library-project/`. Install OCaml and
