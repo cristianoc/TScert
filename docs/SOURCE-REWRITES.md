@@ -60,6 +60,32 @@ of the host's implementation.
 
 ## Rewrites
 
+### A flow document assembled from decoded values
+
+`decodeFlowDocument` in `tools/source-flow.mts` uses the existing
+[fresh-result decoder pattern](#a-decoders-result-asserted-over-parsed-storage).
+Its input type, `Json`, describes JSON values; the return type,
+`FlowDocument`, promises writable graphs, nodes, actions and execution plans.
+
+- **Repair:** field decoders return their checked values in fresh records
+  and arrays. Each action and execution variant constructs its complete
+  declared shape. The graph decoder retains these typed results through
+  its return. Widening the input to `unknown` before a closing assertion
+  supplies neither the graph contract nor protection from writes through
+  a parsed-value alias.
+- **Behaviour:** exact-field checks, validation order, node identities,
+  edge bounds and duplicate-owner checks determine admission. For parsed
+  JSON, the returned document has the same fields and values as its input,
+  in fresh storage throughout. Both production callers in
+  `pipeline/verify-source.mts` serialize that document immediately. Property
+  insertion order follows the decoder's record literals. Mutating an input
+  after decoding leaves the returned document unchanged.
+- **Scope:** `blocker-round-decoder-erased-assertion` checks the typed
+  construction and return. A control in `pipeline/test.mts` checks malformed
+  graph documents and the independence of decoded spans from input writes.
+  The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`

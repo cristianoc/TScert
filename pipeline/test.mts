@@ -1852,6 +1852,31 @@ control(async (): Promise<void> => {
   }
 });
 control(async (): Promise<void> => {
+  // A source cannot make the planner emit a malformed flow document.
+  const node = {
+    id: 0, point: "0:1:0", source: [0, 1], scope: [], handler: null,
+    action: { kind: "end" }, executions: [], bindingPlan: null,
+  };
+  const graph = {
+    owner: [0, 1], bodySpans: [[0, 1]], entry: 0, cells: [],
+    prologue: null, nodes: [node],
+  };
+  const decoded = decodeFlowDocument([graph]);
+  assert.deepEqual(decoded, [graph]);
+  assert.notStrictEqual(decoded[0], graph);
+  assert.throws(() => decodeFlowDocument([{ ...graph, extra: true }]), /unexpected or missing fields/);
+  assert.throws(() => decodeFlowDocument([{ ...graph, entry: 1 }]), /edge names a missing node/);
+  assert.throws(() => decodeFlowDocument([graph, graph]), /duplicate graph owner/);
+  assert.throws(() => decodeFlowDocument([{ ...graph, nodes: [{ ...node, point: "wrong" }] }]), /node identity/);
+  assert.throws(() => decodeFlowDocument([{ ...graph, nodes: [{ ...node, action: { kind: "other" } }] }]), /unknown action kind/);
+  graph.owner[0] = 9;
+  graph.bodySpans[0][0] = 9;
+  node.source[0] = 9;
+  assert.deepEqual(decoded[0]?.owner, [0, 1]);
+  assert.deepEqual(decoded[0]?.bodySpans, [[0, 1]]);
+  assert.deepEqual(decoded[0]?.nodes[0]?.source, [0, 1]);
+});
+control(async (): Promise<void> => {
   const good = run("constructor-tuple-spread");
   assert.equal(runExample("constructor-tuple-spread", "snapshot()"), 12);
   const source = readFileSync(sourceKey(good), "utf8");

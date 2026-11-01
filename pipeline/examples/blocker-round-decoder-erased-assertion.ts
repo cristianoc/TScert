@@ -1,7 +1,13 @@
-// A typed intermediate widened to unknown before its closing assertion.
+// Typed decoder results retain the fields checked while building fresh storage.
 // Census functions:
 // source-flow.mts#decodeFlowDocument
-export function decode(value: { id: string }): { id: string } {
-  const document: unknown = value;
-  return document as { id: string };
+function record(value: { readonly id: unknown }): { id: string } {
+  const id = value.id;
+  if (typeof id !== "string") throw Error("string required");
+  return { id };
+}
+
+export function decode(value: { readonly id: unknown }[]): { id: string }[] {
+  const document = value.map(record);
+  return document;
 }

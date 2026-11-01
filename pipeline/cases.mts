@@ -77,8 +77,7 @@ export const cases: Case[] = [
     /^reject: source refusal at \[\d+,\d+\): a read at a key that may name a member every object inherits from `Object\.prototype` \(`toString`, `constructor`, `valueOf`, \.\.\.\): the model's objects hold no prototype there, so a key the object may lack is read only where no member of it is under the key/),
   gap("blocker-round-decoder-record-assertion", "A decoder closing with a double assertion through unknown.", "unverified", "search",
     /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]* is unknown\. This obligation requires \{ id: string \}\./),
-  gap("blocker-round-decoder-erased-assertion", "A typed intermediate widened to unknown before its closing assertion.", "unverified", "search",
-    /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]* is unknown\. This obligation requires \{ id: string \}\./),
+  positive("blocker-round-decoder-erased-assertion", "A decoder builds fresh records from checked fields and retains its typed mapped result."),
   { ...gap("blocker-round-imported-find-shape", "A host-declaration map/get/find result losing its node field in an importing module.", "unsupported", "proposal",
     /^unsupported: missing field node at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
 
