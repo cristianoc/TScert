@@ -78,12 +78,20 @@ export const cases: Case[] = [
     /^reject: source expression obligation at \[324,364\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-reference-args-map-preserving", "Reference-record construction with args mapped through a store-preserving callback"), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-host-find-callback", "A returning loop finds the first host Type outside literalUnion"), project: "pipeline/blocker-project" },
+<<<<<<< HEAD
   { ...positive("blocker-prep-assign-error-value", "Object.assign retains a fresh Error target's prototype and adds its code field"), project: "pipeline/blocker-project" },
   negative("invalid-assign-constructor-alias", "A constructor can return a shared object: copying a string code changes an alias's number field (run under Node)",
     /Object.assign onto a constructed target needs a constructor contract stating a fresh object/),
   { ...gap("blocker-prep-part-map-effect", "Within-qualified partsOf calling an ordinary function parameter", "unverified", "search",
     /^reject: source effect refusal at \[352,425\): the footprint claimed for 'partsOf' is not established by its body(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-session-after-clear", "Passing a saved session after explicit null and ledger equality tests"), project: "pipeline/blocker-project" },
+=======
+  { ...gap("blocker-prep-assign-error-value", "Object.assign of an Error used as the returned value", "unverified", "search",
+    /^reject: source refusal at \[125,192\): Object\.assign onto an object that is not a fresh literal is lowered only as a statement on a local's own object: the call's value would be one more reference to it(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-prep-part-map-effect", "Part collection calling a store-preserving traversal parameter"), project: "pipeline/blocker-project" },
+  { ...gap("blocker-prep-session-after-clear", "Passing a saved nullable session after an optional-chain ledger equality test", "unverified", "search",
+    /^reject: source expression obligation at \[383,391\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
+>>>>>>> 368eb3f2 (Part collection requires its traversal's store-preserving effect)
   { ...gap("blocker-prep-alias-expression-after-call", "Passing a tested nullable definition expression after calling record", "unverified", "search",
     /^reject: source expression obligation at \[541,565\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-prep-reflect-apply", "Reflect.apply outside the reviewed global overlay", "unsupported", "source",

@@ -8,7 +8,7 @@ type Mapper = {
   ) => Within<{ value: "any"; store: "grow" }, number>;
 };
 export function partsOf(
-  map: (m: Mapper) => unknown,
+  map: (m: Mapper) => Within<{ value: "any"; store: "grow" }, unknown>,
 ): Within<{ value: "any"; store: "grow" }, number[]> {
   const parts: number[] = [];
   map({
