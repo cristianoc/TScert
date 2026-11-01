@@ -1677,6 +1677,32 @@ spread checks establish the fresh array's element contract.
   parameter. This repair adds no external assumption or rule.
 - **Commit:** the introducing commit.
 
+### Native merge binders widened to ReadonlyMap
+
+`tools/array-prototype.mts#mergeRefusal` gives `Binders` the type
+`Map<string, TypeTerm>`. Its `positional` helper constructs each initial
+map with `new Map`; the recursive `visit` receives either that map or the
+`substitution` map constructed for a base declaration. The existing
+[native collection contract](SOURCE-CONTRACTS.md#library-globals) retains
+the native iterator returned by `entries()`, whose spread supplies the
+array passed to `canonical`.
+
+- **Repair:** the annotation retains the native contract established by
+  both producers.
+- **Avoided form and cost:** widening these maps to structural
+  `ReadonlyMap` permits client-defined entry iterators. General protocol
+  spread requires checking iterator calls and their effects during array
+  construction. This single census site already constructs native maps,
+  so retaining their contract uses the existing native spread checks.
+- **Behaviour:** the annotation is erased. The same maps, `entries`
+  methods, iterators and spreads execute in the same order. Entry arrays,
+  key and value identities, serialization, returns, exceptions, mutations,
+  aliases and receivers agree for every input the callers supply.
+- **Scope:** `blocker-round-map-entries-spread` states the native `Map`
+  parameter supplied at this site. This repair adds no rule or external
+  assumption.
+- **Commit:** the introducing commit.
+
 ### An optional-chain result tested before a conditional record
 
 `tools/fragment-classes.mts#classBody` tests

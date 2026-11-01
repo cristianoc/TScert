@@ -896,7 +896,7 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   const none = { refusal: null, admitted: new Set<string>() };
   if (parts.every(isLibrary)) return none;
   type Member = ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration;
-  type Binders = ReadonlyMap<string, TypeTerm>;
+  type Binders = Map<string, TypeTerm>;
   const positional = (part: ts.InterfaceDeclaration): Binders => new Map((part.typeParameters ?? [])
     .map((p, i): [string, TypeTerm] => [p.name.text, { k: "binder", name: `$${i}`, span: [0, 0] }]));
   class Unread extends Error {}
