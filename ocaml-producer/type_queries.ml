@@ -269,6 +269,9 @@ let excludes_undefined_declared declarations t =
    declaration it unfolds (`Set<T>`'s members, `NativeSetView<T>`'s) is
    compared at one receiver for both, as the declaration's own `this`. *)
 let rec plausible_subtype_declared declarations actual expected =
+  (* Presence conversion also reads named element contracts: a readable
+     array whose elements exclude undefined has a dense view. *)
+  let plausible_subtype = plausible_subtype_with (excludes_undefined_declared declarations) in
   let unfold ~own t =
     (* Each declared atom contributes once to the union; the path retains
        the named atom at a cycle. Equations are read only as needed. *)

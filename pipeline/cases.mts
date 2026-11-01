@@ -52,6 +52,7 @@ export const cases: Case[] = [
   positive("blocker-round-conditional-map-cell", "A conditional map/flatMap result in a mutable local used as a filter receiver"),
   negative("invalid-filter-sparse-callback", "filter passes its potentially sparse receiver as the callback array"),
   positive("native-filter-sparse", "filter compacts a sparse receiver through ordinary and guard callbacks"),
+  positive("map-named-element-effect", "map retains the empty footprint on a readable array whose named element contract excludes undefined"),
   positive("blocker-round-conditional-pair-fields", "A conditional pair with a stated tuple contract, destructured into required record fields."),
   { ...positive("blocker-round-optional-host-list", "A saved optional host typeParameters list passed after testing its length."), project: "pipeline/blocker-project" },
   positive("blocker-round-map-keys-spread", "Array spread of a native Map keys iterator, retaining the caller’s constructed Map contract."),
