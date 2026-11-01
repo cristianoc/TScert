@@ -12,13 +12,14 @@ let rec excludes_undefined = function
   | Union ts -> List.for_all excludes_undefined ts
   | Meet (t,ts) -> List.exists excludes_undefined (t::ts)
   | Rigid _ -> false
+let plausible_presence excludes p q =
+  let elements = p.required @ p.optional_elements @ Option.to_list p.rest in
+  p.presence=q.presence || p.presence=Dense || q.presence=Sparse ||
+    (p.presence=Readable && q.presence=Dense && List.for_all excludes elements)
 let plausible_elements excludes a b = match a,b with
   | None,None -> true
   | Some p,Some q ->
-    let elements = p.required @ p.optional_elements @ Option.to_list p.rest in
-    let presence = p.presence=q.presence || p.presence=Dense || q.presence=Sparse ||
-      (p.presence=Readable && q.presence=Dense && List.for_all excludes elements) in
-    presence && (q.readonly || not p.readonly) &&
+    plausible_presence excludes p q && (q.readonly || not p.readonly) &&
       p.required=q.required && p.optional_elements=q.optional_elements && p.rest=q.rest
   | _ -> false
 (* Clause kinds from Claims: non-callable records lower to refs or dict;
@@ -44,6 +45,8 @@ let rec plausible_subtype_with excludes actual expected =
       (* The host-marked record: an object whose type excludes host values,
          as Lean's `hostFree` decides. *)
       | Exact _,Shape {fields=[m];indexes=[];calls=[];elements=None} when m=host_mark -> true
+      | Exact fields,Shape b ->
+        plausible_subtype_with excludes (record fields) (Atoms [Shape b])
       | Shape a,Shape {fields=[m];indexes=[];calls=[];elements=None} when m=host_mark ->
         List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
         List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
@@ -300,7 +303,7 @@ let rec plausible_subtype_declared declarations actual expected =
     | Atoms [Shape ({elements=Some p;_} as a)],Atoms [Shape ({elements=Some q;_} as b)] ->
       q.readonly && a.fields=b.fields && a.indexes=b.indexes && a.calls=[] && b.calls=[] &&
       p.required=[] && q.required=[] && p.optional_elements=[] && q.optional_elements=[] &&
-      (p.presence=q.presence || p.presence=Dense || q.presence=Sparse) &&
+      plausible_presence (excludes_undefined_declared declarations) p q &&
       (match p.rest,q.rest with
        | Some x,Some y -> plausible_subtype_declared declarations x y
        | _ -> false)

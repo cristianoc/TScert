@@ -49,8 +49,9 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   { ...positive("blocker-round-host-member-after-call", "Stable compiler child reads after declaration resolution, array destructuring and array or tuple rest."), project: "pipeline/blocker-project" },
-  gap("blocker-round-conditional-map-cell", "A conditional map/flatMap result in a mutable local used as a filter receiver.", "unverified", "search",
-    /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]*This obligation requires ReadonlyArray</),
+  positive("blocker-round-conditional-map-cell", "A conditional map/flatMap result in a mutable local used as a filter receiver"),
+  negative("invalid-filter-sparse-callback", "filter passes its potentially sparse receiver as the callback array"),
+  positive("native-filter-sparse", "filter compacts a sparse receiver through ordinary and guard callbacks"),
   positive("blocker-round-conditional-pair-fields", "A conditional pair with a stated tuple contract, destructured into required record fields."),
   { ...positive("blocker-round-optional-host-list", "A saved optional host typeParameters list passed after testing its length."), project: "pipeline/blocker-project" },
   positive("blocker-round-map-keys-spread", "Array spread of a native Map keys iterator, retaining the caller’s constructed Map contract."),

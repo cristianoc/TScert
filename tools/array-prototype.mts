@@ -256,13 +256,20 @@ export const overlay: readonly OverlayEntry[] = [
   // type membership survives every write the callbacks after it make; so
   // the result holds `S`s, without the bound `S extends T`. The callback is
   // at the top footprint, which every promise signature's footprint is
-  // within, and so is the call.
+  // within, and so is the call. A sparse receiver is tested for presence
+  // before each visit too; its callback's third argument stays sparse.
   { name: "filter", from: "ReadonlyArray",
     signature: "filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): S[];",
     stated: [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
         result: arrayOf(element, false) }), true),
       { params: [callback(element, guarded, promiseEffect(false, 0))], result: arrayOf(guarded, false),
+        effect: { ...ordinaryEffect, fresh: true } },
+      ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect, "sparse")],
+        result: arrayOf(element, false) }), true).map((signature) =>
+          ({ ...signature, receiver: arrayOf(element, true, "sparse") })),
+      { receiver: arrayOf(element, true, "sparse"),
+        params: [callback(element, guarded, promiseEffect(false, 0), "sparse")], result: arrayOf(guarded, false),
         effect: { ...ordinaryEffect, fresh: true } },
     ] },
   // `flat()`, at its default depth 1, visits the receiver's present

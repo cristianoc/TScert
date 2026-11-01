@@ -419,7 +419,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> []) in
           let seeds = List.filter_map (fun (r,t) ->
             if List.mem r own then Some (r,ValueArgument t) else None) found in
-          {s with params=List.map (Inference.substitute seeds) s.params} in
+          {s with receiver=Inference.substitute seeds s.receiver;
+            params=List.map (Inference.substitute seeds) s.params} in
         (* A callback parameter with its footprint set aside; its promise
            stays, since a promise signature's result is the promised type. *)
         let plain = function
@@ -427,6 +428,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               {c with call_effect={Semantic.ordinary_effect with promise=c.call_effect.promise}}) sh.calls}]
           | t -> t in
         let candidates = List.map seed candidates in
+        (* Contextual callbacks share the first receiver contract the
+           actual meets. A readable receiver and a sparse one offer
+           different third callback arguments; combining those groups
+           would lose the contextual signature even for a guard. All
+           advertised overloads remain candidates for the checked call. *)
+        let candidates = match List.find_opt (fun (s:Semantic.signature) ->
+            plausible_subtype_declared declarations receiver_type s.receiver) candidates with
+          | Some first -> List.filter (fun (s:Semantic.signature) -> s.receiver=first.receiver) candidates
+          | None -> candidates in
         (* A parameter still naming a candidate's own binder, one neither
            the receiver nor the expected result fixes, is no type to check a
            callback at. *)
@@ -508,7 +518,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | kept -> kept)
             | _ -> params in
           match params with
-          | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
+          | Some p :: rest when unbound p && List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
           | Some p :: rest when own_signature arg <> None
               && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
@@ -951,9 +961,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let matching = List.filter states_written matching @
           List.filter (fun p -> not (states_written p)) matching in
         let receiver_matches ((s:Semantic.signature),substitution,_) =
-          plausible_subtype_with
-            (excludes_undefined_declared declarations)
-            receiver_type (Inference.substitute substitution s.receiver) in
+          let expected = Inference.substitute substitution s.receiver in
+          plausible_subtype_with (excludes_undefined_declared declarations) receiver_type expected ||
+          plausible_subtype_declared declarations receiver_type expected in
         let preferred = match List.find_opt receiver_matches matching with
           | Some p -> Some p
           | None -> (match matching with

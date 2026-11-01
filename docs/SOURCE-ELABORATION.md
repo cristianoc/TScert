@@ -1917,6 +1917,22 @@ narrowed claim after a call, which the edge check verifies. Pipeline cases:
 `invalid-assertion-promise` are refused at the return where the argument is
 not a $`T`$, each run under Node by `node-runs.mts`.
 
+For contextual callback inference, the OCaml producer substitutes the
+receiver's inferred type arguments into each candidate receiver and groups
+candidates by that receiver contract. It uses the first group whose
+receiver the actual plausibly meets, retaining all groups if none matches.
+The group's callback parameters supply the context, with footprints set
+aside and promises retained. A shared parameter supplies a context once its
+candidate-owned type parameters are resolved; a named callback can supply
+its own result contract through arity adaptation. This distinguishes
+readable and sparse third array arguments (`native-filter-sparse`). Every
+advertised overload stays available for the call proposal. Receiver
+preference uses the presence-aware comparison and declaration-aware
+readonly element comparison; an exact record can propose its open record
+view. Both comparisons share the same array-presence check. Lean checks
+the selected instance, receiver and callback. A closure's
+offered signature has its body checked through the existing rules.
+
 ## Loops and spreads over iterables
 
 `for (const x of e) S` steps a trusted **iteration intrinsic**, one per kind

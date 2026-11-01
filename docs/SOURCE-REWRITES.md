@@ -235,6 +235,29 @@ accepts that receiver and gives the callback a sparse third argument.
   visited entry gives no presence guarantee for other indices. The native
   contract states the existing standard-object assumption.
 - **Commit:** the introducing commit.
+
+### Conditional mapped arrays passed to filter
+
+`lowerFile` in `tools/fragment-parse.mts` holds either a `map` result or a
+`flatMap` result in `lowered`, then repeatedly filters it. The unrestricted
+map callback permits holes in its result. The existing
+[filter contract](SOURCE-CONTRACTS.md#prototype-contracts) admits the sparse
+receiver and states the same presence mode for the callback's array
+argument, using the existing array-presence checks.
+
+- **Support:** the source retains its conditional, mutable binding and
+  callbacks. No information is discarded at these sites.
+- **Scope:** `blocker-round-conditional-map-cell` exercises the conditional
+  receiver; `native-filter-sparse` covers ordinary and guard callbacks;
+  `invalid-filter-sparse-callback` checks the callback's third argument.
+  The contract uses the existing standard-object assumption.
+- **Case shape:** both initializer arms allocate `{ source, item }`
+  entries, corresponding to the production `{ s, fn }` entries. The filter
+  reads `item.value`; the final projection reads `item` from the saved
+  `kept` result inside the loop. This exercises the allocation-shaped
+  element union and states the final projection's receiver directly.
+- **Commit:** the introducing commit.
+
 ### Decoded records returned by async workers
 
 `tools/unchecked.mts` gives its worker result the type `Result`, whose

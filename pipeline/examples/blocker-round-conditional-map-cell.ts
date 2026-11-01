@@ -12,11 +12,13 @@ export function select(
   partial: boolean,
   read: (x: number) => Item,
 ): Item[] {
-  let lowered = partial ? xs.map((x) => read(x)) : xs.flatMap((x) => [read(x)]);
-  for (let changed = true; changed; ) {
-    const kept = lowered.filter((x) => x.value > 0);
-    changed = kept.length < lowered.length;
+  let lowered = partial
+    ? xs.map((x) => ({ source: x, item: read(x) }))
+    : xs.flatMap((x) => [{ source: x, item: read(x) }]);
+  for (;;) {
+    const kept = lowered.filter(({ item }) => item.value > 0);
+    const changed = kept.length < lowered.length;
     lowered = kept;
+    if (!changed) return kept.map(({ item }) => item);
   }
-  return lowered;
 }

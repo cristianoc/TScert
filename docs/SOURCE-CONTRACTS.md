@@ -2414,6 +2414,18 @@ $`S`$ of its first actual:
      {\mathit{xs}.\mathsf{filter}(f):S[\,]\;!\;\top}\ \textsf{native-guard-filter}
 ```
 
+Both ordinary and guard `filter` signatures also admit a sparse receiver.
+These signatures pass a sparse readonly array as the callback's third
+argument: visiting one present element establishes no presence at other
+indices. The native tests presence before each visit and appends each kept
+value at the next result index, so the result is dense even when the input
+has holes or a callback removes a later input. This uses the same ordinary
+construction and standard-object assumptions as the readable signatures.
+`blocker-round-conditional-map-cell` exercises a mutable receiver holding
+either `map`'s potentially sparse result or `flatMap`'s dense result;
+`invalid-filter-sparse-callback` reads a hole through the callback's array
+argument and throws under Node.
+
 The native reads each present element $`v`$ once, calls the callback with
 $`v`$, its index and the receiver, and appends that same $`v`$ to its fresh
 result, by ordinary construction, where the answer converts to `true`; it

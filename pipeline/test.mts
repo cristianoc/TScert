@@ -3843,31 +3843,36 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  const artifacts = run("blocker-gap-round-captured-arms");
-  const claims = readClaims(artifacts);
-  const source = readFileSync(sourceKey(artifacts), "utf8");
-  const at = source.indexOf("arms.flatMap");
-  const claim = must(claims.functions.flatMap(f => f.expressions)
-    .find(e => e.pos[0] === at && e.pos[1] === at + "arms".length), "flatMap's receiver claim");
-  assert.ok(Array.isArray(claim.type));
-  const array = must(claim.type.find(label => typeof label === "object" && "array" in label),
-    "the receiver's array label");
-  assert.ok(typeof array === "object" && "array" in array);
-  const label = array.array[0];
-  assert.ok(typeof label === "number");
-  const row = structuredClone(must(claims.types[label], "the receiver's store row"));
-  const list = must(row.find(clause => typeof clause === "object" && "list" in clause),
-    "the receiver's list contract");
-  assert.ok(typeof list === "object" && "list" in list);
-  assert.equal(list.list.first.presence, "sparse");
-  list.list.first.presence = "readable";
-  array.array = [claims.types.push(row) - 1];
-  const input = writeClaims(artifacts, "forged-flat-map-readable-receiver", claims);
-  const produced = produceWith(artifacts, input, "forged-flat-map-readable-receiver");
-  assert.ifError(produced.error);
-  assert.equal(produced.status, 1, produced.stdout + produced.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/);
-  process.stdout.write("flatMap: a sparse receiver forged readable refused in search and in checking\n");
+  for (const [file, receiver, method] of [
+    ["blocker-gap-round-captured-arms", "arms", "flatMap"],
+    ["native-filter-sparse", "mapped", "filter"],
+  ]) {
+    const artifacts = run(file);
+    const claims = readClaims(artifacts);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const at = source.indexOf(`${receiver}.${method}`);
+    const claim = must(claims.functions.flatMap(f => f.expressions)
+      .find(e => e.pos[0] === at && e.pos[1] === at + receiver.length), `${method}'s receiver claim`);
+    assert.ok(Array.isArray(claim.type));
+    const array = must(claim.type.find(label => typeof label === "object" && "array" in label),
+      "the receiver's array label");
+    assert.ok(typeof array === "object" && "array" in array);
+    const label = array.array[0];
+    assert.ok(typeof label === "number");
+    const row = structuredClone(must(claims.types[label], "the receiver's store row"));
+    const list = must(row.find(clause => typeof clause === "object" && "list" in clause),
+      "the receiver's list contract");
+    assert.ok(typeof list === "object" && "list" in list);
+    assert.equal(list.list.first.presence, "sparse");
+    list.list.first.presence = "readable";
+    array.array = [claims.types.push(row) - 1];
+    const input = writeClaims(artifacts, `forged-${method}-readable-receiver`, claims);
+    const produced = produceWith(artifacts, input, `forged-${method}-readable-receiver`);
+    assert.ifError(produced.error);
+    assert.equal(produced.status, 1, produced.stdout + produced.stderr);
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/);
+    process.stdout.write(`${method}: a sparse receiver forged readable refused in search and in checking\n`);
+  }
 });
 
 control(async (): Promise<void> => {

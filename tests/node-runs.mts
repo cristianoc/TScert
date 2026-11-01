@@ -1317,6 +1317,22 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,
     "invalid-map-filter-pop: the result has three positions, two present");
+  assert.throws(() => runExample("invalid-filter-sparse-callback", "run()"), /undefined/,
+    "filter's callback receives the sparse source array");
+  assert.equal(runExample("native-filter-sparse", 'JSON.stringify(compact([1, 2, 3]))'), "[1,2]");
+  assert.equal(runExample("native-filter-sparse", 'JSON.stringify(strings(["a", 2, "c"]))'), '["a"]');
+  assert.equal(runExample("native-filter-sparse", 'JSON.stringify(inlineStrings(["a", 2, "c"]))'), '["a"]');
+  for (const partial of [true, false])
+    assert.equal(runExample("blocker-round-conditional-map-cell", `(() => {
+      const xs = [1, 0, -1];
+      const seen = [];
+      const result = select(xs, ${partial}, value => {
+        seen.push(value);
+        xs.pop();
+        return { value };
+      });
+      return JSON.stringify({ result, seen });
+    })()`), '{"result":[{"value":1}],"seen":[1,0]}');
   assert.equal(runExample("find-stable-counter", `firstLong(["ab", "abcd", "x"])`), 6,
     "find-stable-counter: two visits and a found element of length four");
   // `map` passes the index to the constant's second parameter, whose `tag`
