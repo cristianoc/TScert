@@ -1838,6 +1838,44 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A first-match callback calling an imported type reader
+
+`tools/computed-types.mts#inexpressible` describes the member selected by
+`inexpressiblePart`: a `for...of` loop returns the first member for which
+`literalUnion(member, [0, 0])` returns `null`. If every member is expressible,
+it selects the original type. `computedType` and
+`aliasApplication` reach this operation through their diagnostics.
+
+- **Avoided form and cost:** `parts.find(p => literalUnion(p, [0, 0]) === null)`
+  requires a callback whose calls preserve array stores. The imported
+  `literalUnion` contract states no such effect, and its optional `unique`
+  callback admits arbitrary effects. Supporting this call with that form
+  requires a separate checked effect for the two-argument use and complete
+  effect contracts for its compiler API calls. The three census sites share
+  this one search; the loop uses the existing
+  [iteration checks](SOURCE-ELABORATION.md#the-iterator-protocol) and the ordinary imported
+  contract.
+- **Equivalence scope:** the callers supply
+  [compiler API type objects](COMPILER-API.md#the-package-at-run-time),
+  whose fields are data fields and whose member arrays are fresh. The type
+  predicates read flags. In the two-argument `literalUnion` call, `unique`
+  is absent. That call reads these fields, obtains its own fresh member
+  array and builds local terms; primitive conversions receive only primitive
+  values. It neither exposes nor changes the outer `parts` array. Thus its
+  length and present entries stay fixed during the search.
+- **Equivalent behaviour:** under the existing stable-standard-objects
+  assumption, `find` and the array iterator visit the same entries in order,
+  call `literalUnion` with the same type and fresh span pair, and stop at the
+  first `null`. Both select that member or the original type, then format
+  the same description. An exception in the reader propagates before any
+  description; the standard array iterator has no `return` hook. No source
+  array or compiler object is written. This equivalence concerns the actual
+  reader and compiler API values; it does not apply to an arbitrary callback
+  that changes its receiver array.
+- **Scope:** `blocker-prep-host-find-callback` exercises the returning loop
+  over the same union of compiler arrays. This rewrite adds no host contract
+  or external assumption.
+
 ### A mapped array replaced by filtered arrays in a loop
 
 `tools/fragment-parse.mts#lowerFile` keeps its conditional map/flatMap

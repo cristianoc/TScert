@@ -49,8 +49,8 @@ states one invariant for syntax trees and derives the guards from it.
 
 ## The package at run time
 
-Read from the package's `dist/` and measured under Node on 2026-10-16,
-against `typescript` 7.0.2.
+The runtime details concern the package's `dist/` files in `typescript`
+7.0.2. The Node measurements are dated 2026-10-16.
 
 - **Nodes** are instances of one class, `RemoteNode`, whose fields are
   getters decoding an immutable buffer the server sent (`get kind()` reads
@@ -135,7 +135,9 @@ list` is true for a three-element list (a prototype getter) while `list[5]`
   readonly data fields and methods that fetch from the server synchronously.
   `isUnionType()` is `(this.flags & TypeFlags.Union) !== 0`; `getTypes()`
   returns `undefined` unless the type is a union, an intersection or a
-  template literal type.
+  template literal type. For those types, `ProjectObjectRegistry.fetchTypes`
+  returns a fresh array, populated by index when handles are cached and by
+  `map` over the server's type data otherwise (or `[]` for null data).
 - **Node builders.** The factory (`./unstable/ast/factory`), the clones
   (`getSynthesizedDeepClone`, `getSynthesizedDeepClones`) and the visitors
   (`visitNode`, `visitNodes`, `visitEachChild`, and the handwritten

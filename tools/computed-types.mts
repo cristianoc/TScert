@@ -377,11 +377,20 @@ function inferredResult(context: ComputedContext, alias: TypeAliasDeclaration, b
   return answers.length === 1 ? only : { k: "union", parts: answers, span };
 }
 
+/** The first member outside the union of literals and primitives, or `type`
+ * when every member is expressible. */
+function inexpressiblePart(type: Type): Type {
+  const parts = isUnionType(type) ? type.getTypes() : [type];
+  for (const part of parts) {
+    if (literalUnion(part, [0, 0]) === null) return part;
+  }
+  return type;
+}
+
 /** Why `type` is not a union of literals and primitives: its first part that
  * is not one. */
 function inexpressible(checker: Checker, type: Type): string {
-  const parts = isUnionType(type) ? type.getTypes() : [type];
-  const part = parts.find(p => literalUnion(p, [0, 0]) === null) ?? type;
+  const part = inexpressiblePart(type);
   const what = part.flags & TypeFlags.EnumLiteral ? "an enum member, outside the fragment"
     : "not a literal or a primitive";
   return `whose part ${checker.typeToString(part)} is ${what}`;
