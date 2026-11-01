@@ -5,7 +5,7 @@
  *   node dev/gap-iteration.mts work   --run <dir> [--parallel 5]
  *   node dev/gap-iteration.mts finish --run <dir>
  *   node dev/gap-iteration.mts all    --cases N [...]        # rank, work, finish
- *   common: [--driver sol] [--agent sol[,argon,…]] [--reviewer astra] [--codex-stop 85]
+ *   common: [--driver sol] [--agent sol[,argon,…]] [--reviewer astra] [--codex-stop 95]
  *
  * `--agent` lists the case authors' models, taken in turn: the ranking's
  * first case goes to the first, the next to the second, and round again.
@@ -40,7 +40,7 @@
  * (agy gemini-4-argon-medium), `codex:<id>` or `agy:<id>`. An agy author
  * runs `agy -p --mode accept-edits` with every tool allowed and its
  * workspace widened to the run's `work/` and the census directory, with
- * pushes sent to `/dev/null`; agy reads run read-only, in `--mode plan`.
+ * pushes sent to `/dev/null` and `open` doing nothing; agy reads run read-only, in `--mode plan`.
  * Commands that open the compiler need agy outside Claude Code's sandbox:
  * the command runs from the owner's terminal. A codex author runs
  * `codex exec --approve-for-me`: its commands
@@ -99,7 +99,7 @@ function options(args: string[]): Options {
   const parsed: Options = {
     driver: model(option(args, "--driver") ?? "sol"), agents: (option(args, "--agent") ?? "sol").split(",").map(model),
     reviewer: model(option(args, "--reviewer") ?? "astra"), parallel: number("--parallel", 5),
-    codexStop: number("--codex-stop", 85), cases: number("--cases", 5), census: option(args, "--census"),
+    codexStop: number("--codex-stop", 95), cases: number("--cases", 5), census: option(args, "--census"),
     previous: option(args, "--previous"), causes: option(args, "--causes"), run: option(args, "--run"),
   };
   if (parsed.parallel > 5) throw Error("--parallel is at most 5");
@@ -264,9 +264,13 @@ async function agy(r: Run, c: Ask): Promise<string> {
     "--settings", JSON.stringify(settings), "--output-format", "json", "--log-file", c.out + ".agy.log",
     ...dirs.flatMap((d) => ["--add-dir", d])];
   if (c.schema) args.push("--json-schema", JSON.stringify(c.schema));
+  // `open` and `xdg-open` do nothing, so a rendered page stays a file.
+  const noOpen = join(work(r), "no-open");
+  mkdirSync(noOpen, { recursive: true });
+  for (const name of ["open", "xdg-open"]) writeFileSync(join(noOpen, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   rmSync(c.out, { force: true });
   const ran = await exec("agy", args, { cwd: c.cwd, log: c.log,
-    env: { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "remote.origin.pushurl", GIT_CONFIG_VALUE_0: "/dev/null/no-push" } });
+    env: { PATH: `${noOpen}:${process.env.PATH ?? ""}`, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "remote.origin.pushurl", GIT_CONFIG_VALUE_0: "/dev/null/no-push" } });
   const line = ran.output.split("\n").reverse().find((l) => l.startsWith("{\"conversation_id\""));
   const v: unknown = line ? JSON.parse(line) : null;
   const response = v && typeof v === "object" && "status" in v && v.status === "SUCCESS" && "response" in v &&
@@ -626,6 +630,13 @@ async function rank(r: Run): Promise<void> {
       "functions" in c && typeof c.functions === "number" && "sites" in c && isStrings(c.sites)))
       throw Error("a case of ranking.json lacks a field");
     if (!existsSync(join(repository, "pipeline", "examples", `${c.case}.ts`))) throw Error(`no case ${c.case} on main`);
+    // Causes the ranking gives one case are worked as one task.
+    const same = r.state.tasks.find((t) => t.kind === "case" && t.id === c.case);
+    if (same) {
+      Object.assign(same, { reason: `${same.reason}; and ${c.reason}`, statements: same.statements + c.statements,
+        functions: same.functions + c.functions, sites: [...same.sites, ...c.sites] });
+      continue;
+    }
     r.state.tasks.push(newTask(c.case, "case", { reason: c.reason, statements: c.statements, functions: c.functions,
       sites: c.sites, agent: r.o.agents[i % r.o.agents.length]?.name ?? "sol" }));
   }
