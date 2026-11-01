@@ -4374,8 +4374,6 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     } catch (error) {
       refuseAt(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0], error);
     }
-    const seen = new Set<string>();
-    const definitions: TypeDefinition[] = [];
     const records = new Set<string>();
     const starts = [
       ...roots.map(({ root, node }) => ({ node, span: root.binding.span })),
@@ -4384,65 +4382,29 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       ...contextualStarts,
       ...blockStarts,
     ];
-    const collectFrom = (list: readonly { node: TypeDeclaration; span: Span; instance?: DeclarationInstance }[]): void => {
-      for (const { node: start, span, instance } of list) {
-        try {
-          collect(start, seen, definitions, { complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup,
-            computedMembers, instanceOf, instantiate: (owner, node, args, use) => instantiateAt({ owner, externalReads: 0 }, node, args, use),
-            enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation: (owner, node) => equation({ owner, externalReads: 0 }, node),
-            libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
-            guardPromises,
-            keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
-            record: identity => {
-              records.add(definitionKey(identity));
-              observations.record?.(identity);
-            },
-            collecting: (node, key) => {
-              if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
-                programClasses.add(key);
-            } }, instance);
-        } catch (error) {
-          throw declarationError(span, messageOf(error), error);
-        }
-      }
+    const collectionContext: DeclarationCollectionContext = {
+      complete: (owner, declaration, written, use, what, captured) => completeArguments({ owner, externalReads: 0 }, declaration, written, use, what, captured), parameters: parametersOf, lookup,
+      computedMembers, instanceOf, instantiate: (owner, node, args, use) => instantiateAt({ owner, externalReads: 0 }, node, args, use),
+      enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation: (owner, node) => equation({ owner, externalReads: 0 }, node),
+      libraryInterface, collectionIterator: (owner, element) => collectionIterator({ owner, externalReads: 0 }, element), computed: (owner, node, span, read) => computedType(computedContext({ owner, externalReads: 0 }), node, span, read), family: familyOf,
+      guardPromises,
+      keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited, stated: (part, owner) => statement({ owner, externalReads: 0 }, part, owner),
+      record: identity => {
+        records.add(definitionKey(identity));
+        observations.record?.(identity);
+      },
+      collecting: (node, key) => {
+        if (node && key !== null && ts.isClassDeclaration(node) && programFile(node.getSourceFile()) && !ambient(node))
+          programClasses.add(key);
+      },
     };
-    const queuedValues = valueStarts.length;
-    collectFrom(starts);
-    let collectedInstances = 0;
-    const collectInstances = (): void => {
-      while (collectedInstances < instances.size) {
-        const pending = [...instances.values()].slice(collectedInstances);
-        collectedInstances = instances.size;
-        collectFrom(pending.map(instance => ({ node: instance.node,
-          span: [instance.use.getStart(instance.use.getSourceFile()), instance.use.end], instance })));
-      }
-    };
-    collectInstances();
-    // A value a definition names through `typeof` is read while the graph
-    // is collected; the declarations its type names join the graph.
-    for (let from = queuedValues; from < valueStarts.length;) {
-      const to = valueStarts.length;
-      const at = starts[0]?.span ?? [0, 0];
-      collectFrom(valueStarts.slice(from, to).map(node => ({ node, span: at })));
-      collectInstances();
-      from = to;
-    }
-    // An array type reaching the unit only through a declaration (an
-    // imported value's, a declared type's member, a library contract's) is
-    // read at `Array.prototype`'s contract as one the client writes is; the
-    // declarations that contract names join the graph.
-    if (!arrayProto.length &&
-        namesArray({ values, applications, definitions: [...definitions, ...selections, ...overlayDefinitions, ...primitiveProtos,
-          ...regexpDefinitions, ...collectionDefinitions] })) {
-      const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
-      const from = valueStarts.length;
-      try {
-        arrayProto = arrayPrototype(checker, client, overlayLibrary, policy.arrayOverlay ?? overlay);
-      } catch (error) {
-        throw declarationError(at, messageOf(error), error);
-      }
-      collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
-    }
+    const collected = closeDeclarations(starts, valueStarts, instances, collectionContext, {
+      values, applications, selections, overlayDefinitions, primitiveProtos, regexpDefinitions, collectionDefinitions,
+      arrayProto, arrayAt: () => values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0],
+      arrayPrototype: () => arrayPrototype(checker, client, overlayLibrary, policy.arrayOverlay ?? overlay),
+    });
+    const { definitions } = collected;
+    arrayProto = collected.arrayProto;
     appendDocumentDefinitions(definitions, selections, overlayDefinitions, primitiveProtos, regexpDefinitions,
       collectionDefinitions, stableListed, arrayProto);
     // The graph is complete: each mapped type read at a named type before
@@ -4464,6 +4426,91 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     if (observations.familySelected) observations.familySelected(scan());
     return finalizeDeclarations(roots.map(r => r.root), trustedDefinitions, trustedValues, symbols, applications, settledAt);
   });
+}
+
+interface DeclarationStart {
+  node: TypeDeclaration;
+  span: Span;
+  instance?: DeclarationInstance;
+}
+
+interface ClosureContributions {
+  values: ValueRoot[];
+  applications: WrittenApplication[];
+  selections: readonly TypeDefinition[];
+  overlayDefinitions: readonly TypeDefinition[];
+  primitiveProtos: readonly TypeDefinition[];
+  regexpDefinitions: readonly TypeDefinition[];
+  collectionDefinitions: readonly TypeDefinition[];
+  arrayProto: TypeDefinition[];
+  arrayAt: () => Span;
+  arrayPrototype: () => TypeDefinition[];
+}
+
+interface CollectedDeclarations {
+  definitions: TypeDefinition[];
+  arrayProto: TypeDefinition[];
+}
+
+/** Initial declarations, instances, value batches, then the demanded array prototype. */
+function closeDeclarations(starts: readonly DeclarationStart[], valueStarts: readonly TypeDeclaration[],
+    instances: ReadonlyMap<string, DeclarationInstanceRequest>, context: DeclarationCollectionContext,
+    contributions: ClosureContributions): CollectedDeclarations {
+  const seen = new Set<string>();
+  const definitions: TypeDefinition[] = [];
+  const queuedValues = valueStarts.length;
+  collectFrom(starts, seen, definitions, context);
+  let collectedInstances = collectInstances(instances, 0, seen, definitions, context);
+  // A value a definition names through `typeof` is read while the graph
+  // is collected; the declarations its type names join the graph.
+  for (let from = queuedValues; from < valueStarts.length;) {
+    const to = valueStarts.length;
+    const at = starts[0]?.span ?? [0, 0];
+    collectFrom(valueStarts.slice(from, to).map(node => ({ node, span: at })), seen, definitions, context);
+    collectedInstances = collectInstances(instances, collectedInstances, seen, definitions, context);
+    from = to;
+  }
+  // An array type reaching the unit only through a declaration is read
+  // at the prototype contract; its value dependencies join the graph.
+  let arrayProto = contributions.arrayProto;
+  if (!arrayProto.length &&
+      namesArray({ values: contributions.values, applications: contributions.applications,
+        definitions: [...definitions, ...contributions.selections, ...contributions.overlayDefinitions,
+          ...contributions.primitiveProtos, ...contributions.regexpDefinitions, ...contributions.collectionDefinitions] })) {
+    const at = contributions.arrayAt();
+    const from = valueStarts.length;
+    try {
+      arrayProto = contributions.arrayPrototype();
+    } catch (error) {
+      throw declarationError(at, messageOf(error), error);
+    }
+    collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })), seen, definitions, context);
+  }
+  return { definitions, arrayProto };
+}
+
+/** Collect each start in order and locate its refusal at that use. */
+function collectFrom(list: readonly DeclarationStart[], seen: Set<string>, definitions: TypeDefinition[],
+    context: DeclarationCollectionContext): void {
+  for (const { node: start, span, instance } of list) {
+    try {
+      collect(start, seen, definitions, context, instance);
+    } catch (error) {
+      throw declarationError(span, messageOf(error), error);
+    }
+  }
+}
+
+/** Drain instances in insertion order, retaining each sweep's map snapshot. */
+function collectInstances(instances: ReadonlyMap<string, DeclarationInstanceRequest>, collectedInstances: number,
+    seen: Set<string>, definitions: TypeDefinition[], context: DeclarationCollectionContext): number {
+  while (collectedInstances < instances.size) {
+    const pending = [...instances.values()].slice(collectedInstances);
+    collectedInstances = instances.size;
+    collectFrom(pending.map(instance => ({ node: instance.node,
+      span: [instance.use.getStart(instance.use.getSourceFile()), instance.use.end], instance })), seen, definitions, context);
+  }
+  return collectedInstances;
 }
 
 /** Append contributions in discovery order and place the array prototype first. */
