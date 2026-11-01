@@ -197,7 +197,7 @@ function printSignature(stated: Stated): string | null {
     (term.k === "atom" && term.name === "undefined") || (term.k === "union" && term.parts.some(admitsUndefined));
   let required = stated.params.length;
   while (required > 0 && stated.params[required - 1] && admitsUndefined(stated.params[required - 1] ?? stated.result)) required--;
-  const written = params.map((p, i) => `p${i}${i >= required ? "?" : ""}: ${p}`);
+  const written = params.map((p: string | null, i) => `p${i}${i >= required ? "?" : ""}: ${p}`);
   if (rest !== undefined) written.push(`...rest: (${rest})[]`);
   const binders = stated.binders.length ? `<${stated.binders.join(", ")}>` : "";
   return `${binders}(${written.join(", ")}): ${result}`;

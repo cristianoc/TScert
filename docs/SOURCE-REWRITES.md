@@ -1886,6 +1886,34 @@ consumes it.
   Node. This repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A formatting callback narrowed by an earlier every statement
+
+`tools/shadow-contracts.mts#printSignature` states `string | null` on the
+parameter of the callback formatting each parameter's printed type. The
+existing [conversion checks](SOURCE-CONTRACTS.md#prototype-contracts)
+admit interpolation of both strings and null. The preceding `every` test
+retains its guard and early return.
+
+- **Avoided form and cost:** the inferred callback parameter is `string`
+  after the statement testing `every`. Certifying that narrower callback
+  requires carrying the [elements fact](FOOTPRINTS.md#the-elements-fact)
+  across the statement. This formatting operation accepts the full nullable
+  element contract, so its written parameter uses the existing closure and
+  conversion checks. The five supplied census sites share this callback
+  through `printSignature` and its callers.
+- **Behaviour:** the annotation is erased. Both forms evaluate the same
+  `every` test, early returns, result and rest checks, and `map` callback
+  bodies in the same order. They read the same methods, use the same
+  receivers, allocate the same arrays and strings, and have the same
+  returns, exceptions, mutations and aliases for every input admitted by
+  their contracts. The callback can format null, though the preceding test
+  returns before that call for an array containing null.
+- **Scope:** `blocker-round-every-map-narrowing` checks the written nullable
+  callback parameter. The statement-level elements fact has its own cases,
+  `every-elements-negated` and `every-elements-saved`.
+- **Trust:** no external contract or assumption is added.
+- **Commit:** the introducing commit.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts
