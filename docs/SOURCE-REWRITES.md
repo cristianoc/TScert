@@ -1875,6 +1875,38 @@ literals contribute `numericKey`'s string result, unions recurse, and
   assumption.
 - **Commit:** the introducing commit.
 
+### A conditional expression spreading an optional-never arm
+
+`tools/fragment-parts.mts#mapExprParts` maps a build's parts with a block
+callback: `if (p.spread !== undefined)` returns the copied spread part;
+the following return copies the named part. The same traversal supplies
+`deepPartMap`, `directParts`, `forEachPart`, `fragmentTypes`, `moduleHolds`
+and `astHolds`.
+
+- **Route:** avoidance through the existing [branch refinements](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)
+  and [object merge checks](PROGRAM-TYPING.md#allocation-from-parts).
+- **Avoided form and cost:** a conditional expression whose arms spread
+  the tested object. Closure expression plans refine tested slots by tags;
+  the optional field's observation needs the statement graph's read links
+  to narrow the receiver. Extending those expression plans requires carrying
+  the field observation and its validity through each arm's effects. A block
+  callback expresses this site's branch with the existing checks.
+- **Behaviour:** both callbacks test the same field once, then copy the same
+  object's enumerable own properties before reading the selected field and
+  calling `m.expr` once. They overwrite the same key with that call's result.
+  They return the same fresh object, retain extra copied properties and
+  aliases, and propagate the same exceptions. The block adds no read, call,
+  mutation or asynchronous effect, and keeps `m` as the method receiver.
+- **Scope:** `blocker-prep-optional-part-spread` uses the build-part union's
+  named arm and optional `spread?: never`, with the mapper's stated `grow`
+  effect. The [merge proposal](PROGRAM-TYPING.md#allocation-from-parts) retains
+  optional fields at the empty type: they state that the key is absent.
+  Every proposed merge remains subject to the existing merge checker.
+  A forged-claim control claims that the open spread arm's copy lacks
+  `name`; evidence production and checking both refuse that claim.
+  The rewrite adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A decoder's result asserted through unknown
 
 `tools/diagnostic.mts#readDiagnostic` returns a diagnostic variant built

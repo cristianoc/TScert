@@ -2257,8 +2257,9 @@ for the result, coercing; extraction proposes the clauses
 (`ObjectMerge.mergeResult`: where a side states an index, the dictionary over
 the sides' classes, each at the union of the index types and the admitted
 fields' types of the classes overlapping it, if the rule admits it, else the
-record) and states them as hints. The last merge of an
-object literal is at the literal's claim where the rule admits it: each pair
+record) and states them as hints. Optional fields at the empty type remain
+in these proposals: they state that the copied result lacks the key. The last
+merge of an object literal is at the literal's claim where the rule admits it: each pair
 of clauses may give a record of the claim's own, so a field written after a
 spread is allocated at the type of the arm each pair gives, as TypeScript
 types the literal per arm of the contextual union. The producer proposes

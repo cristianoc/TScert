@@ -1811,6 +1811,31 @@ control(async (): Promise<void> => {
   process.stdout.write("spread of an intersection: a copy claimed at a field no operand's field gives refused at the merge, in search and in checking\n");
 });
 control(async (): Promise<void> => {
+  // An open spread arm may carry a name. An optional never field in the
+  // copy's claim needs evidence that neither operand can supply that key.
+  const good = run("blocker-prep-optional-part-spread");
+  const source = readFileSync(sourceKey(good), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "parts"), "parts function");
+  const text = "{ ...p, spread: map(p.spread) }";
+  const start = source.indexOf(text);
+  const copy = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + text.length), "spread copy");
+  copy.type = [claims.types.push([{ refs: {
+    first: [["spread", [rowOf(claims, "num")]]], rest: [], views: [],
+    optional: [{ key: "name", readonly: false, type: [] }],
+  } }]) - 1];
+  const forged = writeClaims(good, "spread-forged-absent-key", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+      sourceKey(good), join(good, mode === "--produce-source-claims"
+        ? "spread-forged-absent-key-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+  process.stdout.write("forged spread absence: an optional never key the source may own refused in search and in checking\n");
+});
+control(async (): Promise<void> => {
   // A contextual readonly view must be derived from the mapped records.
   const good = run("blocker-census-spread-map-records");
   const claims = readClaims(good);

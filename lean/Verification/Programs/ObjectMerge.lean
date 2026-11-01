@@ -2017,7 +2017,7 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
     if oa.neverA CallArguments.protoField then keys.filterMap fun k =>
       if fields.any (·.1 == k) then none else
       let T := (oa.maybeTypes k ++ bMaybe k).eraseDups
-      if !T.isEmpty && oa.withinA k T && sb.within d k T then some ⟨k, false, T⟩ else none
+      if oa.withinA k T && sb.within d k T then some ⟨k, false, T⟩ else none
     else []
   let bound : List KeyBound := match oa.bounds.find? (·.among), sb with
     | some Ka, .prim => [⟨true, Ka.keys.filter (· != arrayStoreKey)⟩]

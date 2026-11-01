@@ -6,11 +6,13 @@
 // fragment-parts.mts#fragmentTypes
 // fragment-parts.mts#moduleHolds
 // fragment-parts.mts#astHolds
-type Part = { spread: number; e?: never } | { e: number; spread?: never };
-export function parts(ps: Part[], map: (x: number) => number): Part[] {
-  return ps.map((p) =>
-    p.spread !== undefined
-      ? { ...p, spread: map(p.spread) }
-      : { ...p, e: map(p.e) },
-  );
+type Part = { spread: number } | { name: string; e: number; spread?: never };
+export function parts(
+  ps: Part[],
+  map: (x: number) => Within<{ value: "any"; store: "grow" }, number>,
+): Part[] {
+  return ps.map((p): Part => {
+    if (p.spread !== undefined) return { ...p, spread: map(p.spread) };
+    return { ...p, e: map(p.e) };
+  });
 }
