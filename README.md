@@ -157,4 +157,6 @@ make help     # every target
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [NON-AI MIT License](LICENSE): the MIT terms, with the code
+excluded from use in training or improving machine-learning systems and from
+datasets for that training, also for its derivatives.
