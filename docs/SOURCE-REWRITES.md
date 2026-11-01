@@ -112,6 +112,28 @@ establishes the lookup.
   repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### Overlay fields consumed by the signature helper
+
+`selectGlobal` in `tools/declaration-graph.mts` passes the result of
+`reviewedForms` to its local `forms` helper. The resolved entry holds
+`forms?: Stated[]`; `GlobalEntry` permits that writable field to hold
+either an array or a function producing one.
+
+- **Repair:** the helper parameter is
+  `Pick<GlobalEntry, "admit" | "effect"> | undefined`, the two fields
+  its body reads. A full writable `GlobalEntry` view would permit replacing
+  the resolved entry’s array with a function. The existing
+  [record checks](POSITIVE-TYPES.md#records) establish the smaller contract.
+- **Behaviour:** the annotation is erased. Both forms read the same
+  `admit` and `effect` values, invoke the same signature reader and maps,
+  and allocate the same signature records and arrays in the same order.
+  Returns, exceptions, mutations, method identities, aliases, receivers
+  and asynchronous effects agree for every admitted input.
+- **Scope:** `blocker-round-inferred-map-result` represents the call with
+  a resolved entry and the helper’s consumed field. Its unannotated map
+  result is used by a second map. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`

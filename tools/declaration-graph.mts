@@ -5133,7 +5133,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // A method's or call signature's forms. A parameter the overlay restricts
   // is stated at what the host accepts: its safe part.
   const forms = (signature: ts.MethodSignatureDeclaration | ts.CallSignatureDeclaration, key: string,
-      what: string, entry: GlobalEntry | undefined) => {
+      what: string, entry: Pick<GlobalEntry, "admit" | "effect"> | undefined) => {
     if (signature.typeParameters?.length || (ts.isMethodSignatureDeclaration(signature) &&
         (signature.postfixToken || signature.modifiers?.length)))
       throw Error(`${what} is generic, optional or modified`);
