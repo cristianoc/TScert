@@ -1110,61 +1110,15 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
     const errors = new Map<string, readonly { pos: number; end: number; text: string }[]>();
-    const clean = (node: Node, what: string): void => {
-      const file = node.getSourceFile();
-      let found = errors.get(file.fileName);
-      if (!found) {
-        found = [...program.getSyntacticDiagnostics(file.fileName),
-          ...program.getSemanticDiagnostics(file.fileName)]
-          .filter(d => d.category === DiagnosticCategory.Error && !untypedAmbientField(file, d));
-        errors.set(file.fileName, found);
-        for (const d of found)
-          observations.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
-            start: file.getLineAndCharacterOfPosition(d.pos),
-            end: file.getLineAndCharacterOfPosition(d.end), text: d.text });
-      }
-      const start = node.getStart(file);
-      const error = found.find(d => d.pos < node.end && d.end > start);
-      if (error) throw Error(`TypeScript reports an error in ${what}: ${error.text}`);
-    };
+    const clean = (node: Node, what: string): void => resolutionClean(program, client, errors, observations, node, what);
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
     const brandKey = (id: DeclarationIdentity): string => `${id.module}#${id.name}#${id.span.join(":")}`;
-    const identityOf = (node: TypeDeclaration): DeclarationIdentity => {
-      const source = node.getSourceFile();
-      // An anonymous class is refused where it is reached, so every
-      // declaration here has a name.
-      const identity: DeclarationIdentity = { module: idOf(source), name: node.name?.text ?? "",
-        span: [node.getStart(source), node.end] };
-      const brand = isTypeAlias(node) && compilerApiFile(source.fileName)
-        ? brandedTypes.find(b => b.name === node.name.text) : undefined;
-      if (brand) {
-        if (node.getText(source).trim() !== brand.text)
-          throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
-        brands.add(brandKey(identity));
-      }
-      return identity;
-    };
+    const identityOf = (node: TypeDeclaration): DeclarationIdentity => resolutionIdentityOf(idOf, brands, brandKey, node);
     const isBrand = (id: DeclarationIdentity): boolean => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
-    const resolveDeclarations = (identifier: Identifier, what: string): Node[] => {
-      const target = targetOf(checker, identifier);
-      if (!target) throw Error(`unresolved type reference ${what}`);
-      const nodes = target.declarations.map((d): Node => {
-        const node = d.resolve();
-        if (!node) throw Error(`unresolved type reference ${what}`);
-        return node;
-      });
-      // The verifier's `Within` and `Footprint` are no types: a statement
-      // is read at a signature's result (`statedResult`), and nowhere else.
-      if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) &&
-          (n.name.text === "Within" || n.name.text === "Footprint")))
-        throw Error(`${WITHIN_PLACE}: ${what}`);
-      for (const statement of statementsOnPath(checker, identifier))
-        clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
-      return nodes;
-    };
+    const resolveDeclarations = (identifier: Identifier, what: string): Node[] => resolutionResolveDeclarations(checker, verifierFile, clean, idOf, identifier, what);
     // Whether a declaration is a host type (COMPILER-API.md, reading rule
     // 1): a class of a host package, or an interface of it that is one of
     // its type roots or reaches one through `extends`: the compiler API's
@@ -1634,13 +1588,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       if (!member) throw Error(`${owner.text} has no member ${name}`);
       return member.value === undefined ? { k: "atom", name: "number", span } : literalTerm(member.value, span);
     };
-    const resolveDeclaration = (identifier: Identifier, what: string): Node => {
-      const nodes = resolveDeclarations(identifier, what);
-      const [node] = nodes;
-      if (nodes.length !== 1 || !node)
-        throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
-      return node;
-    };
+    const resolveDeclaration = (identifier: Identifier, what: string): Node => resolutionResolveDeclaration(resolveDeclarations, identifier, what);
     const awaited = (reference: ts.TypeReferenceNode): boolean => {
       if (!ts.isIdentifier(reference.typeName)) return false;
       const target = targetOf(checker, reference.typeName);
@@ -1688,45 +1636,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
     // A class merged with interfaces is one symbol too, the class its
     // identity, its instance contract every part's members (`collect`).
-    const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
-      // A class merged with interfaces is the class; otherwise the
-      // declaration binding the longest parameter list is the identity.
-      const types0 = nodes.filter(isTypeDeclaration);
-      const classes = types0.filter(ts.isClassDeclaration);
-      const longest = Math.max(0, ...types0.map(n => n.typeParameters?.length ?? 0));
-      const node = classes[0] ?? types0.find(n => (n.typeParameters?.length ?? 0) === longest);
-      const types = node ? [node, ...types0.filter(n => n !== node)] : types0;
-      if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
-            !ts.isFunctionDeclaration(n)) ||
-          (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
-        throw Error(types.length > 1 || nodes.length > 1
-          ? `TypeScript found ${nodes.length} declarations for ${what}`
-          : `${what} is not one type alias, interface or class`);
-      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text);
-      for (const part of types) {
-        if (!part.name) throw Error(`${what} is not one type alias, interface or class`);
-        const own = names(part), all = names(node);
-        if (own.length > all.length || own.some((n, i) => n !== all[i]))
-          throw Error(`the merged declarations of ${what} have different type parameters`);
-        clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
-      }
-      partners.set(node, types);
-      if (isTypeAlias(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
-      return node;
-    };
-    const lookup = (identifier: Identifier, what: string): TypeDeclaration =>
-      declarationOf(resolveDeclarations(identifier, what), what);
+    const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => resolutionDeclarationOf(clean, idOf, partners, aliasNodes, identityOf, nodes, what);
+    const lookup = (identifier: Identifier, what: string): TypeDeclaration => resolutionLookup(resolveDeclarations, declarationOf, identifier, what);
     // The type alias a reference names, if it names one the program declares.
-    const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => {
-      if (!ts.isIdentifier(reference.typeName)) return null;
-      try {
-        const node = lookup(reference.typeName, reference.typeName.text);
-        return isTypeAlias(node) ? node : null;
-      } catch (error) {
-        passToolFailure(error);
-        return null;
-      }
-    };
+    const aliasOf = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => resolutionAliasOf(lookup, reference);
     // A standard library type read at its meaning (`LibraryType`). Every
     // declaration TypeScript binds the name to must be the library's, so a
     // client that declares its own `Array`, merging into the global one, is
@@ -1742,80 +1655,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // A type the overlay of library types states (`library-types.mts`): every
     // part TypeScript binds the name to as a type is one its entry reviews,
     // by origin and heading. Its declarations are not read.
-    const statedType = (nodes: readonly (Node | undefined)[]): TypeEntry | null => {
-      const parts = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
-      const [first] = parts;
-      const name = first?.name?.text;
-      if (!first || !name || parts.some(p => p.name?.text !== name)) return null;
-      const entry = typeEntry(name, parts.map(part => {
-        const file = part.getSourceFile();
-        const end = isTypeAlias(part) ? part.end : part.members.pos;
-        return { origin: declarationOrigin(file, libraryFile),
-          heading: reviewedText(file.text.slice(part.getStart(file), end)) };
-      }));
-      return entry;
-    };
+    const statedType = (nodes: readonly (Node | undefined)[]): TypeEntry | null => resolutionStatedType(libraryFile, nodes);
     // Whether a name is a stated type, without its definitions joining the
     // document: for the sweep, which reads no type.
     const isStatedType = (identifier: Identifier): boolean =>
       statedType((targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve())) !== null;
-    const library = (identifier: Identifier, what: string): LibraryType | null => {
-      const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
-      const stated = statedType(nodes);
-      if (stated) {
-        defineOverlay(stated.definition);
-        return { k: "stated", identity: stated.definition.declaration };
-      }
-      // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
-      // host type of its own, a node list read as a dense readonly array of
-      // its elements met with the record of its own members, as the contract
-      // states them (`hostNodeListMembers`). Its heritage and declared members
-      // are not read.
-      if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
-          compilerApiFile(n.getSourceFile().fileName)))
-        return { k: "array", readonly: true, nodeList: true };
-      // `Array<T>` and `ReadonlyArray<T>` are the types `T[]` and
-      // `readonly T[]` spell: the standard library's global interface,
-      // whichever other files merge into it (Node's types add the heritage
-      // `RelativeIndexable<T>`). They are read as arrays, as `T[]` is, and no
-      // member of any part is read.
-      const arrays = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
-      const [arrayPart] = arrays;
-      const arrayName = arrayPart?.name?.text;
-      if ((arrayName === "Array" || arrayName === "ReadonlyArray") &&
-          arrays.every(n => ts.isInterfaceDeclaration(n) && n.name.text === arrayName) &&
-          arrays.some(n => libraryFile(n.getSourceFile()))) {
-        arrays.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${arrayName}`));
-        return { k: "array", readonly: arrayName === "ReadonlyArray" };
-      }
-      const types: TypeDeclaration[] = [];
-      for (const node of nodes) {
-        if (!node || !libraryFile(node.getSourceFile())) return null;
-        if (isTypeDeclaration(node)) types.push(node);
-      }
-      const [first] = types;
-      const name = first?.name?.text;
-      if (!first || !name || types.some(t => t.name?.text !== name)) return null;
-      const cleanAll = () => types.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${name}`));
-      let body = types.length === 1 && isTypeAlias(first) ? first.type : undefined;
-      while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
-      if (!body || !ts.isMappedTypeNode(body)) return null;
-      cleanAll();
-      // The alias's parameters are positional in its template, and its
-      // equation may name nothing else. Its bounds are TypeScript's to check
-      // at each reference; only string keys expand.
-      const source = first.getSourceFile();
-      const where = `${idOf(source)}#${name}`;
-      const parameters = (first.typeParameters ?? []).map(p => p.name.text);
-      const template = mapped({ source, annotation: false, ...exactOptional,
-        fail: (_node, message) => { throw Error(`${message} in ${where} for ${what}`); },
-        named: (node, span) => {
-          const index = ts.isIdentifier(node.typeName) ? parameters.indexOf(node.typeName.text) : -1;
-          if (index < 0 || node.typeArguments?.length) throw Error(`${where} names a type outside its template`);
-          return { k: "parameter", index, span };
-        } }, body);
-      return { k: "mapped", parameters: parameters.length, template };
-    };
+    const library = (identifier: Identifier, what: string): LibraryType | null => resolutionLibrary(checker, statedType, defineOverlay, libraryFile, clean, idOf, exactOptional, identifier, what);
     // The standard library's `Function`: a value with call or construct code,
     // and nothing more is known. Its declared members are dropped, which is a
     // supertype of TypeScript's `Function`; TypeScript's own special case,
@@ -1866,7 +1711,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       computedContext(emptyDeclarationReading).captures(node);
       const type = checker.getTypeFromTypeNode(node);
       const members = type ? checker.getPropertiesOfType(type).map(p => ({ name: p.name,
-        optional: (p.flags & SymbolFlags.Optional) !== 0, readonly: (p.checkFlags & 8) !== 0 })) : [];
+        optional: (p.flags & SymbolFlags.Optional) !== 0, readonly: compatibilityMappedReadonly(p) })) : [];
       return members.length ? members : null;
     };
     // The key an entity of a string or number literal type names, as an enum
@@ -1880,94 +1725,18 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       return null;
     };
     // Whether a name denotes a standard library value, such as `Symbol`.
-    const isLibraryValue = (name: Identifier): boolean => {
-      const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
-      return nodes.length > 0 && nodes.every(n => !!n && libraryFile(n.getSourceFile()));
-    };
+    const isLibraryValue = (name: Identifier): boolean => resolutionIsLibraryValue(checker, libraryFile, name);
     const symbols: DeclarationIdentity[] = [];
     const symbolIndex = new Map<string, number>();
     // A well-known symbol such as `Symbol.iterator` is a readonly property
     // declared `unique symbol`, and that property is its identity.
-    const symbolOf = (written: Identifier | ts.PropertyAccessExpression): number => {
-      const name = ts.isIdentifier(written) ? written : written.name;
-      if (!ts.isIdentifier(name)) throw Error("a computed key names a symbol");
-      const what = `[${ts.isIdentifier(written) ? written.text : `${written.expression.getText()}.${name.text}`}]`;
-      const node = resolveDeclaration(name, what);
-      const type = ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node) ? node.type : undefined;
-      const constant = ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent) &&
-        !!(node.parent.flags & ts.NodeFlags.Const);
-      const property = ts.isPropertySignatureDeclaration(node) && !node.postfixToken &&
-        node.modifiers?.length === 1 && node.modifiers[0]?.kind === ts.SyntaxKind.ReadonlyKeyword;
-      if (!(constant || property) || !node.name || !ts.isIdentifier(node.name) ||
-          !type || !ts.isTypeOperatorNode(type) || type.operator !== ts.SyntaxKind.UniqueKeyword ||
-          type.type.kind !== ts.SyntaxKind.SymbolKeyword)
-        throw Error(`the computed key ${what} is not a unique symbol constant`);
-      const source = node.getSourceFile();
-      clean(node, `${idOf(source)}#${node.name.text}`);
-      const identity: DeclarationIdentity = { module: idOf(source), name: node.name.text,
-        span: [node.getStart(source), node.end] };
-      // Which symbol a constant holds is what made it. `Symbol()` makes a
-      // fresh one, its declaration's own; `Symbol.for("k")` the registry's
-      // for "k", which every constant made so holds, so that string is its
-      // identity. TypeScript also types a constant made otherwise, by any
-      // value asserted to be one, a unique symbol, whose symbol may be any
-      // other's. A declared constant (`declare const`) or property holds
-      // its own, as its type states: an assumption.
-      const initializer = ts.isVariableDeclaration(node) ? node.initializer : undefined;
-      const library = (callee: Node, name: string): boolean => ts.isIdentifier(callee)
-        ? callee.text === name && isLibraryValue(callee)
-        : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
-          ts.isIdentifier(callee.name) && `${callee.expression.text}.${callee.name.text}` === name &&
-          isLibraryValue(callee.expression);
-      const [registry, ...more] = initializer && ts.isCallExpression(initializer) &&
-        library(initializer.expression, "Symbol.for") ? initializer.arguments : [];
-      const key = registry && !more.length && (ts.isStringLiteral(registry) ||
-          ts.isNoSubstitutionTemplateLiteral(registry)) ? `Symbol.for ${JSON.stringify(registry.text)}`
-        : !initializer || (ts.isCallExpression(initializer) && library(initializer.expression, "Symbol"))
-          ? `${identity.module}#${identity.span[0]}:${identity.span[1]}`
-          : null;
-      if (key === null)
-        throw Error(`the computed key ${what} names a constant made neither by \`Symbol()\` nor by ` +
-          "`Symbol.for` of a string literal: which symbol it holds is not known");
-      let index = symbolIndex.get(key);
-      if (index === undefined) {
-        index = symbols.length;
-        symbols.push(identity);
-        symbolIndex.set(key, index);
-      }
-      return index;
-    };
+    const symbolOf = (written: Identifier | ts.PropertyAccessExpression): number => resolutionSymbolOf(resolveDeclaration, clean, idOf, isLibraryValue, symbolIndex, symbols, written);
     // A private name `#x` of a class member: a key no code outside the class
     // spells, as a symbol whose value no code obtains. It joins the symbols,
     // identified by the member declaring it; the class must be a top-level
     // declaration, evaluated once, so one member is one key.
-    const privateOf = (member: Node): number => {
-      const name = nameOf(member);
-      const cls = member.parent;
-      if (!name || !ts.isPrivateIdentifier(name) || !cls || !ts.isClassDeclaration(cls) || !cls.name ||
-          !ts.isSourceFile(cls.parent))
-        throw Error("a private name is declared by a member of a class at a file's top level");
-      const source = member.getSourceFile();
-      const identity: DeclarationIdentity = { module: idOf(source), name: `${cls.name.text}.${name.text}`,
-        span: [name.getStart(source), name.end] };
-      const key = `private ${identity.module}#${identity.span[0]}:${identity.span[1]}`;
-      let index = symbolIndex.get(key);
-      if (index === undefined) {
-        index = symbols.length;
-        symbols.push(identity);
-        symbolIndex.set(key, index);
-      }
-      return index;
-    };
-    const privateNameOf = (name: ts.PrivateIdentifier): number => {
-      if (name.parent && (ts.isPropertyDeclaration(name.parent) || ts.isMethodDeclaration(name.parent)) &&
-          name.parent.name === name)
-        return privateOf(name.parent);
-      const members = (checker.getSymbolAtLocation(name)?.declarations ?? []).map(d => d.resolve());
-      const [member] = members;
-      if (members.length !== 1 || !member) throw Error(`the private name ${name.text} names no one member`);
-      return privateOf(member);
-    };
+    const privateOf = (member: Node): number => resolutionPrivateOf(idOf, symbolIndex, symbols, member);
+    const privateNameOf = (name: ts.PrivateIdentifier): number => resolutionPrivateNameOf(checker, privateOf, name);
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
@@ -2450,8 +2219,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     });
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
-    const typeDeclarationsOf = (name: Identifier): Node[] =>
-      (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+    const typeDeclarationsOf = (name: Identifier): Node[] => resolutionTypeDeclarationsOf(checker, name);
     // TypeScript's evaluation of a form in a declaration's parameter list at
     // an application (`type-probe.mts`).
     const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name), (name, args, span) => {
@@ -2522,15 +2290,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       captures.set(nodeKey(declaration), result);
       return result;
     };
-    const parametersOf = (declaration: Node): MergedParameter[] => {
-      const name = nameOf(declaration);
-      const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
-      const own = isTypeDeclaration(declaration) ? [declaration] : [];
-      const captured = capturedOf(declaration).map((p): MergedParameter =>
-        ({ name: p.name, constraint: undefined, default: undefined, captured: true }));
-      return [...captured, ...mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
-        constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }))];
-    };
+    const parametersOf = (declaration: Node): MergedParameter[] => resolutionParametersOf(typeDeclarationsOf, capturedOf, declaration);
     // A block type's captured parameter at a use outside a declaration's
     // body: the binder itself, which TypeScript must resolve its spelling
     // to there.
@@ -2952,17 +2712,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // interfaces they name join it.
     // A standard library interface by name, as the overlays name one: its
     // merged declarations, each clean, the first its identity.
-    const libraryInterface = (name: string): TypeDeclaration => {
-      const symbol = checker.resolveName(name, SymbolFlags.Interface, client, false);
-      const parts = (symbol?.declarations ?? []).map(d => d.resolve())
-        .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-      const [first] = parts;
-      if (!first || !parts.every(part => libraryFile(part.getSourceFile())))
-        throw Error(`the standard library declares no ${name}`);
-      for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#${name}`);
-      partners.set(first, parts);
-      return first;
-    };
+    const libraryInterface = (name: string): TypeDeclaration => resolutionLibraryInterface(checker, client, libraryFile, clean, idOf, partners, name);
     // A reference to one, at `args`, from a statement of the overlay of
     // library globals: the interface joins the graph.
     const libraryReference = (reading: DeclarationReading, name: string, args: TypeTerm[]): TypeTerm => {
@@ -2974,23 +2724,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
-      wellKnownSymbol: name => {
-        const symbol = checker.resolveName("SymbolConstructor", SymbolFlags.Interface, client, false);
-        const parts = (symbol?.declarations ?? []).map(d => d.resolve())
-          .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-        // Node may augment SymbolConstructor with unrelated keys. Validate
-        // the one declaration whose identity we need, not that whole interface.
-        const fields = parts.flatMap(part => part.members)
-          .filter(ts.isPropertySignatureDeclaration)
-          .filter(p => ts.isIdentifier(p.name) && p.name.text === name);
-        const [property, ...more] = fields;
-        if (!property) return null;
-        if (more.length || !ts.isIdentifier(property.name) ||
-            !libraryFile(property.getSourceFile()) ||
-            property.getText(property.getSourceFile()).trim() !== `readonly ${name}: unique symbol;`)
-          throw Error(`Symbol.${name} is not declared as reviewed`);
-        return symbolOf(property.name);
-      },
+      wellKnownSymbol: name => compatibilityWellKnownSymbol(checker, client, libraryFile, symbolOf, name),
       reference: (node, args, span) => {
         valueStarts.push(node);
         const target = identityOf(node);
@@ -3003,33 +2737,12 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       // The declaration read is the one at the appended text's exact start
       // and end, whatever the client declares under any name; only its own
       // syntax is read, so a client declaration merging with it adds nothing.
-      reviewed: (body, read) => {
-        let index = 0;
-        while (client.text.includes(`__TScertReviewed${index}`)) index++;
-        const appended = `interface __TScertReviewed${index}${body}`;
-        const start = client.text.length + 1;
-        return probeProgram(new Map([[client.fileName, `${client.text}\n${appended}\n`]]), program => {
-          const file = program.getSourceFile(client.fileName);
-          const declaration = file?.statements.find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) &&
-            n.getStart(file) === start && n.end === start + appended.length);
-          if (!declaration) throw Error("the reviewed signatures do not parse as the appended interface");
-          return read(declaration);
-        });
-      },
+      reviewed: (body, read) => compatibilityReviewed(client, probeProgram, body, read),
     };
     // The keys a regex's type states (`regexp.mts`): the well-known symbols
     // its methods are keyed by, and the marks, synthetic symbols no source
     // declaration has.
-    const markOf = (identity: DeclarationIdentity): number => {
-      const key = `mark ${identity.module}#${identity.name}`;
-      let index = symbolIndex.get(key);
-      if (index === undefined) {
-        index = symbols.length;
-        symbols.push(identity);
-        symbolIndex.set(key, index);
-      }
-      return index;
-    };
+    const markOf = (identity: DeclarationIdentity): number => resolutionMarkOf(symbolIndex, symbols, identity);
     // The native collection iterator a `Set`'s or a `Map`'s members return,
     // its declaration listed with its first use (`array-prototype.mts`).
     const collectionDefinitions: TypeDefinition[] = [];
@@ -3327,13 +3040,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // Resolve Promise only if a requested intrinsic, or a resolution
     // descriptor, actually names it.
     const promiseType = (argument: TypeTerm): TypeTerm => {
-      const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
-      const parts = (symbol?.declarations ?? []).map(d => d.resolve())
-        .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-      const [promise] = parts;
-      if (!promise) throw Error("the standard library declares no Promise");
-      for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
-      partners.set(promise, parts);
+      const promise = resolutionPromise(checker, client, clean, idOf, partners);
       if (!valueStarts.includes(promise)) valueStarts.push(promise);
       return { k: "reference", reference: { name: "Promise", span: [0, 0],
         arguments: [[0, 0]], target: identityOf(promise) }, args: [argument], span: [0, 0] };
@@ -4014,7 +3721,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           ? computedContext(emptyDeclarationReading).annotation(node, declaration, binders) : contextualTerm(closureBinders, typesRead, member, span);
         const readonly = own
           ? !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)
-          : (p.checkFlags & 8) !== 0;
+          : compatibilityMappedReadonly(p);
         return { name: p.name, optional, readonly, type: memberType, span };
       });
       let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
@@ -6407,4 +6114,367 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       context.record(identity);
 
   }
+}
+
+/** Check overlapping declaration errors and report each file’s diagnostics once. */
+function resolutionClean(program: Program, client: SourceFile, errors: Map<string, readonly { pos: number; end: number; text: string }[]>, observations: Pick<DeclarationObservations, "seen">, node: Node, what: string): void {
+  const file = node.getSourceFile();
+  let found = errors.get(file.fileName);
+  if (!found) {
+    found = [...program.getSyntacticDiagnostics(file.fileName),
+      ...program.getSemanticDiagnostics(file.fileName)]
+      .filter(d => d.category === DiagnosticCategory.Error && !untypedAmbientField(file, d));
+    errors.set(file.fileName, found);
+    for (const d of found)
+      observations.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
+        start: file.getLineAndCharacterOfPosition(d.pos),
+        end: file.getLineAndCharacterOfPosition(d.end), text: d.text });
+  }
+  const start = node.getStart(file);
+  const error = found.find(d => d.pos < node.end && d.end > start);
+  if (error) throw Error(`TypeScript reports an error in ${what}: ${error.text}`);
+}
+
+/** Construct a declaration identity and check a reviewed branded string. */
+function resolutionIdentityOf(idOf: (file: SourceFile) => string, brands: Set<string>, brandKey: (id: DeclarationIdentity) => string, node: TypeDeclaration): DeclarationIdentity {
+  const source = node.getSourceFile();
+  // An anonymous class is refused where it is reached, so every
+  // declaration here has a name.
+  const identity: DeclarationIdentity = { module: idOf(source), name: node.name?.text ?? "",
+    span: [node.getStart(source), node.end] };
+  const brand = isTypeAlias(node) && compilerApiFile(source.fileName)
+    ? brandedTypes.find(b => b.name === node.name.text) : undefined;
+  if (brand) {
+    if (node.getText(source).trim() !== brand.text)
+      throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
+    brands.add(brandKey(identity));
+  }
+  return identity;
+}
+
+/** Resolve a type name and check the imports and exports on its path. */
+function resolutionResolveDeclarations(checker: Checker, verifierFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, identifier: Identifier, what: string): Node[] {
+  const target = targetOf(checker, identifier);
+  if (!target) throw Error(`unresolved type reference ${what}`);
+  const nodes = target.declarations.map((d): Node => {
+    const node = d.resolve();
+    if (!node) throw Error(`unresolved type reference ${what}`);
+    return node;
+  });
+  // The verifier's `Within` and `Footprint` are no types: a statement
+  // is read at a signature's result (`statedResult`), and nowhere else.
+  if (nodes.some(n => isTypeAlias(n) && verifierFile(n.getSourceFile()) &&
+      (n.name.text === "Within" || n.name.text === "Footprint")))
+    throw Error(`${WITHIN_PLACE}: ${what}`);
+  for (const statement of statementsOnPath(checker, identifier))
+    clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
+  return nodes;
+}
+
+/** Require one declaration for a resolved name. */
+function resolutionResolveDeclaration(resolveDeclarations: (identifier: Identifier, what: string) => Node[], identifier: Identifier, what: string): Node {
+  const nodes = resolveDeclarations(identifier, what);
+  const [node] = nodes;
+  if (nodes.length !== 1 || !node)
+    throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+  return node;
+}
+
+/** Choose the class or longest parameter list and record the ordered merged parts. */
+function resolutionDeclarationOf(clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>, aliasNodes: Map<string, ts.TypeAliasDeclaration>, identityOf: (node: TypeDeclaration) => DeclarationIdentity, nodes: readonly Node[], what: string): TypeDeclaration {
+  // A class merged with interfaces is the class; otherwise the
+  // declaration binding the longest parameter list is the identity.
+  const types0 = nodes.filter(isTypeDeclaration);
+  const classes = types0.filter(ts.isClassDeclaration);
+  const longest = Math.max(0, ...types0.map(n => n.typeParameters?.length ?? 0));
+  const node = classes[0] ?? types0.find(n => (n.typeParameters?.length ?? 0) === longest);
+  const types = node ? [node, ...types0.filter(n => n !== node)] : types0;
+  if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
+        !ts.isFunctionDeclaration(n)) ||
+      (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
+    throw Error(types.length > 1 || nodes.length > 1
+      ? `TypeScript found ${nodes.length} declarations for ${what}`
+      : `${what} is not one type alias, interface or class`);
+  const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text);
+  for (const part of types) {
+    if (!part.name) throw Error(`${what} is not one type alias, interface or class`);
+    const own = names(part), all = names(node);
+    if (own.length > all.length || own.some((n, i) => n !== all[i]))
+      throw Error(`the merged declarations of ${what} have different type parameters`);
+    clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
+  }
+  partners.set(node, types);
+  if (isTypeAlias(node)) aliasNodes.set(aliasKey(identityOf(node)), node);
+  return node;
+}
+
+/** Resolve a name to its checked merged declaration. */
+function resolutionLookup(resolveDeclarations: (identifier: Identifier, what: string) => Node[], declarationOf: (nodes: readonly Node[], what: string) => TypeDeclaration, identifier: Identifier, what: string): TypeDeclaration {
+  return declarationOf(resolveDeclarations(identifier, what), what);
+}
+
+/** Read a reference’s alias, retaining tool failures. */
+function resolutionAliasOf(lookup: (identifier: Identifier, what: string) => TypeDeclaration, reference: ts.TypeReferenceNode): TypeAliasDeclaration | null {
+  if (!ts.isIdentifier(reference.typeName)) return null;
+  try {
+    const node = lookup(reference.typeName, reference.typeName.text);
+    return isTypeAlias(node) ? node : null;
+  } catch (error) {
+    passToolFailure(error);
+    return null;
+  }
+}
+
+/** Recognize an overlay type by its declarations’ origins and reviewed headings. */
+function resolutionStatedType(libraryFile: (file: SourceFile) => boolean, nodes: readonly (Node | undefined)[]): TypeEntry | null {
+  const parts = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
+  const [first] = parts;
+  const name = first?.name?.text;
+  if (!first || !name || parts.some(p => p.name?.text !== name)) return null;
+  const entry = typeEntry(name, parts.map(part => {
+    const file = part.getSourceFile();
+    const end = isTypeAlias(part) ? part.end : part.members.pos;
+    return { origin: declarationOrigin(file, libraryFile),
+      heading: reviewedText(file.text.slice(part.getStart(file), end)) };
+  }));
+  return entry;
+}
+
+/** Read a library type through its overlay, array contract or mapped template. */
+function resolutionLibrary(checker: Checker, statedType: (nodes: readonly (Node | undefined)[]) => TypeEntry | null, defineOverlay: (definition: TypeDefinition) => void, libraryFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, exactOptional: ExactOptional, identifier: Identifier, what: string): LibraryType | null {
+  const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+  const stated = statedType(nodes);
+  if (stated) {
+    defineOverlay(stated.definition);
+    return { k: "stated", identity: stated.definition.declaration };
+  }
+  // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
+  // host type of its own, a node list read as a dense readonly array of
+  // its elements met with the record of its own members, as the contract
+  // states them (`hostNodeListMembers`). Its heritage and declared members
+  // are not read.
+  if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
+      compilerApiFile(n.getSourceFile().fileName)))
+    return { k: "array", readonly: true, nodeList: true };
+  // `Array<T>` and `ReadonlyArray<T>` are the types `T[]` and
+  // `readonly T[]` spell: the standard library's global interface,
+  // whichever other files merge into it (Node's types add the heritage
+  // `RelativeIndexable<T>`). They are read as arrays, as `T[]` is, and no
+  // member of any part is read.
+  const arrays = nodes.filter((n): n is TypeDeclaration => !!n && isTypeDeclaration(n));
+  const [arrayPart] = arrays;
+  const arrayName = arrayPart?.name?.text;
+  if ((arrayName === "Array" || arrayName === "ReadonlyArray") &&
+      arrays.every(n => ts.isInterfaceDeclaration(n) && n.name.text === arrayName) &&
+      arrays.some(n => libraryFile(n.getSourceFile()))) {
+    arrays.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${arrayName}`));
+    return { k: "array", readonly: arrayName === "ReadonlyArray" };
+  }
+  const types: TypeDeclaration[] = [];
+  for (const node of nodes) {
+    if (!node || !libraryFile(node.getSourceFile())) return null;
+    if (isTypeDeclaration(node)) types.push(node);
+  }
+  const [first] = types;
+  const name = first?.name?.text;
+  if (!first || !name || types.some(t => t.name?.text !== name)) return null;
+  const cleanAll = () => types.forEach(part => clean(part, `${idOf(part.getSourceFile())}#${name}`));
+  let body = types.length === 1 && isTypeAlias(first) ? first.type : undefined;
+  while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
+  if (!body || !ts.isMappedTypeNode(body)) return null;
+  cleanAll();
+  // The alias's parameters are positional in its template, and its
+  // equation may name nothing else. Its bounds are TypeScript's to check
+  // at each reference; only string keys expand.
+  const source = first.getSourceFile();
+  const where = `${idOf(source)}#${name}`;
+  const parameters = (first.typeParameters ?? []).map(p => p.name.text);
+  const template = mapped({ source, annotation: false, ...exactOptional,
+    fail: (_node, message) => { throw Error(`${message} in ${where} for ${what}`); },
+    named: (node, span) => {
+      const index = ts.isIdentifier(node.typeName) ? parameters.indexOf(node.typeName.text) : -1;
+      if (index < 0 || node.typeArguments?.length) throw Error(`${where} names a type outside its template`);
+      return { k: "parameter", index, span };
+    } }, body);
+  return { k: "mapped", parameters: parameters.length, template };
+}
+
+/** Require every declaration of a value to belong to the standard library. */
+function resolutionIsLibraryValue(checker: Checker, libraryFile: (file: SourceFile) => boolean, name: Identifier): boolean {
+  const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
+  return nodes.length > 0 && nodes.every(n => !!n && libraryFile(n.getSourceFile()));
+}
+
+/** Check a unique symbol declaration and allocate its identity in first-use order. */
+function resolutionSymbolOf(resolveDeclaration: (identifier: Identifier, what: string) => Node, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, isLibraryValue: (name: Identifier) => boolean, symbolIndex: Map<string, number>, symbols: DeclarationIdentity[], written: Identifier | ts.PropertyAccessExpression): number {
+  const name = ts.isIdentifier(written) ? written : written.name;
+  if (!ts.isIdentifier(name)) throw Error("a computed key names a symbol");
+  const what = `[${ts.isIdentifier(written) ? written.text : `${written.expression.getText()}.${name.text}`}]`;
+  const node = resolveDeclaration(name, what);
+  const type = ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node) ? node.type : undefined;
+  const constant = ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent) &&
+    !!(node.parent.flags & ts.NodeFlags.Const);
+  const property = ts.isPropertySignatureDeclaration(node) && !node.postfixToken &&
+    node.modifiers?.length === 1 && node.modifiers[0]?.kind === ts.SyntaxKind.ReadonlyKeyword;
+  if (!(constant || property) || !node.name || !ts.isIdentifier(node.name) ||
+      !type || !ts.isTypeOperatorNode(type) || type.operator !== ts.SyntaxKind.UniqueKeyword ||
+      type.type.kind !== ts.SyntaxKind.SymbolKeyword)
+    throw Error(`the computed key ${what} is not a unique symbol constant`);
+  const source = node.getSourceFile();
+  clean(node, `${idOf(source)}#${node.name.text}`);
+  const identity: DeclarationIdentity = { module: idOf(source), name: node.name.text,
+    span: [node.getStart(source), node.end] };
+  // Which symbol a constant holds is what made it. `Symbol()` makes a
+  // fresh one, its declaration's own; `Symbol.for("k")` the registry's
+  // for "k", which every constant made so holds, so that string is its
+  // identity. TypeScript also types a constant made otherwise, by any
+  // value asserted to be one, a unique symbol, whose symbol may be any
+  // other's. A declared constant (`declare const`) or property holds
+  // its own, as its type states: an assumption.
+  const initializer = ts.isVariableDeclaration(node) ? node.initializer : undefined;
+  const library = (callee: Node, name: string): boolean => ts.isIdentifier(callee)
+    ? callee.text === name && isLibraryValue(callee)
+    : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) &&
+      ts.isIdentifier(callee.name) && `${callee.expression.text}.${callee.name.text}` === name &&
+      isLibraryValue(callee.expression);
+  const [registry, ...more] = initializer && ts.isCallExpression(initializer) &&
+    library(initializer.expression, "Symbol.for") ? initializer.arguments : [];
+  const key = registry && !more.length && (ts.isStringLiteral(registry) ||
+      ts.isNoSubstitutionTemplateLiteral(registry)) ? `Symbol.for ${JSON.stringify(registry.text)}`
+    : !initializer || (ts.isCallExpression(initializer) && library(initializer.expression, "Symbol"))
+      ? `${identity.module}#${identity.span[0]}:${identity.span[1]}`
+      : null;
+  if (key === null)
+    throw Error(`the computed key ${what} names a constant made neither by \`Symbol()\` nor by ` +
+      "`Symbol.for` of a string literal: which symbol it holds is not known");
+  let index = symbolIndex.get(key);
+  if (index === undefined) {
+    index = symbols.length;
+    symbols.push(identity);
+    symbolIndex.set(key, index);
+  }
+  return index;
+}
+
+/** Allocate a top-level class member’s private symbol in first-use order. */
+function resolutionPrivateOf(idOf: (file: SourceFile) => string, symbolIndex: Map<string, number>, symbols: DeclarationIdentity[], member: Node): number {
+  const name = nameOf(member);
+  const cls = member.parent;
+  if (!name || !ts.isPrivateIdentifier(name) || !cls || !ts.isClassDeclaration(cls) || !cls.name ||
+      !ts.isSourceFile(cls.parent))
+    throw Error("a private name is declared by a member of a class at a file's top level");
+  const source = member.getSourceFile();
+  const identity: DeclarationIdentity = { module: idOf(source), name: `${cls.name.text}.${name.text}`,
+    span: [name.getStart(source), name.end] };
+  const key = `private ${identity.module}#${identity.span[0]}:${identity.span[1]}`;
+  let index = symbolIndex.get(key);
+  if (index === undefined) {
+    index = symbols.length;
+    symbols.push(identity);
+    symbolIndex.set(key, index);
+  }
+  return index;
+}
+
+/** Resolve a private name to the member declaring its symbol. */
+function resolutionPrivateNameOf(checker: Checker, privateOf: (member: Node) => number, name: ts.PrivateIdentifier): number {
+  if (name.parent && (ts.isPropertyDeclaration(name.parent) || ts.isMethodDeclaration(name.parent)) &&
+      name.parent.name === name)
+    return privateOf(name.parent);
+  const members = (checker.getSymbolAtLocation(name)?.declarations ?? []).map(d => d.resolve());
+  const [member] = members;
+  if (members.length !== 1 || !member) throw Error(`the private name ${name.text} names no one member`);
+  return privateOf(member);
+}
+
+/** Resolve the declarations used to read a merged parameter list. */
+function resolutionTypeDeclarationsOf(checker: Checker, name: Identifier): Node[] {
+  return (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+}
+
+/** Read captured parameters followed by the merged declaration’s parameters. */
+function resolutionParametersOf(typeDeclarationsOf: (name: Identifier) => Node[], capturedOf: (declaration: Node) => ts.TypeParameterDeclaration[], declaration: Node): MergedParameter[] {
+  const name = nameOf(declaration);
+  const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
+  const own = isTypeDeclaration(declaration) ? [declaration] : [];
+  const captured = capturedOf(declaration).map((p): MergedParameter =>
+    ({ name: p.name, constraint: undefined, default: undefined, captured: true }));
+  return [...captured, ...mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
+    constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }))];
+}
+
+/** Resolve the checked library interface and record its ordered parts. */
+function resolutionLibraryInterface(checker: Checker, client: SourceFile, libraryFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>, name: string): TypeDeclaration {
+  const symbol = checker.resolveName(name, SymbolFlags.Interface, client, false);
+  const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+    .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+  const [first] = parts;
+  if (!first || !parts.every(part => libraryFile(part.getSourceFile())))
+    throw Error(`the standard library declares no ${name}`);
+  for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#${name}`);
+  partners.set(first, parts);
+  return first;
+}
+
+/** Allocate a synthetic symbol in first-use order. */
+function resolutionMarkOf(symbolIndex: Map<string, number>, symbols: DeclarationIdentity[], identity: DeclarationIdentity): number {
+  const key = `mark ${identity.module}#${identity.name}`;
+  let index = symbolIndex.get(key);
+  if (index === undefined) {
+    index = symbols.length;
+    symbols.push(identity);
+    symbolIndex.set(key, index);
+  }
+  return index;
+}
+
+/** The overlay’s reviewed unique-symbol property (SOURCE-CONTRACTS.md, the overlay). */
+function compatibilityWellKnownSymbol(checker: Checker, client: SourceFile, libraryFile: (file: SourceFile) => boolean, symbolOf: (written: Identifier | ts.PropertyAccessExpression) => number, name: string): number | null {
+  const symbol = checker.resolveName("SymbolConstructor", SymbolFlags.Interface, client, false);
+  const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+    .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+  // Node may augment SymbolConstructor with unrelated keys. Validate
+  // the one declaration whose identity we need, not that whole interface.
+  const fields = parts.flatMap(part => part.members)
+    .filter(ts.isPropertySignatureDeclaration)
+    .filter(p => ts.isIdentifier(p.name) && p.name.text === name);
+  const [property, ...more] = fields;
+  if (!property) return null;
+  if (more.length || !ts.isIdentifier(property.name) ||
+      !libraryFile(property.getSourceFile()) ||
+      property.getText(property.getSourceFile()).trim() !== `readonly ${name}: unique symbol;`)
+    throw Error(`Symbol.${name} is not declared as reviewed`);
+  return symbolOf(property.name);
+}
+
+/** Read only the appended reviewed interface from its probe snapshot (SOURCE-CONTRACTS.md, the overlay). */
+function compatibilityReviewed<T>(client: SourceFile, probeProgram: ProbeProgram, body: string, read: (declaration: InterfaceDeclaration) => T): T {
+  let index = 0;
+  while (client.text.includes(`__TScertReviewed${index}`)) index++;
+  const appended = `interface __TScertReviewed${index}${body}`;
+  const start = client.text.length + 1;
+  return probeProgram(new Map([[client.fileName, `${client.text}\n${appended}\n`]]), program => {
+    const file = program.getSourceFile(client.fileName);
+    const declaration = file?.statements.find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) &&
+      n.getStart(file) === start && n.end === start + appended.length);
+    if (!declaration) throw Error("the reviewed signatures do not parse as the appended interface");
+    return read(declaration);
+  });
+}
+
+/** The compiler’s synthesized mapped-member readonly bit (COMPILER-API.md, the compiler API contract). */
+function compatibilityMappedReadonly(property: CompilerSymbol): boolean {
+  return (property.checkFlags & 8) !== 0;
+}
+
+/** Resolve Promise’s ordered declarations for an intrinsic or resolution descriptor. */
+function resolutionPromise(checker: Checker, client: SourceFile, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>): InterfaceDeclaration {
+  const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
+  const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+    .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+  const [promise] = parts;
+  if (!promise) throw Error("the standard library declares no Promise");
+  for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
+  partners.set(promise, parts);
+  return promise;
 }
