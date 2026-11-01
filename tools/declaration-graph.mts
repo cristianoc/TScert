@@ -4594,19 +4594,13 @@ export function collectDeclarations(file: string, options: {
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
-    definitions.push(...selections, ...overlayDefinitions, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
-    // First, so its row follows the four fixed ones in every table.
-    definitions.unshift(...arrayProto);
+    appendDocumentDefinitions(definitions, selections, overlayDefinitions, primitiveProtos, regexpDefinitions,
+      collectionDefinitions, stableListed, arrayProto);
     // The graph is complete: each mapped type read at a named type before
     // its definition was is expanded at it (`settleDocument`).
     const settledAt = starts[0]?.span ?? [0, 0];
-    const settledDocument = settleDocument({ definitions, values, applications }, id => records.has(definitionKey(id)),
-      (_where, error) => {
-        return refuseAt(settledAt, error);
-      });
-    definitions.splice(0, definitions.length, ...settledDocument.definitions);
-    values.splice(0, values.length, ...settledDocument.values);
-    applications = settledDocument.applications;
+    applications = settleDeclarations({ definitions, values, applications }, records,
+      (_where, error) => refuseAt(settledAt, error));
     // Trusted generic promise results have a stable non-thenable payload
     // contract, so fresh resolution preserves that payload. Bound each
     // type parameter a Promise or PromiseLike position names accordingly
@@ -4615,17 +4609,54 @@ export function collectDeclarations(file: string, options: {
     // The client's own bodies are checked at their source annotations.
     externalStatements(externalTypes, definitions, statedDefinitions, programClasses);
     const clientModule = idOf(client);
-    const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
-      { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
+    const trustedValues = promisedValues(values);
     const localInstances = new Set([...instances.values()].filter(i => idOf(i.node.getSourceFile()) === clientModule).map(i => i.identity.module));
-    const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule || localInstances.has(d.declaration.module) ? d :
-      { ...d, expression: d.expression && promisedMethods(d.expression) });
+    const trustedDefinitions = promisedDefinitions(definitions, clientModule, localInstances);
     if (options.familySelected) options.familySelected(scan());
-    const document: DeclarationDocument = { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
-    if (deferredInDocument(document))
-      throw declarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
-    return document;
+    return finalizeDeclarations(roots.map(r => r.root), trustedDefinitions, trustedValues, symbols, applications, settledAt);
   });
+}
+
+/** Append contributions in discovery order and place the array prototype first. */
+function appendDocumentDefinitions(definitions: TypeDefinition[], selections: readonly TypeDefinition[],
+    overlayDefinitions: readonly TypeDefinition[], primitiveProtos: readonly TypeDefinition[],
+    regexpDefinitions: readonly TypeDefinition[], collectionDefinitions: readonly TypeDefinition[],
+    stableListed: boolean, arrayProto: readonly TypeDefinition[]): void {
+  definitions.push(...selections, ...overlayDefinitions, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions,
+    ...(stableListed ? [stableDefinition] : []));
+  // First, so its row follows the four fixed ones in every table.
+  definitions.unshift(...arrayProto);
+}
+
+/** Settle the complete graph, retaining the definition and value arrays. */
+function settleDeclarations(parts: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
+    records: ReadonlySet<string>, refused: (where: string, error: unknown) => never): WrittenApplication[] {
+  const settledDocument = settleDocument(parts, id => records.has(definitionKey(id)), refused);
+  parts.definitions.splice(0, parts.definitions.length, ...settledDocument.definitions);
+  parts.values.splice(0, parts.values.length, ...settledDocument.values);
+  return settledDocument.applications;
+}
+
+/** Promise bounds on values supplied by the environment. */
+function promisedValues(values: readonly ValueRoot[]): ValueRoot[] {
+  return values.map(v => v.binding.specifier === intrinsicModule ? v :
+    { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
+}
+
+/** Promise bounds on definitions outside the client's module and its instances. */
+function promisedDefinitions(definitions: readonly TypeDefinition[], clientModule: string,
+    localInstances: ReadonlySet<string>): TypeDefinition[] {
+  return definitions.map(d => d.declaration.module === clientModule || localInstances.has(d.declaration.module) ? d :
+    { ...d, expression: d.expression && promisedMethods(d.expression) });
+}
+
+/** Build the document and refuse a mapped type whose expansion is incomplete. */
+function finalizeDeclarations(roots: TypeRoot[], definitions: TypeDefinition[], values: ValueRoot[],
+    symbols: DeclarationDocument["symbols"], applications: WrittenApplication[], settledAt: Span): DeclarationDocument {
+  const document: DeclarationDocument = { roots, definitions, values, symbols, applications };
+  if (deferredInDocument(document))
+    throw declarationError(settledAt, "a mapped type over a named type is left unexpanded in the declaration document");
+  return document;
 }
 
 /** A value declared outside the program's sources (a package, a declaration
