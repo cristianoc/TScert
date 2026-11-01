@@ -468,6 +468,145 @@ controls and 210 named gaps. Its case outcomes include those gaps; the
 2,752 figure counts agreement with expectations, rather than acceptance of
 every source.
 
+### Steps 1–2: syntax and fixed-input measurements
+
+Measured on 2026-11-01 with
+[`dev/declaration-metrics.mts`](../../dev/declaration-metrics.mts), comparing
+`6e2aa4969397` with `0e853a49dada` on `refactor/collect-declarations`.
+The syntax report reads TypeScript's tree. Lines include the function's
+signature, option type, comments and body, from its first token through its
+closing brace. Each inner function has a name or syntax kind and a source
+line and column. A capture is a direct value reference to a binding declared in an
+enclosing function inside `collectDeclarations`; references in a nested
+function belong to that nested function. Property names and type syntax
+are excluded, and lexical scopes distinguish shadowed bindings.
+
+| Syntax measure                                                   |    `6e2aa4969397` |    `0e853a49dada` |
+| ---------------------------------------------------------------- | ----------------: | ----------------: |
+| `collectDeclarations` lines                                      | 4,094 (526–4,619) | 4,081 (538–4,618) |
+| Inner functions                                                  |               564 |               560 |
+| Inner function declarations / arrows                             |           1 / 563 |           1 / 559 |
+| Inner functions with captures in this scope                      |               360 |               358 |
+| Captured mutable local variables                                 |                11 |                11 |
+| Captured parameters                                              |                76 |                76 |
+| Captured `const` bindings with visible storage mutations         |                41 |                40 |
+| Option properties                                                |                90 |                90 |
+| File's top-level function declarations with bodies               |                45 |                52 |
+| File's top-level functions, including functions held by bindings |                49 |                56 |
+
+Mutable bindings mean `let`, `var` and parameters, whether or not an
+assignment occurs. The separate `const` count observes property/element
+writes, increment, decrement, deletion and calls of standard Array, Map
+and Set mutator names on the binding. It is a syntax measurement: aliases
+and effects inside called functions can add mutations it does not count.
+The option names, types and optional markers are identical between the
+two reports. Each report lists every inner function's captures, every
+captured mutable binding's declaring line and capturing functions, every
+option property and every top-level function.
+
+The mutable local variables' direct capture counts agree in both sources:
+
+| Binding              | Capturing inner functions |
+| -------------------- | ------------------------: |
+| `verifierText`       |                         1 |
+| `externalReads`      |                         2 |
+| `collecting`         |                         3 |
+| `scanned`            |                         1 |
+| `open`               |                         1 |
+| `keysRead`           |                         1 |
+| `iteratorSymbol`     |                         2 |
+| `stableListed`       |                         1 |
+| `found`              |                         1 |
+| `closureBinders`     |                         1 |
+| `collectedInstances` |                         1 |
+
+The seven additional top-level functions are `hasBinderTerm`, `aliasKey`,
+`appendDocumentDefinitions`, `settleDeclarations`, `promisedValues`,
+`promisedDefinitions` and `finalizeDeclarations`.
+
+Both file censuses have clean `tools/` and `pipeline/` sources in their
+records. Their statement denominators include the collector's inner
+functions and the independently extracted helpers.
+
+| File census measure                           |     `6e2aa4969397` |     `0e853a49dada` |
+| --------------------------------------------- | -----------------: | -----------------: |
+| V: verified / counted statements              | 410 / 4,247 (9.7%) | 421 / 4,257 (9.9%) |
+| Verified / counted functions                  |            31 / 45 |            34 / 52 |
+| P: parse CPU seconds                          |          77.275100 |          73.862362 |
+| Attempted / executed / replayed parses        |        45 / 45 / 0 |        52 / 52 / 0 |
+| Unavailable parse CPU readings                |                  0 |                  0 |
+| `collectDeclarations` slice parse CPU seconds |          14.271882 |          12.197093 |
+| Census wall seconds                           |            131.547 |            147.895 |
+
+These census P totals cover different slice sets. The fixed-input samples
+below compare the same slice set.
+
+The fixed parse inputs are all 45 census slices of `declaration-graph.mts`
+and all 14 census slices of its direct caller `fragment-parse.mts` at
+`6e2aa4969397`. Both implementations read those same 59 files, in sorted
+file order, at the same source paths, with the baseline's copied source
+dependencies and `tools/tsconfig.json`. Installed packages are the same
+physical copies for both implementations. For parse timing, `git archive`
+loads each revision's `tools/`, `pipeline/` and `dev/` sources into the same
+temporary `measurement/` directory, retaining that directory's copied
+dependencies and supplying the same measurement driver. The fixed inputs'
+`tools/node_modules` link resolves to this installation, so the implementation
+and its inputs recognize the same package paths and runtime enum objects.
+`inputs.json` records the slices'
+hashes; `sources.json` records every copied source/configuration file's
+hash, and each sample checks that manifest before parsing.
+
+```text
+inputs.json SHA-256: ef7bbc6312ab5eae25b9879ed46f9cbba01d925c9f109363e392f05164a2c855
+sources.json SHA-256: ef0582f9549451fea29b552c174efe19b48a67dc2742f8f3cc9c5a1d174686fd
+```
+
+Each sample is a new Node process invoking `parseSource` on the fixed
+inputs; parser and declaration-session lifetimes are those of the parse
+stage. CPU seconds sum user plus system CPU attributed to the 59 parse
+invocations, including their compiler CPU. Samples alternate current and
+baseline implementation, five pairs in order. Each sample names a fresh
+`TSCERT_STAGE_STORE` directory. Both file censuses and the parse samples
+take the session's shared `heavy.lock`, released by an exit trap on failure
+as well as success. The censuses use the default store and 300 s stage limit.
+
+| Fixed-input parse CPU seconds            | `6e2aa4969397` | `0e853a49dada` |
+| ---------------------------------------- | -------------: | -------------: |
+| Sample 1                                 |      83.768107 |      84.454912 |
+| Sample 2                                 |      83.720527 |      83.935689 |
+| Sample 3                                 |      83.395038 |      83.749236 |
+| Sample 4                                 |      83.610453 |      84.212861 |
+| Sample 5                                 |      83.925367 |      83.981496 |
+| Median                                   |  **83.720527** |  **83.981496** |
+| Successful / attempted parses per sample |        59 / 59 |        59 / 59 |
+| Executed / replayed parses per sample    |         59 / 0 |         59 / 0 |
+| Unavailable CPU readings per sample      |              0 |              0 |
+
+Every sample has identical input hashes and parse outcomes (all successful).
+`summary` computes each median from the five retained `report.json` files.
+
+The detailed syntax reports, fixed sources, input manifests, census logs,
+per-sample reports and invocation logs are session artifacts under:
+
+```text
+/private/tmp/claude-501/-Users-cristianocalcagno-GitHub-TScert/75ad4d56-5055-4c0a-99ba-5190005ab04d/scratchpad/refactor/tmp2/
+  before-syntax.json
+  current-syntax.json
+  {before,current}-summary.json
+  fixed-sources/{inputs,sources}.json
+  before-census.log
+  current-census.log
+  tscert-census/8b2bc1fdc21a/census-tools-6e2aa4969397-2026-11-01T10-54-59-674Z.json
+  tscert-census/8f4c28523e7f/census-tools-0e853a49dada-2026-11-01T10-52-27-022Z.json
+  timed-parse-{before,current}-{1,2,3,4,5}/{report.json,invocations.jsonl}
+  timed-store-{before,current}-{1,2,3,4,5}/
+```
+
+This fixed-source comparison measures these census slices with an explicit
+project. The workloads and automatic project discovery described above
+have their own measurement requirements. These measurements compare the
+complete revisions, including changes outside `declaration-graph.mts`.
+
 ### Refusals and the earliest expected gains
 
 | Function or group | Counted statements | Observed first refusal | Implication for extraction |

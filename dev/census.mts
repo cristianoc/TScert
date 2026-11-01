@@ -103,7 +103,7 @@ function identifiers(node: ts.Node, into: Set<string>): Set<string> {
 /** The slices of one module: each function declaration with a body and a
  * name, with the module's declarations it uses, transitively, in the
  * module's order, and the imports of the names they use. */
-function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
+export function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
   const declarations = new Map<string, ts.Statement>();
   const imports: ts.ImportDeclaration[] = [];
   for (const s of tree.statements) {
@@ -183,7 +183,7 @@ function writeStable(path: string, text: string): void {
  * with tools/'s installation linked, at a path the same for every process and run of
  * this checkout, so slices' module paths, and the stage keys embedding them,
  * repeat. */
-function prepare(out: string, directory: string): void {
+export function prepare(out: string, directory: string): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
     const names = new Set(readdirSync(from).filter(select).sort());
