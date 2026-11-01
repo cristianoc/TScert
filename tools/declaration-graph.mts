@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isImport, isTypeAlias } from "./syntax.mts";
-import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -255,6 +255,18 @@ function withOwnProject<T>(file: string,
   } finally {
     releaseCompiler(api, thrown);
   }
+}
+
+/** Whether a type term contains a named binder. */
+function hasBinderTerm(term: TypeTerm): Within<{ value: "any"; store: "grow" }, boolean> {
+  if (term.k === "binder") return true;
+  for (const part of typeParts(term)) if (hasBinderTerm(part)) return true;
+  return false;
+}
+
+/** The module, name and source span identifying an alias. */
+function aliasKey(identity: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> {
+  return `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
 }
 
 /** Whether the parts of a declaration document name an array or a tuple
@@ -1489,8 +1501,6 @@ export function collectDeclarations(file: string, options: {
     // typed by one, and an indexed access into one's application, read it
     // through its equation (`restTerm`, `computed-types.mts`).
     const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
-    const aliasKey = (identity: DeclarationIdentity) =>
-      `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     // A class merged with interfaces is one symbol too, the class its
     // identity, its instance contract every part's members (`collect`).
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
@@ -5756,7 +5766,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // reaches a function's binder has no reading in its equation.
     const computed: ComputedHook = (part, pos, read) => {
       const term = applied ? context.instantiate(node, applied.args, applied.use)(part) : context.computed(part, pos, read);
-      if (JSON.stringify(term).includes('"k":"binder"'))
+      if (hasBinderTerm(term))
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
       return term;
     };
