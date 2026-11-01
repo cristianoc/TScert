@@ -20,8 +20,8 @@
 // computes it for a record from the sources of the record's commit (of the
 // checkout for a census of a dirty tree, or by `--sources`), without
 // running a slice. `refusals` prints, as JSON, the refused slices grouped by
-// the blocker their first refusal names, each group with its functions'
-// census statements, most statements first.
+// the blocker their first refusal names and the source text it refuses, each
+// group weighted by its functions' sizes, the heaviest first.
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -709,31 +709,49 @@ function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord
     process.stdout.write(`  ${k.padEnd(12)} ${row(ta.get(k))} → ${row(tb.get(k))}\n`);
 }
 
-/** The refused slices grouped by the blocker their first refusal names: each
- * group's census statements, its functions and each function's detail, most
- * statements first. */
-function refusals(census: Census): { reason: string; statements: number; functions: number; sites: string[] }[] {
+/** The source text a slice's first refusal names, its span read from the
+ * slice file beside the record, when that file still holds the text the
+ * census checked (its hash in the record); null otherwise. */
+function refusedText(record: string, directory: string, s: SliceRecord): string | null {
+  const span = /at \[(\d+),(\d+)\)/.exec(s.detail);
+  const path = join(dirname(record), directory, directory, s.slice);
+  if (!span || !existsSync(path)) return null;
+  const text = readFileSync(path, "utf8");
+  if (sha256(text) !== s.sourceSha256) return null;
+  return text.slice(Number(span[1]), Number(span[2])).replace(/\s+/g, " ");
+}
+
+/** The refused slices grouped by the blocker their first refusal names and
+ * the source text it refuses: each group's census statements, its function
+ * count, its weight and each function's detail, the heaviest first. A
+ * function of n statements weighs 10 / (10 + n): one whose first refusal is
+ * cleared verifies sooner the fewer statements, and refusals, it holds. */
+function refusals(census: Census, record: string):
+  { reason: string; text: string | null; weight: number; statements: number; functions: number; sites: string[] }[] {
   const statements = new Map<string, number>();
   for (const u of classifiedInventory(census).units)
     if (u.scope === "census") statements.set(`${u.file}#${u.fn}`, (statements.get(`${u.file}#${u.fn}`) ?? 0) + 1);
-  const groups = new Map<string, { reason: string; statements: number; functions: number; sites: string[] }>();
+  const groups = new Map<string,
+    { reason: string; text: string | null; weight: number; statements: number; functions: number; sites: string[] }>();
   for (const [key, s] of census.slices) {
     if (s.status === "verified") continue;
-    const reason = blocker(s.detail);
-    const group = groups.get(reason) ?? { reason, statements: 0, functions: 0, sites: [] };
-    group.statements += statements.get(key) ?? 0;
+    const reason = blocker(s.detail), text = refusedText(record, census.source.directory, s);
+    const n = statements.get(key) ?? 0;
+    const group = groups.get(`${reason}\n${text}`) ?? { reason, text, weight: 0, statements: 0, functions: 0, sites: [] };
+    group.weight += 10 / (10 + n);
+    group.statements += n;
     group.functions++;
-    group.sites.push(`${key}: ${s.detail}`);
-    groups.set(reason, group);
+    group.sites.push(`${key} (${n} statements): ${s.detail}`);
+    groups.set(`${reason}\n${text}`, group);
   }
-  return [...groups.values()].sort((a, b) => b.statements - a.statements || b.functions - a.functions);
+  return [...groups.values()].sort((a, b) => b.weight - a.weight || b.functions - a.functions);
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
   const args = process.argv.slice(2);
   try {
     if (args[0] === "refusals" && args[1] !== undefined && args.length === 2)
-      process.stdout.write(JSON.stringify(refusals(readCensus(args[1])), null, 1) + "\n");
+      process.stdout.write(JSON.stringify(refusals(readCensus(args[1]), args[1]), null, 1) + "\n");
     else if (args[0] === "report" || args[0] === "coverage") {
       const perFunction = args.includes("--per-function");
       const rest = args.slice(1).filter((a) => a !== "--per-function");

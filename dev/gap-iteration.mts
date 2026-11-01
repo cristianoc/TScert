@@ -340,9 +340,8 @@ ${section(".claude/skills/gap-round/SKILL.md", "## 2.")}
 
 ${section(".claude/skills/gap-round/SKILL.md", "## 3.")}
 
-Write the confirmed ranking to ${join(work(r), "ranking.md")}, and the ${r.o.cases} open causes first by the
-census functions they block, most first, a tie going to the cause whose functions are smaller (fewer statements
-each), a cause blocking one function of more than 500 statements after every other, each with the pipeline case that shows it (one you added if none did), to
+Write the confirmed ranking to ${join(work(r), "ranking.md")}, and the ${r.o.cases} open causes first by their weight
+in refusals.json (each function a cause blocks counts 10 / (10 + its statements)), each with the pipeline case that shows it (one you added if none did), to
 ${join(work(r), "ranking.json")}: {"cases": [{"case": "<name of pipeline/examples/<name>.ts>", "reason": "...",
 "statements": n, "functions": n, "sites": ["file.mts#fn: what is refused", ...]}]}. Heavy runs take the lock
 ${heavy(r)} (until mkdir it 2>/dev/null; do sleep 20; done; <command>; rmdir it). Commit the cases you add as one

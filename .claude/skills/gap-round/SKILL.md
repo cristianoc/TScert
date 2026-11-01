@@ -37,8 +37,8 @@ node dev/census.mts refusals <record>
 ```
 
 The census prints the record's path. `refusals` groups the refused
-functions by the blocker their first refusal names, with the functions
-and statements each group affects.
+functions by the blocker their first refusal names and the source text it
+refuses, with each group's functions, statements and weight.
 
 ## 2. The reasons, confirmed from the record
 
@@ -67,11 +67,9 @@ step-1 cases.
 
 ## 4. The next 10 cases, at most 5 agents at a time
 
-Take the 10 open cases of the ranking, in its order: by the census
-functions they block, most first, a tie going to the cause whose
-functions are smaller (fewer statements each); a cause blocking one
-function of more than 500 statements goes after every other. For each,
-start a background agent in its own worktree (`isolation: "worktree"`)
+Take the 10 open cases of the ranking, in its order: by the weight
+`census.mts refusals` gives each reason, each function it blocks counting
+10 / (10 + its statements). For each, start a background agent in its own worktree (`isolation: "worktree"`)
 with [brief.md](brief.md), the case's name, its reason and its sites
 from `ranking.md`. When an agent finishes, start the next case, keeping
 at most 5 running.
