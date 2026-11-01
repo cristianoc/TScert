@@ -2451,6 +2451,25 @@ expression types. `blocker-gap-round-receiver-template` exercises the
 interpolation, and `invalid-gap-round-receiver-template` requires a string
 where the logical operator can return `false`.
 
+### A host-node union in a logical operator's result
+
+`tools/computed-types.mts#unionMembers` reads a declaration's parameter
+member with `d && params.get(d)`, then finds the first defined result.
+The compiler API's `Node` declaration expands to a union of object types.
+The producer's declaration-aware truthiness query traverses each union
+arm and excludes the declaration from the falsy result only when every
+arm is truthy. An intersection's settled operand establishes its
+truthiness; conflicting answers remain undecided.
+The resulting `Member | undefined` retains the `node`,
+`read` and `params` fields required by the recursive call.
+
+This uses the existing [logical-operator checks](SOURCE-ELABORATION.md#logical-operators).
+Lean checks the proposed expression claims through the same certificates.
+`blocker-round-imported-find-shape` exercises the importing module's
+`map`/`get`/`find` chain; `invalid-round-imported-find-shape` retains `false`
+in a union with host nodes and returns `false` under Node. The producer
+repair takes no external assumption.
+
 ### A recursive callback offered narrower parameters
 
 The parent walk `topStatement` in `tools/fragment-parse.mts#lowerFile`

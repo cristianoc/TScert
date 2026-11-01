@@ -79,8 +79,8 @@ export const cases: Case[] = [
   gap("blocker-round-decoder-record-assertion", "A decoder closing with a double assertion through unknown.", "unverified", "search",
     /^reject: closure expression claim at \[\d+,\d+\): evidence search failed\nobligation: [^\n]* is unknown\. This obligation requires \{ id: string \}\./),
   positive("blocker-round-decoder-erased-assertion", "A decoder builds fresh records from checked fields and retains its typed mapped result."),
-  { ...gap("blocker-round-imported-find-shape", "A host-declaration map/get/find result losing its node field in an importing module.", "unsupported", "proposal",
-    /^unsupported: missing field node at \[\d+,\d+\)(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-imported-find-shape", "A host-declaration map/get/find result retains its member fields through declaration-aware truthiness."), project: "pipeline/blocker-project" },
+  { ...negative("invalid-round-imported-find-shape", "A union of host nodes and false retains false as a possible logical-operator result (Node returns false).", /This return requires string\./), project: "pipeline/blocker-project" },
 
   positive("blocker-gap-round-early-capture", "An early captured function states the function its outer arrow returns."),
   { ...positive("blocker-gap-round-parent-walk", "A recursive parent walk retains its declared parameters when offered ignored callback arguments."), project: "pipeline/blocker-project" },

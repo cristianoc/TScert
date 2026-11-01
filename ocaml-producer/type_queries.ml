@@ -954,17 +954,28 @@ let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty opti
 let rec atom_truthiness declarations seen = function
   | Named (id,args) when not (List.mem id seen) ->
     (match (try Some (definition declarations id args) with Json.Error _ -> None) with
-     | Some (Atoms (_::_ as atoms)) ->
-       (match List.sort_uniq compare (List.map (atom_truthiness declarations (id::seen)) atoms) with
-        | [answer] -> answer
-        | _ -> None)
-     | _ -> None)
+     | Some body -> type_truthiness declarations (id::seen) body
+     | None -> None)
   | a -> truthiness a
+and type_truthiness declarations seen = function
+  | Atoms atoms -> common_truthiness (List.map (atom_truthiness declarations seen) atoms)
+  | Union types -> common_truthiness (List.map (type_truthiness declarations seen) types)
+  (* Every intersection value meets each operand: one settled operand
+     suffices. Conflicting answers are kept undecided. *)
+  | Meet (t,ts) -> common_truthiness
+      (List.filter Option.is_some (List.map (type_truthiness declarations seen) (t::ts)))
+  | Rigid _ -> None
+and common_truthiness = function
+  | [] -> None
+  | answers -> (match List.sort_uniq compare answers with
+      | [answer] -> answer
+      | _ -> None)
 (* The part of a type a truthiness test answering [truth] leaves, an atom
    naming a declaration dropped where all its values answer the other way. *)
-let truthy_refine declarations truth t = match t with
+let rec truthy_refine declarations truth t = match t with
   | Atoms xs -> truthy_slice truth (Atoms (List.filter (fun a ->
       atom_truthiness declarations [] a <> Some (not truth)) xs))
+  | Union ts -> List.fold_left union (Atoms []) (List.map (truthy_refine declarations truth) ts)
   | t -> truthy_slice truth t
 let rec discriminate ?(seen = []) bounds declarations t key slice =
   match declared_head declarations [] t with
