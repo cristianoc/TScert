@@ -325,7 +325,7 @@ function inputs(directory: string): void {
   if (readdirSync(directory).length)
     throw Error("inputs requires an empty directory");
   prepare(directory, "tools");
-  const manifest = [];
+  const manifest: { file: string; function: string; sha256: string }[] = [];
   for (const file of ["declaration-graph.mts", "fragment-parse.mts"]) {
     const path = join(directory, "tools", file);
     const text = readFileSync(path, "utf8");
@@ -379,7 +379,12 @@ function parse(directory: string, output: string): object {
     throw Error("parse requires an empty stage store directory");
   mkdirSync(output, { recursive: true });
   const recorder = new Recorder(join(output, "invocations.jsonl"));
-  const outcomes = [];
+  const outcomes: {
+    file: string;
+    sha256: string;
+    code: ReturnType<typeof parseSource>["parsed"]["code"];
+    detail: string;
+  }[] = [];
   for (const file of readdirSync(join(directory, "tools"))
     .filter((f) => f.startsWith("slice-"))
     .sort()) {
