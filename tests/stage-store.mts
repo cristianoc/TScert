@@ -753,7 +753,7 @@ writeFileSync(input, '{"modules":[]}');
 writeFileSync(program, '#!/bin/sh\n' + (during
   ? 'if [ ! -f "' + marker + '" ]; then\n' +
     'printf "\\n// edited during execution\\n" >> "' + target.pathname + '"\n' +
-    ': > "' + marker + '"\n' + (timeout ? '/bin/sleep 5\n' : '') + 'fi\n'
+    ': > "' + marker + '"\n' + (timeout ? '/bin/sleep 30\n' : '') + 'fi\n'
   : '') + '/bin/cat "$2"\n');
 chmodSync(program, 0o755);
 auditForTests(program, ["/bin/cat", "/bin/sleep"]);
@@ -762,7 +762,9 @@ let edit = during;
 const run = (): ReturnType<typeof invokeInProcess<string>> => {
   if (kind === "process") {
     const result = invokeProcess(verifierCall(program, ["--lower-control-flow", input]),
-      { limitMs: timeout ? 500 : 10_000, force: false, recorder });
+      // These drivers start together beside the other fast checks. Allow
+      // the shell time to reach its edit before the timeout kills it.
+      { limitMs: timeout ? 5_000 : 10_000, force: false, recorder });
     return { value: result.stdout, record: result.record };
   }
   const call = assemblyCall('{"modules":[]}', []);
