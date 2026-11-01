@@ -1,4 +1,4 @@
-// A mapped array used as a push receiver.
+// A fresh snapshot mapped into a writable result, expressed as a loop.
 // Census functions:
 // host-families.mts#familyTable
 export function arms(
@@ -6,7 +6,8 @@ export function arms(
   arm: (x: number) => string,
   extra: boolean,
 ): string[] {
-  const result = xs.map((x) => arm(x));
+  const result: string[] = [];
+  for (const x of xs.slice()) result.push(arm(x));
   if (extra) result.push("extra");
   return result;
 }

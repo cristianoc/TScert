@@ -1750,6 +1750,41 @@ use `node`, and the assignment to `found` uses the guarded `n`.
   The rewrite adds no rule or external assumption.
 - **Commit:** the introducing commit.
 
+### Mapping a private snapshot before appending to its result
+
+`familyTable` in `tools/host-families.mts` builds its arms with an explicit
+loop over `[...groups.values()].sort(...)`, appending each `g.arm()` to a
+fresh `FamilyArm[]`. It then appends the residual arm when one exists.
+The existing [array and loop checks](SOURCE-ELABORATION.md) establish the
+result's writable element contract.
+
+- **Avoided form:** `snapshot.map(g => g.arm())`, followed by `push` on
+  the result. An unrestricted callback gives `map` a possibly sparse
+  result. Establishing that this particular callback cannot reach the
+  private snapshot requires information beyond its callable contract.
+  The supplied census identifies one site in `familyTable`. Tracking which
+  fresh arrays a callback can reach would add a general analysis for this
+  single use; the explicit loop uses the existing allocation and call rules.
+- **Equivalence:** the snapshot is a fresh dense array of the map's values,
+  sorted before any arm runs. Neither the snapshot nor the result reaches
+  an arm function. Both forms call each saved arm once, in sorted order,
+  with the group as its receiver, and save the returned value before the
+  next call. Mutations of the groups or their map cannot change the saved
+  sequence. Both propagate the first exception and append the same residual
+  arm after all calls return. The result is fresh in both forms, with the
+  same elements and element aliases. Under the existing stable standard-object
+  assumption, array allocation, iteration, `map` and `push` invoke no
+  additional client code here.
+- **Scope:** `blocker-round-mapped-array-push` uses a fresh `slice` snapshot
+  and an explicit loop, so its callback may mutate the original input
+  without changing the visited sequence. Mapping that snapshot reproduces
+  the receiver refusal. `invalid-round-mapped-array-push` retains a shared
+  receiver: a callback that clears a two-element input leaves the second
+  result position absent, and a later `push` preserves that hole. Running
+  this fixture under Node returns `undefined` at that position. This
+  avoidance adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts

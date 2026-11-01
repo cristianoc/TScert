@@ -576,7 +576,8 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
         ? () => ({ k: "generic", declarations: source.declarations, values })
         : () => synthetic(source.declaration.name.text, values) });
     }
-    const result = [...groups.values()].sort((x, y) => compareTags(x.first, y.first)).map(g => g.arm());
+    const result: FamilyArm[] = [];
+    for (const g of [...groups.values()].sort((x, y) => compareTags(x.first, y.first))) result.push(g.arm());
     const rest = members.filter(t => !selection.has(t));
     if (rest.length) result.push(synthetic(`${a.name.text} residual`, rest));
     return result;
