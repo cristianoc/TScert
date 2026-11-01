@@ -3418,7 +3418,7 @@ interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
 declaration no library has, which joins the document with the entry:
 
 ```math
-\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{readonly}\ \mathsf{JsonValue}[\,]\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
+\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{readonly}\ (\mathsf{JsonValue}\mid\mathsf{undefined})[\,]\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
 ```
 
 (`JSON.stringify`'s parameter), and
@@ -3445,10 +3445,19 @@ leaves its array arm, whose `map` stays dense (`json-parse-data`).
 `ParsedJson` is a `JsonValue`: each of its arms is one read-only. A
 `JsonValue` array owns no `toJSON` (the arrays' own-key exclusion,
 [arrays](SOURCE-MODEL.md#arrays)), inherits none (no object along its chain
-holds one, a host assumption), and holds `JsonValue`s. It is dense: a
-readable array admits a hole only where `undefined` meets its element
-contract, which `JsonValue` excludes, and neither `Array.prototype` nor
-`Object.prototype` owns a numeric key ([trust surface](DESIGN.md#trust-surface)).
+holds one, a host assumption), and holds `JsonValue`s or `undefined`.
+Its readable element contract admits holes. ECMA-262's SerializeJSONArray
+reads each index below the captured length and writes `null` when
+SerializeJSONProperty returns `undefined`; this covers both a hole and an
+explicit `undefined`, recursively at every array depth
+(`json-stringify-sparse`, `blocker-round-mapped-json`). Neither
+`Array.prototype` nor `Object.prototype` owns a numeric key
+([trust surface](DESIGN.md#trust-surface)). Root `undefined` is outside
+`JsonValue`, since its serialization returns `undefined`
+(`invalid-json-stringify-undefined`, run under Node). A nested array element
+with a callable `toJSON` is outside this contract too
+(`invalid-json-stringify-sparse-hook`, run under Node: the hook shrinks
+the array visited by an enclosing `map`).
 A dictionary owns no prototype key and holds `JsonValue`s at every string key
 it owns, none callable: a member `JSON.parse` defines under the name
 `"toJSON"`, at any depth, is JSON data, which `JSON.stringify` reads and does

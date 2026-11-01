@@ -172,9 +172,10 @@ const dictionary = (value: TypeTerm): TypeTerm =>
 
 /** The values `JSON.stringify` serializes to a string with no code of the
  * client's run and no `undefined` returned: `null`, a Boolean, a number, a
- * string, or a read-only array or dictionary of such values,
+ * string, a read-only array of such values or `undefined`, or a dictionary
+ * of such values,
  *
- *     type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [k: string]: JsonValue };
+ *     type JsonValue = null | boolean | number | string | readonly (JsonValue | undefined)[] | { readonly [k: string]: JsonValue };
  *
  * A dictionary owns no `[[proto]]` and every string key it owns holds a
  * `JsonValue` (`dictViewT`), so no key it owns is callable and it inherits
@@ -182,9 +183,10 @@ const dictionary = (value: TypeTerm): TypeTerm =>
  * own-key exclusion, `RequestJson.arrayExcludedKeys`) and inherits none: no
  * object along its prototype chain holds one, a host assumption (DESIGN.md,
  * the trust surface). So `toJSON` is never called, and no getter runs. The
- * array is dense: a readable array admits a hole only where `undefined`
- * meets its element contract, which `JsonValue` excludes, and neither
- * `Array.prototype` nor `Object.prototype` owns a numeric key. A
+ * array admits holes and explicit `undefined` elements: SerializeJSONArray
+ * writes `null` when SerializeJSONProperty returns `undefined`. Neither
+ * `Array.prototype` nor `Object.prototype` owns a numeric key. Root
+ * `undefined` is excluded because its serialization returns `undefined`. A
  * record a declaration types by its fields is left out: a record is open,
  * and nothing bounds the own keys it does not declare. A cycle throws, an
  * outcome; a bigint would throw too, and is left out as a value the host
@@ -194,7 +196,8 @@ const jsonValue: TypeTerm = { k: "reference", args: [], span: at,
   reference: { name: jsonValueIdentity.name, span: at, arguments: [], target: jsonValueIdentity } };
 const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, parameters: [], bases: [],
   expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
-    { k: "array", presence: "readable", readonly: true, element: jsonValue, span: at }, dictionary(jsonValue)] } };
+    { k: "array", presence: "readable", readonly: true,
+      element: { k: "union", parts: [jsonValue, atom("undefined")], span: at }, span: at }, dictionary(jsonValue)] } };
 
 /** What `JSON.parse` returns without a reviver: `null`, a Boolean, a number,
  * a string, an array of such values, or an object of them,

@@ -3431,7 +3431,7 @@ control(async (): Promise<void> => {
   // An array owns no `toJSON`, whatever the parser and the producer say: a
   // forged parameter type giving `nested`'s array one is refused by the
   // search and by the check of the evidence the original program earned.
-  const artifacts = run("json-stringify-arrays");
+  const artifacts = run("json-stringify-sparse");
   const ast = readFragmentFile(join(artifacts, "fragment.json"));
   const nested = must(ast.functions.find(f => f.name === "nested"), "nested's declaration");
   const rows = must(nested.params[0], "nested's parameter");

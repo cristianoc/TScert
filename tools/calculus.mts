@@ -110,7 +110,7 @@ export type Term =
  * of a parsed object finds a `Json`, or `undefined` where the object lacks
  * the key. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-/** A value of the shape of `JsonValue` (library-globals.mts), whatever built
+/** A value admitted by `JsonValue` (library-globals.mts), whatever built
  * it: `null`, a Boolean, a number, a string, or a read-only array or
  * dictionary of such values. A `Json` is one. The readers of the claims, the
  * type graphs and the diagnostics take their input at it. */
