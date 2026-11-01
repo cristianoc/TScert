@@ -8,8 +8,10 @@ export function update(
   absolute: string,
   changed: boolean,
 ): Snapshot {
-  return compiler.updateSnapshot({
-    openFiles: [absolute],
-    ...(changed ? { fileChanges: { changed: [absolute] } } : {}),
-  });
+  return changed
+    ? compiler.updateSnapshot({
+        openFiles: [absolute],
+        fileChanges: { changed: [absolute] },
+      })
+    : compiler.updateSnapshot({ openFiles: [absolute] });
 }

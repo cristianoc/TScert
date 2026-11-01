@@ -93,10 +93,9 @@ function projectFor(absolute: string): Project {
   // snapshot bytes; otherwise a changed source can receive a stale tree.
   if (changed)
     compiler.updateSnapshot({ closeFiles: [absolute], fileChanges: { changed: [absolute] } });
-  const snapshot = compiler.updateSnapshot({
-    openFiles: [absolute],
-    ...(changed ? { fileChanges: { changed: [absolute] } } : {}),
-  });
+  const snapshot = changed
+    ? compiler.updateSnapshot({ openFiles: [absolute], fileChanges: { changed: [absolute] } })
+    : compiler.updateSnapshot({ openFiles: [absolute] });
   opened.add(absolute);
   const project = snapshot.getDefaultProjectForFile(absolute);
   if (!project) throw new Error(`the compiler did not open ${absolute}`);

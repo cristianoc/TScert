@@ -1867,6 +1867,35 @@ the final projection uses the existing [closure checks](SOURCE-CLAIMS.md).
   split and the final projection. This rewrite adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A snapshot request with a conditional spread
+
+`tools/fragment-parse.mts#projectFor` selects a complete request literal
+for `compiler.updateSnapshot`: both branches supply `openFiles`, and the
+changed branch also supplies `fileChanges.changed`. `openText` and
+`openFile` reach that call through `projectFor`. The existing
+[allocation and call checks](SOURCE-CLAIMS.md) establish each request.
+
+- **Avoided form and cost:** `{ openFiles: [absolute], ...(changed ?
+  { fileChanges: { changed: [absolute] } } : {}) }` requires the merged
+  record to retain the writable request's nested field and array contracts.
+  An explicit `UpdateSnapshotParams` annotation also leaves that allocation
+  refused. The supplied census names this one request through three
+  functions; complete literals use the existing checks without extending
+  merge inference for it.
+- **Equivalence:** `changed` is a local boolean, and `absolute` a string.
+  Both forms read the same compiler method before allocating its argument,
+  allocate fresh arrays and records, and call it once with the compiler as
+  receiver. The changed request has own keys `openFiles`, then
+  `fileChanges`, whose own `changed` array contains the same string; the
+  other request has only `openFiles`. The spread's temporary plain record
+  stays local and runs no getters. Standard prototypes supply no replaced
+  hooks under the existing policy. Returns, exceptions, mutations, method
+  identities, aliases, receivers and asynchronous effects agree for every
+  admitted input and reachable state.
+- **Scope:** `blocker-prep-snapshot-conditional-spread` checks both request
+  branches. The rewrite adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A generic observed value assigned across try/finally
 
 `tools/files.mts#observedNoting` initializes `value` with an immediately
