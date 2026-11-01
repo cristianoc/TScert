@@ -101,7 +101,14 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
   }
   if (!isObject(atom)) {
     state.printable = false;
-    return String(atom);
+    if (
+      typeof atom === "string" ||
+      typeof atom === "number" ||
+      typeof atom === "boolean" ||
+      atom === null
+    )
+      return String(atom);
+    return "«type»";
   }
   if (atom.unsupported === true) {
     state.printable = false;

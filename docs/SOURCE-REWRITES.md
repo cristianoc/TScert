@@ -1622,6 +1622,36 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A negative object guard before primitive conversion
+
+`tools/claim-text.mts#bareAtomText` prints malformed JSON atoms. After its
+array check and negative object guard, it tests `typeof atom` for string,
+number and Boolean, and `atom === null`, before calling `String(atom)`.
+These tests establish the primitive domain of the existing [conversion contract](SOURCE-CONTRACTS.md#library-globals).
+
+- **Route:** a runtime check. The JSON input contract retains the source
+  value’s recursive shape; the explicit tests establish the conversion’s
+  domain directly through the existing conditional checks.
+- **Avoided form and cost:** using `!isObject(atom)` after the array check
+  as the sole evidence for primitive conversion.
+  The [guard’s positive promise](SOURCE-ELABORATION.md#user-defined-guards)
+  states a dictionary view. Its false result supplies no converse promise
+  excluding every object. Supporting that inference requires a checked
+  converse for the guard; direct primitive tests suffice at this site.
+- **Behaviour:** every admitted JSON value is a primitive, an array or a
+  dictionary. The array branch returns first. On the remaining values,
+  the explicit tests select exactly the values the original object test
+  rejected. The fallback after the primitive tests is unreachable on that
+  domain. The object guard retains its dictionary promise for subsequent
+  field reads. Both forms set `state.printable` to false and apply the same
+  conversion to the same primitive. Dictionaries follow the same printing
+  branches. The tests invoke no client code, allocate nothing and write
+  nothing; returns, exceptions, mutations, receivers and aliases agree.
+- **Scope:** `blocker-round-unknown-string` exercises the JSON input and
+  explicit primitive tests. Arbitrary object conversion requires accounting
+  for conversion hooks and their effects. This rewrite adds no trust.
+- **Commit:** the introducing commit.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts
