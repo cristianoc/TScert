@@ -462,7 +462,7 @@ function entriesRead(path: string): Listed<Entries> {
     if (directory) directories.push(e.name);
     else if (file) files.push(e.name);
   }
-  const entries = { files, directories };
+  const entries: Entries & { readonly [key: string]: readonly string[] } = { files, directories };
   const answer = sha256(JSON.stringify(entries));
   return { entries, answer };
 }

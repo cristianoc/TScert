@@ -9,6 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a: 1, extra: "text" })["extra"]'),
+  "string", "an open record admits an extra key outside the number dictionary contract");
+
 {
   assert.equal(runExample("invalid-decoder-record-alias",
     '(() => { const input = { id: "checked" }; const output = decode(input); input.id = 0; try { output.id.toUpperCase(); return false; } catch (error) { return error instanceof TypeError; } })()'), true,

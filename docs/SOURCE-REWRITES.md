@@ -1853,6 +1853,39 @@ result's writable element contract.
   avoidance adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A named record widened to a JSON dictionary
+
+`tools/files.mts#entriesRead` retains a readonly string index of readonly
+string arrays on the fresh `{ files, directories }` record before
+serialization. `GuardClosure` in `tools/guard-closure.mts` retains a
+readonly string index whose values are file-digest dictionaries or module-edge
+arrays. Its named `files` and `edges` fields keep their precise types.
+The existing [record allocation checks](POSITIVE-TYPES.md#records) establish
+the key bound, and the [JSON serialization contract](SOURCE-CONTRACTS.md#library-globals)
+consumes it.
+
+- **Repair:** fresh allocation establishes the complete key contract.
+  Keeping it in the local annotation and the returned closure type prevents
+  its loss before `JSON.stringify`. Directory listing and guard activation
+  serialize the same records through their existing callers.
+- **Avoided form and cost:** a named record with only its field types is
+  open. General conversion to a JSON dictionary cannot establish that extra
+  keys hold JSON values: a hidden callable `toJSON` can change the result
+  and run client code. Retaining the known index contract needs no new rule
+  or inspection of keys at runtime.
+- **Behaviour:** the annotations are erased. The same literals allocate
+  the same fields in the same order, with the same arrays and dictionaries.
+  Serialization reads the same keys and values. Returns, serialized bytes,
+  exceptions, mutations, aliases, receivers and asynchronous effects agree
+  for the records these callers construct; the rewrite adds no execution.
+- **Scope:** `named-implicit-index` checks construction and a function result
+  retaining the index contract before serialization.
+  `invalid-named-implicit-index` retains the open-record conversion: under
+  Node an extra string-valued key survives its promised number dictionary.
+  `invalid-json-stringify-record` exercises a hidden `toJSON` hook under
+  Node. This repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts

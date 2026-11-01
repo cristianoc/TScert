@@ -8,6 +8,7 @@ import * as ts from "typescript/unstable/ast";
 export type ModuleEdge = readonly [from: string, local: string, target: string, exported: string,
   attributes: readonly (readonly [string, string])[], kind: "import" | "export"];
 export type GuardClosure = {
+  readonly [key: string]: Readonly<Record<string, string>> | readonly ModuleEdge[];
   files: Readonly<Record<string, string>>;
   edges: readonly ModuleEdge[];
 };
