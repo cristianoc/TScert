@@ -1,0 +1,5 @@
+# ai.txt: TScert reserves the rights of its copyright holder against text and
+# data mining, under Article 4(3) of Directive (EU) 2019/790, including for
+# training or improving machine-learning systems. See LICENSE.
+User-Agent: *
+Disallow: /

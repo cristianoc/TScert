@@ -160,3 +160,8 @@ make help     # every target
 Licensed under the [NON-AI MIT License](LICENSE): the MIT terms, with the code
 excluded from use in training or improving machine-learning systems and from
 datasets for that training, also for its derivatives.
+
+The copyright holder reserves the rights in this repository against text and
+data mining, under Article 4(3) of Directive (EU) 2019/790, including for
+training or improving machine-learning systems; [ai.txt](ai.txt) states the
+same reservation in machine-readable form.
