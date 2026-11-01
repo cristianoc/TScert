@@ -1742,39 +1742,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const valueStarts: TypeDeclaration[] = [];
     // Computed members have an equation only at closed arguments. Each
     // instance retains the declaration's whole admitted shape and heritage.
-    const computedMembers = (node: TypeDeclaration): boolean => {
-      if (isTypeAlias(node) || !node.typeParameters?.length) return false;
-      const names = new Set(node.typeParameters.map(p => p.name.text));
-      const mentions = (part: Node): boolean =>
-        (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
-        (part.forEachChild(c => mentions(c) || undefined) ?? false);
-      const computed = (part: Node): boolean => {
-        const alias = ts.isTypeReferenceNode(part) ? aliasOf(part) : null;
-        if (ts.isTypeNode(part) && (computedForm(part) !== null ||
-            (alias !== null && computedAlias(alias, aliasOf))) && mentions(part)) return true;
-        return part.forEachChild(c => computed(c) || undefined) ?? false;
-      };
-      return (partners.get(node) ?? [node]).some(part =>
-        (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) && part.members.some(computed));
-    };
-    const instances = new Map<string, { node: TypeDeclaration; identity: DeclarationIdentity; args: readonly TypeTerm[]; use: Node }>();
-    const instanceOf = (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span): TypeTerm => {
-      let open = false;
-      args.forEach(arg => visitType(arg, term => { if (term.k === "binder" || term.k === "parameter") open = true; }));
-      if (open) throw Error(`${node.name?.text}: computed members are read only at closed type arguments`);
-      const original = identityOf(node);
-      // An instance is its declaration at its arguments' data: the spans of
-      // an occurrence are its provenance, which the reference keeps.
-      const key = `[${identityText(original)},${termsText(args)}]`;
-      let instance = instances.get(key);
-      if (!instance) {
-        if (instances.size >= 256) throw Error("computed declaration instances exceed the graph budget of 256");
-        const identity = { ...original, module: `tscert/instance/${instances.size}/${original.module}` };
-        instance = { node, identity, args, use };
-        instances.set(key, instance);
-      }
-      return { k: "reference", reference: { name: original.name, target: instance.identity, arguments: [], span }, args: [], span };
-    };
+    const computedMembers = (node: TypeDeclaration): boolean => elaborationComputedMembers(partners, aliasOf, node);
+    const instances = new Map<string, DeclarationInstanceRequest>();
+    const instanceOf = (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span): TypeTerm =>
+      elaborationInstanceOf(instances, identityOf, node, args, use, span);
     // The types of the values declared outside the program's sources, which
     // may reach no statement but a program class's (`externalStatements`).
     const externalTypes: { what: string; type: TypeTerm }[] = [];
@@ -5515,14 +5486,13 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
   return { k: "object", fields, stringIndex: null, calls: [], span: identityOf(node).span };
 }
 
-/** Every declaration reachable from `start`, each once across roots. */
 /** The standard library's iterator interfaces ECMA-262 specifies, whose
  * done value `BuiltinIteratorReturn` names. */
 const ecmaIterators = ["ArrayIterator", "MapIterator", "SetIterator", "StringIterator", "RegExpStringIterator"];
 
 type DeclarationInstance = { identity: DeclarationIdentity; args: readonly TypeTerm[]; use: Node };
 
-function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
+interface DeclarationElaborationContext {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   computedMembers: (node: TypeDeclaration) => boolean;
   instanceOf: (node: TypeDeclaration, args: readonly TypeTerm[], use: Node, span: Span) => TypeTerm;
@@ -5553,9 +5523,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** Whether a reference is a statement (`Within`), recording that the
    * definition `owner` reads one. */
   stated: (reference: ts.TypeReferenceNode, owner: string) => boolean;
-  /** Told each declaration collected, under its key, before its equation
-   * is read: the program's classes are recorded (`externalStatements`). */
-  collecting: (node: TypeDeclaration | null, key: string | null) => void;
   /** A mapped type's keys as TypeScript computes them. */
   keys: KeysHook;
   /** Told each definition that is a record written as one (`NamedRecords`). */
@@ -5581,539 +5548,562 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
    * families' markers and their definitions' names: each the tag values of
    * its entry. */
   guardPromises: ReadonlyMap<string, ReadonlyMap<string, readonly TagValue[]>>;
-}, instance?: DeclarationInstance): void {
-  const { lookup, identityOf, symbol, partners, library, equation } = context;
+}
+
+interface DeclarationCollectionContext extends DeclarationElaborationContext {
+  /** Told each declaration collected, under its key, before its equation
+   * is read: the program's classes are recorded (`externalStatements`). */
+  collecting: (node: TypeDeclaration | null, key: string | null) => void;
+}
+
+/** Contributions are appended synchronously, including those preceding a refusal. */
+interface ElaboratedDeclaration {
+  definitions: TypeDefinition[];
+  dependencies: TypeDeclaration[];
+}
+
+/** Every declaration reachable from `start`, each once across roots. */
+function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[],
+    context: DeclarationCollectionContext, instance?: DeclarationInstance): void {
   const queue: TypeDeclaration[] = [start];
+  const output: ElaboratedDeclaration = { definitions, dependencies: queue };
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
     if (!node) throw Error("missing queued declaration");
     const applied = cursor === 0 ? instance : undefined;
-    const identity = applied?.identity ?? identityOf(node);
+    const identity = applied?.identity ?? context.identityOf(node);
     const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
     if (seen.has(key)) continue;
     seen.add(key);
     context.collecting(node, key);
-    const stated = equation(key, node);
-    if (stated) {
-      definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
-      continue;
-    }
-    const source = node.getSourceFile();
-    // Its parameters, its merged declarations together.
-    // A block type's captured parameters come first; an own parameter
-    // shadows a captured one of its spelling (`lastIndexOf`).
-    const parameterNodes = context.parameters(node);
-    const parameterNames = parameterNodes.map(parameter => parameter.name.text);
-    const capturedNames = parameterNodes.filter(p => p.captured).map(p => p.name.text);
-    const ownNames = parameterNames.slice(capturedNames.length);
-    if (new Set(ownNames).size !== ownNames.length)
-      throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
-    // A captured parameter at a reference in the body: this declaration's
-    // own position for the same type parameter.
-    const capturedHere = (parameter: ts.TypeParameterDeclaration): TypeTerm => {
-      const index = parameterNodes.findIndex(p => {
-        const at = p.name.parent;
-        return !!p.captured && !!at && at.pos === parameter.pos && at.end === parameter.end &&
-          at.getSourceFile().fileName === parameter.getSourceFile().fileName;
-      });
-      if (index < 0) throw Error(`a type declared in a block closes over ${parameter.name.text}, which ${identity.module}#${identity.name} does not`);
-      return { k: "parameter", index, span: [parameter.getStart(parameter.getSourceFile()), parameter.end] };
-    };
-    const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
-        read: (part: TypeNode) => TypeTerm, base = false, written?: ts.TypeReferenceNode): TypeTerm => {
-      const what = `${identity.module}#${identifier.text}`;
-      const known = library(identifier, what);
-      // A base is a declaration whose members are inherited; a library type
-      // read at its meaning has none here. A class extending `Array` has
-      // instances that are arrays, exotic objects allocated by the library's
-      // constructor, which a class's construction (an ordinary allocation)
-      // does not give.
-      if (known && base)
-        throw Error(`extending the standard library's ${identifier.text} is outside the fragment: ` +
-          "its instances are what the library's constructor allocates, not an ordinary object a class allocates, " +
-          "and its members are read at the library type's meaning, not inherited");
-      if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
-        message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
-      const targetNode = lookup(identifier, what);
-      // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
-      // what an iterator of ECMA-262 returns when it is done: the iterators
-      // of arrays, maps, sets, strings and `matchAll` complete with
-      // CreateIterResultObject(undefined, true), so in their interfaces it
-      // is `undefined`, as `strictBuiltinIteratorReturn` reads it. Another
-      // interface naming it (Intl's, the DOM's) is another specification's
-      // iterator, which this reading does not attribute.
-      if (isTypeAlias(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
-          context.libraryFile(targetNode.getSourceFile())) {
-        const owner = ts.isInterfaceDeclaration(node) ? node.name.text : "";
-        if (context.libraryFile(source) && ecmaIterators.includes(owner))
-          return { k: "atom", name: "undefined", span: pos };
-        throw Error(`BuiltinIteratorReturn in ${identity.module}#${identity.name} is the done value of an iterator ECMA-262 does not specify; only ${ecmaIterators.join(", ")} are read`);
-      }
-      // An alias TypeScript computes from its parameters is the type it
-      // computes at this reference's arguments.
-      if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
-      const target = identityOf(targetNode);
-      const completed = context.complete(key, targetNode, arguments_.map(read), written ?? null,
-        `${target.module}#${target.name}`, capturedHere);
-      if (context.computedMembers(targetNode)) {
-        if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
-        return context.instanceOf(targetNode, completed, written, pos);
-      }
-      const edge: Reference = { name: identifier.text, span: pos,
-        arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
-      queue.push(targetNode);
-      return { k: "reference", reference: edge, args: completed, span: pos };
-    };
-    // Each declaration part is read in its own file, which its spans index.
-    let body: TypeNode | undefined;
-    if (isTypeAlias(node)) {
-      body = node.type;
-      while (ts.isParenthesizedTypeNode(body)) body = body.type;
-    }
-    // A declaration's own parameters are positional: a computed type that
-    // reaches a function's binder has no reading in its equation.
-    const computed: ComputedHook = (part, pos, read) => {
-      const term = applied ? context.instantiate(key, node, applied.args, applied.use)(part) : context.computed(key, part, pos, read);
-      if (hasBinderTerm(term))
-        throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
-      return term;
-    };
-    // A part of a merged interface binds a prefix of the declaration's
-    // parameters, by position: its members are read with only those.
-    const scopeOf = (source: SourceFile, names: readonly string[] = parameterNames): TermScope => ({
-      source,
-      annotation: false,
-      awaited: context.awaited,
-      stated: part => context.stated(part, key),
-      ...(body ? { body } : {}),
-      symbol,
-      literalKey: context.literalKey,
-      privateName: context.privateName,
-      keys: context.keys,
-      modifiers: context.modifiers,
-      computed,
-      enumerated: context.enumerated,
-      fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
-      named: (part, pos, read) => {
-        const name = context.memberName(part.typeName);
-        if (!name) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
-        const own = ts.isIdentifier(part.typeName) && names.includes(name.text);
-        const enumType = own ? null : context.enumType(name, source, pos);
-        if (enumType) {
-          if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
-          return enumType;
-        }
-        const index = own ? names.lastIndexOf(name.text) : -1;
-        if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
-        if (part.typeArguments?.length)
-          throw Error(`type parameter applied as constructor: ${name.text}`);
-        return applied?.args[index] ?? { k: "parameter", index, span: pos };
-      },
-    });
-    const scope = scopeOf(source);
-    const parts = partners.get(node) ?? [node];
-    const partScope = (part: TypeDeclaration): TermScope =>
-      scopeOf(part.getSourceFile(), [...capturedNames, ...(part.typeParameters ?? []).map(parameter => parameter.name.text)]);
-    // A bound or default is read in the scope of the declaration stating it.
-    const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
-      at.type ? typeTerm(partScope(at.part), at.type) : null;
-    let sawDefault = false;
-    const parameters = applied ? [] : parameterNodes.map((parameter, index) => {
-      if (sawDefault && !parameter.default)
-        throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
-      sawDefault ||= !!parameter.default;
-      const own = (parameter.captured ? undefined : node.typeParameters?.[index - capturedNames.length]) ??
-        parameter.name.parent;
-      const parameterSpan: Span = [own.getStart(own.getSourceFile()), own.end];
-      return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.default };
-    });
-    // An alias TypeScript computes from its parameters has no equation: its
-    // definition states its parameters and defaults.
-    // (A predicate's false branch would narrow `node` to no alias.)
-    const computedEquation: boolean = computedAlias(node, context.alias);
-    if (computedEquation || (!applied && context.computedMembers(node))) {
-      definitions.push({ declaration: identity, parameters, bases: [], expression: null });
-      continue;
-    }
-    // A standard library interface read through the overlay: only its listed
-    // members, and no base.
-    const overlaid = ts.isInterfaceDeclaration(node) && parts.every(part => context.libraryFile(part.getSourceFile()))
-      ? interfaceOverlay.get(node.name.text) : undefined;
-    if (overlaid && ts.isInterfaceDeclaration(node)) {
-      definitions.push({ declaration: identity, parameters, bases: [],
-        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,
-          identityOf, symbol, (name, span) => {
-          if (name === "NativeIterator") return ([element]: TypeTerm[]): TypeTerm => {
-            if (!element) throw Error("a collection iterator states its element");
-            return context.collectionIterator(key, element);
-          };
-          const target = context.libraryInterface(name);
-          queue.push(target);
-          return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
-            args: context.complete(key, target, args, null, name),
-            reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
-        }) });
-      continue;
-    }
-    // A host class, and a host interface the contract names a view for, is
-    // read through its named view (reading rule 4): the members the contract
-    // lists, each as its reviewed text declares it.
-    const named = compilerApiFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
-    const view = ts.isClassDeclaration(node) && compilerApiFile(source.fileName) ? named?.members ?? []
-      : ts.isInterfaceDeclaration(node) ? named?.members ?? null : null;
-    if (view && (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)))
-      for (const entry of view)
-        if (!parts.some(part => (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) &&
-            part.members.some((m: Node) => m.getText(part.getSourceFile()).trim() === entry.text)))
-          throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
-    const admitted = (member: Node): boolean =>
-      !view || view.some(entry => member.getText(member.getSourceFile()).trim() === entry.text);
-    // A view is the whole shape: no declaration outside the audited
-    // installation merges into it, and it inherits nothing.
-    if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
-      throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
-    // A declaration of a host family (HOST-FAMILIES.md, "The family
-    // contract"): one whose tag is a set of literals, or a generic one, is
-    // its flattened members with the family's marker; one whose tag is no
-    // set of literals keeps its identity and is read as the union of the
-    // arms the run's selection keeps, the residual last.
-    const familyReading = ts.isInterfaceDeclaration(node) ? context.family(node) : null;
-    if (familyReading && ts.isInterfaceDeclaration(node)) {
-      const { table, selection } = familyReading;
-      const marker = table.description.marker;
-      const span: Span = [node.getStart(source), node.end];
-      const tagTerm = (values: readonly TagValue[]): TypeTerm => {
-        const parts = values.map(v => literalTerm(v, span));
-        const [only] = parts;
-        return only && parts.length === 1 ? only : { k: "union", parts, span };
-      };
-      // A flattened member, read in its owner's scope, as a host type's
-      // member is (reading rules 1, 2 and 5), optional where it is at one of
-      // the tags `tags` the reading covers; a generic owner's tag parameter
-      // is read at `value` where a synthetic shape reads it.
-      type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const readMember = (f: FlatMember, tags: readonly TagValue[], value: TagValue | null): Field => {
-        const file = f.owner.getSourceFile();
-        const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
-        const term = members(scopeOf(file, names), f.members, f.owner, [f.owner.getStart(file), f.owner.end], true);
-        const [field] = term.k === "object" ? term.fields : [];
-        if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
-          throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
-        const substituted = names.length && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
-        // A method the family states a footprint for, its text reviewed
-        // (`familyTable`), is read at it (T3).
-        const stated = table.description.footprints.find(m => m.owner === f.owner.name.text && m.member === f.name);
-        const type = stated ? footprintReading(stated.kind, substituted) : substituted;
-        return { ...field, readonly: true,
-          optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
-          type: hostBrands(type, true, context.isBrand,
-            message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
-      };
-      // A shape's stable members: its property members, required or
-      // optional, the stable-member rule names, the tag among them
-      // (HOST-FAMILIES.md, "Stable keys").
-      const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
-        const keys = fields.flatMap(f => typeof f.name === "string" && stable.includes(f.name) ? [f.name] : []);
-        return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
-      };
-      const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
-        queue.push(target);
-        const id = identityOf(target);
-        return { k: "reference", span, args: context.complete(key, target, args, null, `${id.module}#${id.name}`),
-          reference: { name: id.name, span, arguments: args.map(() => span), target: id } };
-      };
-      const synthetic = (name: string): { id: DeclarationIdentity; fresh: boolean; term: TypeTerm } => {
-        const id: DeclarationIdentity = { module: `tscert/family/${marker}`, name, span: [0, 0] };
-        const key = `${id.module}#${id.name}`;
-        const fresh = !seen.has(key);
-        seen.add(key);
-        return { id, fresh, term: { k: "reference", span, args: [], reference: { name, span, arguments: [], target: id } } };
-      };
-      // Each method a declaration states is one definition, which every
-      // shape stating it required names as a base: one method head, shared
-      // by the shapes, whatever other methods a shape overrides. A method a
-      // shape states optional, by its declaration or by a correction of the
-      // shape's tag, is that shape's own optional member.
-      const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
-      const shared = (f: FlatMember, tags: readonly TagValue[]): boolean => isMethod(f) && !table.optional(f, tags);
-      const methodBase = (f: FlatMember): TypeTerm => {
-        const made = synthetic(`${f.owner.name.text}.${f.name}`);
-        if (made.fresh) {
-          if (f.owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${f.owner.name.text}`);
-          definitions.push({ declaration: made.id, parameters: [], bases: [], expression: { k: "object",
-            fields: [readMember(f, [], null)], stringIndex: null, calls: [], span } });
-        }
-        return made.term;
-      };
-      const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => methods.map(methodBase);
-      const arm = (a: FamilyArm): TypeTerm => {
-        if (a.k === "declaration") return reference(a.declaration, []);
-        if (a.k === "generic") {
-          const parts = a.declarations.map(g => reference(g, [tagTerm(a.values)]));
-          const [only] = parts;
-          return only && parts.length === 1 ? only : { k: "intersection", parts, span };
-        }
-        const made = synthetic(a.name);
-        if (made.fresh) {
-          const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
-          const stable: string[] = table.tagStable(a.values) ? [table.description.tag.field] : [];
-          const methods: FlatMember[] = [];
-          // Every method's definition, in member order, whether or not the
-          // residual shares it.
-          const written: FlatMember[] = [];
-          for (const s of a.fields) {
-            const [first] = s.sources;
-            // A method some replaced shape states optional is forgotten: the
-            // residual relates to the shapes stating it required and to those
-            // stating it optional alike.
-            if (first && isMethod(first.member) && (s.optional || !shared(first.member, []))) {
-              written.push(...s.sources.map(x => x.member));
-              continue;
-            }
-            if (first && shared(first.member, []) &&
-                s.sources.every(x => x.member.owner === first.member.owner)) {
-              methods.push(first.member);
-              written.push(first.member);
-              continue;
-            }
-            const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
-            const types: TypeTerm[] = [];
-            for (const r of read) if (!types.some(t => termText(t) === termText(r.type))) types.push(r.type);
-            const [one] = types;
-            if (!one) continue;
-            fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
-              type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
-            if (s.sources.every(x => table.stable(x.member))) stable.push(s.name);
-          }
-          written.forEach(methodBase);
-          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields, stable) });
-        }
-        return made.term;
-      };
-      const tag = table.tagOf(node);
-      if (tag.k === "open") {
-        const arms = table.arms(node, selection);
-        const union = (selected: readonly FamilyArm[]): TypeTerm => {
-          const parts = selected.map(arm);
-          const [only] = parts;
-          return only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
-        };
-        definitions.push({ declaration: identity, parameters, bases: [], expression: union(arms) });
-        // A listed node guard's promise, at the family's root: the arms
-        // whose tags meet the guard's set (HOST-FAMILIES.md, "Guards as
-        // values").
-        const promised = node.name.text === table.description.root.name ? context.guardPromises.get(marker) : undefined;
-        if (promised)
-          for (const [name, values] of promised) {
-            const made = synthetic(name);
-            if (!made.fresh) continue;
-            const armValues = (a: FamilyArm): readonly TagValue[] =>
-              a.k === "declaration" ? table.tagsOf(a.declaration) : a.values;
-            definitions.push({ declaration: made.id, parameters: [], bases: [],
-              expression: union(arms.filter(a => armValues(a).some(v => values.includes(v)))) });
-          }
-      } else {
-        // Optional where it is at any tag the declaration's values can have:
-        // a generic declaration's every application, a literal set's every tag.
-        const tags = table.tagsOf(node);
-        const flat = table.flatten(node);
-        // Every method's definition is written, whether or not this reading
-        // shares it, so readings that differ only by corrections number their
-        // definitions alike.
-        flat.filter(isMethod).forEach(methodBase);
-        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
-          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null)),
-            flat.filter(f => !shared(f, tags) && !isMethod(f) && table.stable(f)).map(f => f.name)) });
-      }
-      continue;
-    }
-    let expression = isTypeAlias(node)
-      ? typeTerm(scope, node.type)
-      : ts.isClassDeclaration(node)
-        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
-            if (part === node || !ts.isInterfaceDeclaration(part)) return [];
-            const file = part.getSourceFile();
-            return [members(scopeOf(file), part.members.filter(admitted), part, [part.getStart(file), part.end], true)];
-          }), (at, message) => scope.fail(at, message), node)
-        : mergeMembers(parts.map(part => {
-            const file = part.getSourceFile();
-            if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
-            return members(partScope(part), part.members.filter(admitted), part,
-              [part.getStart(file), part.end], true);
-          }), (at, message) => scope.fail(at, message), node);
-    // A host type's members are readonly views, whether or not they are
-    // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
-    // to one is refused, and a test of one narrows as an invariant field's.
-    // A member whose reads give no one value for a node's life is no member
-    // of the host type's shape (the active family description's `omitted`,
-    // declared as reviewed): every read of it, in any form, is a read of a
-    // member the type does not state, and no structural type requiring it
-    // admits a value of the host type.
-    if (context.hostType(node) && expression.k === "object") {
-      const omitted = ts.isInterfaceDeclaration(node)
-        ? (familyOfFile(node.getSourceFile().fileName)?.omitted ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
-      for (const entry of omitted) {
-        const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
-          .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
-        if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
-          throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
-      }
-      // A member declared `any` states nothing (reading rule 2): an optional
-      // member of type `unknown`, as the brands (`_expressionBrand: any`),
-      // which no runtime node owns, are read.
-      const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
-        ? [...part.members] : []).flatMap(m => {
-          const name = nameOf(m);
-          return name && ts.isIdentifier(name) && readsAsOptionalUnknown(m) ? [name.text] : [];
-        }));
-      // The host produces each member: a branded string there is read as a
-      // string, and one the client would produce refused (reading rule 5).
-      // A view's methods are the sync API's requests, read at their
-      // statement (T6, `requestReading`).
-      const request = (f: { name: PropertyKey }): boolean =>
-        !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
-      const fresh = (f: { name: PropertyKey }): boolean =>
-        !!named && named.members.some(m => m.name === f.name && m.fresh === true);
-      // A symbol table's key is a string the package produced (`tableReading`).
-      const table = (f: { name: PropertyKey }): boolean =>
-        !!named && named.members.some(m => m.name === f.name && m.table === true);
-      const libraryMap = (id: DeclarationIdentity): boolean =>
-        id.module.startsWith("typescript/lib/") && id.name === "ReadonlyMap";
-      expression = { ...expression, fields: expression.fields
-        .filter(f => !omitted.some(m => m.name === f.name))
-        .map(f => {
-          const fail = (message: string): never => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); };
-          const read = table(f) ? tableReading(f.type, libraryMap, context.isBrand, fail) : f.type;
-          return { ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
-            type: hostBrands(request(f) ? requestReading(read, fresh(f)) : read, true, context.isBrand, fail) };
-        }) };
-    }
-    // Native promise observation uses PromiseResolve's constructor equality
-    // fast path. Its standard constructor and methods are inherited, and a
-    // promise owns none of those keys. The ordinary prototype/own-key
-    // contracts preserve this requirement through structural writable aliases.
-    if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
-        context.libraryFile(part.getSourceFile()))) {
-      if (parts.some(part => !context.libraryFile(part.getSourceFile())))
-        scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the built-in reviewed Promise contract");
-      if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
-          expression.numberIndex || expression.symbolIndex || expression.calls.length)
-        throw Error("the native Promise declaration must be an ordinary interface");
-      const span = expression.span;
-      const payload: TypeTerm = { k: "binder", name: "NativePayload", span };
-      const promiseAt = (arg: TypeTerm): TypeTerm => ({ k: "reference", args: [arg], span,
-        reference: { name: "Promise", span, arguments: [span], target: identity } });
-      // catch and finally forward a fulfilled input by resolving a fresh
-      // promise. The receiver's payload must therefore stay non-thenable.
-      // The payload binder belongs to the callable, preserving covariance of
-      // Promise itself and requiring the bound at every actual receiver.
-      // `then` and `catch` resolve their callbacks' results: a native
-      // promise is adopted through its standard `then`, and any other value
-      // fulfills the result. A `PromiseLike` there is read as the native
-      // promise, which a source thenable is not; elsewhere it stays the
-      // structural record it is declared.
-      const assimilated = (type: TypeTerm): TypeTerm =>
-        type.k === "union" ? { ...type, parts: type.parts.map(assimilated) }
-        : type.k === "reference" && type.reference.name === "PromiseLike" &&
-            /typescript\/lib\//.test(type.reference.target.module) && type.args.length === 1 && type.args[0]
-          ? promiseAt(type.args[0]) : type;
-      const callbackResults = (type: TypeTerm): TypeTerm =>
-        type.k === "union" ? { ...type, parts: type.parts.map(callbackResults) }
-        : type.k === "function" ? { ...type, result: assimilated(type.result) } : type;
-      const resolving = (type: TypeTerm): TypeTerm =>
-        type.k === "scheme" ? { ...type, signatures: type.signatures.map(signature => signature.k === "function"
-          ? { ...signature, params: signature.params.map(callbackResults) } : signature) }
-        : type.k === "function" ? { ...type, params: type.params.map(callbackResults) } : type;
-      type NativeField = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const nativeFields = expression.fields.map((declared): NativeField => {
-        const field = declared.name === "then" || declared.name === "catch"
-          ? { ...declared, type: resolving(declared.type) } : declared;
-        if (field.name !== "catch" && field.name !== "finally") return field;
-        const type = field.type;
-        const binders = type.k === "scheme" ? type.binders : [];
-        const signatures = (type.k === "scheme" ? type.signatures : type.k === "function" ? [type] : [])
-          .filter((signature): signature is Extract<TypeTerm, { k: "function" }> => signature.k === "function");
-        if (!signatures.length || parameters.length !== 1)
-          throw Error(`the native Promise.${field.name} declaration has an unsupported signature`);
-        const receiver = promiseAt(payload);
-        // finally assimilates the cleanup result even though its public
-        // declaration discards that result. Native cleanup promises use the
-        // constructor fast path; other results must be stably non-thenable.
-        const amended = signatures.map(signature => {
-          let callbacks = 0;
-          const cleanup = (type: TypeTerm): TypeTerm => {
-            if (type.k === "union") return { ...type, parts: type.parts.map(cleanup) };
-            if (type.k === "atom" && (type.name === "undefined" || type.name === "null")) return type;
-            if (type.k !== "function" || type.params.length || type.rest ||
-                type.receiver || type.result.k !== "atom" || type.result.name !== "void")
-              throw Error("the native Promise.finally cleanup parameter has an unsupported signature");
-            callbacks++;
-            return { ...type, result: { k: "union", span,
-              parts: [nonThenable, promiseAt({ k: "atom", name: "unknown", span })] } };
-          };
-          const params = field.name === "finally" ? signature.params.map(cleanup) : signature.params;
-          if (field.name === "finally" && (params.length !== 1 || callbacks !== 1))
-            throw Error("the native Promise.finally declaration must take one optional cleanup callback");
-          return { ...signature, receiver, params, result: substitute(signature.result, [payload]) };
-        });
-        const updated: TypeTerm = { k: "scheme", span: type.span,
-          binders: [...binders, { name: "NativePayload", bound: null, resolution: null, default: null, span }],
-          signatures: amended };
-        return { ...field, readonly: true, type: updated };
-      });
-      // Method members already describe lookup along the receiver's prototype
-      // chain. Keep their host-relative contracts on the receiver; the
-      // prototype slots state presence and prohibit own replacements.
-      const isMethod = (type: TypeTerm): boolean =>
-        (type.k === "scheme" && type.signatures.every(signature =>
-          signature.k === "function" && signature.receiver?.k === "self")) ||
-        (type.k === "function" && type.receiver?.k === "self") ||
-        (type.k === "intersection" && type.parts.every(isMethod));
-      const methods = nativeFields.filter(field => isMethod(field.type));
-      expression = { ...expression, fields: methods,
-        prototype: { ...expression, fields: [...nativeFields.map((field): NativeField => {
-          if (!isMethod(field.type)) return field;
-          const type: TypeTerm = { k: "atom", name: "unknown", span };
-          return { ...field, readonly: true, type };
-        }),
-          { name: "constructor", optional: false, readonly: true,
-            type: { k: "atom", name: "unknown", span }, span }] } };
-    }
-    // A class's `implements` clauses are obligations on the class, not part of
-    // its instance type; the class it extends is a base of that type, as an
-    // interface's are.
-    const bases = view ? [] : parts.flatMap(part => {
-      if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
-      const file = part.getSourceFile();
-      const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);
-      return (part.heritageClauses ?? []).filter(clause =>
-          !(ts.isClassDeclaration(part) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
-          if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
-            throw Error(`unsupported heritage in ${identity.module}#${identity.name}`);
-          return clause.types.map(base => {
-            if (!ts.isIdentifier(base.expression))
-              throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
-            // A class extending the standard `Error` is, beside its own
-            // members, what `Error` constructs (SOURCE-ELABORATION.md, a
-            // class extending `Error`).
-            if (ts.isClassDeclaration(part) && base.expression.text === "Error" && !base.typeArguments?.length &&
-                context.libraryFile(lookup(base.expression, `${identity.module}#Error`).getSourceFile()))
-              return errorInstance([base.getStart(file), base.end]);
-            return reference(file, base.expression, base.typeArguments ?? [],
-              [base.getStart(file), base.end], read, true);
-          });
-        });
-    });
-    definitions.push({ declaration: identity, parameters, bases, expression });
-    // A record written as one: an interface or an alias read as its declared
-    // body, outside a class, a host type and a view; or an alias of a named
-    // type, whose shape is that type's.
-    if (!view && !context.hostType(node) && !parts.some(ts.isClassDeclaration) &&
-        ((expression.k === "object" && !expression.prototype && !expression.host) ||
-          (isTypeAlias(node) && expression.k === "reference")))
-      context.record(identity);
-
+    elaborateDeclaration(node, identity, key, applied, seen, output, context);
   }
+}
+
+/** Read one declaration with its scope hooks and ordered dependency destination. */
+function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdentity, key: string,
+    applied: DeclarationInstance | undefined, seen: Set<string>, output: ElaboratedDeclaration,
+    context: DeclarationElaborationContext): void {
+  const { lookup, identityOf, symbol, partners, library, equation } = context;
+  const stated = equation(key, node);
+  if (stated) {
+    output.definitions.push({ declaration: identity, parameters: [], bases: [], expression: stated });
+    return;
+  }
+  const source = node.getSourceFile();
+  // Its parameters, its merged declarations together.
+  // A block type's captured parameters come first; an own parameter
+  // shadows a captured one of its spelling (`lastIndexOf`).
+  const parameterNodes = context.parameters(node);
+  const parameterNames = parameterNodes.map(parameter => parameter.name.text);
+  const capturedNames = parameterNodes.filter(p => p.captured).map(p => p.name.text);
+  const ownNames = parameterNames.slice(capturedNames.length);
+  if (new Set(ownNames).size !== ownNames.length)
+    throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
+  // A captured parameter at a reference in the body: this declaration's
+  // own position for the same type parameter.
+  const capturedHere = (parameter: ts.TypeParameterDeclaration): TypeTerm => {
+    const index = parameterNodes.findIndex(p => {
+      const at = p.name.parent;
+      return !!p.captured && !!at && at.pos === parameter.pos && at.end === parameter.end &&
+        at.getSourceFile().fileName === parameter.getSourceFile().fileName;
+    });
+    if (index < 0) throw Error(`a type declared in a block closes over ${parameter.name.text}, which ${identity.module}#${identity.name} does not`);
+    return { k: "parameter", index, span: [parameter.getStart(parameter.getSourceFile()), parameter.end] };
+  };
+  const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
+      read: (part: TypeNode) => TypeTerm, base = false, written?: ts.TypeReferenceNode): TypeTerm => {
+    const what = `${identity.module}#${identifier.text}`;
+    const known = library(identifier, what);
+    // A base is a declaration whose members are inherited; a library type
+    // read at its meaning has none here. A class extending `Array` has
+    // instances that are arrays, exotic objects allocated by the library's
+    // constructor, which a class's construction (an ordinary allocation)
+    // does not give.
+    if (known && base)
+      throw Error(`extending the standard library's ${identifier.text} is outside the fragment: ` +
+        "its instances are what the library's constructor allocates, not an ordinary object a class allocates, " +
+        "and its members are read at the library type's meaning, not inherited");
+    if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
+      message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
+    const targetNode = lookup(identifier, what);
+    // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
+    // what an iterator of ECMA-262 returns when it is done: the iterators
+    // of arrays, maps, sets, strings and `matchAll` complete with
+    // CreateIterResultObject(undefined, true), so in their interfaces it
+    // is `undefined`, as `strictBuiltinIteratorReturn` reads it. Another
+    // interface naming it (Intl's, the DOM's) is another specification's
+    // iterator, which this reading does not attribute.
+    if (isTypeAlias(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
+        context.libraryFile(targetNode.getSourceFile())) {
+      const owner = ts.isInterfaceDeclaration(node) ? node.name.text : "";
+      if (context.libraryFile(source) && ecmaIterators.includes(owner))
+        return { k: "atom", name: "undefined", span: pos };
+      throw Error(`BuiltinIteratorReturn in ${identity.module}#${identity.name} is the done value of an iterator ECMA-262 does not specify; only ${ecmaIterators.join(", ")} are read`);
+    }
+    // An alias TypeScript computes from its parameters is the type it
+    // computes at this reference's arguments.
+    if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
+    const target = identityOf(targetNode);
+    const completed = context.complete(key, targetNode, arguments_.map(read), written ?? null,
+      `${target.module}#${target.name}`, capturedHere);
+    if (context.computedMembers(targetNode)) {
+      if (!written) throw Error(`${identifier.text}: computed members need a written type application`);
+      return context.instanceOf(targetNode, completed, written, pos);
+    }
+    const edge: Reference = { name: identifier.text, span: pos,
+      arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
+    output.dependencies.push(targetNode);
+    return { k: "reference", reference: edge, args: completed, span: pos };
+  };
+  // Each declaration part is read in its own file, which its spans index.
+  let body: TypeNode | undefined;
+  if (isTypeAlias(node)) {
+    body = node.type;
+    while (ts.isParenthesizedTypeNode(body)) body = body.type;
+  }
+  // A declaration's own parameters are positional: a computed type that
+  // reaches a function's binder has no reading in its equation.
+  const computed: ComputedHook = (part, pos, read) => {
+    const term = applied ? context.instantiate(key, node, applied.args, applied.use)(part) : context.computed(key, part, pos, read);
+    if (hasBinderTerm(term))
+      throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
+    return term;
+  };
+  // A part of a merged interface binds a prefix of the declaration's
+  // parameters, by position: its members are read with only those.
+  const scopeOf = (source: SourceFile, names: readonly string[] = parameterNames): TermScope => ({
+    source,
+    annotation: false,
+    awaited: context.awaited,
+    stated: part => context.stated(part, key),
+    ...(body ? { body } : {}),
+    symbol,
+    literalKey: context.literalKey,
+    privateName: context.privateName,
+    keys: context.keys,
+    modifiers: context.modifiers,
+    computed,
+    enumerated: context.enumerated,
+    fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
+    named: (part, pos, read) => {
+      const name = context.memberName(part.typeName);
+      if (!name) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
+      const own = ts.isIdentifier(part.typeName) && names.includes(name.text);
+      const enumType = own ? null : context.enumType(name, source, pos);
+      if (enumType) {
+        if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
+        return enumType;
+      }
+      const index = own ? names.lastIndexOf(name.text) : -1;
+      if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
+      if (part.typeArguments?.length)
+        throw Error(`type parameter applied as constructor: ${name.text}`);
+      return applied?.args[index] ?? { k: "parameter", index, span: pos };
+    },
+  });
+  const scope = scopeOf(source);
+  const parts = partners.get(node) ?? [node];
+  const partScope = (part: TypeDeclaration): TermScope =>
+    scopeOf(part.getSourceFile(), [...capturedNames, ...(part.typeParameters ?? []).map(parameter => parameter.name.text)]);
+  // A bound or default is read in the scope of the declaration stating it.
+  const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
+    at.type ? typeTerm(partScope(at.part), at.type) : null;
+  let sawDefault = false;
+  const parameters = applied ? [] : parameterNodes.map((parameter, index) => {
+    if (sawDefault && !parameter.default)
+      throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
+    sawDefault ||= !!parameter.default;
+    const own = (parameter.captured ? undefined : node.typeParameters?.[index - capturedNames.length]) ??
+      parameter.name.parent;
+    const parameterSpan: Span = [own.getStart(own.getSourceFile()), own.end];
+    return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.default };
+  });
+  // An alias TypeScript computes from its parameters has no equation: its
+  // definition states its parameters and defaults.
+  // (A predicate's false branch would narrow `node` to no alias.)
+  const computedEquation: boolean = computedAlias(node, context.alias);
+  if (computedEquation || (!applied && context.computedMembers(node))) {
+    output.definitions.push({ declaration: identity, parameters, bases: [], expression: null });
+    return;
+  }
+  // A standard library interface read through the overlay: only its listed
+  // members, and no base.
+  const overlaid = ts.isInterfaceDeclaration(node) && parts.every(part => context.libraryFile(part.getSourceFile()))
+    ? interfaceOverlay.get(node.name.text) : undefined;
+  if (overlaid && ts.isInterfaceDeclaration(node)) {
+    output.definitions.push({ declaration: identity, parameters, bases: [],
+      expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,
+        identityOf, symbol, (name, span) => {
+        if (name === "NativeIterator") return ([element]: TypeTerm[]): TypeTerm => {
+          if (!element) throw Error("a collection iterator states its element");
+          return context.collectionIterator(key, element);
+        };
+        const target = context.libraryInterface(name);
+        output.dependencies.push(target);
+        return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
+          args: context.complete(key, target, args, null, name),
+          reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
+      }) });
+    return;
+  }
+  // A host class, and a host interface the contract names a view for, is
+  // read through its named view (reading rule 4): the members the contract
+  // lists, each as its reviewed text declares it.
+  const named = compilerApiFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
+  const view = ts.isClassDeclaration(node) && compilerApiFile(source.fileName) ? named?.members ?? []
+    : ts.isInterfaceDeclaration(node) ? named?.members ?? null : null;
+  if (view && (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)))
+    for (const entry of view)
+      if (!parts.some(part => (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) &&
+          part.members.some((m: Node) => m.getText(part.getSourceFile()).trim() === entry.text)))
+        throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
+  const admitted = (member: Node): boolean =>
+    !view || view.some(entry => member.getText(member.getSourceFile()).trim() === entry.text);
+  // A view is the whole shape: no declaration outside the audited
+  // installation merges into it, and it inherits nothing.
+  if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
+    throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
+  // A declaration of a host family (HOST-FAMILIES.md, "The family
+  // contract"): one whose tag is a set of literals, or a generic one, is
+  // its flattened members with the family's marker; one whose tag is no
+  // set of literals keeps its identity and is read as the union of the
+  // arms the run's selection keeps, the residual last.
+  const familyReading = ts.isInterfaceDeclaration(node) ? context.family(node) : null;
+  if (familyReading && ts.isInterfaceDeclaration(node)) {
+    const { table, selection } = familyReading;
+    const marker = table.description.marker;
+    const span: Span = [node.getStart(source), node.end];
+    const tagTerm = (values: readonly TagValue[]): TypeTerm => {
+      const parts = values.map(v => literalTerm(v, span));
+      const [only] = parts;
+      return only && parts.length === 1 ? only : { k: "union", parts, span };
+    };
+    // A flattened member, read in its owner's scope, as a host type's
+    // member is (reading rules 1, 2 and 5), optional where it is at one of
+    // the tags `tags` the reading covers; a generic owner's tag parameter
+    // is read at `value` where a synthetic shape reads it.
+    type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
+    const readMember = (f: FlatMember, tags: readonly TagValue[], value: TagValue | null): Field => {
+      const file = f.owner.getSourceFile();
+      const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
+      const term = members(scopeOf(file, names), f.members, f.owner, [f.owner.getStart(file), f.owner.end], true);
+      const [field] = term.k === "object" ? term.fields : [];
+      if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
+        throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
+      const substituted = names.length && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
+      // A method the family states a footprint for, its text reviewed
+      // (`familyTable`), is read at it (T3).
+      const stated = table.description.footprints.find(m => m.owner === f.owner.name.text && m.member === f.name);
+      const type = stated ? footprintReading(stated.kind, substituted) : substituted;
+      return { ...field, readonly: true,
+        optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
+        type: hostBrands(type, true, context.isBrand,
+          message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
+    };
+    // A shape's stable members: its property members, required or
+    // optional, the stable-member rule names, the tag among them
+    // (HOST-FAMILIES.md, "Stable keys").
+    const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
+      const keys = fields.flatMap(f => typeof f.name === "string" && stable.includes(f.name) ? [f.name] : []);
+      return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
+    };
+    const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
+      output.dependencies.push(target);
+      const id = identityOf(target);
+      return { k: "reference", span, args: context.complete(key, target, args, null, `${id.module}#${id.name}`),
+        reference: { name: id.name, span, arguments: args.map(() => span), target: id } };
+    };
+    const synthetic = (name: string): { id: DeclarationIdentity; fresh: boolean; term: TypeTerm } => {
+      const id: DeclarationIdentity = { module: `tscert/family/${marker}`, name, span: [0, 0] };
+      const key = `${id.module}#${id.name}`;
+      const fresh = !seen.has(key);
+      seen.add(key);
+      return { id, fresh, term: { k: "reference", span, args: [], reference: { name, span, arguments: [], target: id } } };
+    };
+    // Each method a declaration states is one definition, which every
+    // shape stating it required names as a base: one method head, shared
+    // by the shapes, whatever other methods a shape overrides. A method a
+    // shape states optional, by its declaration or by a correction of the
+    // shape's tag, is that shape's own optional member.
+    const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
+    const shared = (f: FlatMember, tags: readonly TagValue[]): boolean => isMethod(f) && !table.optional(f, tags);
+    const methodBase = (f: FlatMember): TypeTerm => {
+      const made = synthetic(`${f.owner.name.text}.${f.name}`);
+      if (made.fresh) {
+        if (f.owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${f.owner.name.text}`);
+        output.definitions.push({ declaration: made.id, parameters: [], bases: [], expression: { k: "object",
+          fields: [readMember(f, [], null)], stringIndex: null, calls: [], span } });
+      }
+      return made.term;
+    };
+    const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => methods.map(methodBase);
+    const arm = (a: FamilyArm): TypeTerm => {
+      if (a.k === "declaration") return reference(a.declaration, []);
+      if (a.k === "generic") {
+        const parts = a.declarations.map(g => reference(g, [tagTerm(a.values)]));
+        const [only] = parts;
+        return only && parts.length === 1 ? only : { k: "intersection", parts, span };
+      }
+      const made = synthetic(a.name);
+      if (made.fresh) {
+        const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
+        const stable: string[] = table.tagStable(a.values) ? [table.description.tag.field] : [];
+        const methods: FlatMember[] = [];
+        // Every method's definition, in member order, whether or not the
+        // residual shares it.
+        const written: FlatMember[] = [];
+        for (const s of a.fields) {
+          const [first] = s.sources;
+          // A method some replaced shape states optional is forgotten: the
+          // residual relates to the shapes stating it required and to those
+          // stating it optional alike.
+          if (first && isMethod(first.member) && (s.optional || !shared(first.member, []))) {
+            written.push(...s.sources.map(x => x.member));
+            continue;
+          }
+          if (first && shared(first.member, []) &&
+              s.sources.every(x => x.member.owner === first.member.owner)) {
+            methods.push(first.member);
+            written.push(first.member);
+            continue;
+          }
+          const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
+          const types: TypeTerm[] = [];
+          for (const r of read) if (!types.some(t => termText(t) === termText(r.type))) types.push(r.type);
+          const [one] = types;
+          if (!one) continue;
+          fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
+            type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
+          if (s.sources.every(x => table.stable(x.member))) stable.push(s.name);
+        }
+        written.forEach(methodBase);
+        output.definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields, stable) });
+      }
+      return made.term;
+    };
+    const tag = table.tagOf(node);
+    if (tag.k === "open") {
+      const arms = table.arms(node, selection);
+      const union = (selected: readonly FamilyArm[]): TypeTerm => {
+        const parts = selected.map(arm);
+        const [only] = parts;
+        return only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
+      };
+      output.definitions.push({ declaration: identity, parameters, bases: [], expression: union(arms) });
+      // A listed node guard's promise, at the family's root: the arms
+      // whose tags meet the guard's set (HOST-FAMILIES.md, "Guards as
+      // values").
+      const promised = node.name.text === table.description.root.name ? context.guardPromises.get(marker) : undefined;
+      if (promised)
+        for (const [name, values] of promised) {
+          const made = synthetic(name);
+          if (!made.fresh) continue;
+          const armValues = (a: FamilyArm): readonly TagValue[] =>
+            a.k === "declaration" ? table.tagsOf(a.declaration) : a.values;
+          output.definitions.push({ declaration: made.id, parameters: [], bases: [],
+            expression: union(arms.filter(a => armValues(a).some(v => values.includes(v)))) });
+        }
+    } else {
+      // Optional where it is at any tag the declaration's values can have:
+      // a generic declaration's every application, a literal set's every tag.
+      const tags = table.tagsOf(node);
+      const flat = table.flatten(node);
+      // Every method's definition is written, whether or not this reading
+      // shares it, so readings that differ only by corrections number their
+      // definitions alike.
+      flat.filter(isMethod).forEach(methodBase);
+      output.definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
+        expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null)),
+          flat.filter(f => !shared(f, tags) && !isMethod(f) && table.stable(f)).map(f => f.name)) });
+    }
+    return;
+  }
+  let expression = isTypeAlias(node)
+    ? typeTerm(scope, node.type)
+    : ts.isClassDeclaration(node)
+      ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
+          if (part === node || !ts.isInterfaceDeclaration(part)) return [];
+          const file = part.getSourceFile();
+          return [members(scopeOf(file), part.members.filter(admitted), part, [part.getStart(file), part.end], true)];
+        }), (at, message) => scope.fail(at, message), node)
+      : mergeMembers(parts.map(part => {
+          const file = part.getSourceFile();
+          if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
+          return members(partScope(part), part.members.filter(admitted), part,
+            [part.getStart(file), part.end], true);
+        }), (at, message) => scope.fail(at, message), node);
+  // A host type's members are readonly views, whether or not they are
+  // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
+  // to one is refused, and a test of one narrows as an invariant field's.
+  // A member whose reads give no one value for a node's life is no member
+  // of the host type's shape (the active family description's `omitted`,
+  // declared as reviewed): every read of it, in any form, is a read of a
+  // member the type does not state, and no structural type requiring it
+  // admits a value of the host type.
+  if (context.hostType(node) && expression.k === "object") {
+    const omitted = ts.isInterfaceDeclaration(node)
+      ? (familyOfFile(node.getSourceFile().fileName)?.omitted ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
+    for (const entry of omitted) {
+      const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
+        .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
+      if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
+        throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
+    }
+    // A member declared `any` states nothing (reading rule 2): an optional
+    // member of type `unknown`, as the brands (`_expressionBrand: any`),
+    // which no runtime node owns, are read.
+    const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
+      ? [...part.members] : []).flatMap(m => {
+        const name = nameOf(m);
+        return name && ts.isIdentifier(name) && readsAsOptionalUnknown(m) ? [name.text] : [];
+      }));
+    // The host produces each member: a branded string there is read as a
+    // string, and one the client would produce refused (reading rule 5).
+    // A view's methods are the sync API's requests, read at their
+    // statement (T6, `requestReading`).
+    const request = (f: { name: PropertyKey }): boolean =>
+      !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
+    const fresh = (f: { name: PropertyKey }): boolean =>
+      !!named && named.members.some(m => m.name === f.name && m.fresh === true);
+    // A symbol table's key is a string the package produced (`tableReading`).
+    const table = (f: { name: PropertyKey }): boolean =>
+      !!named && named.members.some(m => m.name === f.name && m.table === true);
+    const libraryMap = (id: DeclarationIdentity): boolean =>
+      id.module.startsWith("typescript/lib/") && id.name === "ReadonlyMap";
+    expression = { ...expression, fields: expression.fields
+      .filter(f => !omitted.some(m => m.name === f.name))
+      .map(f => {
+        const fail = (message: string): never => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); };
+        const read = table(f) ? tableReading(f.type, libraryMap, context.isBrand, fail) : f.type;
+        return { ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
+          type: hostBrands(request(f) ? requestReading(read, fresh(f)) : read, true, context.isBrand, fail) };
+      }) };
+  }
+  // Native promise observation uses PromiseResolve's constructor equality
+  // fast path. Its standard constructor and methods are inherited, and a
+  // promise owns none of those keys. The ordinary prototype/own-key
+  // contracts preserve this requirement through structural writable aliases.
+  if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
+      context.libraryFile(part.getSourceFile()))) {
+    if (parts.some(part => !context.libraryFile(part.getSourceFile())))
+      scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the built-in reviewed Promise contract");
+    if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
+        expression.numberIndex || expression.symbolIndex || expression.calls.length)
+      throw Error("the native Promise declaration must be an ordinary interface");
+    const span = expression.span;
+    const payload: TypeTerm = { k: "binder", name: "NativePayload", span };
+    const promiseAt = (arg: TypeTerm): TypeTerm => ({ k: "reference", args: [arg], span,
+      reference: { name: "Promise", span, arguments: [span], target: identity } });
+    // catch and finally forward a fulfilled input by resolving a fresh
+    // promise. The receiver's payload must therefore stay non-thenable.
+    // The payload binder belongs to the callable, preserving covariance of
+    // Promise itself and requiring the bound at every actual receiver.
+    // `then` and `catch` resolve their callbacks' results: a native
+    // promise is adopted through its standard `then`, and any other value
+    // fulfills the result. A `PromiseLike` there is read as the native
+    // promise, which a source thenable is not; elsewhere it stays the
+    // structural record it is declared.
+    const assimilated = (type: TypeTerm): TypeTerm =>
+      type.k === "union" ? { ...type, parts: type.parts.map(assimilated) }
+      : type.k === "reference" && type.reference.name === "PromiseLike" &&
+          /typescript\/lib\//.test(type.reference.target.module) && type.args.length === 1 && type.args[0]
+        ? promiseAt(type.args[0]) : type;
+    const callbackResults = (type: TypeTerm): TypeTerm =>
+      type.k === "union" ? { ...type, parts: type.parts.map(callbackResults) }
+      : type.k === "function" ? { ...type, result: assimilated(type.result) } : type;
+    const resolving = (type: TypeTerm): TypeTerm =>
+      type.k === "scheme" ? { ...type, signatures: type.signatures.map(signature => signature.k === "function"
+        ? { ...signature, params: signature.params.map(callbackResults) } : signature) }
+      : type.k === "function" ? { ...type, params: type.params.map(callbackResults) } : type;
+    type NativeField = Extract<TypeTerm, { k: "object" }>["fields"][number];
+    const nativeFields = expression.fields.map((declared): NativeField => {
+      const field = declared.name === "then" || declared.name === "catch"
+        ? { ...declared, type: resolving(declared.type) } : declared;
+      if (field.name !== "catch" && field.name !== "finally") return field;
+      const type = field.type;
+      const binders = type.k === "scheme" ? type.binders : [];
+      const signatures = (type.k === "scheme" ? type.signatures : type.k === "function" ? [type] : [])
+        .filter((signature): signature is Extract<TypeTerm, { k: "function" }> => signature.k === "function");
+      if (!signatures.length || parameters.length !== 1)
+        throw Error(`the native Promise.${field.name} declaration has an unsupported signature`);
+      const receiver = promiseAt(payload);
+      // finally assimilates the cleanup result even though its public
+      // declaration discards that result. Native cleanup promises use the
+      // constructor fast path; other results must be stably non-thenable.
+      const amended = signatures.map(signature => {
+        let callbacks = 0;
+        const cleanup = (type: TypeTerm): TypeTerm => {
+          if (type.k === "union") return { ...type, parts: type.parts.map(cleanup) };
+          if (type.k === "atom" && (type.name === "undefined" || type.name === "null")) return type;
+          if (type.k !== "function" || type.params.length || type.rest ||
+              type.receiver || type.result.k !== "atom" || type.result.name !== "void")
+            throw Error("the native Promise.finally cleanup parameter has an unsupported signature");
+          callbacks++;
+          return { ...type, result: { k: "union", span,
+            parts: [nonThenable, promiseAt({ k: "atom", name: "unknown", span })] } };
+        };
+        const params = field.name === "finally" ? signature.params.map(cleanup) : signature.params;
+        if (field.name === "finally" && (params.length !== 1 || callbacks !== 1))
+          throw Error("the native Promise.finally declaration must take one optional cleanup callback");
+        return { ...signature, receiver, params, result: substitute(signature.result, [payload]) };
+      });
+      const updated: TypeTerm = { k: "scheme", span: type.span,
+        binders: [...binders, { name: "NativePayload", bound: null, resolution: null, default: null, span }],
+        signatures: amended };
+      return { ...field, readonly: true, type: updated };
+    });
+    // Method members already describe lookup along the receiver's prototype
+    // chain. Keep their host-relative contracts on the receiver; the
+    // prototype slots state presence and prohibit own replacements.
+    const isMethod = (type: TypeTerm): boolean =>
+      (type.k === "scheme" && type.signatures.every(signature =>
+        signature.k === "function" && signature.receiver?.k === "self")) ||
+      (type.k === "function" && type.receiver?.k === "self") ||
+      (type.k === "intersection" && type.parts.every(isMethod));
+    const methods = nativeFields.filter(field => isMethod(field.type));
+    expression = { ...expression, fields: methods,
+      prototype: { ...expression, fields: [...nativeFields.map((field): NativeField => {
+        if (!isMethod(field.type)) return field;
+        const type: TypeTerm = { k: "atom", name: "unknown", span };
+        return { ...field, readonly: true, type };
+      }),
+        { name: "constructor", optional: false, readonly: true,
+          type: { k: "atom", name: "unknown", span }, span }] } };
+  }
+  // A class's `implements` clauses are obligations on the class, not part of
+  // its instance type; the class it extends is a base of that type, as an
+  // interface's are.
+  const bases = view ? [] : parts.flatMap(part => {
+    if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
+    const file = part.getSourceFile();
+    const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);
+    return (part.heritageClauses ?? []).filter(clause =>
+        !(ts.isClassDeclaration(part) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
+        if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
+          throw Error(`unsupported heritage in ${identity.module}#${identity.name}`);
+        return clause.types.map(base => {
+          if (!ts.isIdentifier(base.expression))
+            throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
+          // A class extending the standard `Error` is, beside its own
+          // members, what `Error` constructs (SOURCE-ELABORATION.md, a
+          // class extending `Error`).
+          if (ts.isClassDeclaration(part) && base.expression.text === "Error" && !base.typeArguments?.length &&
+              context.libraryFile(lookup(base.expression, `${identity.module}#Error`).getSourceFile()))
+            return errorInstance([base.getStart(file), base.end]);
+          return reference(file, base.expression, base.typeArguments ?? [],
+            [base.getStart(file), base.end], read, true);
+        });
+      });
+  });
+  output.definitions.push({ declaration: identity, parameters, bases, expression });
+  // A record written as one: an interface or an alias read as its declared
+  // body, outside a class, a host type and a view; or an alias of a named
+  // type, whose shape is that type's.
+  if (!view && !context.hostType(node) && !parts.some(ts.isClassDeclaration) &&
+      ((expression.k === "object" && !expression.prototype && !expression.host) ||
+        (isTypeAlias(node) && expression.k === "reference")))
+    context.record(identity);
 }
 
 /** Check overlapping declaration errors and report each file’s diagnostics once. */
@@ -6477,4 +6467,50 @@ function resolutionPromise(checker: Checker, client: SourceFile, clean: (node: N
   for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
   partners.set(promise, parts);
   return promise;
+}
+
+/** Detect parameter-dependent computed members in the ordered merged parts. */
+function elaborationComputedMembers(partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>,
+    aliasOf: (reference: ts.TypeReferenceNode) => TypeAliasDeclaration | null, node: TypeDeclaration): boolean {
+  if (isTypeAlias(node) || !node.typeParameters?.length) return false;
+  const names = new Set(node.typeParameters.map(p => p.name.text));
+  const mentions = (part: Node): boolean =>
+    (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && names.has(part.typeName.text)) ||
+    (part.forEachChild(c => mentions(c) || undefined) ?? false);
+  const computed = (part: Node): boolean => {
+    const alias = ts.isTypeReferenceNode(part) ? aliasOf(part) : null;
+    if (ts.isTypeNode(part) && (computedForm(part) !== null ||
+        (alias !== null && computedAlias(alias, aliasOf))) && mentions(part)) return true;
+    return part.forEachChild(c => computed(c) || undefined) ?? false;
+  };
+  return (partners.get(node) ?? [node]).some(part =>
+    (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) && part.members.some(computed));
+}
+
+interface DeclarationInstanceRequest {
+  node: TypeDeclaration;
+  identity: DeclarationIdentity;
+  args: readonly TypeTerm[];
+  use: Node;
+}
+
+/** Reserve a computed declaration's identity before its body is collected. */
+function elaborationInstanceOf(instances: Map<string, DeclarationInstanceRequest>,
+    identityOf: (node: TypeDeclaration) => DeclarationIdentity, node: TypeDeclaration,
+    args: readonly TypeTerm[], use: Node, span: Span): TypeTerm {
+  let open = false;
+  args.forEach(arg => visitType(arg, term => { if (term.k === "binder" || term.k === "parameter") open = true; }));
+  if (open) throw Error(`${node.name?.text}: computed members are read only at closed type arguments`);
+  const original = identityOf(node);
+  // An instance is its declaration at its arguments' data: the spans of
+  // an occurrence are its provenance, which the reference keeps.
+  const key = `[${identityText(original)},${termsText(args)}]`;
+  let instance = instances.get(key);
+  if (!instance) {
+    if (instances.size >= 256) throw Error("computed declaration instances exceed the graph budget of 256");
+    const identity = { ...original, module: `tscert/instance/${instances.size}/${original.module}` };
+    instance = { node, identity, args, use };
+    instances.set(key, instance);
+  }
+  return { k: "reference", reference: { name: original.name, target: instance.identity, arguments: [], span }, args: [], span };
 }
