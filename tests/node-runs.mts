@@ -10,6 +10,15 @@ import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
 {
+  assert.equal(runExample("invalid-some-sparse-callback",
+    '(() => { try { run(); return "returned"; } catch (error) { return error instanceof TypeError; } })()'), true,
+    "some's third callback argument retains the mapped hole");
+  assert.equal(runExample("blocker-round-mapped-array-some",
+    '(() => { const xs = [1, 2]; let calls = 0; return optional(xs, () => { calls++; xs.pop(); return { optional: false }; }) === false && calls === 1; })()'), true,
+    "some skips the mapped hole");
+}
+
+{
   assert.equal(runImporting("invalid-node-url-write-only", '(() => { const u = new URL("file:///x"); moved(u); return u.protocol; })()'), "http:");
   assert.equal(runImporting("node-url-strings", 'pathOf("file:///tmp/x")'), "/tmp/x");
   assert.equal(runImporting("node-url-strings", 'file("/tmp/x")'), "file:///tmp/x");

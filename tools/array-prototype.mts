@@ -243,8 +243,11 @@ export const overlay: readonly OverlayEntry[] = [
     ] },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
-      result: atomOf("boolean") })) },
+    // `some` visits only present positions, including on a sparse receiver.
+    // Its third callback argument is that same array and retains its holes.
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect, "sparse")],
+        result: atomOf("boolean") })).map(signature =>
+          ({ ...signature, receiver: arrayOf(element, true, "sparse") })) },
   // `filter` is reviewed against its guard overload, whose declaration binds
   // `S`, and states both of TypeScript's: the predicate one at each
   // footprint, and the guard one at a callback promising `S` of the value it

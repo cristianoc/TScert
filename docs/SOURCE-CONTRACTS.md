@@ -2375,15 +2375,34 @@ closed footprint $`\varepsilon`$ (`array-preserving-callbacks`,
 `map-stable-filter-push`, `invalid-map-filter-pop`):
 
 ```math
-\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}\mathtt{unknown}}
+\frac{m\in\{\mathsf{filter},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}\mathtt{unknown}}
      {\mathit{xs}.m(f):R_m\;!\;\varepsilon}\ \textsf{native-callback}
 ```
 
-with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
+with $`R_m`$ the member's result: $`T[\,]`$, `boolean`,
 `undefined`. `Boolean` read as a value is such a callback
 ([library globals](#library-globals)). The members that write their receiver (`sort`,
 `push`, `pop`, `shift`, `unshift`, `reverse`, `splice`) and those that call an
 unrestricted callback do not.
+
+`some` admits a sparse receiver through the same prototype-contract
+mechanism. Its callback receives a present element of type $`T`$, its numeric
+index and the same sparse readonly array. The native captures the length
+before visiting positions, tests presence before each read, and skips holes,
+including positions removed by an earlier callback. It converts each answer
+to a Boolean without calling conversion hooks, stops at the first truthy
+answer and otherwise returns `false`. It allocates no result object and
+performs no writes beside those of its callback, so each closed callback
+footprint is also the call's footprint. Callback throws propagate.
+
+The signature retains sparse presence in the callback's third
+argument; visiting one position establishes no other position's presence.
+The third argument has this contract even for a readable receiver; indexed
+reads through it can return `undefined`.
+This contract uses the existing numeric data-property and stable standard
+prototype assumptions. `blocker-round-mapped-array-some` checks a mapped
+receiver. `invalid-some-sparse-callback` reads a missing position through
+the third argument and throws a `TypeError` under Node.
 
 `filter` is stated at TypeScript's guard overload too,
 `filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S): S[]`,
