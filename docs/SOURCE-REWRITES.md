@@ -86,6 +86,32 @@ Its input type, `Json`, describes JSON values; the return type,
   The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### Optional prototype bounds looked up by binder name
+
+`OverlayEntry.bounds` in `tools/array-prototype.mts` holds a native
+`Map<string, TypeTerm>`. The `join` and `toString` entries supply `T`'s
+conversion bound, and `prototype` reads `entry.bounds?.get(name) ?? null`
+for each binder. The existing [Map contract](SOURCE-CONTRACTS.md#prototype-contracts)
+establishes the lookup.
+
+- **Repair:** binder names identify entries supplied by the overlay. A
+  dictionary read can find `Object.prototype.constructor` or `toString`
+  at an absent own key and pass that function as a type bound. A Map
+  returns a supplied bound or `undefined`, giving `null` for an absent
+  bound. This is the [runtime-key table repair](#a-dictionary-read-at-a-key-known-only-at-run-time).
+- **Behaviour:** the two built-in tables contain the same `T` bound.
+  Present entries retain their type-term identity; absent entries give
+  `null`. At inherited names the repair supplies the intended absent
+  bound. Each table is allocated once with its overlay entry.
+- **Scope:** `blocker-round-optional-dictionary-read` verifies the optional
+  native Map lookup. `invalid-round-optional-dictionary-read` retains the
+  dictionary form: an empty object at `constructor` or `toString` returns
+  a function despite its `string | null` result annotation, as running
+  the fixture under Node shows. `primitivePrototype` and
+  `functionPrototype` reach the same lookup through `prototype`. The
+  repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`

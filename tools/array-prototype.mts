@@ -63,7 +63,7 @@ export type OverlayEntry = {
   resultAs?: "Iterator" | "IterableIterator" | "NativeIterator";
   /** A reviewed restriction on a quantified parameter. Required when native
    * coercion could otherwise call an arbitrary client method. */
-  bounds?: Readonly<Record<string, TypeTerm>>;
+  bounds?: Map<string, TypeTerm>;
   /** A reviewed result contract replacing TypeScript's result. In particular,
    * map may produce holes and cannot promise a dense array. */
   result?: TypeTerm;
@@ -297,7 +297,7 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
     effect: { ...emptyEffect, fresh: true } },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: stringConvertible }, effect: emptyEffect,
+    bounds: new Map([["T", stringConvertible]]), effect: emptyEffect,
     // Get at a missing numeric key yields undefined, converted to empty text.
     // Present elements meet the same conversion bound as a readable array.
     stated: [
@@ -305,7 +305,7 @@ export const overlay: readonly OverlayEntry[] = [
       { receiver: arrayOf(element, true, "sparse"),
         params: [{ k: "union", parts: [atomOf("string"), atomOf("undefined")], span: at }], result: atomOf("string") }] },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
-    bounds: { T: stringConvertible }, effect: emptyEffect },
+    bounds: new Map([["T", stringConvertible]]), effect: emptyEffect },
   { name: "indexOf", from: "ReadonlyArray",
     signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "lastIndexOf", from: "ReadonlyArray",
@@ -1145,7 +1145,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     // Several forms of a member without binders are their intersection
     // (`split`'s non-empty form beside its general one).
     const type: TypeTerm = binders.length
-      ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, resolution: null, default: null, span })),
+      ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.get(name) ?? null, resolution: null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
       : oneTerm(forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span);
     const key = ts.isComputedPropertyName(member.name) &&
