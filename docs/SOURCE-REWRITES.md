@@ -129,7 +129,7 @@ either an array or a function producing one.
   and allocate the same signature records and arrays in the same order.
   Returns, exceptions, mutations, method identities, aliases, receivers
   and asynchronous effects agree for every admitted input.
-- **Scope:** `blocker-round-inferred-map-result` represents the call with
+- **Scope:** `blocker-round-resolved-overlay-map-result` represents the call with
   a resolved entry and the helper’s consumed field. Its unannotated map
   result is used by a second map. The repair adds no external assumption.
 - **Commit:** the introducing commit.
