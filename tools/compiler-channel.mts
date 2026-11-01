@@ -18,41 +18,14 @@ import { API, type APIOptions, type LSPConnectionOptions } from "typescript/unst
 import type { UpdateSnapshotParams } from "typescript/unstable/proto";
 import { compilerFileSystem, findPackage, importLedger, installed, moduleLocation, newLedger, privateLauncher, takeQueryFailure, treeDigest, unobservable,
   withLedger, type Ledger } from "./files.mts";
-import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
+import { CompilerFailure, messageOf, toolFailureOf } from "./thrown.mts";
 import { compilerEnding, compilerStarted } from "./compiler-processes.mts";
-import { clientHasMethod, guardClientRequests, requestMembers } from "./client-prototype.mts";
+import { checkedPrivateClient, guardClientRequests, type CompilerProcess, type PrivateClient } from "./client-prototype.mts";
 export { heldSnapshots, queryTelemetry } from "./client-prototype.mts";
 
-/** The compiler process, as the client's channel holds it. */
-interface CompilerProcess {
-  readonly pid?: number;
-  readonly exitCode: number | null;
-  readonly signalCode: string | null;
-  kill(signal: "SIGKILL"): boolean;
-  once(event: "exit", listener: () => void): unknown;
-}
-/** The members of an `API`'s private client this module uses. */
-interface PrivateClient {
-  close(): void;
-  readonly channel: { readonly child: CompilerProcess };
-}
-const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
-
-
-/** An `API`'s private client, its members checked by name. */
+/** An API's private client, checked at the compiler-package boundary. */
 export function privateClient(api: API): PrivateClient {
-  const client = fieldOf(api, "client");
-  const missing = (member: string): Error =>
-    Error(`the compiler package's private shape changed: API.client${member} is missing (compiler-channel.mts)`);
-  if (!client || typeof client !== "object") throw missing("");
-  if (!("close" in client) || !isProcedure(client.close)) throw missing(".close");
-  for (const member of requestMembers)
-    if (!clientHasMethod(api, member)) throw missing(`.${member}`);
-  const child = fieldOf(fieldOf(client, "channel"), "child");
-  if (!child || typeof child !== "object" || !("kill" in child) || !isProcedure(child.kill) ||
-      !("once" in child) || !isProcedure(child.once) || !("exitCode" in child) || !("signalCode" in child))
-    throw missing(".channel.child");
-  return client as PrivateClient; // asserted: the decoder of the private client, each member it names checked above
+  return checkedPrivateClient(api);
 }
 
 /** Each client's ledger (docs/STAGE-STORE.md, "Shared work"): every

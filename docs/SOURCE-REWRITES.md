@@ -1345,9 +1345,9 @@ to share.
   `namesRead`, `renamedModule`, `presentObligation`, and their callers;
   `typed-tree-fold` is the pattern as a case, and
   `blocker-in-unknown-walk` the refused walk. Two sites reading an
-  object the compiler provides (`privateClient` of
-  `tools/compiler-channel.mts`, `isNode` of `tools/syntax.mts`) have no grammar of TScert's to walk and keep
-  their refusal.
+  object the compiler provides have no grammar of TScert's to walk:
+  `privateClient` uses [the compiler-client boundary](#the-compiler-client-and-its-child-process),
+  and `isNode` of `tools/syntax.mts` requires the compiler node contract.
 - **Commit:** the introducing commit, `Typed trees are walked through their grammar's typed traversal`.
 
 ### Type terms compared as untyped data
@@ -2476,8 +2476,10 @@ language reads them: a read through the client can run a getter.
   answer itself; it throws when `around` returned without sending, and
   throws the request's failure when `around` returned after it failed. The
   memo of a snapshot's queries is in the boundary.
-- **What callers get:** neither the client, its prototype, a method nor a
-  way to answer a request. The channel's `around` (the ledger, the failure
+- **What callers get:** request guards expose neither the prototype nor a
+  way to answer a request. The private-client accessor has the separate
+  [client and child-process contract](#the-compiler-client-and-its-child-process).
+  The channel's `around` (the ledger, the failure
   conversion) is verified against these signatures (`blocker-client-prototype`).
 - **Contract, audited against the package** (`dist/api/sync/client.js`,
   `api.js`): the request methods are own data properties of `Client`'s
@@ -2493,6 +2495,54 @@ language reads them: a read through the client can run a getter.
   returns passes through the wrapper.
 - **Commit:** the introducing commit, `Confine Object.getPrototypeOf to a
   host boundary of the compiler channel`.
+
+### The compiler client and its child process
+
+This extends [the compiler-client boundary](#the-compiler-clients-prototype).
+`tools/client-prototype.mts#checkedPrivateClient(api)` performs the package's
+private-client lookup and checks its close method, request methods and child
+members. `tools/compiler-channel.mts#privateClient` calls that accessor.
+The boundary accepts the nominal compiler `API`, whose private client the
+package constructs. General object tests cannot establish a native child's
+method signatures, callback behavior or changing process fields. Supporting
+those operations requires their external contracts regardless of how the
+nested object is narrowed.
+
+- **Contract:** the accessor returns the API's client itself. `close()` uses
+  that client as receiver, calls its channel's `close()` and returns void on
+  normal completion. `channel.child` is the channel's Node `ChildProcess`:
+  `pid` is a number or undefined, `exitCode` a number or null, and
+  `signalCode` a string or null. `kill("SIGKILL")` uses the child as receiver
+  and returns a boolean on normal completion. `once("exit", listener)`
+  registers the listener once and returns the child; the listener is called
+  when Node emits exit, with the exit code and signal arguments, which this
+  zero-parameter listener discards. Calls may throw; no preservation effect
+  is promised. Process fields change as Node observes termination, and
+  listeners may run other code.
+- **Behavior:** the lookup uses the same `fieldOf` reads, member tests and
+  request-member loop, in the same order, with the same errors. It returns
+  the original client, channel and child identities. Callers' ledger keys,
+  method receivers, close-method replacement and later child reads retain
+  their original objects.
+- **Audit:** TypeScript 7.0.2's local `dist/api/sync/api.js` constructs its
+  client; `dist/api/sync/client.js` constructs `SyncRpcChannel` and forwards
+  `close`; `dist/api/syncChannel.js` stores the result of Node's `spawn` in
+  `child`. Channel close removes the child from its live set, closes its pipe
+  and streams, signals the child, and resets its descriptors, swallowing
+  exceptions within that operation. The front end's close wrapper announces
+  the process end and invokes the saved method with the same receiver.
+- **Trust:** the package retains this private layout, Node supplies the
+  stated child-process behavior, and external code preserves those private
+  object contracts. The front end's close wrapper satisfies the same void
+  contract. Runtime shape tests detect missing members; they do not prove
+  these external contracts. This trust is outside the calculus theorem and
+  requires owner review. It includes the policy assumption about stable
+  standard objects and prototypes.
+- **Scope:** `blocker-prep-private-client-assertion` verifies the accessor's
+  caller. The accessor's implementation remains outside that proof; its
+  assertion is confined to the external operation. `tests/tool-failures.mts`
+  exercises opening and abandoning a real compiler and observing its exit.
+  `compilerLedger`, `abandonCompiler` and `abandon` consume this contract.
 
 ### URLs as strings
 

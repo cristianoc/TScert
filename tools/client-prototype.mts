@@ -1,5 +1,5 @@
 /* Part of the trusted front end: the compiler channel's (`compiler-channel.mts`)
- * access to the class prototype of an `API`'s private client, `Client` in the
+ * access to an `API`'s private client and its class prototype, `Client` in the
  * pinned package's `dist/api/sync/client.js`, whose request methods are own
  * data properties of that prototype, and the memo of a snapshot's answers.
  * This module holds the front end's only use of `Object.getPrototypeOf`,
@@ -10,14 +10,46 @@
  *
  * Each function takes the `API` itself, a compiler API value only the package
  * makes, so the only prototype it reaches is that client's class prototype.
- * Neither hands its caller the client, the prototype, a method or a way to
- * answer a request: every answer a wrapped request returns is the
+ * The checked private-client accessor retains the package client and Node
+ * child identities under the contract in SOURCE-REWRITES.md. Request guards
+ * expose neither the prototype nor a way to answer a request: every answer
+ * a wrapped request returns is the
  * compiler's, or, for a query of a snapshot asked again, its earlier answer
  * read back from JSON text, which assumes the compiler answers a held
  * snapshot's query the same each time (query omission, a conjecture). */
 import type { API } from "typescript/unstable/sync";
 import { sharing } from "./files.mts";
 import { fieldOf } from "./thrown.mts";
+
+/** The compiler process, as the client's channel holds it. */
+export interface CompilerProcess {
+  readonly pid?: number;
+  readonly exitCode: number | null;
+  readonly signalCode: string | null;
+  kill(signal: "SIGKILL"): boolean;
+  once(event: "exit", listener: () => void): unknown;
+}
+/** The members of an `API`'s private client this module uses. */
+export interface PrivateClient {
+  close(): void;
+  readonly channel: { readonly child: CompilerProcess };
+}
+const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
+/** An `API`'s private client, its members checked by name. */
+export function checkedPrivateClient(api: API): PrivateClient {
+  const client = fieldOf(api, "client");
+  const missing = (member: string): Error =>
+    Error(`the compiler package's private shape changed: API.client${member} is missing (compiler-channel.mts)`);
+  if (!client || typeof client !== "object") throw missing("");
+  if (!("close" in client) || !isProcedure(client.close)) throw missing(".close");
+  for (const member of requestMembers)
+    if (!clientHasMethod(api, member)) throw missing(`.${member}`);
+  const child = fieldOf(fieldOf(client, "channel"), "child");
+  if (!child || typeof child !== "object" || !("kill" in child) || !isProcedure(child.kill) ||
+      !("once" in child) || !isProcedure(child.once) || !("exitCode" in child) || !("signalCode" in child))
+    throw missing(".channel.child");
+  return client as PrivateClient; // asserted: the pinned package supplies Client and its Node child; SOURCE-REWRITES.md, The compiler client and its child process
+}
 
 /** The client's members that send a request on its channel: every one of
  * them, the API's requests through the first two, and an echo and the
