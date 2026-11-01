@@ -1,15 +1,10 @@
-<section id="method" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:24px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Measured 2026-10-31 · census of 13d2104e09a9</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">One search-failure message contains many source forms</h2>
-<table style="font-size:24px;color:#1d2422">
-<tr><th style="width:28%;text-align:left;font-weight:600">The record’s group</th><th style="width:12%;text-align:left;font-weight:600">Statements</th><th style="width:12%;text-align:left;font-weight:600">Functions</th><th style="width:48%;text-align:left;font-weight:600">What proof is missing</th></tr>
-<tr><td>Source expression obligation</td><td>3,757</td><td>126</td><td>That an expression meets its claimed type, using the known types and facts</td></tr>
-<tr><td>Missing field text</td><td>2,941</td><td>1</td><td>The producer cannot read text from the proposed type of an interface base expression</td></tr>
-<tr><td>Closure expression claim</td><td>1,825</td><td>22</td><td>That an expression inside a closure meets its claimed type under that closure’s parameters and captured values</td></tr>
-<tr><td>Optional object field read</td><td>942</td><td>45</td><td>The producer refuses a nested read through a field whose object-or-undefined contract its test does not narrow</td></tr>
-<tr><td>Incoming edge obligation</td><td>695</td><td>12</td><td>That an execution step establishes the type claims required at its destination</td></tr>
-</table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Confirmed from source:</b> each located refusal is read in its supplied slice. Generic groups are split by refused expression and the functions reaching it. A shared expression confirms a source form; the exact failed proof may require investigation.</li>
-<li><b style="font-weight:600">Scope:</b> these are the five heaviest unsplit messages. The next slides rank source constructs. A generic search failure does not identify a shared implementation defect or establish that the source is unsafe.</li>
+<section id="method" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:26px">
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Cited priority rule · dev/census.mts, refusals; measured sites in the supplied slices</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Priority favors reasons blocking many small functions</h2>
+<ul style="font-size:24px;color:#1d2422;line-height:1.36">
+<li><b style="font-weight:600">Each function contributes:</b> 10 / (10 + its statement count). A function with 10 statements contributes 0.5; one with 90 contributes 0.1. Smaller functions tend to have fewer further refusals behind their first.</li>
+<li><b style="font-weight:600">A group’s weight:</b> the sum of those contributions. Groups appear in descending weight, rounded to three decimals in the tables. The statement and function columns give the code each group blocks. Weight is a priority rule; future gains are unmeasured.</li>
+<li><b style="font-weight:600">One construct per group:</b> a generic failed-search message is split by its refused expression and the functions reaching it. Field-key conversion and numeric-claim conversion are separate groups, with different input contracts. Shared syntax identifies an observed construct; it does not prove a common defect.</li>
+<li><b style="font-weight:600">Read the sites:</b> all 257 refusal details agree with the record, and every refused slice matches its recorded source hash. The leading twenty groups’ source contexts and case comparisons are in work/round/ranking.md and site-contexts.md in session storage.</li>
 </ul>
 </section>

@@ -1,17 +1,16 @@
 <section id="routes" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">How a refusal is answered · SOURCE-REWRITES.md</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">The first route that establishes the obligation at acceptable cost</h2>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Cited policy · SOURCE-REWRITES.md</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Use the first route that establishes the obligation at acceptable cost</h2>
 <table style="font-size:24px;color:#1d2422">
 <tr><th style="width:25%;text-align:left;font-weight:600;padding:4px 12px">Route</th><th style="width:75%;text-align:left;font-weight:600;padding:4px 12px">What the route requires</th></tr>
 <tr><td style="padding:4px 12px">1. Support</td><td style="padding:4px 12px">A rule or external contract admits the construct</td></tr>
 <tr><td style="padding:4px 12px">2. A runtime check</td><td style="padding:4px 12px">An executable check establishes the whole property</td></tr>
 <tr><td style="padding:4px 12px">3. A repair</td><td style="padding:4px 12px">The source corrects a defect the refusal reveals</td></tr>
 <tr><td style="padding:4px 12px">4. Avoidance</td><td style="padding:4px 12px">An equivalent source form avoids costly support</td></tr>
-<tr><td style="padding:4px 12px">5. A host boundary</td><td style="padding:4px 12px">A small wrapper module performs an external service operation with no model. Its signatures admit only that service’s values. Its functions stay refused; callers assume its audited result and effect contract</td></tr>
+<tr><td style="padding:4px 12px">5. A host boundary</td><td style="padding:4px 12px">A small wrapper performs an external service operation with no model. Its functions stay refused; callers assume its audited result and effect contract</td></tr>
 <tr><td style="padding:4px 12px">6. A trusted unit</td><td style="padding:4px 12px">Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
 <tr><td style="padding:4px 12px">7. A proof</td><td style="padding:4px 12px">A Lean proof establishes the needed fact in the model</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li><b style="font-weight:600">Effect:</b> a contract may bound how a call changes stored values. A host boundary’s result and effect are assumptions about its code.</li>
-<li>Before choosing a route, check for discarded type information and for assertions over storage whose writes the checks do not constrain. Construct 13’s record-to-index refusal protects keys its named fields do not describe; construct 18’s lookup may find inherited methods.</li>
+<li>Before choosing a route, inspect whether the code discards information it already has. An external declaration is a specification to audit. A successful small case can establish a route for its construct while the larger census function reaches another refusal. Later obligations are outside this record’s first-refusal ranking.</li>
 </ul>
 </section>
