@@ -154,9 +154,10 @@ function bareAtomText(atom: JsonValue, state: PrintState): string {
     return JSON.stringify(atom.v);
   if (
     (atom.a === "numberlit" || atom.a === "numlit") &&
+    typeof atom.v === "string" &&
     Number.isFinite(Number(atom.v))
   )
-    return String(atom.v);
+    return atom.v;
   if (atom.a === "bigintlit" && typeof atom.v === "string") return atom.v + "n";
   if (atom.a === "record" && isList(atom.fields)) {
     // An index signature that is no object is shown in the atom's encoding.

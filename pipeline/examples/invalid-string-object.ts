@@ -1,8 +1,22 @@
-// Census: tools/type-term.mts#expandIdentity and its callers, including typeParts.
-// The collected mapped-type keys are strings; the symbol-record arm of the
-// property-key encoding is outside this collection's domain.
-function describe(key: string): string[] {
-  const names: string[] = [];
-  names.push(key);
-  return names.map((n) => String(n));
+// Census: tools/claim-text.mts#bareAtomText and #atomText, through typeText,
+// printType, liftClause, liftSignatures, liftType, liftLabels, treeAtom and lift.
+// Finite conversion alone does not establish that the JSON field is text.
+type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
+function describe(atom: {
+  readonly a: JsonValue;
+  readonly v: JsonValue;
+}): string {
+  if (
+    (atom.a === "numberlit" || atom.a === "numlit") &&
+    typeof atom.v === "string" &&
+    Number.isFinite(Number(atom.v))
+  )
+    return atom.v;
+  return "«type»";
 }

@@ -27,4 +27,14 @@ assert.deepEqual(
     call: "unknown", construct: "unknown", array: "unknown" }),
   { text: "{ undefined: unknown }", printable: false },
 );
+// The numeric literal format requires text, even when Number(v) is finite.
+for (const v of [[], [1], null, true, 1, { toString: 0 }]) {
+  assert.deepEqual(printed({ a: "numberlit", v }), {
+    text: "«numberlit»",
+    printable: false,
+  });
+}
+for (const v of ["01", " 2 ", "-0"]) {
+  assert.equal(printed({ a: "numberlit", v }).text, v);
+}
 process.stdout.write("claim text: malformed index markers, an array atom and malformed fields shown as they arrived\n");

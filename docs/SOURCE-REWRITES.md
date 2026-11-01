@@ -104,6 +104,30 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### Numeric literal text checked before conversion
+
+`tools/claim-text.mts#bareAtomText` prints `numberlit` and `numlit` atoms
+from JSON data. The claim decoder requires a string in `v`; conversion by
+`Number` also accepts non-string values such as `[]`, whose number is zero.
+The numeric branch requires `typeof atom.v === "string"` before testing
+`Number.isFinite(Number(atom.v))` and returns that string directly.
+
+- **Repair:** numeric literal text retains its string domain at the read.
+  Finite conversion alone does not establish that domain. Malformed
+  non-string values reach the printer's unavailable-atom fallback instead
+  of appearing as numeric literal text (an empty array otherwise prints an
+  empty string). Valid numeric text keeps its exact spelling, including
+  leading zeros and whitespace.
+- **Mechanism:** the existing [global conversion contracts](SOURCE-CONTRACTS.md#library-globals)
+  admit the checked string. The runtime check adds no rule or external
+  assumption. General JSON object coercion requires its conversion hooks
+  and effects; this literal format requires text.
+- **Scope:** `invalid-string-object` exercises the numeric branch used by
+  `bareAtomText`, `atomText` and their callers. The malformed-output control
+  in `tests/claim-text.mts` checks the diagnostic fallback for non-string
+  fields and the spelling of valid numeric fields.
+- **Commit:** the introducing commit.
+
 ### A reduce callback returning a writable statement array
 
 `tools/fragment-statements.mts#switchStmt` states `Stmt[]` on the
@@ -1789,7 +1813,7 @@ literals contribute `numericKey`'s string result, unions recurse, and
   Its callers receive the same fields or exceptions; the annotation
   changes no execution. Symbol keys remain subject to the collector's
   existing refusal.
-- **Scope:** `invalid-string-object` collects a string and converts its
+- **Scope:** `mapped-identity-string-key` collects a string and converts its
   mapped elements. Its header names `expandIdentity` and `typeParts`, a
   caller in the same recursive group. The repair adds no external
   assumption.
