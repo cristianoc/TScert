@@ -126,6 +126,26 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### Part collection through a store-preserving traversal
+
+`tools/fragment-parts.mts#partsOf` collects direct parts by passing identity
+callbacks that append to a fresh array into a traversal. Its `map`
+parameter states `(m: PartMap) => Within<{ value: "any"; store: "grow" }, unknown>`.
+The callers in `directParts` and `codeParts` supply `mapExprParts`,
+`mapStmtParts`, `mapPatternParts` and `mapFunctionParts` through closures.
+Each traversal carries the same store-preserving contract.
+
+The parameter retains the effect that these supplied traversals establish.
+The existing [stated-effect checks](SOURCE-ELABORATION.md#stated-effects)
+check each supplied closure and the collector's body. An ordinary function
+parameter permits shrinking shared arrays, which cannot establish the
+collector's written store-preserving effect.
+
+The annotation is erased: calls, callback order, collected part identities,
+returns, exceptions and mutations agree for every internal caller.
+`blocker-prep-part-map-effect` exercises this contract repair. It adds no
+rule or external assumption.
+
 ### Promise binder maps with concrete writable bounds
 
 `tools/declaration-graph.mts#promisedBinders` maps value binders with the

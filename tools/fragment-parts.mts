@@ -159,7 +159,7 @@ export type Part =
   | { k: "param"; p: TypeParamAst };
 
 /** The direct parts of a node, in the order its map meets them. */
-function partsOf(map: (m: PartMap) => unknown): Within<{ value: "any"; store: "grow" }, Part[]> {
+function partsOf(map: (m: PartMap) => Within<{ value: "any"; store: "grow" }, unknown>): Within<{ value: "any"; store: "grow" }, Part[]> {
   const parts: Part[] = [];
   map({
     expr: e => { parts.push({ k: "expr", e }); return e; },
