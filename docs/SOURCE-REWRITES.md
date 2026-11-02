@@ -3762,3 +3762,27 @@ string with strict equality; their bodies establish the matcher contract.
   writes a false preservation promise whose body pops that context's searched
   array; Node throws `TypeError` at the next visit's `global` read. The generic
   find mutation and ordinary-field-effect cases retain their own refusals.
+
+### A mapped identity's null-free array observation
+
+`tools/type-term.mts#expandIdentity` tests whether all mapped field types
+are non-null. Its local `settled` function returns a Boolean. Both callers
+retain each indexed fallback, `values[i] ?? f.type`, when constructing the
+field type. The test observes current contents while
+the array keeps its nullable element storage contract.
+
+- **Repair:** the result annotation states the Boolean observation the
+  callers consume. A type predicate promising `TypeTerm[]` would require a
+  narrower invariant array storage contract; testing present elements does
+  not establish that contract
+  ([storage contracts](FOOTPRINTS.md#the-fact)).
+- **Behaviour:** the annotation is erased. The same `every` calls, null
+  comparisons, short-circuit decisions, indexed fallbacks and returned
+  records execute in the same order.
+- **Scope:** `blocker-next-array-store-promise` exercises the Boolean
+  observation. `invalid-next-array-store-promise` retains the unsafe
+  mutable-array promise: a nullable alias appends `null` after the test,
+  and the narrowed alias calls `toUpperCase` on it. Node throws `TypeError`.
+  The [elements fact](FOOTPRINTS.md#the-elements-fact) describes heap
+  knowledge subject to preservation; it does not replace a location's
+  invariant storage contract.
