@@ -46,8 +46,10 @@ import { childrenOf, nameOf, isTypeAlias, typeArgumentsOf } from "./syntax.mts";
 /** A symbol of the checker. */
 type Symbolic = Symbol;
 
-/** A program over the project's files with some of them replaced. */
-export type ProbeProgram = <T>(files: ReadonlyMap<string, string>,
+/** A program over the project's files with some of them replaced. The
+ * replacement texts are native maps constructed by the probe reader and
+ * compatibility reviewer; retaining that contract preserves their iterators. */
+export type ProbeProgram = <T>(files: Map<string, string>,
   read: (program: Program, checker: Checker) => T) => T;
 
 /** One evaluation: `form`, written in `declaration` (whose `parameters` are

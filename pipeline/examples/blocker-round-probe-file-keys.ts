@@ -1,5 +1,5 @@
 // Census functions: declaration-graph.mts#withProject,#withOwnProject,#clientErrors.
-// The probe interface widens the callers' constructed native maps to ReadonlyMap.
-export function keys(files: ReadonlyMap<string, string>): string[] {
+// The probe interface retains the callers' constructed native maps.
+export function keys(files: Map<string, string>): string[] {
   return [...files.keys()];
 }
