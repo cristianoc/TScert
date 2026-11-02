@@ -1027,30 +1027,38 @@ bound the values written there later.
   patterns`, which made the effect types readonly, and the introducing
   commit.
 
-### Contract syntax retained through recursive printing
+### Type terms compared through their semantic fields
 
-`tools/array-prototype.mts#mergeRefusal` compares source contracts through
-its local `canonical` printer. The values printed are type terms, the
-method and property records built around them, and arrays of binder-name
-and type-term pairs. Their recursive data contract contains strings,
-numbers, Booleans, null, undefined, arrays and dictionaries of those values.
-The printer retains this contract in its parameter and entry callbacks.
+`tools/array-prototype.mts#mergeRefusal` compares a member's kind,
+optionality, readonly flag, type parameter bounds and signatures. Each term
+is represented by [`termText`](../tools/named-record.mts), the shared
+printer of the `TypeTerm` grammar. Binder substitutions use the same term
+text beside each binder name, in the native map's iteration order. Fresh
+outer records and arrays contain strings, Booleans and null and are keyed
+by `JSON.stringify`. The complete method/property union is intersected with
+`JsonObject` at its allocation, retaining both its named fields and its
+recursive data bound.
 
-- **Repair:** retain the data contract established by the syntax reader and
-  local record construction. Widening it to `unknown` admits compiler
-  objects, whose fields the ordinary-object entry contract cannot expose.
-- **Array view:** the native `Array.isArray` test supplies the false-branch
-  exclusion that the dictionary traversal needs. Inside the array branch,
-  a checked predicate repeats that same pure native test and retains the
-  recursive element contract under the shadow declarations. Both answers
-  agree under the standard native contract; the disagreement throw is
-  unreachable for the parameter's values.
-- **Behaviour:** field traversal, callbacks, key order, span omission and
-  primitive conversions give the same strings, returns and exceptions for
-  every supplied value. Arrays incur the extra pure array test.
-- **Scope:** `blocker-entries-mixed-overloads` exercises the recursive
-  printer at this contract. The generic and plain overloads retain their
-  independent forged-claim control in `pipeline/test.mts`.
+- **Repair:** an ordinary `TypeTerm` record describes its named fields;
+  it does not constrain every additional string key to recursively plain
+  data. Naming the semantic fields retains the whole term contract without
+  exposing arbitrary extra keys through `Object.entries`.
+- **Equality:** term location spans and reference argument locations do not
+  distinguish contracts. A declaration identity's span does. Field insertion
+  order and extra own fields do not distinguish the same term. The shared
+  printer owns these decisions; the merge reader owns its member flags and
+  binder names.
+- **Member checks:** traversal order, binder order, member flags, signature
+  alternatives and unsupported-syntax refusals are the merge reader's. Its
+  result states a refusal and the set of admitted member names. The internal
+  key uses the term grammar's equality decisions.
+- **Effects:** term printing reads the declared data fields under its checked
+  normal-return footprint. The surrounding arrays and objects are fresh
+  plain data. Native map iteration and its order retain the existing
+  collection contract. The comparison introduces no external assumption.
+- **Scope:** `blocker-round-binder-entries` supplies a source-owned term through
+  the map's ordinary `TypeTerm` boundary. The generic native-map spread case
+  and recursive dictionary-printer case exercise their independent contracts.
 
 ### An intersection owning its writable parts
 
@@ -2597,7 +2605,7 @@ map with `new Map`; the recursive `visit` receives either that map or the
 `substitution` map constructed for a base declaration. The existing
 [native collection contract](SOURCE-CONTRACTS.md#library-globals) retains
 the native iterator returned by `entries()`, whose spread supplies the
-array passed to `canonical`.
+array used by the [semantic contract key](#type-terms-compared-through-their-semantic-fields).
 
 - **Repair:** the annotation retains the native contract established by
   both producers.

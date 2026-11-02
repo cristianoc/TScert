@@ -76,7 +76,7 @@ export const cases: Case[] = [
   { ...negative("invalid-round-host-brand-footprint", "An unrestricted brand callback cannot acquire a preservation promise by being stored in a qualified context (TypeError under Node)",
     /source expression obligation at \[490,499\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-document-parts", "A complete declaration document constructed from its known parts", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
-  { ...gap("blocker-round-binder-entries", "An owned syntax-binder map's open term annotations used at a recursive data contract", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-binder-entries", "An owned syntax-binder map uses the shared semantic term printer before plain-data serialization."), project: "pipeline/blocker-project" },
   positive("blocker-round-conditional-path-reuse", "A plain record member path keeps its read equality across successive conditional tests."),
   gap("blocker-round-generic-rest-answer", "A private callback getter forwards its captured generic argument pack", "unsupported", "source", /a rest parameter needs.*argument pack only/s),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
