@@ -4530,7 +4530,7 @@ function appendDocumentDefinitions(definitions: TypeDefinition[], selections: re
 
 /** Settle the complete graph, retaining the definition and value arrays. */
 function settleDeclarations(parts: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
-    records: ReadonlySet<string>, refused: (where: string, error: unknown) => never): WrittenApplication[] {
+    records: Set<string>, refused: (where: string, error: unknown) => never): WrittenApplication[] {
   const settledDocument = settleDocument(parts, id => records.has(definitionKey(id)), refused);
   parts.definitions.splice(0, parts.definitions.length, ...settledDocument.definitions);
   parts.values.splice(0, parts.values.length, ...settledDocument.values);
