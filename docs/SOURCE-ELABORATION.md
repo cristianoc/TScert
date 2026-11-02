@@ -917,6 +917,14 @@ operand: it is typed at that expression's claim and not observed. So in
 where `rest` is still untested (`logical-chain-entry`,
 `invalid-logical-chain-entry`).
 
+Pure dispatch of a residual can read a saved [path witness](HOST-FAMILIES.md#entries).
+The internal variable uses its slot's type in the current checked graph
+context. Its empty source span needs no expression claim: ordinary variable
+typing checks the read, and the graph's incoming-edge and read-link checks
+establish the slot's type and its relation to the source member. The type is
+available during predicate compilation; subsequent effects use their resulting
+context and links.
+
 ### Closure branches
 
 Closure branches whose two arms fall through require no additional typing rule.
