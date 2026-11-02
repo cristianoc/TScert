@@ -2790,6 +2790,30 @@ the census of 4d25222, which block 245 statements of 13 functions.
   type-only, so the code runs as before.
 - **Commit:** the introducing commit.
 
+### Node's declared type-stripper export
+
+`tools/strip-types.mts` reads `nodeModule.stripTypeScriptTypes` and checks
+that it is callable before using it. The pinned Node declarations state
+this export; the call retains its declared function type. The
+[module overlay](SOURCE-CONTRACTS.md#library-modules) states its one-string
+call.
+
+- **Avoided form:** `Object.getOwnPropertyDescriptor(nodeModule,
+  "stripTypeScriptTypes")?.value`, which passes a module namespace as an
+  ordinary value.
+  [Namespace imports](SOURCE-ELABORATION.md#namespace-imports) are used
+  through their member reads.
+- **Equivalent form:** `nodeModule.stripTypeScriptTypes`. An ES module
+  namespace's named export is an own data property, so its value is the
+  descriptor's value. An absent export gives `undefined` in both forms;
+  the callable check, Bun branch and conversion of the result remain. The
+  call reads the export directly under the standard-object assumption
+  that the Node built-in and its exported function are untampered. The
+  native function ignores its receiver.
+- **Evidence:** `blocker-prep-namespace-descriptor` reads the export and
+  calls its one-string form; `strip-types.mts#stripTypes` is its census site.
+- **Commit:** the introducing commit.
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

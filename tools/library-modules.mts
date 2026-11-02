@@ -174,6 +174,11 @@ const assertEntries: ModuleEntry[] = [
 
 export const modulesOverlay: readonly ModuleEntry[] = [
   ...assertEntries,
+  // Node validates the string, strips annotations and returns source text.
+  // The warning and error paths may run user code: the effect is unrestricted.
+  { module: "module", name: "stripTypeScriptTypes",
+    signature: "function stripTypeScriptTypes(code: string, options?: StripTypeScriptTypesOptions): string;",
+    stated: { binders: [], params: [atom("string")], result: atom("string") } },
   // `execFileSync`'s restricted form, read first: options naming every key the synchronous path
   // reads, each at a type the host validates without code of the client's
   // (SOURCE-CONTRACTS.md, "Library modules"). `env` is absent or undefined,
