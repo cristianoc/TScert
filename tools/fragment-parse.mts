@@ -1303,6 +1303,44 @@ function renamedModule(module: ModuleAst, from: string, to: string): ModuleAst {
     init: module.init.map(parts.stmt), functions: module.functions.map(f => mapFunctionParts(f, parts)) };
 }
 
+/** Whether a block can read a lexical binding before its initialization. */
+function hasEarlyBindingReference(source: SourceFile, block: ts.Block): boolean {
+  const declared = new Map<string, ts.VariableDeclaration>();
+  for (const st of block.statements)
+    if (ts.isVariableStatement(st) && st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
+      for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) declared.set(d.name.text, d);
+  // A function declaration mentioned in an earlier one's closure.
+  const functions = block.statements.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s) && !!s.name);
+  const order = new Map(functions.map((f, i) => [f.name?.text ?? "", i]));
+  const forward = (n: Node, i: number): boolean => {
+    if (ts.isTypeNode(n)) return false;
+    if (ts.isIdentifier(n)) return (order.get(n.text) ?? -1) > i;
+    return n.forEachChild((c) => forward(c, i) || undefined) ?? false;
+  };
+  if (functions.some((f, i) => forward(f, i))) return true;
+  if (!declared.size) return false;
+  const visit = (n: Node, created: number | null): boolean => {
+    if (ts.isTypeNode(n)) return false;
+    if (ts.isIdentifier(n)) {
+      const parent = n.parent;
+      if (parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+          ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+            ts.isPropertySignatureDeclaration(parent)) && parent.name === n)))) return false;
+      const d = declared.get(n.text);
+      const at = created ?? n.getStart(source);
+      if (!d || n === d.name || at >= d.end) return false;
+      let literal: Node | undefined = d.initializer;
+      while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+      return !(!!(d.parent.flags & ts.NodeFlags.Const) && literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+        n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
+    }
+    const inner = created ?? (ts.isFunctionDeclaration(n) ? -1
+      : ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
+    return n.forEachChild((c) => visit(c, inner) || undefined) ?? false;
+  };
+  return block.statements.some((st) => visit(st, null));
+}
+
 function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
@@ -1629,42 +1667,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // them.
   let firstAsync: Node | undefined;
   const intrinsicNames = new Set<string>();
-  const earlyCandidate = (block: ts.Block): boolean => {
-    const declared = new Map<string, ts.VariableDeclaration>();
-    for (const st of block.statements)
-      if (ts.isVariableStatement(st) && st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
-        for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) declared.set(d.name.text, d);
-    // A function declaration mentioned in an earlier one's closure.
-    const functions = block.statements.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s) && !!s.name);
-    const order = new Map(functions.map((f, i) => [f.name?.text ?? "", i]));
-    const forward = (n: Node, i: number): boolean => {
-      if (ts.isTypeNode(n)) return false;
-      if (ts.isIdentifier(n)) return (order.get(n.text) ?? -1) > i;
-      return n.forEachChild((c) => forward(c, i) || undefined) ?? false;
-    };
-    if (functions.some((f, i) => forward(f, i))) return true;
-    if (!declared.size) return false;
-    const visit = (n: Node, created: number | null): boolean => {
-      if (ts.isTypeNode(n)) return false;
-      if (ts.isIdentifier(n)) {
-        const parent = n.parent;
-        if (parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
-            ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
-              ts.isPropertySignatureDeclaration(parent)) && parent.name === n)))) return false;
-        const d = declared.get(n.text);
-        const at = created ?? n.getStart(source);
-        if (!d || n === d.name || at >= d.end) return false;
-        let literal: Node | undefined = d.initializer;
-        while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
-        return !(!!(d.parent.flags & ts.NodeFlags.Const) && literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
-          n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
-      }
-      const inner = created ?? (ts.isFunctionDeclaration(n) ? -1
-        : ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
-      return n.forEachChild((c) => visit(c, inner) || undefined) ?? false;
-    };
-    return block.statements.some((st) => visit(st, null));
-  };
+
   const findAsync = (node: Node): void => {
     const add = (...names: string[]) => {
       firstAsync ??= node;
@@ -1674,7 +1677,7 @@ function lowerFile(file: string, carriesContext: boolean,
     // A block whose `let` or `const` may be mentioned before its
     // initialization (`markEarly`, by spelling here) throws through
     // `%ThrowUninitialized%` where a checked access finds it so.
-    if (ts.isBlock(node) && earlyCandidate(node)) add(throwUninitializedName);
+    if (ts.isBlock(node) && hasEarlyBindingReference(source, node)) add(throwUninitializedName);
     // A module `let` is a module cell, every mention a checked access.
     if (ts.isVariableStatement(node) && node.parent && ts.isSourceFile(node.parent) &&
         node.declarationList.flags & ts.NodeFlags.Let) add(throwUninitializedName);
