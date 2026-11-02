@@ -1,11 +1,16 @@
 // Census functions: declaration-graph.mts#declarationAnswer,
 // declaration-graph.mts#declarationServices, declaration-graph.mts#collectDeclarations.
-interface Options { answer?: (value: string) => string }
-function captured<A extends readonly unknown[], R>(options: Options,
-  answer: ((...args: A) => R) | undefined): ((...args: A) => R) | undefined {
-  return answer == null ? undefined : (...args: A): R => Reflect.apply(answer, options, args);
+interface Options {
+  answer?: (value: string) => string;
 }
 export function deliver(options: Options, value: string): string | undefined {
-  const service = { get answer() { return captured(options, options.answer); } };
+  const service: Pick<Options, "answer"> = options;
   return service.answer?.(value);
+}
+export function evaluate(
+  options: Options,
+  value: () => string,
+): string | undefined {
+  const service: Pick<Options, "answer"> = options;
+  return service.answer?.(value());
 }

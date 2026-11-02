@@ -1,7 +1,6 @@
-// A closure's rest typed by its own type parameter: the closure's scheme
-// reads a bound as the meet of its binder with it, and argument lists have no
-// meet row, so no store contract fits the array its call collects.
+// The local closure collects number elements; its public count operation
+// needs the number of the two arguments it supplies.
 export function count(): number {
-  const bare = <T extends readonly number[]>(...args: T): number => args.length;
+  const bare = (...args: number[]): number => args.length;
   return bare(1, 2);
 }
