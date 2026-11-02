@@ -759,7 +759,21 @@ private partial def executionEntryRead (name : String) (immutable : Bool := fals
     let immutable := match b.storage with | .value => true | _ => false
     let some p := (executionEntryRead b.source.name immutable plan).1 | return Δ
     match fc.exprs.lookup p with
-    | some _ => return Δ.set i (← claimAt fc p)
+    | some _ =>
+      let claimed ← claimAt fc p
+      let refined ← if immutable then do
+          let some current := Γ[i]? | throw "internal execution arm: missing value slot"
+          -- A value keeps its checked type as the arm establishes its read
+          -- claim. Their intersection retains both facts at the join.
+          if current.all claimed.contains then pure current
+          else if claimed.all current.contains then pure claimed
+          else
+            let (T, generation) ← tableAt
+            if ← withinAt T generation current claimed then pure current
+            else if ← withinAt T generation claimed current then pure claimed
+            else lower (EquationStore.meet [current, claimed])
+        else pure claimed
+      return Δ.set i refined
     | none => return Δ) Γ
 
 /-- A pure predicate can name a path witness in place of a source read.

@@ -23,6 +23,11 @@ assert.throws(() => runExample("invalid-guard-filter-field-alias",
 assert.equal(runExample("guard-filter-footprints",
   '(() => { const values = new Set(), seen = []; return JSON.stringify([pure(["a", 1]), writing(["a", 1], values), values.size, growing(["a", 1], seen), seen.length, shrinking(["a", "b", "c"])]); })()'),
   '[["a"],["a"],1,["a"],2,["a","b"]]', "guard filter copies selected values while retaining callback effects");
+assert.equal(runExample("branch-context-facts", 'JSON.stringify([choices(null), choices(0), choices(2)])'),
+  '[[null,1,1,null],[0,1,0,0],[2,2,2,2]]', "logical, nullish and conditional arms retain their ordinary results");
+assert.equal(runExample("branch-context-facts",
+  '(() => { const kept = []; const result = boundRecord({ name: "n", bound: 2 }, kept); return result.name === "n" && result.bound === 2 && kept.length === 1 && kept[0] === 2; })()'), true,
+  "the qualified call inside the record arm retains its observable mutation");
 
 assert.equal(runExample("invalid-array-rest-own-iterator",
   '(() => { const xs = [1], victim = [2]; changed(xs, victim); return victim.length; })()'), 0,
