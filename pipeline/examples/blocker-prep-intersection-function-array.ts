@@ -6,7 +6,8 @@ export function oneTerm(
   terms: Fn[],
   span: [number, number],
 ): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  return terms.length === 1 && terms[0]
-    ? terms[0]
-    : { k: "intersection", parts: terms, span };
+  const [only] = terms;
+  if (terms.length === 1 && only) return only;
+  const parts: TypeTerm[] = terms.map((term): TypeTerm => term);
+  return { k: "intersection", parts, span };
 }

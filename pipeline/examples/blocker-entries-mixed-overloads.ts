@@ -1,18 +1,28 @@
-// `Object.entries` of an `object`: TypeScript selects the generic overload at
-// the array arm and the plain one at `{}` at the other, which are one callee.
-// An `object` admits a compiler object, whose own fields the plain overload
-// would hand to the program, and its array arm a node list: the call is
-// refused at the overload's non-host parameter (R8, COMPILER-API.md).
-// Census functions:
-// type-term.mts#classInstance, type-term.mts#constructorForms,
-// type-term.mts#expandMapped, type-term.mts#indexKinds,
-// type-term.mts#intersection, type-term.mts#mapped, type-term.mts#members,
-// type-term.mts#promiseOf, type-term.mts#quantified,
-// type-term.mts#readTypeTerm, type-term.mts#sameData, type-term.mts#sameIndex,
-// type-term.mts#signature, type-term.mts#signatures,
-// type-term.mts#statedResult, type-term.mts#statementOf,
-// type-term.mts#substitute, type-term.mts#tuple, type-term.mts#typeTerm,
-// type-term.mts#validateAnnotation, type-term.mts#visitType.
-export function use(o: object): [string, unknown][] {
-  return Array.isArray(o) ? Object.entries(o) : Object.entries(o);
+// Census functions: array-prototype.mts#mergeRefusal,#prototype,#functionPrototype.
+// Contract syntax retains its recursive data contract during printing.
+type ContractData =
+  | null
+  | undefined
+  | boolean
+  | number
+  | string
+  | readonly ContractData[]
+  | { readonly [key: string]: ContractData };
+const isArrayData = (value: ContractData): value is readonly ContractData[] =>
+  Array.isArray(value);
+export function canonical(value: ContractData): string {
+  if (Array.isArray(value)) {
+    // Both tests are the same pure native operation.
+    if (!isArrayData(value)) throw Error("array data tests disagree");
+    const items: readonly ContractData[] = value;
+    return `[${items.map(canonical).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .filter(([key]: [string, ContractData]) => key !== "span")
+      .map(
+        ([key, field]: [string, ContractData]) => `${key}:${canonical(field)}`,
+      )
+      .join(",")}}`;
+  return typeof value === "string" ? JSON.stringify(value) : String(value);
 }
