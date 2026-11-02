@@ -311,12 +311,18 @@ const restFromName = (k: number): string => `%RestFrom:${k}%`;
  * call, made after their reads and defaults, reads the current length as
  * that step does. The parameter states what the elements from `k` on are
  * whatever the first `k` hold, so a union of tuples of different lengths
- * meets it arm by arm: `[number] | [number, string]` at `T = string`. */
+ * meets it arm by arm: `[number] | [number, string]` at `T = string`.
+ * The array invariant excludes own prototype members, including
+ * `Symbol.iterator`, and numeric accessors; the standard array iterator
+ * reads data elements and allocates its result without changing an old
+ * location. The result is fresh, with an own position even for a hole in
+ * the source (whose read yields undefined). */
 export function restFromIntrinsic(k: number):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   return { name: restFromName(k), typeParams: [{ name: "T", bound: null, resolution: null }],
-    type: fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
-      rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }) };
+    type: { ...fn([{ k: "tuple", presence: "readable", readonly: true, required: [], optional: Array.from({ length: k }, () => atom("unknown")),
+      rest: binder, span }], { k: "array", presence: "readable", readonly: false, element: binder, span }),
+      effect: footprintEffect(emptyFootprint, { fresh: true }) } };
 }
 
 /** The string keys `Object.prototype` holds (Lean's `objectProtoKeys`): an

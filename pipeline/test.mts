@@ -71,6 +71,54 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  // Rest collection consumes the intrinsic's stated effect. Weakening that
+  // declaration cannot retain the defining unit's growth guarantee, even
+  // with its honest claims and evidence.
+  const artifacts = run("blocker-next-array-rest-footprint");
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const rest = must(fragment.declarations.values.find(v => v.binding.local === "%RestFrom:1%"), "the rest intrinsic");
+  assert.ok(rest.type.k === "function");
+  rest.type.effect = ordinaryEffect;
+  const weakened = join(artifacts, "array-rest-unrestricted.json");
+  writeFileSync(weakened, JSON.stringify(fragment));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "array-rest-unrestricted", weakened);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /source effect refusal.*footprint claimed for 'rest'/s);
+  // Evidence carries this declaration's translated table. The original
+  // evidence is incompatible with the weakened declaration's table.
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, weakened), /reject:/);
+
+  // An admitted undefined first element requires its default. Withholding
+  // that expression claim cannot remove the default from either extraction.
+  const defaults = run("array-rest-footprints");
+  const source = readFileSync(sourceKey(defaults), "utf8");
+  const claims = readClaims(defaults);
+  const fn = must(claims.functions.find(f => f.name === "defaults"), "defaults' claims");
+  const at = source.indexOf("7, second");
+  assert.ok(fn.expressions.some(e => e.pos[0] === at), "the first default's claim");
+  fn.expressions = fn.expressions.filter(e => e.pos[0] !== at);
+  const missing = writeClaims(defaults, "array-rest-missing-default", claims);
+  const defaultSearch = produceWith(defaults, missing, "array-rest-missing-default");
+  assert.equal(defaultSearch.status, 1, defaultSearch.stdout + defaultSearch.stderr);
+  for (const detail of [defaultSearch.stdout + defaultSearch.stderr,
+    invoke(missing, join(defaults, "evidence.json"), defaults)])
+    assert.match(detail, /no claim|missing claim|no claimed/i);
+
+  // A producer cannot publish an array as a record owning the iterator key:
+  // the checked read of the array still carries its own-key exclusion.
+  const aliasArtifacts = run("invalid-array-rest-own-iterator");
+  const aliasClaims = readClaims(aliasArtifacts);
+  const aliasSource = readFileSync(sourceKey(aliasArtifacts), "utf8");
+  const changed = must(aliasClaims.functions.find(f => f.name === "changed"), "changed's claims");
+  const alias = must(changed.entries.flatMap(e => e.bindings).find(b => b.name === "alias"), "the iterator alias");
+  const aliasAt = aliasSource.indexOf("= xs;") + 2;
+  must(changed.expressions.find(e => e.pos[0] === aliasAt), "the array read").type = alias.type;
+  const forged = writeClaims(aliasArtifacts, "array-rest-forged-iterator-alias", aliasClaims);
+  refusedAt(aliasArtifacts, forged, "array-rest-forged-iterator-alias", `source expression obligation at [${aliasAt},`);
+  process.stdout.write("array rests: unrestricted intrinsic, omitted default and forged own iterator alias refused\n");
+});
+
+control(async (): Promise<void> => {
   assert.equal(runExample("invalid-string-object-hook",
     '(() => { const cell = { value: "kept" }; return kept(cell, { a: 1, toString() { cell.value = undefined; return "object"; } }); })()'), undefined);
 });

@@ -2398,6 +2398,42 @@ length, claimed at the rest's span with the call's instance:
      {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}\ \textsf{rest-slice}
 ```
 
+The intrinsic states the empty footprint and a fresh array result on normal
+return. For ordinary arrays, the [array invariant](DESIGN.md#trust-surface) excludes own keys
+declared by `ArrayProto`, including `Symbol.iterator`, and permits only data
+properties at numeric element keys. Together with standard array and iterator
+prototypes, this makes collection a sequence of reads and fresh allocations:
+the iterator is fresh, each step reads the current length and element, and
+the result is a fresh ordinary array with an own position for every yielded
+value. A hole yields `undefined`; collection performs no species lookup.
+Source contracts require external arrays to meet the same invariant. A writable own-iterator alias is
+refused at its binding (`invalid-array-rest-own-iterator`, run under Node).
+
+Compiler [node lists](COMPILER-API.md#node-lists) have their separate host
+interpretation (T4): their custom generator reads the fixed sequence of nodes,
+allocating only its iterator and internal wrappers, without client callbacks
+or observable closing cleanup. Its bookkeeping is outside the modeled heap.
+Their rest collection is classified as transparent by the
+[host-operation table](HOST-FAMILIES.md#operations-and-their-obligations);
+the C4 checks exercise it at lengths around the package's getter boundary.
+
+The intrinsic's effect is an audited host contract consumed by the general
+qualified-call rule. The fixed-tuple lowering uses the proved inspection
+rules for reads, immutable lets and allocations. In either form, the result
+owns fresh element cells holding the copied values: replacing a result
+element preserves the corresponding source cell; an object value retains
+its identity and the aliases to its fields (`array-rest-footprints`, run
+under Node).
+
+Fixed-tuple rests read the later positions into local value slots in order,
+then allocate their store from those slots. Collection occupies the rest's
+position in the binding or assignment schedule, after preceding defaults;
+the [restriction on interleaved array mutation](SOURCE-FRAGMENT.md#model-limits)
+applies to both fixed and slice rests. Each initializer and default retains
+its own effect obligation (`array-rest-footprints`,
+`invalid-array-rest-default-effect`). A default may read an earlier binding;
+an omitted producer claim cannot erase its execution.
+
 The parameter says nothing of the first $`k`$ positions, so a union of tuples
 of different lengths meets it arm by arm: `[number] | [number, string]` from
 1 at $`T=\mathsf{string}`$. JavaScript steps the array's iterator on past the
@@ -3669,8 +3705,8 @@ states its conclusion. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
 source annotations remain unrestricted; OCaml proposes preservation for
-closure bodies of reads, element reads, fresh allocations, patterns without a
-rest, and fixed calls and method calls whose callee's signatures all state it
+closure bodies of reads, element reads, fresh allocations, patterns including
+array rests, and fixed calls and method calls whose callee's signatures all state it
 (`footprint_expr` in `source.ml`), retaining it through symbolic claims and
 substitution. A method call on a union of hosts each holding the member is
 such a call, its member bound to the object

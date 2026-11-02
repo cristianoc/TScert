@@ -9,6 +9,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+assert.equal(runExample("invalid-array-rest-own-iterator",
+  '(() => { const xs = [1], victim = [2]; changed(xs, victim); return victim.length; })()'), 0,
+  "an own array iterator can shrink another ordinary array during rest collection");
+assert.equal(runExample("invalid-array-rest-default-effect",
+  '(() => { const victim = [2]; changed({}, victim); return victim.length; })()'), 0,
+  "a default preceding nested rest collection retains its mutation");
+assert.equal(runExample("array-rest-footprints", 'defaults([undefined, undefined, 3])'), 15,
+  "array pattern defaults see earlier bindings before collecting the rest");
+assert.equal(runExample("array-rest-footprints", '(() => { const xs = [1, 2, "s"]; return fixed(xs) === 2 && xs.length === 3; })()'), true,
+  "fixed-tuple rest copies later positions and preserves the source");
+assert.equal(runExample("array-rest-footprints",
+  '(() => { const item = { value: 1 }, source = [item], result = copy(source); const shared = result[0] === item; result[0].value = 2; const visible = source[0].value === 2; result[0] = { value: 3 }; return shared && visible && source[0] === item && source[0].value === 2 && source.length === 1 && fresh([1, 2]) === 1; })()'), true,
+  "rest arrays own fresh element cells while retaining their elements' object identities");
+
 // A direct optional method call saves its callback before an argument can
 // replace the destination and uses the original options as its receiver.
 assert.equal(runExample("blocker-round-generic-rest-answer",

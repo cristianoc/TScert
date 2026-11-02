@@ -58,6 +58,9 @@ checked, host boundaries and their contracts, trusted units and refused
 functions are reported apart, and a result under a host contract is no proof
 of the host's implementation.
 
+The support route for array rest collection is specified under
+[patterns](SOURCE-ELABORATION.md#patterns).
+
 ## Unsafe examples
 
 ### Reference arguments mapped through an unrestricted callback

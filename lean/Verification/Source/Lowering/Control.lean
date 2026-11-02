@@ -251,10 +251,15 @@ type and the array's claimed type. -/
   if !T.optional.isEmpty || T.rest.isSome then throw restOfUnknownLength
   let C ← claimAt fc restPos
   let some Sr := storeOf (SourceTypes.graph (← table)) C | throw "an array rest needs an array claim"
-  let reads ← (List.range (T.required.length - start)).mapM fun j => do
-    return Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (← indexTerm (start + j))
+  let n := T.required.length - start
+  -- Each read runs where the rest is collected, after earlier pattern
+  -- defaults. Its value is saved before the next read; the allocation
+  -- then consumes only value slots, as an array literal does.
+  let reads ← (List.range n).mapM fun j => do
+    return Tm.elemAt (.readAt SourceTypes.storeField (.var (obj+j))) (← indexTerm (start + j))
   let _ ← arrayObject Sr
-  return (.arrLit reads, Sr, C)
+  let store := reads.foldr Tm.letE (.arrLit ((List.range n).map fun j => .var (n-1-j)))
+  return (store, Sr, C)
 
 /-- A slice rest's collection: the call of its `%RestFrom:k%`, `k` the
 rest's index, on the array at slot `obj`, after the pattern's reads and
