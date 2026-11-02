@@ -160,7 +160,7 @@ const swapCase = (text: string): string =>
  * are not all observed. */
 export type CompilerImplementation =
   { identity: { [field: string]: string | boolean }; changed: () => boolean; unobserved?: never } | { unobserved: string; identity?: never };
-type Identification = { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string };
+type Identification = { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string; identity?: never };
 function identify(at: Installation): Identification & JsonObject {
   if (at.missing !== undefined) return { unobserved: at.missing };
   if (process.platform !== "darwin" || !installed("/usr/bin/sandbox-exec"))

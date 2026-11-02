@@ -3800,3 +3800,26 @@ the array keeps its nullable element storage contract.
   The [elements fact](FOOTPRINTS.md#the-elements-fact) describes heap
   knowledge subject to preservation; it does not replace a location's
   invariant storage contract.
+
+### The compiler identification failure's absent identity
+
+`tools/compiler-channel.mts#identify` returns a fresh failure object
+containing only `unobserved` when the installation is missing, confinement
+is unavailable, or an installation digest is missing. Its private
+`Identification` failure alternative states `identity?: never`. The
+success alternative carries the identity record.
+
+- **Repair:** the result annotation retains the absent identity established
+  by all three failure constructors. `current` keeps that fact when it
+  builds the failure alternative of `CompilerImplementation`; the existing
+  [object-allocation checks](PROGRAM-TYPING.md#objects-and-records) check
+  each producer and the returned `Current` record.
+- **Scope:** `Identification` is private to the module. Its values come
+  from `identify`, called by `current` for its captured identity and again
+  by the `changed` callback. The annotation describes these constructors.
+  `CompilerImplementation` retains its complete existing contract.
+- **Behaviour:** the annotation is erased. The same installation checks,
+  digest reads, sandbox profile, failure strings, identities and comparison
+  callbacks execute; object keys and serialized JSON agree.
+- **Example:** `blocker-next-current-identification` carries the absent key
+  through the conditional implementation record.
