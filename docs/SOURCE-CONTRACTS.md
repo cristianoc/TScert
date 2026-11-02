@@ -22,6 +22,43 @@ Throughout, $`⟦T⟧`$ is the graph type a
 declared or written term lowers to, and $`T[\vec p:=\vec U]`$ the term with its
 binders fixed to ground types.
 
+## Modeling a library
+
+A library contract describes the operations real project code uses. Choose
+representative calls, callbacks and returned values from that code, and state
+the supported use in the contract. Complete coverage of the library's API is
+not a prerequisite. The compiler-API instance is specified in
+[Compiler API](COMPILER-API.md).
+
+Use the existing mechanisms: declaration overlays for native contracts,
+[host families](HOST-FAMILIES.md) for objects with shared invariants, and
+[footprints](FOOTPRINTS.md) for facts preserved across calls. A native
+operation receives a stronger effect only where its audit establishes it;
+other operations retain their declared effects. An operation's name or its
+membership in a library supplies no preservation guarantee.
+
+Audit the supported operation's execution: callbacks it retains or invokes,
+serialization and coercion, aliases, result construction, and both normal and
+exceptional exits. A runtime declaration describes types; it does not prove
+these effects. A project wrapper can require stronger invariants, with its
+body checked against them. Using a guarantee whose body or dependencies are
+uncertified requires an explicitly approved external contract; without that
+contract the stronger use is refused.
+
+A restriction is a boundary of admitted behavior. State it in the source
+fragment and the external contract, enforce it, and retain a control showing
+that excluded behavior cannot enter silently. An excluded behavior requires
+no general modeling machinery. Every contract the admitted use relies on is
+represented completely or refused; a restriction cannot erase a callback,
+field or execution that the admitted use still permits.
+
+Measure a simplification against the real project. Keep pipeline examples
+and independent boundary controls, run the project suites, and compare the
+census before and after. Coverage losses are part of the result. A smaller
+example alone does not establish that a simplification preserves project
+support. General mechanisms remain reusable; library-specific work follows
+the project's useful calls rather than hypothetical uses of every export.
+
 ## Modules and code units
 
 A module is the unit of verification. Its function declarations are hoisted;

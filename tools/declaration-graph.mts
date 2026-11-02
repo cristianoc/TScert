@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, isRequest, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
+import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
@@ -6027,8 +6027,10 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     // string, and one the client would produce refused (reading rule 5).
     // A view's methods are the sync API's requests, read at their
     // statement (T6, `requestReading`).
-    const request = (f: { name: PropertyKey }): boolean =>
-      !!named && named.members.some(m => m.name === f.name && isRequest(named.owner, m));
+    const request = (f: { name: PropertyKey }): boolean => {
+      const members = named?.members.filter(m => m.name === f.name) ?? [];
+      return members.length > 0 && members.every(m => m.request === true);
+    };
     const fresh = (f: { name: PropertyKey }): boolean =>
       !!named && named.members.some(m => m.name === f.name && m.fresh === true);
     // A symbol table's key is a string the package produced (`tableReading`).

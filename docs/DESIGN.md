@@ -30,6 +30,15 @@ ignore behavior of an admitted program or erase a difficult contract. The
 ordinary-array construction restriction is one such trade-off. A motivating
 ordinary program is not a corner case merely because its implementation is hard.
 
+**Library models follow project use.** A complex library is supported through
+an explicit contract for useful project operations. Preserve the complete
+contracts those operations rely on; use restrictions for excluded behavior
+and existing general mechanisms for admitted behavior. Extra library breadth
+is justified by useful programs. A simplification is evaluated by the project
+suites and census, including lost coverage, rather than by the size of one
+example. [Modeling a library](SOURCE-CONTRACTS.md#modeling-a-library) gives the
+method.
+
 **Soundness is no wrong values.** An accepted unit, run in any environment
 meeting its inputs, evaluates to a value of its declared type, takes a step,
 or throws a value: it never gets stuck and never produces a value outside its
