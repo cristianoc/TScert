@@ -126,6 +126,26 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### Callable JSON fields printed through an optional read domain
+
+`atomText` and `bareAtomText` in `tools/claim-text.mts` accept `JsonRead`,
+the result of reading a `JsonObject` field. A malformed callable atom can
+lack its `function` or `bag` field. The existing object and array guards
+handle `undefined`, mark the text as incomplete and print `«type»` for
+that part. `printType` accepts `JsonValue` and checks the complete claim
+shape independently before returning the text and its `printable` flag.
+
+- **Repair:** the two internal parameter annotations state the domain
+  their existing guards handle, including an absent field.
+- **Equivalence:** annotations erase under Node. Both parameter changes
+  leave every executable statement intact, so returns, exceptions and
+  writes are identical for every input. The public printer's input and
+  output contracts remain the same.
+- **Evidence:** `blocker-round-callable-json-fields` exercises a recursive
+  JSON field read with the optional domain; `tests/claim-text.mts` runs the
+  actual printer with complete callable parts, either part absent and both
+  parts absent, checking the full text and its completeness flag.
+
 ### Part collection through a store-preserving traversal
 
 `tools/fragment-parts.mts#partsOf` collects direct parts by passing identity

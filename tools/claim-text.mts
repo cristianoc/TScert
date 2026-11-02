@@ -72,7 +72,7 @@ interface PrintState {
 /** The keys of an atom's metadata, literals naming no member of
  * `Object.prototype`. */
 type MetadataKey = "call" | "construct" | "array";
-function atomText(atom: JsonValue, state: PrintState): string {
+function atomText(atom: JsonRead, state: PrintState): string {
   const text = bareAtomText(atom, state);
   if (!isObject(atom)) return text;
   const metadata: { [key: string]: JsonValue } = {};
@@ -93,7 +93,7 @@ function atomText(atom: JsonValue, state: PrintState): string {
         JSON.stringify(metadata)
     : text;
 }
-function bareAtomText(atom: JsonValue, state: PrintState): string {
+function bareAtomText(atom: JsonRead, state: PrintState): string {
   // An array where an atom belongs is no atom of any kind.
   if (isList(atom)) {
     state.printable = false;
