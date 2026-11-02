@@ -3427,3 +3427,23 @@ visitor the same annotation while popping the mapped array: two identifiers
 produce a result with a hole under Node. The closure body must establish the
 written footprint. The annotation changes no runtime return, exception or
 effect and adds no external assumption.
+
+### Native probe files at their callback boundary
+
+`tools/type-probe.mts#ProbeProgram` receives `Map<string, string>` from
+`makeProbe` and `tools/declaration-graph.mts#compatibilityReviewed`, each
+constructed with `new Map`. Its implementations in `withOwnProject` and
+`tools/declaration-session.mts#collect` retain that native contract when
+iterating the replacements and spreading their keys.
+
+- **Repair:** the parameter retains the native map its callers supply. The
+  [native collection contract](SOURCE-CONTRACTS.md#library-globals) gives
+  `keys()` its native iterator, checked by array spread.
+- **Behaviour:** the annotation is erased. Map identities, lookups,
+  iteration order, callbacks, writes, returns and exceptions agree.
+- **Avoided form and cost:** a structural `ReadonlyMap` admits arbitrary
+  user-written iterators. Checking their protocol effects is unnecessary
+  for these constructed maps.
+- **Scope:** `blocker-round-probe-file-keys` retains this map boundary.
+  This repair adds no rule or external assumption.
+- **Commit:** the introducing commit.
