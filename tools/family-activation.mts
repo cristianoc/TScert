@@ -158,7 +158,7 @@ function checkInventory(description: FamilyDescription, root: string): ReadonlyS
  * each root owned by one description. */
 function installations(): readonly { description: FamilyDescription; root: string }[] {
   const active = activeFamilies();
-  const found = active.map(description => ({ description, root: installationRoot(description) }));
+  const found = active.flatMap(description => [{ description, root: installationRoot(description) }]);
   for (const [i, a] of found.entries())
     for (const b of found.slice(i + 1)) {
       if (a.description.marker === b.description.marker)

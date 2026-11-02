@@ -126,6 +126,51 @@ establishes the helper argument contract in `selectGlobal`.
 
 ## Rewrites
 
+### Installation records built by a singleton flatMap
+
+`installations` in `tools/family-activation.mts` collects completed root
+lookups before checking marker, root and guard ownership. Its singleton
+`flatMap` appends one record for each description visited by native array
+iteration. The existing [native array contract](SOURCE-CONTRACTS.md#prototype-contracts)
+establishes dense output even when a lookup changes the input array.
+
+```ts
+const found = active.flatMap(description => [
+  { description, root: installationRoot(description) },
+]);
+```
+
+- **Defect:** `map` captures the input length and leaves a result hole for
+  an index removed before its visit. The ownership loop reads every result
+  entry and dereferences its fields. A filesystem provider can trigger
+  this defect through the real `installationRoot`: Node's experimental VFS
+  calls a provider's `statSync`, which can shrink an aliased active-family
+  array without replacing a standard method.
+- **Repair:** `flatMap` keeps completed lookup records densely packed.
+  Both operations capture the entry length, visit present indices in
+  order and skip indices removed before their visit. The repair changes
+  the hole case: a two-family input shrunk to one during its first lookup
+  gives a length-two holed map result and a `TypeError` in the comparison;
+  singleton `flatMap` returns the one completed record when its ownership
+  checks pass. A lookup that throws still aborts collection before those
+  checks. This traversal does not promise a snapshot of families removed
+  during a lookup.
+- **Preserved behavior:** when lookups preserve the dense input array,
+  both forms compute the same records with the same description references,
+  lookup order, observations and ownership checks. Comparisons under Node
+  with real package lookup for zero, one and two installations, repeated
+  markers and repeated roots agree on records, exceptions and filesystem
+  observations. This equivalence is conditional on input preservation.
+- **Evidence and cost:** `blocker-round-installation-records` verifies the
+  real lookup and captured comparisons. A Node 26.13.0 VFS probe executes
+  both complete bodies with the real lookup and a shrinking provider,
+  obtaining the hole and `TypeError` versus a dense single-record return.
+  The first description retains its identity, and the filesystem and array
+  method identities remain unchanged. One temporary singleton array is
+  allocated per visited family. The repair adds no callback restriction,
+  VFS exclusion or external assumption. The arbitrary-callback map
+  counterexample remains `blocker-prep-captured-map-records`.
+
 ### Callable JSON fields printed through an optional read domain
 
 `atomText` and `bareAtomText` in `tools/claim-text.mts` accept `JsonRead`,

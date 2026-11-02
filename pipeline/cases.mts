@@ -66,7 +66,7 @@ export const cases: Case[] = [
     /source expression obligation at \[321,391\): evidence search failed: no derivation of its node-typing claim/),
   { ...positive("blocker-round-callable-json-fields", "A recursive JSON field printer accepts possibly absent fields and handles them through its existing guard."), project: "pipeline/blocker-project" },
   { ...positive("blocker-round-recording-stage", "An optional true stage field added to a fresh recording before it escapes"), project: "pipeline/blocker-project" },
-  { ...gap("blocker-round-installation-records", "Installation records captured after mapping the real installation resolver", "unverified", "search", /^reject: closure expression claim at \[631,636\): evidence search failed(?:\n|$)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-installation-records", "Singleton flatMap keeps real installation records dense for the captured ownership comparisons."), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-collection-effect", "Collection predicate effect metadata built by spreading readonly effect data", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-error-field-array", "Error prototype fields built through an inferred local constructor", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-receiver-path-reuse", "A receiver-member witness reused after a preceding property-access branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s), project: "pipeline/blocker-project" },
