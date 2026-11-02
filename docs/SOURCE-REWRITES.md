@@ -2651,6 +2651,42 @@ retains its guard and early return.
 - **Trust:** no external contract or assumption is added.
 - **Commit:** the introducing commit.
 
+### An optional native Map copied at explicit type arguments
+
+`tools/family-activation.mts#activatedModules` copies the modules held by a
+private `Loaded` value, or constructs an empty map when no guard table is
+loaded. `checkedGuards` constructs that outer map with
+`new Map<string, ReadonlyMap<string, unknown>>()` and supplies the sole
+`Loaded` record. `loadedGuards`, `activateGuards` and the `activeTables`
+cache carry that record's contract.
+
+- **Repair:** `Loaded.modules` retains the outer native `Map` contract its
+  provider supplies. Each namespace value keeps its structural
+  `ReadonlyMap<string, unknown>` contract. This is the existing
+  [native-map boundary repair](#native-probe-files-at-their-callback-boundary).
+  The [native constructor overlay](SOURCE-CONTRACTS.md#library-globals)
+  states the copy with either that native view or `undefined` as its input.
+- **Avoided form:** `new Map(loadedGuards(description.guards, root)?.modules)`.
+  Generic inference connects named applications and several union shapes;
+  it has no matching path from an optional native map to a union of a
+  parameterized native view and `undefined`. The optional constructor form
+  alone therefore does not infer the key and value arguments. Supporting
+  that inference requires matching structured union arms before collecting
+  their binder constraints.
+- **Equivalent form:**
+  `new Map<string, ReadonlyMap<string, unknown>>(loadedGuards(description.guards, root)?.modules)`.
+  The field annotation and constructor arguments are erased. The same
+  guard lookup, property read and native constructor execute in the same
+  order, with the same entries, identities, receivers, aliases, mutations,
+  exceptions and asynchronous effects. The explicit arguments use the
+  existing generic instantiation checks and add no runtime work.
+- **Scope:** `blocker-next-optional-native-map-copy` checks the optional
+  native copy with explicit arguments; `blocker-collection-from-iterable`
+  checks inference for a definite native map. The structural iterator
+  boundary remains `invalid-map-from-readonly-map`: its entry getter can
+  mutate another array under Node. The constructor's existing native
+  iterator and standard-object assumptions suffice.
+
 ### A native placement Map widened to ReadonlyMap
 
 `tools/fragment-statements.mts#markEarly` accepts

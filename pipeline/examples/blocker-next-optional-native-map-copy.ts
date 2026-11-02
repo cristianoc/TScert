@@ -5,6 +5,6 @@
 export function copy(
   source: Map<string, number> | undefined,
 ): ReadonlyMap<string, number> {
-  const modules = new Map(source);
+  const modules = new Map<string, number>(source);
   return modules;
 }

@@ -856,7 +856,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // it reads each entry's `0` and `1`, own data elements of that fresh
   // array, so no getter runs, and sets them by `Map.prototype.set`, which
   // it gets from the fresh map, whose prototype is the untampered
-  // `Map.prototype`. It reads `m` and allocates.
+  // `Map.prototype`. It reads `m` and allocates. An undefined argument
+  // returns the empty map before looking up `set` or obtaining an iterator.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
     .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), global: "Map", signature, effect: emptyEffect,
@@ -866,6 +867,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
             optional: [], rest: null, span: at }))],
           result: library("Map", [binder("K"), binder("V")]) };
         return signature.includes("Iterable") ? [pairs, { binders: ["K", "V"], params: [view("Map", [binder("K"), binder("V")])],
+          result: library("Map", [binder("K"), binder("V")]) }, { binders: ["K", "V"], params: [optional(view("Map", [binder("K"), binder("V")]))],
           result: library("Map", [binder("K"), binder("V")]) }] : [pairs];
       } })),
   // `new Date()` is now; `new Date(v)` converts a number or a string without

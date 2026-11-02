@@ -2990,7 +2990,14 @@ readonly T[] | NativeSetView<T>): Set<T>`. Its array arm uses the array
 contract of the first form, so a union of arrays and host sets fixes one
 element type (`blocker-census-set-copy`). `Map`'s iterable overload
 states, beside its array of pairs, `new <K, V>(entries: NativeMapView<K, V>):
-Map<K, V>`. The host arms take a collection's reading view, which a
+Map<K, V>` and `new <K, V>(entries: NativeMapView<K, V> | undefined): Map<K, V>`.
+For `undefined`, [ECMA-262's Map constructor](REFERENCES.md#ecma-262)
+allocates an empty map and returns before reading its `set` member or
+obtaining an iterator. This result meets every key and value contract and
+preserves existing values and stores. The present-input form retains its
+own signature for inference. `blocker-next-optional-native-map-copy` checks
+the optional form with explicit key and value arguments.
+The host arms take a collection's reading view, which a
 `Set<T>` and a `Map<K, V>` meet, at the empty footprint. The construction
 gets the argument's
 `[Symbol.iterator]`, the host's collection iterator by the assumption
