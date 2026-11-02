@@ -828,7 +828,7 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
     !f.optional || id.optionalMod !== "remove" || !mayHoldUndefined(f.type) || id.exact === true ? f.type
       : id.exact === false ? withoutUndefined(f.type, fail, alias)
       : fail("`-?` over an optional field whose type may hold undefined, whose meaning depends on exactOptionalPropertyTypes, is outside the fragment");
-  const settled = (values: (TypeTerm | null)[]): values is TypeTerm[] => values.every(v => v !== null);
+  const settled = (values: (TypeTerm | null)[]): boolean => values.every(v => v !== null);
   if (id.homomorphic) {
     if ((x.stringIndex || x.numberIndex || x.symbolIndex) && id.optionalMod === "add")
       return fail("an optional mapped type over an index signature's keys is outside the fragment");

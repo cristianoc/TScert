@@ -7,6 +7,6 @@
 interface Term {
   kind: string;
 }
-export function settled(values: (Term | null)[]): values is Term[] {
+export function settled(values: (Term | null)[]): boolean {
   return values.every((v) => v !== null);
 }
