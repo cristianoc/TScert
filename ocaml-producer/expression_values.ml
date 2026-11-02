@@ -304,12 +304,18 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          && (rigid_arm lt || rigid_arm rt) then
         S.explain site ("strict equality with a value of a type parameter: " ^ equality_reason);
       bool
-    | Apply (callee,receiver,list) ->
+    | Apply (callee,receiver,list,required_list) ->
       (* The list is typed at its own contract; Lean reads each element's
          type from it and checks the call against the target's signature. *)
       let callee = declared_head declarations [] (expr env callee) in
       ignore (expr env receiver);
-      Option.iter (fun l -> ignore (expr env l)) list;
+      (match list with
+       | None when required_list -> Proposal_diagnostics.unsupported "Reflect.apply requires an array argument list"
+       | Some l ->
+         let t = expr env l in
+         if required_list && t <> Semantic.without_nullish t then
+           Proposal_diagnostics.unsupported "Reflect.apply requires an array argument list"
+       | None -> ());
       (match callee with
        | Atoms [Shape {calls=[{quantified=[];result;_}];_}] -> result
        | _ -> Proposal_diagnostics.unsupported ".apply requires a single arrow")

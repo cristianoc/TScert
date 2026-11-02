@@ -191,13 +191,15 @@ export type Expr =
   /* `f.apply(r, list)`: the target, the receiver and the list are evaluated
      and saved, then the list's length and each indexed element are read in
      order, then the target is invoked with the receiver and those actuals. A
-     missing, null or undefined list gives no actuals. */
+     missing, null or undefined list gives no actuals when `requiredList` is false.
+     Reflect.apply sets it true: lowering requires an array list. */
   | {
       k: "applyWithReceiver";
       pos: Span;
       callee: Expr;
       receiver: Expr;
       list: Expr | null;
+      requiredList: boolean;
     }
   | {
       k: "callWithReceiver" | "bindWithReceiver";

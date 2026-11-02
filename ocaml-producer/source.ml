@@ -555,7 +555,7 @@ and expr_node =
      explicit type arguments written on the call, if any. *)
   | Invoke of expr * expr list * int list * ty list
   (* `f.apply(r, list)`: the list's elements, read by index, are the actuals. *)
-  | Apply of expr * expr * expr option
+  | Apply of expr * expr * expr option * bool
   (* A class value: its constructor, and its static fields, each the binding
      its initializer bound, in member order. *)
   | Ctor of expr * (Semantic.key * expr) list
@@ -697,7 +697,7 @@ let rec children e = match e.node with
   | Lambda (_,_,_,defaults,_,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
   | Invoke (f,args,_,_) | New (f,_,args,_) -> f :: args
-  | Apply (f,r,l) -> f :: r :: Option.to_list l
+  | Apply (f,r,l,_) -> f :: r :: Option.to_list l
   | Bind (f,r,args) -> f :: r :: args
   | ObjectAssign (t,sources) -> t :: sources
 and statement_children s = match s.statement with
@@ -1138,7 +1138,7 @@ let rec expr binders j =
       | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
     Invoke (sub "callee",List.map (expr binders) (items "args" j),spreads,type_args)
   | "applyWithReceiver" ->
-    Apply (sub "callee",sub "receiver",(match field "list" j with Null -> None | l -> Some (expr binders l)))
+    Apply (sub "callee",sub "receiver",(match field "list" j with Null -> None | l -> Some (expr binders l)), (match field "requiredList" j with Bool b -> b | _ -> fail "requiredList must be a Boolean"))
   | "callWithReceiver" ->
     Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[],[])
   | "coalesce" -> Coalesce (sub "left",sub "right")

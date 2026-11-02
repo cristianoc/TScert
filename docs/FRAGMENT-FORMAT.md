@@ -122,7 +122,12 @@ The call constructors (`apply`, `invoke`, `new`, `callWithReceiver`,
 `bindWithReceiver`, `applyWithReceiver`) keep their operands distinct in the
 tree. Lean's execution plans save their values in source evaluation order
 before performing the invocation. Closure bodies have their own checked graphs
-and capture interfaces. A class value is `ctor`: its constructor lambda as
+and capture interfaces. `applyWithReceiver` carries `callee`, `receiver`,
+`list` (an expression or `null`) and the Boolean `requiredList`.
+`Function.prototype.apply` sets it false, permitting a missing or nullish
+list; `Reflect.apply` sets it true, requiring an array list. Expression
+planning and type substitution retain the field, and both lowerings check
+it. A class value is `ctor`: its constructor lambda as
 construct-only code and its static fields.
 
 ### Receivers

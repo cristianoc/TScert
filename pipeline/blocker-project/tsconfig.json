@@ -13,6 +13,7 @@
   },
   "include": [
     "../examples/blocker-*.ts",
+    "../examples/invalid-error-subclass-prototype.ts",
     "../examples/invalid-census-annotated-node-union.ts",
     "../examples/invalid-prep-generic-binder-map.ts",
     "../examples/invalid-round-imported-find-shape.ts",

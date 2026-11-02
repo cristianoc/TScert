@@ -2808,6 +2808,28 @@ prototype that passes `instanceof` for its base while holding none of the
 base's fields (`invalid-get-prototype-array-prototype`). No form within the
 language reads them: a read through the client can run a getter.
 
+The census sites `clientHasMethod` and `guardClientRequests` are the
+boundary's implementation. Their direct prototype reads rely on this
+contract. Its caller `invalid-error-subclass-prototype` verifies the
+`clientHasMethod` signature, and `blocker-client-prototype` verifies the
+request wrapper's caller; `blocker-client-prototype-forged` refuses an
+ordinary object presented as an API.
+
+The general prototype-observation source represented by the first case's
+name is safe but outside the fragment:
+
+```ts
+class Decline extends Error {}
+export function proto(): object | null {
+  return Object.getPrototypeOf(new Decline("x"));
+}
+```
+
+It returns `Decline.prototype` under Node. Its return annotation is true;
+exposing arbitrary prototypes requires a model admitting values such as
+`Array.prototype` and class prototypes lacking their instances' fields.
+The compiler uses its declared request operations through the boundary.
+
 - **Boundary:** `tools/client-prototype.mts`. Its functions take the `API`
   itself, a compiler API value only the package makes, whose private members
   no ordinary object has (`blocker-client-prototype-forged`).

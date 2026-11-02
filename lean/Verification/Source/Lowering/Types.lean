@@ -711,7 +711,7 @@ negation. -/
   | .lambda .. => pure e
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
-  | .applyWithReceiver p c r list => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc))
+  | .applyWithReceiver p c r list requiredList => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc)) requiredList
   | .call p c args spread ts =>
     return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spread ts
   | .invoke p c args spreads typeArgs =>

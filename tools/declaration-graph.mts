@@ -785,6 +785,8 @@ export interface OperationAnswers {
   /** Told each call of a global that the reviewed overlay reads as its
    * construct, such as `Error(m)`, by the call's span. */
   globalConstruct?: (span: Span) => void;
+  /** Told each reviewed Reflect.apply call lowered as receiver application. */
+  globalReceiverApply?: (span: Span) => void;
   /** A program iterable is reported with the well-known `Symbol.iterator`'s index
    * among the symbols, which its protocol reads the iterator method by. */
   iterable?: (span: Span, intrinsic: string, iteratorSymbol: number | null) => void;
@@ -967,6 +969,7 @@ function declarationServices(options: DeclarationOptions): DeclarationServices {
       get globalTest() { return declarationAnswer(options, options.globalTest); },
       get globalIntrinsic() { return declarationAnswer(options, options.globalIntrinsic); },
       get globalConstruct() { return declarationAnswer(options, options.globalConstruct); },
+      get globalReceiverApply() { return declarationAnswer(options, options.globalReceiverApply); },
       get iterable() { return declarationAnswer(options, options.iterable); },
       get restSlice() { return declarationAnswer(options, options.restSlice); },
       get hostIn() { return declarationAnswer(options, options.hostIn); },
@@ -3365,6 +3368,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
             operationAnswers.globalIntrinsic?.(span, name);
           },
           construct: span => operationAnswers.globalConstruct?.(span),
+          receiverApply: span => operationAnswers.globalReceiverApply?.(span),
           library: (name, args) => libraryReference(emptyDeclarationReading, name, args), view: (kind, args) => collectionView(emptyDeclarationReading, kind, args),
           define: defineOverlay });
         if (!selection) continue;
@@ -4683,6 +4687,7 @@ type SelectionContext = {
   intrinsic: (span: Span, name: string) => void;
   /** Told each call the overlay reads as the global's construct. */
   construct: (span: Span) => void;
+  receiverApply: (span: Span) => void;
   /** Given each declaration a read entry's statement names that no library
    * declares (`GlobalEntry.definitions`). */
   define: (definition: TypeDefinition) => void;
@@ -4813,6 +4818,12 @@ function globalNamespace(checker: Checker, name: string, uses: readonly Identifi
     const text = overload.getText(overload.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, access.name.text, signature => signature === text,
       declarationOrigin(overload.getSourceFile(), context.libraryFile));
+    if (entry?.receiverApply) {
+      if (call.arguments.length !== 3)
+        throw Error(`${what} requires a target, receiver and argument list`);
+      context.receiverApply(spanOf(call));
+      continue;
+    }
     if (!entry?.intrinsic) throw Error(`${what} is not in the reviewed overlay of library globals: ${reviewedText(text)}`);
     context.intrinsic(spanOf(call), entry.intrinsic);
   }

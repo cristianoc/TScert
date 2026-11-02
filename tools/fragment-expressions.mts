@@ -482,6 +482,19 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
         onUndefined: guard.onUndefined,
         e: gate.expr(argument) };
+    if (gate.globalReceiverApplies.has(gate.span(node).join(":"))) {
+      const [target, receiver, list] = node.arguments;
+      if (!target || !receiver || !list || node.arguments.length !== 3)
+        gate.fail(node, "Reflect.apply requires a target, receiver and argument list");
+      let written = list;
+      while (ts.isParenthesizedExpression(written)) written = written.expression;
+      if (ts.isArrayLiteralExpression(written) &&
+          !written.elements.some(e => ts.isSpreadElement(e) || ts.isOmittedExpression(e)))
+        return { k: "callWithReceiver", pos: gate.span(node), callee: gate.expr(target),
+          receiver: gate.expr(receiver), args: written.elements.map(e => gate.expr(e)) };
+      return { k: "applyWithReceiver", pos: gate.span(node), callee: gate.expr(target),
+        receiver: gate.expr(receiver), list: gate.expr(list), requiredList: true };
+    }
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));
@@ -600,6 +613,7 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
         };
       return {
         k: "applyWithReceiver",
+        requiredList: false,
         pos: gate.span(node),
         callee: gate.expr(node.expression.expression),
         receiver: gate.expr(receiver),

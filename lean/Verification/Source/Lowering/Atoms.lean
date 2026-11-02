@@ -825,7 +825,7 @@ Mappings discard only the temporaries introduced by this expression. -/
       (scope := held ⟨"",some right.span⟩::held ⟨"",some left.span⟩ :: scope)
     let right ← compileAtom recursive fc (held ⟨"",some left.span⟩ :: scope) (B::Γ) right test
     compileAtom recursive fc scope Γ left right
-  | .applyWithReceiver _ callee receiver list =>
+  | .applyWithReceiver _ callee receiver list requiredList =>
     -- Function.prototype.apply: the target, the receiver and the list are
     -- saved in order; then the list's length and each index are read in order
     -- (CreateListFromArrayLike), and the target is invoked with the receiver
@@ -835,6 +835,9 @@ Mappings discard only the temporaries introduced by this expression. -/
     let R₀ ← exprType fc receiver
     let listTy ← list.mapM (exprType fc)
     let G := SourceTypes.graph (← table)
+    if requiredList && (listTy.map (nullishList G)).getD true then
+      throw (locatedRefusal (← table) e.span .bindingAnnotation
+        "Reflect.apply requires an array argument list")
     -- A tuple of required positions is read index by index. An array of any
     -- length goes to a signature that takes only a rest: its store's positions
     -- are the actuals, `undefined` at a hole, as `CreateListFromArrayLike`
