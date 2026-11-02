@@ -28,7 +28,7 @@ import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaratio
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 import { buffer, bytes, definitions as stated, textDecoder, url } from "./library-types.mts";
 
@@ -644,7 +644,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
-      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true, freshObject: true },
+      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: footprintEffect(emptyFootprint, { onThrow: true, freshObject: true }),
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
         result: { k: "intersection", span: at, parts: [errorInstance(at), atom("nonHostObject")] } } })),
   // `new TypeError(m)` with a string is ECMA-262's NativeError constructor
@@ -656,7 +656,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // converts a string message with no code of the client's and writes
   // nothing it did not allocate: the empty footprint, on a throw too.
   ...["new (message?: string): TypeError;", "new (message?: string, options?: ErrorOptions): TypeError;"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "TypeError", signature, effect: { ...emptyEffect, onThrow: true },
+    (signature): GlobalEntry => ({ host: contract, global: "TypeError", signature, effect: footprintEffect(emptyFootprint, { onThrow: true }),
       stated: { binders: [], params: signature.includes("options") ? [atom("string"), errorOptions(at)] : [atom("string")],
         result: errorInstance(at) } })),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
@@ -778,7 +778,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // allocate, on its throw too.
   ...["new (pattern: RegExp | string, flags?: string): RegExp;", "new (pattern: string, flags?: string): RegExp;",
     "new (pattern: RegExp | string): RegExp;"].map((signature): GlobalEntry => ({ host: contract, global: "RegExp", signature,
-      effect: { ...emptyEffect, onThrow: true },
+      effect: footprintEffect(emptyFootprint, { onThrow: true }),
       stated: library => ({ binders: [], params: signature.includes("flags")
         ? [atom("string"), optional(atom("string"))] : [atom("string")], result: library("RegExp", []) }) })),
   // `e instanceof Error`: `Error` owns no `[Symbol.hasInstance]` and
@@ -890,7 +890,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { host: contract, global: "JSON", member: "parse",
     signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
     stated: { binders: [], params: [atom("string")], result: parsedJson }, definitions: [parsedJsonDefinition],
-    effect: { ...emptyEffect, onThrow: true } },
+    effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // `JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
   // function, calls a `toJSON` it finds, and throws on a bigint or a cycle;
   // at a `JsonValue` it does none of the first two and returns a string. A
@@ -906,7 +906,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     stated: { binders: [], params: [jsonValue, optional(atom("null")),
       optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
     definitions: [jsonValueDefinition],
-    effect: { ...emptyEffect, onThrow: true } },
+    effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // The overload whose replacer is a list of keys, which `JSON.stringify`
   // reads by its length and indices, primitive numbers and strings whose
   // conversion runs no code; or `null` or absent, as the other.
@@ -916,7 +916,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
       readonlyArray({ k: "union", parts: [atom("number"), atom("string")], span: at })] }),
       optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
     definitions: [jsonValueDefinition],
-    effect: { ...emptyEffect, onThrow: true } },
+    effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // `%PromiseReject%`: a promise rejected with the reason, whose await
   // throws it, an outcome; it settles to no value, so it is a promise of
   // every type. The declared `any` is read as `unknown`: nothing runs on it.

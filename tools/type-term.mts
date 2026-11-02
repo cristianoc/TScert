@@ -7,7 +7,7 @@ import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, T
 import type { Span } from "./span.mts";
 import { childrenOf, isTypeAlias } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, TypeTerm } from "./declaration-types.mts";
-import { footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
+import { withPromise, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, CallPromise } from "./type-graph.mts";
 
 /** The projections a resolvable parameter owns: its observation and its
@@ -1141,7 +1141,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   // A guard's statement bounds both signatures: they run the same code.
   return predicate
     ? [...forms, ...forms.map((f): FunctionTerm =>
-        ({ ...f, effect: { ...effect, promise: predicate.effect.promise }, result: predicate.type }))]
+        ({ ...f, effect: withPromise(effect, predicate.effect.promise), result: predicate.type }))]
     : forms;
 }
 
@@ -1151,7 +1151,7 @@ export const WITHIN_PLACE = "`Within` states a written signature's effect, at it
 /** The call effect a statement gives its signature: its footprint and
  * on-throw flag, no promise, no fresh result, no receiver-store exception. */
 export const statedEffect = (stated: StatedEffect): Within<{ value: "any"; store: "grow" }, CallEffect> =>
-  ({ ...footprintEffect(stated.footprint), onThrow: stated.onThrow });
+  (footprintEffect(stated.footprint, { onThrow: stated.onThrow }));
 
 /** A result annotation's statement of its signature's effect,
  * `Within<F, T>` with `Within` the verifier's (SOURCE-ELABORATION.md,

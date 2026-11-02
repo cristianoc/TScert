@@ -31,7 +31,7 @@ import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import { termText } from "./named-record.mts";
 import type { JsonObject } from "./calculus.mts";
 import type { DeclarationIdentity, ElementKind, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
+import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
@@ -129,7 +129,7 @@ const elementPredicates: readonly { kind: ElementKind; type: TypeTerm }[] = [
 const guarded: TypeTerm = { k: "binder", name: "S", span: at };
 /** A destructive member's: within `{value: any, store: keep}` but for its
  * receiver's store, which it may change arbitrarily. */
-const receiverStoreEffect: CallEffect = { ...footprintEffect({ value: "any", store: "keep" }), receiverStore: true };
+const receiverStoreEffect: CallEffect = footprintEffect({ value: "any", store: "keep" }, { receiverStore: true });
 /** `sort`'s at a comparator whose store changes are at most `grow`: its
  * writeback grows the receiver's store over the whole call (`sort_grow`) and
  * changes element contents. */
@@ -145,7 +145,7 @@ const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootpr
     { params: TypeTerm[]; result: TypeTerm }, fresh: boolean = false): EffectSignature[] =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
-    return { ...signature(effect, footprint), effect: { ...effect, fresh } };
+    return { ...signature(effect, footprint), effect: footprintEffect(footprint, { fresh }) };
   });
 
 export const overlay: readonly OverlayEntry[] = [
@@ -171,9 +171,9 @@ export const overlay: readonly OverlayEntry[] = [
       ...stableForDensity.map((footprint) => ({
         receiver: arrayOf(element, true, "dense"),
         params: [callback(element, mappedElement, footprintEffect(footprint))],
-        result: arrayOf(mappedElement, false), effect: { ...footprintEffect(footprint), fresh: true } })),
+        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint, { fresh: true }) })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
-        result: arrayOf(mappedElement, false, "sparse"), effect: { ...ordinaryEffect, fresh: true } },
+        result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(topFootprint, { fresh: true }) },
       // At a receiver whose present elements all have the predicate's kind
       // when the call starts (`requires`), and a callback within the empty
       // footprint, every element `map` passes has it: the callback changes
@@ -184,9 +184,9 @@ export const overlay: readonly OverlayEntry[] = [
       // is the receiver's.
       ...elementPredicates.flatMap(({ kind, type }) => [
         { receiver: arrayOf(element, true, "dense"), params: [callback(type, mappedElement, emptyEffect)],
-          result: arrayOf(mappedElement, false), effect: { ...emptyEffect, fresh: true, requires: [kind] } },
+          result: arrayOf(mappedElement, false), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind] }) },
         { params: [callback(type, mappedElement, emptyEffect)],
-          result: arrayOf(mappedElement, false, "sparse"), effect: { ...emptyEffect, fresh: true, requires: [kind] } },
+          result: arrayOf(mappedElement, false, "sparse"), effect: footprintEffect(emptyFootprint, { fresh: true, requires: [kind] }) },
       ]),
     ] },
   // `flatMap` calls the callback at each position still present when
@@ -240,8 +240,8 @@ export const overlay: readonly OverlayEntry[] = [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
         result: atomOf("boolean") })),
       ...elementPredicates.map(({ kind, type }) => ({
-        params: [callback(element, type, { ...emptyEffect, promise: { guards: { param: 0 } } })],
-        result: atomOf("boolean"), effect: { ...emptyEffect, elements: [kind] } })),
+        params: [callback(element, type, footprintEffect(emptyFootprint, { promise: { guards: { param: 0 } } }))],
+        result: atomOf("boolean"), effect: footprintEffect(emptyFootprint, { elements: [kind] }) })),
     ] },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
@@ -266,13 +266,13 @@ export const overlay: readonly OverlayEntry[] = [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
         result: arrayOf(element, false) }), true),
       { params: [callback(element, guarded, promiseEffect(false, 0))], result: arrayOf(guarded, false),
-        effect: { ...ordinaryEffect, fresh: true } },
+        effect: footprintEffect(topFootprint, { fresh: true }) },
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect, "sparse")],
         result: arrayOf(element, false) }), true).map((signature) =>
           ({ ...signature, receiver: arrayOf(element, true, "sparse") })),
       { receiver: arrayOf(element, true, "sparse"),
         params: [callback(element, guarded, promiseEffect(false, 0), "sparse")], result: arrayOf(guarded, false),
-        effect: { ...ordinaryEffect, fresh: true } },
+        effect: footprintEffect(topFootprint, { fresh: true }) },
     ] },
   // `flat()`, at its default depth 1, visits the receiver's present
   // elements below the length it read first and, for each array, appends
@@ -290,14 +290,14 @@ export const overlay: readonly OverlayEntry[] = [
       "    ): FlatArray<A, D>[];",
     binders: ["U"],
     stated: [{ receiver: arrayOf(arrayOf(mappedElement, true, "sparse"), true, "sparse"), params: [],
-      result: arrayOf(mappedElement, false, "dense"), effect: { ...emptyEffect, fresh: true } }] },
+      result: arrayOf(mappedElement, false, "dense"), effect: footprintEffect(emptyFootprint, { fresh: true }) }] },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
   // equality or SameValueZero, and allocate only their result: they run no
   // client code and write no existing location.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    effect: { ...emptyEffect, fresh: true } },
+    effect: footprintEffect(emptyFootprint, { fresh: true }) },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
     bounds: new Map([["T", stringConvertible]]), effect: emptyEffect,
     // Get at a missing numeric key yields undefined, converted to empty text.
@@ -329,7 +329,7 @@ export const overlay: readonly OverlayEntry[] = [
       ...atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
         result: maybeElement })),
       ...closedFootprints.filter((footprint) => footprint.store === "keep").map((footprint) => ({
-        params: [callback(element, guarded, { ...footprintEffect(footprint), promise: { guards: { param: 0 } } })],
+        params: [callback(element, guarded, footprintEffect(footprint, { promise: { guards: { param: 0 } } }))],
         result: { k: "union", parts: [guarded, atomOf("undefined")], span: at } satisfies TypeTerm,
         effect: footprintEffect(footprint) })),
     ] },
@@ -388,7 +388,7 @@ export const overlay: readonly OverlayEntry[] = [
   // the length: it changes the receiver's store arbitrarily and allocates its
   // result. The overload with `items` is not listed.
   { name: "splice", from: "Array", signature: "splice(start: number, deleteCount?: number): T[];",
-    effect: { ...receiverStoreEffect, fresh: true } },
+    effect: footprintEffect(receiverStoreEffect.footprint, { receiverStore: true, fresh: true }) },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
@@ -458,7 +458,7 @@ const primitiveOverlay: Readonly<Record<string, readonly OverlayEntry[]>> &
     // whose store its result is; `replaceAll` of a non-global `RegExp` would
     // throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
-      effect: { ...emptyEffect, fresh: true },
+      effect: footprintEffect(emptyFootprint, { fresh: true }),
       stated: [{ params: [atomOf("string"), optionalNumber],
         result: { k: "array", presence: "dense", readonly: false, element: atomOf("string"), span: at } }] },
     { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",

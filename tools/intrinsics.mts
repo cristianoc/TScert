@@ -90,7 +90,7 @@
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
-import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import { bytes } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
@@ -430,7 +430,7 @@ export function enumIntrinsic(name: string, members: readonly EnumMemberValue[])
 function instanceOfCollection(view: TypeTerm): TypeTerm {
   const plain: Signature = { ...fn([atom("unknown")], atom("boolean")), effect: emptyEffect };
   return { k: "intersection", span, parts: [plain,
-    { ...plain, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: view }] };
+    { ...plain, effect: footprintEffect(emptyFootprint, { promise: { guards: { param: 0 } } }), result: view }] };
 }
 
 /** The intrinsics' binders and signatures, given the standard library's
@@ -465,7 +465,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // with `receiverOwn` (SOURCE-CONTRACTS.md, "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }],
-        { ...step, effect: { ...emptyEffect, receiverOwn: true } }), effect: { ...emptyEffect, freshObject: true } } }),
+        { ...step, effect: footprintEffect(emptyFootprint, { receiverOwn: true }) }), effect: footprintEffect(emptyFootprint, { freshObject: true }) } }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),
@@ -496,7 +496,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // It returns nothing and allocates the error it throws: within the
     // empty footprint over storage that existed before it, on its throw.
     [throwUninitializedName]: () => ({ typeParams: [],
-      type: { ...fn([], atom("never")), effect: { ...emptyEffect, onThrow: true } } }),
+      type: { ...fn([], atom("never")), effect: footprintEffect(emptyFootprint, { onThrow: true }) } }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
     // The first evaluation of `import.meta` in a module fills the object
     // from the module's wrapper, which other code reaches

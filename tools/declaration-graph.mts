@@ -39,7 +39,7 @@ import { computedType, enclosingBinders, inferredTerm, isInstanceReference, lite
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, SourceTypeParameter, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
-import { emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
+import { withPromise, footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect, promiseEffect, type CallEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // named-record.mts reads a named type's record shape, at which a mapped type read before its definition is expanded.
 import { definitionKey, deferredInDocument, identityText, settleDocument, termsText, termText } from "./named-record.mts";
@@ -1780,7 +1780,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const [promise] = promises;
         if (!promise || promises.length !== 1) throw Error(`the stated guard ${stated.name} has no one promise signature`);
         return { k: "intersection", span: one.span, parts: [{ ...one, effect: emptyEffect },
-          { ...promise, effect: { ...emptyEffect, promise: promise.effect.promise } }] };
+          { ...promise, effect: footprintEffect(emptyFootprint, { promise: promise.effect.promise }) }] };
       }
       if (!entry || entry.name !== node.name.text) return one;
       const constants = guardConstants(node, entry);
@@ -1809,7 +1809,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       // the promise signature alike.
       const rest: TypeTerm = { k: "atom", name: "unknown", span };
       const plainForm = { ...one, effect: emptyEffect };
-      const promiseForm = { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised };
+      const promiseForm = { ...one, effect: footprintEffect(emptyFootprint, { promise: { guards: { param: 0 } } }), result: promised };
       return { k: "intersection", span, parts: [plainForm, promiseForm, { ...plainForm, rest }, { ...promiseForm, rest }] };
     };
     const valueRead = (reading: DeclarationReading, declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
@@ -2304,7 +2304,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         const plain: FunctionTerm = { k: "function", effect, receiver, params: entry.stated.params,
           rest: entry.stated.rest ?? null, result: entry.stated.result, span: at };
         return entry.promise
-          ? [plain, { ...plain, effect: { ...effect, promise: { asserts: { param: entry.promise.param } } }, result: entry.promise.type }]
+          ? [plain, { ...plain, effect: withPromise(effect, { asserts: { param: entry.promise.param } }), result: entry.promise.type }]
           : [plain];
       };
       // The value: the forms of each overload its calls resolve to; the
