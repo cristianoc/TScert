@@ -78,6 +78,7 @@ export const cases: Case[] = [
   { ...gap("blocker-round-document-parts", "A complete declaration document constructed from its known parts", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-binder-entries", "An owned syntax-binder map's open term annotations used at a recursive data contract", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   positive("blocker-round-conditional-path-reuse", "A plain record member path keeps its read equality across successive conditional tests."),
+  gap("blocker-round-generic-rest-answer", "A private callback getter forwards its captured generic argument pack", "unsupported", "source", /a rest parameter needs.*argument pack only/s),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
