@@ -2,7 +2,7 @@
 type Signature = { params: number[]; result: number };
 const collect = (
   values: readonly number[],
-  signature: (n: number) => Signature,
+  signature: (n: number) => Within<{ value: "keep"; store: "keep" }, Signature>,
 ): (Signature & { effect: number })[] =>
   values.map((n) => ({ ...signature(n), effect: n }));
 export function reviewed(
