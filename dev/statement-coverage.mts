@@ -293,10 +293,13 @@ export function coverageComparison(before: readonly UnitRecord[], after: readonl
     const t = `${state(u)} → ${state(w)}`;
     transitions.set(t, (transitions.get(t) ?? 0) + 1);
   }
-  const deleted = [...ka.keys()].filter((k) => !kb.has(k)).length;
-  const added = [...kb.keys()].filter((k) => !ka.has(k)).length;
+  const deleted = [...ka].filter(([key]) => !kb.has(key));
+  const added = [...kb].filter(([key]) => !ka.has(key));
+  const countedDeleted = deleted.filter(([, u]) => u.scope === "census" && u.class !== notRun).length;
+  const countedAdded = added.filter(([, u]) => u.scope === "census" && u.class !== notRun).length;
   out.push("matched statements (file, function, kind, ordinal):");
   for (const [t, n] of [...transitions].sort()) out.push(`  ${t.padEnd(24)} ${n}`);
-  out.push(`deleted statements: ${deleted}; added statements: ${added}`);
+  out.push(`counted statements: deleted ${countedDeleted}; added ${countedAdded}`);
+  out.push(`all inventory statements (including uncounted): deleted ${deleted.length}; added ${added.length}`);
   return out.join("\n") + "\n";
 }

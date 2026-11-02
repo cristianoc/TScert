@@ -793,6 +793,22 @@ stages and withdrawals, after entry eviction. They describe observed
 execution cost. Elapsed time depends on the machine's load; CPU time does not
 count waiting.
 
+A census comparison's stage-cost table sums the producing measurements
+referenced by its slice records. Shared work can appear in several records,
+and a replay refers to a historical producing execution. Those sums describe
+recorded costs, rather than CPU consumed by the current census. Counting
+unique producing executions uses `replay.storedAttempt` for a replay and
+`attempt` otherwise. Function cohorts can share a producing execution, so
+costs deduplicated within separate cohorts need not add to the globally
+deduplicated cost. Peak memory is a maximum, not a sum. The census record's
+elapsed time measures that run's wall time, including replay and scheduling.
+
+A fixed-input performance comparison states the source or request, claims,
+mode and arguments it holds fixed, the executable for each run, and their
+outcomes. A source change that passes an earlier refusal can expose more
+proof work; aggregate census costs alone do not establish the cost of the
+same proof obligation.
+
 ## Location and size
 
 The store lives outside every checkout at

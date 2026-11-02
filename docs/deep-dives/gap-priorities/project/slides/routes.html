@@ -1,16 +1,16 @@
 <section id="routes" style="background:#f6f7f5;color:#1d2422;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;padding:120px 128px;display:flex;flex-direction:column;gap:20px">
-<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Cited policy · SOURCE-REWRITES.md</p>
-<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Use the first route that establishes the obligation at acceptable cost</h2>
+<p style="font-size:24px;color:#5b6662;font-weight:600;letter-spacing:2px;text-transform:uppercase">Cited policy · docs/SOURCE-REWRITES.md</p>
+<h2 style="font-family:'IBM Plex Serif',Georgia,serif;font-size:56px;font-weight:500;line-height:1.15">Choose the first route that establishes the obligation at acceptable cost</h2>
 <table style="font-size:24px;color:#1d2422">
-<tr><th style="width:25%;text-align:left;font-weight:600;padding:4px 12px">Route</th><th style="width:75%;text-align:left;font-weight:600;padding:4px 12px">What the route requires</th></tr>
-<tr><td style="padding:4px 12px">1. Support</td><td style="padding:4px 12px">A rule or external contract admits the construct</td></tr>
-<tr><td style="padding:4px 12px">2. A runtime check</td><td style="padding:4px 12px">An executable check establishes the whole property</td></tr>
-<tr><td style="padding:4px 12px">3. A repair</td><td style="padding:4px 12px">The source corrects a defect the refusal reveals</td></tr>
-<tr><td style="padding:4px 12px">4. Avoidance</td><td style="padding:4px 12px">An equivalent source form avoids costly support</td></tr>
-<tr><td style="padding:4px 12px">5. A host boundary</td><td style="padding:4px 12px">A small wrapper performs an external service operation with no model. Its functions stay refused; callers assume its audited result and effect contract</td></tr>
-<tr><td style="padding:4px 12px">6. A trusted unit</td><td style="padding:4px 12px">Local code is exempt from checking, with the owner accepting its full contract as an assumption</td></tr>
-<tr><td style="padding:4px 12px">7. A proof</td><td style="padding:4px 12px">A Lean proof establishes the needed fact in the model</td></tr>
+<tr><th style="width:25%;text-align:left;font-weight:600;padding:4px 12px">Route</th><th style="width:75%;text-align:left;font-weight:600;padding:4px 12px">Required evidence</th></tr>
+<tr><td style="padding:4px 12px">Support</td><td style="padding:4px 12px">A checked rule or audited external contract admits the construct</td></tr>
+<tr><td style="padding:4px 12px">Runtime check</td><td style="padding:4px 12px">An executable check establishes the complete required property</td></tr>
+<tr><td style="padding:4px 12px">Repair</td><td style="padding:4px 12px">The source corrects a defect exposed by the refusal</td></tr>
+<tr><td style="padding:4px 12px">Avoidance</td><td style="padding:4px 12px">An equivalent source form preserves returns, exceptions and effects</td></tr>
+<tr><td style="padding:4px 12px">Host boundary</td><td style="padding:4px 12px">A small wrapper performs an external service operation; callers assume its audited contract</td></tr>
+<tr><td style="padding:4px 12px">Trusted unit</td><td style="padding:4px 12px">The owner accepts a local unit’s complete contract as an assumption</td></tr>
+<tr><td style="padding:4px 12px">Proof</td><td style="padding:4px 12px">A Lean proof establishes the required fact in the model</td></tr>
 </table><ul style="font-size:24px;color:#1d2422;line-height:1.36">
-<li>Before choosing a route, inspect whether the code discards information it already has. An external declaration is a specification to audit. A successful small case can establish a route for its construct while the larger census function reaches another refusal. Later obligations are outside this record’s first-refusal ranking.</li>
+<li>First inspect whether the source discards information its own construction already establishes. A negative case needs demonstrated unsafe behavior. A refused ordinary program remains an obligation to investigate, even when another source form verifies. The status table in WORK.md owns each investigation’s status.</li>
 </ul>
 </section>

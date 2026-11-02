@@ -376,7 +376,11 @@ separately.
 its file, its top-level function, its kind and its ordinal among that
 function's units of that kind. A unit matched on both sides counts in the
 transition between verified, not verified and not counted; a unit on one
-side only counts as deleted or added.
+side only counts as deleted or added. The comparison reports additions
+and deletions separately for counted statements and for the complete
+inventory, which also contains out-of-scope and not-run units. Only
+counted statements contribute to the coverage denominator; matched units
+that enter or leave the counted set also move that denominator.
 
 **Records.** A census record holds each file's source hash and its
 inventory, every unit with its file, span, position, kind, owner and class
