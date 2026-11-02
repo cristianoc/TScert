@@ -2449,11 +2449,11 @@ the third argument and throws a `TypeError` under Node.
 `filter` is stated at TypeScript's guard overload too,
 `filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S): S[]`,
 read at a callback whose [promise signature](SOURCE-ELABORATION.md#user-defined-guards) promises
-$`S`$ of its first actual:
+$`S`$ of its first actual, at each closed footprint $`\varepsilon`$:
 
 ```math
-\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow S\,[\mathsf{guards}\ 0]}
-     {\mathit{xs}.\mathsf{filter}(f):S[\,]\;!\;\top}\ \textsf{native-guard-filter}
+\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon} S\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{filter}(f):S[\,]\;!\;\varepsilon}\ \textsf{native-guard-filter}
 ```
 
 Both ordinary and guard `filter` signatures also admit a sparse receiver.
@@ -2479,8 +2479,22 @@ one $`v\in S`$ held in, and membership of a type is kept by world extension
 (`Adm`'s `mono`, [Types.lean](../lean/Verification/Types/Types.lean)).
 Every kept value is an $`S`$ without the bound $`S\le T`$, which the
 overlay leaves out; at $`S`$ the empty type the result is empty. The
-signature states the callback at the top footprint, so the call may change
-any location; its result is fresh. A callback whose promise is about another parameter meets
+callback's closed footprint also bounds the native on normal return: beside
+callbacks it only reads existing locations and writes the fresh result's
+store and element cells. This includes reentrant calls; their writes must
+meet the callback's contract. No exceptional footprint is stated.
+`guard-filter-footprints` exercises pure, value-writing, growing and
+shrinking callbacks; `blocker-next-guard-filter-map-density` keeps the
+enclosing map's result dense through a preserving guard filter.
+`invalid-guard-filter-map-pop` pops the outer map receiver from the guard,
+leaving an absent result position that throws `TypeError` when read under Node.
+A narrowed readonly field remains a view of an invariant storage contract:
+`invalid-guard-filter-field-alias` cannot promise a string field merely by
+testing a writable nullable field. Its later callback writes null through an
+alias to an earlier selected object, whose string operation throws under Node.
+The existing ordinary-construction, species and numeric-data restrictions
+apply to every footprint, including the top footprint. A callback whose
+promise is about another parameter meets
 only the plain signatures, where `filter` keeps `T`. A guard read as a
 value meets the guard signature where its value states its promise
 signature extended by a rest of `unknown`, the actuals past its parameters

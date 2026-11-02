@@ -9,6 +9,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+assert.throws(() => runExample("invalid-footprint-factory-provider", 'broken([1, 2, 3])[2].result'),
+  /TypeError/, "a shrinking factory provider leaves an absent mapped result position");
+assert.equal(runExample("blocker-next-footprint-factory", 'JSON.stringify(reviewed([1, 2]))'),
+  '[{"params":[1],"result":1,"effect":1},{"params":[2],"result":2,"effect":2}]',
+  "a preserving factory copies each record and its effect in input order");
+
+assert.throws(() => runExample("invalid-guard-filter-map-pop", 'broken(["a", "b", "c"])[2].length'),
+  /TypeError/, "a mutating guard filter leaves a hole in its enclosing map's result");
+assert.throws(() => runExample("invalid-guard-filter-field-alias",
+  '(() => { const victim = { value: "a" }; return unsafe([victim, { value: "b" }], victim); })()'),
+  /TypeError/, "a later callback invalidates a current-content refinement through a writable alias");
+assert.equal(runExample("guard-filter-footprints",
+  '(() => { const values = new Set(), seen = []; return JSON.stringify([pure(["a", 1]), writing(["a", 1], values), values.size, growing(["a", 1], seen), seen.length, shrinking(["a", "b", "c"])]); })()'),
+  '[["a"],["a"],1,["a"],2,["a","b"]]', "guard filter copies selected values while retaining callback effects");
+
 assert.equal(runExample("invalid-array-rest-own-iterator",
   '(() => { const xs = [1], victim = [2]; changed(xs, victim); return victim.length; })()'), 0,
   "an own array iterator can shrink another ordinary array during rest collection");

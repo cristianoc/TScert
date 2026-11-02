@@ -31,7 +31,7 @@ import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import { termText } from "./named-record.mts";
 import type { JsonObject } from "./calculus.mts";
 import type { DeclarationIdentity, ElementKind, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
+import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
@@ -142,7 +142,7 @@ const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
 const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
-    { params: TypeTerm[]; result: TypeTerm }, fresh: boolean = false): EffectSignature[] =>
+    Within<{ value: "keep"; store: "keep" }, { params: TypeTerm[]; result: TypeTerm }>, fresh: boolean = false): EffectSignature[] =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
     return { ...signature(effect, footprint), effect: footprintEffect(footprint, { fresh }) };
@@ -256,23 +256,26 @@ export const overlay: readonly OverlayEntry[] = [
   // is passed (`native-guard-filter`). The native appends the very value it
   // passed where the answer is `true`, which the promise leaves an `S`, and
   // type membership survives every write the callbacks after it make; so
-  // the result holds `S`s, without the bound `S extends T`. The callback is
-  // at the top footprint, which every promise signature's footprint is
-  // within, and so is the call. A sparse receiver is tested for presence
-  // before each visit too; its callback's third argument stays sparse.
+  // the result holds `S`s, without the bound `S extends T`. Each closed
+  // footprint bounds both the callback's promise signature and the call;
+  // collection itself only reads and writes its fresh result. A sparse
+  // receiver is tested for presence before each visit too; its callback's
+  // third argument stays sparse.
   { name: "filter", from: "ReadonlyArray",
     signature: "filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): S[];",
     stated: [
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
         result: arrayOf(element, false) }), true),
-      { params: [callback(element, guarded, promiseEffect(false, 0))], result: arrayOf(guarded, false),
-        effect: footprintEffect(topFootprint, { fresh: true }) },
+      ...atEachFootprint((_effect, footprint) => ({
+        params: [callback(element, guarded, footprintEffect(footprint, { promise: { guards: { param: 0 } } }))],
+        result: arrayOf(guarded, false) }), true),
       ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect, "sparse")],
         result: arrayOf(element, false) }), true).map((signature) =>
           ({ ...signature, receiver: arrayOf(element, true, "sparse") })),
-      { receiver: arrayOf(element, true, "sparse"),
-        params: [callback(element, guarded, promiseEffect(false, 0), "sparse")], result: arrayOf(guarded, false),
-        effect: footprintEffect(topFootprint, { fresh: true }) },
+      ...atEachFootprint((_effect, footprint) => ({
+        params: [callback(element, guarded, footprintEffect(footprint, { promise: { guards: { param: 0 } } }), "sparse")],
+        result: arrayOf(guarded, false) }), true).map((signature) =>
+          ({ ...signature, receiver: arrayOf(element, true, "sparse") })),
     ] },
   // `flat()`, at its default depth 1, visits the receiver's present
   // elements below the length it read first and, for each array, appends

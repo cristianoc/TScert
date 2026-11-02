@@ -451,6 +451,23 @@ uses it to retain readable array presence for reduction and iteration.
   adds no external assumption.
 - **Commit:** the introducing commit.
 
+The private `atEachFootprint` helper in `tools/array-prototype.mts` applies
+this pattern at its `signature` parameter. Its result is
+`Within<{ value: "keep"; store: "keep" }, { params: TypeTerm[]; result: TypeTerm }>`.
+The complete data contract stays explicit; each provider must establish the
+preserving footprint at the call. The providers construct records, arrays
+and effect descriptions without writing existing locations. The helper's
+map consequently retains readable result presence.
+
+The annotation is erased: the same footprint array is visited in the same
+order, each provider runs once per visited value, and the same records are
+spread and returned. Returns, exceptions, mutations and aliases are
+unchanged for those checked providers. `blocker-next-footprint-factory`
+checks the private factory and its preserving provider;
+`invalid-footprint-factory-provider` supplies a shrinking provider that
+cannot meet the parameter contract and leaves an absent result position
+under Node. This source repair adds no external assumption.
+
 ### A cache callback's nullable answer field
 
 `realOf` in `tools/files.mts` supplies `attemptAnswer` with a callback
