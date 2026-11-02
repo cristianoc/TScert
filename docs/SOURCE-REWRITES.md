@@ -963,20 +963,53 @@ bound the values written there later.
   patterns`, which made the effect types readonly, and the introducing
   commit.
 
-### A callback inheriting `any` from object entries
+### Contract syntax retained through recursive printing
 
-`mergeRefusal` (`tools/array-prototype.mts`) reads `Object.entries(o)` in
-its local canonical representation, through `filter` and `map` with
-unannotated destructuring callbacks. The standard library's object
-overload supplies `[string, any]`, so the callback's value has no stated
-contract.
+`tools/array-prototype.mts#mergeRefusal` compares source contracts through
+its local `canonical` printer. The values printed are type terms, the
+method and property records built around them, and arrays of binder-name
+and type-term pairs. Their recursive data contract contains strings,
+numbers, Booleans, null, undefined, arrays and dictionaries of those values.
+The printer retains this contract in its parameter and entry callbacks.
 
-- **Rewrite:** each callback declares its entry `[string, unknown]`.
-  The recursive reader already accepts `unknown`.
-- **Pattern:** a callback receiving untyped external data states the
-  weakest contract its body needs, checking values before using them.
-- **Functions:** `mergeRefusal` (its local `canonical`).
-- **Commit:** the introducing commit, `State the contracts used by the front end's negative patterns`.
+- **Repair:** retain the data contract established by the syntax reader and
+  local record construction. Widening it to `unknown` admits compiler
+  objects, whose fields the ordinary-object entry contract cannot expose.
+- **Array view:** the native `Array.isArray` test supplies the false-branch
+  exclusion that the dictionary traversal needs. Inside the array branch,
+  a checked predicate repeats that same pure native test and retains the
+  recursive element contract under the shadow declarations. Both answers
+  agree under the standard native contract; the disagreement throw is
+  unreachable for the parameter's values.
+- **Behaviour:** field traversal, callbacks, key order, span omission and
+  primitive conversions give the same strings, returns and exceptions for
+  every supplied value. Arrays incur the extra pure array test.
+- **Scope:** `blocker-entries-mixed-overloads` exercises the recursive
+  printer at this contract. The generic and plain overloads retain their
+  independent forged-claim control in `pipeline/test.mts`.
+
+### An intersection owning its writable parts
+
+`tools/type-term.mts#oneTerm` returns a sole function term directly and
+constructs an intersection for the other arities. The intersection's
+`parts` array permits every `TypeTerm`; its input array permits only
+function terms. An intersection therefore owns a fresh array constructed
+at the full element contract.
+
+- **Repair:** copy the function terms into fresh `TypeTerm[]` storage.
+  Publishing the input through the broader writable result lets a caller
+  replace a function with an atom through `parts`, then read the original
+  function array at a value without `params`.
+- **Counterexample:** `invalid-prep-intersection-function-array` publishes
+  the shared array. Writing an atom through the intersection and reading
+  `functions[0].params.length` throws `TypeError` under Node. The repaired
+  `blocker-prep-intersection-function-array` retains the original functions
+  through that write and returns the same function object for a singleton.
+- **Behaviour:** the terms and their order are retained. Empty and multiple
+  terms receive independent writable storage; the singleton's identity is
+  retained. Writes through an intersection leave the input array's
+  function-only contract intact.
+
 
 ### A promise executor inheriting `any` from its context
 

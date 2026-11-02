@@ -9,6 +9,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+{
+  const values = 'const span = [0, 0]; const atom = { k: "atom", name: "string", span }; const effect = { footprint: { value: "any", store: "any" }, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null }; const fn = { k: "function", effect, receiver: null, params: [], rest: null, result: atom, span }; const functions = [fn, fn];';
+  assert.equal(runExample("invalid-prep-intersection-function-array",
+    `(() => { ${values} const combined = oneTerm(functions, span); combined.parts[0] = atom; try { functions[0].params.length; return false; } catch (error) { return error instanceof TypeError; } })()`), true,
+    "an intersection's writable view can corrupt the function array it aliases");
+  assert.equal(runExample("blocker-prep-intersection-function-array",
+    `(() => { ${values} const combined = oneTerm(functions, span); combined.parts[0] = atom; return functions[0].params.length === 0 && oneTerm([fn], span) === fn; })()`), true,
+    "the intersection owns its writable parts and the singleton keeps its term identity");
+}
+
 assert.equal(runExample("invalid-project-after-check-write",
   '(() => { const project = { options: { strict: true } }; return use(project, p => { p.options.strict = false; }); })()'), false,
   "a callback can invalidate the nested strict flag before its true result annotation");

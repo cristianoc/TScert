@@ -916,11 +916,20 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   });
   // A contract without its spans: the reader keeps no parameter name, so
   // equal contracts read alike.
-  const canonical = (value: unknown): string => {
-    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  type ContractData = null | undefined | boolean | number | string
+    | readonly ContractData[] | { readonly [key: string]: ContractData };
+  const isArrayData = (value: ContractData): value is readonly ContractData[] => Array.isArray(value);
+  const canonical = (value: ContractData): string => {
+    if (Array.isArray(value)) {
+      // The native test excludes arrays on the other branch; this checked
+      // guard retains their element contract under the shadow declarations.
+      if (!isArrayData(value)) throw Error("array data tests disagree");
+      const items: readonly ContractData[] = value;
+      return `[${items.map(canonical).join(",")}]`;
+    }
     if (value !== null && typeof value === "object")
-      return `{${Object.entries(value).filter(([key]: [string, unknown]) => key !== "span")
-        .map(([key, field]: [string, unknown]) => `${key}:${canonical(field)}`).join(",")}}`;
+      return `{${Object.entries(value).filter(([key]: [string, ContractData]) => key !== "span")
+        .map(([key, field]: [string, ContractData]) => `${key}:${canonical(field)}`).join(",")}}`;
     return typeof value === "string" ? JSON.stringify(value) : String(value);
   };
   const contract = (member: Member, binders: Binders): string | null => {

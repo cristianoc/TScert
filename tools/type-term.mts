@@ -1249,7 +1249,10 @@ export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary
 /** Several signatures as one term: their intersection, which a value meets by
  * meeting each. */
 export function oneTerm(terms: FunctionTerm[], span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  return terms.length === 1 && terms[0] ? terms[0] : { k: "intersection", parts: terms, span };
+  const [only] = terms;
+  if (terms.length === 1 && only) return only;
+  const parts: TypeTerm[] = terms.map((term): TypeTerm => term);
+  return { k: "intersection", parts, span };
 }
 
 type SchemeTerm = Extract<TypeTerm, { k: "scheme" }>;
