@@ -75,6 +75,7 @@ export const cases: Case[] = [
     /source expression obligation at \[490,499\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-document-parts", "A complete declaration document constructed from its known parts", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   gap("blocker-round-conditional-path-reuse", "A plain-object member fact retained after a preceding conditional branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s),
+  { ...gap("blocker-round-binder-entries", "An owned syntax-binder map's open term annotations used at a recursive data contract", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
