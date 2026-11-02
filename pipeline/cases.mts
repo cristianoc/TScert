@@ -60,6 +60,7 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-declaration-bindings-map", "a recursive visitor popping its mapped array cannot state a growth footprint: two real snapshot identifiers leave a result hole under Node",
     /source expression obligation at \[324,517\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/compiler-api-project" },
+  { ...gap("blocker-next-compiler-api-ancestor-cell", "A compiler statement parent cell later reaches an absent ancestor", "unverified", "search", /storage-contract claim/), project: "pipeline/compiler-api-project" },
   gap("blocker-next-optional-native-map-copy", "Optional native Map copied at its key and value contract", "unverified", "search", /source expression obligation/),
   gap("blocker-next-noted-json", "Resolution observations serialized as open named-field records", "unverified", "search", /source expression obligation.*no derivation of its node-typing claim/s),
   gap("blocker-next-indexed-refinement", "A guarded constant array index is read again at a required object field", "unverified", "search",
