@@ -58,6 +58,8 @@ export const cases: Case[] = [
   { ...positive("blocker-round-logical-member-witness", "Checked member witnesses type residual constructor-member, disjunction and optional-member logical predicates."), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-callable-json-fields", "Recursive printing of a possibly absent field at a JsonValue parameter", "unverified", "search",
     /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
+  { ...gap("blocker-round-parser-held-compiler", "A nullable compiler module cell refined across another captured cell's update", "unverified", "search",
+    /^reject: source incoming edge obligation at \[508,545\): evidence search failed: the edge from node 84 does not establish the claims at this point(?:\n|$)/), project: "pipeline/blocker-project" },
   gap("blocker-round-probe-file-keys", "A probe map's keys spread through a structural ReadonlyMap interface", "unverified", "search",
     /source expression obligation.*node-typing claim/s),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
