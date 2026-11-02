@@ -4252,15 +4252,28 @@ type names does, and a definition's methods name it as their receiver
   and encodes URL control characters. It states no effect.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
-  too (Node's `lib/path.js`). `join` of any number of strings,
-  `resolve` of any number and `relative` of two compute one too, but `join`
-  calls `posix.normalize` and `resolve` and `relative` call `process.cwd()`
-  for a relative path, writable properties other code may replace, so they
-  are unrestricted in their effect, as `realpathSync` is, which resolves its
-  path the same way (`node-path-strings`; `invalid-node-path-join-callback`
-  and `invalid-node-path-resolve-callback`, run under Node). The module
-  exports one object (`export = path`), whose methods are the overloads an
-  entry names.
+  too (Node's `lib/path.js`). `join` at any number of primitive strings is
+  within the empty footprint on normal return under the standard-object
+  assumption: the module's platform-specific `normalize`, and the standard
+  array and string operations it uses, are untampered. The Node 26.13.0
+  POSIX and Windows implementations validate each string, collect nonempty
+  pieces into private arrays, and concatenate and normalize strings. The
+  Windows reserved-device checks run only internal string predicates. They
+  read no client object, invoke no client callback or coercion, and write
+  only fresh private arrays; the result is a string. No exceptional footprint
+  is stated. The string-pattern `split` contract gives a fresh dense array,
+  and the checked map callback preserves stores, so `Set` receives readable
+  string elements (`blocker-prep-set-mapped-paths`). No source rewrite or
+  extra trust beyond untampered standard objects is needed.
+  `invalid-node-path-join-callback` explicitly replaces `path.posix.normalize`
+  and demonstrates a hole under Node; the module-overlay gate refuses the
+  native implementation object it accesses. External code obeys the same
+  standard-object assumption. `resolve` and `relative` keep unrestricted
+  effects: they read `process.cwd()` for relative paths, as `realpathSync`
+  does (`invalid-node-path-resolve-callback`, run under Node).
+  The module exports one object (`export = path`), whose methods are the
+  overloads an entry names (`node-path-strings`, including the safe map from
+  the normalizer-tampering example).
 - `node:os`'s `tmpdir()` returns a string: on POSIX the native
   `getTempDir`, the first of `TMPDIR`, `TMP` and `TEMP` set, or `"/tmp"`; on
   Windows `process.env`'s `TEMP` or `TMP`, or `SystemRoot` or `windir`

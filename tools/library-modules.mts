@@ -464,15 +464,12 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "crypto", name: "createHash",
     signature: "function createHash(algorithm: string, options?: HashOptions): Hash;",
     stated: { binders: [], params: [text("sha256")], result: hash }, definitions: [hashDefinition, stated.bytes] },
-  // `node:path`'s string functions compute a path from strings. `dirname`
-  // and `basename` with an optional suffix validate their strings and
-  // compute from them alone (Node 25.2.1's lib/path.js): they run no code of
-  // the client's, write nothing and allocate the string they return. `join`
-  // calls `posix.normalize`, and `resolve`, and `relative` through it, read
-  // `process.cwd()` for a relative path: writable properties other code may
-  // replace, so the three are unrestricted in their effect.
+  // String-only `join` invokes the standard platform normalize function,
+  // allocates private arrays and strings, and runs no client callback under
+  // the untampered-standard-object contract (SOURCE-CONTRACTS.md, Library modules).
+  // `resolve` and `relative` keep their unrestricted contracts.
   { module: "path", name: "join", signature: "join(...paths: string[]): string;",
-    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
+    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") }, effect: emptyEffect },
   { module: "path", name: "resolve", signature: "resolve(...paths: string[]): string;",
     stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
   { module: "path", name: "dirname", signature: "dirname(path: string): string;",
