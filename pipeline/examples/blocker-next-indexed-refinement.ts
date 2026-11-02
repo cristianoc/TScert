@@ -2,6 +2,7 @@
 // #optionalMethodCall,#wrappedMethodCall,#chainLink,#update,#template,#binary,#lambda.
 type E = { k: "id" };
 export function wrap(args: E[]): { object: E } {
-  if (!args[0]) throw Error("empty");
-  return { object: args[0] };
+  const object = args[0];
+  if (!object) throw Error("empty");
+  return { object };
 }
