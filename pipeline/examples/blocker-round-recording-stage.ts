@@ -3,6 +3,7 @@
 import type { Recording } from "../../tools/files.mts";
 export function recording(stage: boolean, staleProcess: string | null): Recording {
   const made: Recording = { answers: new Map(), holding: new Set(), incomplete: null,
-    inconsistent: staleProcess, ledger: false, readsInput: false, ...(stage ? { stage: true } : {}) };
+    inconsistent: staleProcess, ledger: false, readsInput: false };
+  if (stage) made.stage = true;
   return made;
 }
