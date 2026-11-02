@@ -1885,6 +1885,31 @@ field's type did not state that.
   `renamedModule`.
 - **Commit:** the introducing commit.
 
+### Active recording membership
+
+`tools/files.mts` holds active recordings in an insertion-ordered `Set`.
+Each observation creates a fresh record; a retained ledger enters only when
+its record is absent. `enterLedger` returns the record it activates, or null
+when that record is already active. `leaveLedger` removes that saved identity. A mutable alias may
+replace a ledger's recording during a callback; cleanup belongs to the record
+activated at entry. Reading the replacement for cleanup can remove an enclosing
+activation and misattribute subsequent observations. The mutable-alias control
+in `tests/shared-work.mts` exercises that failure. `withLedger` pairs these
+operations around an arbitrary callback, including a callback that shrinks arrays.
+
+Set membership updates have the existing
+[native footprints](SOURCE-CONTRACTS.md#native-footprints): arbitrary value
+changes and preserved array stores. The helper statements are checked from
+their bodies. `active-ledger-footprint` exercises these statements and a
+composition whose callback preserves stores on both normal and exceptional
+returns. This proof scope requires the callback's `onThrow` guarantee at the
+exceptional edge of `finally` ([footprints](FOOTPRINTS.md)).
+
+Named inputs select the nearest active stage by scanning a snapshot in reverse
+insertion order. Ledger validation suspends the active set and restores its
+snapshot in insertion order. The shared-work controls exercise repeated ledger
+entry, exceptional exit, validation restoration and nested named inputs.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

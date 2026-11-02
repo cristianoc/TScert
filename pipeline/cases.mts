@@ -49,6 +49,7 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   // Supplied census first refusals; source headers name the functions each case represents.
+  positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
   { ...gap("blocker-prep-set-mapped-paths", "Set construction from an array mapped through node:path join", "unverified", "search",
     /^reject: source expression obligation at \[503,567\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },
