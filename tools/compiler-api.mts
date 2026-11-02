@@ -263,7 +263,8 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * declaration text states it; an overloaded member is the overloads listed.
  * An entry marked `fresh` returns an array its call allocates (audited,
  * COMPILER-API.md, "Audits of sync members"), which its request reading
- * states (`requestReading`). An entry marked `table` returns a native `Map`
+ * states (`requestReading`). An entry marked `request` carries the audited
+ * normal-return store-growth effect. An entry marked `table` returns a native `Map`
  * whose keys are strings the package produced (audited, COMPILER-API.md,
  * "Audits of sync members"), which `tableReading` reads at `string` keys.
  * A class the contract lists no view for has none: no member. The members
@@ -271,17 +272,17 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
  * methods, whose promise is about the receiver, which is no actual of a call:
  * the stated guards of their names state them as functions (`statedGuards`).
  * `Type`, an interface, has a view of its own as a class does. */
-export const hostViews: readonly { owner: string; members: readonly { name: string; text: string; fresh?: true; table?: true }[] }[] = [
+export const hostViews: readonly { owner: string; members: readonly { name: string; text: string; request?: true; fresh?: true; table?: true }[] }[] = [
   { owner: "API", members: [
     { name: "parseConfigFile", text: "parseConfigFile(file: DocumentIdentifier): ConfigResponse;" },
-    { name: "close", text: "close(): void;" },
+    { name: "close", request: true, text: "close(): void;" },
     { name: "updateSnapshot", text: "updateSnapshot(params?: FromLSP extends true ? LSPUpdateSnapshotParams : UpdateSnapshotParams): Snapshot;" },
   ] },
   { owner: "Snapshot", members: [
-    { name: "getProjects", text: "getProjects(): readonly Project[];" },
-    { name: "dispose", text: "dispose(): void;" },
+    { name: "getProjects", request: true, text: "getProjects(): readonly Project[];" },
+    { name: "dispose", request: true, text: "dispose(): void;" },
     { name: "getDefaultProjectForFile", text: "getDefaultProjectForFile(file: DocumentIdentifier): Project | undefined;" },
-    { name: "getProject", text: "getProject(configFileName: string): Project | undefined;" },
+    { name: "getProject", request: true, text: "getProject(configFileName: string): Project | undefined;" },
   ] },
   { owner: "Project", members: [
     { name: "checker", text: "readonly checker: Checker;" },
@@ -292,46 +293,46 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
   ] },
   { owner: "Program", members: [
     { name: "getDeclarationDiagnostics", text: "getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
-    { name: "getGlobalDiagnostics", text: "getGlobalDiagnostics(): readonly Diagnostic[];" },
-    { name: "getProgramDiagnostics", text: "getProgramDiagnostics(): readonly Diagnostic[];" },
+    { name: "getGlobalDiagnostics", request: true, text: "getGlobalDiagnostics(): readonly Diagnostic[];" },
+    { name: "getProgramDiagnostics", request: true, text: "getProgramDiagnostics(): readonly Diagnostic[];" },
     { name: "getSemanticDiagnostics", text: "getSemanticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
     { name: "getSourceFile", text: "getSourceFile(file: DocumentIdentifier): SourceFile | undefined;" },
-    { name: "getSourceFileNames", text: "getSourceFileNames(): readonly string[];" },
+    { name: "getSourceFileNames", request: true, text: "getSourceFileNames(): readonly string[];" },
     { name: "getSyntacticDiagnostics", text: "getSyntacticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
-    { name: "isSourceFileDefaultLibrary", text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
+    { name: "isSourceFileDefaultLibrary", request: true, text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
   ] },
   { owner: "Checker", members: [
-    { name: "getContextualType", text: "getContextualType(node: Expression): Type | undefined;" },
-    { name: "getAliasedSymbol", text: "getAliasedSymbol(symbol: Symbol): Symbol;" },
-    { name: "getConstantValue", text: "getConstantValue(node: Node): string | number | undefined;" },
-    { name: "getExportsOfModule", text: "getExportsOfModule(symbol: Symbol): readonly Symbol[];" },
-    { name: "getImmediateAliasedSymbol", text: "getImmediateAliasedSymbol(symbol: Symbol): Symbol | undefined;" },
-    { name: "getIndexInfosOfType", text: "getIndexInfosOfType(type: Type): readonly IndexInfo[];" },
-    { name: "getNonNullableType", text: "getNonNullableType(type: Type): Type | undefined;" },
-    { name: "getParameterType", text: "getParameterType(signature: Signature, index: number): Type | undefined;" },
-    { name: "getPropertiesOfType", text: "getPropertiesOfType(type: Type): readonly Symbol[];" },
-    { name: "getPropertyOfType", text: "getPropertyOfType(type: Type, name: string): Symbol | undefined;" },
-    { name: "getResolvedSignature", text: "getResolvedSignature(node: Node): Signature | undefined;" },
-    { name: "getReturnTypeOfSignature", text: "getReturnTypeOfSignature(signature: Signature): Type | undefined;" },
-    { name: "getShorthandAssignmentValueSymbol", text: "getShorthandAssignmentValueSymbol(node: Node): Symbol | undefined;" },
-    { name: "getSignaturesOfType", text: "getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[];" },
-    { name: "getSymbolAtLocation", text: "getSymbolAtLocation(node: Node): Symbol | undefined;" },
-    { name: "getSymbolAtLocation", text: "getSymbolAtLocation(nodes: readonly Node[]): (Symbol | undefined)[];", fresh: true },
-    { name: "getTypeArguments", text: "getTypeArguments(type: TypeReference): readonly Type[];" },
-    { name: "getTypeAtLocation", text: "getTypeAtLocation(node: Node): Type | undefined;" },
-    { name: "getTypeAtLocation", text: "getTypeAtLocation(nodes: readonly Node[]): (Type | undefined)[];", fresh: true },
-    { name: "getTypeFromTypeNode", text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
-    { name: "getTypeOfSymbol", text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
-    { name: "getTypePredicateOfSignature", text: "getTypePredicateOfSignature(signature: Signature): TypePredicate | undefined;" },
-    { name: "isArrayType", text: "isArrayType(type: Type): boolean;" },
-    { name: "isTupleType", text: "isTupleType(type: Type): boolean;" },
-    { name: "isUndefinedSymbol", text: "isUndefinedSymbol(symbol: Symbol): boolean;" },
-    { name: "isUnknownSymbol", text: "isUnknownSymbol(symbol: Symbol): boolean;" },
+    { name: "getContextualType", request: true, text: "getContextualType(node: Expression): Type | undefined;" },
+    { name: "getAliasedSymbol", request: true, text: "getAliasedSymbol(symbol: Symbol): Symbol;" },
+    { name: "getConstantValue", request: true, text: "getConstantValue(node: Node): string | number | undefined;" },
+    { name: "getExportsOfModule", request: true, text: "getExportsOfModule(symbol: Symbol): readonly Symbol[];" },
+    { name: "getImmediateAliasedSymbol", request: true, text: "getImmediateAliasedSymbol(symbol: Symbol): Symbol | undefined;" },
+    { name: "getIndexInfosOfType", request: true, text: "getIndexInfosOfType(type: Type): readonly IndexInfo[];" },
+    { name: "getNonNullableType", request: true, text: "getNonNullableType(type: Type): Type | undefined;" },
+    { name: "getParameterType", request: true, text: "getParameterType(signature: Signature, index: number): Type | undefined;" },
+    { name: "getPropertiesOfType", request: true, text: "getPropertiesOfType(type: Type): readonly Symbol[];" },
+    { name: "getPropertyOfType", request: true, text: "getPropertyOfType(type: Type, name: string): Symbol | undefined;" },
+    { name: "getResolvedSignature", request: true, text: "getResolvedSignature(node: Node): Signature | undefined;" },
+    { name: "getReturnTypeOfSignature", request: true, text: "getReturnTypeOfSignature(signature: Signature): Type | undefined;" },
+    { name: "getShorthandAssignmentValueSymbol", request: true, text: "getShorthandAssignmentValueSymbol(node: Node): Symbol | undefined;" },
+    { name: "getSignaturesOfType", request: true, text: "getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[];" },
+    { name: "getSymbolAtLocation", request: true, text: "getSymbolAtLocation(node: Node): Symbol | undefined;" },
+    { name: "getSymbolAtLocation", request: true, text: "getSymbolAtLocation(nodes: readonly Node[]): (Symbol | undefined)[];", fresh: true },
+    { name: "getTypeArguments", request: true, text: "getTypeArguments(type: TypeReference): readonly Type[];" },
+    { name: "getTypeAtLocation", request: true, text: "getTypeAtLocation(node: Node): Type | undefined;" },
+    { name: "getTypeAtLocation", request: true, text: "getTypeAtLocation(nodes: readonly Node[]): (Type | undefined)[];", fresh: true },
+    { name: "getTypeFromTypeNode", request: true, text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
+    { name: "getTypeOfSymbol", request: true, text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
+    { name: "getTypePredicateOfSignature", request: true, text: "getTypePredicateOfSignature(signature: Signature): TypePredicate | undefined;" },
+    { name: "isArrayType", request: true, text: "isArrayType(type: Type): boolean;" },
+    { name: "isTupleType", request: true, text: "isTupleType(type: Type): boolean;" },
+    { name: "isUndefinedSymbol", request: true, text: "isUndefinedSymbol(symbol: Symbol): boolean;" },
+    { name: "isUnknownSymbol", request: true, text: "isUnknownSymbol(symbol: Symbol): boolean;" },
     { name: "resolveName", text: "resolveName(name: string, meaning: SymbolFlags, location?: Node | DocumentPosition, excludeGlobals?: boolean): Symbol | undefined;" },
-    { name: "typeToString", text: "typeToString(type: Type, enclosingDeclaration?: Node, flags?: number): string;" },
+    { name: "typeToString", request: true, text: "typeToString(type: Type, enclosingDeclaration?: Node, flags?: number): string;" },
   ] },
   { owner: "NodeHandle", members: [
-    { name: "resolve", text: "resolve(project?: Project): Node | undefined;" },
+    { name: "resolve", request: true, text: "resolve(project?: Project): Node | undefined;" },
   ] },
   { owner: "Symbol", members: [
     { name: "checkFlags", text: "readonly checkFlags: number;" },
@@ -340,16 +341,16 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "id", text: "readonly id: number;" },
     { name: "name", text: "readonly name: string;" },
     { name: "valueDeclaration", text: "readonly valueDeclaration: NodeHandle | undefined;" },
-    { name: "getMembers", text: "getMembers(): ReadonlyMap<__String, Symbol>;", table: true },
-    { name: "getExports", text: "getExports(): ReadonlyMap<__String, Symbol>;", table: true },
+    { name: "getMembers", request: true, text: "getMembers(): ReadonlyMap<__String, Symbol>;", table: true },
+    { name: "getExports", request: true, text: "getExports(): ReadonlyMap<__String, Symbol>;", table: true },
   ] },
   { owner: "Type", members: [
     { name: "flags", text: "readonly flags: TypeFlags;" },
     { name: "id", text: "readonly id: number;" },
-    { name: "getSymbol", text: "getSymbol(): Symbol | undefined;" },
-    { name: "getAliasTypeArguments", text: "getAliasTypeArguments(): readonly Type[];" },
-    { name: "getAliasSymbol", text: "getAliasSymbol(): Symbol | undefined;" },
-    { name: "isErrorType", text: "isErrorType(): boolean;" },
+    { name: "getSymbol", request: true, text: "getSymbol(): Symbol | undefined;" },
+    { name: "getAliasTypeArguments", request: true, text: "getAliasTypeArguments(): readonly Type[];" },
+    { name: "getAliasSymbol", request: true, text: "getAliasSymbol(): Symbol | undefined;" },
+    { name: "isErrorType", request: true, text: "isErrorType(): boolean;" },
   ] },
   // The predicates about `this` (COMPILER-API.md, "Audits of sync members"):
   // the client copies the server's `parameterIndex`, 0 for them, where the
@@ -366,9 +367,9 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
   ] },
   { owner: "Signature", members: [
     { name: "declaration", text: "readonly declaration?: NodeHandle | undefined;" },
-    { name: "getParameters", text: "getParameters(): readonly Symbol[];" },
-    { name: "getThisParameter", text: "getThisParameter(): Symbol | undefined;" },
-    { name: "getTypeParameters", text: "getTypeParameters(): readonly TypeParameter[];" },
+    { name: "getParameters", request: true, text: "getParameters(): readonly Symbol[];" },
+    { name: "getThisParameter", request: true, text: "getThisParameter(): Symbol | undefined;" },
+    { name: "getTypeParameters", request: true, text: "getTypeParameters(): readonly TypeParameter[];" },
     { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
   ] },
 ];
@@ -404,35 +405,11 @@ export const statedGuards: readonly { name: string; text: string; implementation
     implementation: "function isTypeReference(type) {\n    return isObjectType(type) && (type.objectFlags & ObjectFlags.Reference) !== 0;\n}" },
 ];
 
-/** The listed methods whose arguments may hold an object of the program:
- * a `DocumentIdentifier` object, a `DocumentPosition` or the snapshot's
- * parameters, which the client puts into its payload and serializes with
- * `JSON.stringify`, so a `toJSON` method of the program's runs during the
- * request (`invalid-compiler-api-request-tojson`, run under Node). Each is
- * read at its declared signature, which states no effect. */
-export const serializingRequests: readonly string[] = [
-  "API.parseConfigFile", "API.updateSnapshot", "Snapshot.getDefaultProjectForFile", "Program.getSourceFile",
-  "Program.getDeclarationDiagnostics", "Program.getSemanticDiagnostics", "Program.getSyntacticDiagnostics",
-  "Checker.resolveName",
-];
-
-/** A stated request of the sync API (T6, COMPILER-API.md, "The sync
- * API"): a method a named view lists whose arguments are primitives and
- * host objects, which the client sends as primitives and the host objects'
- * ids (audited, `api.js`), so it runs no code of the program but its
- * instance's retained `fs` callbacks and the `toJSON` of what they return,
- * which the client serializes; every instance a run meets is opened with
- * callbacks within `{value: any, store: grow}`, their results' serialization
- * included (`openCompiler`'s, audited, and an external instance's by T8), and the host's own state is
- * observed by no transparent operation (T4): so a call is within
- * `{value: any, store: grow}` on normal return. */
-export const isRequest = (owner: string, entry: { name: string; text: string }): boolean =>
-  !entry.text.startsWith("readonly ") && !serializingRequests.includes(`${owner}.${entry.name}`);
-
-/** A request's reading: each of its signatures at `{value: any, store:
- * grow}`, on normal return only; where the member has a `fresh` entry, a
- * signature whose result is an array also states that its call allocated
- * the result's store. */
+/** The reading of a view member explicitly marked `request`: each signature
+ * at `{value: any, store: grow}`, on normal return only. An unmarked member
+ * retains its declared effects, including methods whose serialization runs
+ * getters or `toJSON` of program objects. A `fresh` entry additionally states
+ * that an array result's store is allocated by the call. */
 export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
   const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
     receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null };

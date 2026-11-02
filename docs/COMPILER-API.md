@@ -14,10 +14,12 @@ prerequisites are the reading of declarations in
 [Source contracts](SOURCE-CONTRACTS.md), the record clauses of
 [Positive types](POSITIVE-TYPES.md#records), the array invariant of
 [Semantics](SEMANTICS.md#the-array-invariant) and the source model's
-[arrays](SOURCE-MODEL.md#arrays). Two pieces are proposed and unbuilt,
-each marked where it is stated: the sync API's checking wrapper (C5), and
-the rest of the [shape check](#binding-the-contract-to-the-implementation)
-(C3).
+[arrays](SOURCE-MODEL.md#arrays). The supported members follow the front
+end's actual use, through the method of
+[modeling a library](SOURCE-CONTRACTS.md#modeling-a-library). General compiler
+construction, caller-selected backends and registration of retained callbacks
+are outside this source interface; incoming instances satisfy the external
+contract stated below.
 
 ## The contract in brief
 
@@ -805,7 +807,8 @@ instance throwing on every later request; a throw is an allowed outcome.
 **Requests' footprint.** A method a view lists whose arguments are
 primitives and host objects is read at the footprint
 $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
-on normal return (`isRequest`, `requestReading`): the client sends the
+on normal return where its view entry explicitly marks `request`
+(`requestReading`): the client sends the
 primitives and the host objects' ids, so the serialization with
 `JSON.stringify` runs no code of the program (audited, `api.js`); the call
 changes no location of the model but through its instance's retained
@@ -832,8 +835,7 @@ The methods whose arguments may hold an object of the program
 (`API.parseConfigFile`, `API.updateSnapshot`, `Snapshot.getDefaultProjectForFile`,
 `Program.getSourceFile`, `Program.getDeclarationDiagnostics`,
 `Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics`,
-`Checker.resolveName`:
-`serializingRequests`) put it into the payload, whose serialization runs
+`Checker.resolveName`) put it into the payload, whose serialization runs
 its `toJSON`; each is read at its declared signature, which states no
 effect (`invalid-compiler-api-request-tojson`, whose `toJSON` pops the
 mapped array under Node).
@@ -863,12 +865,12 @@ an assumption about runtime behaviour, rather than a Lean proof.
 | View member and declaration | Implementation and contract |
 | --- | --- |
 | `Checker.getContextualType(node: Expression): Type \| undefined;` | `getContextualType` sends snapshot and project ids and `getNodeId(node)`; the response becomes a cached host `Type` or `undefined`. Serialization contains no client object. The request reading gives the store-growth footprint on normal return under the retained-callback assumptions of T6 and T8. |
-| `API.parseConfigFile(file: DocumentIdentifier): ConfigResponse;` | `parseConfigFile` initializes the channel and sends `{ file }` directly to `apiRequest`. An object identifier can run getters or `toJSON` during payload serialization, so `serializingRequests` keeps the ordinary declared signature with no preservation guarantee. The response is the channel's JSON-decoded object; its fields are ordinary writable data. |
+| `API.parseConfigFile(file: DocumentIdentifier): ConfigResponse;` | `parseConfigFile` initializes the channel and sends `{ file }` directly to `apiRequest`. An object identifier can run getters or `toJSON` during payload serialization, so its view entry retains the ordinary declared signature with no preservation guarantee. The response is the channel's JSON-decoded object; its fields are ordinary writable data. |
 | `Snapshot.getProjects(): readonly Project[];` | `getProjects` checks disposal and returns `[...this.projectMap.values()]`, a fresh dense array of the snapshot's projects. It invokes no client callback and changes no existing model location. A disposed snapshot throws. |
 | `Snapshot.dispose(): void;` | `dispose` marks the snapshot disposed, disposes its projects, clears its maps and registry, calls the internal `onDispose` closure created by `API.updateSnapshot`, then requests `release` with the snapshot id. The closure removes the snapshot and releases cache references; it is not supplied by the client. Retained filesystem callbacks, if requested by the channel, remain subject to T6 and T8. Repeated disposal returns immediately; subsequent operations may throw. The normal-return footprint permits growth and preserves existing stable members. |
 | `Symbol.checkFlags: number` (declaration `readonly checkFlags: number;`) | The `Symbol` constructor assigns `data.checkFlags` once. No other assignment to `checkFlags` occurs in `api.js`. The member is a stable readonly number, with its value supplied by the server under T6. |
 | `Project.rootFiles` (declaration `readonly rootFiles: readonly string[];`) | The `Project` constructor assigns `data.rootFiles`, the channel's JSON-decoded array, once; no other assignment occurs in `api.js`, and the package writes no element of it. The member is a stable readonly view of a dense array of strings under T6; a write through another alias is T8's. |
-| `Program.getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];` | Sends snapshot and project ids and `file`, as `getSemanticDiagnostics` does, and returns the decoded array or a fresh empty one. An object identifier is serialized with `JSON.stringify`, so `serializingRequests` keeps the declared signature. |
+| `Program.getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];` | Sends snapshot and project ids and `file`, as `getSemanticDiagnostics` does, and returns the decoded array or a fresh empty one. An object identifier is serialized with `JSON.stringify`, so its view entry retains the declared signature. |
 | `Program.getGlobalDiagnostics(): readonly Diagnostic[];` | Sends snapshot and project ids alone and returns the decoded array or a fresh empty one: a request, at the store-growth footprint on normal return (T6, T8). |
 | `Checker.getSymbolAtLocation(nodes: readonly Node[]): (Symbol \| undefined)[];` | The method's second overload, beside `getSymbolAtLocation(node: Node)`. `Array.isArray` selects it, and `nodes.map(node => getNodeId(node))` reads the argument; the call runs no code of the program under the [trust surface](DESIGN.md#trust-surface)'s rows on arrays a program receives: a plain array, no proxy, owning no key `ArrayProto` declares (so `map` is the standard one) and no `constructor` (so `map` allocates an ordinary array), and holding data properties at its numeric keys (so `map` runs no getter). Outside those rows, a proxy, an array subclass or an indexed getter runs code during the call. `getNodeId` tests `instanceof RemoteNode` and reads the node's id, throwing on any other value; a hole, which `map` skips, is sent as `null`, and the server's answer, observed under Node, is an error (`invalid node handle`). It sends `getSymbolsAtLocations` with the ids and returns `data.map(…)` over the decoded response: a fresh dense array, one entry per node, each the client's shared `Symbol` for its id (the one the single form returns for that node) or `undefined` where the node has none (a statement, `invalid-compiler-api-array-query-entry`, run under Node). A request at the store-growth footprint on normal return (T6, T8), whose array result is fresh (`fresh` in `hostViews`). |
 | `Checker.getTypeAtLocation(nodes: readonly Node[]): (Type \| undefined)[];` | As the row above, with `getTypeAtLocations` and the client's shared `Type`s: a request at the store-growth footprint whose array result is fresh. |
@@ -959,29 +961,20 @@ binds the contract to the implementation it was reviewed against and
 re-runs the measurements of [the package at run time](#the-package-at-run-time)
 as regression evidence.
 
-- **C0, binding.** Execution uses the audited artifacts, whatever package
-  path names them.
-  - *The selected backend.* `resolveExePath` uses `options.tsserverPath`
-    when given (`options.js:9`), and `API.fromLSPConnection` and socket
-    options (`pipe`) connect to a server the package did not start. The
-    contract's view of the constructor admits `new API(options)` only with
-    an options type whose key bound excludes `tsserverPath` and `pipe`, and
-    its `API` view omits `fromLSPConnection`; so every admitted instance runs
-    the executable `getExePath()` selects,
-    `@typescript/typescript-<platform>-<arch>/lib/tsc`, resolved through
-    `import.meta.resolve`.
-  - *The dependency closure.* `compiler-api.mts` records the SHA-256 of
-    every module in the static import closure of the admitted entry points
-    (`unstable/ast`, `unstable/sync`) as Node resolves it (`exports`,
-    `imports`, the `default` condition), computed by following the imports,
-    which includes behaviour-bearing modules such as `node/protocol.js`
-    (layout and child-property tables), `msgpack.js`, `wtf8.js`,
-    `encoder.js`, `getExePath.js` and the loaded `dist/enums/*.js`, and the
-    SHA-256 of the selected executable.
+- **C0, binding.** The installed package has the reviewed name, version
+  and declaration digest. A lookalike package elsewhere is outside the
+  contract. The AST guard table binds its entry point and static dependency
+  closure by content through the
+  [guard closure](HOST-FAMILIES.md#the-guard-table). C6 and C7 compare the
+  sync implementations they name with their reviewed texts. These are the
+  executable binding checks; the declaration digest alone states no fact
+  about a sync implementation or a server executable.
 
-  A different hash, a module added to the closure, or a different selected
-  executable fails the suite, and the contract is reviewed again, whether or
-  not the declarations changed.
+  General `new API`, `API.fromLSPConnection` and caller-selected backends
+  are refused by the named views. An instance supplied to verified code
+  satisfies T6 and T8, including the selected backend and retained-callback
+  assumptions. Construction of that incoming instance is outside the
+  certified client.
 
 - **C1, enums.** For every enum the contract reads (`hostEnums`), every
   member of its `.enum.d.ts` is an integer literal, and the runtime object
@@ -1020,13 +1013,6 @@ as regression evidence.
   and `SyntheticExpression`, `PartiallyEmittedExpression` and
   `SyntheticReferenceExpression`, which the checker and the emitter make
   and no parse gives.
-  Proposed, unbuilt, the rest of the check: every node of a corpus
-  (`tools/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/**/*.ts`, the
-  standard library `.d.ts` files, and a JavaScript file with JSDoc) has every
-  member its shape states as required, every child within its member's
-  declared kinds, and the absent required members are exactly the
-  corrections. Each kind has one shape by the rule of
-  [the node invariant](#the-node-invariant).
 - **C4, members, lists and operations (regression evidence).** On the
   corpus (C3's walk), every property member of every node's shape,
   required or optional, is read twice and again after the entry point's
@@ -1058,11 +1044,6 @@ as regression evidence.
   For every exported function of the package, its own keys and their
   descriptors are those T4 states, and `typeof` of every host object and
   node list met is `"object"`.
-- **C5, sync API (regression evidence; proposed, unbuilt).** During
-  `make suite`, the front end's calls into the sync API run through a checking wrapper that compares
-  each result with its declared type and, after each stated type guard
-  returns `true`, calls the members its promise covers; the lifetime
-  controls run under Node.
 - **C6, stated guards.** Each [stated guard](#stated-type-guards) is
   declared as its entry states, and the function Node loads for it, and
   for `isTypeReference`'s helper `isObjectType`, is the entry's reviewed
@@ -1096,8 +1077,8 @@ as regression evidence.
 ## Trust
 
 Each sentence is an assumption the verification result is relative to. None
-is proved. The checks C0–C4 bind each to the reviewed implementation files;
-the corpus runs are regression evidence, not proofs.
+is proved. C0 states the executable binding scope; the other checks give
+regression evidence for the named properties, not proofs of the assumptions.
 
 - **T1 (node invariant).** F1 and F2 of the
   [family rows](HOST-FAMILIES.md#trust-rows) for this description: every

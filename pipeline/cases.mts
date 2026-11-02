@@ -1615,6 +1615,8 @@ export const cases: Case[] = [
   { ...negative("invalid-compiler-api-visitor-effect", "a `map` callback calling `forEachChild` with a visitor popping the mapped array: the call is within no footprint that keeps array stores, so the result may hold holes (run under Node)",
     /source expression obligation at \[405,496\): evidence search failed: no derivation of its binding-annotation claim/),
     project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-project-query", "A real project query through snapshot, project, source and type handles, mapping an immutable statement list and disposing its snapshot"),
+    project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-request-effect", "a checker request in a `map` callback, within `{value: any, store: grow}` (T6): the result is dense"),
     project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-retained-fs", "a sync API instance whose retained `fs` callback pops an array the program holds: the constructor is outside the fragment (run under Node: a later request pops the array)"),

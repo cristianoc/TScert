@@ -19,6 +19,27 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "the intersection owns its writable parts and the singleton keeps its term identity");
 }
 
+{
+  const directory = mkdtempSync(join(tmpdir(), "tscert-api-query-"));
+  const config = join(directory, "tsconfig.json"), file = join(directory, "sample.ts");
+  writeFileSync(config, JSON.stringify({ compilerOptions: { strict: true, target: "es2022", module: "esnext" }, files: ["sample.ts"] }));
+  writeFileSync(file, "export const x = 1;\nexport function add(a: number, b: number): number { return a + b; }\n");
+  try {
+    const apiModule = pathToFileURL(fileURLToPath(new URL("../tools/node_modules/typescript/dist/api/sync/api.js", import.meta.url))).href;
+    const ran = runNode("compiler-api-project-query", [
+      `import { API } from ${JSON.stringify(apiModule)};`,
+      `const api = new API({ cwd: ${JSON.stringify(directory)} });`,
+      `try { const values = statementTypeFlags(api, ${JSON.stringify(config)}, ${JSON.stringify(file)});`,
+      `console.log(JSON.stringify([values.length, values.every(v => typeof v === "number"), 0 in values, 1 in values]));`,
+      `} finally { api.close(); }`,
+    ].join("\n"));
+    assert.equal(ran.status, 0, "the checked query client runs against the real compiler");
+    assert.equal(ran.stdout, "[2,true,true,true]", "the project query returns one numeric value per statement without holes");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 assert.equal(runExample("invalid-project-after-check-write",
   '(() => { const project = { options: { strict: true } }; return use(project, p => { p.options.strict = false; }); })()'), false,
   "a callback can invalidate the nested strict flag before its true result annotation");
