@@ -3651,3 +3651,32 @@ that checked contract.
   false-preservation negative exercise the narrower classification contract.
   Definition lookup retains its growth guarantee.
 - **Commit:** the introducing commit.
+
+### A global declaration matcher's array-store footprint
+
+`tools/library-globals.mts#globalEntry` searches the reviewed overlay with
+`find`. Its `GlobalSignatureMatcher` takes a signature string and returns a
+Boolean within `{ value: "any"; store: "keep" }` on normal return. The lookup
+retains the same normal-return footprint. The five providers in
+`tools/declaration-graph.mts` compare the argument to a captured declaration
+string with strict equality; their bodies establish the matcher contract.
+
+- **Repair:** the matcher contract retains the array-store guarantee of the
+  supplied primitive comparisons at the helper's parameter and an owned
+  lookup context. The existing callback definition checks certify each
+  supplied function before its effect is consumed
+  ([certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
+- **Find:** the [prototype contract](SOURCE-CONTRACTS.md#prototype-contracts)
+  requires `store: "keep"` to pass an element without adding `undefined`.
+  The matcher leaves value changes unrestricted.
+- **Exceptions:** the guarantee concerns normal return. A throwing matcher
+  may change the heap before it throws; the lookup propagates that exception.
+- **Behaviour:** the annotations are erased. The same array, field reads,
+  strict comparisons, callback arguments, short-circuit order and origin
+  default select the same first entry or `undefined`. The callback precondition
+  is checked at the source's supplied definitions.
+- **Scope:** `blocker-round-global-signature-matcher` checks a known matcher
+  retained through an owned context. `invalid-round-global-signature-matcher`
+  writes a false preservation promise whose body pops that context's searched
+  array; Node throws `TypeError` at the next visit's `global` read. The generic
+  find mutation and ordinary-field-effect cases retain their own refusals.

@@ -1,6 +1,9 @@
 // Census functions: library-globals.mts#globalEntry; declaration-graph.mts#globalNamespace.
 // A known string matcher is retained through the owned lookup context.
-import type { GlobalEntry } from "../../tools/library-globals.mts";
+import type {
+  GlobalEntry,
+  GlobalSignatureMatcher,
+} from "../../tools/library-globals.mts";
 export function lookup(text: string): GlobalEntry | undefined {
   const entries: GlobalEntry[] = [
     {
@@ -9,7 +12,7 @@ export function lookup(text: string): GlobalEntry | undefined {
       host: { k: "transparent", why: "test" },
     },
   ];
-  const context: { matches: (signature: string) => boolean } = {
+  const context: { matches: GlobalSignatureMatcher } = {
     matches: (signature) => signature === text,
   };
   return entries.find(
