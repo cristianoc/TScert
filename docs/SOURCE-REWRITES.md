@@ -1879,7 +1879,38 @@ whole union was refused.
 - **Functions:** `declaration-graph.mts#collectDeclarations`.
 - **Commit:** the introducing commit.
 
+### Error prototype fields at their member contract
+
+`tools/library-globals.mts#errorInstance` constructs the two prototype
+fields of the modeled `Error`: `message` and `name`. Its local field
+constructor states the element contract of `TypeTerm`'s object fields.
+The fresh nested atom states its `k` and `name` through that result
+contract. The existing contextual checks of fresh records and arrays
+establish the writable field and array contracts.
+
+The annotations are erased. The constructor evaluates the same two calls,
+allocates the same objects and arrays in the same order, and retains the
+same `span` references. `blocker-round-error-field-array` exercises this
+construction. The native `Error` contract is described in
+[library globals](SOURCE-CONTRACTS.md#library-globals).
+
 ### An open record spread over the fields written before it
+
+`tools/declaration-graph.mts#namesArray` constructs a document from its
+three parts by naming `values`, `applications` and `definitions`, after
+fresh empty `roots` and `symbols` arrays. Its sole caller in
+`closeDeclarations` supplies a fresh object literal with exactly those
+three own data properties in that order. All three source arrays retain
+their identity, contents and holes; both forms allocate the same two empty
+arrays and one document in the same order and own key order. The argument
+object is unescaped and carries no getter or additional own key, so named
+reads and the spread have the same returns, exceptions and effects over
+all states this caller admits. `documentHolds` reads the document's named
+parts. `blocker-round-document-parts` exercises the complete construction.
+The avoided form is `{ roots: [], symbols: [], ...parts }`; an open
+`parts` contract permits additional own keys to replace the initial ones.
+Supporting that form generally requires a checked bound on those keys.
+
 
 `assertEntry` (`tools/library-modules.mts`) built each `node:assert/strict`
 entry as `{ module, name, signature, ...(member === undefined ? {} : { member }), ...entry }`,

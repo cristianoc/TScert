@@ -117,8 +117,8 @@ export type GlobalEntry = {
  * copy takes, as JavaScript's own non-enumerable `message` and the `name` it
  * inherits from `Error.prototype` are not copied either. */
 export function errorInstance(span: Span): TypeTerm {
-  const text = (name: string) => ({ name, optional: false, readonly: true,
-    type: { k: "atom" as const, name: "string" as const, span }, span });
+  const text = (name: string): Extract<TypeTerm, { k: "object" }>["fields"][number] => ({ name, optional: false, readonly: true,
+    type: { k: "atom", name: "string", span }, span });
   return { k: "object", fields: [], stringIndex: null, calls: [], span,
     prototype: { k: "object", fields: [text("message"), text("name")], stringIndex: null, calls: [], span } };
 }

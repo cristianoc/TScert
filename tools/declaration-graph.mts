@@ -272,7 +272,7 @@ function aliasKey(identity: DeclarationIdentity): Within<{ value: "any"; store: 
 /** Whether the parts of a declaration document name an array or a tuple
  * type, which Lean reads at `ArrayProto`. */
 function namesArray(parts: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }): boolean {
-  return documentHolds({ roots: [], symbols: [], ...parts }, t => t.k === "array" || t.k === "tuple", () => false);
+  return documentHolds({ roots: [], symbols: [], values: parts.values, applications: parts.applications, definitions: parts.definitions }, t => t.k === "array" || t.k === "tuple", () => false);
 }
 
 /** A module's identity: the client by its absolute path, a standard library
