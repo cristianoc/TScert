@@ -3627,3 +3627,27 @@ through the shared type and a context. `invalid-round-host-brand-footprint`
 shows that storing an unrestricted callback at that type remains an
 obligation: a callback popping the outer arguments during recursion leaves
 a result hole and causes `TypeError` under Node.
+
+### A record classifier's checked preservation contract
+
+`tools/named-record.mts#NamedRecords` gives classification a normal-return
+preservation [footprint](FOOTPRINTS.md). Its definition lookup has a
+separate growth footprint, allowing definitions to be settled and cached.
+`aliasMeaning` retains its tested expression across classification under
+that checked contract.
+
+- **Repair:** `definitionKey` states its checked preservation footprint.
+  `Gate.namedRecords` supplies native set membership with that key, and
+  `settleDeclarations` retains the native `Set` constructed by its caller.
+  The callback passed through `settleDocument` keeps the same preservation
+  contract. Each source body has the ordinary qualification check.
+- **Behaviour:** these annotations are erased. The classifiers perform the
+  same key construction and set lookup; identities, iteration, callbacks,
+  returns, exceptions and mutations agree for their native-set callers.
+  Preservation applies on normal return.
+- **Scope:** a callback with a growth footprint can replace a definition's
+  nullable expression. `blocker-prep-alias-expression-after-call` throws a
+  `TypeError` under Node for such a callback. The preserving example and the
+  false-preservation negative exercise the narrower classification contract.
+  Definition lookup retains its growth guarantee.
+- **Commit:** the introducing commit.

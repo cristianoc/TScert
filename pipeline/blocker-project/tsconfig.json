@@ -19,6 +19,7 @@
     "../examples/invalid-prep-generic-binder-map.ts",
     "../examples/invalid-prep-intersection-function-array.ts",
     "../examples/invalid-round-imported-find-shape.ts",
+    "../examples/invalid-round-record-classifier.ts",
     "../examples/invalid-gap-round-parent-walk.ts",
     "../examples/invalid-gap-round-scheme-binder-map.ts",
     "../examples/invalid-gap-round-locations-map.ts",

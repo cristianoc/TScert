@@ -16,7 +16,7 @@ type Index = { readonly: boolean; value: TypeTerm; span: Span };
 type Fail = (message: string) => never;
 
 /** A definition's key: its full declaration identity. */
-export const definitionKey = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> =>
+export const definitionKey = (id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, string> =>
   JSON.stringify([id.module, id.span, id.name]);
 
 /** The complete definitions a shape is read from: each by its identity,
@@ -25,9 +25,11 @@ export const definitionKey = (id: DeclarationIdentity): Within<{ value: "any"; s
  * (`records` of the declaration graph);
  * a class, a host type, a library interface read through its overlay or a
  * definition the reader states itself is none. */
+// Classification preserves the definition being inspected; definition lookup
+// can settle and cache definitions under its separate growth contract.
 export type NamedRecords = {
   definition(id: DeclarationIdentity, fail: Fail): Within<{ value: "any"; store: "grow" }, TypeDefinition | undefined>;
-  record(id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, boolean>;
+  record(id: DeclarationIdentity): Within<{ value: "keep"; store: "keep" }, boolean>;
 };
 
 const PREFIX = "a mapped type's value names its key, over a named type";
@@ -220,7 +222,7 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
  * shape is read from it, so a definition whose settling needs its own shape
  * is refused. The refusal callback throws with the source location. */
 export function settleDocument(document: { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] },
-    record: (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>,
+    record: (id: DeclarationIdentity) => Within<{ value: "keep"; store: "keep" }, boolean>,
     refused: (where: string, error: unknown) => never): Within<{ value: "any"; store: "grow" }, { definitions: TypeDefinition[]; values: ValueRoot[]; applications: WrittenApplication[] }> {
   const byKey = new Map(document.definitions.map(d => [definitionKey(d.declaration), d] as const));
   const settled = new Map<string, TypeDefinition>();
