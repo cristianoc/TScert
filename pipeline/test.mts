@@ -7250,6 +7250,40 @@ control(async (): Promise<void> => {
 });
 
 mutationControl(async (): Promise<void> => {
+  // An ordinary read can give undefined at an absent key. Its output link
+  // therefore cannot be strengthened into a claim that the key is owned.
+  const artifacts = run("blocker-round-conditional-path-reuse");
+  const claims = readClaims(artifacts);
+  const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+  const index = claims.functions.findIndex(f => f.name === "optionalReuse");
+  assert.ok(index >= 0);
+  const unit: unknown = evidence.main.functions[index];
+  assert.ok(object(unit) && Array.isArray(unit.certificate));
+  type Link = { cell: number; value: number; alias: boolean; field: string; optional: boolean };
+  type ReadNode = WireNode & { output: { links: Link[] } };
+  const certificate = unit.certificate as ReadNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes and checks the complete forged document
+  const node = must(certificate.filter(c => {
+    const term = nodeSequent(c).term;
+    return object(term) && object(term.readAt) && term.readAt.field === "expression" &&
+      c.output.links.some(g => !g.alias && g.optional && g.field === "expression" && g.value === 0);
+  }).at(-1), "the optional receiver field's first ordinary read");
+  const link = must(node.output.links.find(g => !g.alias && g.optional && g.field === "expression" && g.value === 0),
+    "the result's ordinary read relation");
+  link.optional = false;
+  const path = join(artifacts, "forged-read-witness-ownership.json");
+  writeFileSync(path, tabledEvidence(evidence));
+  checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
+  const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("node.expression", source.indexOf("export function optionalReuse"));
+  assert.ok(checked.includes(`source evidence refusal at [${start},${start + "node.expression".length}): the evidence does not establish this node's typing`), checked);
+  process.stdout.write("ordinary read witness: unsupported own-key strengthening refused by the checker; the same exact document checks only with read-link checking bypassed\n");
+});
+
+mutationControl(async (): Promise<void> => {
   // Constant returns isolate the entry obligation from subsequent read typing.
   // Forged claims select named paths at source statements. The test-only
   // mutation executable searches their complete evidence and checks it with

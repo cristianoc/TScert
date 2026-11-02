@@ -1151,13 +1151,23 @@ read link on that edge. Witness names cannot occur in source identifiers.
 The slots contain saved values; a later source member read is checked by
 `read-linked`. Paths compose through the witnesses of their prefixes.
 
+Every statement-entry witness link states the result of an ordinary property
+read, including `undefined` where the key is absent. The slot's type is
+checked separately on each incoming edge. Root annotations and explicit
+presence predicates establish own-key requirements. A narrower saved-value
+type uses the same ordinary-read relation at successive entries
+(`blocker-round-conditional-path-reuse`, `blocker-round-receiver-path-reuse`).
+A link through a present key establishes this relation
+(`LinkClasses.holds_optional`); strengthening the relation to require a
+present key requires independent evidence.
+
 A statement entry states a path's refinement through the
 [current-content assertion](SOURCE-CLAIMS.md#current-content-assertions) of
 its root, a path of one member or more:
 `{"name": "n", "type": […], "current": [[["expression"], [PropertyAccessExpression]], [["expression", "expression"], [Identifier]]]}`.
 A refinement of a path $`p = x.f_1\cdots f_n`$ beyond the declared read
 contract and the supported field predicates uses a witness slot $`w_p`$ at
-the asserted type, with a required read link $`r.f_n\mapsto w_p`$ whose
+the asserted type, with a checked read link $`r.f_n\mapsto w_p`$ whose
 receiver $`r`$ is the root binding's slot for $`n = 1`$ and the witness slot
 of the prefix $`p' = x.f_1\cdots f_{n-1}`$ otherwise. An entry holding a
 witness of $`p`$ holds one of each of its prefixes, at the prefix's asserted
@@ -1165,9 +1175,8 @@ type or, where none is asserted, at its declared read from its own prefix's
 type, so a path is a chain of links, one per segment. An asserted
 refinement outside the primitive predicates that the declared read already
 implies, where a tag refinement of the root leaves arms stating the member
-required, also has its witness at the asserted type, with a read link
-through a key the object may lack: the entry passes on the link of the
-test that read the path, which a later entry whose root claim no longer
+required, also has its witness at the asserted type. The entry passes on the
+ordinary-read relation of the test that read the path, which a later entry whose root claim no longer
 implies the refinement needs (a loop's update after a guarded branch
 rejoins, `blocker-compiler-api-parent-loop`; a write of the root in the
 branch ends the link, `invalid-compiler-api-parent-loop-write`). The entry

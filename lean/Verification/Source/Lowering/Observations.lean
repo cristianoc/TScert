@@ -249,9 +249,7 @@ nullish exclusions `A` implies. -/
 root binding through the path's one field, or from the witness of the path's
 prefix through its last field. Every incoming edge checks each link together
 with the witness's context type. -/
-@[nospecialize] def witnessLinks (Γ : List (Ty Tree))
-    (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : Compiler HeapLinks.Links := do
-  let G := SourceTypes.graph (← table)
+@[nospecialize] def witnessLinks (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : Compiler HeapLinks.Links := do
   scope.zipIdx.filterMapM fun (b,j) => do
     let some (root, path) := b.witness | return none
     let some field := path.getLast? | return none
@@ -261,14 +259,12 @@ with the witness's context type. -/
         let some _ ← witnessClaimHere fc pos root path.dropLast | return none
         return scope.findIdx? (·.witness == some (root, path.dropLast)) : Compiler (Option Nat))
       | return none
-    -- A witness the root's claim implies asks for the link through a key
-    -- the object may lack, which the test's read, made before the root was
-    -- refined, recorded where the root's type then admitted the key absent.
-    let (T, gen) ← tableAt
-    let implied := (← ownWitnessWith T (withinAt T gen) fc pos root path).isNone &&
-      (← impliedWitnessWith T (withinAt T gen) fc pos root path).isSome
-    return some ⟨r,j,false,field,
-      implied || !(HeapExpressionRules.fieldOperand (PositiveRules.expand G (Γ[r]?.getD [])) field)⟩
+    -- A path witness states the result of an ordinary property read,
+    -- including undefined at an absent key. The source root's type and
+    -- explicit presence tests state own-key requirements independently.
+    -- Keeping this relation uniform across entries permits a narrowed
+    -- witness to reuse the same checked read relation.
+    return some ⟨r,j,false,field,true⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
