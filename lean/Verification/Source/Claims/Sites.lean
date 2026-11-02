@@ -76,7 +76,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
     | .lambda _ _ _ _ _ _ _ _ _ _ e => if !includeBodies then own else joinSites own (exprSitesCore includeBodies e)
     | _ => own
   | .construct p f args _ _ => args.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) (joinSites ([],[p],[]) (exprSitesCore includeBodies f))
-  | .applyWithReceiver p f receiver list =>
+  | .applyWithReceiver p f receiver list _ =>
     joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies f) (joinSites (exprSitesCore includeBodies receiver)
       ((list.map (exprSitesCore includeBodies)).getD ([],[],[]))))
   -- The saved receiver's read, spelled at the `?.` token, is a site of its own.

@@ -3169,12 +3169,34 @@ global (`prototype-shadowed-object`):
 
 Any other read of `Object.getPrototypeOf` is refused
 (`invalid-get-prototype-array-prototype`; under Node its write lands in
-`Array.prototype`, where every array's holes read it;
-`invalid-error-subclass-prototype`).
+`Array.prototype`, where every array's holes read it). The compiler client's
+prototype is inspected through [its audited boundary](SOURCE-REWRITES.md#the-compiler-clients-prototype).
+
+`Reflect.apply(target, receiver, list)` extends the receiver application
+lowering used for `Function.prototype.apply`: it evaluates the three
+arguments in order, reads the array list's length and indices, and invokes
+the target with that receiver and those actuals. The target's checked
+signature supplies its result and effect; the broad library overload's
+`any` result supplies no claim. A fresh array literal's elements are the
+actuals directly. A tuple supplies its required positions; an array of
+unknown length requires a target taking only a rest parameter, whose
+contract admits `undefined` at a hole. `Reflect.apply` requires an array
+list; a missing, null or undefined list is refused. The `requiredList`
+[field](FRAGMENT-FORMAT.md#expression-closures-and-calls) carries this distinction; the
+closed-expression lowering refuses an array list.
+
+This is audited against [ECMA-262](REFERENCES.md#ecma-262), `Reflect.apply`,
+`CreateListFromArrayLike` and `Call`. It reads no `apply` property of the
+target, so a function parameter is admitted without the local confinement
+required for `f.apply`. Array reads use the existing array contracts;
+standard `Reflect.apply` is untampered. `reflect-apply` checks receiver and
+list order, and `invalid-reflect-apply-arguments` and
+`invalid-reflect-apply-receiver` return a number at a promised string under
+Node and are refused by the verifier.
 
 `Reflect` is a namespace, whose functions are no annotated variable's
 members: each use calls one, whose overload an entry of the overlay states
-as an intrinsic; a function read as a value or by a computed key is refused
+as an intrinsic or receiver application; a function read as a value or by a computed key is refused
 (`invalid-reflect-extracted`, `invalid-reflect-computed`), as is a function
 no entry reviews (`invalid-reflect-unreviewed`). `Reflect.ownKeys(o)` of a
 $`\mathsf{NonHost}`$ value is its [[OwnPropertyKeys]], which runs no code

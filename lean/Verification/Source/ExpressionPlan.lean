@@ -252,11 +252,11 @@ private partial def expression (root : Span) (e : Expr) (observed : Bool := true
     | .callWithReceiver pos callee receiver args => operand root callee "callee" fun callee => do
         operand root receiver "receiver" fun receiver => do operands root args fun args => do
           pure (atom (.callWithReceiver pos (readSaved callee) (readSaved receiver) (args.map readSaved)))
-    | .applyWithReceiver pos callee receiver list => operand root callee "callee" fun callee => do
+    | .applyWithReceiver pos callee receiver list requiredList => operand root callee "callee" fun callee => do
         operand root receiver "receiver" fun receiver => do match list with
-        | none => pure (atom (.applyWithReceiver pos (readSaved callee) (readSaved receiver) none))
+        | none => pure (atom (.applyWithReceiver pos (readSaved callee) (readSaved receiver) none requiredList))
         | some list => operand root list "value" fun list => do
-            pure (atom (.applyWithReceiver pos (readSaved callee) (readSaved receiver) (some (readSaved list))))
+            pure (atom (.applyWithReceiver pos (readSaved callee) (readSaved receiver) (some (readSaved list)) requiredList))
     | .call pos callee args spreads typeArgs => operand root callee "callee" fun callee => do
         callArguments root e args spreads 0 fun args => do
           pure (atom (.call pos (readSaved callee) (args.map readSaved) spreads typeArgs))

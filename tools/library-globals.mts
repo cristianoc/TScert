@@ -83,6 +83,8 @@ export type GlobalEntry = {
    * this intrinsic at `e` (negated for `!==`), and the member's result
    * reaches the program in no other way. */
   prototypeTest?: string;
+  /** Reflect.apply: invoke the target with its receiver and array-like list. */
+  receiverApply?: true;
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
@@ -515,6 +517,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // (`invalid-get-prototype-array-prototype`).
   { host: obligated("the operand", "runs its [[GetPrototypeOf]], code of a host exotic object"), global: "Object", member: "getPrototypeOf", signature: "getPrototypeOf(o: any): any;",
     prototypeTest: prototypeIsObjectName },
+  // Reflect.apply invokes the target itself, never reading target.apply.
+  // CreateListFromArrayLike reads length and indices, then Call supplies the
+  // receiver. The existing receiver-application lowering checks the target,
+  // receiver and array elements. Reflect requires a non-null argument list.
+  { host: contract, global: "Reflect", member: "apply", receiverApply: true,
+    signature: "function apply<T, A extends readonly any[], R>(\n        target: (this: T, ...args: A) => R,\n        thisArgument: T,\n        argumentsList: Readonly<A>,\n    ): R;" },
+  { host: contract, global: "Reflect", member: "apply", receiverApply: true,
+    signature: "function apply(target: Function, thisArgument: any, argumentsList: ArrayLike<any>): any;" },
   // `Reflect.ownKeys(o)` of a value that is no host object: its
   // [[OwnPropertyKeys]], which runs no code on an ordinary object or one of
   // ECMAScript's exotic objects but a proxy (no object is one; a host

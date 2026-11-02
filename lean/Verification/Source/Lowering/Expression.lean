@@ -564,7 +564,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       (.makeAt (.bound (.var (2*n+2)) (.var n) ((List.range n).map fun i => .var (n-1-i))) [] [])
       [own] rule []
     pure (saveOperands (plans ++ copies) (DirectProof.cast H A bound))
-  | .applyWithReceiver _ f receiver list => do
+  | .applyWithReceiver _ f receiver list requiredList => do
     -- The target, the receiver and the list, saved in order. A null or
     -- undefined list gives no actuals; reading an array's elements is an array
     -- operation, which a closed expression does not have.
@@ -573,6 +573,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let receiverPlan ← closureExpr recursive fc (held ⟨"",some f.span⟩ :: scope) K receiver
     let H := receiverPlan.type :: K
     let ds := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
+    if requiredList then throw "Reflect.apply of an array list inside a closed expression is outside the fragment"
     let (saved, J, dsJ) ← match list with
       | none => pure ([], H, ds)
       | some xs => do

@@ -39,7 +39,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .ctor _ lam fs => assignsExpr name lam || fs.any (assignsExpr name ·.2)
   | .objectAssign _ t ss => assignsExpr name t || ss.any (assignsExpr name)
   | .construct _ f args _ _ => assignsExpr name f || args.any (assignsExpr name)
-  | .applyWithReceiver _ f r list =>
+  | .applyWithReceiver _ f r list _ =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
   | .block _ ss => ss.any (assignsStmt name)
@@ -125,7 +125,7 @@ private partial def captureExpr (x : String) (c : Bool) (e : Fragment.Expr) (w :
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => all es w
   | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ => all (f :: args) w
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args => all (f :: r :: args) w
-  | .applyWithReceiver _ f r list => all (f :: r :: list.toList) w
+  | .applyWithReceiver _ f r list _ => all (f :: r :: list.toList) w
   | .objectAssign _ t ss => all (t :: ss) w
   | .block _ ss => captureStmts x ss w
 
@@ -259,7 +259,7 @@ partial def escapesExpr (n : String) : Fragment.Expr → Bool
     escapesExpr n f || args.any (escapesExpr n)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     escapesExpr n f || escapesExpr n r || args.any (escapesExpr n)
-  | .applyWithReceiver _ f r list =>
+  | .applyWithReceiver _ f r list _ =>
     escapesExpr n f || escapesExpr n r || (list.map (escapesExpr n)).getD false
   | .objectAssign _ t ss => escapesExpr n t || ss.any (escapesExpr n)
 
@@ -288,7 +288,7 @@ partial def closureBodies : Fragment.Expr → List (List Fragment.Stmt)
     closureBodies f ++ args.flatMap closureBodies
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     closureBodies f ++ closureBodies r ++ args.flatMap closureBodies
-  | .applyWithReceiver _ f r list =>
+  | .applyWithReceiver _ f r list _ =>
     closureBodies f ++ closureBodies r ++ (list.map closureBodies).getD []
   | .objectAssign _ t ss => closureBodies t ++ ss.flatMap closureBodies
   | .block _ ss => [ss]

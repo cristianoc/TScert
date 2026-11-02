@@ -343,8 +343,9 @@ inductive Expr where
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   /-- `f.apply(r, list)`: the target, the receiver and the list are saved,
   then the list's length and each index are read in order, before the call. No
-  list, or a null or undefined one, gives no actuals. -/
-  | applyWithReceiver (pos : Span) (callee receiver : Expr) (list : Option Expr)
+  list, or a null or undefined one, gives no actuals when `requiredList` is false.
+  Reflect.apply requires an array list and sets the field true. -/
+  | applyWithReceiver (pos : Span) (callee receiver : Expr) (list : Option Expr) (requiredList : Bool)
   /-- `spreads` are the positions of the arguments written with `...`, in
   increasing order: each stands for the elements of its operand, read where it
   is written. `typeArgs` are the explicit type arguments written on the call,
@@ -500,7 +501,7 @@ partial def Expr.freeNames : Expr → List String
       (rest.filter (·.2.1)).toList.map (fun (_, _, q) => restFromName q.index)
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
-  | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
+  | .applyWithReceiver _ f r list _ => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
   | .call _ f args _ _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .objectAssign _ t ss => t.freeNames ++ ss.flatMap Expr.freeNames
   | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
@@ -537,7 +538,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
       sliceCallees ((rest.filter (·.2.1)).toList.map fun (p, _, q) => (p, q.index))
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.callees ++ r.callees ++ args.flatMap Expr.callees
-  | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
+  | .applyWithReceiver _ f r list _ => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
   | .call p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
@@ -646,7 +647,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .withObject p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -1065,12 +1066,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .callWithReceiver p (← decodeExpr (← jField j "callee"))
       (← decodeExpr (← jField j "receiver")) (← (← jArr j "args").mapM decodeExpr)
   | "applyWithReceiver" => do
-    fieldsExactly j ["k","pos","callee","receiver","list"]
+    fieldsExactly j ["k","pos","callee","receiver","list","requiredList"]
     let list ← match ← jField j "list" with
       | .null => pure none
       | l => some <$> decodeExpr l
     return .applyWithReceiver p (← decodeExpr (← jField j "callee"))
-      (← decodeExpr (← jField j "receiver")) list
+      (← decodeExpr (← jField j "receiver")) list (← (← jField j "requiredList").getBool?)
   | "withValue" => do
     fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))

@@ -1078,6 +1078,38 @@ control(async (): Promise<void> => {
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 });
 control(async (): Promise<void> => {
+  const artifacts = run("callables/apply");
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  assert.ok(fragment.includes('"requiredList":false'));
+  const forged = join(artifacts, "reflect-required-list.fragment.json");
+  writeFileSync(forged, fragment.replaceAll('"requiredList":false', '"requiredList":true'));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "reflect-required-list", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /Reflect.apply/);
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, forged), /Reflect.apply/);
+  const arrays = run("reflect-apply");
+  const claims = readClaims(arrays);
+  const variable = must(claims.functions.find(f => f.name === "variable"), "variable");
+  const source = readFileSync(sourceKey(arrays), "utf8");
+  const start = source.indexOf("list);", source.indexOf("export function variable"));
+  const list = must(variable.expressions.find(e => e.pos[0] === start), "Reflect.apply's array list");
+  assert.ok(Array.isArray(list.type));
+  assert.ok(list.type.every(label => typeof label === "object"));
+  list.type = [rowOf(claims, "nul"), ...list.type];
+  const nullable = writeClaims(arrays, "reflect-nullable-list", claims);
+  const refused = produceWith(arrays, nullable, "reflect-nullable-list");
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  assert.match(refused.stdout + refused.stderr, /\.apply needs an array list/);
+  assert.match(invoke(nullable, join(arrays, "evidence.json"), arrays), /\.apply needs an array list/);
+  assert.equal(runExample("reflect-apply", "orderAll()"), 1234);
+  assert.equal(runExample("invalid-reflect-apply-arguments", "wrong()"), 7);
+  assert.equal(runExample("invalid-reflect-apply-receiver", "wrong()"), 7);
+  assert.equal(runExample("reflect-apply", "ordered(true)"), false);
+  assert.equal(runExample("reflect-apply", 'receiver({ value: "a" }, ["b"])'), "ab");
+  assert.equal(runExample("reflect-apply", 'variable(Object.assign((...xs) => xs.join(""), { apply: () => "wrong" }), ["a", "b"])'), "ab");
+  process.stdout.write("Reflect.apply: argument and receiver counterexamples executed; required list checked in evidence production and consumption\n");
+});
+control(async (): Promise<void> => {
   const artifacts = run("blocker-prep-assign-error-value");
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
   for (const [name, from, to] of [

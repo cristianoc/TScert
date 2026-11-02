@@ -27,7 +27,7 @@ partial def expressionOccurrences (e : Expr) : List Expr :=
         ((rest.map fun (r : Span × Bool × ArrayElem Expr) => r.2.2.target.referenceParts).getD [])
     | .construct _ callee args _ _ | .call _ callee args _ _ | .invoke _ callee args _ _ => callee :: args
     | .bindWithReceiver _ callee receiver args | .callWithReceiver _ callee receiver args => callee :: receiver :: args
-    | .applyWithReceiver _ callee receiver list => callee :: receiver :: list.toList
+    | .applyWithReceiver _ callee receiver list _ => callee :: receiver :: list.toList
   match e with
   | .block .. => []
   | _ => e :: children.flatMap expressionOccurrences
