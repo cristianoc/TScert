@@ -3079,6 +3079,12 @@ Reading the primitive field again would refine a different slot while that
 entry requires the saved witness's type and link.
 A single primitive field of the root is tested through its receiver,
 retaining the root's discriminant refinement and its field facts.
+An entry whose claims state no refinement of the path's prefix, as in
+`tools/fragment-classes.mts#ownClass` after `cls !== gate.selfClass?.name`,
+states `unknown` for the witness; the edge covers it by the subtype of the
+tested type, the
+[tested-slot obligation](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)'s
+Boolean case (`nested-witness-optional-receiver`).
 
 `blocker-prep-project-after-check` exercises the compiler project guard.
 `invalid-project-after-check-write` checks that a call invalidates a mutable

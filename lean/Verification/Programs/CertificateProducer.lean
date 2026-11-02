@@ -1297,7 +1297,9 @@ observation comes from graph dispatch, never from supplied point annotations. -/
       if slot target.mapping i == tested then
         match o with
         | .boolean q =>
-          if BranchRefinement.booleanMember G B q then pure {} else failure
+          -- The answer is a member of the target's type, or the target's
+          -- type holds every value of the tested one.
+          if BranchRefinement.booleanMember G B q then pure {} else subtypeUsing G images A B
         | .tag t q =>
           if BranchRefinement.tagMember G B t q then pure {}
           else (subtypeUsing G images (BranchRefinement.tagSlice G A t q) B).orElse fun _ =>

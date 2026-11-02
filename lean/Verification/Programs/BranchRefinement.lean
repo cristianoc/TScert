@@ -1737,7 +1737,8 @@ an algorithm for the tag case, not the meaning of refinement. -/
 @[nospecialize] def checkObservedSubResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   match o with
-  | .boolean q => CheckResult.ofBool (booleanMember G B q)
+  | .boolean q => (CheckResult.ofBool (booleanMember G B q)).orElse fun _ =>
+      ProgramCertificates.checkSubtypeUsing G images A B p
   | .tag t q =>
       (ProgramCertificates.checkSubtypeUsing G images (tagSlice G A t q) B p).orElse fun _ =>
       CheckResult.ofBool (tagMember G B t q || presentKey t q (promotes G (tagSlice G A t q) B) ||
@@ -1756,7 +1757,7 @@ theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images :
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) :
     checkObservedSubUsing G images A B o p =
   match o with
-  | .boolean q => booleanMember G B q
+  | .boolean q => booleanMember G B q || PositiveCertificates.checkUsing G images A B p
   | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || tagMember G B t q ||
       presentKey t q (promotes G (tagSlice G A t q) B) ||
       (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q ||
@@ -1769,11 +1770,12 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
   intro n W v hv ho
   cases o with
   | boolean q =>
-    simp only [checkObservedSubUsing_eq] at hc
-    have hb := hc
-    change v = (if q then .tru else .fls) at ho
-    rw [ho]
-    exact booleanMember_sound hb n W
+    simp only [checkObservedSubUsing_eq, Bool.or_eq_true] at hc
+    rcases hc with hb | hc
+    · change v = (if q then .tru else .fls) at ho
+      rw [ho]
+      exact booleanMember_sound hb n W
+    · exact PositiveCertificates.acceptedUsing hc n W v hv
   | tag t q =>
     simp only [checkObservedSubUsing_eq, Bool.or_eq_true, Bool.and_eq_true] at hc
     rcases hc with (((((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet) | hset) | hsource

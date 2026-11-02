@@ -66,6 +66,7 @@ export const cases: Case[] = [
   negative("invalid-parameters-qualified-hook", "Parameters retains the callback's store-preserving contract; a shrinking callback violates it (TypeError under Node).",
     /^reject: source expression obligation at \[226,311\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/),
   { ...positive("blocker-prep-project-after-check", "Incoming edge after checking an optional strict compiler project"), project: "pipeline/blocker-project" },
+  positive("nested-witness-optional-receiver", "A nested primitive witness tested after an optional chain's comparison narrowed its receiver, at an entry stating unknown for the witness"),
   negative("invalid-project-after-check-write", "An unrestricted callback invalidates a nested primitive field narrowing.", /This return requires true\./),
   { ...gap("blocker-prep-effect-spread", "Spreading the readonly CallEffect value while overriding onThrow", "unverified", "search",
     /^reject: source expression obligation at \[314,347\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },

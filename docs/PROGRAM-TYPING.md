@@ -2634,7 +2634,10 @@ Four implementations discharge the tested-slot obligation:
 - **Boolean equality:** `booleanMember` checks that the supplied destination
   contains the observed Boolean. `subset` is the canonical evidence marker for
   this check, not an ordinary subset derivation. No synthetic singleton label
-  is needed.
+  is needed. Otherwise an ordinary subtype certificate from the tested type
+  to the destination covers it, whatever the answer: a saved witness tested
+  as a Boolean reaches an entry that states `unknown` for it, which holds
+  no Boolean clause.
 - **Tag outcome:** `tagSlice` discards a label only if every clause contradicts
   the observation, then checks an ordinary subtype certificate from the remaining
   labels to the supplied destination. Mixed-shape labels are retained intact.
