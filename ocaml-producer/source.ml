@@ -154,7 +154,7 @@ let rec source_type ctx j =
     | name -> unsupported ("literal type " ^ name))
   | "union" ->
     (* `unknown` absorbs the rest of its union: semantic top. *)
-    (match List.fold_left union (Atoms []) (List.map recur (items "parts" j)) with
+    (match unions (List.map recur (items "parts" j)) with
     | Atoms atoms when List.mem Top atoms -> top
     | t -> t)
   | "array" -> array {required=[];optional_elements=[];

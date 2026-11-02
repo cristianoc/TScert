@@ -333,7 +333,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           (match p.rest with
            | Some p when List.for_all Option.is_some arm_elements ->
              (match List.concat_map (Option.value ~default:[]) arm_elements with
-              | _::_ as elements -> bind p (List.fold_left Semantic.union (Atoms []) elements)
+              | _::_ as elements -> bind p (Semantic.unions elements)
               | [] -> [])
            | _ -> [])
         | _ -> [] in

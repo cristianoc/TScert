@@ -396,7 +396,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          the empty literal and the positions each meet. *)
       let view other = match other with
         | Atoms [Shape {elements=Some ({required=_::_;_} as s);fields=[];calls=[];indexes=[]}] ->
-          let element = List.fold_left union (Atoms []) (s.required @ s.optional_elements @ Option.to_list s.rest) in
+          let element = unions (s.required @ s.optional_elements @ Option.to_list s.rest) in
           Some (Semantic.array {required=[];optional_elements=[];rest=Some element;readonly=true;presence=Semantic.Readable})
         | _ -> None in
       let at_other other e = if array other then expr ~expected:other env e else expr env e in

@@ -240,7 +240,7 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
   let resolve get keyed =
     match get a,get b with
     | (Some _,_ | _,Some _) when (get a <> None || a.exact) && (get b <> None || b.exact) ->
-      Some (List.fold_left union (Atoms [])
+      Some (unions
         (Option.to_list (get a) @ Option.to_list (get b)
          @ List.map (fun (f:Semantic.field) -> f.read) (List.filter keyed fields)))
     | _ -> None in

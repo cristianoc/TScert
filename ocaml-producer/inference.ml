@@ -41,9 +41,9 @@ let resolution_instance ~native ~expand ~owned ~observed ~resolvable input =
   and arms seen inputs =
     let descriptors = List.map (describe seen) inputs in
     let results = List.map (fun (_,r,_) -> r) descriptors in
-    List.fold_left union (Atoms []) (List.map (fun (o,_,_) -> o) descriptors),
+    unions (List.map (fun (o,_,_) -> o) descriptors),
     (if List.mem None results then None
-     else Some (List.fold_left union (Atoms []) (List.filter_map Fun.id results))),
+     else Some (unions (List.filter_map Fun.id results))),
     UnionResolution (List.map (fun (_,_,certificate) -> certificate) descriptors) in
   describe [] input
 
@@ -77,7 +77,7 @@ let rec substitute ?meet solution = function
     | Some (ResolutionArgument (input,_,_,_)) -> input
     | Some (PackArgument _) -> unsupported ("pack substitution used as a value type: " ^ identity.spelling))
   | Atoms atoms -> Atoms (List.map (substitute_atom ?meet solution) atoms)
-  | Union types -> List.fold_left union (Atoms []) (List.map (substitute ?meet solution) types)
+  | Union types -> unions (List.map (substitute ?meet solution) types)
   | Meet (t,ts) ->
     let t = substitute ?meet solution t and ts = List.map (substitute ?meet solution) ts in
     (match meet with Some meet -> meet t ts | None -> Meet (t,ts))
@@ -456,7 +456,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
           | _ -> []) arms in
         let rec opened depth t = if depth = 0 then t else match t with
           | Atoms [Named _] -> (match expand t with Some e -> opened (depth-1) e | None -> t)
-          | Union ts -> List.fold_left union (Atoms []) (List.map (opened (depth-1)) ts)
+          | Union ts -> unions (List.map (opened (depth-1)) ts)
           | t -> t in
         let parts = pieces (match opened 4 left with
           | Atoms xs as o when List.exists (fun x -> List.mem x named) xs -> o

@@ -4,7 +4,7 @@ open Semantic
 open Source
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
-let combine = List.fold_left union (Atoms [])
+let combine = unions
 (* A conservative proposal-side test. In particular a rigid parameter is
    not known to exclude undefined. Lean's CoversPresence proves the conversion. *)
 let rec excludes_undefined = function
@@ -880,7 +880,7 @@ let rec restrict ?declarations singleton equal t = match t with
       | _ -> atom))
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
-  | Union ts -> List.fold_left union (Atoms []) (List.map (restrict ?declarations singleton equal) ts)
+  | Union ts -> unions (List.map (restrict ?declarations singleton equal) ts)
   | Meet (principal,_) when restrict ?declarations singleton equal principal = Atoms [] -> Atoms []
   | Rigid _ | Meet _ -> t
 (* The one value every member of a type is, as Lean selects a singleton
@@ -979,7 +979,7 @@ and common_truthiness = function
 let rec truthy_refine declarations truth t = match t with
   | Atoms xs -> truthy_slice truth (Atoms (List.filter (fun a ->
       atom_truthiness declarations [] a <> Some (not truth)) xs))
-  | Union ts -> List.fold_left union (Atoms []) (List.map (truthy_refine declarations truth) ts)
+  | Union ts -> unions (List.map (truthy_refine declarations truth) ts)
   | t -> truthy_slice truth t
 let rec discriminate ?(seen = []) bounds declarations t key slice =
   match declared_head declarations [] t with
@@ -1002,12 +1002,12 @@ let rec discriminate ?(seen = []) bounds declarations t key slice =
     let parts = List.map (fun (_,id,u) -> discriminate ~seen:(id :: seen) bounds declarations u key slice) unions in
     if unions = [] then (if List.length kept = List.length atoms then t else Atoms kept)
     else if List.length kept = List.length plain && parts = List.map (fun (_,_,u) -> u) unions then t
-    else List.fold_left union (Atoms kept) parts
+    else Semantic.unions (Atoms kept :: parts)
   (* A union's arms each, an intersection arm dropped where its field holds
      nothing the slice keeps. *)
   | Union ts ->
     let parts = List.map (fun u -> discriminate ~seen bounds declarations u key slice) ts in
-    if parts = ts then t else List.fold_left union (Atoms []) parts
+    if parts = ts then t else unions parts
   | Meet _ as m ->
     (match (try Some (field_type bounds declarations [] m key) with Json.Error _ -> None) with
      | Some field when slice field = Atoms [] -> Atoms []

@@ -280,12 +280,29 @@ let union a b = match a,b with
   | _ when a=b -> a
   | _ -> let parts = function Union ts -> ts | t -> [t] in
     Union (List.sort_uniq compare (parts a @ parts b))
+(* `unions`, with each run of atom lists met while
+   the joined type is atoms grounded once: one non-empty list is kept as it
+   is, as `union` keeps it beside an empty one, and several are what `ground`
+   makes of their concatenation, as `union` makes of each pair. Joining one
+   atom at a time costs a pass over the joined list per atom; one `ground`
+   sorts the run once. *)
+let unions ts =
+  let joined lists = match List.filter (function [] -> false | _ -> true) (List.rev lists) with
+    | [] -> Atoms [] | [l] -> Atoms l | ls -> ground (List.concat ls) in
+  let rec run lists = function Atoms xs :: rest -> run (xs :: lists) rest | rest -> lists, rest in
+  let rec go acc ts = match acc, ts with
+    | _, [] -> acc
+    | Atoms a, _ ->
+      let lists, rest = run [a] ts in
+      (match rest with [] -> joined lists | t :: rest -> go (union (joined lists) t) rest)
+    | _, t :: rest -> go (union acc t) rest in
+  go (Atoms []) ts
 let rec widen = function
   | Atoms xs -> ground (List.concat_map (function
       | True | False -> [True;False] | NumLit _ -> [Num] | StrLit _ -> [Str]
       | BigintLit _ -> [Bigint] | SymbolLit _ -> [Symbol]
       | a -> [a]) xs)
-  | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
+  | Rigid _ as t -> t | Union ts -> unions (List.map widen ts)
   | Meet (t,ts) -> Meet (widen t,ts)
 (* A member bound to its host where the host is a union of hosts, each arm
    given by its member's type: Lean splits the host's slot and binds each
@@ -356,7 +373,7 @@ let rec admits_undefined = function
 
 let rec without_nullish = function
   | Atoms xs -> ground (List.filter (function Nul | Undef -> false | _ -> true) xs)
-  | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)
+  | Rigid _ as t -> t | Union ts -> unions (List.map without_nullish ts)
   | Meet (t,ts) -> Meet (without_nullish t,ts)
 (* The values of `t` a test keeps, [slice] reading each arm: a type
    parameter's are the meet of it with what the test keeps of its bound,
@@ -369,7 +386,7 @@ let narrow_rigid bounds slice t =
         let kept = slice bound in
         if kept = bound then t else if kept = Atoms [] then Atoms [] else Meet (t,[kept])
       | _ -> t)
-    | Union ts -> List.fold_left union (Atoms []) (List.map arm ts)
+    | Union ts -> unions (List.map arm ts)
     | t -> slice t in
   arm t
 (* JavaScript's `ToBoolean` of every value of an atom, where the atom settles
@@ -390,7 +407,7 @@ let rec truthy_slice truth = function
       (unknown_slice (fun a -> truthiness a <> Some (not truth)))
   | Atoms xs -> ground (List.filter (fun a -> truthiness a <> Some (not truth)) xs)
   | Rigid _ | Meet _ as t -> t
-  | Union ts -> List.fold_left union (Atoms []) (List.map (truthy_slice truth) ts)
+  | Union ts -> unions (List.map (truthy_slice truth) ts)
 let number_literal spelling = Atoms [NumLit (Int64.bits_of_float (float_of_string spelling))]
 (* The literal *type* `0` (or `-0`) admits both runtime zeros: TypeScript
    gives `-0` the type `0`, and strict equality equates them. A literal value

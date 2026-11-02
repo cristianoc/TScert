@@ -58,7 +58,7 @@ let rec typeof_slice shape holds = function
   | Rigid _ as t when holds && shape = "function" -> Meet (t,[any_function])
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
-  | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
+  | Union ts -> unions (List.map (typeof_slice shape holds) ts)
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
 (* A declaration's arm stays on both arms of a `typeof` test, its shape not
@@ -74,13 +74,13 @@ let typeof_refine declarations shape holds t =
     | Union ts -> List.exists named ts | Rigid _ | Meet _ -> false in
   if not (named sliced) then sliced else
   let rec unfold seen = function
-    | Atoms xs -> List.fold_left union (Atoms []) (List.map (function
+    | Atoms xs -> unions (List.map (function
         | Named (id,args) as a when not (List.mem id seen) ->
           (match definition declarations id args with
            | body -> unfold (id::seen) body
            | exception Json.Error _ -> Atoms [a])
         | a -> Atoms [a]) xs)
-    | Union ts -> List.fold_left union (Atoms []) (List.map (unfold seen) ts)
+    | Union ts -> unions (List.map (unfold seen) ts)
     | t -> t in
   let unfolded = unfold [] sliced in
   let resliced = typeof_slice shape holds unfolded in
@@ -488,7 +488,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     let rec passing t = match t with
       | Atoms xs -> Atoms (List.filter (fun x ->
           List.exists (fun a -> restrict ~declarations a true (Atoms [x]) <> Atoms []) atoms) xs)
-      | Union ts -> List.fold_left union (Atoms []) (List.map passing ts)
+      | Union ts -> unions (List.map passing ts)
       (* An intersection holds nothing where one operand holds nothing. *)
       | Meet (p,others) when List.exists (fun o -> passing o = Atoms []) (p :: others) -> Atoms []
       | Meet _ | Rigid _ -> t in
