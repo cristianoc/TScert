@@ -1871,6 +1871,10 @@ mapping reads one holding it, those every predecessor carries. Untrusted: the
 checker follows each edge again. -/
 @[nospecialize] def argumentSlots (P : Program) (claims : List (PointClaim ι)) (start : Nat)
     (slot : Option Nat) : List (List Nat) := Id.run do
+  -- No promised argument seeds no slots: reads, pushes, edge mappings and
+  -- predecessor intersections preserve the empty set; unreachable nodes
+  -- also return it. Keep one entry per node without a propagation pass.
+  if slot.isNone then return List.replicate P.length []
   -- `none`: not reached yet. Arrays: nodes are visited by label.
   let widths := (claims.map (·.context.length)).toArray
   let mut table : Array (Option (List Nat)) := Array.replicate P.length none

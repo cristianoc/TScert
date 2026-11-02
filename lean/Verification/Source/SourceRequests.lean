@@ -476,13 +476,28 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
   let obligations ← r.obligations.mapM fun o => do
     return ({ pos := o.pos, sequent := ← relabel o.sequent, plan := ← relabel o.plan,
               role := o.role, context := o.context } : ExpressionClaims.Required _)
-  let claims ← relabel r.claims
+  -- One frozen request fixes label validity. Share each strictly decoded
+  -- type across its occurrences in point contexts and results.
+  let claimType := fun (A : Ty Tree) =>
+    (do
+      if let some B := (← get).get? A then return B
+      let B ← relabel A
+      modify fun cache => cache.insert A B
+      return B : StateT (Std.HashMap (Ty Tree) (Ty (CheckedLabel F.equations F.primitive)))
+        (Except String) (Ty (CheckedLabel F.equations F.primitive)))
+  let claims ← (r.claims.mapM fun (c : PointClaim Tree) => match c with
+    | ⟨context, type⟩ => do
+      let context ← try context.mapM claimType catch e =>
+        throw s!"{``PointClaim}.context: {e}"
+      let type ← try claimType type catch e =>
+        throw s!"{``PointClaim}.type: {e}"
+      return (⟨context, type⟩ : PointClaim (CheckedLabel F.equations F.primitive))).run' {}
   let result ← relabel r.result
   let promise ← r.promise.mapM fun (asserts, slot, T) => do return (asserts, slot, ← relabel T)
   let inputs ← relabel r.inputs
   let codes ← relabel r.codes
   let hints ← relabel r.hints
-  let nodePlans ← relabel r.nodePlans
+  let nodePlans ← r.nodePlans.mapM fun p => relabel p
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
       inputs := inputs, codes := codes, promise := promise }

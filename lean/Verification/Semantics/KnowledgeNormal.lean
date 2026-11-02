@@ -649,19 +649,56 @@ end unique
 
 /-! ## Computing the normal form with one closure -/
 
+/-- First read of each receiver and field, preserving the link order. -/
+private def readIndex : HeapLinks.Links → Std.HashMap (Nat × PropKey) Nat
+  | [] => {}
+  | g :: gs =>
+    let m := readIndex gs
+    if g.alias then m else m.insert (g.cell, g.field) g.value
+
+private theorem readIndex_get (ls : HeapLinks.Links) (x : Nat) (f : PropKey) :
+    (readIndex ls)[(x, f)]? =
+      (ls.find? fun g => !g.alias && g.cell == x && g.field == f).map (·.value) := by
+  induction ls with
+  | nil => simp [readIndex]
+  | cons g gs ih =>
+    cases ha : g.alias <;> by_cases hx : g.cell = x <;> by_cases hf : g.field = f <;>
+      simp [readIndex, ha, hx, hf, Std.HashMap.getElem?_insert, ih, beq_false_of_ne]
+
+/-- Contents grouped by a key, in the facts' order, retaining duplicates. -/
+@[nospecialize] private def buckets {α : Type} [BEq α] [Hashable α]
+    (key : HeapFacts.Fact → α) : HeapFacts.Facts → Std.HashMap α (List ValueSet)
+  | [] => {}
+  | F :: fs =>
+    let m := buckets key fs
+    let a := key F
+    m.insert a (F.contents :: (m[a]?).getD [])
+
+private theorem buckets_get {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (key : HeapFacts.Fact → α) (fs : HeapFacts.Facts) (a : α) :
+    ((buckets key fs)[a]?).getD [] = (fs.filter fun F => key F == a).map (·.contents) := by
+  induction fs with
+  | nil => simp [buckets]
+  | cons F fs ih =>
+    by_cases h : key F = a <;>
+      simp [buckets, Std.HashMap.getElem?_insert, h, ih]
+
 /-- `norm`, computing the alias closure and the normal links once. -/
 def normFast (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let cs := LinkClasses.closure k.links
-  let r := LinkClasses.repIn cs
+  let classesBySlot := Partitions.index cs
+  let members := fun x => (classesBySlot[x]?).getD [x]
+  let r := fun x => LinkClasses.least x (members x)
   let nl := canon (LinkClasses.linksIn k.links cs)
-  let readDest := fun (x : Nat) (f : PropKey) =>
-    (nl.find? fun g => !g.alias && g.cell == x && g.field == f).map (·.value)
-  let classCtx := fun (x : Nat) => match (canon (Partitions.cls cs x)).filterMap ctx with
+  let reads := readIndex nl
+  let readDest := fun (x : Nat) (f : PropKey) => reads[(x, f)]?
+  let classCtx := fun (x : Nat) => match (canon (members x)).filterMap ctx with
     | [] => none
     | C :: Cs => some (meetAll C Cs)
+  let valuesByClass := buckets (fun f => r f.slot) k.values
+  let cellsByRead := buckets (fun f => readDest (r f.slot) f.field) k.cells
   let valueParts := fun (x : Nat) =>
-    (k.values.filter fun f => r f.slot == x).map (·.contents) ++
-    (k.cells.filter fun f => readDest (r f.slot) f.field == some x).map (·.contents)
+    (valuesByClass[x]?).getD [] ++ (cellsByRead[some x]?).getD []
   let classes := canon ((k.values.map fun f => r f.slot) ++ k.cells.filterMap fun f => readDest (r f.slot) f.field)
   let valueFact := fun (x : Nat) =>
     let C := (classCtx x).getD ValueSet.top
@@ -669,11 +706,13 @@ def normFast (ctx : Ctx) (k : Knowledge) : Knowledge :=
     if (classCtx x).isSome && V == C.normIn ValueSet.top then none else some (⟨x, V, valueField⟩ : Fact)
   let cellKeys := canon (k.cells.filterMap fun f =>
     if readDest (r f.slot) f.field = none then some (⟨r f.slot, f.field⟩ : CellKey) else none)
-  let cellParts := fun (c : CellKey) =>
-    (k.cells.filter fun f => r f.slot == c.slot && f.field == c.field).map (·.contents)
+  let cellsByKey := buckets (fun f => (r f.slot, f.field)) k.cells
+  let cellParts := fun (c : CellKey) => (cellsByKey[(c.slot, c.field)]?).getD []
   ⟨cellKeys.map (fun c => ⟨c.slot, ValueSet.top.normIn (meetAll ValueSet.top (cellParts c)), c.field⟩),
    classes.filterMap valueFact, nl, SeparationNormal.compact r k.separation, k.elems⟩
 
-theorem normFast_eq (ctx : Ctx) (k : Knowledge) : normFast ctx k = norm ctx k := rfl
+theorem normFast_eq (ctx : Ctx) (k : Knowledge) : normFast ctx k = norm ctx k := by
+  simp only [normFast, Partitions.index_cls, readIndex_get, buckets_get]
+  rfl
 
 end Verification.KnowledgeNormal
