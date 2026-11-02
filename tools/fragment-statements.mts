@@ -1637,7 +1637,8 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
     // lowering binds the name after its initializer, so the read would name
     // another binding or none.
     const self = gate.local(d.name);
-    const reads = (n: Node): Node | undefined => {
+    // The recursive visitor preserves array stores, including calls through itself.
+    const reads = (n: Node): Within<{ value: "any"; store: "grow" }, Node | undefined> => {
       if (ts.isTypeNode(n)) return undefined;
       if (ts.isIdentifier(n) && gate.local(n) === self) {
         const parent = n.parent;

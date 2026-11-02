@@ -51,8 +51,10 @@ export const cases: Case[] = [
   negative("invalid-round-logical-length-value", "A short-circuited member length retains its numeric zero result.", /no derivation of its return-contract claim/),
   negative("invalid-round-logical-member-effect", "A call ends a logical chain's saved member refinement.", /no derivation of its return-contract claim/),
   // Supplied census first refusals; source headers name the functions each case represents.
-  { ...gap("blocker-compiler-api-declaration-bindings-map", "A recursive visitor capturing a qualified operation loses preservation before a dense map result", "unverified", "search",
-    /source expression obligation.*binding-annotation claim/s), project: "pipeline/compiler-api-project" },
+  { ...positive("blocker-compiler-api-declaration-bindings-map", "a recursive compiler-node visitor calling a captured preserving callback states its normal-return growth footprint, so its surrounding map produces dense number storage"),
+    project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-declaration-bindings-map", "a recursive visitor popping its mapped array cannot state a growth footprint: two real snapshot identifiers leave a result hole under Node",
+    /source expression obligation at \[324,517\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/compiler-api-project" },
   { ...positive("blocker-round-logical-member-witness", "Checked member witnesses type residual constructor-member, disjunction and optional-member logical predicates."), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-callable-json-fields", "Recursive printing of a possibly absent field at a JsonValue parameter", "unverified", "search",
     /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },

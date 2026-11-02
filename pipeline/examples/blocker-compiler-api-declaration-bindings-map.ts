@@ -6,7 +6,9 @@ type Gate = {
 };
 export function bindings(nodes: ts.Node[], gate: Gate): number[] {
   const found: number[] = nodes.map((node) => {
-    const reads = (n: ts.Node): ts.Node | undefined => {
+    const reads = (
+      n: ts.Node,
+    ): Within<{ value: "any"; store: "grow" }, ts.Node | undefined> => {
       if (ts.isIdentifier(n) && gate.local(n) === "self") return n;
       return n.forEachChild(reads);
     };

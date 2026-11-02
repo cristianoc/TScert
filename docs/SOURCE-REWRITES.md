@@ -3353,3 +3353,23 @@ slice including it ended in that tool failure.
 
 - **Change:** read the first declaration by index, forming no empty tuple.
 - **Commit:** f704fdb (`tools/fragment-support.mts`).
+
+### A recursive declaration visitor's store contract
+
+The `reads` visitor in `tools/fragment-statements.mts#declarationsOf`
+checks an initializer for a reference to the declaration being bound.
+Its result states a normal-return `Within` footprint allowing array growth
+and preserving existing array positions. The recursive self call and the
+compiler API's `forEachChild` use that signature; the existing closure and
+call checks establish its body and each call against the footprint.
+The surrounding `map` can therefore produce dense `BindingAst[]` storage.
+
+This uses the existing [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+mechanism with a written recursive signature.
+`blocker-compiler-api-declaration-bindings-map` exercises a recursive visitor
+that calls a captured preserving callback while mapping compiler nodes to
+numbers. `invalid-compiler-api-declaration-bindings-map` gives the recursive
+visitor the same annotation while popping the mapped array: two identifiers
+produce a result with a hole under Node. The closure body must establish the
+written footprint. The annotation changes no runtime return, exception or
+effect and adds no external assumption.
