@@ -59,7 +59,7 @@ export const cases: Case[] = [
   { ...positive("blocker-round-parser-held-compiler", "Store the opened compiler after updating its opening counter"), project: "pipeline/blocker-project" },
   gap("blocker-round-compiler-identity-json", "A compiler identity return annotation retaining its plain JSON data contract", "unverified", "search", /source expression obligation.*node-typing claim/s),
   { ...positive("blocker-round-callable-json-fields", "A recursive JSON field printer accepts possibly absent fields and handles them through its existing guard."), project: "pipeline/blocker-project" },
-  { ...gap("blocker-round-recording-stage", "A recording literal with an optional true stage field constructed by spread", "unverified", "search", /source expression obligation.*binding-annotation claim/s), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-recording-stage", "An optional true stage field added to a fresh recording before it escapes"), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-installation-records", "Installation records captured after mapping the real installation resolver", "unverified", "search", /^reject: closure expression claim at \[631,636\): evidence search failed(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-collection-effect", "Collection predicate effect metadata built by spreading readonly effect data", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-error-field-array", "Error prototype fields built through an inferred local constructor", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },

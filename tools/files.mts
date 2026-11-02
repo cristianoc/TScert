@@ -168,7 +168,8 @@ function observedNoting<T>(run: () => T, stage: boolean, inherit: boolean):
     { value: T; noted: Noted[]; incomplete: string | null; inconsistent: string | null; readsInput: boolean } {
   if (stage && recordings.size === 0) epoch++;
   const recording: Recording = { answers: new Map(), holding: new Set(), incomplete: null, inconsistent: staleProcess,
-    ledger: false, readsInput: false, ...(stage ? { stage: true } : {}) };
+    ledger: false, readsInput: false };
+  if (stage) recording.stage = true;
   // The outermost stage's record bounds the attempt's answers.
   const begins = stage && attempt === null;
   if (begins) attempt = attemptOf(recording);

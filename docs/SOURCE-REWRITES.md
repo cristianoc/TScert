@@ -1936,6 +1936,40 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### An optional literal field added before a record escapes
+
+`tools/files.mts#observedNoting` allocates its `Recording` without a
+`stage` key and executes `if (stage) recording.stage = true` before
+passing the record to `attemptOf`, `inheritLedger` or the active set.
+The existing [key-adding write rule](PROGRAM-TYPING.md#key-adding-writes)
+checks the write on this fresh record against `stage?: true`.
+`observed` and the process-cache and resolution callers share this
+construction; `newLedger` constructs a record without a stage key.
+
+- **Avoided form and cost:** the conditional spread
+  `...(stage ? { stage: true } : {})` supplies a writable field whose
+  inferred boolean contract loses the literal requirement of `stage?: true`.
+  The binding annotation is refused. Carrying that literal requirement
+  through conditional spread needs additional contextual inference;
+  the direct write uses the existing fresh-object checks for this one
+  construction.
+- **Equivalence:** both forms evaluate the same `Map` and `Set`
+  constructors, then the same initial fields in the same order. The fresh
+  record is unescaped until its optional key is complete. For a false flag,
+  neither form gives it a `stage` key. For a true flag, both give it a last
+  own data property `stage` with value `true`, writable, enumerable and
+  configurable. Under the existing untampered-standard-objects assumption,
+  `Object.prototype` supplies no setter for `stage`, so the fresh-object
+  assignment invokes no callback and has the same effect as the spread's
+  property definition. Constructor exceptions occur before either record
+  is exposed. Returns, exceptions, receivers, aliases, mutations and
+  asynchronous effects agree for every admitted flag and recording state.
+  The `Recording` contract and every read of its optional field remain
+  `true | undefined`.
+- **Scope:** `blocker-round-recording-stage` checks both branches through
+  the complete recording contract. No host contract or external assumption
+  is added.
+
 ### A compiler stored after its opening counter
 
 `tools/fragment-parse.mts#projectFor` saves the return of
