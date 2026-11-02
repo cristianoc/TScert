@@ -71,6 +71,32 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  // An arm's read claim may refine a callable only where the incoming
+  // edge establishes it. The known identity closure has its checked
+  // numeric signatures; an additional string-result signature is false.
+  const artifacts = run("blocker-next-variadic-context-branch");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "rename"), "rename's claims");
+  const at = source.indexOf("term(n)");
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 4), "the arm's callable read");
+  assert.ok(Array.isArray(read.type));
+  const label = must(read.type.find(t => typeof t === "number"), "the callable label");
+  const row = must(claims.types[label], "the callable row");
+  const callable = must(row.find(c => typeof c === "object" && "arrs" in c), "the callable clause");
+  assert.ok(typeof callable === "object" && "arrs" in callable);
+  const own = must(callable.arrs.arrows[0], "the fixed numeric signature");
+  const wrong = { ...own, result: [rowOf(claims, "str")] };
+  read.type = [claims.types.push([{ arrs: { ...callable.arrs, arrows: [...callable.arrs.arrows, wrong] } }]) - 1];
+  const forged = writeClaims(artifacts, "forged-arm-callable-result", claims);
+  const searched = produceWith(artifacts, forged, "forged-arm-callable-result");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /source incoming edge obligation/);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+  process.stdout.write("an arm's invented callable signature is refused at its incoming edge; the original evidence is refused\n");
+});
+
+control(async (): Promise<void> => {
   // Rest collection consumes the intrinsic's stated effect. Weakening that
   // declaration cannot retain the defining unit's growth guarantee, even
   // with its honest claims and evidence.

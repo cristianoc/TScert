@@ -740,6 +740,15 @@ branch uses the split above. A disjunctive outcome (a false `&&`, a true
 `||`) joins at its target, whose entry claim each incoming edge establishes
 under its own refinement.
 
+An immutable binding enters an expression arm at the intersection of its
+checked context type and the arm's first-read claim. A callee read may use
+one signature of a function whose context type certifies several; both
+facts reach the join (`blocker-next-variadic-context-branch`,
+`branch-context-facts`). Where either type implies the other, the context
+uses the stronger type. Each incoming edge establishes every conjunct
+before the arm consumes it. Mutable bindings retain their separate
+[write and storage obligations](#mutable-bindings-and-module-constants).
+
 For Boolean left operands, logical AND and OR use the derived forms:
 
 ```math
