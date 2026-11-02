@@ -829,6 +829,31 @@ let fresh_expr ~callable ~fresh (e:expr) = match e.node with
    (`Type_queries.dispatches_call`). *)
 let plain_actuals (args:expr list) =
   List.for_all (fun (a:expr) -> match a.node with Id _ | Literal _ -> true | _ -> false) args
+(* A conservative control-flow proposal: every completion leaves by a throw.
+   Lean checks the corresponding region using all graph edges, handlers and
+   empty result types. Statements whose control flow is not covered keep the
+   ordinary footprint proposal. *)
+let rec throw_only_stmts = function
+  | [] -> false
+  | s :: rest ->
+    let rec falls_or_throws = function
+      | [] -> true
+      | s :: rest ->
+        (match s.statement with
+         | Declare _ | Effect _ | Destructure _ | Throw _ -> true
+         | If (_,a,b) -> falls_or_throws a && falls_or_throws b
+         | Block (None,body) -> falls_or_throws body
+         | _ -> false) && falls_or_throws rest in
+    match s.statement with
+    | Throw _ -> true
+    | Declare _ | Effect _ | Destructure _ -> throw_only_stmts rest
+    | If (_,a,b) ->
+      (throw_only_stmts a && throw_only_stmts b) ||
+      (falls_or_throws a && falls_or_throws b && throw_only_stmts rest)
+    | Block (None,body) -> throw_only_stmts body ||
+      (falls_or_throws body && throw_only_stmts rest)
+    | _ -> false
+
 let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
   let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
@@ -935,6 +960,8 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_ret
     (* A handler starts where the guarded block threw: Lean bounds that heap
        where every node of the block bounds its throw (`throws_stmts`). A
        finalizer is not proposed. *)
+    | Try (body,Some (_,handler),None) when throw_only_stmts handler ->
+      join_bound (block readable body) (tail ())
     | Try (body,Some (binding,handler),None) when throws_stmts ~callable body ->
       let caught = match binding with Some (name,_) -> name :: readable | None -> readable in
       join_bound (block readable body) (join_bound (block caught handler) (tail ()))

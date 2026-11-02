@@ -36,8 +36,9 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   let firstBad (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
     let facts := GraphCode.inferFresh G images c.readSummaries P C start
+    let dead := GraphCode.inferDead G P C exc
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images c.readSummaries Φ facts ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images c.readSummaries Φ facts dead ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
   -- An async definition's footprint is `top` whatever its body does
@@ -79,8 +80,9 @@ private def nodeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Source
   let firstBad (Φ : Footprints.Closed) (exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
     let facts := GraphCode.inferFresh G images c.readSummaries P C start
+    let dead := GraphCode.inferDead G P C exc
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images c.readSummaries Φ facts false exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images c.readSummaries Φ facts dead false exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (pos : Span) :=
     s!"source evidence refusal at [{pos.1},{pos.2}): the evidence does not establish this node's claim"
   ((firstBad r.footprint r.onThrow r.start r.program c.certificate r.sourceMap).map (refuse ·.pos)) <|>

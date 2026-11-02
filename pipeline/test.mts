@@ -4372,6 +4372,21 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // No-return regions justify normal-return effects only. Claiming the
+  // same wrapper's effect on throws must check the query and the handler.
+  const artifacts = run("normal-return-rethrow");
+  const claims = readClaims(artifacts);
+  must(claims.functions.find(f => f.name === "changedOnThrow"), "rethrowing function").onThrow = true;
+  const input = writeClaims(artifacts, "forged-rethrow-onthrow", claims);
+  const produce = produceWith(artifacts, input, "forged-rethrow-onthrow");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'changedOnThrow'/);
+  process.stdout.write("forged rethrow footprint: an exceptional guarantee refused in production and checking\n");
+});
+
+control(async (): Promise<void> => {
   // A node never returns normally only where its checked typing is empty
   // (`no-return`). `stop(xs)` returns a `Promise<never>`, a value: claimed at
   // `never`, with the callback calling it claimed within the empty
