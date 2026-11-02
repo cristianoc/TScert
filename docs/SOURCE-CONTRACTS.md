@@ -4253,6 +4253,14 @@ type names does, and a definition's methods name it as their receiver
   effect. An options object may select the `"buffer"` encoding, which
   answers `Buffer`s: no entry states a call with an argument
   (`invalid-node-os-user-info-buffer`, run under Node).
+- `node:module`'s `stripTypeScriptTypes(code)` takes one string and returns
+  the string with its TypeScript annotations erased, or throws. The entry
+  admits no options argument. Node 26.13.0's
+  `internal/modules/typescript` validates the string and runs its native
+  TypeScript parser in strip-only mode; the parser's result is the output
+  string, with syntax or unsupported-syntax failures thrown. The experimental
+  warning and error paths may run client code, so the effect is unrestricted.
+  `blocker-prep-namespace-descriptor` reads the export and calls this form.
 - `node:module`'s `isBuiltin(id)` at a string tests the id in the set of
   built-ins requirable without a scheme, and, after a `node:` prefix, in
   the set of those requirable by users (Node's
