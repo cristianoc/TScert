@@ -9,6 +9,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+// A direct optional method call saves its callback before an argument can
+// replace the destination and uses the original options as its receiver.
+assert.equal(runExample("blocker-round-generic-rest-answer",
+  `(() => { const trace = []; let selected = function(value) { trace.push(this === options ? "receiver" : "wrong"); return value; }; const options = { get answer() { trace.push("get"); return selected; } }; const value = () => { trace.push("argument"); selected = () => "replaced"; return "chosen"; }; return JSON.stringify([evaluate(options, value), trace]); })()`),
+  '["chosen",["get","argument","receiver"]]', "callback service views preserve the selected destination and receiver");
+assert.equal(runExample("blocker-round-generic-rest-answer",
+  `(() => { let calls = 0; const result = evaluate({}, () => { calls++; return "unused"; }); return result === undefined && calls === 0; })()`), true,
+  "an absent callback skips its argument");
+assert.equal(runExample("blocker-round-generic-rest-answer",
+  `(() => { const marker = {}; let calls = 0; try { evaluate({ get answer() { throw marker; } }, () => { calls++; return "unused"; }); } catch (error) { return error === marker && calls === 0; } return false; })()`), true,
+  "a callback getter's exception is preserved before argument evaluation");
+assert.equal(runExample("blocker-round-generic-rest-answer",
+  `(() => { const marker = {}; const options = { answer() { if (this !== options) return "wrong"; throw marker; } }; try { deliver(options, "chosen"); } catch (error) { return error === marker; } return false; })()`), true,
+  "a callback's exception identity is preserved");
+assert.equal(runExample("closure-rest-pack-refused", "count()"), 2,
+  "the local ordinary rest preserves the exported count result");
+
 {
   const values = 'const span = [0, 0]; const atom = { k: "atom", name: "string", span }; const effect = { footprint: { value: "any", store: "any" }, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null }; const fn = { k: "function", effect, receiver: null, params: [], rest: null, result: atom, span }; const functions = [fn, fn];';
   assert.equal(runExample("invalid-prep-intersection-function-array",

@@ -3035,6 +3035,48 @@ call.
   calls its one-string form; `strip-types.mts#stripTypes` is its census site.
 - **Commit:** the introducing commit.
 
+### Generic rest forwarding for callback service views
+
+`tools/declaration-graph.mts#declarationServices` groups callback destinations
+through twelve views of the original `DeclarationOptions` object. Each
+view holds that object. The callback views are `bindingAnswers`,
+`operationAnswers`, `typeAnswers`, `enumAnswers` and `observations`. Their consumers invoke members
+directly, including `resolutionClean`'s call of `observations.seen`.
+A method call selects the callback once before evaluating its arguments and
+supplies the options object as its receiver.
+
+The avoided form creates a getter for every callback. Each getter selects
+its destination and returns a generic rest closure forwarding through
+`Reflect.apply(answer, options, args)`. An abstract argument pack describes
+lists of values; collecting those values into a fresh array needs a store
+contract related to that pack. The existing rest-array allocation checks
+represent arrays and required-position tuples, while the abstract pack has
+no such store row ([calls](SOURCE-MODEL.md#calls)).
+
+Request views retain property reads at their consumers. Each array read
+already supplies its `?? []` default there; an absent request creates the
+same fresh default at that read. The completion-presence test reads
+`typeAnswers.completion`, the callback the options object supplies, once
+before its truthiness test. Input and policy views read the same fields.
+
+The views preserve the consumer protocol's callback reads, receiver,
+argument evaluation order and arity, returns, exceptions and alias mutation.
+An argument replacing the destination cannot replace the selected callback;
+an absent destination skips its arguments. The views are private and their
+consumers neither enumerate the groups nor extract callbacks for later
+invocation. Equivalence is scoped to these consumers: the views expose the
+options object's keys and identity if inspected as ordinary objects.
+The rewrite removes forwarding allocations and adds no runtime check or
+external assumption. Existing record views and optional method calls check
+`blocker-round-generic-rest-answer`.
+
+`closure-rest-pack-refused` uses an ordinary `number[]` rest in its local
+counting closure. Its exported `count(): number` supplies exactly `1, 2`
+and observes the collected length; the generic tuple parameter contributes
+no further observation. The equivalent function returns `2`. This case
+exercises the ordinary rest-array check; generic argument-pack rest closures
+retain the [model limit](SOURCE-FRAGMENT.md#model-limits).
+
 ## Host boundaries
 
 Operations of TScert's code on an external service that no rule models,

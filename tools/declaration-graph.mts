@@ -878,7 +878,7 @@ interface DeclarationServices {
   rootsRequested: RootRequests;
   bindingsRequested: BindingRequests;
   operationsRequested: OperationRequests;
-  typesRequested: TypeRequests & { completionRequested: boolean };
+  typesRequested: TypeRequests;
   enumsRequested: EnumRequests;
   bindingAnswers: BindingAnswers;
   operationAnswers: OperationAnswers;
@@ -887,131 +887,24 @@ interface DeclarationServices {
   observations: DeclarationObservations;
 }
 
-/** Deliver a synchronous answer with the public options as its receiver. */
-function declarationAnswer<A extends readonly unknown[], R>(options: DeclarationOptions,
-    answer: ((...args: A) => R) | undefined): ((...args: A) => R) | undefined {
-  return answer == null ? undefined : (...args: A): R => Reflect.apply(answer, options, args);
-}
-
-/** Group requests and synchronous answer destinations by their owner. */
+/** Group requests and synchronous answer destinations by their owner.
+ * Views alias the options: consumers supply their defaults where read,
+ * and direct callback calls retain its receiver and select the destination
+ * before evaluating arguments. */
 function declarationServices(options: DeclarationOptions): DeclarationServices {
   return {
-    input: {
-      get tsconfigPath() { return options.tsconfigPath; },
-      get client() { return options.client; },
-    },
-    policy: {
-      get arrayOverlay() { return options.arrayOverlay; },
-      get familySelection() { return options.familySelection; },
-    },
-    rootsRequested: {
-      get namespaceMembers() { return options.namespaceMembers ?? []; },
-      get locals() { return options.locals ?? []; },
-      get globals() { return options.globals ?? []; },
-      get globalValues() { return options.globalValues ?? []; },
-      get importMeta() { return options.importMeta ?? []; },
-      get ambient() { return options.ambient ?? []; },
-      get root() { return options.root; },
-      get arrays() { return options.arrays; },
-      get intrinsics() { return options.intrinsics; },
-    },
-    bindingsRequested: {
-      get symbolKeys() { return options.symbolKeys ?? []; },
-      get privateNames() { return options.privateNames ?? []; },
-      get staticReads() { return options.staticReads ?? []; },
-      get classTests() { return options.classTests ?? []; },
-      get hookTests() { return options.hookTests ?? []; },
-      get bindingReads() { return options.bindingReads ?? []; },
-    },
-    operationsRequested: {
-      get iterables() { return options.iterables ?? []; },
-      get spreads() { return options.spreads ?? []; },
-      get restTargets() { return options.restTargets ?? []; },
-      get inKeys() { return options.inKeys ?? []; },
-      get receiverTargets() { return options.receiverTargets ?? []; },
-      get libraryNames() { return options.libraryNames ?? []; },
-      get libraryValues() { return options.libraryValues ?? []; },
-      get elementReads() { return options.elementReads ?? []; },
-      get lengthReads() { return options.lengthReads ?? []; },
-      get openReads() { return options.openReads ?? []; },
-      get regexps() { return options.regexps ?? []; },
-      get dispatchCalls() { return options.dispatchCalls ?? []; },
-      get memberReceivers() { return options.memberReceivers ?? []; },
-    },
-    typesRequested: {
-      get staticTypes() { return options.staticTypes ?? []; },
-      get contextualParams() { return options.contextualParams ?? []; },
-      get contextualClosures() { return options.contextualClosures ?? []; },
-      get assignCalls() { return options.assignCalls ?? []; },
-      get computed() { return options.computed ?? []; },
-      get blockTypes() { return options.blockTypes ?? []; },
-      get keyTypes() { return options.keyTypes ?? []; },
-      get mappedTypes() { return options.mappedTypes ?? []; },
-      get symbolNames() { return options.symbolNames ?? []; },
-      get completionRequested() { return !!options.completion; },
-    },
-    enumsRequested: {
-      get enums() { return options.enums ?? []; },
-      get constEnumReads() { return options.constEnumReads ?? []; },
-    },
-    bindingAnswers: {
-      get symbolKey() { return declarationAnswer(options, options.symbolKey); },
-      get privateName() { return declarationAnswer(options, options.privateName); },
-      get staticMember() { return declarationAnswer(options, options.staticMember); },
-      get inheritedStatic() { return declarationAnswer(options, options.inheritedStatic); },
-      get classTest() { return declarationAnswer(options, options.classTest); },
-      get hookTest() { return declarationAnswer(options, options.hookTest); },
-      get importedClassTest() { return declarationAnswer(options, options.importedClassTest); },
-      get bindingRead() { return declarationAnswer(options, options.bindingRead); },
-    },
-    operationAnswers: {
-      get assertionCall() { return declarationAnswer(options, options.assertionCall); },
-      get globalTest() { return declarationAnswer(options, options.globalTest); },
-      get globalIntrinsic() { return declarationAnswer(options, options.globalIntrinsic); },
-      get globalConstruct() { return declarationAnswer(options, options.globalConstruct); },
-      get globalReceiverApply() { return declarationAnswer(options, options.globalReceiverApply); },
-      get iterable() { return declarationAnswer(options, options.iterable); },
-      get restSlice() { return declarationAnswer(options, options.restSlice); },
-      get hostIn() { return declarationAnswer(options, options.hostIn); },
-      get methodTarget() { return declarationAnswer(options, options.methodTarget); },
-      get libraryName() { return declarationAnswer(options, options.libraryName); },
-      get libraryValue() { return declarationAnswer(options, options.libraryValue); },
-      get hostElement() { return declarationAnswer(options, options.hostElement); },
-      get byteRead() { return declarationAnswer(options, options.byteRead); },
-      get openRead() { return declarationAnswer(options, options.openRead); },
-      get regexp() { return declarationAnswer(options, options.regexp); },
-      get dispatch() { return declarationAnswer(options, options.dispatch); },
-    },
-    typeAnswers: {
-      get library() { return declarationAnswer(options, options.library); },
-      get awaited() { return declarationAnswer(options, options.awaited); },
-      get resolvable() { return declarationAnswer(options, options.resolvable); },
-      get awaitable() { return declarationAnswer(options, options.awaitable); },
-      get within() { return declarationAnswer(options, options.within); },
-      get associatedAlias() { return declarationAnswer(options, options.associatedAlias); },
-      get staticType() { return declarationAnswer(options, options.staticType); },
-      get contextualParam() { return declarationAnswer(options, options.contextualParam); },
-      get contextualBinders() { return declarationAnswer(options, options.contextualBinders); },
-      get assignTypes() { return declarationAnswer(options, options.assignTypes); },
-      get computedType() { return declarationAnswer(options, options.computedType); },
-      get blockType() { return declarationAnswer(options, options.blockType); },
-      get completion() { return declarationAnswer(options, options.completion); },
-      get keyType() { return declarationAnswer(options, options.keyType); },
-      get mappedType() { return declarationAnswer(options, options.mappedType); },
-      get symbolName() { return declarationAnswer(options, options.symbolName); },
-    },
-    enumAnswers: {
-      get enumMember() { return declarationAnswer(options, options.enumMember); },
-      get importedEnum() { return declarationAnswer(options, options.importedEnum); },
-      get enumMemberRead() { return declarationAnswer(options, options.enumMemberRead); },
-      get constEnumRead() { return declarationAnswer(options, options.constEnumRead); },
-    },
-    observations: {
-      get record() { return declarationAnswer(options, options.record); },
-      get hostGuard() { return declarationAnswer(options, options.hostGuard); },
-      get seen() { return declarationAnswer(options, options.seen); },
-      get familySelected() { return declarationAnswer(options, options.familySelected); },
-    },
+    input: options,
+    policy: options,
+    rootsRequested: options,
+    bindingsRequested: options,
+    operationsRequested: options,
+    typesRequested: options,
+    enumsRequested: options,
+    bindingAnswers: options,
+    operationAnswers: options,
+    typeAnswers: options,
+    enumAnswers: options,
+    observations: options,
   };
 }
 
@@ -4238,7 +4131,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       }
       node.forEachChild(completing);
     };
-    if (typesRequested.completionRequested) completing(client);
+    if (typeAnswers.completion) completing(client);
     // The applications written in the client file and in the declarations it
     // reaches (`written-applications.mts`), each target joining the graph for
     // its bounds; a library one is stated for its bounds only.
