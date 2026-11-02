@@ -69,6 +69,7 @@ export const cases: Case[] = [
   { ...gap("blocker-round-installation-records", "Installation records captured after mapping the real installation resolver", "unverified", "search", /^reject: closure expression claim at \[631,636\): evidence search failed(?:\n|$)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-collection-effect", "Collection predicate effect metadata built by spreading readonly effect data", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-error-field-array", "Error prototype fields built through an inferred local constructor", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
+  { ...gap("blocker-round-receiver-path-reuse", "A receiver-member witness reused after a preceding property-access branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s), project: "pipeline/blocker-project" },
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
