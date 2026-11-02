@@ -81,13 +81,22 @@ resulting table and all arrow evidence. This search is deliberately incomplete:
 it does not enumerate arbitrary intermediate types, transitivity derivations,
 or arbitrary nested arrow-combination proofs.
 
-For a fresh object literal expected at an intersection of records with
-pairwise disjoint fields, the producer uses every member's field contract
-as an allocation hint. Each initializer must meet its field's full type,
-and the resulting record must meet the complete intersection through the
-existing [allocation rules](SOURCE-MODEL.md#object-literals).
-This hint lookup requires each member to have no index signatures, call
-signatures or array store. Overlapping fields receive no intersection hint.
+For a fresh object literal, the producer uses the expected record's named
+fields and index signatures as allocation hints. A union's hint is the
+unique arm its written keys and literal-valued members admit. An
+intersection combines one record arm from each operand when their named
+fields are pairwise disjoint, retaining every index signature. Named
+declarations substitute their type arguments before their arms are considered.
+Candidate combinations can grow as the product of the operands' union sizes.
+
+Each initializer must meet its field's full type, and the resulting record
+must meet the complete written contract through the existing
+[allocation rules](SOURCE-MODEL.md#object-literals). A read-only dictionary
+bound uses the literal's exact own keys; a writable index requires
+allocation at its store contract. This hint lookup requires each member to
+have no call signatures or array store. Overlapping fields receive no
+combined hint, and their constraints remain in the written contract.
+An existing object gains no own-key bound from a construction hint.
 `blocker-gap-round-scheme-binder-map` exercises a binder whose bound and
 resolution fields belong to one member and whose default and span belong
 to another. `invalid-gap-round-scheme-binder-map` keeps the object in a

@@ -13,6 +13,7 @@
  * failure of a file-system query the front end answered for it is thrown as
  * that query's `IoFailure`. */
 import { userInfo } from "node:os";
+import type { JsonObject } from "./calculus.mts";
 import { join } from "node:path";
 import { API, type APIOptions, type LSPConnectionOptions } from "typescript/unstable/sync";
 import type { UpdateSnapshotParams } from "typescript/unstable/proto";
@@ -159,7 +160,8 @@ const swapCase = (text: string): string =>
  * are not all observed. */
 export type CompilerImplementation =
   { identity: { [field: string]: string | boolean }; changed: () => boolean; unobserved?: never } | { unobserved: string; identity?: never };
-function identify(at: Installation): { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string } {
+type Identification = { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string };
+function identify(at: Installation): Identification & JsonObject {
   if (at.missing !== undefined) return { unobserved: at.missing };
   if (process.platform !== "darwin" || !installed("/usr/bin/sandbox-exec"))
     return { unobserved: "the compiler's own reads are confined on macOS only (sandbox-exec)" };
@@ -173,10 +175,11 @@ function identify(at: Installation): { identity: { [field: string]: string | boo
 type Current = { installation: Installation; implementation: CompilerImplementation; launcher: string | null };
 function current(from: string): Current {
   const installation = locate(from);
-  const identified = identify(installation);
+  const data = identify(installation);
+  const identified: Identification = data;
   return { installation, launcher: null, implementation: identified.unobserved !== undefined ? identified
     : { identity: identified.identity,
-      changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
+      changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(data) } };
 }
 let using: Current = current(moduleLocation(import.meta.dirname));
 /** How many times the installation in use was chosen: a compiler opened

@@ -3481,3 +3481,26 @@ iterating the replacements and spreading their keys.
 - **Scope:** `blocker-round-probe-file-keys` retains this map boundary.
   This repair adds no rule or external assumption.
 - **Commit:** the introducing commit.
+
+### Compiler identity as JSON data
+
+`tools/compiler-channel.mts#identify` constructs a plain compiler identity
+record or an explanation string under `unobserved`. Its result combines
+that field union with `JsonObject`, retaining the bound on every own string
+key that [JSON serialization](SOURCE-CONTRACTS.md#json-and-error) requires.
+The constructor uses the existing
+[contextual object hints](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims),
+which retain each field and index contract through the intersection.
+
+`current` keeps that full result as `data` for serialization and reads its
+fields through an `Identification` view. Both bindings hold the same object;
+`identify` executes once, and the serializer receives that original object.
+The additional local binding changes no return, exception or heap effect.
+This is a repair of an internal data boundary and an explicit record view
+for optional-field reads; it adds no external assumption.
+
+`blocker-round-compiler-identity-json` exercises the data boundary through
+a generic field union. The overlapping-field, multiple-index and extra-hook
+negative cases require all construction constraints. Under Node their
+values violate the promised Boolean field or index, or a `toJSON` hook
+returns `undefined` where serialization promises a string.
