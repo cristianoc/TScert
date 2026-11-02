@@ -732,6 +732,15 @@ let rec index_type bounds declarations seen receiver key =
     | Some b -> index_type bounds declarations seen b key
     | None -> unsupported "indexed read on rigid parameter")
 
+let merge_object_hints left right = match left,right with
+  | Some ({calls=[];elements=None;_} as left),
+    Some ({calls=[];elements=None;_} as right)
+    when not (List.exists (fun (f:field) ->
+      List.exists (fun (g:field) -> f.name = g.name) right.fields) left.fields) ->
+    Some {left with fields=left.fields @ right.fields;
+      indexes=left.indexes @ right.indexes}
+  | _ -> None
+
 (* A fresh literal is built at the one object contract its expected type
    names: a record or dictionary shape, possibly behind a declaration (a class
    instance, or the dictionary arm of a recursive type). This is a construction
@@ -753,15 +762,7 @@ let rec object_hint declarations seen = function
        contract. Keep every index: the allocation checker must establish
        its bound for the named fields too. Overlapping named members still
        need their own intersection handling. *)
-    let merge left right = match left,right with
-      | Some ({calls=[];elements=None;_} as left),
-        Some ({calls=[];elements=None;_} as right)
-        when not (List.exists (fun (f:field) ->
-          List.exists (fun (g:field) -> f.name = g.name) right.fields) left.fields) ->
-        Some {left with fields=left.fields @ right.fields;
-          indexes=left.indexes @ right.indexes}
-      | _ -> None in
-    List.fold_left (fun shape part -> merge shape (object_hint declarations seen part))
+    List.fold_left (fun shape part -> merge_object_hints shape (object_hint declarations seen part))
       (object_hint declarations seen first) rest
   | Rigid _ -> None
 
@@ -784,7 +785,13 @@ let rec record_arms declarations seen = function
         record_arms declarations (id::seen) (definition declarations id args)
       | _ -> []) atoms
   | Union parts -> List.concat_map (record_arms declarations seen) parts
-  | Rigid _ | Meet _ -> []
+  | Meet (first,rest) ->
+    List.fold_left (fun arms part ->
+      let next = record_arms declarations seen part in
+      List.concat_map (fun left ->
+        List.filter_map (fun right -> merge_object_hints (Some left) (Some right)) next) arms)
+      (record_arms declarations seen first) rest
+  | Rigid _ -> []
 let discriminated_record declarations expected (members:(key * expr) list) =
   let admits (s:shape) =
     List.for_all (fun (name,e) ->
