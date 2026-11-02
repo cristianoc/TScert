@@ -587,6 +587,9 @@ is written, `[...s]`, a fresh store the call then spreads, so the later actual
 cannot change what it passes ([a literal with spreads](#a-literal-with-spreads),
 `arrParts`); into fixed parameters the lowering admits no such actual (above).
 A hole read from the source becomes a present `undefined` value in the copy.
+The literal rule checks the source against the copy's element contract,
+including `undefined` at any possible hole. Ordinary and construct calls
+use this same obligation.
 
 For a required tuple, source lowering instead reads its known positions in
 order into an ordinary array literal before evaluating later actuals. The

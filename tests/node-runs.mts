@@ -26,6 +26,26 @@ assert.equal(runExample("blocker-round-generic-rest-answer",
 assert.equal(runExample("closure-rest-pack-refused", "count()"), 2,
   "the local ordinary rest preserves the exported count result");
 
+
+assert.equal(runExample("blocker-round-append-definitions",
+  '(() => { const xs = [2]; append(xs, xs, true); return JSON.stringify(xs); })()'), "[2,2,1]",
+  "a compound append snapshots an aliased source before mutating its target");
+assert.equal(runExample("dense-spread-before-effect",
+  '(() => { const values = [1, 2], target = []; append(target, values, () => { values.pop(); return 3; }); return JSON.stringify([target, values]); })()'), "[[1,2,3],[1]]",
+  "a method call collects the spread before a later callback shrinks its source");
+assert.equal(runExample("dense-spread-before-effect",
+  '(() => { const values = [1, 2]; return forward((...xs) => xs.join(","), values, () => { values.push(99); return 3; }); })()'), "1,2,3",
+  "an ordinary call excludes a later callback's appended source element");
+assert.equal(runExample("invalid-dense-spread-element",
+  '(() => { const target = []; wrong(target, [undefined], () => 0); try { target[0].toFixed(); return false; } catch (error) { return error instanceof TypeError; } })()'), true,
+  "an undefined copied element corrupts the numeric target contract under Node");
+assert.equal(runExample("blocker-round-owned-promised-definitions",
+  '(() => { const definitions = [{ module: "client", expression: { value: 1 } }, { module: "local", expression: { value: 2 } }, { module: "foreign", expression: { value: 3 } }, { module: "foreign", expression: null }]; const result = promised(definitions, "client"); return JSON.stringify([result.length, result.every((_, i) => i in result), result[0] === definitions[0], result[1] === definitions[1], result[2] !== definitions[2], result[2].expression.value, result[3].expression, definitions.length]); })()'),
+  "[4,true,true,true,true,3,null,4]", "native membership retains readable results, selected identities and null expressions");
+assert.equal(runExample("invalid-round-promised-readonly-set",
+  `(() => { const definitions = [{ module: "foreign", expression: { value: 1 } }, { module: "foreign", expression: { value: 2 } }]; const empty = new Set(); const local = { size: 0, has() { definitions.pop(); return false; }, forEach() {}, keys() { return empty.keys(); }, values() { return empty.values(); }, entries() { return empty.entries(); }, [Symbol.iterator]() { return empty.values(); }, union() { return new Set(); }, intersection() { return new Set(); }, difference() { return new Set(); }, symmetricDifference() { return new Set(); }, isSubsetOf() { return true; }, isSupersetOf() { return false; }, isDisjointFrom() { return true; } }; const result = promised(definitions, "client", local); try { result[1].module; return false; } catch (error) { return result.length === 2 && !(1 in result) && error instanceof TypeError; } })()`), true,
+  "a complete structural readonly set can shrink the map input and leave a result hole");
+
 {
   const values = 'const span = [0, 0]; const atom = { k: "atom", name: "string", span }; const effect = { footprint: { value: "any", store: "any" }, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null }; const fn = { k: "function", effect, receiver: null, params: [], rest: null, result: atom, span }; const functions = [fn, fn];';
   assert.equal(runExample("invalid-prep-intersection-function-array",

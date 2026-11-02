@@ -48,6 +48,9 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  positive("dense-spread-before-effect", "Unbounded readable spreads are copied before a later callback in method and ordinary calls."),
+  negative("invalid-dense-spread-element", "An undefined source element cannot meet the numeric spread-copy contract.", /source expression obligation.*spread-copy claim/s),
+  negative("invalid-round-promised-readonly-set", "A structural set membership callback can leave a hole in the mapped definition array.", /source expression obligation.*return-contract claim/s),
   negative("invalid-round-conditional-path-absent", "A missing or undefined field cannot meet a nonundefined result contract through an ordinary read witness.", /no derivation of its return-contract claim/),
   negative("invalid-round-conditional-path-call", "A value-writing callback ends the tested member relation even when it preserves stores.", /no derivation of its return-contract claim/),
   negative("invalid-round-logical-length-value", "A short-circuited member length retains its numeric zero result.", /no derivation of its return-contract claim/),
@@ -82,8 +85,8 @@ export const cases: Case[] = [
   { ...positive("blocker-round-global-signature-matcher", "An owned global-signature matcher retains its checked normal-return array-store contract."), project: "pipeline/blocker-project" },
   { ...negative("invalid-round-global-signature-matcher", "A falsely promised matcher pops the searched array and find reads undefined on its next visit (TypeError under Node).",
     /source expression obligation at \[538,622\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/blocker-project" },
-  gap("blocker-round-append-definitions", "A spread precedes an allocating conditional tail argument", "unverified", "search", /source refusal.*spread copied before a later actual runs needs a rest element type that admits `undefined`/s),
-  gap("blocker-round-owned-promised-definitions", "An owned native set widened at a conditional definition map", "unverified", "search", /source expression obligation.*return-contract claim/s),
+  positive("blocker-round-append-definitions", "An ordinary call snapshots readable unbounded spreads before a conditional suffix."),
+  positive("blocker-round-owned-promised-definitions", "An owned native set retains its preserving membership operation through the conditional map."),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   { ...positive("blocker-round-alias-expression-preserving", "A checked preserving classification callback retains the tested definition expression."), project: "pipeline/blocker-project" },
   { ...negative("invalid-round-record-classifier", "A callback replacing a definition expression cannot promise classification preservation.", /^reject: source expression obligation at \[293,414\): evidence search failed: no derivation of its node-typing claim(?:\n|$)/), project: "pipeline/blocker-project" },

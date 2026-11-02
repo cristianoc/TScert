@@ -4438,7 +4438,7 @@ function promisedValues(values: readonly ValueRoot[]): ValueRoot[] {
 
 /** Promise bounds on definitions outside the client's module and its instances. */
 function promisedDefinitions(definitions: readonly TypeDefinition[], clientModule: string,
-    localInstances: ReadonlySet<string>): TypeDefinition[] {
+    localInstances: Set<string>): TypeDefinition[] {
   return definitions.map(d => d.declaration.module === clientModule || localInstances.has(d.declaration.module) ? d :
     { ...d, expression: d.expression && promisedMethods(d.expression) });
 }

@@ -1982,6 +1982,31 @@ insertion order. Ledger validation suspends the active set and restores its
 snapshot in insertion order. The shared-work controls exercise repeated ledger
 entry, exceptional exit, validation restoration and nested named inputs.
 
+### A native instance set read through a structural interface
+
+`tools/declaration-graph.mts#promisedDefinitions` takes `localInstances` as
+`Set<string>`. Its sole caller constructs that set from the current
+module's instance names immediately before the call. The native set's
+[reviewed membership operation](SOURCE-CONTRACTS.md#prototype-contracts)
+retains its preserving effect. The callback's complete body, including
+`promisedMethods`, uses the existing inferred-effect certification; its
+map result retains readable definition storage.
+
+A structural `ReadonlySet<string>` states a Boolean `has` method whose
+contract permits effects. An implementation can pop the definition input
+while answering `false`. Mapping two definitions then leaves a result of
+length two with no second index, and reading that definition's `module`
+throws `TypeError` under Node. The negative
+`invalid-round-promised-readonly-set` exercises this contract with a complete
+structural set implementation, without changing a standard method.
+
+The repair retains the native input the caller already supplies. The
+annotation is erased; callback order, selected definition identities,
+cloned fields, null expressions, exceptions and mutations are unchanged.
+`blocker-round-owned-promised-definitions` checks an owned set through the
+same boundary. This uses the existing native-set contract and adds no
+external assumption.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not

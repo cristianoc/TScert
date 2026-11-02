@@ -1921,27 +1921,31 @@ control(async (): Promise<void> => {
   }
 });
 control(async (): Promise<void> => {
-  // An array literal's spread is copied before a later element that runs
-  // code, as JavaScript reads it there; a spread operand claimed at other
-  // than an array is refused where the elements are produced and checked.
-  const good = run("array-literal-spread");
+  // Array literals and ordinary calls use the same checked spread copy.
+  // A forged operand claim must be refused in production and checking.
   assert.equal(runExample("array-literal-spread", "snapshot()"), 22);
-  const source = readFileSync(sourceKey(good), "utf8");
-  const claims = readClaims(good);
-  const fn = must(claims.functions.find(f => f.name === "appended"), "appended function");
-  const start = source.indexOf("[...xs, x]") + "[...".length;
-  const operand = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 2), "spread operand claim");
-  const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
-  assert(number >= 0);
-  operand.type = [number];
-  const forged = writeClaims(good, "array-spread-number", claims);
-  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      sourceKey(good), join(good, mode === "--produce-source-claims"
-        ? "array-spread-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
-    assert.ifError(result.error);
-    assert.equal(result.status, 1, result.stdout + result.stderr);
+  for (const sample of [
+    { file: "array-literal-spread", function: "appended", text: "[...xs, x]", offset: 4, length: 2 },
+    { file: "dense-spread-before-effect", function: "append", text: "...values", offset: 3, length: 6 },
+  ]) {
+    const good = run(sample.file);
+    const source = readFileSync(sourceKey(good), "utf8");
+    const claims = readClaims(good);
+    const fn = must(claims.functions.find(f => f.name === sample.function), "spread function");
+    const start = source.indexOf(sample.text) + sample.offset;
+    const operand = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + sample.length), "spread operand claim");
+    const number = claims.types.findIndex(r => Array.isArray(r) && r.length === 1 && r[0] === "num");
+    assert(number >= 0);
+    operand.type = [number];
+    const forged = writeClaims(good, "spread-number", claims);
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+        sourceKey(good), join(good, mode === "--produce-source-claims"
+          ? "spread-forged-evidence.json" : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+    }
   }
 });
 control(async (): Promise<void> => {
