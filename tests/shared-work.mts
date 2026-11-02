@@ -15,13 +15,48 @@ import { mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { compilerLedger, heldSnapshots, openFrontEndCompiler, queryTelemetry, releaseCompiler } from "../tools/compiler-channel.mts";
-import { newLedger, nodeResolve, observed, present, realPath, sharingForTests, unobservable, validateLedger, withLedger }
+import { ledgerAnswers, newLedger, nodeResolve, noteInput, observed, present, realPath, sharingForTests, unobservable, validateLedger, withLedger }
   from "../tools/files.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 
 
 const dir = runDirectory("tscert-shared-work-");
 const real = (path: string): string => realPath(path);
+
+// --- active ledger membership and nested stage ownership
+{
+  const ledger = newLedger();
+  const first = join(dir, "ledger-first"), second = join(dir, "ledger-second"), after = join(dir, "ledger-after");
+  const outer = observed(() => withLedger(ledger, () => {
+    assert.throws(() => withLedger(ledger, () => { present(first); throw Error("nested ledger"); }), /nested ledger/);
+    present(second);
+    assert.equal(validateLedger(ledger), null);
+    const inner = observed(() => { noteInput("inner", "yes"); return 1; });
+    assert.deepEqual(inner.observations.filter(([op]) => op === "input"), [["input", "inner", "yes"]]);
+    noteInput("outer", "yes");
+    return inner.value;
+  }));
+  present(after);
+  const paths = ledgerAnswers(ledger).map(n => n.observation[1]);
+  assert.ok(paths.includes(first) && paths.includes(second), "the outer activation survives a repeated ledger's throw");
+  assert.ok(!paths.includes(after), "the outer activation ends on return");
+  assert.deepEqual(outer.observations.filter(([op]) => op === "input"), [["input", "outer", "yes"]],
+    "validation restores stage order and named inputs belong to the innermost stage");
+  const aliasOuter = newLedger(), aliasInner = newLedger();
+  const alias = { recording: aliasInner.recording };
+  withLedger(aliasOuter, () => {
+    withLedger(alias, () => { alias.recording = aliasOuter.recording; });
+    present(after);
+  });
+  assert.ok(ledgerAnswers(aliasOuter).some(n => n.observation[1] === after),
+    "changing the ledger through a mutable alias preserves the surrounding activation");
+  assert.ok(!ledgerAnswers(aliasInner).some(n => n.observation[1] === after),
+    "cleanup removes the record that this scope activated");
+  const failed = newLedger();
+  assert.throws(() => withLedger(failed, () => { present(first); throw Error("outer ledger"); }), /outer ledger/);
+  present(after);
+  assert.ok(!ledgerAnswers(failed).some(n => n.observation[1] === after), "activation ends on throw");
+}
 
 // --- attempt answers
 {
