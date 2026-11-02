@@ -62,6 +62,7 @@ export const cases: Case[] = [
     /source expression obligation at \[324,517\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/compiler-api-project" },
   { ...gap("blocker-next-compiler-api-ancestor-cell", "A compiler statement parent cell later reaches an absent ancestor", "unverified", "search", /storage-contract claim/), project: "pipeline/compiler-api-project" },
   gap("blocker-next-optional-native-map-copy", "Optional native Map copied at its key and value contract", "unverified", "search", /source expression obligation/),
+  gap("blocker-next-footprint-factory", "A private signature factory preserves the mapped footprint array", "unverified", "search", /source expression obligation.*return-contract claim/s),
   gap("blocker-next-splice-insert-spread", "Replacing an array through splice with inserted spread values", "unsupported", "proposal", /a spread argument needs a tuple of required positions/),
   gap("blocker-next-variadic-context-branch", "An immutable function retains its variadic offer across a logical branch", "unverified", "search", /source incoming edge obligation/),
   gap("blocker-next-noted-json", "Resolution observations serialized as open named-field records", "unverified", "search", /source expression obligation.*no derivation of its node-typing claim/s),
