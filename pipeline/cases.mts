@@ -49,6 +49,12 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   // Supplied census first refusals; source headers name the functions each case represents.
+  { ...gap("blocker-round-logical-member-witness", "Checked member witnesses used inside logical chains with truthy intermediate values", "unverified", "search",
+    /no claimed type for the expression at \[296,296\)/), project: "pipeline/blocker-project" },
+  { ...gap("blocker-round-callable-json-fields", "Recursive printing of a possibly absent field at a JsonValue parameter", "unverified", "search",
+    /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
+  gap("blocker-round-probe-file-keys", "A probe map's keys spread through a structural ReadonlyMap interface", "unverified", "search",
+    /source expression obligation.*node-typing claim/s),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
   { ...gap("blocker-prep-set-mapped-paths", "Set construction from an array mapped through node:path join", "unverified", "search",
