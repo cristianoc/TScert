@@ -88,9 +88,10 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Stage store, census and measurement
 
 - **attempt**: one execution of a stage invocation; within it, an observed stage's record is being made ([shared work](STAGE-STORE.md#shared-work)).
-- **census**: every top-level function of a directory (`tools/` by default) sliced and run through the pipeline, the benchmark of front-end coverage ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main), [the goal](../WORK.md#coverage-of-the-front-end)).
+- **census**: every named top-level function declaration with a body in a directory (`tools/` by default), sliced and run through the pipeline, the benchmark of front-end coverage ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main), [the goal](../WORK.md#coverage-of-the-front-end)).
 - **census record**: a census's persistent record: each slice's source identity, outcome and stage invocations with their timings ([census records](STAGE-STORE.md#census-records)).
 - **entry**: a stored stage result, published under its key and replayed when the key matches ([entries and timeouts](STAGE-STORE.md#entries-and-timeouts)).
+- **front-end function coverage**: verified census functions divided by all census functions in `tools/`, the headline and release metric ([counting and release thresholds](DESIGN.md#function-coverage-and-release-thresholds)).
 - **invocation**: one call of a stage through the common mechanism, with its input description and recorded result ([the stage store](STAGE-STORE.md)).
 - **key** / **stage key**: the digest of a stage, its implementation and its complete input description ([keys](STAGE-STORE.md#keys)).
 - **ledger**: every answer the file system gave one compiler over its lifetime, noted in each record that uses it ([shared work](STAGE-STORE.md#shared-work)).
@@ -113,7 +114,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **snapshot**: a state of a compiler's program that queries are asked of, held until the front end releases it ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions), [shared work](STAGE-STORE.md#shared-work)).
 - **stage**: one step of the pipeline (parse, propose, search, check) or one operation of a control, run through one invocation mechanism ([the stage store](DESIGN.md#the-stage-store)).
 - **stage store**: the content-addressed store from which every stage replays ([the stage store](STAGE-STORE.md)).
-- **statement coverage**: the percentage of a directory's executable source statements a census verifies ([statement coverage](DESIGN.md#statement-coverage)).
+- **statement coverage**: the percentage of executable statements inside the census functions' bodies that the census verifies ([statement coverage](DESIGN.md#statement-coverage)).
 - **step limit** / **timeout**: the time after which a stage is killed, and the observation recording it at that limit ([the stage store](../AGENTS.md#the-stage-store), [entries and timeouts](STAGE-STORE.md#entries-and-timeouts)).
 
 ## Calculus and semantics

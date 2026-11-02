@@ -83,6 +83,8 @@ loaded is rerun by its pattern, not with the whole suite.
 
 ### Measuring coverage: once, on main
 
+Coverage reports follow [function coverage and release thresholds](docs/DESIGN.md#function-coverage-and-release-thresholds): state the count, denominator and scope; label statement coverage and aggregates separately.
+
 The census of the front end's own functions (each top-level function of
 `tools/` sliced and run through the pipeline) runs once on main, after a
 merge, and its movement is recorded then. A branch runs no census, over

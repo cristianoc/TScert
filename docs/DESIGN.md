@@ -298,6 +298,30 @@ project axioms; that fact does not itself establish source correspondence.
 See [the semantic guarantee](SEMANTICS.md#lean-files)
 and [trust-reduction options](TRUST-REDUCTION.md).
 
+### Function coverage and release thresholds
+
+The headline benchmark and release metric is function coverage of `tools/`,
+the front end. Its denominator is every named top-level function declaration
+with a body in that directory; its numerator is those whose complete census
+slice verifies. Unsupported, unverified, timed-out and failed functions
+remain in the denominator. Each function counts once, including functions
+sharing a mutually recursive slice. Function size carries no weight. Module
+initialization, class members and functions held by module bindings are
+outside this census scope.
+
+A release `v0.N` requires at least `N × 10%` of these functions to verify in
+the complete census of `tools/` on main. A selected-file or selected-function
+run is a targeted check, not the release benchmark. A report states the
+verified count, total count and percentage together. Comparing releases uses this same directory and unit
+of counting. This is a census of functions, not a claim that the same
+percentage of source statements or all project code is verified.
+
+Censuses of `dev/`, `tests/` and `pipeline/` are reported under their own
+directory names; an aggregate of directories is labelled with its scope.
+[Statement coverage](#statement-coverage) is a separate measure, weighted
+by the statements inside the census functions. Neither replaces the
+front-end function percentage in a release or headline comparison.
+
 ### Statement coverage
 
 Statement coverage states how much of a directory's source a census verifies,

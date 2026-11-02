@@ -94,6 +94,23 @@ the [status table](WORK.md#status) records what works and what is open,
 including how much of TScert's own front end it verifies, the benchmark that
 drives its development.
 
+Coverage reports distinguish these metrics:
+
+| Metric | What is counted | Purpose |
+| --- | --- | --- |
+| Front-end function coverage | Verified named top-level function declarations with bodies / all such declarations in `tools/` | Headline benchmark and release threshold |
+| Front-end statement coverage | Verified executable statements / counted statements inside those function bodies | Separate measure of source coverage |
+| Multi-directory coverage | Counts across explicitly named directories, such as `tools/`, `dev/`, `tests/` and `pipeline/` | Broader project comparison, reported separately |
+
+Every percentage is reported with its numerator, denominator and scope.
+A percentage of functions does not state the percentage of statements
+verified. Class members, module initializers and functions held by module
+bindings are outside the function census. A release `v0.N` requires at least
+`N × 10%` front-end function coverage in the complete `tools/` census on main. The
+[release metric](docs/DESIGN.md#function-coverage-and-release-thresholds) and
+[statement coverage](docs/DESIGN.md#statement-coverage) have separate definitions.
+The [status table](WORK.md#status) owns the dated measurements.
+
 In outline, the supported subset covers:
 
 - `const`/`let`, patterns, `if`, `switch`, loops including `for...of` and
