@@ -49,6 +49,8 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   // Supplied census first refusals; source headers name the functions each case represents.
+  { ...gap("blocker-compiler-api-declaration-bindings-map", "A recursive visitor capturing a qualified operation loses preservation before a dense map result", "unverified", "search",
+    /source expression obligation.*binding-annotation claim/s), project: "pipeline/compiler-api-project" },
   { ...gap("blocker-round-logical-member-witness", "Checked member witnesses used inside logical chains with truthy intermediate values", "unverified", "search",
     /no claimed type for the expression at \[296,296\)/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-callable-json-fields", "Recursive printing of a possibly absent field at a JsonValue parameter", "unverified", "search",
