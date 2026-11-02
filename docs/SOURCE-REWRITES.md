@@ -1902,8 +1902,8 @@ Set membership updates have the existing
 changes and preserved array stores. The helper statements are checked from
 their bodies. `active-ledger-footprint` exercises these statements and a
 composition whose callback preserves stores on both normal and exceptional
-returns. This proof scope requires the callback's `onThrow` guarantee at the
-exceptional edge of `finally` ([footprints](FOOTPRINTS.md)).
+returns. The example states the callback's `onThrow` guarantee explicitly
+([footprints](FOOTPRINTS.md)).
 
 Named inputs select the nearest active stage by scanning a snapshot in reverse
 insertion order. Ledger validation suspends the active set and restores its

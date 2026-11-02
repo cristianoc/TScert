@@ -3500,9 +3500,9 @@ Consequently, a body checker cannot carry this guarantee through a caught
 exception: it must check the handler with the possibly changed heap, or have
 a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The pure-body
 checker does not admit such calls. Graph composition checks normal-return
-postconditions node by node and refuses handlers; the independent pure-graph
-rule can still certify pure handlers. Qualified-call composition retains
-this distinction. No stronger external assumption is implicit here.
+postconditions node by node, with [checked regions that cannot return
+normally](FOOTPRINTS.md#the-checked-callback-contract) covering rethrowing paths.
+The independent pure-graph rule also certifies pure handlers. No stronger external assumption is implicit here.
 
 The guarantee is sufficient but not necessary for safe dense
 `map`: mutation of unrelated state can also be safe. [Footprints](FOOTPRINTS.md)
@@ -3626,8 +3626,9 @@ wrapper whose `[[proto]]` is the prototype slot, and the read through it.
 with ordinary safety, so the additional graph proof has no second set of edge or
 branch rules. During expression evaluation, `GraphCode.ReturnsPost` tracks the
 normal-return postcondition independently of the safety proof's evolving world.
-A caught exception cannot use that postcondition: compositional checking refuses
-handlers, while the independent pure-graph rule still admits pure handlers.
+A caught exception uses its exceptional postcondition when its handler can
+return normally; [the checked callback contract](FOOTPRINTS.md#the-checked-callback-contract)
+covers handlers whose paths cannot return.
 Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
 rule's footprint must lie within the bound, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
@@ -3898,7 +3899,8 @@ freshness cutoff, the length of $`h_0`$: a node's run is bounded on the
 locations below $`b`$, so a node may change storage the body allocated
 before it, a receiver among them. Throws keep that cutoff:
 
-- a node with a handler is admitted when its term's run is `SafePostExc`
+- a node with a handler outside the [checked region with no normal
+  exit](FOOTPRINTS.md#the-checked-callback-contract) is admitted when its term's run is `SafePostExc`
   whose exceptional postcondition relates the node's entry heap to the heap
   it raises in on the locations below $`b`$; the `handle` transition then
   keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ by `Closed.Holds.trans_on` with
@@ -3940,8 +3942,8 @@ Every way a node's term can raise is then covered:
   the invariant, so a throw at any node is relative to the body's entry
   heap.
 - **Handlers and rethrows.** A handler is a node like any other. A rethrow
-  is a `throw` node without a handler, which raises at its entry heap and so
-  reaches `.raised` with the invariant.
+  is a `throw` node without a handler. Where the body claims `onThrow`, it
+  reaches `.raised` with the footprint invariant.
 
 A pure graph keeps its independent operational rule, which covers its
 handlers already and bounds its throws too: every step keeps the heap a
@@ -3998,7 +4000,10 @@ its footprint. OCaml proposes it for a closure and, at a greatest fixpoint
 over the module, for a declaration whose every node bounds its throw
 (`Source.throws_stmts`); a `try` whose block bounds its throws, with a catch
 and no `finally`, is within the join of the block's and the handler's
-footprints. Implementation: `HeapObservations.SafePostExc`,
+footprints. A handler whose every completion throws permits the guarded
+block's normal-return footprint without including the handler's mutations;
+the graph checker independently certifies its region. Implementation:
+`HeapObservations.SafePostExc`,
 `CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
 `GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
 (its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose

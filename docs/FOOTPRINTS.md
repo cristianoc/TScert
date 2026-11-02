@@ -126,8 +126,8 @@ presence only between callbacks is audited.
 
 ## The checked callback contract
 
-A body is certified within a closed footprint $`\Phi`$ when every node of its
-graph runs within $`\Phi`$, from the heap the node starts in, on the
+A body is certified within a closed footprint $`\Phi`$ when every node outside
+a checked region with no normal exit runs within $`\Phi`$, from the heap the node starts in, on the
 locations below the heap the body started in; the runs compose by
 `Closed.Holds.trans_on` into the body's (`GraphCode.BoundState`,
 `goto_bounded`). Lean accepts a node (`compositionalChecked`,
@@ -174,16 +174,31 @@ expanding to no clause (`ExpressionEffects.emptyType`; proved:
 `emptyType_sound`, and `noReturn_sound`, by `of_value_property` from the
 node's safety, every normal postcondition holding vacuously). `never` and a
 generic call instantiated at `never` are empty; `Promise<never>` and a
-guard's `boolean` are not. The rule bounds normal returns only: a node under
-a handler, or in a body claiming `onThrow`, still bounds its throw by the
-rule below, whatever its type, so a caller catching the throw of a
-never-returning call gains nothing.
+guard's `boolean` are not.
 
-A node with an exceptional handler is within the bound on a throw as well,
-since its handler turns the throw into a normal path: the node's throw is an
-inspection, a typed write, or a call whose signature bounds its throws
-(`onThrow`), and the handler's facts follow from the node's, the thrown value
-never fresh (proved: `GraphCode.throwsWithin_sound`, `handlerFresh_sound`).
+For a normal-return guarantee, a checked region $`D`$ may contain nodes whose
+paths cannot return normally. Every node in $`D`$ has either an empty result
+type by the rule above, or a non-return continuation whose destinations all
+lie in $`D`$; every exceptional handler of a node in $`D`$ also lies in $`D`$.
+The region may contain cycles. Its nodes retain ordinary safety and may
+change the heap without satisfying $`\Phi`$. A handler outside $`D`$ requires
+the throwing node to meet the footprint on its throw too. A body claiming
+`onThrow` uses an empty $`D`$.
+
+Proved: `GraphCode.bounded_step` preserves the bound outside $`D`$ and the
+absence of a normal exit inside it; `goto_bounded` gives the body's footprint.
+The checker computes a candidate region (`inferDead`) and checks each member's
+normal and exceptional exits (`deadNode`), so stopping the computation early
+cannot admit an unchecked exit. The region is derived from the graph and its
+ordinary certificate and adds no claim field. A rethrowing handler can belong
+to $`D`$; an outer handler or finalizer returning normally keeps any path to
+that return outside $`D`$.
+
+A node whose exceptional handler lies outside $`D`$ is within the bound on a
+throw as well: its throw is an inspection, a typed write, or a call whose
+signature bounds its throws (`onThrow`), and the handler's facts follow from
+the node's, the thrown value never fresh (proved:
+`GraphCode.throwsWithin_sound`, `handlerFresh_sound`).
 A signature stating `onThrow` bounds the throws leaving the invocation too
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)).
 A function's guarantee comes only from its checked body: a declaration's
