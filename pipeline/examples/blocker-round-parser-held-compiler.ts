@@ -7,8 +7,9 @@ let openings: number = 0;
 const opened = new Set<string>();
 export function update(api: API, absolute: string): Snapshot {
   if (!compiler) {
-    compiler = api;
+    const created = api;
     openings++;
+    compiler = created;
   }
   const changed = opened.has(absolute);
   return changed
