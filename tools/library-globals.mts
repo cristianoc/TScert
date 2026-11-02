@@ -931,9 +931,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     intrinsic: newPromiseName },
 ];
 
-/** The entry for `global`'s `member` (absent: its call) declared as `text`. */
+/** A declaration-text matcher preserves array stores on normal return. */
+export type GlobalSignatureMatcher = (signature: string) =>
+  Within<{ value: "any"; store: "keep" }, boolean>;
+
+/** Search entries by global, member (absent: its call), signature and origin. */
 export function globalEntry(entries: readonly GlobalEntry[], global: string, member: string | undefined,
-    matches: (signature: string) => boolean, origin: string): GlobalEntry | undefined {
+    matches: GlobalSignatureMatcher, origin: string): Within<{ value: "any"; store: "keep" }, GlobalEntry | undefined> {
   return entries.find(e => e.global === global && e.member === member && matches(e.signature) &&
     (e.origin ?? "library") === origin);
 }
