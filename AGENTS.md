@@ -148,12 +148,12 @@ prints a census's verified statement coverage per directory and file
 the record's commit or of the checkout, running no slice. A census rerun with a longer `TSCERT_STEP_LIMIT`
 executes the stages that timed out again and replays the finished ones.
 
-A branch is ready to merge when `make test` and
-`make suite` pass and its review is done, and reports as soon as its suites
-pass. A small, local fix whose output is unchanged (an untrusted
-search's speed, a diagnostic's wording) merges on green suites without a
-further review round; a new rule or a change of trust is reviewed before it
-merges.
+A branch is ready to merge when `make test` and `make suite` pass and a
+trusted model (Claude Opus 5.5 or Astra) that has read its diff states it is
+confident the change is correct and sound, a new rule's or a change of
+trust's soundness included; it reports as soon as its suites pass. An
+independent review by a trusted model is asked for only where that model is
+not confident. A less capable model's statement is no confidence.
 
 ### Working in a separate git worktree
 
