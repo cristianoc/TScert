@@ -77,10 +77,9 @@ holes with unrestricted callbacks. This is a negative case under the
 `Within<{ value: "any"; store: "grow" }, TypeTerm>` from `go`; the existing
 [effect checks](FOOTPRINTS.md) and native map contract establish the readable
 result, and the reference construction verifies. This adds no external
-assumption. The census functions `compiler-api.mts#hostBrands`,
-`#hostBrandsConstructor` and `#hostBrandsFunction` share the recursive
-`hostBrands` call, whose `brand` and `fail` parameters carry ordinary
-function contracts. Those signatures supply no store-preservation guarantee.
+assumption. The compiler's own branding traversal retains a checked
+[brand-predicate footprint](#the-brand-predicates-normal-return-footprint)
+through its recursive calls and declaration context.
 
 ### Installation records mapped through an unrestricted callback
 
@@ -3549,3 +3548,32 @@ a generic field union. The overlapping-field, multiple-index and extra-hook
 negative cases require all construction constraints. Under Node their
 values violate the promised Boolean field or index, or a `toJSON` hook
 returns `undefined` where serialization promises a string.
+
+### The brand predicate's normal-return footprint
+
+`tools/compiler-api.mts#hostBrands` and its function and constructor helpers
+use `BrandPredicate`: a Boolean callback within
+`{ value: "any", store: "grow" }` on normal return. The recursive results
+and local `go` closures state the same footprint. The existing
+[effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+checks their bodies before calls consume that guarantee; the native map
+contract preserves the readable argument arrays.
+
+The declaration reader's `brandKey` formats string fields and a numeric
+span with `join`, and `isBrand` uses the native `Set.has` contract.
+Their written footprints and `DeclarationElaborationContext.isBrand` retain
+this guarantee at each call to the traversal. The predicate type has one
+owner in `compiler-api.mts`. These annotations add no runtime operation,
+return, exception or heap effect and take no external assumption.
+
+The failure callback returns `never` and carries its ordinary contract.
+It has no normal exit. The traversal's footprint states no guarantee for
+an exceptional exit, including one on which that callback mutates a heap
+before throwing. Brand directions follow the compiler API's
+[declaration reading rules](COMPILER-API.md#reading-rules).
+
+`blocker-round-host-brand-footprint` exercises a known predicate retained
+through the shared type and a context. `invalid-round-host-brand-footprint`
+shows that storing an unrestricted callback at that type remains an
+obligation: a callback popping the outer arguments during recursion leaves
+a result hole and causes `TypeError` under Node.

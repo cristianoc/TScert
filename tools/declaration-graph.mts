@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
+import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
@@ -1116,9 +1116,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     const clean = (node: Node, what: string): void => resolutionClean(program, client, errors, observations, node, what);
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
-    const brandKey = (id: DeclarationIdentity): string => `${id.module}#${id.name}#${id.span.join(":")}`;
+    const brandKey = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, string> => `${id.module}#${id.name}#${id.span.join(":")}`;
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => resolutionIdentityOf(idOf, brands, brandKey, node);
-    const isBrand = (id: DeclarationIdentity): boolean => brands.has(brandKey(id));
+    const isBrand = (id: DeclarationIdentity): Within<{ value: "any"; store: "grow" }, boolean> => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => resolutionResolveDeclarations(checker, verifierFile, clean, idOf, identifier, what);
@@ -5564,7 +5564,7 @@ interface DeclarationElaborationContext {
   instantiate: (owner: string, node: Node, args: readonly TypeTerm[], use: Node | null) => (part: TypeNode) => TypeTerm;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether an identity is a branded string of the host (reading rule 5). */
-  isBrand: (id: DeclarationIdentity) => boolean;
+  isBrand: BrandPredicate;
   /** Whether a file is the standard library's (`moduleIds`). */
   libraryFile: (file: SourceFile) => boolean;
   /** Whether a declaration is a host type, whose members are readonly views. */
