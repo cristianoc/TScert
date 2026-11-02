@@ -12,7 +12,7 @@ import type { GuardClosure } from "./guard-closure.mts";
 import { createHash } from "node:crypto";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
 import type { TypeTerm } from "./declaration-types.mts";
-import { closedFootprints, emptyEffect, footprintEffect, type CallEffect } from "./type-graph.mts";
+import { emptyFootprint, closedFootprints, footprintEffect, type CallEffect } from "./type-graph.mts";
 
 /** A tag value: a number, or a string for a family whose tag is a string. */
 export type TagValue = number | string;
@@ -81,7 +81,7 @@ export type FootprintMember = { owner: string; member: string; text: string; kin
  * (`atEachFootprint`, array-prototype.mts). */
 export function footprintReading(kind: FootprintMember["kind"], type: TypeTerm): TypeTerm {
   if (kind === "empty") {
-    const effect: CallEffect = { ...emptyEffect, onThrow: true };
+    const effect: CallEffect = footprintEffect(emptyFootprint, { onThrow: true });
     const at = (t: TypeTerm): TypeTerm =>
       t.k === "function" && t.effect.promise === null ? { ...t, effect }
       : t.k === "intersection" ? { ...t, parts: t.parts.map(at) } : t;

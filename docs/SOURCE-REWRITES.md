@@ -3025,22 +3025,48 @@ statements of 17 functions in the census of 6be11ce.
 
 ### A spread of a record of readonly fields
 
-`requestReading` in `tools/compiler-api.mts` gave a request's signature its
-effect as `{ ...effect, fresh: … }`, a spread of a local typed `CallEffect`,
-whose fields are all readonly. A merge reads only operands whose type
-excludes host values, and a record of readonly fields alone excludes none
-([excluding host values](HOST-FAMILIES.md#excluding-host-values),
-`invalid-compiler-api-node-spread`). Support would track that the local
-holds a fresh literal through its annotation, for this one site, which
-a8cba50 introduced into a function the census of 6be11ce verified.
+`tools/type-graph.mts#footprintEffect` constructs the nine fields of a
+`CallEffect` from its footprint and optional guarantees. The options have
+type `Partial<Omit<CallEffect, "footprint">>`; an omitted or `undefined`
+option gives the field its `false` or `null` default. Explicit `false` and
+`null` retain those values. `promiseEffect` supplies its promise through
+this constructor. `withPromise` copies an effect's nine fields with a
+replacement promise, retaining every other guarantee. All three constructors
+state checked normal-return preservation of values and stores: their bodies
+read metadata and allocate fresh records through the existing footprint rules.
 
-- **Equivalent form:** a literal reads `effect`'s five fields in the order
-  the spread copies them, with `fresh` at its place, as the spread's later
-  field overwrites it. `effect` is a local literal no code writes, owning
-  exactly these five data properties, so the copy holds the same values
-  under the same keys in the same order, and is fresh as the spread's was.
-- **Commit:** the introducing commit, `requestReading builds a request's
-  effect field by field`.
+A `CallEffect` has readonly fields. Such a record permits host values,
+whose own keys the type does not enumerate. Object spread requires a
+contract that excludes them
+([excluding host values](HOST-FAMILIES.md#excluding-host-values),
+`invalid-compiler-api-node-spread`).
+
+- **Equivalent form:** the effect's known footprint and selected guarantees
+  are passed to `footprintEffect`. A promise update of existing metadata
+  calls `withPromise`. The replaced operands are ordinary effects constructed
+  by the metadata factories; they own exactly the nine data properties in
+  constructor order. Construction retains the same values and key order,
+  including the identities of the footprint, promise and element-kind arrays.
+  `withPromise` retains the unchanged fields of its input. The one-argument
+  constructor calls retain their defaults. At these sites the arguments are
+  lexical reads, reads of ordinary data properties and fresh literals. They
+  invoke no code, and the intermediate allocations are unobserved.
+- **Avoided form and cost:** `{ ...emptyEffect, onThrow: true }` and
+  `{ ...footprintEffect(footprint), promise }` spread a readonly contract.
+  Tracking the constructor's fresh value through that annotation would
+  establish a stronger fact than its readers need. Explicit construction
+  uses the existing object checks. A custom call allocates an options record
+  and its result; the avoided form allocates its result and, for an inline
+  constructor operand, the intermediate effect record. A promise update
+  allocates its result and retains the input effect.
+- **Scope:** `blocker-prep-effect-spread` constructs an on-throw effect;
+  `blocker-round-collection-effect` constructs a native collection guard's
+  promise. `spread-readonly-record-refused` retains the host exclusion.
+  `tools/library-modules.mts` retains its readonly effect spreads with the
+  same host-exclusion obligation ([catalog scope](../WORK.md#status)).
+  `tools/compiler-api.mts#requestReading` copies its local effect's nine
+  fields explicitly; that local owns those fields and no code writes it.
+- **Commit:** the introducing commit.
 
 ### A parameter type computed from a compiler-API method
 

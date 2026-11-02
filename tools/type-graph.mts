@@ -44,19 +44,27 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", store: "grow" }, { value: "any", store: "grow" },
   { value: "keep", store: "any" }, { value: "any", store: "any" },
 ];
-/** A signature with a footprint and no promise. */
-export const footprintEffect = (footprint: ClosedFootprint): Within<{ value: "any"; store: "grow" }, CallEffect> =>
-  ({ footprint, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false,
-    requires: null, elements: null });
+/** The optional guarantees a footprint's signature states. */
+type EffectOptions = Partial<Omit<CallEffect, "footprint">>;
+/** A fresh signature effect, with false and null for omitted guarantees. */
+export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+  ({ footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
+    receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
+    receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
+    requires: options?.requires ?? null, elements: options?.elements ?? null });
+/** A fresh effect with a replacement promise and every other guarantee retained. */
+export const withPromise = (effect: CallEffect, promise: CallPromise | null): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+  ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
+    onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
+    requires: effect.requires, elements: effect.elements });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
 export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
 /** A promise signature: a guard's or an assertion function's, about `param`,
  * whose code may change every location. */
-export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "any"; store: "grow" }, CallEffect> =>
-  ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
-    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null });
+export const promiseEffect = (asserts: boolean, param: number): Within<{ value: "keep"; store: "keep" }, CallEffect> =>
+  footprintEffect(topFootprint, { promise: asserts ? { asserts: { param } } : { guards: { param } } });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
 const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
