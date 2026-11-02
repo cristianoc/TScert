@@ -2,7 +2,7 @@
 type Identity = { [field: string]: string | boolean };
 type Identification =
   | { identity: Identity; unobserved?: never }
-  | { unobserved: string };
+  | { unobserved: string; identity?: never };
 type Implementation =
   | { identity: Identity; changed: () => boolean; unobserved?: never }
   | { unobserved: string; identity?: never };
