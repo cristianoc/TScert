@@ -60,6 +60,7 @@ export const cases: Case[] = [
     /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-parser-held-compiler", "A nullable compiler module cell refined across another captured cell's update", "unverified", "search",
     /^reject: source incoming edge obligation at \[508,545\): evidence search failed: the edge from node 84 does not establish the claims at this point(?:\n|$)/), project: "pipeline/blocker-project" },
+  gap("blocker-round-compiler-identity-json", "A compiler identity return annotation retaining its plain JSON data contract", "unverified", "search", /source expression obligation.*node-typing claim/s),
   gap("blocker-round-probe-file-keys", "A probe map's keys spread through a structural ReadonlyMap interface", "unverified", "search",
     /source expression obligation.*node-typing claim/s),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
