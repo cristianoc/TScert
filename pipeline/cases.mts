@@ -82,6 +82,8 @@ export const cases: Case[] = [
   { ...positive("blocker-prep-assign-error-value", "Object.assign retains a fresh Error target's prototype and adds its code field"), project: "pipeline/blocker-project" },
   negative("invalid-assign-constructor-alias", "A constructor can return a shared object: copying a string code changes an alias's number field (run under Node)",
     /Object.assign onto a constructed target needs a constructor contract stating a fresh object/),
+  { ...positive("compiler-overlay-footprint", "A live native-map overlay retains checked read effects through its read-only interface"), project: "pipeline/blocker-project" },
+  { ...negative("invalid-compiler-overlay-footprint", "An unrestricted structural map reader can shrink the mapped paths and leave a hole (run under Node)"), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-part-map-effect", "Part collection calling a store-preserving traversal parameter"), project: "pipeline/blocker-project" },
   { ...positive("blocker-prep-session-after-clear", "Passing a saved session after explicit null and ledger equality tests"), project: "pipeline/blocker-project" },
   { ...gap("blocker-prep-alias-expression-after-call", "Passing a tested nullable definition expression after calling record", "unverified", "search",

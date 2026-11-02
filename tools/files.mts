@@ -581,6 +581,20 @@ export function installed(path: string): boolean {
 // ---------------------------------------------------------------------------
 // The compiler's file system
 
+/** The overlay reads the compiler performs, with their preservation contract. */
+export type CompilerOverlay = {
+  readonly get: (path: string) => Within<{ value: "keep"; store: "keep" }, string | undefined>;
+  readonly has: (path: string) => Within<{ value: "keep"; store: "keep" }, boolean>;
+};
+
+/** A live read view of the native map, retaining its methods' effects. */
+export function compilerOverlay(overlay: Map<string, string>): CompilerOverlay {
+  return {
+    get: (path: string): Within<{ value: "keep"; store: "keep" }, string | undefined> => overlay.get(path),
+    has: (path: string): Within<{ value: "keep"; store: "keep" }, boolean> => overlay.has(path),
+  };
+}
+
 /** The compiler API's file-system queries (`typescript/unstable/fs`), each
  * answered here and never declined, so the compiler falls back to its own
  * file system for none of them. */
@@ -608,7 +622,7 @@ function compilerText(path: string, bytes: Buffer): string {
  * inside `installation`, the compiler's own installation, which the
  * implementation's identity covers, declined, for the compiler to read
  * itself; every other answer an observation of exactly that answer. */
-export function compilerFileSystem(overlay: ReadonlyMap<string, string>, installation: string | null):
+export function compilerFileSystem(overlay: CompilerOverlay, installation: string | null):
     CompilerFileSystem {
   const own = (path: string): boolean => installation !== null && path.startsWith(installation + sep);
   return {
