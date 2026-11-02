@@ -28,6 +28,8 @@ import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
+import { termText } from "./named-record.mts";
+import type { JsonObject } from "./calculus.mts";
 import type { DeclarationIdentity, ElementKind, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
@@ -914,37 +916,25 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
       throw new Unread("a named type");
     },
   });
-  // A contract without its spans: the reader keeps no parameter name, so
-  // equal contracts read alike.
-  type ContractData = null | undefined | boolean | number | string
-    | readonly ContractData[] | { readonly [key: string]: ContractData };
-  const isArrayData = (value: ContractData): value is readonly ContractData[] => Array.isArray(value);
-  const canonical = (value: ContractData): string => {
-    if (Array.isArray(value)) {
-      // The native test excludes arrays on the other branch; this checked
-      // guard retains their element contract under the shadow declarations.
-      if (!isArrayData(value)) throw Error("array data tests disagree");
-      const items: readonly ContractData[] = value;
-      return `[${items.map(canonical).join(",")}]`;
-    }
-    if (value !== null && typeof value === "object")
-      return `{${Object.entries(value).filter(([key]: [string, ContractData]) => key !== "span")
-        .map(([key, field]: [string, ContractData]) => `${key}:${canonical(field)}`).join(",")}}`;
-    return typeof value === "string" ? JSON.stringify(value) : String(value);
-  };
+  type ContractShape = (
+    { k: "method"; optional: boolean; bounds: (string | null)[]; forms: string[] } |
+    { k: "property"; optional: boolean; readonly: boolean; type: string }
+  ) & JsonObject;
+  // Type terms are compared by their semantic fields; the outer contract
+  // records contain only fresh plain data and the terms' text.
   const contract = (member: Member, binders: Binders): string | null => {
     try {
       const own = ts.isMethodSignatureDeclaration(member) ? member.typeParameters ?? [] : [];
       if (own.some(p => p.defaultType)) return null;
       const scope = scopeOf(member, binders, own.map(p => p.name.text));
-      const shape = ts.isMethodSignatureDeclaration(member)
+      const shape: ContractShape = ts.isMethodSignatureDeclaration(member)
         ? { k: "method", optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
-            bounds: own.map(p => p.constraint ? typeTerm(scope, p.constraint) : null),
-            forms: signatures(scope, member.parameters, member.type, member, [0, 0]) }
+            bounds: own.map(p => p.constraint ? termText(typeTerm(scope, p.constraint)) : null),
+            forms: signatures(scope, member.parameters, member.type, member, [0, 0]).map(termText) }
         : { k: "property", optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
             readonly: !!member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword),
-            type: typeTerm(scope, member.type, member) };
-      return canonical(shape);
+            type: termText(typeTerm(scope, member.type, member)) };
+      return JSON.stringify(shape);
     } catch (error) {
       if (error instanceof Unread) return null;
       throw error;
@@ -958,7 +948,7 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   const seen = new Map<ts.InterfaceDeclaration, Set<string>>();
   let visits = 0;
   const visit = (part: ts.InterfaceDeclaration, binders: Binders): string | null => {
-    const at = canonical([...binders.entries()]);
+    const at = JSON.stringify([...binders.entries()].map(([name, type]) => [name, termText(type)]));
     const known = seen.get(part) ?? new Set<string>();
     if (known.has(at)) return null;
     known.add(at);
