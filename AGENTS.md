@@ -300,6 +300,7 @@ concern's mechanism. Where no mechanism fits, that section lists the mechanisms 
 why each falls short; no new machinery is proposed before it is written.
 Every review of a design or of a new rule asks first: is this an instance
 of an existing mechanism, and which; what does it duplicate?
+For an external API, follow [modeling a library](docs/SOURCE-CONTRACTS.md#modeling-a-library).
 
 ### Engineering trade-offs
 
