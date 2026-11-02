@@ -72,6 +72,7 @@ export const cases: Case[] = [
   { ...gap("blocker-round-receiver-path-reuse", "A receiver-member witness reused after a preceding property-access branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-host-brand-footprint", "A recursive host-brand reader retains its owned classification callback footprint", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-document-parts", "A complete declaration document constructed from its known parts", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
+  gap("blocker-round-conditional-path-reuse", "A plain-object member fact retained after a preceding conditional branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
