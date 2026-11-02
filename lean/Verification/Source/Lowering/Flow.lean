@@ -290,7 +290,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
   let separation := separationFacts (SourceTypes.graph (← table)) scope Γ
-  let links ← witnessLinks Γ fc node.source.1 scope
+  let links ← witnessLinks fc node.source.1 scope
   if !facts.isEmpty || !links.isEmpty || !separation.facts.isEmpty then
     recordAssertion reserved ⟨facts, [], links, separation, []⟩
   recordCut reserved

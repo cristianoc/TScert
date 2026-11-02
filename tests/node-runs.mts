@@ -2750,3 +2750,15 @@ for (const [file, call] of [
     '(() => { const holder={value:{size:1,text:"x"}}; return typeof wrong(holder,()=>{holder.value.text=undefined}); })()'),
     "undefined", "a call can invalidate a member tested earlier in a logical chain");
 }
+
+{
+  assert.equal(runExample("blocker-round-conditional-path-reuse",
+    '[reuse({expression:{kind:"property",name:{text:"call"}}}),reuse({expression:{kind:"property",name:{text:"apply"}}}),reuse({expression:{kind:"other"}}),reuse({expression:{kind:"property",name:{text:"other"}}}),optionalReuse({}),optionalReuse({expression:undefined}),kept({expression:{kind:"property",name:{text:"call"}}},()=>{})].join(",")'),
+    "1,0,0,0,0,0,1", "ordinary read witnesses preserve both conditional answers, including absent fields");
+  for (const input of ["{}", "{expression:undefined}"])
+    assert.equal(runExample("invalid-round-conditional-path-absent", `typeof wrong(${input})`),
+      "undefined", "an absent or undefined field violates the nonundefined result contract");
+  assert.equal(runExample("invalid-round-conditional-path-call",
+    '(() => { const node={expression:{kind:"property",name:{text:"call"}}}; return typeof wrong(node,()=>{node.expression=undefined}); })()'),
+    "undefined", "a growth-preserving value write can invalidate the tested field");
+}

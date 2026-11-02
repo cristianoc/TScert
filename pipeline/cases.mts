@@ -48,6 +48,8 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  negative("invalid-round-conditional-path-absent", "A missing or undefined field cannot meet a nonundefined result contract through an ordinary read witness.", /no derivation of its return-contract claim/),
+  negative("invalid-round-conditional-path-call", "A value-writing callback ends the tested member relation even when it preserves stores.", /no derivation of its return-contract claim/),
   negative("invalid-round-logical-length-value", "A short-circuited member length retains its numeric zero result.", /no derivation of its return-contract claim/),
   negative("invalid-round-logical-member-effect", "A call ends a logical chain's saved member refinement.", /no derivation of its return-contract claim/),
   // Supplied census first refusals; source headers name the functions each case represents.
@@ -69,12 +71,12 @@ export const cases: Case[] = [
   { ...positive("blocker-round-installation-records", "Singleton flatMap keeps real installation records dense for the captured ownership comparisons."), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-collection-effect", "Collection predicate effect metadata built by spreading readonly effect data", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-error-field-array", "Error prototype fields built through an inferred local constructor", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
-  { ...gap("blocker-round-receiver-path-reuse", "A receiver-member witness reused after a preceding property-access branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-receiver-path-reuse", "Reused compiler member paths keep ordinary read equality across conditional entries."), project: "pipeline/blocker-project" },
   { ...positive("blocker-round-host-brand-footprint", "A known brand predicate's normal-return footprint is checked and retained through a context and recursive reference mapping"), project: "pipeline/blocker-project" },
   { ...negative("invalid-round-host-brand-footprint", "An unrestricted brand callback cannot acquire a preservation promise by being stored in a qualified context (TypeError under Node)",
     /source expression obligation at \[490,499\): evidence search failed: no derivation of its node-typing claim/), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-document-parts", "A complete declaration document constructed from its known parts", "unverified", "search", /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
-  gap("blocker-round-conditional-path-reuse", "A plain-object member fact retained after a preceding conditional branch", "unverified", "search", /source incoming edge obligation.*does not establish the claims at this point/s),
+  positive("blocker-round-conditional-path-reuse", "A plain record member path keeps its read equality across successive conditional tests."),
   positive("blocker-round-probe-file-keys", "The probe retains its callers' constructed native Map contract when spreading file keys."),
   positive("active-ledger-footprint", "Unique active ledger membership and generic callback effects"),
   { ...positive("blocker-prep-reduce-block-spread", "reduce callback with an explicit statement-array result contract"), project: "pipeline/blocker-project" },
