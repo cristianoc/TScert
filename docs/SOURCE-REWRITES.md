@@ -689,6 +689,21 @@ so the destructured value's checked type includes `undefined`.
   type independently of subsequent reads or calls. Compiler node arrays
   supply nodes at their positions, so the check preserves the accepted
   source programs and their lowering.
+- **Indexed guards:** `wrappedMethodCall` saves the first argument of a
+  lowered intrinsic before testing it and assigning its receiver. Its
+  `read` comes from `expr` or `chainLink`; `Gate.intrinsic` holds the ordinary
+  argument arrays those readers construct, including the literal arrays for
+  `%ElementAt%`, `%ByteAt%` and `%Read:k%`. The guard and assignment have no
+  intervening call or write. Saving the first read therefore preserves the
+  receiver, failure and evaluation order for these AST arrays. The callee
+  checks remain before that read; member reconstruction, token lookup,
+  reductions and source-argument mapping remain afterward.
+  Repeated indexed truthiness would require checked knowledge connecting a
+  particular store position to its observed value. The existing linked-read
+  rule connects named fields; array reads use the required, optional and
+  rest position rules. Narrowing a saved value uses the existing binding
+  rule without strengthening the array's invariant storage contract.
+  `blocker-next-indexed-refinement` checks the saved element.
 - **Scope:** `blocker-gap-round-assign-target` checks the saved value;
   `blocker-gap-round-assign-target-length-only` checks the equivalent
   form of the [avoided length-only read](#an-array-target-justified-only-by-length).

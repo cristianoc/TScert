@@ -971,8 +971,10 @@ export function wrappedMethodCall(this: Gate, node: ts.CallExpression, callee: E
   if (read.k === "read" || read.k === "index") {
     object = read.e;
     member = { ...read, e: saved(mark) };
-  } else if (read.k === "apply" && read.callee.k === "id" && read.callee.name.startsWith("%") && read.args[0]) {
-    object = read.args[0];
+  } else if (read.k === "apply" && read.callee.k === "id" && read.callee.name.startsWith("%")) {
+    const first = read.args[0];
+    if (!first) return gate.fail(node, WRAPPED_MEMBER_CALL);
+    object = first;
     member = { ...read, args: [saved(mark), ...read.args.slice(1)] };
   } else return gate.fail(node, WRAPPED_MEMBER_CALL);
   const paren = gate.token(node.expression.end, "(", node);
