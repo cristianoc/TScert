@@ -1,7 +1,14 @@
-// `join` calls `posix.normalize`, a property other code may replace by a
-// function that shrinks the array `map` visits (run under Node): the call
-// is unrestricted, and the mapped array may be sparse.
-import { join } from "node:path";
+// A replacement for the standard normalizer shrinks map's input, leaving
+// a hole under Node. Access to that native implementation object is refused.
+import path, { join } from "node:path";
+
+export function tamper(files: string[]): void {
+  const normalize = path.posix.normalize;
+  path.posix.normalize = (p: string): string => {
+    files.pop();
+    return normalize(p);
+  };
+}
 
 export function parents(files: string[]): string[] {
   return files.map((f) => join(f, ".."));
