@@ -57,9 +57,9 @@ for the synthetic copy. -/
   let some ⟨_, (_, P), _, _⟩ := signatures.head? | throw "a spread needs a variadic callee"
   let some E := PositiveRules.restElem G P
     | throw "a spread into a rest needs an element rest"
-  if !E.contains Labels.undef then
-    throw (locatedRefusal (← table) call.span .bindingAnnotation
-      "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
+  -- The ordinary array-parts certificate checks the copy at this element
+  -- type, as for a variadic construct call. Sparse sources must establish
+  -- that their holes' undefined values meet it.
   let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
   recordHints [C]
   return [C]

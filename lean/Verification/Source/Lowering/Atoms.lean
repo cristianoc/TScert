@@ -236,8 +236,9 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
       throw (locatedRefusal (← table) e.span .bindingAnnotation
         "a spread into fixed parameters followed by an actual that runs code is outside the fragment")
   let As₀ ← operands.mapM (exprType fc)
-  -- A dense tuple keeps its exact positions when copied. Other arrays use
-  -- the existing unbounded copy rule, whose result may have holes.
+  -- A fixed tuple keeps its exact positions when copied. An unbounded
+  -- copy uses the existing array-parts rule: its source store must spread
+  -- into the rest element, including undefined wherever it can have holes.
   let copyTypes ← copied.mapM fun i => do
     let G := SourceTypes.graph (← table)
     let some original := As₀[i]? | throw "a spread argument needs an operand"
@@ -248,9 +249,6 @@ def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (T
     let some ⟨_, (_, P), _, _⟩ := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
     let some E := PositiveRules.restElem G P
       | throw "a spread into a rest needs an element rest"
-    if !E.contains Labels.undef then
-      throw (locatedRefusal (← table) e.span .bindingAnnotation
-        "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
     let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
     recordHints [C]
     pure (i, [C])
