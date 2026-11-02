@@ -199,6 +199,9 @@ export const brandedTypes: readonly { name: string; text: string }[] = [
   { name: "__String", text: "export type __String = (string & {\n    __escapedIdentifier: void;\n}) | InternalSymbolName;" },
 ];
 
+/** A brand lookup preserves existing array prefixes on normal return. */
+export type BrandPredicate = (id: DeclarationIdentity) => Within<{ value: "any"; store: "grow" }, boolean>;
+
 /** A host-produced type with each branded string where the host produces it
  * (`out`) read as `string` (reading rule 5): a primitive result, a readonly
  * member, a callback's parameter. Where the client produces one (`out`
@@ -209,9 +212,9 @@ export const brandedTypes: readonly { name: string; text: string }[] = [
  * a client annotation naming it or an alias of it, keeps its declared
  * definition, `string & { … }`, which no value meets and which is refused
  * where it is used. */
-export function hostBrands(t: TypeTerm, out: boolean | null, brand: (id: DeclarationIdentity) => boolean,
-    fail: (message: string) => never): TypeTerm {
-  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+export function hostBrands(t: TypeTerm, out: boolean | null, brand: BrandPredicate,
+    fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   switch (t.k) {
     case "reference":
       if (brand(t.reference.target)) {
@@ -244,16 +247,16 @@ export function hostBrands(t: TypeTerm, out: boolean | null, brand: (id: Declara
   }
 }
 function hostBrandsConstructor(t: Extract<TypeTerm, { k: "constructor" }>, out: boolean | null,
-    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "constructor" }> {
+    brand: BrandPredicate, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, Extract<TypeTerm, { k: "constructor" }>> {
   const flip = out === null ? null : !out;
-  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   return { ...t, params: t.params.map(p => go(p, flip)), rest: t.rest && go(t.rest, flip), result: go(t.result, out),
     ...(t.statics ? { statics: t.statics.map(s => ({ ...s, type: go(s.type, s.readonly ? out : null) })) } : {}) };
 }
 function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolean | null,
-    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "function" }> {
+    brand: BrandPredicate, fail: (message: string) => never): Within<{ value: "any"; store: "grow" }, Extract<TypeTerm, { k: "function" }>> {
   const flip = out === null ? null : !out;
-  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  const go = (u: TypeTerm, o: boolean | null): Within<{ value: "any"; store: "grow" }, TypeTerm> => hostBrands(u, o, brand, fail);
   return { ...t, receiver: t.receiver && go(t.receiver, flip), params: t.params.map(p => go(p, flip)),
     rest: t.rest && go(t.rest, flip), result: go(t.result, out) };
 }

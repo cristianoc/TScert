@@ -14,6 +14,7 @@
   "include": [
     "../examples/blocker-*.ts",
     "../examples/invalid-error-subclass-prototype.ts",
+    "../examples/invalid-round-host-brand-footprint.ts",
     "../examples/invalid-census-annotated-node-union.ts",
     "../examples/invalid-prep-generic-binder-map.ts",
     "../examples/invalid-prep-intersection-function-array.ts",
