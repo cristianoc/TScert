@@ -30,7 +30,9 @@
     "../examples/invalid-node-url-*.ts",
     "../examples/node-url-*.ts",
     "../examples/node-array-*.ts",
-    "../examples/invalid-node-array-*.ts"
+    "../examples/invalid-node-array-*.ts",
+    "../examples/compiler-overlay-*.ts",
+    "../examples/invalid-compiler-overlay-*.ts"
   ],
   "files": ["../../tools/resolvable.d.ts"]
 }

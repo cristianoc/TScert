@@ -2086,6 +2086,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     // and `findIndex` hands the callback `undefined`.
     ["invalid-readonly-set-has-effect", "(() => { const list = [1, 2], seen = []; const drain = { next: () => ({ done: true, value: undefined }), [Symbol.iterator]() { return this; } }; first({ size: 0, has: (n) => { seen.push(n); list.pop(); return false; }, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list); return String(seen[1]); })()", "undefined"],
     ["invalid-readonly-set-iterator-native", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
+    ["invalid-compiler-overlay-footprint", "(() => { const paths = ['a','b']; const empty = new Map(); const view = { size: 0, get: () => { paths.pop(); return 'x'; }, has: () => false, forEach: () => {}, keys: () => empty.keys(), values: () => empty.values(), entries: () => empty.entries(), [Symbol.iterator]: () => empty[Symbol.iterator]() }; const result = read(view, paths); return JSON.stringify([result, 1 in result]); })()", "[[\"x\",null],false]"],
     // A `ReadonlyMap`'s values whose `next` shrinks the list; a hole of a
     // popping `map` beside a `Map`'s values, stepped as an array's.
     ["invalid-for-of-readonly-map-values", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, get: () => undefined, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
@@ -2116,6 +2117,11 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     ["invalid-read-narrows-path-falsy", "JSON.stringify(wrong([{ initializer: '' }]))", '""'],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
+  const overlay = runNode("compiler-overlay-footprint",
+    "console.log(JSON.stringify([live(), read(new Map([['a','A'],['b','B']]), ['a','b'])]));",
+    { "../../tools/files.mts": fileURLToPath(new URL("../tools/files.mts", import.meta.url)) });
+  assert.equal(overlay.status, 0, "the real compiler overlay runs as a module");
+  assert.equal(overlay.stdout, '["first:second",["A","B"]]', "the compiler overlay reads live native-map updates and preserves dense mapping");
   // Imported unique symbols as Node's modules give them: a re-export is the
   // symbol it re-exports, and two constants made by `Symbol.for` of one
   // string hold one symbol; `Symbol()` makes another.

@@ -2434,6 +2434,29 @@ spread checks establish the fresh array's element contract.
   parameter. This repair adds no external assumption or rule.
 - **Commit:** the introducing commit.
 
+### A live compiler overlay with checked read effects
+
+`tools/files.mts#compilerOverlay` exposes `get` and `has` with the
+existing [footprint contract](FOOTPRINTS.md). Each arrow calls the captured
+native map's corresponding method with that map as its receiver. The
+[native collection contract](SOURCE-CONTRACTS.md#library-globals)
+establishes preservation of values and stores on normal return.
+
+- **Repair:** `openFrontEndCompiler` receives the native `Map` supplied by
+  its callers and passes its checked read interface to `compilerFileSystem`.
+  The interface retains the effect contract at the read-only boundary.
+- **Behaviour:** each lookup reads the live map. Mutations through the
+  caller's map alias affect subsequent lookups. The adapter allocates one
+  record and two arrows; each call forwards the same key and receiver and
+  returns the native method's answer.
+- **Scope:** `compiler-overlay-footprint` checks the real adapter inside an
+  array map and observes a later update through its alias under Node.
+  `invalid-compiler-overlay-footprint` uses an unrestricted structural
+  `ReadonlyMap` reader that shrinks the source array during mapping; Node
+  observes a hole in the result. The compiler's other file-system callbacks
+  retain their own effect obligations.
+- **Commit:** the introducing commit.
+
 ### Native merge binders widened to ReadonlyMap
 
 `tools/array-prototype.mts#mergeRefusal` gives `Binders` the type
