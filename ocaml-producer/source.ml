@@ -662,18 +662,21 @@ let rec pattern_defaults = function
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
       @ (match rest with Some (_,_,_,t) -> pattern_defaults t | None -> [])
 
-(* The names a pattern binds, and whether it only reads: no rest, which
-   allocates. *)
+(* The names a pattern binds, and whether its reads and allocations preserve
+   existing locations. Array rests copy data elements: a fixed tuple's
+   reads and allocation, or the reviewed RestFrom intrinsic's empty effect.
+   Initializer and default expressions retain their separate bounds. *)
 let rec pattern_names = function
   | PName (n,_) -> [n]
   | PObject (props,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) props @
     (match rest with Some (_,t) -> pattern_names t | None -> [])
   | PArray (elems,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) elems @
     (match rest with Some (_,_,_,t) -> pattern_names t | None -> [])
-let rec pattern_reads = function
+let rec pattern_inspects ~array_rest = function
   | PName _ -> true
-  | PObject (props,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) props
-  | PArray (elems,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) elems
+  | PObject (props,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_inspects ~array_rest t) props
+  | PArray (elems,rest) -> List.for_all (fun (_,t,_) -> pattern_inspects ~array_rest t) elems &&
+      (match rest with None -> true | Some (_,_,_,t) -> array_rest && pattern_inspects ~array_rest t)
 
 (* The immediate subexpressions of a form, and those of a closure body's
    statements. *)
@@ -947,9 +950,9 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_ret
     | While (c,body,update) ->
       join_bound (go c) (join_bound (block readable (body @ update)) (tail ()))
     | Break _ | Continue -> tail ()
-    (* A pattern without a rest reads fields and positions of its
-       initializer's value and binds them. *)
-    | Destructure (target,d,init) when pattern_reads target ->
+    (* The pattern's reads and fresh array-rest allocation preserve old
+       locations; initializer and defaults are bounded independently. *)
+    | Destructure (target,d,init) when pattern_inspects ~array_rest:true target ->
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
          [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
@@ -1011,7 +1014,8 @@ and throws_stmts ~callable = function
     | Block (_,body) -> throws_stmts ~callable body && tail ()
     | While (c,body,update) -> go c && throws_stmts ~callable (body @ update) && tail ()
     | Break _ | Continue -> tail ()
-    | Destructure (target,d,init) when pattern_reads target ->
+    (* RestFrom's contract states its normal effect only. *)
+    | Destructure (target,d,init) when pattern_inspects ~array_rest:false target ->
       go init && List.for_all go (Option.to_list d @ pattern_defaults target) && tail ()
     | Try (body,Some (_,handler),None) -> throws_stmts ~callable body && throws_stmts ~callable handler && tail ()
     | ForOf _ | Destructure _ | Try _ | Closing _ -> false
