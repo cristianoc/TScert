@@ -345,6 +345,9 @@ The development reads the current draft,
 [tc39.es/ecma262](https://tc39.es/ecma262/) (titled *ECMAScript® 2027
 Language Specification* as of this writing). Sections relied on by name:
 
+- [Map constructor](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
+  including the return for an undefined input and `AddEntriesFromIterable`,
+  for [native collection construction](SOURCE-CONTRACTS.md#library-globals);
 - [WeakMap objects](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-objects),
   including construction and `get`, `set`, `has`, `delete`, for the
   [weak-table native contract](SOURCE-CONTRACTS.md#weak-tables);

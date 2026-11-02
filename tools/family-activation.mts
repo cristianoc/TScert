@@ -229,7 +229,7 @@ export function familyOfGuard(entry: GuardEntry): FamilyDescription {
  * refuses, is no table: every guard of the family is then read without
  * predicate. */
 type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry>;
-  modules: ReadonlyMap<string, ReadonlyMap<string, unknown>> };
+  modules: Map<string, ReadonlyMap<string, unknown>> };
 /** The guard tables activated, by root and table, each with the
  * observations it was computed from (`remembered`). */
 const activeTables = new Map<string, Map<GuardTable, Remembered<Loaded | null>>>();
@@ -492,7 +492,7 @@ export function importedExport(from: string, specifier: string, imported: string
  * exports C1 audits. All binding recognition uses this one module inventory. */
 function activatedModules(description: FamilyDescription): ReadonlyMap<string, ReadonlyMap<string, unknown>> {
   const root = checkedInstallation(description);
-  const modules = new Map(loadedGuards(description.guards, root)?.modules);
+  const modules = new Map<string, ReadonlyMap<string, unknown>>(loadedGuards(description.guards, root)?.modules);
   if (description === compilerApiFamily) {
     for (const { specifier, namespace } of hostEnumModules) {
       const url = nodeResolve(specifier, moduleLocation(import.meta.filename));
