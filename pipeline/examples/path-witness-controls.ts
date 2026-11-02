@@ -91,3 +91,10 @@ export function afterCallRead(holder: Holder, replace: () => void): Value {
   }
   return holder.value;
 }
+
+export function numericChain(holder: {
+  value: { size: number; flag?: boolean };
+}): number {
+  if (holder.value.size && holder.value.flag && holder.value.flag) return 1;
+  return 0;
+}

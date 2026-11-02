@@ -7280,13 +7280,14 @@ mutationControl(async (): Promise<void> => {
     ["predecessor", "before", "return 0;", "type coverage"],
     ["read", "afterCallRead", "return holder.value;", "heap knowledge"],
     ["primitiveBefore", "primitiveBefore", "if (holder.value", "type coverage"],
+    ["primitiveNumericChain", "numericChain", "if (holder.value.size", "type coverage"],
     ["primitiveAfterCall", "primitiveAfterCall", "return 0;", "heap knowledge"],
   ]) {
     const claims = structuredClone(honest);
     const fn = must(claims.functions.find(f => f.name === functionName), name);
     const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged entry`);
     must(at.bindings.find(b => b.name === "holder"), "holder").current = name.startsWith("primitive")
-      ? [[["value", "flag"], primitiveType]] : [[["value"], type]];
+      ? [[["value", name === "primitiveNumericChain" ? "size" : "flag"], primitiveType]] : [[["value"], type]];
     if (name === "read") {
       const expression = must(fn.expressions.find(e => e.pos[0] === at.start + "return ".length &&
         e.pos[1] === at.start + "return holder.value".length), "read past call");

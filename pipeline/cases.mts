@@ -48,11 +48,12 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  negative("invalid-round-logical-length-value", "A short-circuited member length retains its numeric zero result.", /no derivation of its return-contract claim/),
+  negative("invalid-round-logical-member-effect", "A call ends a logical chain's saved member refinement.", /no derivation of its return-contract claim/),
   // Supplied census first refusals; source headers name the functions each case represents.
   { ...gap("blocker-compiler-api-declaration-bindings-map", "A recursive visitor capturing a qualified operation loses preservation before a dense map result", "unverified", "search",
     /source expression obligation.*binding-annotation claim/s), project: "pipeline/compiler-api-project" },
-  { ...gap("blocker-round-logical-member-witness", "Checked member witnesses used inside logical chains with truthy intermediate values", "unverified", "search",
-    /no claimed type for the expression at \[296,296\)/), project: "pipeline/blocker-project" },
+  { ...positive("blocker-round-logical-member-witness", "Checked member witnesses type residual constructor-member, disjunction and optional-member logical predicates."), project: "pipeline/blocker-project" },
   { ...gap("blocker-round-callable-json-fields", "Recursive printing of a possibly absent field at a JsonValue parameter", "unverified", "search",
     /source expression obligation.*node-typing claim/s), project: "pipeline/blocker-project" },
   gap("blocker-round-probe-file-keys", "A probe map's keys spread through a structural ReadonlyMap interface", "unverified", "search",

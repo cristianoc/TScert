@@ -2742,3 +2742,11 @@ for (const [file, call] of [
   assert.equal(runExample("invalid-for-let-capture", "cleared()"), null);
   assert.equal(runExample("invalid-for-let-capture-initializer", "wrong()"), null);
 }
+
+{
+  assert.equal(runExample("invalid-round-logical-length-value",
+    'typeof wrong({kind:"array",items:[]})'), "number", "a logical chain can return zero");
+  assert.equal(runExample("invalid-round-logical-member-effect",
+    '(() => { const holder={value:{size:1,text:"x"}}; return typeof wrong(holder,()=>{holder.value.text=undefined}); })()'),
+    "undefined", "a call can invalidate a member tested earlier in a logical chain");
+}

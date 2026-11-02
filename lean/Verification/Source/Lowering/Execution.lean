@@ -762,6 +762,19 @@ private partial def executionEntryRead (name : String) (immutable : Bool := fals
     | some _ => return Δ.set i (← claimAt fc p)
     | none => return Δ) Γ
 
+/-- A pure predicate can name a path witness in place of a source read.
+Its type is the witness slot's current checked context type. Such internal
+slots have no source expression claim; their uses remain ordinary typed
+variable reads in the generated graph. The types are scoped to predicate
+compilation, so later effects cannot retain a stale witness type. -/
+@[nospecialize] private def withPredicateWitnessTypes
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (action : Compiler Target) : Compiler Target := do
+  let previous ← executionBindings
+  let witnesses := (scope.zip Γ).filterMap fun (b, A) =>
+    if b.witness.isSome then some (b.source.name, A) else none
+  withExecutionBindings { previous with types := witnesses ++ previous.types } action
+
 /-- A terminal continuation sees the result first and all evaluated operands.
 Only the plan traverses source execution; the continuation can inspect the
 prepared predicate without replaying an effectful source operand. -/
@@ -968,7 +981,8 @@ prepared predicate without replaying an effectful source operand. -/
       let yes ← arm true Y yes
       let no ← arm false N no
       if correlated then
-        return ← LoweringAtoms.compileConditionAtom recursive fc scope' Δ origin yes no
+        return ← withPredicateWitnessTypes scope' Δ
+          (LoweringAtoms.compileConditionAtom recursive fc scope' Δ origin yes no)
       let adapt := fun (target : Target) =>
         ⟨target.label,some ((target.mapping.getD (List.range Δ.length)).map
           (fun i => if i == 0 || alias == some i then 0 else i+1))⟩
@@ -1000,7 +1014,8 @@ statement after its loop, which is then no point of the graph. -/
     let unsettled := !(BranchRefinement.tagSlice G A .truthy true).isEmpty &&
       !(BranchRefinement.tagSlice G A .truthy false).isEmpty
     if unsettled && readOnly predicate && !predicate.freeNames.contains "" then
-      LoweringAtoms.compileConditionAtom recursive fc inner Δ predicate (adapt yes) (adapt no)
+      withPredicateWitnessTypes inner Δ
+        (LoweringAtoms.compileConditionAtom recursive fc inner Δ predicate (adapt yes) (adapt no))
     else
       let drop := fun (target : Target) =>
         ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+(offset+1)))⟩
