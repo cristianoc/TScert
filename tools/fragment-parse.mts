@@ -80,8 +80,9 @@ export const parserOpenings = (): number => openings;
  */
 function projectFor(absolute: string): Project {
   if (!compiler) {
-    compiler = openFrontEndCompiler(dirname(absolute), contents);
+    const created = openFrontEndCompiler(dirname(absolute), contents);
     openings++;
+    compiler = created;
   }
   // A file the compiler already holds is re-read rather than reused: the text
   // for a path can change between two opens in one process, and reusing the

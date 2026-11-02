@@ -1936,6 +1936,40 @@ Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
 
+### A compiler stored after its opening counter
+
+`tools/fragment-parse.mts#projectFor` saves the return of
+`openFrontEndCompiler` in a local `created`, increments `openings`, and
+assigns `created` to the module cell `compiler`. `openText` and `openFile`
+consume the same project lookup. The local retains the returned API value
+through the counter update; the existing assignment and guard checks
+establish the compiler cell's non-null value at the branch join.
+
+- **Avoided form and cost:** assigning `compiler` before incrementing the
+  captured `openings` counter requires retaining a fact about one captured
+  cell through a write to another. The closure's input contracts supply no
+  separation fact for those cells. Supporting that source order requires
+  establishing their separation through closure capture;
+  this single initialization shared by the census callers uses the
+  existing checks through an equivalent order instead.
+- **Equivalence:** both orders call the opener with the same arguments
+  before either subsequent module-cell write. A returned API is held locally;
+  `openings` has primitive `number` contents and its increment performs
+  no coercion callback. Assignment to either lexical cell invokes no code.
+  Thus no observer can run between the two cell writes. Both orders leave
+  the same counter and compiler, then perform the same set lookup and
+  snapshot requests with the same receivers. If opening throws, neither
+  subsequent write executes. The increment and lexical assignment cannot throw for
+  these initialized cells. Returns, exceptions, mutations, method
+  identities, aliases and asynchronous effects agree for every input and
+  reachable parser state. Compiler callbacks during opening retain their
+  original position before both writes; snapshot calls continue to read
+  the module cell at each call.
+- **Scope:** `blocker-round-parser-held-compiler` exercises this order with
+  an API argument. `blocker-prep-snapshot-conditional-spread` exercises the
+  separate complete-request construction. The rewrite adds no rule,
+  host contract or external assumption.
+
 ### A first-match callback calling an imported type reader
 
 `tools/computed-types.mts#inexpressible` describes the member selected by
