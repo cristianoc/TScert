@@ -63,9 +63,7 @@ const field = (name: string, type: TypeTerm, optional: boolean): Field =>
 
 /** A function that computes a string and allocates only it, also when it
  * throws. */
-const pathEffect: CallEffect = { footprint: emptyEffect.footprint, promise: emptyEffect.promise, fresh: emptyEffect.fresh,
-  receiverStore: emptyEffect.receiverStore, onThrow: true, receiverOwn: emptyEffect.receiverOwn,
-  freshObject: emptyEffect.freshObject, requires: emptyEffect.requires, elements: emptyEffect.elements };
+const pathEffect: CallEffect = { ...emptyEffect, onThrow: true };
 
 /** What `createHash("sha256")` returns, a `Hash` at the members the
  * overlay states (SOURCE-CONTRACTS.md, "Library modules"),
@@ -205,9 +203,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("timeout", union(atom("number"), atom("undefined")), true),
         field("killSignal", union(atom("string"), atom("number"), atom("undefined")), true)] }],
       result: atom("string") },
-    effect: { footprint: emptyEffect.footprint, promise: emptyEffect.promise, fresh: emptyEffect.fresh,
-      receiverStore: emptyEffect.receiverStore, onThrow: true, receiverOwn: emptyEffect.receiverOwn,
-      freshObject: emptyEffect.freshObject, requires: emptyEffect.requires, elements: emptyEffect.elements } },
+    effect: { ...emptyEffect, onThrow: true } },
   // `execFileSync(file, args, options)` runs `file` with the arguments and,
   // when the child exits with status 0, returns its standard output: decoded
   // to a string where `options.encoding` is a text encoding, `null` where

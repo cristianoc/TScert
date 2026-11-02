@@ -81,9 +81,7 @@ export type FootprintMember = { owner: string; member: string; text: string; kin
  * (`atEachFootprint`, array-prototype.mts). */
 export function footprintReading(kind: FootprintMember["kind"], type: TypeTerm): TypeTerm {
   if (kind === "empty") {
-    const effect: CallEffect = { footprint: emptyEffect.footprint, promise: emptyEffect.promise, fresh: emptyEffect.fresh,
-      receiverStore: emptyEffect.receiverStore, onThrow: true, receiverOwn: emptyEffect.receiverOwn,
-      freshObject: emptyEffect.freshObject, requires: emptyEffect.requires, elements: emptyEffect.elements };
+    const effect: CallEffect = { ...emptyEffect, onThrow: true };
     const at = (t: TypeTerm): TypeTerm =>
       t.k === "function" && t.effect.promise === null ? { ...t, effect }
       : t.k === "intersection" ? { ...t, parts: t.parts.map(at) } : t;
