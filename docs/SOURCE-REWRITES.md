@@ -1336,6 +1336,17 @@ which only separating storage an unknown call cannot reach would show
   calling it; `liftClause`, whose store clause maps `required` and
   `optional` through `liftType`, which writes `types.lifted`, and the
   functions calling it (`liftLabels`, `treeAtom`, `liftSignatures`).
+- **Presence guards:** the array printer saves `atom.presence` immediately
+  before calling `isArrayPresence`, and tests and prints that same value.
+  The imported guard's ordinary signature permits value writes; its
+  predicate applies to its argument value. Its implementation compares its
+  argument with three primitive strings and writes no storage. The printer's
+  actual callers supply ordinary data fields: `recordType` prints a `lift`
+  result, internal `shown` and `treeAtom` print constructed lift results, and
+  the printer controls supply object literals. The presence field's value
+  stays unchanged during this guard call for these callers. Earlier recursive
+  printing calls finish before the saved read. `blocker-next-presence-snapshot`
+  checks the saved value through the real imported guard contract.
 - **Commit:** the introducing commit, `Fields atomText's guards test are read before its callbacks run`;
   for `liftClause`, `A field's narrowing survives a map or forEach call whose callback changes nothing`.
 

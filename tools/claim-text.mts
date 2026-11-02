@@ -127,9 +127,10 @@ function bareAtomText(atom: JsonRead, state: PrintState): string {
     const required = requiredTypes.map((t) => typeText(t, state));
     const optional = optionalTypes.map((t) => typeText(t, state) + "?");
     const rest = atom.rest === null ? null : typeText(atom.rest, state);
+    const presence = atom.presence;
     const text =
-      (isArrayPresence(atom.presence)
-        ? presencePrefix(atom.presence)
+      (isArrayPresence(presence)
+        ? presencePrefix(presence)
         : "(invalid presence) ") +
       (required.length === 0 && optional.length === 0 && rest !== null
         ? `${atom.readonly ? "ReadonlyArray" : "Array"}<${rest}>`
