@@ -26,8 +26,8 @@ open S
     let publish source t instantiation =
       publish_expression source t instantiation in
     let rec defined_slice truth t = match t with
-      | Union alternatives -> combine (List.map (defined_slice truth) alternatives)
-      | Atoms atoms -> combine (List.map (fun atom ->
+      | Union alternatives -> unions (List.map (defined_slice truth) alternatives)
+      | Atoms atoms -> unions (List.map (fun atom ->
           match atom,expand_named declarations (Atoms [atom]) with
           (* A named type is expanded only to find the undefined it may
              hold: one whose expansion holds none, `Set<number>`, stays
@@ -117,7 +117,7 @@ open S
         let alternatives=List.map (fun (a:alternative) ->
           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
           (source_alternatives ~bound:S.rigid_bound ~site:source declarations [] (get values receiver)) in
-        let t=combine (List.map (fun a -> alternative_type
+        let t=unions (List.map (fun a -> alternative_type
           (merge_alternative empty_alternative a)) alternatives) in
         publish source t None; run env (put values value t) next
       | Execution.ArrayRest (source,array,start,slice,value,next) ->

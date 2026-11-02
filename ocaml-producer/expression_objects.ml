@@ -173,7 +173,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             differently: " ^ copy_field_reason);
           alts
         | _ -> alts in
-      combine (List.map alternative_type alts)
+      unions (List.map alternative_type alts)
     (* `Object.assign(t, ...sources)`: each source copied over what the
        target and the sources before it give, as a spread is; a literal
        source is claimed with its exact keys, which says it owns no
@@ -185,7 +185,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         mark_exact s;
         merge alts (source_alternatives ~bound:S.rigid_bound ~site:s.pos declarations [] (expr env s)))
         (source_alternatives ~target:true ~bound:S.rigid_bound ~site:target.pos declarations [] (expr env target)) sources in
-      combine (List.map alternative_type alts)
+      unions (List.map alternative_type alts)
     | ArrayLiteral (es,spreads) ->
       (* One array arm of the expected type is the literal's contract: an
          optional array parameter, `readonly T[] | undefined`, is its array;
@@ -212,7 +212,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         | None,_ -> None in
       let rec elements t = match (try declared_head declarations [] t with Json.Error _ -> t) with
         | Atoms [Shape {elements=Some s;_}] ->
-          let held = combine (s.required @ s.optional_elements @ Option.to_list s.rest) in
+          let held = unions (s.required @ s.optional_elements @ Option.to_list s.rest) in
           Some (if s.presence = Sparse then union held (Atoms [Undef]) else held)
         (* A union of arrays, `xs ?? []`: the elements of each. *)
         | Union (_ :: _ :: _ as parts) -> elements_of parts
@@ -220,7 +220,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         | t -> iterated_hint declarations t
       and elements_of parts =
         let each = List.map elements parts in
-        if List.for_all Option.is_some each then Some (combine (List.filter_map Fun.id each)) else None in
+        if List.for_all Option.is_some each then Some (unions (List.filter_map Fun.id each)) else None in
       (* A position holding a hole (`contextual_actual`) is its element's own
          type: the element is built at no type there. *)
       let hole = function Rigid r -> List.mem r (holes ()) | _ -> false in
@@ -257,9 +257,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           let rest = List.filteri (fun i _ -> i >= fixed) types in
           array {s with required=List.mapi at s.required;
             optional_elements=List.mapi (fun i q -> at (i + List.length s.required) q) s.optional_elements;
-            rest=Option.map (fun q -> if Support.mentions_hole q then widen (combine rest) else q) s.rest}
+            rest=Option.map (fun q -> if Support.mentions_hole q then widen (unions rest) else q) s.rest}
         | Some s -> array s
-        | None -> array {required=[];optional_elements=[];rest=Some (absorb declarations (widen (combine types)));
+        | None -> array {required=[];optional_elements=[];rest=Some (absorb declarations (widen (unions types)));
             readonly=false;presence=Readable})
     (* A field a guard found holding less than its type is read at that. *)
     | _ -> Json.fail "expression dispatched to the wrong typing family"

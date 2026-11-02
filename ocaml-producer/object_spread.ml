@@ -163,7 +163,7 @@ let rec alternatives_of ~target ~bound declarations seen t =
           the copy is a new object, which holds no array store"
       | Shape {elements=Some s;_} ->
         [{empty_alternative with exact=false;
-          numeric=Some (combine (s.required @ s.optional_elements @ Option.to_list s.rest))}]
+          numeric=Some (unions (s.required @ s.optional_elements @ Option.to_list s.rest))}]
       (* A function's own enumerable properties are whatever was assigned to
          it: its type states its fields, and no other key. *)
       | Shape {fields;indexes=[];calls=_::_;elements=None} ->

@@ -4,7 +4,6 @@ open Semantic
 open Source
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
-let combine = unions
 (* A conservative proposal-side test. In particular a rigid parameter is
    not known to exclude undefined. Lean's CoversPresence proves the conversion. *)
 let rec excludes_undefined = function
@@ -291,14 +290,14 @@ let rec plausible_subtype_declared declarations actual expected =
           | a -> a) atoms)
       | t -> t in
     let rec walk seen = function
-      | Atoms atoms -> combine (List.map (function
+      | Atoms atoms -> unions (List.map (function
           | Named (id,args) as a when not (List.mem id seen) ->
             if Hashtbl.mem expanded (id,args) then Atoms [] else begin
               Hashtbl.add expanded (id,args) ();
               try walk (id::seen) (own_receivers id (definition declarations id args)) with Json.Error _ -> Atoms [a]
             end
           | a -> Atoms [a]) atoms)
-      | Union ts -> combine (List.map (walk seen) ts)
+      | Union ts -> unions (List.map (walk seen) ts)
       | t -> t in
     walk [] t in
   let unfolded_actual = lazy (unfold ~own:false actual) in
@@ -409,7 +408,7 @@ let empty_meet declarations parts =
     | _ -> List.exists (fun (n,xs) -> List.exists (fun (m,ys) -> n=m && apart xs ys) (required [] b))
              (required [] a)) parts) parts
 let rec field_type bounds declarations seen t name = match t with
-  | Atoms atoms -> combine (List.map (function
+  | Atoms atoms -> unions (List.map (function
       | atom when name = Name "toString" && function_atom atom ->
         if not (List.exists (fun (d:Source.declaration) -> d.id=function_prototype) declarations) then
           unsupported "a read of a function's toString where the type TypeScript gives the receiver admits no function: the producer and TypeScript disagree on the receiver";
@@ -458,7 +457,7 @@ let rec field_type bounds declarations seen t name = match t with
         end;
         field_type bounds declarations seen (Atoms [Named (id,[])]) name
       | _ -> unsupported "field read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> field_type bounds declarations seen t name) ts)
+  | Union ts -> unions (List.map (fun t -> field_type bounds declarations seen t name) ts)
   (* A value of an intersection is one of each operand: read as the first
      operand that has the field, a hint Lean checks. *)
   | Meet (t,ts) ->
@@ -487,7 +486,7 @@ let rec field_type bounds declarations seen t name = match t with
       let choices = choices () in
       (match List.filter (fun parts -> not (empty parts)) choices with
        | [] -> read (t::ts)
-       | live -> combine (List.map read live))
+       | live -> unions (List.map read live))
     else read (t::ts)
   | Rigid r -> (match List.assoc_opt r bounds with
     | Some b -> field_type bounds declarations seen b name
@@ -581,7 +580,7 @@ let iterated_hint declarations expected =
       | Some (Atoms [True]) -> None
       | _ -> member (Name "value") r) (parts [] results) with
   | [] -> None
-  | values -> Some (combine values)
+  | values -> Some (unions values)
 (* The first arm of an iterated value that is not an array, named for the
    refusal where the loop or spread steps `%Iterate%` or copies an array:
    the parser picks the intrinsic of a string, a `Set`, a `Map` or a host
@@ -619,7 +618,7 @@ let slice_element declarations start t =
           arms (id::seen) (declared_head declarations [] (Atoms [a]))
         | a -> [a]) atoms
     | Rigid _ | Meet _ -> unsupported "a slice rest over a type parameter or an intersection" in
-  combine (List.concat_map (function
+  unions (List.concat_map (function
     | Shape {elements=Some s;_} ->
       let r = List.length s.required in
       List.filteri (fun i _ -> i >= start) s.required
@@ -673,9 +672,9 @@ let key_singletons = function
 let rec index_type bounds declarations seen receiver key =
   let key = literal_key declarations key in
   match key_singletons key with
-  | Some ks -> combine (List.map (fun k -> index_type bounds declarations seen receiver (Atoms [k])) ks)
+  | Some ks -> unions (List.map (fun k -> index_type bounds declarations seen receiver (Atoms [k])) ks)
   | None -> match receiver with
-  | Atoms atoms -> combine (List.map (function
+  | Atoms atoms -> unions (List.map (function
       | Shape {elements=Some sequence;_} ->
         let at i = if i < 0 then Atoms [Undef]
           else match List.nth_opt sequence.required i with
@@ -687,7 +686,7 @@ let rec index_type bounds declarations seen receiver key =
           | Atoms [NumLit bits] -> let n=Int64.float_of_bits bits in
             if n >= 0. && n < float_of_int max_int && Float.floor n=n then at (int_of_float n)
             else Atoms [Undef]
-          | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
+          | _ -> unions (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
       | Shape shape -> (match key with
           | Atoms [StrLit name] -> field_type bounds declarations seen (Atoms [Shape shape]) (Name name)
           (* A number names the property its `ToString` spells. *)
@@ -727,7 +726,7 @@ let rec index_type bounds declarations seen receiver key =
           | Atoms [StrLit name] -> field_type bounds declarations seen (Atoms [atom]) (Name name)
           | _ -> unsupported "a primitive's member needs a string literal key")
       | _ -> unsupported "indexed read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> index_type bounds declarations seen t key) ts)
+  | Union ts -> unions (List.map (fun t -> index_type bounds declarations seen t key) ts)
   | Meet (t,ts) -> first_part (fun t -> index_type bounds declarations seen t key) (t::ts)
   | Rigid r -> (match List.assoc_opt r bounds with
     | Some b -> index_type bounds declarations seen b key

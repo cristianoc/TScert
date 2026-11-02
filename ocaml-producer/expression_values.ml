@@ -174,7 +174,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
               && (match x with Atoms [Shape {elements=Some _;_}] -> false | _ -> true)
               && iterated_hint declarations x <> None ->
          array {required=[];optional_elements=[];
-           rest=Some (combine (s.required @ s.optional_elements));readonly=true;presence=(match s.presence with Dense | Readable -> Readable | Sparse -> Sparse)}
+           rest=Some (unions (s.required @ s.optional_elements));readonly=true;presence=(match s.presence with Dense | Readable -> Readable | Sparse -> Sparse)}
        | t,_ -> t)
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
@@ -482,6 +482,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        checked at the closure's result where it has one. *)
     | BlockBody ss ->
       let _,returned = body e.pos expected env ss in
-      combine (List.rev returned)
+      unions (List.rev returned)
     | _ -> Json.fail "expression dispatched to the wrong typing family"
 end

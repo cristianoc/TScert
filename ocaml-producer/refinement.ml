@@ -589,7 +589,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
         | Some a,_ -> Some ((fun t -> restrict ~declarations a equal t),true)
         | None,Atoms (_::_ as atoms) when equal
             && List.for_all (fun a -> singleton_atom (Atoms [a]) <> None) atoms ->
-          Some ((fun t -> combine (List.map (fun a -> restrict ~declarations a true t) atoms)),false)
+          Some ((fun t -> unions (List.map (fun a -> restrict ~declarations a true t) atoms)),false)
         | _ -> None) in
     (* What a field holds is known from a test against one singleton, whose
        saved read Lean observes; against several, from Lean's test of each,

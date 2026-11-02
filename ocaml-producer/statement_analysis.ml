@@ -361,7 +361,7 @@ let transfer (expr:Analysis_state.expression_infer) =
       let env = after e env in
       if List.exists (adds before receiver t) names then begin
         record_growth n;
-        let t' = combine (List.map (fun name -> grown declarations t name c) names) in
+        let t' = unions (List.map (fun name -> grown declarations t name c) names) in
         (* Every constant holding the object holds the copy, and so does a
            `let` held in a slot, which the lowering rebinds; a `let`'s cell
            keeps its contract. *)

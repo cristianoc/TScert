@@ -46,7 +46,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let allocated_type = match body.node with
         | BlockBody ss ->
           let _,returned = infer_body body.pos (Some result) inner ss in
-          combine (List.rev returned)
+          unions (List.rev returned)
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)

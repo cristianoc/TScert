@@ -544,7 +544,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         | SymbolLit _ -> not (List.mem Symbol atoms)
         | _ -> true) atoms)
     | t -> t in
-  let join = function [] -> None | first::rest -> Some (absorb (List.fold_left union first rest)) in
+  let join = function [] -> None | (_::_ as types) -> Some (absorb (unions types)) in
   (* If U has a chosen lower-bound join, an upper-only T <= U must also fit
      that choice. Propagating only U's declared uppers would miss this case. *)
   List.iter (fun (lower,upper) ->

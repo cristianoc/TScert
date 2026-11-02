@@ -358,8 +358,7 @@ let spread_element ?(readonly=false) = function
     let arm = function
       | Shape {indexes=[];calls=[];elements=Some s;_} when readonly || not s.readonly ->
         let positions = s.required @ s.optional_elements @ Option.to_list s.rest in
-        Some (List.fold_left union (if s.presence = Sparse then Atoms [Undef] else Atoms [])
-          positions)
+        Some (unions ((if s.presence = Sparse then [Atoms [Undef]] else []) @ positions))
       | _ -> None in
     List.fold_left (fun acc a -> match acc,arm a with
       | Some t,Some u -> Some (union t u) | _ -> None) (Some (Atoms [])) arms

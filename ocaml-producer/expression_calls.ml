@@ -1032,8 +1032,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let signatures = List.filter_map (function
           | Semantic.Shape {calls=[s];_} -> Some s | _ -> None) arms in
         ignore (shared_actuals signatures);
-        List.fold_left (fun acc (s:Semantic.signature) -> union acc s.result)
-          (Atoms []) signatures
+        unions (List.map (fun (s:Semantic.signature) -> s.result) signatures)
       (* JavaScript drops actuals past the parameters, but the calculus's call
          takes no more actuals than its signature's positions. *)
       | Atoms [Shape {calls=[{variadic=None;rest_pack=None;params;_}];_}]
