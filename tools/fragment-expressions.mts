@@ -7,7 +7,7 @@ import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, Fun
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Atom } from "./claim.mts";
 import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numericKey, optionalTerm } from "./type-term.mts";
-import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
+import type { Expr, LambdaParamAst, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
@@ -2195,26 +2195,26 @@ export function lambda(this: Gate,
     for (let i = 0; i < parameters.length; i++) {
       const p = parameters[i];
       if (p === undefined) continue;
-      if (ts.isIdentifier(p.name) && p.name.text === "this")
+      // Each child the checks test, read once.
+      const name = p.name;
+      const optional = !!p.questionToken;
+      const defaulted = !!p.initializer;
+      const rest = !!p.dotDotDotToken;
+      if (ts.isIdentifier(name) && name.text === "this")
         gate.fail(p, "expected an ordinary closure parameter");
-      if (!ts.isIdentifier(p.name) && p.dotDotDotToken)
+      if (!ts.isIdentifier(name) && rest)
         gate.fail(p, "a rest parameter pattern is outside the fragment");
-      if (p.questionToken && p.initializer)
+      if (optional && defaulted)
         gate.fail(p, "a parameter cannot be both optional and defaulted");
-      if (p.dotDotDotToken) {
-        if (p.questionToken || p.initializer)
+      if (rest) {
+        if (optional || defaulted)
           gate.fail(p, "a rest parameter is neither optional nor defaulted");
         if (i !== parameters.length - 1)
           gate.fail(p, "a rest parameter must be the last one");
       }
-      if (
-        !p.questionToken &&
-        !p.initializer &&
-        !p.dotDotDotToken &&
-        parameters.indexOf(p) > firstOptional(parameters)
-      )
+      if (!optional && !defaulted && !rest && parameters.indexOf(p) > firstOptional(parameters))
         gate.fail(p, "a required parameter cannot follow an optional one");
-      if (ts.isIdentifier(p.name) && p.name.text === "undefined")
+      if (ts.isIdentifier(name) && name.text === "undefined")
         gate.fail(p, "shadowing undefined is outside the fragment");
     }
 
@@ -2254,7 +2254,7 @@ export function lambda(this: Gate,
       const bindings: Stmt[] = [];
       // Each hidden name's pattern and default, as the source writes them.
       const bound = new Map<string, [PatternAst, Expr | null]>();
-      const params = parameters.map((p, i) => {
+      const params = parameters.map((p, i): LambdaParamAst => {
         if (ts.isIdentifier(p.name) && !p.initializer)
           return {
             name: gate.local(p.name),
@@ -2327,7 +2327,7 @@ export function lambda(this: Gate,
       pos: gate.span(node),
       typeParams,
       receiver,
-      params: parameters.map((p, i) => {
+      params: parameters.map((p, i): LambdaParamAst => {
         const default_ = defaults[i];
         return {
           name: gate.local(identifierOf(p)),

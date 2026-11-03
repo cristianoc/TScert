@@ -2510,8 +2510,9 @@ its earlier test or construction no longer types it:
 - `lambda` read `defaults[i]` in `...(defaults[i] ? { default: defaults[i] }
   : {})`; an element read twice is two reads, the second not narrowed by
   the first. Its parameter loop tested `p !== parameters[parameters.length -
-  1]` on each pass, a test after which the search kept no knowledge of the
-  parameter's fields the loop's later tests read.
+  1]` and read the parameter's `questionToken`, `initializer` and
+  `dotDotDotToken` in nested tests, after which the search kept no
+  knowledge of those fields where the loop's later test reads them again.
 - `classBody` built the base read's receiver as `{ ...derivedBase, pos:
   extendsAt }`, a spread of a binding typed `Expr`, which the code had just
   set to `{ k: "id", pos: extendsAt, name: slot }`.
@@ -2521,7 +2522,8 @@ its earlier test or construction no longer types it:
 
 - **Repair:** `lambda` holds the `this` parameter, or `null`, and its
   checked annotation in one record, and walks its parameters by index,
-  testing the index against the last one; `binary` holds the write target in a
+  reading each child the checks test once and testing the index against
+  the last one; `binary` holds the write target in a
   constant tested once;
   `lambda` holds each default in a constant; the base read writes its
   record, `{ k: "id", pos: extendsAt, name: slot }`; the prototype fields
@@ -2529,7 +2531,8 @@ its earlier test or construction no longer types it:
 - **Behaviour:** the same tests run on the same nodes in the same order
   (the parameter array is a fresh copy of a node list, dense, which nothing
   writes, and holds each node once, so a parameter is the last element
-  exactly where its index is the last);
+  exactly where its index is the last; a compiler node's children are
+  stable reads, so reading one once or at each test gives the same value);
   the base read's record has the same keys in the same order, its `pos`
   the same array; annotations are erased.
 - **Commit:** the introducing commit.
@@ -2538,14 +2541,16 @@ its earlier test or construction no longer types it:
 
 `tools/fragment-statements.mts#functionDecl` maps the declaration's
 parameters to records `{ name, pos, type, ...(rest ? { rest: true } : {}) }`
-and reads them in a second `map` callback. The callback's parameter type
+and reads them in a second `map` callback, as
+`tools/fragment-expressions.mts#lambda` does a closure's. The callback's parameter type
 was the instance of the anonymous record TypeScript inferred for the first
 `map`, whose optional `rest` the compiler's API gives only with the
 `undefined` optionality adds; the parser refuses such a contextual type.
 
-- **Repair:** the record is the named type `FunctionParamAst` of
-  `tools/fragment.mts`, which `FunctionAst.params` holds, and the first
-  callback states it as its result; the callback mapping the parameters'
+- **Repair:** the records are the named types `FunctionParamAst` and
+  `LambdaParamAst` of `tools/fragment.mts`, which `FunctionAst.params` and
+  the lambda expression's `params` hold, and the first callbacks state them
+  as their results; the callback mapping the parameters'
   types, run through the generic `headerTypes`, states `TypeTerm`.
 - **Behaviour:** the annotation is erased; the records are unchanged.
 - **Commit:** the introducing commit.
