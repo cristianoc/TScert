@@ -151,8 +151,9 @@ theorem entryFacts_holds {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W h} (
 
 /-- The contexts of a node's output slots: the entry's, one further; the
 result's slot has none. -/
-@[inline] def outputCtx (G : NormalGraph ι) (c : NodeEvidence ι) : KnowledgeNormal.Ctx :=
-  HeapKnowledge.setsCtx (HeapKnowledge.typeSets G (entry c)) 1
+@[macro_inline] def outputCtx (G : NormalGraph ι) (c : NodeEvidence ι) : KnowledgeNormal.Ctx :=
+  let sets := HeapKnowledge.typeSets G (entry c)
+  HeapKnowledge.setsCtx sets 1
 
 theorem outputCtx_ok {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W} (he : EnvOk G (entry c) ρ n W) (v : Tm) :
     KnowledgeNormal.CtxOk (outputCtx G c) (push v ρ) := by

@@ -12,8 +12,9 @@ open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower Heap
 
 /-- The context of each slot of an environment typed by `Γ`: the values its
 type admits, where the type is of finitely many primitive predicates. -/
-@[inline] def ctxOf {ι : Type} (G : NormalGraph ι) (Γ : List (Ty ι)) : Ctx :=
-  HeapKnowledge.setsCtx (HeapKnowledge.typeSets G Γ) 0
+@[macro_inline] def ctxOf {ι : Type} (G : NormalGraph ι) (Γ : List (Ty ι)) : Ctx :=
+  let sets := HeapKnowledge.typeSets G Γ
+  HeapKnowledge.setsCtx sets 0
 
 theorem ctxOf_ok {ι : Type} {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} (he : EnvOk G Γ ρ n W) :
     CtxOk (ctxOf G Γ) ρ := by

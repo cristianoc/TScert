@@ -819,7 +819,8 @@ a type denoting finitely many primitive predicates (`link-fact`,
 PROGRAM-TYPING.md, "A call that keeps the heap"): reading the field gives that
 value, so it meets one of them. -/
 def typedLinkFacts (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
-  linkFactsBy (setsCtx (typeSets G Γ) 0) k
+  let sets := typeSets G Γ
+  linkFactsBy (setsCtx sets 0) k
 where
   /-- With each slot's type set read through `t`, each computed once. -/
   linkFactsBy (t : Nat → Option ValueSets.ValueSet) (k : Knowledge) : Facts :=

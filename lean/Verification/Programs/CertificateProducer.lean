@@ -1685,7 +1685,8 @@ promise's evidence. -/
   -- The output is stored in its normal form at the output's contexts where
   -- the computed output establishes it, and the node's edges read it
   -- expanded, as the checker does (`ControlFlow.outFacts`).
-  let outCtx : KnowledgeNormal.Ctx := HeapKnowledge.setsCtx (HeapKnowledge.typeSets G c.context) 1
+  let sets := HeapKnowledge.typeSets G c.context
+  let outCtx : KnowledgeNormal.Ctx := HeapKnowledge.setsCtx sets 1
   let normal := KnowledgeNormal.normFast outCtx out
   let storedOut := normal
   let out := KnowledgeExpand.expandLinks outCtx storedOut
