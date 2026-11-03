@@ -791,7 +791,8 @@ it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
-A test's right operand that is no test is read for its truthiness the same
+A test's right operand that is no test, judged as a left operand is (see
+[negated operands](#negated-operands)), is read for its truthiness the same
 way: in $`t\mathbin{\&\&}b`$ with $`t`$ a test, the test is dispatched as a
 Boolean and $`b`$ as $`\mathsf{truth}(b)`$. An optional chain read as a
 condition, `p?.length && g(n)`, is `p != null && p.length && g(n)`, which
@@ -851,10 +852,15 @@ arm where `a` answered `true` is the arm a guard call narrows on, so
 type, a closure in the right operand included
 (`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
 nothing (`invalid-guard-negated-and`). A left operand `a op b` stays grouped
-where both its operands are tests, `a` judged as a left operand is: `!a`
-is a test where `a` is one. So `(!g(v) || b) || c` regroups as
-`!g(v) || (b || c)`, and `v` is at the promised type where the whole is
-false (`guard-disjunction-middle-test`), and a field the guard tested is at
+where both its operands are tests, each judged as a left operand is: `!a`
+is a test where `a` is one, and `a op b` where both its operands are. So
+`(!g(v) || b) || c` regroups as `!g(v) || (b || c)`, and `v` is at the
+promised type where the whole is false (`guard-disjunction-middle-test`);
+`(t || !g(v)) || !g(w)`, `t` a test, regroups as `t || (!g(v) || !g(w))`,
+whose right operand is no test, so `v` and `w` are at the promised types
+where the whole is false (`guard-disjunction-after-test`, and
+`invalid-guard-disjunction-after-test-write` with a disjunct writing the
+field, checked with its twin's claims); and a field the guard tested is at
 the promised type past a middle disjunct whose call keeps the heap, but not
 past one whose call may write it (`invalid-guard-disjunction-middle-write`,
 checked with its twin's claims); a conjunction inside a

@@ -2678,6 +2678,16 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // The producer refuses `invalid-guard-disjunction-after-test-write`: given
+  // its twin's claims, a call in the last disjunct, after a test and the
+  // guard, claimed to change everything keeps no read link of the guarded
+  // field, and search refuses the reread after the condition.
+  refusedWithWritingReset("invalid-guard-disjunction-after-test-write", "guard-disjunction-after-test-write-twin-prettier-ignore",
+    "x.f = 1", "return x.f.context.length");
+  process.stdout.write("a test, a guard on a field, then a disjunct claimed to change everything: the reread refused\n");
+});
+
+control(async (): Promise<void> => {
   // The producer refuses `invalid-intersection-discriminant-overlap` at the
   // read of `at`. Given its twin's claims, the annotation's discriminant
   // claimed at `"callback"` as the refused source writes it, the arm
