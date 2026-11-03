@@ -149,13 +149,13 @@ if (process.argv[2] === "--store-op") {
     const snapshot = store.stableDirectory("sources", [["source.ts", Buffer.from(rest[0])]]);
     process.stdout.write(`${snapshot}\n`);
   } else if (op === "read") {
-    // Replays of one entry until the file `rest[1]` exists, while another
-    // process publishes and evicts it: each is the entry's own result or a
-    // miss.
-    const input = rest[0], stop = rest[1];
+    // Replays of one entry until the file `rest[1]` exists or the test that
+    // started it has stopped, while another process publishes and evicts
+    // it: each is the entry's own result or a miss.
+    const input = rest[0], stop = rest[1], parent = process.ppid;
     const counts = { hits: 0, misses: 0, wrong: 0 };
     process.stdout.write("ready\n");
-    while (!existsSync(stop)) {
+    while (!existsSync(stop) && process.ppid === parent) {
       const found = store.finished("lower", sha256(input), input);
       if (!found) counts.misses++;
       else if (found.result.stdout.equals(evictableOutput(input))) counts.hits++;
