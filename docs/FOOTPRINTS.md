@@ -236,7 +236,11 @@ object's claim gives every alternative the field as a required writable one
 holding source values (`Type_queries.source_field_write`, as Lean's typed
 write reads it), a call or construction the join
 of every signature its callee may take, a call its own typing claims at
-`never` the empty footprint, an async definition none, and a method call,
+`never` the empty footprint, a `throw` in a closure not proposed on a throw
+the empty footprint, outside a `try` whose handler may return normally (the
+throw and its operand's nodes lie in the checked region with no normal
+exit; `map-throw-operand-footprint`, `invalid-map-throw-operand-caught`),
+an async definition none, and a method call,
 in a function's or a closure's body, on an object whose claim has several
 alternatives once each declaration it names is unfolded, with actuals that
 are names or literals none: the lowering may read and invoke its member in one

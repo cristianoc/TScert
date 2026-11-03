@@ -11,6 +11,10 @@ open Semantic
 type binding = Value of ty | Storage of ty * ty | Local of ty * ty
 let binding_type = function Value t | Storage (_,t) | Local (_,t) -> t
 let cell contract = Storage (contract,contract)
+(* The `let` cells a body analysed, or a body enclosing a closure of it,
+   declares: each allocated by that body, at a location no older object
+   has (Lean's separation of a fresh allocation). *)
+let unit_cells : string list ref = ref []
 (* The module's cells (SOURCE-ELABORATION.md, "Module cells"), each at the contract
    the initialization unit claims: a module function reads and writes one as
    the cell it captures. *)

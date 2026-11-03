@@ -780,7 +780,7 @@ function observePackageLinks(directory: string): void {
  * that its target is to be found. */
 /** Whether Node resolves `specifier` to one of its built-in modules
  * (`node:fs`, `fs`), as `isBuiltin` of the running Node answers. */
-export const builtinModule = (specifier: string): boolean => isBuiltin(specifier);
+export const builtinModule = (specifier: string): Within<{ value: "keep"; store: "keep" }, boolean> => isBuiltin(specifier);
 
 function observeResolution(specifier: string, parent: string): boolean {
   if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return false;

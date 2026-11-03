@@ -877,6 +877,11 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "every-elements-sparse: the result keeps the receiver's hole");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "map-unstable-pop-sparse: the result has three positions, two present");
+  assert.throws(() => runExample("invalid-map-throw-operand-caught",
+    '(() => { const xs = [null, "ab"]; return lengths(xs, () => { xs.pop(); return Error("x"); })[1].toFixed(); })()'),
+    /Cannot read properties of undefined/, "invalid-map-throw-operand-caught: the caught throw's call leaves a hole");
+  assert.equal(runExample("map-throw-operand-footprint", 'JSON.stringify(lengths(["a", "bc"], () => Error("x")))'), "[1,2]",
+    "map-throw-operand-footprint: the lengths in order");
   assert.equal(runExample("invalid-map-optional-pop", "Object.keys(drained([1, 2, 3], undefined)).length"), 2,
     "invalid-map-optional-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-class-constructor-pop", "Object.keys(shrinkAll([1, 2, 3])).length"), 2,

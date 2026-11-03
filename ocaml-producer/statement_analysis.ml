@@ -454,8 +454,19 @@ let rec allocated_constants ss = List.concat_map (fun (s:Source.stmt) -> match s
    allocation (Lean's `ScopeBinding.fresh` survives the capture). *)
 let allocated = ref []
 
+(* The `let` names a statement list declares, nested blocks included. *)
+let rec declared_cells ss = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+  | Declare (true,bindings) -> List.map (fun (name,_,_) -> name) bindings
+  | If (_,a,b) -> declared_cells a @ declared_cells b
+  | While (_,b,u) -> declared_cells (b @ u)
+  | Block (_,b) | ForOf (_,_,_,_,b) -> declared_cells b
+  | Try (b,h,f) -> declared_cells (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> declared_cells (b @ c)
+  | Declare (false,_) | Destructure _ | Return _ | Effect _ | Throw _ | Break _ | Continue -> []) ss
+
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
   allocated := allocated_constants ss @ !allocated;
+  Environment.unit_cells := declared_cells ss @ !Environment.unit_cells;
   let transfer_statement = transfer expr in
   let after e env = effects env e in
   let early env (s:Source.stmt) name = match s.statement with

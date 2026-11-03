@@ -75,7 +75,7 @@ export type SessionTelemetry = {
   /** Probe programs made in sessions. */
   probes: number;
 };
-const telemetry: SessionTelemetry = { opens: 0, reuses: 0, replacements: 0, lastReplacement: null, discarded: 0,
+let telemetry: SessionTelemetry = { opens: 0, reuses: 0, replacements: 0, lastReplacement: null, discarded: 0,
   lastDiscard: null, automatic: 0, probes: 0 };
 export const declarationSessionTelemetry = (): SessionTelemetry => ({ ...telemetry });
 
@@ -103,7 +103,7 @@ export function asideForTests<T>(run: () => T): T {
   } finally {
     retained = held;
     retaining = was;
-    Object.assign(telemetry, counts);
+    telemetry = counts;
   }
 }
 /** Tests only: the retained session's ledger. */
@@ -241,22 +241,23 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
     return read(project.program, project.checker);
   };
   let thrown: { error: unknown } | null = null;
-  let value: T | undefined;
+  let result: { value: T } | null = null;
   try {
-    value = withLedger(s.ledger, () => {
+    result = { value: withLedger(s.ledger, () => {
       // The project is opened once, by the session's first snapshot; a
       // later collection reacquires it in a snapshot of its own.
       const base = update(s, s.idle === null ? { openProjects: [s.config] } : {});
       snapshots.base = base;
       s.idle?.dispose();
       s.idle = null;
-      if (fault?.kind === "during") {
-        const { during } = fault;
+      const injected = fault;
+      if (injected?.kind === "during") {
+        const { during } = injected;
         fault = null;
         during((config) => void s.api.parseConfigFile(config));
       }
       return use(base.getProject(s.config), probe);
-    });
+    }) };
   } catch (error) {
     thrown = { error };
   }
@@ -286,7 +287,8 @@ function collect<T>(s: Session, use: (project: Project | undefined, probe: Probe
     } else retained = s;
   }
   if (thrown) throw thrown.error;
-  return value as T; // asserted: `use` returned it, there being no thrown error
+  if (result === null) throw Error("a declaration collection neither returned nor threw");
+  return result.value;
 }
 
 /** Restore a session's base state after a collection: the overlay cleared,
@@ -299,27 +301,30 @@ function restore(s: Session, replaced: readonly string[], obsolete: readonly (Sn
   try {
     return withLedger(s.ledger, () => {
       s.overlay.clear();
-      if (fault?.kind === "restoration") {
+      // Only the injection and these branches write the fault: one read
+      // decides which this restoration makes.
+      const injected = fault;
+      if (injected?.kind === "restoration") {
         fault = null;
         throw Error("an injected restoration failure");
       }
       const snapshot = update(s, replaced.length ? { fileChanges: { changed: [...replaced] } } : {});
       for (const old of obsolete) old?.dispose();
       s.idle = snapshot;
-      if (fault?.kind === "overlay") {
+      if (injected?.kind === "overlay") {
         fault = null;
         s.overlay.set(resolve(s.cwd, "leaked.ts"), "");
-      } else if (fault?.kind === "project") {
-        const extra = fault.project;
+      } else if (injected?.kind === "project") {
+        const extra = injected.project;
         fault = null;
         s.idle = update(s, { openProjects: [extra] });
         snapshot.dispose();
-      } else if (fault?.kind === "document-request") {
-        const document = fault.document;
+      } else if (injected?.kind === "document-request") {
+        const document = injected.document;
         fault = null;
         update(s, { openFiles: [document] });
-      } else if (fault?.kind === "document-left") {
-        const document = fault.document;
+      } else if (injected?.kind === "document-left") {
+        const document = injected.document;
         fault = null;
         s.idle = s.api.updateSnapshot({ openFiles: [document] });
         snapshot.dispose();

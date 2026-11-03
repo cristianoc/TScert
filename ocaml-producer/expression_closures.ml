@@ -302,12 +302,14 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let field_write (o:expr) k = match latest_claim o.pos with
         | Some t -> source_field_write declarations t k
         | None -> false in
-      let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
-        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~field_write ~callable ~no_return ~iteration ~readable d))
-          (footprint_expr ~dispatched ~field_write ~callable ~no_return ~iteration ~readable body) defaults in
       (* Where every node of the body and its defaults bounds its throw, the
-         footprint is proposed on a throw too. *)
+         footprint is proposed on a throw too; otherwise a `throw` is outside
+         what it bounds. *)
       let on_throw = List.for_all (fun (_,d) -> throws_expr ~callable d) defaults && throws_expr ~callable body in
+      let dead_throw = not on_throw in
+      let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable d))
+          (footprint_expr ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable body) defaults in
       let call_effect = match bound with
         | Some footprint -> {Semantic.ordinary_effect with footprint; fresh=fresh_result ~callable body; on_throw}
         | None -> Semantic.ordinary_effect in

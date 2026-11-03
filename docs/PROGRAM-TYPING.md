@@ -3547,7 +3547,13 @@ $`\mathrm{apart}(x.f,z.g)`$;
 it destroys the rest of $`\Sigma`$ — including atoms about cells that may or may
 not be this one. So `x.f = v` and `x.f ??= v` with `v` an object leave a field
 declared `T | null` holding no `null` for a later read, until a call or another
-write (`field-write-refinement`, `invalid-field-write-call`). Where $`y`$ has
+write (`field-write-refinement`, `invalid-field-write-call`). A `let` cell
+the unit declares is allocated apart from every older location
+(`fresh-separation`); any other cell, a module's say, is separated by no
+fact, so the producer proposes its write as a step that may write cells:
+every other cell and field is known by its contract alone, and a member path
+through stable members keeps its entry (`module-cells-written-in-turn`).
+Where $`y`$ has
 no predicate, the write establishes no new contents and keeps the separated
 atoms all the same:
 
