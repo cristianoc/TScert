@@ -515,6 +515,45 @@ then for `readTypeTerm`).
   keeps a program `ReadonlySet` whose iterator writes.
 - **Commit:** the introducing commit.
 
+### The shadow prelude's definitions typed as a native map
+
+`prelude` in `tools/shadow-contracts.mts` spreads
+`[...definitions.values()]`, where the module constant `definitions` is the
+`new Map(…)` built from the library overlay's definitions; its annotation
+was `ReadonlyMap<string, TypeDefinition>`. A spread keeps the host's
+collection iteration, which a program's object meeting the `ReadonlyMap`
+view need not give ("no derivation of its node-typing claim" at the spread,
+as in `spread-readonly-map-values-refused`).
+
+- **Repair:** `definitions` is a `Map<string, TypeDefinition>`, the native
+  map its initializer builds; no code writes it. The annotation changes no
+  execution and adds no assumption.
+- **Scope:** `spread-readonly-map-values-refused` keeps the spread of a
+  `ReadonlyMap`'s values refused.
+- **Commit:** the introducing commit.
+
+### An indexed access's projections built densely
+
+`indexedAccess` in `tools/computed-types.mts` projects an object type at
+its keys. A union's or an intersection's parts were projected by
+`object.parts.map(part => project(part, depth + 1))`; `project` reads the
+compiler through `context`, whose members state no effect, so the native
+`map` may leave a hole, and the result did not meet `union`'s `TypeTerm[]`
+(as in `blocker-round-inferred-map-result`). A record's found fields were
+kept by `parts.filter((p): p is TypeTerm => p !== null)`, whose inferred
+parameter the producer claims at the arms of `TypeTerm | null` without
+selecting `filter`'s guard signature, so `found` was claimed with `null`
+("no derivation of its node-typing claim" at `union(found)`).
+
+- **Avoidance:** each projection pushes into a fresh `TypeTerm[]` in a
+  `for...of` loop, which visits the same parts in the same order and
+  leaves no hole; the guard names its parameter `p: TypeTerm | null`, the
+  type TypeScript infers. Returns, exceptions and effects are those of the
+  `map` and `filter` forms on an array without holes.
+- **Scope:** `blocker-last-indexed-access-fields`;
+  `blocker-last-guard-param-inferred` keeps the inferred parameter as a gap.
+- **Commit:** the introducing commit.
+
 ### Mapped arms with a store-preserving callback
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,

@@ -616,10 +616,20 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
     if (depth >= 64)
       throw Error(`the indexed access ${computed} exceeds the projection chain limit of 64`);
     switch (object.k) {
-      case "union": return union(object.parts.map(part => project(part, depth + 1)));
+      // Each part projected into a fresh dense array: a `map` with this
+      // unrestricted callback may leave a hole, which `TypeTerm[]` excludes.
+      case "union": {
+        const projected: TypeTerm[] = [];
+        for (const part of object.parts) projected.push(project(part, depth + 1));
+        return union(projected);
+      }
       // An intersection's member at a key is the meet of its operands'
       // members there: `(A[] & B[])[number]` is `A & B`.
-      case "intersection": return { k: "intersection", parts: object.parts.map(part => project(part, depth + 1)), span };
+      case "intersection": {
+        const projected: TypeTerm[] = [];
+        for (const part of object.parts) projected.push(project(part, depth + 1));
+        return { k: "intersection", parts: projected, span };
+      }
       case "array":
         if (keyList.every(k => k.k === "atom" && k.name === "number")) return object.element;
         break;
@@ -644,7 +654,7 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
           const field = object.fields.find(f => f.name === key.text);
           return field ? (field.optional ? optionalTerm(field.type, span) : field.type) : null;
         });
-        const found = parts.filter((p): p is TypeTerm => p !== null);
+        const found = parts.filter((p: TypeTerm | null): p is TypeTerm => p !== null);
         if (found.length === parts.length) return union(found);
         break;
       }
