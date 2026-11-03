@@ -5,6 +5,7 @@ export function snapshot(
   opened: boolean,
   api: { update(request: { closeFiles?: Document[] }): { value: number } },
 ): number {
-  const saved = api.update({ ...(opened ? { closeFiles: [file] } : {}) });
+  const closeFiles: Document[] | undefined = opened ? [file] : undefined;
+  const saved = api.update({ ...(closeFiles ? { closeFiles } : {}) });
   return saved.value;
 }

@@ -64,7 +64,7 @@ export const cases: Case[] = [
   positive("blocker-next-optional-native-map-copy", "Optional native Map copied at its key and value contract"),
   { ...positive("blocker-next-compiler-api-callback-view", "A readonly Node view gives the compiler-list filter its admitted callback domain"), project: "pipeline/compiler-api-project" },
   gap("blocker-next-throwing-binder-callback", "A binder callback preserves stores on normal return while a failure path calls unrestricted code", "unverified", "search", /source expression obligation.*node-typing claim/s),
-  gap("blocker-next-conditional-array-context", "Conditional request spread retains a fresh array wider than its first string", "unverified", "search", /source expression obligation.*node-typing claim/s),
+  positive("blocker-next-conditional-array-context", "A fresh optional document array retains its complete writable request contract"),
   gap("blocker-next-table-predicate-preservation", "A table classifier preserves the nested reference it checks", "unsupported", "proposal", /missing field args/),
   positive("blocker-next-footprint-factory", "A private signature factory preserves the mapped footprint array"),
   negative("invalid-footprint-factory-provider", "A shrinking provider cannot meet the private factory's preserving contract (run under Node)",

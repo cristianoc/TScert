@@ -5,7 +5,7 @@
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isIntersectionType, isNumberLiteralType, isStringLiteralType, isTupleType, isTypeParameter, isTypeReference, isUnionType, type Checker, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isIntersectionType, isNumberLiteralType, isStringLiteralType, isTupleType, isTypeParameter, isTypeReference, isUnionType, type Checker, type DocumentIdentifier, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -232,7 +232,8 @@ function withOwnProject<T>(file: string,
   const probe: ProbeProgram = (files, read) => {
     overlay.clear();
     for (const [name, text] of files) overlay.set(name, text);
-    const snapshot = api.updateSnapshot({ ...(opened ? { closeFiles: [file] } : {}),
+    const closeFiles: DocumentIdentifier[] | undefined = opened ? [file] : undefined;
+    const snapshot = api.updateSnapshot({ ...(closeFiles ? { closeFiles } : {}),
       openProjects: [config],
       fileChanges: { changed: [...new Set([...replaced, ...files.keys()])] } });
     opened = false;
