@@ -572,8 +572,11 @@ ordinary signature. The search runs as the plan's runs one by one, the
 importer's first (`--plan-imports`, `--produce-run`), with the outcome of
 the search over the whole document. Before proposing the importer at its
 reads, the pipeline plans them (`--plan-imports` over the reads and the
-modules' claims) and withdraws the first read the plan refuses, one per
-round: the plan reads of the importer's claims only the list of its
+modules' claims) and withdraws every read the plan refuses in one round:
+a refused plan states, after its first refusal, each other read of the
+importer, and of each module an admitted read names, whose two readings it
+refuses (`planRefusals`), a line each. Each read is checked on its own, at
+that round's documents and claims, as `planImports` checks it. The plan reads of the importer's claims only the list of its
 qualified reads, so its answer is the search's at those reads. The final check is one
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes

@@ -229,7 +229,13 @@ def planFile (astPath claimsPath : String) : IO UInt32 := do
   let claims ← readJson claimsPath
   match do SourceClaimJson.planJson (← ast) (← claims) with
   | .ok runs => runs.forM (IO.println ·.compress); return 0
-  | .error e => refuse e
+  | .error e =>
+    -- The plan's first refusal, then each other read it refuses, a line
+    -- each, so the pipeline withdraws them in one round.
+    let others := match do SourceClaimJson.planRefusals (← ast) (← claims) with
+      | .ok rs => rs.filter (· != e)
+      | .error _ => []
+    refuse ("\n".intercalate (e :: others))
 
 /-- Search evidence for one planned run (`SourceClaimJson.produceRunJson`),
 written to `evidencePath`. -/

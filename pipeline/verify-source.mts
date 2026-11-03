@@ -402,21 +402,24 @@ function failedImport(detail: string): { module: string; name: string | null } |
   return run?.[1] ? { module: run[1], name: null } : null;
 }
 
-/** The read or module run the plan of `reads` refuses, before the importer
- * is proposed at them, as `module#name` or `module#*`; null where the plan
- * holds or its refusal names neither. The plan (`--plan-imports`) reads of
- * the importer's claims document only its `qualified` list, which the
- * producer writes as the declarations of `reads`, in order, and its
- * `modules`, the claims `used`: given those, its answer is the one the
- * search of the assembled claims gives. */
+/** The reads and module runs the plan of `reads` refuses, before the
+ * importer is proposed at them, each as `module#name` or `module#*`: the
+ * plan (`--plan-imports`) states each read it refuses on a line of its own,
+ * and all of them are withdrawn in one round. Empty where the plan holds or
+ * its refusal names none. The plan reads of the importer's claims document
+ * only its `qualified` list, which the producer writes as the declarations
+ * of `reads`, in order, and its `modules`, the claims `used`: given those,
+ * its answer is the one the search of the assembled claims gives. */
 function planRefused(recorder: Recorder, ast: string, reads: QualifiedRead[], used: string[], budget: string[],
-    planPath: string): string | null {
+    planPath: string): string[] {
   // Spliced as text, as the claims assembly is: a bigint literal's digits pass through unrounded.
   writeFileSync(planPath, `{"qualified":${JSON.stringify(reads.map((r) => r.declaration))},"modules":[${used.join(",")}]}`);
   const refusal = verifierRefusal(runStep(verifierCall(verifier, [...budget, "--plan-imports", ast, planPath]), recorder),
     "--plan-imports");
-  const failed = refusal === null ? null : failedImport(refusal);
-  return failed ? `${failed.module}#${failed.name ?? "*"}` : null;
+  return [...new Set((refusal ?? "").split("\n").flatMap((line) => {
+    const failed = failedImport(line);
+    return failed ? [`${failed.module}#${failed.name ?? "*"}`] : [];
+  }))];
 }
 
 /** The search of a document with certified imports, run by run: the plan
@@ -637,12 +640,13 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         const text = moduleClaims.get(m)?.text;
         return text === undefined ? [] : [text];
       });
-      // A read the plan refuses is withdrawn before the importer is proposed
-      // at it: the plan reads of the importer's claims only the qualified
+      // The reads the plan refuses are withdrawn before the importer is
+      // proposed at them: the plan reads of the importer's claims only the qualified
       // reads, which the proposal lists as `reads` (`planRefused`).
-      const refused = reads.length > 0 ? planRefused(recorder, ast, reads, used, budget, join(artifacts, "plan-reads.json")) : null;
-      if (refused !== null && !withdrawn.has(refused)) {
-        withdrawn.add(refused);
+      const refused = reads.length > 0 ? planRefused(recorder, ast, reads, used, budget, join(artifacts, "plan-reads.json")) : [];
+      const fresh = refused.filter((r) => !withdrawn.has(r));
+      if (fresh.length > 0) {
+        for (const r of fresh) withdrawn.add(r);
         continue;
       }
       const proposed = propose(recorder, ast, flow, reads, join(artifacts, "qualified.json"));
