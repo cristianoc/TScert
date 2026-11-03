@@ -17,7 +17,7 @@ type Child = "name" | "propertyName" | "label" | "type" | "questionToken" | "pos
 type Children = "modifiers" | "typeParameters" | "parameters";
 
 /** One child of `node`, where its kind carries it and it is present. */
-export function childOf(node: Node, key: Child): Within<{ value: "any"; store: "grow" }, Node | undefined> {
+export function childOf(node: Node, key: Child): Within<{ value: "keep"; store: "keep" }, Node | undefined> {
   switch (key) {
     case "name":
       if (ts.isVariableDeclaration(node)) return node.name;
@@ -221,7 +221,7 @@ export function typeArgumentsOf(node: Node): Within<{ value: "keep"; store: "kee
 }
 
 /** The name a declaration or member declares, where its kind has one. */
-export const nameOf = (node: Node): Within<{ value: "any"; store: "grow" }, Node | undefined> => childOf(node, "name");
+export const nameOf = (node: Node): Within<{ value: "keep"; store: "keep" }, Node | undefined> => childOf(node, "name");
 
 /** Whether `node` is a type alias declaration of a TypeScript file, by its
  * kind. The compiler's `isTypeAliasDeclaration` also accepts a JavaScript

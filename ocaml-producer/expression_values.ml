@@ -436,8 +436,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         | _ -> (match quietly (fun () -> expr env e) with
           | Some u -> plausible_subtype_declared declarations u t
           | None -> false) in
+      (* A record literal there is built at the left's type too, at the arm
+         of a discriminated union its literal-valued fields select, as
+         `ps[i] ?? { k: "name", name }`: a construction hint, its claim
+         checked by Lean. *)
       let right = match expected,b.node with
         | None,ArrayLiteral _ when fits b present -> expr ~expected:present env b
+        | None,Alloc _ when present <> Atoms [] -> expr ~expected:present env b
         | _ -> expr ?expected env b in
       if expected <> None && rigid_arm present then
         S.explain site ("`??` on a value of a type parameter whose bound states no values other than null \

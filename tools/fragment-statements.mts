@@ -7,9 +7,9 @@
  * states no effect (SOURCE-MODEL.md, calls through a location). */
 import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
-import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
+import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import type { TypeTerm } from "./declaration-types.mts";
+import type { StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
@@ -503,14 +503,14 @@ export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
     Within<{ value: "any"; store: "grow" }, { node: Node; hole: boolean; before: Node[]; after: Node[] }[]> {
   return left.elements.map((el) => {
     if (ts.isOmittedExpression(el)) return { node: el, hole: true, before: [], after: [] };
-    const assigned = ts.isBinaryExpression(el) && el.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-    const target = ts.isSpreadElement(el) ? el.expression : assigned ? el.left : el;
-    const before = ts.isPropertyAccessExpression(target) ? [target.expression]
+    const assigned = ts.isBinaryExpression(el) && el.operatorToken.kind === ts.SyntaxKind.EqualsToken ? el : null;
+    const target = ts.isSpreadElement(el) ? el.expression : assigned ? assigned.left : el;
+    const before: Node[] = ts.isPropertyAccessExpression(target) ? [target.expression]
       : ts.isElementAccessExpression(target) ? [target.expression, target.argumentExpression] : [];
-    const write = ts.isElementAccessExpression(target) ||
+    const write: Node[] = ts.isElementAccessExpression(target) ||
       ts.isPropertyAccessExpression(target) && ts.isIdentifier(target.name) && target.name.text === "length"
       ? [target] : [];
-    return { node: el, hole: false, before, after: [...(assigned ? [el.right] : []), ...write] };
+    return { node: el, hole: false, before, after: [...(assigned ? [assigned.right] : []), ...write] };
   });
 }
 
@@ -1851,6 +1851,10 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
   );
 }
 
+/** A declaration's header as `functionDecl` reads it: its result, its
+ * guard, its stated effect and its parameters' contracts. */
+type FunctionHeader = { retType: TypeTerm; guard: Guard | null; stated: StatedEffect | null; parameterTypes: TypeTerm[] };
+
 export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst {
   const gate: Gate = this;
   if (!node.name) gate.fail(node, "anonymous function");
@@ -1900,17 +1904,14 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     gate.asyncBody = isAsync;
     if (typeParams.some(p => p.resolution) && gate.statedResult(node.type, node).stated)
       gate.fail(node.type ?? node, "`Within` on a resolution-qualified declaration is outside the fragment: such a unit claims no footprint");
-    const { retType, guard, stated, parameterTypes } = gate.headerTypes(() => {
+    const { retType, guard, stated, parameterTypes } = gate.headerTypes((): FunctionHeader => {
       const guard = gate.guardOf(node);
       const written = gate.statedResult(node.type, node);
-      return {
-      retType: guard ? guardResult(guard) : gate.typeOf(written.result, node),
-      guard,
-      stated: written.stated,
-      parameterTypes: node.parameters.map(p => p.dotDotDotToken ? gate.moduleRestType(p, node)
+      const retType = guard ? guardResult(guard) : gate.typeOf(written.result, node);
+      const parameterTypes: TypeTerm[] = node.parameters.map((p): TypeTerm => p.dotDotDotToken ? gate.moduleRestType(p, node)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
-        : gate.typeOf(p.type, p)),
-      };
+        : gate.typeOf(p.type, p));
+      return { retType, guard, stated: written.stated, parameterTypes };
     });
     gate.guardBody = guard !== null;
     // A parameter written as a pattern or with a default binds a hidden
@@ -1923,7 +1924,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     const bindings: Stmt[] = [];
     // Each hidden name's pattern and default, as the source writes them.
     const bound = new Map<string, [PatternAst, Expr | null]>();
-    const params = node.parameters.map((p, i) => {
+    const params = node.parameters.map((p, i): FunctionParamAst => {
       if (ts.isIdentifier(p.name) && p.name.text === "undefined")
         gate.fail(p, "shadowing undefined is outside the fragment");
       if (

@@ -2420,6 +2420,162 @@ returns `undefined` as its `number[]`).
   erased.
 - **Scope:** `blocker-next-table-predicate-preservation`. No external
   assumption is added.
+
+### Effects stated where the expression front end calls through a function type
+
+Several helpers of the expression and statement front end call a function
+held in a parameter, a record field or a gate method whose type is an
+ordinary arrow, which states no effect: `readOf`'s `local`, `extendChain`'s
+`link`, the `check` field and `value` parameter of `objectFields`'
+`literalKey` and `valued` closures, `Gate.termScope`, which `guardOf`
+calls, `classBody`, which `classStmt` calls, and the declarations
+`classBody` calls, `signature` (`tools/type-term.mts`), `errorBase` and
+`errorOptions` (`tools/library-globals.mts`), `localClass`, which
+`classStmt` calls, and `Gate.moduleRestType` and `typeParameterMentioned`,
+which `functionDecl`'s `map` callback calls, which stated none. Each call
+was read at an unrestricted contract, so the caller's statement `{value: any, store: grow}`
+was refused ("the footprint claimed for … is not established by its body").
+
+- **Repair:** each function type states the footprint the functions passed
+  there meet, `Within<{ value: "any"; store: "grow" }, R>`
+  ([stated effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
+  A caller checked in a slice relies on the statement as written; the
+  statement is established where the stating function's own slice
+  verifies. `signature`, `errorOptions` and `localClass` have such slices.
+  `readOf` takes its names as the native `Set` its callers build, whose
+  `has` has a reviewed contract, as `functionDeclarations`' map does.
+- **Statements no slice checks:** the census slices neither gate methods
+  nor every module constant, and one slice is refused, so these statements
+  are assumed by their callers and audited by reading:
+  - `nameOf` (`tools/syntax.mts`, `{value: keep, store: keep}`): returns
+    `childOf(node, "name")`, whose statement its slice verifies.
+  - `errorBase` (`tools/fragment-support.mts`): allocates a fresh record, a
+    fresh array of two fresh records and a fresh `Map`, and calls
+    `errorOptions`, whose slice verifies.
+  - `Gate.termScope`: allocates a record of arrow functions over the gate;
+    it calls none of them.
+  - `Gate.moduleRestType`: reads the parameter's syntax and types it
+    through `typeOf`, `restType`, `typeParameterMentioned` and
+    `restPositions`, each stating `{value: any, store: grow}`, and `find`
+    at a callback that only reads; it writes nothing.
+  - `classBody` (`tools/fragment-classes.mts`): its slice is refused at the
+    footprint of its `construct` closure. Its body writes fields of records
+    and arrays it allocates (`push`, field writes on fresh records), calls
+    gate methods stating `{value: any, store: grow}`, and reads the
+    compiler's nodes; the audit found no operation outside that footprint,
+    which the slice does not yet confirm.
+- **Behaviour:** the annotations are erased; every call, argument and
+  result is unchanged.
+- **Commit:** the introducing commit.
+
+### A parent walk at the parent's host contract
+
+`tools/fragment-support.mts#jumpTarget` walks `parent` links from a
+`break` or `continue` with `let parent = node.parent`, which TypeScript
+types `Node`. The compiler's host contract gives `parent` as
+`Node | undefined` (a source file has none), so the binding's inferred
+contract could not hold the next link.
+
+- **Repair:** the binding states `Node | undefined`, the contract the loop
+  test already handles.
+- **Behaviour:** the annotation is erased; the same links are read and the
+  same node is returned.
+- **Commit:** the introducing commit.
+
+### A destructuring element's assignment held as its node
+
+`tools/fragment-statements.mts#assignedSteps` held `el`'s test as a Boolean,
+`const assigned = ts.isBinaryExpression(el) && …`, and read `el.left` and
+`el.right` under `assigned` after a test of `el` against `SpreadElement`;
+the producer kept no narrowing of `el` through the constant there
+("missing field left"). Its `before` and `write` arrays were inferred at
+the element types of their literals, which a writable `Node[]` result field
+does not hold.
+
+- **Repair:** the constant holds the binary node or `null`, and the reads go
+  through it; `before` and `write` state `Node[]`.
+- **Behaviour:** the same tests run in the same order on the same node; the
+  annotations are erased. Each returned step holds the same nodes.
+- **Commit:** the introducing commit.
+
+### Reads stated as reading only
+
+`tools/syntax.mts#childOf` and `nameOf` read a child of a compiler node
+through kind tests, and `tools/fragment-support.mts#firstOptional` finds a
+parameter's index with `findIndex` over a field read; each stated
+`{value: any, store: grow}`. `staticPrivate` calls `nameOf` in a `find`
+callback, and `find` at a callback that may grow a store passes `undefined`
+past a shrunk length, outside the callback's `ClassElement` parameter;
+`lambda` calls `firstOptional` in a loop over its parameters, whose array a
+call that may grow stores does not keep as the loop's head states it.
+
+- **Repair:** each states `{value: keep, store: keep}`, which its body,
+  kind tests, field reads and a `findIndex` at a callback within the same
+  footprint, establishes: the slices of `childOf` and `firstOptional`
+  verify it; `nameOf`'s rests on its delegation to `childOf`
+  ([statements no slice checks](#effects-stated-where-the-expression-front-end-calls-through-a-function-type)).
+- **Behaviour:** the annotations are erased.
+- **Commit:** the introducing commit.
+
+### Values the expression and class front ends read again, held once
+
+Five sites of the expression and class front ends read a value again where
+its earlier test or construction no longer types it:
+
+- `lambda` held its receiver test as a Boolean, `const stated = !!head &&
+  …`, and read `head` and `head.type` under it after calls; the producer
+  kept no narrowing of `head` through the constant across them.
+
+- `binary`'s field write tested `node.left` against `PropertyAccessExpression`,
+  then read `node.left` again after `gate.staticPrivate` and
+  `gate.memberKey`, calls within `{value: any, store: grow}`; the read was
+  not at the tested arm.
+- `lambda` read `defaults[i]` in `...(defaults[i] ? { default: defaults[i] }
+  : {})`; an element read twice is two reads, the second not narrowed by
+  the first. Its parameter loop tested `p !== parameters[parameters.length -
+  1]` and read the parameter's `questionToken`, `initializer` and
+  `dotDotDotToken` in nested tests, after which the search kept no
+  knowledge of those fields where the loop's later test reads them again.
+- `classBody` built the base read's receiver as `{ ...derivedBase, pos:
+  extendsAt }`, a spread of a binding typed `Expr`, which the code had just
+  set to `{ k: "id", pos: extendsAt, name: slot }`.
+- `classBody` declared its prototype fields `{ name; e }[]` and passed them
+  where an allocation's fields are `{ name; e; computed?: true }[]`: a
+  writable array's element contract is its own, not a narrower one.
+
+- **Repair:** `lambda` holds the `this` parameter, or `null`, and its
+  checked annotation in one record, and walks its parameters by index,
+  reading each child the checks test once and testing the index against
+  the last one; `binary` holds the write target in a
+  constant tested once;
+  `lambda` holds each default in a constant; the base read writes its
+  record, `{ k: "id", pos: extendsAt, name: slot }`; the prototype fields
+  state the allocation's element type.
+- **Behaviour:** the same tests run on the same nodes in the same order
+  (the parameter array is a fresh copy of a node list, dense, which nothing
+  writes, and holds each node once, so a parameter is the last element
+  exactly where its index is the last; a compiler node's children are
+  stable reads, so reading one once or at each test gives the same value);
+  the base read's record has the same keys in the same order, its `pos`
+  the same array; annotations are erased.
+- **Commit:** the introducing commit.
+
+### A function's parameter records at a named type
+
+`tools/fragment-statements.mts#functionDecl` maps the declaration's
+parameters to records `{ name, pos, type, ...(rest ? { rest: true } : {}) }`
+and reads them in a second `map` callback, as
+`tools/fragment-expressions.mts#lambda` does a closure's. The callback's parameter type
+was the instance of the anonymous record TypeScript inferred for the first
+`map`, whose optional `rest` the compiler's API gives only with the
+`undefined` optionality adds; the parser refuses such a contextual type.
+
+- **Repair:** the records are the named types `FunctionParamAst` and
+  `LambdaParamAst` of `tools/fragment.mts`, which `FunctionAst.params` and
+  the lambda expression's `params` hold, and the first callbacks state them
+  as their results; the callback mapping the parameters'
+  types, run through the generic `headerTypes`, states `TypeTerm`.
+- **Behaviour:** the annotation is erased; the records are unchanged.
 - **Commit:** the introducing commit.
 
 ### Merged declaration lists stored at a readonly element contract
@@ -2678,15 +2834,17 @@ its body").
   a native iterator stepping its array: a marked iterator kind whose step
   reads the array's current length and element at the array's presence,
   through the parser's iteration kinds and the overlay. Nine other loops
-  of `tools/` use the form; this round writes the two in the `quantified`
-  slice out.
+  of `tools/` use the form; the two in the `quantified` slice and the walk
+  over a constructor's statements in `fragment-classes.mts#classBody` are
+  written out.
 - **Equivalence:** `for (let index = 0; index < xs.length; index++) {
   const p = xs[index]; … }` reads the array's length before each step and
   its element at the index, as the array iterator's step does
   (CreateArrayIterator), and runs the body with the same bindings; `continue`
   steps the index as the iterator would. The added check of `p` answers
-  only at a hole, which neither array has: `typeParameters` is a compiler
-  node list and `ordinary` a fresh copy of one. Returns, exceptions,
+  only at a hole, which none of the arrays has: `typeParameters` is a
+  compiler node list, `ordinary` a fresh copy of one, and a constructor's
+  statements a node list or a one-element literal. Returns, exceptions,
   mutations and receivers agree for every array its callers pass.
 - **Scope:** `array-index-loop-footprint`.
 
@@ -3947,6 +4105,47 @@ outside it keeps that type inside.
   constant typed `string` that the closure captures. Returns, exceptions
   and mutations agree.
 - **Scope:** `blocker-claim-lift-forms`.
+
+### A record literal whose discriminant a conditional selects
+
+`tools/fragment-expressions.mts#chainLink` built a call record as
+`{ k: method ? "invoke" : "apply", pos, callee, args, …spreads }`, expected
+at `Expr`. Its `k` is the union `"invoke" | "apply"`, a record no arm of
+`Expr` holds: TypeScript admits it by distributing the record over the
+discriminant's members, which the subtyping of the calculus does not do.
+
+- **Avoided form and cost:** support needs a subtyping rule distributing a
+  record over the literal members of one field, with its soundness proof;
+  the census shows this one site at a discriminated union.
+- **Equivalence:** `if (method) return { k: "invoke", … }; return { k:
+  "apply", … }` tests `method`, then evaluates `pos`, `object`, `args` and
+  `spreads.length` in the original order, and the invoke arm spreads
+  `typeArgs` where it has any. The apply arm omits the `typeArgs` spread,
+  which there spread `{}` and added no key. The returned record has the
+  same keys in the same order and the same values.
+- **Scope:** `blocker-conditional-discriminant-record`.
+
+### A loop replacing a binding's record on each pass
+
+`tools/fragment-expressions.mts#template` folded a template's spans with
+`for (const part of node.templateSpans) { acc = { k: "arith", …, l: acc,
+r: gate.expr(…) }; acc = { … } }`. A `for...of` loop that replaces a
+binding's record with a fresh one on each pass is refused at the loop's
+entry: the loop head's knowledge from the back edge separates the fresh
+record from the loop's iterator, which the entry edge does not state
+(`blocker-for-of-fresh-record`, a gap in WORK.md).
+
+- **Avoided form and cost:** support is a change to how the search
+  generalizes separation knowledge at a loop head; this round writes the
+  one site out.
+- **Equivalence:** `node.templateSpans.reduce((acc, part) => …, head)`
+  visits the same spans in order: the span list is a compiler node array,
+  dense, which `gate.expr` does not change (the compiler's tree is read
+  only under its host contract). Each step evaluates the substitution with
+  `gate.expr` and allocates the two records in the original order, and the
+  last answer is returned; `reduce`'s length read once and the iterator's
+  per step agree on a list that does not change.
+- **Scope:** `blocker-compiler-api-template-reduce`.
 
 ## Host boundaries
 

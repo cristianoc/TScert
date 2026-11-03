@@ -2269,7 +2269,12 @@ types the literal per arm of the contextual union. The producer proposes
 each written field at the type agreed by the arms that the literal-valued
 written fields admit, as TypeScript discriminates a contextual union by a literal's
 properties: `{ k: "alloc", ...s }` at a union whose arms fix `k` builds its
-`k` at `"alloc"`.
+`k` at `"alloc"`. A literal is admitted by a field type whose members, an
+alias named inside a union expanded, include it. A spread operand written as
+a record literal, or a conditional between record literals, is built at the
+fields the contract, or every admitted arm, types alike, each optional: a
+tuple field there is a tuple. A record literal on the right of `??` is built
+at the left operand's type.
 
 For heap knowledge a merge is an allocation, as a literal is
 (`HeapExpressionRules.merge_alloc_sound`): it reads the heap and writes no

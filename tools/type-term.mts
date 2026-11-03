@@ -1013,7 +1013,7 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
     result: TypeNode | undefined, at: Node, span: Span,
     // A declared function's defaulted parameter may be omitted: `undefined`
     // is what a short call binds there. Function types have no defaults.
-    declared: boolean = false): FunctionTerm[] {
+    declared: boolean = false): Within<{ value: "any"; store: "grow" }, FunctionTerm[]> {
   const forms = signatures(scope, parameters, result, at, span, declared);
   // A guard's promise is a second form beside the plain one; any other second
   // form is a rest over several tuples.

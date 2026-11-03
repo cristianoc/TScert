@@ -775,8 +775,13 @@ let rec object_hint declarations seen = function
    the widened `string` no arm admits. A construction hint only, as
    [object_hint] is: Lean checks every member against the arm, and no other
    arm is ever assumed. *)
+(* A literal is admitted by a type whose atoms, aliases named inside a union
+   expanded (`BinaryOp = ArithOp | "lt"`), include it. *)
 let literal_admitted declarations (e:expr) t = match e.node with
-  | Literal l -> plausible_subtype (literal_type l) (declared_head declarations [] t)
+  | Literal l ->
+    (match flat_atoms declarations t with
+     | Some atoms -> plausible_subtype (literal_type l) (Atoms atoms)
+     | None -> plausible_subtype (literal_type l) (declared_head declarations [] t))
   | _ -> true
 let rec record_arms declarations seen = function
   | Atoms atoms -> List.concat_map (function

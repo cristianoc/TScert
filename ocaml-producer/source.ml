@@ -868,6 +868,18 @@ let rec throw_only_stmts = function
       (falls_or_throws body && throw_only_stmts rest)
     | _ -> false
 
+(* Whether statements may complete other than by falling through or a
+   throw: a `return`, `break` or `continue` anywhere in them, a nested
+   loop's included. *)
+let rec leaves_stmts ss = List.exists (fun s -> match s.statement with
+  | Return _ | Break _ | Continue -> true
+  | If (_,a,b) -> leaves_stmts a || leaves_stmts b
+  | While (_,b,u) -> leaves_stmts (b @ u)
+  | Block (_,b) | ForOf (_,_,_,_,b) -> leaves_stmts b
+  | Try (b,h,f) -> leaves_stmts (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> leaves_stmts (b @ c)
+  | Declare _ | Destructure _ | Effect _ | Throw _ -> false) ss
+
 let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ?(dead_throw=false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
   let go = footprint_expr ~fresh ~dispatched ~field_write ~dead_throw ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
@@ -985,7 +997,11 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
     (* A handler starts where the guarded block threw: Lean bounds that heap
        where every node of the block bounds its throw (`throws_stmts`). A
-       finalizer is not proposed. *)
+       finalizer that only falls through or throws completes normally only
+       where the block did: after a throw it throws again. It is proposed
+       there; Lean checks every node of the graph. *)
+    | Try (body,None,Some finalizer) when not (leaves_stmts finalizer) ->
+      join_bound (block readable body) (join_bound (block readable finalizer) (tail ()))
     | Try (body,Some (_,handler),None) when throw_only_stmts handler ->
       join_bound (block readable body) (tail ())
     (* A throw of the guarded block reaches a handler that may return

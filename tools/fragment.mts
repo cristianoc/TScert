@@ -220,7 +220,7 @@ export type Expr =
          function's. A `rest` parameter's type is the array its arguments are
          collected into: a tuple, whose required elements are positions of
          the signature, or a `T[]`, which collects any number of them. */
-      params: { name: string; type: TypeTerm; default?: Expr; rest?: true }[];
+      params: LambdaParamAst[];
       /* An arrow has none. An ordinary function expression binds the
          receiver of each call: `type` is its `this` annotation, `unknown`
          where it states none, and `strict` records that the code is strict
@@ -377,11 +377,19 @@ export interface Guard {
  * throw rejects (SOURCE-CONTRACTS.md, "Async functions and await"). */
 export type Completion = "sync" | "async";
 
+/** A closure's parameter: its fragment name, its contract, the default
+ * replacing an omitted argument, and whether it collects the rest. */
+export type LambdaParamAst = { name: string; type: TypeTerm; default?: Expr; rest?: true };
+
+/** A function declaration's parameter: its fragment name, where it is
+ * written, its contract, and whether it collects the rest. */
+export type FunctionParamAst = { name: string; pos: Span; type: TypeTerm; rest?: true };
+
 export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: TypeTerm; rest?: true }[];
+  params: FunctionParamAst[];
   /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
   guard: Guard | null;

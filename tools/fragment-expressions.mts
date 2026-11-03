@@ -7,7 +7,7 @@ import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, Fun
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Atom } from "./claim.mts";
 import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numericKey, optionalTerm } from "./type-term.mts";
-import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
+import type { Expr, LambdaParamAst, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN, OBJECT } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf, isTypeAlias } from "./syntax.mts";
@@ -772,7 +772,7 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
   // the expression is evaluated first, checked at the literal, then the
   // value (ECMA-262, PropertyDefinitionEvaluation; SOURCE-MODEL.md, "Object
   // literals").
-  const literalKey = (name: Node): { key: string; check: () => Expr } | null => {
+  const literalKey = (name: Node): { key: string; check: () => Within<{ value: "any"; store: "grow" }, Expr> } | null => {
     if (!ts.isComputedPropertyName(name)) return null;
     const result = gate.symbolNames.get(gate.span(name.expression).join(":"));
     if (result === undefined || !result.ok || typeof result.value === "number") return null;
@@ -782,7 +782,7 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
       annot: literalTerm(value, span), e: gate.expr(name.expression) }) };
   };
   // The key's check, then the value, evaluated in that order.
-  const valued = (name: Node, value: () => Expr): Expr => {
+  const valued = (name: Node, value: () => Within<{ value: "any"; store: "grow" }, Expr>): Expr => {
     const literal = literalKey(name);
     if (!literal) return value();
     const left = literal.check();
@@ -888,7 +888,7 @@ export function optionalChain(this: Gate,
  * value: the body of its innermost `optional`, past the saved objects of
  * optional method calls (`withObject`), so that each `?.` before the link
  * skips it. Each node it passes through ends where `node` does. */
-function extendChain(gate: Gate, node: Node, chain: Expr, link: (value: Expr, at: Span) => Expr): Within<{ value: "any"; store: "grow" }, Expr> {
+function extendChain(gate: Gate, node: Node, chain: Expr, link: (value: Expr, at: Span) => Within<{ value: "any"; store: "grow" }, Expr>): Within<{ value: "any"; store: "grow" }, Expr> {
   const pos: Span = [chain.pos[0], node.end];
   if (chain.k === "withObject") return { ...chain, pos, body: extendChain(gate, node, chain.body, link) };
   if (chain.k !== "optional") return gate.fail(node, "a link of an optional chain without its `?.`");
@@ -1037,14 +1037,16 @@ export function chainLink(this: Gate,
   const typeArgs = node.typeArguments?.map((t) => gate.typeOf(t, node));
   if (typeArgs?.length && !method)
     gate.fail(node, "explicit type arguments are admitted on a method call only");
-  return {
-    k: method ? "invoke" : "apply",
-    pos,
-    callee: object,
-    args,
-    ...(spreads.length ? { spreads } : {}),
-    ...(method && typeArgs?.length ? { typeArgs } : {}),
-  };
+  if (method)
+    return {
+      k: "invoke",
+      pos,
+      callee: object,
+      args,
+      ...(spreads.length ? { spreads } : {}),
+      ...(typeArgs?.length ? { typeArgs } : {}),
+    };
+  return { k: "apply", pos, callee: object, args, ...(spreads.length ? { spreads } : {}) };
 }
 
 // A call signature alone does not establish the inherited .call intrinsic.
@@ -1534,18 +1536,17 @@ export function update(this: Gate,
 export function template(this: Gate, node: ts.TemplateExpression): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const start = node.getStart(gate.file);
-  let acc: Expr = { k: "lit", pos: gate.span(node.head), lit: { a: "stringlit", v: node.head.text } };
-  for (const part of node.templateSpans) {
-    acc = { k: "arith", pos: [start, part.expression.end], op: "add", l: acc, r: gate.expr(part.expression) };
-    acc = {
+  const head: Expr = { k: "lit", pos: gate.span(node.head), lit: { a: "stringlit", v: node.head.text } };
+  return node.templateSpans.reduce((acc: Expr, part): Expr => {
+    const value: Expr = { k: "arith", pos: [start, part.expression.end], op: "add", l: acc, r: gate.expr(part.expression) };
+    return {
       k: "arith",
       pos: [start, part.literal.end],
       op: "add",
-      l: acc,
+      l: value,
       r: { k: "lit", pos: gate.span(part.literal), lit: { a: "stringlit", v: part.literal.text } },
     };
-  }
-  return acc;
+  }, head);
 }
 
 /** Whether an `instanceof` right operand names a class of this file that
@@ -1907,30 +1908,16 @@ export function binary(this: Gate, node: BinaryExpression): Within<{ value: "any
         key: gate.expr(node.left.argumentExpression),
         rhs: gate.expr(node.right),
       };
-    if (
-      !ts.isPropertyAccessExpression(node.left) ||
-      node.left.questionDotToken
-    )
-      gate.fail(node.left, "only field and local assignments are supported");
+    const target = node.left;
+    if (!ts.isPropertyAccessExpression(target) || target.questionDotToken)
+      return gate.fail(target, "only field and local assignments are supported");
     return {
       k: "write",
       pos: gate.span(node),
-      field: ts.isPropertyAccessExpression(node.left)
-        ? (gate.staticPrivate(node.left) !== null
-          ? gate.fail(node.left, "a write to a static member: statics are immutable bindings")
-          : gate.memberKey(node.left.name))
-        : gate.fail(
-            node.left,
-            "only field and local assignments are supported",
-          ),
-      receiver: gate.expr(
-        ts.isPropertyAccessExpression(node.left)
-          ? node.left.expression
-          : gate.fail(
-              node.left,
-              "only field and local assignments are supported",
-            ),
-      ),
+      field: gate.staticPrivate(target) !== null
+        ? gate.fail(target, "a write to a static member: statics are immutable bindings")
+        : gate.memberKey(target.name),
+      receiver: gate.expr(target.expression),
       rhs: gate.expr(node.right),
     };
   }
@@ -2143,21 +2130,20 @@ export function lambda(this: Gate,
   // method's states a type its host, the instance it is read from, must
   // meet, which a generic method's scheme does not state.
   const head = node.parameters[0];
-  const stated =
-    !!head && ts.isIdentifier(head.name) && head.name.text === "this";
-  if (stated && instance && node.typeParameters?.length)
-    gate.fail(head, GENERIC_METHOD_RECEIVER);
-  if (stated && !ordinary)
-    gate.fail(head, "an arrow cannot declare a receiver");
-  if (
-    stated &&
-    (!head.type ||
-      head.questionToken ||
-      head.dotDotDotToken ||
-      head.initializer)
-  )
-    gate.fail(head, "a receiver needs a required type annotation");
-  const parameters = stated ? node.parameters.slice(1) : [...node.parameters];
+  const receiverParam = head && ts.isIdentifier(head.name) && head.name.text === "this" ? head : null;
+  // The `this` parameter with its annotation, which it requires.
+  let statedReceiver: { param: ts.ParameterDeclaration; type: ts.TypeNode } | null = null;
+  if (receiverParam) {
+    if (instance && node.typeParameters?.length)
+      gate.fail(receiverParam, GENERIC_METHOD_RECEIVER);
+    if (!ordinary)
+      gate.fail(receiverParam, "an arrow cannot declare a receiver");
+    const annotation = receiverParam.type;
+    if (!annotation || receiverParam.questionToken || receiverParam.dotDotDotToken || receiverParam.initializer)
+      gate.fail(receiverParam, "a receiver needs a required type annotation");
+    statedReceiver = { param: receiverParam, type: annotation };
+  }
+  const parameters = receiverParam ? node.parameters.slice(1) : [...node.parameters];
   const body = node.body;
   if (!body) gate.fail(node, "a function must have a body");
   // A directive prologue in the function's own body makes it strict. It
@@ -2196,8 +2182,8 @@ export function lambda(this: Gate,
       : {
           // A class method's receiver is its instance, or the type its
           // `this` parameter states.
-          type: stated
-            ? gate.typeOf(head.type, head)
+          type: statedReceiver
+            ? gate.typeOf(statedReceiver.type, statedReceiver.param)
             : instance ? instance : ({ k: "atom", name: "unknown", span: gate.span(node) } satisfies TypeTerm),
           strict: gate.strict,
         };
@@ -2206,27 +2192,29 @@ export function lambda(this: Gate,
     const bound = new Set<string>();
     const patterns: (PatternAst | null)[] = parameters.map((p) =>
       ts.isIdentifier(p.name) ? null : gate.pattern(p.name, bound));
-    for (const p of parameters) {
-      if (ts.isIdentifier(p.name) && p.name.text === "this")
+    for (let i = 0; i < parameters.length; i++) {
+      const p = parameters[i];
+      if (p === undefined) continue;
+      // Each child the checks test, read once.
+      const name = p.name;
+      const optional = !!p.questionToken;
+      const defaulted = !!p.initializer;
+      const rest = !!p.dotDotDotToken;
+      if (ts.isIdentifier(name) && name.text === "this")
         gate.fail(p, "expected an ordinary closure parameter");
-      if (!ts.isIdentifier(p.name) && p.dotDotDotToken)
+      if (!ts.isIdentifier(name) && rest)
         gate.fail(p, "a rest parameter pattern is outside the fragment");
-      if (p.questionToken && p.initializer)
+      if (optional && defaulted)
         gate.fail(p, "a parameter cannot be both optional and defaulted");
-      if (p.dotDotDotToken) {
-        if (p.questionToken || p.initializer)
+      if (rest) {
+        if (optional || defaulted)
           gate.fail(p, "a rest parameter is neither optional nor defaulted");
-        if (p !== parameters[parameters.length - 1])
+        if (i !== parameters.length - 1)
           gate.fail(p, "a rest parameter must be the last one");
       }
-      if (
-        !p.questionToken &&
-        !p.initializer &&
-        !p.dotDotDotToken &&
-        parameters.indexOf(p) > firstOptional(parameters)
-      )
+      if (!optional && !defaulted && !rest && parameters.indexOf(p) > firstOptional(parameters))
         gate.fail(p, "a required parameter cannot follow an optional one");
-      if (ts.isIdentifier(p.name) && p.name.text === "undefined")
+      if (ts.isIdentifier(name) && name.text === "undefined")
         gate.fail(p, "shadowing undefined is outside the fragment");
     }
 
@@ -2266,7 +2254,7 @@ export function lambda(this: Gate,
       const bindings: Stmt[] = [];
       // Each hidden name's pattern and default, as the source writes them.
       const bound = new Map<string, [PatternAst, Expr | null]>();
-      const params = parameters.map((p, i) => {
+      const params = parameters.map((p, i): LambdaParamAst => {
         if (ts.isIdentifier(p.name) && !p.initializer)
           return {
             name: gate.local(p.name),
@@ -2339,15 +2327,18 @@ export function lambda(this: Gate,
       pos: gate.span(node),
       typeParams,
       receiver,
-      params: parameters.map((p, i) => ({
-        name: gate.local(identifierOf(p)),
-        // A defaulted parameter's type is what the body reads; the default
-        // itself is the expression that replaces an omitted argument. A rest
-        // parameter's type is the tuple its arguments are collected into.
-        type: p.dotDotDotToken ? gate.restType(p) : gate.closureParamType(p),
-        ...(defaults[i] ? { default: defaults[i] } : {}),
-        ...rest(p),
-      })),
+      params: parameters.map((p, i): LambdaParamAst => {
+        const default_ = defaults[i];
+        return {
+          name: gate.local(identifierOf(p)),
+          // A defaulted parameter's type is what the body reads; the default
+          // itself is the expression that replaces an omitted argument. A rest
+          // parameter's type is the tuple its arguments are collected into.
+          type: p.dotDotDotToken ? gate.restType(p) : gate.closureParamType(p),
+          ...(default_ ? { default: default_ } : {}),
+          ...rest(p),
+        };
+      }),
       result: declaredResult,
       guard,
       stated: written.stated,
