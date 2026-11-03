@@ -2,7 +2,6 @@ import Verification.Source.Claims.Wire
 import Verification.Source.Claims.Diagnostics
 import Verification.Source.FlowGraph
 import Verification.Source.SourceFacts
-import Verification.Source.ExpressionPlan
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
@@ -32,15 +31,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
       (joinSites ([],[p],[p]) (exprSitesCore includeBodies e))
   | .shapeTest p _ _ e | .tagMember p _ _ _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
   | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
-  -- A condition dispatching on a negated operand that is no test evaluates
-  -- its deciding outcome at the span of the `!` (`SourceExecution.truthOf`):
-  -- a left operand's, or a right one's, which regrouping `(x op y) op z`
-  -- makes a left one.
-  | .logical p _ a b =>
-    let mark := fun (e : Fragment.Expr) => match e with
-      | .not np inner => if SourceExecution.testForm inner then [] else [SourceExecution.negationMark np]
-      | _ => []
-    joinSites ([],p :: mark a ++ mark b,[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
+  | .logical p _ a b
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b => joinSites ([],[p],[]) (joinSites (exprSitesCore includeBodies a) (exprSitesCore includeBodies b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.

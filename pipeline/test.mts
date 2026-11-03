@@ -1586,9 +1586,9 @@ control(async (): Promise<void> => {
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 });
 control(async (): Promise<void> => {
-  // A chain read right-nested types its first operand where the chain
-  // starts; the residual `b && c` is observed at an empty span, which names
-  // no source expression. The first read of `rest` claimed without
+  // A chain's first operand is typed where the chain starts, each later
+  // operand dispatched where the ones before it answered. The first read of
+  // `rest` claimed without
   // `undefined`, as if the chain's later operands had answered, is refused
   // where evidence is produced and where it is checked.
   const good = run("logical-chain-entry");
@@ -5120,33 +5120,24 @@ control(async (): Promise<void> => {
 
 control(async (): Promise<void> => {
   // A negated guard as `||`'s left operand: where `!isRecord(v)` decides,
-  // the outcome is the literal `true` at the span of the `!`, and there the
-  // guard answered `false`. Claimed `false` at that span, or `v` claimed at
-  // the guarded type where the condition throws, the claims are refused
-  // where evidence is produced and where the honest evidence is checked.
+  // the guard answered `false`. `v` claimed at the guarded type where the
+  // condition throws is refused where evidence is produced and where the
+  // honest evidence is checked.
   const artifacts = run("guard-negated-short-circuit");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const from = source.indexOf("function bounded");
-  const bang = source.indexOf("!isRecord(v) || n > 3", from);
   const forge = (name: string, edit: (fn: SourceClaims["functions"][number]) => void): string => {
     const claims = readClaims(artifacts);
     edit(must(claims.functions.find(f => f.name === "bounded"), "bounded's claims"));
     return writeClaims(artifacts, name, claims);
   };
-  const decided = forge("forged-negated-decided", fn => {
-    const mark = must(fn.expressions.find(e => e.pos[0] === bang && e.pos[1] === bang + 1), "the decided outcome's claim");
-    assert.deepEqual(mark.type, [1], "the decided outcome is true");
-    mark.type = [2];
-  });
   const thrown = forge("forged-negated-throw", fn => {
     const ret = must(fn.entries.find(e => e.start === source.indexOf("return v", from)), "the return's entry");
     const throwing = must(fn.entries.find(e => e.start === source.indexOf("throw Error", from)), "the throw's entry");
     must(throwing.bindings.find(b => b.name === "v"), "v at the throw").type =
       must(ret.bindings.find(b => b.name === "v"), "v at the return").type;
   });
-  for (const [input, name, refusal] of [
-    [decided, "forged-negated-decided", `source expression obligation at [${bang},${bang + 1}): evidence search failed: no derivation of its node-typing claim`],
-    [thrown, "forged-negated-throw", "the edge from node"]] as const) {
+  for (const [input, name, refusal] of [[thrown, "forged-negated-throw", "the edge from node"]] as const) {
     refusedAt(artifacts, input, name, refusal);
     // Checking the honest evidence refuses at a node of `bounded`, whose
     // claim the evidence states otherwise.
@@ -5154,7 +5145,36 @@ control(async (): Promise<void> => {
     const located = must(/source evidence refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
     assert.ok(Number(located[1]) >= from, checked);
   }
-  process.stdout.write("negated guard dispatch: a decided outcome claimed false and a narrowed claim where the guard answered false refused in search and in checking\n");
+  process.stdout.write("negated guard dispatch: a narrowed claim where the guard answered false refused in search and in checking\n");
+});
+
+control(async (): Promise<void> => {
+  // A condition's dispatch takes one arm where a known Boolean answers it.
+  // Past `(c && x) || !c`, every edge reaching `return c ? 2 : 3` carries
+  // `c` true: its entry claimed `c` false, which only the arm `!c` cannot
+  // take would carry, is refused. And the arm pruned at `!c` rests on the
+  // entry's type of `c`: the entry of the second `if` claimed `c` true,
+  // which the first condition's edge where `c` and `z` failed does not
+  // establish, is refused. Each in search and against the honest evidence.
+  const artifacts = run("known-condition-disjunction");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const from = source.indexOf("export function plain");
+  const forge = (name: string, statement: string, literal: boolean): string => {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "plain"), "plain's claims");
+    const entry = must(fn.entries.find(e => e.start === source.indexOf(statement, from)), `the entry of ${statement}`);
+    must(entry.bindings.find(b => b.name === "c"), "c at the entry").type = [rowOf(claims, { boolLit: { value: literal } })];
+    return writeClaims(artifacts, name, claims);
+  };
+  for (const [name, statement, literal] of [
+    ["forged-known-pruned-edge", "return c ? 2 : 3", false],
+    ["forged-known-entry", "if ((c && x) || !c)", true]] as const) {
+    const input = forge(name, statement, literal);
+    refusedAt(artifacts, input, name, "evidence search failed");
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    assert.ok(/source evidence refusal at \[\d+,\d+\)/.test(checked), checked);
+  }
+  process.stdout.write("known Boolean: an entry claimed past what only a pruned arm carries, and a known Boolean's entry claimed at a literal its edges do not establish, refused in search and in checking\n");
 });
 
 control(async (): Promise<void> => {
@@ -7356,9 +7376,10 @@ control(async (): Promise<void> => {
   // the evaluation's nodes, and a negation its operand decides keeps that
   // answer: claims forged past what those nodes establish are refused, in
   // search and in checking against the genuine evidence. The second test's
-  // read claimed without the value the first test's failure leaves it; the
-  // negation claimed `true` or a nonempty wrong-kind type in a condition
-  // and as the left operand of `&&`.
+  // read in a condition claimed without the value the first test's failure
+  // leaves it; the negation, a value as the left operand of `&&`, claimed
+  // `true` or a nonempty wrong-kind type. A negation in a condition yields
+  // no value, so its claim is no obligation.
   const artifacts = run("negated-disjunction-test");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const spanOf = (text: string, from: string): [number, number] => {
@@ -7379,15 +7400,11 @@ control(async (): Promise<void> => {
   };
   const negation = '!(k.name === "a" || k.name === "b")';
   forge("forged-negated-disjunction-read", "rest", spanOf("k.name", 'k.name === "b"'), [{ strIn: { values: ["c", "d"] } }]);
-  forge("forged-negated-disjunction-condition", "rest", spanOf(negation, "export function rest"),
-    [{ boolLit: { value: true } }]);
   forge("forged-negated-disjunction-operand", "operand", spanOf(negation, "export function operand"),
     [{ boolLit: { value: true } }]);
-  forge("forged-negated-disjunction-number", "rest", spanOf(negation, "export function rest"),
-    [{ numLit: { bits: "0" } }]);
   forge("forged-negated-disjunction-string", "operand", spanOf(negation, "export function operand"),
     [{ strLit: { value: "x" } }]);
-  process.stdout.write("negated disjunction: a re-read claimed past the first test's answer, and a negation claimed true or at a nonempty wrong-kind type, refused in search and in checking\n");
+  process.stdout.write("negated disjunction: a re-read in a condition claimed past the first test's answer, and a negation as a value claimed true or at a nonempty wrong-kind type, refused in search and in checking\n");
 });
 
 mutationControl(async (): Promise<void> => {

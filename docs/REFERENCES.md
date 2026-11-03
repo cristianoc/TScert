@@ -611,7 +611,7 @@ condition into branches (section 6.6.3, flow-of-control statements, and
 right operand only where the left one does not decide. The translation there
 is of a three-address language; the correspondence with JavaScript's
 evaluation is argued where it is used.
-**Discussed in** [the conditions draft](drafts/conditions.md).
+**Discussed in** [SOURCE-ELABORATION: conditions](SOURCE-ELABORATION.md#conditions).
 
 ## Tools
 

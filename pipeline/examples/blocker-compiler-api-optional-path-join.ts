@@ -1,8 +1,7 @@
-// A disjunction whose first operand is a negated host guard is lowered as a
-// value, and the condition tests that value: where `typeParameters?.length`
-// passed, the value is tested again, and a number's truthy slice is
-// `number`, so the re-test's failing edge reaches the closure binding
-// without the fact that `postfixToken` is undefined, which its entry claims.
+// A disjunction whose first operand is a negated host guard: each operand
+// is dispatched on its truth where the one before it failed, so the closure
+// binding is reached only where `postfixToken` is undefined, which its entry
+// claims.
 // Census functions:
 // declaration-graph.mts#overlaidInterface.
 import * as ts from "typescript/unstable/ast";

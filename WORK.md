@@ -88,7 +88,6 @@ each item's design and evidence, not its progress.
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
-| [A re-tested operand of a negated guard's disjunction](#retested-disjunction-operand) | open: cause established (2026-10-30) | `blocker-compiler-api-optional-path-join` verifies |
 | [Investigation of a recursive visitor on a node's arms](#for-each-child-union-visitor) | done: on fea595c, with the producer proposing a dispatched call in an expression as the lowering makes it (8ae33c5) (2026-10-24) | `compiler-api-visitor-union` verifies |
 | [Assigned parameter patterns](#assigned-parameter-patterns) | open | `invalid-parameter-pattern-assigned` and `invalid-parameter-pattern-default-order` become positive cases verifying their Node results |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
@@ -372,21 +371,6 @@ with `if (d.initializer) return 1;`, or with `d` read before the test
 (`read-narrows-path`'s `returned`), verifies, and so does the negated test
 over a compiler node (`ts.VariableDeclarationList`'s first declaration).
 Which receiver type the negation's lowering hands the read is unknown.
-
-<a id="retested-disjunction-operand"></a>
-**A re-tested operand of a negated guard's disjunction.** In
-`if (!ts.isMethodSignatureDeclaration(m) || m.typeParameters?.length ||
-m.postfixToken) throw …`, the negated guard is a test, so
-`ExpressionPlan.logicalTruth` lowers the regrouped `!g(m) || (b || c)` as a
-value and the `if` tests it. Where `b`, a number, passed its truthy test, the
-value is `b`'s and is tested again; the truthy slice of `number` is `number`,
-so the re-test's failing edge, which the run never takes, reaches the next
-statement without the fact `m.postfixToken` undefined that its entry claims.
-The same condition verifies with a Boolean in place of the guard, without
-the negation, or without `b` (2026-10-30). A repair either dispatches such a
-disjunction on its operands' truth, the producer claiming the negation's
-literal wherever the lowering evaluates it, or states the passed test as a
-fact of the value that makes the re-test's failing edge vacuous.
 
 <a id="for-each-child-union-visitor"></a>
 **A recursive visitor on a node's arms.** A closure passing itself to
