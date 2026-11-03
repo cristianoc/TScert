@@ -68,7 +68,6 @@ each item's design and evidence, not its progress.
 | Family activation: record at an index signature | open: `blocker-gap-round-unknown-spread` verifies through the [module export boundary](docs/SOURCE-REWRITES.md#a-loaded-modules-own-exports), with the unrestricted spread retained as a negative case; targeted slices `family-activation.mts#checkedGuards,#activeGuards` advance from the spread's node-typing claim to a record at an index signature, with 0 of 2 functions verified and statement coverage 0 of 174 → 0 of 172, no timeouts (2026-10-31) | the record establishes its index-signature contract |
 | Named records serialized as JSON | done: `named-implicit-index` verifies with the [complete key contracts retained](docs/SOURCE-REWRITES.md#a-named-record-widened-to-a-json-dictionary); the unsafe open-record conversion is `invalid-named-implicit-index`, whose extra string-valued key is observed under Node; targeted slices `files.mts#entriesRead,#entriesOf` and `family-activation.mts#checkedGuards,#activeGuards` verify 0 → 4 of 4 functions and 0 → 198 of 198 statements, with no timeouts (2026-11-01) | the constructed records retain their index-signature contracts through serialization |
 | Array presence at the module filtering loop exit | closed by the [equivalent first-round split](docs/SOURCE-REWRITES.md#a-mapped-array-replaced-by-filtered-arrays-in-a-loop): `blocker-prep-captured-filter-map` verifies; targeted slices `fragment-parse.mts#lowerFile,#parseFile` pass the final projection and reach the node-typing claim of `compiler.updateSnapshot`; 0 of 2 functions verify before and after, with statement coverage 0 of 747 → 0 of 753 and no timeouts on fresh stores (2026-11-01) | the final projection has a checked receiver through a loop-exit fact or an equivalent source rewrite |
-| Investigation: mixed compiler-node and record method invocation | open: `blocker-every-mixed-closure` reaches the node-typing claim of `node.getSourceFile()` with its named callback's declared leading parameter types; the parameter admits a compiler node or a record holding the method as a field (2026-10-31) | the mixed method invocation has a checked typing derivation |
 | Census refusal examples (043267592814) | open: five supplied causes cover 1997 statements in 23 functions; `blocker-census-effect-map-result` verifies through the [sparse receiver of native `join`](docs/SOURCE-CONTRACTS.md#prototype-contracts), with `invalid-sparse-join-coercion` retaining the conversion-bound refusal; targeted slices `claim-text.mts#atomText,#bareAtomText` advance from `atom.args.map((t) => typeText(t, state))` to the node-typing claim of `JSON.stringify(key)`, with 0 of 2 functions and 0 of 78 statements verified before and after; the full nested-spread example verifies with its input records stated as JSON data and fresh mapped records allocated at their full writable contract; the narrower inferred allocation stays a negative case; `blocker-census-spread-map-records` verifies through a checked readonly array view, and `invalid-spread-map-records` refuses a shrinking callback; `blocker-gap-round-optional-parameter` verifies with the [readonly field contract of `firstOptional`](docs/SOURCE-REWRITES.md#readonly-fields-in-the-optional-parameter-helper), and `blocker-gap-round-optional-parameter-writable` retains the writable-field refusal; targeted slices `fragment-classes.mts#classBody,#classStmt` advance from `firstOptional(all)` to an incoming-edge obligation in the `baseProto` record expression, with 0 of 2 slices and 0 of 393 statements verified before and after, no timeouts (2026-10-31); `invalid-in-union-read` verifies with the named part's absent spread value stated, and `invalid-in-union-part` retains the original missing-field refusal; targeted slices `fragment-parts.mts#mapExprParts,#deepPartMap` advance from missing `spread` to a source-expression typing obligation, with 0 of 2 functions and 0 of 46 statements verified before and after; `blocker-gap-round-parent-initializer` verifies through the [compiler initializer kinds](docs/SOURCE-REWRITES.md#a-compiler-nodes-initializer-read-through-its-parent), and `blocker-gap-round-parent-initializer-open-node` verifies through the same kind tests, with the open-node `in` form recorded under [constructs avoided](docs/SOURCE-REWRITES.md#an-initializer-read-after-an-in-test-on-an-open-compiler-node); targeted slices `written-applications.mts#isInitializer,#writtenApplications` verify 1 of 2 functions and 2 of 315 statements before and after: `isInitializer` verifies, while `writtenApplications` retains a closure signature outside its source annotation at `[25842,25863)`; no timeouts (2026-10-31); targeted slices `written-applications.mts#writtenApplications` and `declaration-graph.mts#collectDeclarations` verify 0 of 2 functions and 0 of 3251 statements before and after: the former advances from missing `initializer` to a closure signature outside its source annotation in `level => level.length`, while the latter retains missing `text`; no timeout in either measurement (2026-10-31); targeted slices `declaration-graph.mts#selectGlobal,#collectDeclarations` verify 0 of 2 functions and 0 of 3290 statements before and after: `selectGlobal` passes the nested-spread callback parameter and reaches the return contract of a scheme-binder allocation, while `collectDeclarations` retains its `capturedAt` initialization refusal; no timeout in either measurement (2026-10-31); `blocker-gap-round-scheme-binder-map` verifies through the existing allocation checks with complete field hints from record intersections; `invalid-gap-round-scheme-binder-map` retains the refusal to widen an already allocated binder; targeted slices `declaration-graph.mts#selectGlobal,#collectDeclarations` verify 0 of 2 functions and 0 of 3290 statements before and after: `selectGlobal` advances from the scheme-binder return contract at `[28522,28588)` to the node-typing claim of `forms(overload, key, what, entry)` at `[28645,28678)`, while `collectDeclarations` retains missing field `text` at `[57387,57407)`; no timeout in either measurement (2026-10-31); `blocker-census-annotated-node-union` verifies through the existing closure checks, with the producer retaining a sufficient callback claim and its per-signature body claims; its negative result-contract case and forged-claim controls guard the boundary; targeted slices `declaration-graph.mts#collect,#collectDeclarations` verify 0 of 2 functions and 0 of 3317 statements before and after: `collect` advances past the per-arrow body-claim mismatch to a closure signature outside its annotation in `nativeFields.map`, while `collectDeclarations` retains its possible read of `capturedAt` before initialization (2026-10-31); `blocker-gap-round-native-method-map` verifies through [writable field annotations](docs/SOURCE-REWRITES.md#native-method-maps-with-writable-field-contracts); `blocker-gap-round-native-method-map-inferred` verifies the same explicit form, with [inferred writable fields avoided](docs/SOURCE-REWRITES.md#inferred-writable-fields-in-native-method-maps) and no remaining supplied census sites; targeted slices `declaration-graph.mts#collect,#collectDeclarations` verify 0 of 2 functions before and after, with statement coverage 0 of 3317 → 0 of 3320 on base `ee67919f`; `collect` advances from the native method map’s closure signature to a closure-expression claim at `[33912,33916)`, while `collectDeclarations` retains missing field `text`; no timeouts (2026-10-31); `blocker-gap-round-locations-map` verifies through the [JSON location result contract](docs/SOURCE-REWRITES.md#declaration-locations-retained-as-json-data), with its unknown-result negative and unrestricted-callback gap retained; targeted slices `type-probe.mts#makeProbe` and `declaration-graph.mts#collectDeclarations` verify 0 of 2 functions and 0 of 3138 statements before and after: `makeProbe` advances from the declaration-map closure claim to the node-typing claim of `n.end` in `nodeAt`, while `collectDeclarations` retains missing field `text`; no timeouts (2026-10-31); `blocker-round-mapped-array-some` verifies through the [sparse receiver contract of native `some`](docs/SOURCE-CONTRACTS.md#prototype-contracts), with `invalid-some-sparse-callback` refusing an unchecked read through its sparse third callback argument (TypeError under Node); targeted slices `declaration-graph.mts#collect,#collectDeclarations` verify 0 of 2 functions and 0 of 3323 statements before and after on base `d6675e26`: `collect` advances from `read.some` at `[33912,33916)` to `nativeFields.map` at `[46984,46996)`, while `collectDeclarations` advances from missing field `text` at `[57387,57407)` to `shadowing parameter 1`; no timeouts (2026-11-01); `blocker-round-inferred-map-result` is a negative case: a shrinking callback leaves a hole in its `Form[]` result, demonstrated under Node (2026-11-01; [unsafe inferred map result](docs/SOURCE-REWRITES.md#an-inferred-map-result-with-an-unrestricted-callback)); `blocker-round-resolved-overlay-map-result` verifies with the [consumed overlay fields](docs/SOURCE-REWRITES.md#overlay-fields-consumed-by-the-signature-helper) of the signature helper in `selectGlobal`; targeted slices `declaration-graph.mts#selectGlobal,#collectDeclarations` verify 0 of 2 functions and 0 of 3296 statements before and after on `a92cc758`: `selectGlobal` changes its first refusal from the helper call at `[28693,28726)` to the allocation of a scheme record at `[28518,28665)`, while `collectDeclarations` retains `shadowing parameter 1`; no timeouts (2026-11-01); `blocker-round-mapped-filter-length` verifies with the [mapped binder records’ writable contract](docs/SOURCE-REWRITES.md#mapped-binder-records-with-their-writable-contract); targeted slices `written-applications.mts#writtenApplications` and `declaration-graph.mts#collectDeclarations` verify 0 of 2 functions and 0 of 3254 statements before and after on base `a92cc758`: the former passes the mapped-record filter and reaches the callback signature of `t => childParameters(t).length` at `[15098,15128)`, while the latter retains `shadowing parameter 1`; no timeouts (2026-11-01) | each cause has a checked resolution under the source-rewrite routes, including checked receiver contracts and callback signatures for the three isolated mapped-array cases, or documented source rewrites |
 | [Investigation: does the model's error lacking `stack` matter](docs/SOURCE-ELABORATION.md#in) | open: an error the program builds owns `stack`, which the model's error does not hold, so `"stack" in e` answers `false` in the model and `true` in JavaScript where `e`'s type leaves `stack` unstated, as every type an error meets does; both answers are checked; no program is known whose result differs (2026-10-27) | a proof that the differing answer changes no checked outcome, or a program it changes |
 | Census refusal examples (f502699ca098) | open: the five largest causes after splitting the supplied first refusals cover 5989 statements in 71 functions; `blocker-census-rest-result` verifies by checked result inference for array-rest closures; the Set-copy cause is resolved by retaining the host `Set` type and admitting its union with an array in one constructor form; `blocker-census-options-default` verifies through the existing record and binding checks; targeted slices `declaration-graph.mts#collectDeclarations` and `fragment-parse.mts#lowerFile` verify 0 of 2 functions and 0 of 3680 statements before and after: the former advances past `tsconfigPath` to a possible read of `capturedAt` before initialization, the latter retains its refusal of a closure collecting a rest array without a result annotation; `blocker-census-import-guard-call` verifies with the [exact-kind import guard](docs/SOURCE-REWRITES.md#a-type-node-or-an-import-recognised-by-a-guard-accepting-another-kind); targeted slices `fragment-statements.mts#readScope,#readCannotThrow` advance from the import call to the `for-of-iterator` claim of `for (const f of mentions[i] ?? [])` in `functionPlacement`, with 0 of 2 slices and 0 of 42 statements verified before and after; `blocker-flat-map-narrow-field` verifies with the fresh array's writable element contract stated at allocation, and `invalid-flat-map-narrow-field` retains the original widening refusal; targeted slices `fragment-expressions.mts#expr,#binary` advance from array widening to the node-typing claim of `gate.expr(target)` in the `Object.assign` branch, with 0 of 2 slices and 0 of 459 statements verified before and after (2026-10-31); `blocker-gap-round-assign-target` verifies through a [direct check of the destructured target](docs/SOURCE-REWRITES.md#an-array-patterns-first-element-after-a-length-test); `blocker-gap-round-assign-target-length-only` verifies in the [equivalent checked form](docs/SOURCE-REWRITES.md#an-array-target-justified-only-by-length), with targeted slices `fragment-expressions.mts#expr,#binary` retaining the callable-return node-typing refusal at `[27877,28021)` and 0 of 2 functions and 0 of 461 statements verified before and after, no timeouts (2026-10-31); targeted slices `fragment-expressions.mts#expr,#binary` advance past `gate.expr(target)` to the callable branch’s `withValue` return object at `[27877,28021)`, with 0 of 2 slices verified and statement coverage 0 of 459 → 0 of 461, no timeouts (2026-10-31); `blocker-gap-round-early-capture` verifies with the outer arrow’s returned-function type stated; targeted slices `declaration-graph.mts#collectDeclarations` and `fragment-parse.mts#lowerFile` verify 0 of 2 functions and 0 of 3680 statements before and after: the former advances from `capturedAt` initialization to missing field `text`, while the latter retains its closure-signature body-lowering refusal; neither measurement times out (2026-10-31) | each cause has a checked resolution under the source-rewrite routes |
@@ -85,22 +84,16 @@ each item's design and evidence, not its progress.
 | [Slices of the value universe](#universe-slices) | partial: a tag test on `unknown` keeps the kinds it does not contradict, proved (`in-unknown-object`); open: the negative `Array.isArray` slice, the meet of a type parameter with `unknown`, and the guards over `unknown` | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A key found on an open object](#key-on-open-object) | partial: the read verifies as an open read, `%Read:k%` at `unknown`, under the open-read restriction, an assumption for the owner's review, on an object no type states the key of (`blocker-in-name-object`) and where a passed `in` test makes the read syntactically eligible on a union with an arm stating no key, at `body` and `type` only on receivers each arm of which states the key or is of the host package (`compiler-api-in-union-read`); open: the read as the model's own, with the lookup invariant proved | `if (typeof v === "object" && v !== null && "k" in v) return v.k` verifies, with the lookup invariant proved |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | partial: a guard read as a value meets `filter`'s guard overload and `find`'s at a footprint keeping array stores (`filter-guard-value`, `blocker-compiler-api-filter-guard-element`), and a guard closure meets `find`'s by its promise signature at its body's footprint (`blocker-compiler-api-find-promise`); `every` at a guard promising `string`, `number` or `boolean` gives [the elements fact](docs/FOOTPRINTS.md#the-elements-fact), which `map` relies on within one expression (`blocker-every-promise`, `every-elements-map-join`); open: the predicates excluding null or undefined, and the other natives at the fact; `blocker-round-every-map-narrowing` verifies by [stating the formatting callback parameter at `string | null`](docs/SOURCE-REWRITES.md#a-formatting-callback-narrowed-by-an-earlier-every-statement), an erased annotation avoiding reliance on the elements fact across a statement; targeted slices `shadow-contracts.mts#print,#printSignature`: 0 → 2 functions and 0 → 78 statements verified, no timeouts (2026-11-01) | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, verifies; the formatting callback verifies at its nullable parameter contract |
-| Investigation: the elements fact past a statement | cause unknown: the atom `every` adds reaches the branch on its result but not the `map` after it where the test is a statement (`every-elements-saved`, a constant; `every-elements-negated`, `if (!…) return`) | both cases verify |
 | [A conditional's join past an arm's read](#conditional-optional-field) | closed by avoidance: `blocker-round-conditional-record-join` verifies with the [explicit receiver test](docs/SOURCE-REWRITES.md#an-optional-chain-result-tested-before-a-conditional-record) and the existing preservation contract of `Gate.span`; `invalid-round-conditional-record-call` refuses a callback that clears the field, shown under Node; targeted slices `fragment-classes.mts#classBody,#classStmt` advance from the incoming-edge refusal to the prototype-binding allocation's node-typing claim, with 0 of 2 functions and 0 of 393 statements verified before and after, no timeouts (2026-11-01) | the equivalent receiver test answers the supplied census expression without a new rule or trust assumption |
 | [Investigation of the search's cost on the parser's slices](#search-cost-parser-slices) | done: the cost of filtering a fact by the slot's type, decided with each shared label's overlap computed once; `moduleFunction` 39.8 s → 5.3 s, `confined` past 300 s → 21.8 s; the search's elapsed time over the census 1036 s at d5c2754, 298 s at 963ffa4 (2026-10-24) | the cause is established of the search's elapsed time over the census rising from 224 s at 38ed032 to 1036 s at d5c2754, with `fragment-expressions.mts`'s `moduleFunction` from 5 s to 55 s and `confined` from 8 s to the 300 s limit |
 | [Investigation of generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Investigation of a negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
-| [Investigation of a literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [A re-tested operand of a negated guard's disjunction](#retested-disjunction-operand) | open: cause established (2026-10-30) | `blocker-compiler-api-optional-path-join` verifies |
-| [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
-| [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
-| [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a recursive visitor on a node's arms](#for-each-child-union-visitor) | done: on fea595c, with the producer proposing a dispatched call in an expression as the lowering makes it (8ae33c5) (2026-10-24) | `compiler-api-visitor-union` verifies |
-| [Investigation of `forEachChild`'s list visitor](#for-each-child-list-visitor) | open: an investigation, cause unknown | `compiler-api-visitor-list-gap` verifies |
 | [Assigned parameter patterns](#assigned-parameter-patterns) | open | `invalid-parameter-pattern-assigned` and `invalid-parameter-pattern-default-order` become positive cases verifying their Node results |
 | [Constructor rests](#constructor-rests) | open | a constructor with a rest parameter is constructed and its variadic construct signature introduced |
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
-| [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
+| [Generic methods left](#generic-methods-left) | open | bounded class-method binders and members binding different numbers of binders have checked contracts |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
@@ -187,7 +180,7 @@ message that is no literal and so narrows nothing. `node:assert/strict`'s
 `equal` promises its actual is the expected value only in its declaration:
 the promise is generic, and the producer encodes no generic promise
 signature ("quantified callable claim encoding"), which a program's own
-generic assertion function meets too (`node-assert-equal-promise`, a gap).
+generic assertion function meets too.
 
 `readFragmentFile` and `readClaimsFile` in `pipeline/verify-source.mts` read
 back a document the run wrote, for a test to forge, and assert its type with
@@ -395,29 +388,6 @@ disjunction on its operands' truth, the producer claiming the negation's
 literal wherever the lowering evaluates it, or states the passed test as a
 fact of the value that makes the re-test's failing edge vacuous.
 
-<a id="literal-guard-json-read"></a>
-**A literal guard over `JsonValue | undefined`.**
-`isDense(value: JsonValue | undefined): value is "dense"` returning `value
-=== "dense"` is refused at its true return, the literal `true` at the first
-code unit of `return` ("the promised argument is not within the promise at
-this return"), where the diagnostic gives the argument's claim as
-`JsonValue`, `undefined` removed, and not `"dense"`
-(`guard-literal-json-read-refused`). The same guard over `unknown`,
-`JsonValue`, `string`, `string | undefined`, `null | string` or `string |
-number` verifies (2026-10-19). Which step of the comparison's narrowing
-keeps the whole of `JsonValue` is unknown. The front end's literal guards
-(`isArrayPresence`, `isIndexClass` in `type-graph.mts`) take `unknown`,
-which verifies.
-
-<a id="field-before-literal-arm"></a>
-**A field written before a spread of a literal arm.**
-`object-spread-field-before-literal`: `{ name: "x", ...(dots ? { name: 1 } :
-{}) }` is claimed at `{ name: number } | { name: string }`, and the search
-finds no derivation, reporting the claim available for the literal as
-`{ name: "x" }`. The same literal with the field after the spread verifies
-(`object-spread-exact-literals`'s `later`). Observed on 784c8b8 and on the
-branch alike (2026-10-22).
-
 <a id="for-each-child-union-visitor"></a>
 **A recursive visitor on a node's arms.** A closure passing itself to
 `n.forEachChild` in an expression, where the flow reads `n` at several arms
@@ -426,35 +396,6 @@ n.forEachChild(refers)`), verifies at the footprint its body shows
 (`compiler-api-visitor-union`): the producer proposes the call dispatched
 on the union in one node, as the lowering makes it
 (`Type_queries.dispatches_call`).
-
-<a id="for-each-child-list-visitor"></a>
-**`forEachChild`'s list visitor.** A call of `forEachChild` passing a
-second visitor, `n.forEachChild(() => { k++; }, () => { k++; })`, has no
-derivation of its node typing in search, inside a callback or not, at the
-declared signature as at the per-footprint ones
-(`compiler-api-visitor-list-gap`); the same call with one visitor verifies.
-The declaration reader reads the second parameter as an optional function of
-a readonly dense array of nodes. Which step refuses the second argument is
-not established.
-
-<a id="callable-alias-meet"></a>
-**An alias of function types met with a record.**
-`type Calls = (() => number) & ((n: number) => number)` met with
-`{ tag: string }` in a parameter's annotation is refused by Lean's reading
-of the declarations: "the intersection is empty". The same three operands
-written in the annotation verify (`spread-intersection-callable-grouping`).
-Which step of the declaration's normalization yields no clause is not
-established.
-
-<a id="meet-member-disagreement"></a>
-**A member two intersection operands state.** With
-`binder: Param<string> & { bound: "a" | "b" | null }`,
-`if (binder.bound) return binder.bound;` at `"a" | "b" | "none"` is refused
-(`path-test-intersection-disagree`): the producer reads the member at the
-first operand's `string | null`. Proposing it at `"a" | "b" | null` instead,
-the operands' meet, the search found no derivation of the condition's read
-at that type, though Lean's row states `bound` at both (observed
-2026-10-22).
 
 <a id="assigned-parameter-patterns"></a>
 **Assigned parameter patterns.** A parameter pattern one of whose bindings
@@ -488,7 +429,7 @@ expect.
 <a id="generic-methods-left"></a>
 **Generic methods left.** A class's generic method with a bounded binder:
 the member's binder row is named by its bound, which the parser does not
-spell for the closure (`class-generic-method-bounded-refused`). Members of
+spell for the closure. Members of
 two declarations, or of two instances of one, binding as many binders relate
 up to renaming ([generic methods](docs/SOURCE-CONTRACTS.md#generic-methods)); two
 binding different numbers of binders (`m<U, V>` at `m<W>`), which TypeScript
@@ -742,8 +683,7 @@ outside:
   receivers, mutable-view exports and forged setter claims refused.
 - **Events known only as strings.** A `for...of` over an array literal of
   signal names gives each a `string`, not proven an admitted signal, so its
-  registration is refused (`collections-process`, `collections-main`, gaps,
-  both verified before the review).
+  registration is refused (`collections-process`).
 
 ### Proofs, precision and trust
 
@@ -762,24 +702,24 @@ where the store's contract says so, which the frame rule would have to take
 from the read's typing (a length is a number, and keeps them). An element
 read the code guards is read at the element type or `undefined`; a member of
 it is read past a nullish guard, which throws where JavaScript does, but the
-value itself passed on keeps `undefined`
-(`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
+value itself passed on keeps `undefined`,
+as in `xs[0] !== undefined && known.has(xs[0])`, which
 needs a current-content fact about an element location, kept from the test
 to the second read, as a field path would need one (`o.a !== undefined &&
 f(o.a)` is refused the same way). A `flatMap` callback returning a
-primitive or an array of primitives (`flat-map-scalar-result-refused`)
+primitive or an array of primitives
 needs a second signature quantifying a binder bounded by the primitives,
 which the first does not use: neither the producer's instance of a member
 read nor Lean's search for one assigns a binder no parameter of the
 selected signature names. The design question is per-signature binders, or
 bounds, in a prototype member's scheme. A closure passed to `map` over an array literal of
-records with different members (`closure-contextual-literal-union`) is read
+records with different members is read
 at TypeScript's contextual records, `{ a: number; b?: undefined } |
 { a?: undefined; b: number }`; the producer claims it at the literals'
 records `{ a: number } | { b: number }`, which state no absence of the
 other's member and so are outside the parameter's records. A closure parameter at a generic declaration's anonymous record at an
 instance with an optional member at a binder
-(`closure-contextual-anonymous-instance-refused`: `{ v?: T }` of
+(`{ v?: T }` of
 `interface Opt<T> { readonly items: readonly { v?: T }[] }`, read through
 `const xs = o.items; xs.map((i) => i.v)` at `o: Opt<number>`) is refused:
 the compiler's synchronous API gives the instance's members but no
@@ -796,9 +736,8 @@ object's type listing no keys.
 The record tools are written around two of these limits, and each form is
 restored when its limit lifts: element reads the code already guards by a
 test of the same element (`record-render.mts`'s `mathRoles`, its
-`afterRelation` and `textWord`, and `docs.mts`'s `numbered`;
-`guarded-element-read-refused`), and a `flatMap` callback returning a string
-(`record-render.mts`'s `card`; `flat-map-scalar-result-refused`).
+`afterRelation` and `textWord`, and `docs.mts`'s `numbered`), and a `flatMap`
+callback returning a string (`record-render.mts`'s `card`).
 
 **Field facts across calls** are deferred, measured (2026-10-19): a call
 step keeps no current-content fact, and keeping those a call's checked

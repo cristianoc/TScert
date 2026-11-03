@@ -108,12 +108,7 @@ and nothing shadows.
 
 [methods.ts](methods.ts) passes a method's object as its receiver and keeps a
 copied method's plain call apart; [apply.ts](apply.ts) reads an `.apply`
-list's length and indices after its receiver, in order. Two receiver examples
-are gap cases: [call-objects.ts](call-objects.ts) uses `.call` with a
-different object as receiver of a method read off an object, which is refused
-(`.call` requires a known local function), and
-[generic-receivers.ts](generic-receivers.ts) instantiates one quantified
-method at two receiver contracts, where evidence search fails.
+list's length and indices after its receiver, in order.
 
 [function-field.ts](function-field.ts) initializes one mutable field on a fresh
 arrow, writes through the original reference and reads/calls through an alias;

@@ -822,9 +822,8 @@ unit at every assignment of the class's binders. The scheme states the
 construct signatures alone; a read of the class's static field reads the class
 value at an instance ([classes](#classes)), so a unit reading the class both as
 a value and through a static field holds the instances its reads name, which
-do not meet the scheme (a gap, `class-static-generic-value-refused`: the slot
-holds the scheme or the instances, not the scheme with the static-field
-facts).
+do not meet the scheme: the slot holds the scheme or the instances, rather
+than a scheme carrying the static-field facts.
 
 ```math
 \frac{C\ \text{a generic class}\quad \mathsf{ctor}(C)=\forall\vec p\le\vec\beta.\ \mathsf{new}\ \vec A\to C\langle\vec p\rangle\quad C\ \text{read, not constructed}}
@@ -1886,7 +1885,7 @@ its modifiers (`blocker-omit-interface`, `invalid-omit-omitted-member`,
 `invalid-omit-readonly`); with `type KeyBox<T> = Box<keyof T>`, `KeyBox<{ a: number }>` is
 `Box<"a">` (`computed-argument-alias`,
 `invalid-computed-argument-alias`). At a type parameter its keys are known only at an
-instance, and the reference is refused (`omit-type-parameter-refused`). A `typeof` of a constant without an
+instance, and the reference is refused. A `typeof` of a constant without an
 annotation is the type TypeScript infers for its initializer where that is a
 union of literals and primitives or an object literal's record of such
 types, each property a writable field and each index a spread copied, read
@@ -1987,8 +1986,7 @@ and effect do not qualify the extracted parameters.
 
 A guard's result is its Boolean, which TypeScript computes as a union of
 literals (`returntype-guard`); a generic function's `typeof` is refused, as
-its instantiation at its bounds states a value type no reader states
-(`returntype-generic-refused`). An indexed access of a method is refused
+its instantiation at its bounds states a value type no reader states. An indexed access of a method is refused
 (`blocker-api-indexed-method`).
 
 Each rule above gives what a computed type denotes. That replaces the
@@ -3909,7 +3907,7 @@ through `process` or through the process a registration returns
   `once`'s removal `removeListener`, synchronously: the call states no
   effect, its throw included, and returns the process. An event known only as
   a string, a meta-event, or an event no entry lists (`message`) is refused
-  (`collections-process` and `collections-main`, gaps; `invalid-node-process-meta-event`,
+  (`collections-process`; `invalid-node-process-meta-event`,
   `invalid-node-process-message-event`); so are `emit`, reading listeners back
   and replacing a method, which no entry lists.
 - `console.log` and `console.error`, of the DOM's library and Node's, at
@@ -4489,8 +4487,7 @@ under Node). A message is stated at `string`.
   $`\forall T.\ (\mathtt{unknown},\ T,\ M)\Rightarrow\mathtt{void}`$, the empty
   footprint on normal return. `Object.is(a, e)` makes $`a`$ the value $`e`$, of
   type $`T`$; that promise, $`(\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$,
-  is not stated, as the producer encodes no generic promise signature
-  (`node-assert-equal-promise`, a gap). `notEqual`:
+  is not stated, as the producer encodes no generic promise signature. `notEqual`:
   $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty
   footprint on normal return.
 - `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
