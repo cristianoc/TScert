@@ -347,8 +347,19 @@ where
       let keep := Plan.atom mark (.evaluate decided decided .none)
       return .choose truth left.span .truthy binding lhs
         (if andOp then keep else rhs) (if andOp then rhs else keep)
+  -- A test's left operand whose right one is no test, `a != null && (b &&
+  -- c)` as an optional chain's condition regroups: the test is dispatched
+  -- as a Boolean, then the right operand is read for its truthiness alone.
   | .logical _ andOp left right =>
-    if leftTestForm left then expression root cond observed
+    if leftTestForm left && !testForm right then do
+      let truth : Span := (cond.span.1, cond.span.1)
+      let binding ← saved root left.span "condition"
+      let lhs ← expression root left
+      let rhs ← truthOf root right
+      let keep := Plan.atom truth (.evaluate (.var truth binding.name) (.var truth binding.name) .none)
+      return .choose truth left.span .truthy binding lhs
+        (if andOp then rhs else keep) (if andOp then keep else rhs)
+    else if leftTestForm left then expression root cond observed
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"

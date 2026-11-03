@@ -1706,6 +1706,8 @@ export const cases: Case[] = [
     /ts\.visitEachChildOfJSDocPropertyTag builds nodes outside the node invariant, which the compiler-API contract refuses \(dist\/ast\/visitor\.d\.ts\)/), status: "unsupported", phase: "source", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-node-jsdoc-visitor-reexport", "a handwritten JSDoc parameter visitor through a program module re-export: the replacement root lacks parent (run under Node)",
     /visitEachChildOfJSDocParameterTag builds nodes outside the node invariant, which the compiler-API contract refuses \(dist\/ast\/visitor\.d\.ts\)/), status: "unsupported", phase: "source", project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-optional-length-guard", "an optional chain's length followed by a guard in a condition: after the chain's test the rest is read for its truthiness alone, so the guard's refinement reaches the branch, as `type-term.mts#members` tests a generic method signature (SOURCE-ELABORATION.md, \"Conditions read for truthiness\")"),
+    project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-entry-path", "member paths of two and three members tested in one statement and read in a later one: each entry holds a witness of the path and of its prefixes, one checked link per segment, through a loop's backedge and past a call where every segment is stable (HOST-FAMILIES.md, \"Entries\")"),
     project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-entry-path-record", "a three-member path whose middle member is a program record's field: the call may replace it, which no stable link keeps, so the read past it is of the declared type (run under Node)",
