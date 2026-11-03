@@ -21,11 +21,11 @@ open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson SourceExtrac
 open PromiseCalls (Implication Yield)
 open PointClaims (EdgeEvidence)
 
-/-- A sequent whose context and type are entries of the document's
-`contexts` and `types`. -/
+/-- A sequent whose context, term and type are entries of the document's
+`contexts`, `terms` and `types`. -/
 structure SequentRef where
   context : Nat
-  term : Tm
+  term : Nat
   type : Nat
   deriving ToJson, FromJson
 
@@ -62,19 +62,20 @@ inductive OrdinaryRef where
   | proof (tree : Nat)
   deriving ToJson, FromJson
 
-/-- `StepEvidence`, each proof an entry of `proofs`. -/
+/-- `StepEvidence`, each proof an entry of `proofs` and each value set an
+entry of `valueSets`. -/
 inductive StepRef (ι : Type) where
   | ordinary (proof : Nat)
   | pure (proof : Nat)
   | reading (proof : Nat)
   | created (proof : Nat)
   | typedRead (slot : Nat) (proof : Nat)
-  | observedRead (slot : Nat) (contents : ValueSets.ValueSet)
+  | observedRead (slot : Nat) (contents : Nat)
   | slicedRead (tag : Tag) (answer : Bool) (slot : Nat) (proof : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
-  | knownValue (slot : Nat) (contents : ValueSets.ValueSet)
+  | knownValue (slot : Nat) (contents : Nat)
   | linkedRead (slot value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   | allocated (proof : Nat)
-  | written (receiver value : Nat) (contents : Option ValueSets.ValueSet) (proof : Nat)
+  | written (receiver value : Nat) (contents : Option Nat) (proof : Nat)
   deriving ToJson, FromJson
 
 /-- `NodeEvidence`, its sequent, derivations and knowledge named by
@@ -116,6 +117,7 @@ obligations over them. -/
 structure Document (ι : Type) where
   types : List (Ty ι)
   contexts : List (List Nat)
+  terms : List Tm
   links : List HeapLinks.Link
   separations : List HeapSeparation.Fact
   valueSets : List ValueSets.ValueSet
@@ -156,20 +158,23 @@ premises, the ones before it), or the refusal naming the reference. -/
 structure Tables (ι : Type) where
   types : Array (Ty ι)
   contexts : Array (List (Ty ι))
+  terms : Array Tm
+  valueSets : Array ValueSets.ValueSet
   knowledge : Array HeapKnowledge.Knowledge
   proofs : Array (Evidence ι)
 
-@[nospecialize] def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (s : SequentRef) :
-    Except String (Sequent ι) :=
-  match entry "context" contexts s.context, entry "type" types s.type with
-  | .ok Γ, .ok A => .ok ⟨Γ, s.term, A⟩
-  | .error m, _ => .error m
-  | .ok _, .error m => .error m
+@[nospecialize] def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (terms : Array Tm)
+    (s : SequentRef) : Except String (Sequent ι) :=
+  match entry "context" contexts s.context, entry "term" terms s.term, entry "type" types s.type with
+  | .ok Γ, .ok m, .ok A => .ok ⟨Γ, m, A⟩
+  | .error e, _, _ => .error e
+  | .ok _, .error e, _ => .error e
+  | .ok _, .ok _, .error e => .error e
 
 /-- A derivation node, its premises among the nodes `earlier`. -/
-@[nospecialize] def proof (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (earlier : Array (Evidence ι))
-    (e : ProofEntry ι) : Except String (Evidence ι) :=
-  match sequent types contexts e.claim, entries "proof" earlier e.premises with
+@[nospecialize] def proof (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (terms : Array Tm)
+    (earlier : Array (Evidence ι)) (e : ProofEntry ι) : Except String (Evidence ι) :=
+  match sequent types contexts terms e.claim, entries "proof" earlier e.premises with
   | .ok j, .ok premises => .ok (.node j e.rule premises)
   | .error m, _ => .error m
   | .ok _, .error m => .error m
@@ -190,12 +195,13 @@ structure Tables (ι : Type) where
 @[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
   let types := d.types.toArray
   let contexts ← build (fun _ c => entries "type" types c) d.contexts #[]
+  let terms := d.terms.toArray
   let links := d.links.toArray
   let separations := d.separations.toArray
   let valueSets := d.valueSets.toArray
   let knowledge ← build (fun _ e => knowledge links separations valueSets e) d.knowledge #[]
-  let proofs ← build (proof types contexts) d.proofs #[]
-  return ⟨types, contexts, knowledge, proofs⟩
+  let proofs ← build (proof types contexts terms) d.proofs #[]
+  return ⟨types, contexts, terms, valueSets, knowledge, proofs⟩
 
 @[nospecialize] def step (t : Tables ι) : StepRef ι → Except String (HeapExpressionRules.StepEvidence ι)
   | .ordinary p => return .ordinary (← entry "proof" t.proofs p)
@@ -203,12 +209,13 @@ structure Tables (ι : Type) where
   | .reading p => return .reading (← entry "proof" t.proofs p)
   | .created p => return .created (← entry "proof" t.proofs p)
   | .typedRead slot p => return .typedRead slot (← entry "proof" t.proofs p)
-  | .observedRead slot contents => return .observedRead slot contents
+  | .observedRead slot contents => return .observedRead slot (← entry "value set" t.valueSets contents)
   | .slicedRead tag answer slot p sub => return .slicedRead tag answer slot (← entry "proof" t.proofs p) sub
-  | .knownValue slot contents => return .knownValue slot contents
+  | .knownValue slot contents => return .knownValue slot (← entry "value set" t.valueSets contents)
   | .linkedRead slot value sub => return .linkedRead slot value sub
   | .allocated p => return .allocated (← entry "proof" t.proofs p)
-  | .written receiver value contents p => return .written receiver value contents (← entry "proof" t.proofs p)
+  | .written receiver value contents p =>
+    return .written receiver value (← contents.mapM (entry "value set" t.valueSets)) (← entry "proof" t.proofs p)
 
 @[nospecialize] def ordinary (t : Tables ι) : OrdinaryRef → Except String (OrdinaryEvidence ι)
   | .effect => return .effect
@@ -218,7 +225,7 @@ structure Tables (ι : Type) where
 given positionally, so a field added to `NodeEvidence` is a field this
 reads. -/
 @[nospecialize] def node (t : Tables ι) (n : NodeRef ι) : Except String (NodeEvidence ι) := do
-  let c : NodeEvidence ι := ⟨← n.ordinary.mapM (ordinary t), ← n.sequent.mapM (sequent t.types t.contexts),
+  let c : NodeEvidence ι := ⟨← n.ordinary.mapM (ordinary t), ← n.sequent.mapM (sequent t.types t.contexts t.terms),
     n.edges, ← entry "knowledge" t.knowledge n.knowledge, ← n.effect.mapM (step t),
     ← entry "knowledge" t.knowledge n.output, n.handler, n.implies, n.yields, n.arguments, n.promise⟩
   unless c.wellFormed do
@@ -250,10 +257,10 @@ table of the unfolded derivations. -/
 
 /-- The unfolding equations of a `proofs` table: each entry the node of its
 claim and rule over the earlier entries its premises name. -/
-def Unfolds (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (es : List (ProofEntry ι))
-    (a : Array (Evidence ι)) : Prop :=
+def Unfolds (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (terms : Array Tm)
+    (es : List (ProofEntry ι)) (a : Array (Evidence ι)) : Prop :=
   a.size = es.length ∧ ∀ k, k < a.size → ∃ e j premises, es[k]? = some e ∧
-    sequent types contexts e.claim = .ok j ∧ entries "proof" a e.premises = .ok premises ∧
+    sequent types contexts terms e.claim = .ok j ∧ entries "proof" a e.premises = .ok premises ∧
     (∀ p ∈ e.premises, p < k) ∧ a[k]? = some (.node j e.rule premises)
 
 theorem entry_lt {table : Array β} {k : Nat} {b : β} (h : entry kind table k = .ok b) : k < table.size := by
@@ -317,9 +324,9 @@ theorem build_spec {f : Array β → α → Except String β} : ∀ {es : List �
     · cases h
 
 /-- **Resolution satisfies the unfolding equations.** -/
-theorem proofs_unfold {types : Array (Ty ι)} {contexts : Array (List (Ty ι))} {es : List (ProofEntry ι)}
-    {a : Array (Evidence ι)} (h : build (proof types contexts) es #[] = .ok a) :
-    Unfolds types contexts es a := by
+theorem proofs_unfold {types : Array (Ty ι)} {contexts : Array (List (Ty ι))} {terms : Array Tm}
+    {es : List (ProofEntry ι)} {a : Array (Evidence ι)} (h : build (proof types contexts terms) es #[] = .ok a) :
+    Unfolds types contexts terms es a := by
   obtain ⟨hsize, -, hentries⟩ := build_spec h
   simp only [Array.size_empty, Nat.zero_add] at hsize hentries
   refine ⟨hsize, fun k hk => ?_⟩
@@ -337,8 +344,9 @@ theorem proofs_unfold {types : Array (Ty ι)} {contexts : Array (List (Ty ι))} 
   · cases hf
 
 /-- **The unfolding equations have one solution.** -/
-theorem unfold_unique {types : Array (Ty ι)} {contexts : Array (List (Ty ι))} {es : List (ProofEntry ι)}
-    {a b : Array (Evidence ι)} (ha : Unfolds types contexts es a) (hb : Unfolds types contexts es b) :
+theorem unfold_unique {types : Array (Ty ι)} {contexts : Array (List (Ty ι))} {terms : Array Tm}
+    {es : List (ProofEntry ι)} {a b : Array (Evidence ι)} (ha : Unfolds types contexts terms es a)
+    (hb : Unfolds types contexts terms es b) :
     a = b := by
   have key : ∀ n k : Nat, k < n → a[k]? = b[k]? := by
     intro n
@@ -385,6 +393,8 @@ structure Interned (κ α : Type) [BEq κ] [Hashable κ] where
 structure Interner (ι : Type) [BEq ι] [Hashable ι] where
   types : Interned (Ty ι) (Ty ι) := {}
   contexts : Interned (List Nat) (List Nat) := {}
+  /-- Terms by their JSON text. -/
+  terms : Interned String Tm := {}
   links : Interned HeapLinks.Link HeapLinks.Link := {}
   separations : Interned HeapSeparation.Fact HeapSeparation.Fact := {}
   valueSets : Interned ValueSets.ValueSet ValueSets.ValueSet := {}
@@ -407,6 +417,10 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
     let (k, t) := s.contexts.add ks ks
     (k, { s with contexts := t })
 
+@[nospecialize] def internTerm (m : Tm) : InternM ι Nat := modifyGet fun s =>
+  let (k, t) := s.terms.add (toJson m).compress m
+  (k, { s with terms := t })
+
 @[nospecialize] def internLink (l : HeapLinks.Link) : InternM ι Nat := modifyGet fun s =>
   let (k, t) := s.links.add l l
   (k, { s with links := t })
@@ -415,9 +429,12 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let (k, t) := s.separations.add a a
   (k, { s with separations := t })
 
-@[nospecialize] def internFact (f : HeapFacts.Fact) : InternM ι FactRef := modifyGet fun s =>
-  let (k, t) := s.valueSets.add f.contents f.contents
-  (⟨f.slot, k, f.field⟩, { s with valueSets := t })
+@[nospecialize] def internValueSet (V : ValueSets.ValueSet) : InternM ι Nat := modifyGet fun s =>
+  let (k, t) := s.valueSets.add V V
+  (k, { s with valueSets := t })
+
+@[nospecialize] def internFact (f : HeapFacts.Fact) : InternM ι FactRef := do
+  return ⟨f.slot, ← internValueSet f.contents, f.field⟩
 
 @[nospecialize] def internKnowledge (k : HeapKnowledge.Knowledge) : InternM ι Nat := do
   let ls ← k.links.mapM internLink
@@ -431,7 +448,7 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
     (i, { s with knowledge := t })
 
 @[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do
-  return ⟨← internContext j.context, j.term, ← internType j.type⟩
+  return ⟨← internContext j.context, ← internTerm j.term, ← internType j.type⟩
 
 @[nospecialize] partial def internProof : Evidence ι → InternM ι Nat
   | .node j rule premises => do
@@ -446,12 +463,13 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   | .reading p => return .reading (← internProof p)
   | .created p => return .created (← internProof p)
   | .typedRead slot p => return .typedRead slot (← internProof p)
-  | .observedRead slot contents => return .observedRead slot contents
+  | .observedRead slot contents => return .observedRead slot (← internValueSet contents)
   | .slicedRead tag answer slot p sub => return .slicedRead tag answer slot (← internProof p) sub
-  | .knownValue slot contents => return .knownValue slot contents
+  | .knownValue slot contents => return .knownValue slot (← internValueSet contents)
   | .linkedRead slot value sub => return .linkedRead slot value sub
   | .allocated p => return .allocated (← internProof p)
-  | .written receiver value contents p => return .written receiver value contents (← internProof p)
+  | .written receiver value contents p =>
+    return .written receiver value (← contents.mapM internValueSet) (← internProof p)
 
 @[nospecialize] def internOrdinary : OrdinaryEvidence ι → InternM ι OrdinaryRef
   | .effect => return .effect
@@ -470,7 +488,8 @@ abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
   let run : InternM ι (List (ResponseRef ι) × List (List Nat)) := do
     return (← b.functions.mapM internResponse, ← b.obligations.mapM (·.mapM internProof))
   let ((functions, obligations), s) := run.run {}
-  let d : Document ι := ⟨s.types.entries.toList, s.contexts.entries.toList, s.links.entries.toList,
+  let d : Document ι := ⟨s.types.entries.toList, s.contexts.entries.toList, s.terms.entries.toList,
+    s.links.entries.toList,
     s.separations.entries.toList, s.valueSets.entries.toList, s.knowledge.entries.toList, s.proofs.entries.toList, functions, obligations⟩
   toJson d
 
