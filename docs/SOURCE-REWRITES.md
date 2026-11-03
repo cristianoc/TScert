@@ -286,6 +286,39 @@ establish those writable contracts.
   and initial accumulator contracts. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### A probe request's fresh document array
+
+`tools/declaration-graph.mts#withOwnProject` allocates the probe request's
+`closeFiles` array at `DocumentIdentifier[]`, whose element contract is
+`string | { uri: string }`. An immutable local is that array when `opened`
+is true and `undefined` otherwise. The existing
+[allocation checks](SOURCE-CLAIMS.md) establish the complete writable
+contract before the array enters the request. `withProject` and
+`clientErrors` reach this helper.
+
+- **Repair:** the conditional spread tests the local itself. Its array arm
+  supplies the field at its full contract; its other arm omits the key.
+  The source keeps the shared `Set` expression at one site.
+- **Behaviour:** the initializer reads an initialized boolean and string,
+  allocating an ordinary array only on the true arm. These operations
+  commute with the API's data-method read: the package declares
+  `updateSnapshot` as a class method, and `openCompiler` installs its own
+  ordinary wrapper before returning the API. The existing
+  [T4 relation](COMPILER-API.md#trust) covers that read's value and client-code
+  behavior. The true request's own keys are `closeFiles`, `openProjects`,
+  `fileChanges`, in that order; the false request's are `openProjects`,
+  `fileChanges`. The argument evaluates the same `Set` expression once,
+  after method lookup and with the same iteration and callback order.
+  Method identity, receiver, file values, flag updates, cache replacements,
+  disposal and exception propagation agree for every admitted input and
+  reachable state.
+- **Scope:** `blocker-next-conditional-array-context` checks the fresh
+  contract; its Node observation checks the receiver and both presence
+  arms. The repair adds no external assumption. The
+  [complete-request construction](#a-snapshot-request-with-a-conditional-spread)
+  describes `projectFor`'s separate request.
+- **Commit:** the introducing commit.
+
 ### A flow document assembled from decoded values
 
 `decodeFlowDocument` in `tools/source-flow.mts` uses the existing

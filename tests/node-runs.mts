@@ -9,6 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+assert.equal(runExample("blocker-next-conditional-array-context",
+  '(() => { const seen = []; const api = { update(request) { seen.push([this === api, Object.keys(request), request.closeFiles?.[0] ?? null]); return { value: seen.length }; } }; return JSON.stringify([snapshot("file", true, api), snapshot("file", false, api), seen]); })()'),
+  '[1,2,[[true,["closeFiles"],"file"],[true,[],null]]]', "the optional request keeps its receiver and omits the closeFiles key on the false arm");
+
 assert.throws(() => runExample("invalid-footprint-factory-provider", 'broken([1, 2, 3])[2].result'),
   /TypeError/, "a shrinking factory provider leaves an absent mapped result position");
 assert.equal(runExample("blocker-next-footprint-factory", 'JSON.stringify(reviewed([1, 2]))'),
