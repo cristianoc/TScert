@@ -146,7 +146,8 @@ locations below the heap the body started in; the runs compose by
   admits only source values, within `{value: any, store: keep}`: the written
   location holds no store, by its contract (`writeWithin`; proved:
   `write_within`, from `sourceField_sound`). A variable's cell is such a
-  field;
+  field, and so is a named field an assignment or a logical assignment
+  writes (`field-write-refinement`);
 - an **element write** at a literal index, within `{value: any, store: grow}`,
   or `{value: any, store: keep}` at a required position
   ([element writes](#element-writes));

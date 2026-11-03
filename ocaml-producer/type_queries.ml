@@ -962,20 +962,25 @@ let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty opti
    typed write of a location holding a value (Lean's `fieldWriteWithin`):
    every alternative of the claim, its declarations unfolded, is a record
    holding [k] as a required writable field, whose type's alternatives are
-   source values (no `unknown`, no type parameter). *)
+   source values (no `unknown`, no type parameter); an intersection, by its
+   principal operand. *)
 let source_field_write declarations (object_claim:ty) (k:key) =
   let source_values t = List.for_all (function
     | Atoms [Top] | Rigid _ | Meet _ -> false
     | Atoms [_] -> true
     | _ -> false) (unfolded_arms declarations [] t) in
-  match unfolded_arms declarations [] object_claim with
-  | [] -> false
-  | arms -> List.for_all (function
-    | Atoms [Shape {fields; _}] ->
-      (match List.find_opt (fun (f:field) -> f.name = k) fields with
-       | Some f -> not f.host && not f.optional && f.write <> None && source_values f.read
-       | None -> false)
-    | _ -> false) arms
+  let rec records seen t = match unfolded_arms declarations [] t with
+    | [] -> false
+    | arms -> List.for_all (function
+      | Atoms [Shape {fields; _}] ->
+        (match List.find_opt (fun (f:field) -> f.name = k) fields with
+         | Some f -> not f.host && not f.optional && f.write <> None && source_values f.read
+         | None -> false)
+      (* An intersection's record states its principal operand's members
+         first (Lean's first invariant operand). *)
+      | Meet (principal,_) as m when not (List.mem m seen) -> records (m :: seen) principal
+      | _ -> false) arms in
+  records [] object_claim
 (* `ToBoolean` of every value of an atom, through the declaration it names:
    a declaration all of whose arms settle it one way (a named union of
    records, always truthy) settles it so. *)

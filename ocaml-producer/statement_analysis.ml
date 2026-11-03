@@ -85,9 +85,30 @@ let transfer (expr:Analysis_state.expression_infer) =
   (* The first use of an unannotated constant's fresh array, in the
      statements after its declaration: where it is the whole value expected
      at a type (an annotated constant's initializer, a returned value, an
-     argument of a call to a function of one plain signature), that type;
+     argument of a call to a function of one plain signature, a field of an
+     object literal expected at a type, a spread part of an array literal
+     expected at an array type), that type;
      any other first use, none. `None` where it is not used. *)
   let rec first_use env n rest = Option.join (List.find_map Fun.id (uses env n rest))
+  (* An array of the elements of the array type [expected]. *)
+  and spread_hint expected = Option.bind expected (fun t ->
+    match Semantic.array_element ~readonly:true (try declared_head declarations [] t with Json.Error _ -> t) with
+    | Some element -> Some (array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable})
+    | None -> None)
+  (* The type the records of [expected] that state field [k] give it, an
+     optional one's without `undefined`, where they all give one type. *)
+  and field_hint expected k = match expected with
+    | None -> None
+    | Some t ->
+      let given = List.concat_map (function
+        | Atoms [Shape {fields;_}] -> List.filter_map (fun (f:Semantic.field) ->
+            if f.name <> k then None
+            else if f.optional then (match f.read with
+              | Atoms xs -> Some (Atoms (List.filter (fun a -> a <> Undef) xs))
+              | r -> Some r)
+            else Some f.read) fields
+        | _ -> []) (try unfolded_arms declarations [] t with Json.Error _ -> []) in
+      (match List.sort_uniq compare given with [one] -> Some one | _ -> None)
   (* Each statement's use of the constant: `Some` of where its first
      mention in the statement is the whole value expected at a type, as
      [first_use] reads it. *)
@@ -119,6 +140,14 @@ let transfer (expr:Analysis_state.expression_infer) =
              | exception Json.Error _ -> [])
           | _ -> [] in
         List.find_map Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
+      (* A field of an object literal, at the type every record of the
+         expected type stating that field gives it, where they agree. *)
+      | Alloc fields -> List.find_map (fun (k,v) -> sink (field_hint expected k) v) fields
+      | Build parts -> List.find_map (fun (k,v) ->
+          sink (Option.bind k (fun k -> field_hint expected (Name k))) v) parts
+      (* A spread part of an array literal expected at `T[]`, at a `T[]`. *)
+      | ArrayLiteral (es,spreads) -> List.find_map Fun.id (List.mapi (fun i v ->
+          sink (if List.mem i spreads then spread_hint expected else None) v) es)
       | _ -> List.find_map (sink None) (Source.children e) in
     let at (s:stmt) = match s.statement with
       | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
@@ -126,6 +155,11 @@ let transfer (expr:Analysis_state.expression_infer) =
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
     List.map at rest in
+  (* A write of a field of an immutable binding's object leaves the field
+     holding the written value: of its contract, the nullish values the value
+     admits (Lean's `writeOutput`, the written value's predicate). *)
+  let written_field env n field value =
+    Refinement.refine_field (rigid_bounds ()) declarations env n field (fun _ -> value) in
   let transfer_statement env s =
     (* A grown local's exact keys are claimed only where nothing else can
        reach its object: from the first statement that may let it escape on
@@ -160,13 +194,13 @@ let transfer (expr:Analysis_state.expression_infer) =
          activation: every point claims what it holds there. *)
       let slot = mutable_ && not (held_in_cell n s.span) in
       if String.ends_with ~suffix:".[[class]]" n then mark_fresh_constructor ();
-      (* An unannotated constant's fresh array is built at the array type its
-         first use expects it at, where that use is one (TypeScript widens it
+      (* An unannotated constant's fresh array, a literal or a `map` call's
+         result, is built at the array type its first use expects it at, where that use is one (TypeScript widens it
          at the declaration, and refuses the use when that differs). A
          proposal: Lean checks the elements against it and every use against
          the binding. *)
       let committed = match mutable_,written,init.node with
-        | false,None,ArrayLiteral (_::_,_) ->
+        | false,None,(ArrayLiteral (_::_,_) | Invoke ({node=Read (_,Name "map");_},[_],[],[])) ->
           (match first_use env n (following_statements s.span) with
            | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
              | Atoms atoms when atoms <> [] && List.for_all (function
@@ -370,7 +404,15 @@ let transfer (expr:Analysis_state.expression_infer) =
           | Value _ when List.mem m holders -> m,Value t'
           | Local (contract,_) when List.mem m holders -> m,Local (contract,t')
           | _ -> m,b) env
-      end else env
+      end else (match e.node with
+        | Write (_,Name field,_) -> written_field env n field c
+        | _ -> env)
+    (* `x.f ??= e` leaves the field holding the value it yields: the old one
+       where it was present, the written one otherwise. *)
+    | Effect ({node=LogicalAssign (Nullish,{node=Read ({node=Id n;_},Name field);_},_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let c = expr env e in
+      written_field (after e env) n field c
     | Effect e -> ignore (expr env e);
       (* An assertion function's call leaves its actual at the promise's type. *)
       Refinement.promise_refine ~claimed:latest_claim

@@ -166,6 +166,11 @@ alone, which `tagMember` checks on the edge. -/
     else if let some (i, f, tag, equal) := fieldConditionTag scope cond then
       -- The test's dispatch re-reads the field and records its link, which
       -- justifies the object's arms on the edge (`fieldSlice`).
+      -- The longer path's witness, where the scope holds one, is the
+      -- re-read (`compileConditionAtom`), which the test refines.
+      let Γ := match longerWitness scope i f with
+        | some j => Γ.set j (BranchRefinement.sourceRefine G kinds (Γ[j]?.getD []) tag (answer == equal))
+        | none => Γ
       Γ.set i (BranchRefinement.fieldSlice G (Γ[i]?.getD []) f tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       -- A tested Boolean is the outcome; any other tested value is of the

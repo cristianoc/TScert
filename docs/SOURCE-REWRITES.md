@@ -415,6 +415,24 @@ establish that full writable contract before the enclosing array reaches
   no external assumption.
 - **Commit:** the introducing commit.
 
+### A generic class method's binder records with their writable contract
+
+`classInstance` in `tools/type-term.mts` maps a generic method's type
+parameters to binder records with `resolution: null` and places the array
+in a scheme's `binders`, whose element is `SourceTypeParameter<TypeTerm>`
+with its `default` and `span`. Inferred from the literals, the array's
+writable element contract was narrower than the scheme's, which an
+invariant array does not meet ("no rule derives this makeAt").
+
+- **Repair:** the callback's result annotation states
+  `SchemeTerm["binders"][number]`, as
+  [mapped binder records](#mapped-binder-records-with-their-writable-contract)
+  do. The annotation is erased; the same records are allocated in the same
+  order.
+- **Scope:** the rule is the one `blocker-round-mapped-filter-length`
+  shows. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`
@@ -453,6 +471,48 @@ callback in `tools/fragment-classes.mts`.
 - **Scope:** `blocker-gap-round-optional-parameter` verifies the call inside
   `map`; `blocker-gap-round-optional-parameter-writable` retains the
   writable-field refusal. This repair adds no external assumption.
+- **Commit:** the introducing commit.
+
+### Readonly member names in the type reader's key helpers
+
+`members` and `classInstance` in `tools/type-term.mts` read each member's
+key through a local `named` helper, whose parameter was
+`TypeElement & { name?: Node }` (`ts.ClassElement & { name?: Node }` in
+`classInstance`). A writable optional field at `Node` would permit
+replacing a compiler node's narrower `name` with any node, so a property
+signature's node did not meet it ("no rule derives this invoke" at
+`named(member, message)`).
+
+- **Repair:** the parameters state `{ readonly name?: Node }`, the access
+  the helpers use, as the
+  [optional-parameter helper](#readonly-fields-in-the-optional-parameter-helper)
+  does; the record rules admit the nodes. The annotation changes no
+  execution.
+- **Scope:** the rule is the one `blocker-gap-round-optional-parameter`
+  shows. This repair adds no external assumption.
+- **Commit:** the introducing commit.
+
+### The type reader's native collections typed as natives
+
+`visitType` in `tools/type-term.mts` states `{value: any, store: grow}` and
+extends the binder names in scope with `new Set([...bound, …])`; its
+`bound` parameter was a `ReadonlySet<string>`. `readTypeTerm` reads
+`scope.wildcard?.get(…)`, a `ReadonlyMap`. Each admits a program object
+whose iterator or `get` runs code, so the step could change any location
+("the footprint claimed for 'visitType' is not established by its body",
+then for `readTypeTerm`).
+
+- **Repair:** `bound` is a `Set<string>`, the native set every caller
+  passes (the default `new Set()` or the walk's own `new Set(…)`), and
+  `TermScope.wildcard` is a `Map`, the one `wildcardReadings` builds. A
+  native set's iterator and a native map's `get` run no client code
+  ([iteration intrinsics](../tools/intrinsics.mts),
+  [collection overlays](../tools/array-prototype.mts)), within
+  `{value: any, store: keep}`. The `visit` callback still receives the set
+  as a `ReadonlySet<string>`. The annotations change no execution and add
+  no assumption.
+- **Scope:** `set-spread-stated-footprint`; `invalid-readonly-set-has-effect`
+  keeps a program `ReadonlySet` whose iterator writes.
 - **Commit:** the introducing commit.
 
 ### Mapped arms with a store-preserving callback
@@ -2156,6 +2216,32 @@ construction; `newLedger` constructs a record without a stage key.
 - **Scope:** `blocker-round-recording-stage` checks both branches through
   the complete recording contract. No host contract or external assumption
   is added.
+
+### An array's entries iterated by index
+
+`quantified` and `signatures` in `tools/type-term.mts` walked an array with
+its positions, `for (const [index, p] of xs.entries())`, inside the type
+reader's stated `{value: any, store: grow}`. The overlay reads
+`ReadonlyArray.prototype.entries` as an `IterableIterator`, a structural
+iterator whose `next` states no effect, so the loop could change any
+location ("the footprint claimed for 'quantified' is not established by
+its body").
+
+- **Avoided form and cost:** support would read an array's `entries()` as
+  a native iterator stepping its array: a marked iterator kind whose step
+  reads the array's current length and element at the array's presence,
+  through the parser's iteration kinds and the overlay. Nine other loops
+  of `tools/` use the form; this round writes the two in the `quantified`
+  slice out.
+- **Equivalence:** `for (let index = 0; index < xs.length; index++) {
+  const p = xs[index]; … }` reads the array's length before each step and
+  its element at the index, as the array iterator's step does
+  (CreateArrayIterator), and runs the body with the same bindings; `continue`
+  steps the index as the iterator would. The added check of `p` answers
+  only at a hole, which neither array has: `typeParameters` is a compiler
+  node list and `ordinary` a fresh copy of one. Returns, exceptions,
+  mutations and receivers agree for every array its callers pass.
+- **Scope:** `array-index-loop-footprint`.
 
 ### A closure called by an earlier closure
 

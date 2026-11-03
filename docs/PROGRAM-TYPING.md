@@ -3537,13 +3537,19 @@ on the choice — only precision does.
 ##### Writing
 
 Writing stores $`y`$'s value in the field $`f`$ of the object $`x`$ names. The
-result is `null`. Where $`y`$'s value is a known primitive it establishes the new
-contents for $`x`$ and every variable recorded equal to it; it keeps the atoms
-about locations [separated](#separation-facts) from the written one,
+result is `null`. The predicate $`R`$ of $`y`$'s value is its type's primitive
+values, or, for a type with no primitive description, an object's say, the
+nullish values it admits (`typeValues`), met with what the knowledge states of
+$`y`$ (`valuesAt`). The write establishes $`R`$ as the new contents for $`x`$
+and every variable recorded equal to it; it keeps the atoms about locations
+[separated](#separation-facts) from the written one,
 $`\mathrm{apart}(x.f,z.g)`$;
 it destroys the rest of $`\Sigma`$ — including atoms about cells that may or may
-not be this one. Writing a value that is not a known primitive, an object say,
-establishes no new contents and keeps the separated atoms all the same:
+not be this one. So `x.f = v` and `x.f ??= v` with `v` an object leave a field
+declared `T | null` holding no `null` for a later read, until a call or another
+write (`field-write-refinement`, `invalid-field-write-call`). Where $`y`$ has
+no predicate, the write establishes no new contents and keeps the separated
+atoms all the same:
 
 ```math
 \frac{\Gamma\vdash_G\mathrm{write}_f(x,y):\mathsf{Null}

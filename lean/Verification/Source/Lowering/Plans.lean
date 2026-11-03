@@ -146,6 +146,15 @@ whether the test holds where the tag does. -/
     | _ => none
   | _ => none
 
+/-- The witness of the path one member longer than the witness at slot `i`:
+a read of field `f` of a path's witness reads that longer path, whose
+witness, where the scope holds one, holds the value it reads
+(HOST-FAMILIES.md, "Entries"). -/
+@[nospecialize] def longerWitness (scope : List (ScopeBinding ι)) (i : Nat) (f : PropKey) : Option Nat := do
+  let b ← scope[i]?
+  let (root, fields) ← b.witness
+  scope.findIdx? (·.witness == some (root, fields ++ [f]))
+
 /-- The tag a condition tests on an immutable variable: its own shape or
 singleton test, or, for a variable that is not a Boolean, its truthiness
 (`ToBoolean`), which is how JavaScript reads any other value as a condition. -/

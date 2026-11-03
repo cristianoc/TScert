@@ -936,6 +936,8 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=
      object's claim, is a writable field holding source values changes one
      location, which holds a value (Lean's typed field write). *)
   | Write (o,k,v) when field_write o k -> join_bound cell_write (all [o;v])
+  (* `x.f ??= v`, `||=` and `&&=` read the field, then may write it. *)
+  | LogicalAssign (_,{node=Read (o,k);_},v) when field_write o k -> join_bound cell_write (all [o;v])
   | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _

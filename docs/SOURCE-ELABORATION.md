@@ -791,6 +791,14 @@ it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
+A test's right operand that is no test is read for its truthiness the same
+way: in $`t\mathbin{\&\&}b`$ with $`t`$ a test, the test is dispatched as a
+Boolean and $`b`$ as $`\mathsf{truth}(b)`$. An optional chain read as a
+condition, `p?.length && g(n)`, is `p != null && p.length && g(n)`, which
+regroups as `p != null && (p.length && g(n))`, so `p.length` is a left
+operand read for its truthiness and the guard's refinement reaches the
+branch (`compiler-api-optional-length-guard`).
+
 ### A guard's Boolean return
 
 In a type guard or an assertion function, a `return` of a Boolean by its

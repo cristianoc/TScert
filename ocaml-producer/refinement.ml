@@ -612,7 +612,13 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       (* A field of a path's value: the path's arms, as the read the test
          refined holds them. *)
       | Some (slice,_),Read (inner,key) when path_of env inner <> None ->
-        refine_path env inner (claimed inner.pos) (fun t -> discriminate bounds declarations t key slice)
+        let env = refine_path env inner (claimed inner.pos) (fun t -> discriminate bounds declarations t key slice) in
+        (* Against `null` or `undefined`, the path's own value too: Lean's
+           dispatch re-reads it into the path's witness and slices it by the
+           tag (`LoweringAtoms.compileConditionAtom`). *)
+        (match other.node with
+         | Literal (LNull | LUndefined) -> refine_path env operand (claimed operand.pos) slice
+         | _ -> env)
       | Some _,_ -> env in
     narrow (narrow env l r) r l
   | (Call _ | Invoke _) when truth ->
