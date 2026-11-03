@@ -120,6 +120,32 @@ instance : StrictTotal PropKey where
 /-- A list of fields in order, each once. -/
 def fieldsCanon (fs : List PropKey) : List PropKey := canon fs
 
+private def strictlyIncreasing : List PropKey → Bool
+  | a :: b :: xs => decide (a < b) && strictlyIncreasing (b :: xs)
+  | _ => true
+private theorem strictlyIncreasing_pairwise : ∀ (xs : List PropKey),
+    strictlyIncreasing xs = true → xs.Pairwise (· < ·)
+  | [], _ => by simp
+  | [_], _ => by simp
+  | a :: b :: xs, h => by
+    simp only [strictlyIncreasing, Bool.and_eq_true, decide_eq_true_eq] at h
+    have ih := strictlyIncreasing_pairwise (b :: xs) h.2
+    refine List.Pairwise.cons ?_ ih
+    intro c hc
+    rcases List.mem_cons.mp hc with e | hc
+    · subst c; exact h.1
+    · exact StrictTotal.trans h.1 ((List.pairwise_cons.mp ih).1 c hc)
+/-- Canonical field lists share their existing list; other inputs are sorted. -/
+private def fieldsCanonOrdered (xs : List PropKey) : List PropKey :=
+  if strictlyIncreasing xs then xs else dedupSorted (xs.mergeSort notAbove)
+@[csimp] theorem fieldsCanon_eq_ordered : fieldsCanon = fieldsCanonOrdered := by
+  funext xs
+  unfold fieldsCanonOrdered
+  split
+  · rename_i h
+    exact canon_of_pairwise (strictlyIncreasing_pairwise xs h)
+  · rfl
+
 /-! ### The compacted form -/
 
 /-- The first occurrence of each element, in order. -/
