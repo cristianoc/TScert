@@ -126,6 +126,11 @@ let transfer (expr:Analysis_state.expression_infer) =
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
     List.map at rest in
+  (* A write of a field of an immutable binding's object leaves the field
+     holding the written value: of its contract, the nullish values the value
+     admits (Lean's `writeOutput`, the written value's predicate). *)
+  let written_field env n field value =
+    Refinement.refine_field (rigid_bounds ()) declarations env n field (fun _ -> value) in
   let transfer_statement env s =
     (* A grown local's exact keys are claimed only where nothing else can
        reach its object: from the first statement that may let it escape on
@@ -370,7 +375,15 @@ let transfer (expr:Analysis_state.expression_infer) =
           | Value _ when List.mem m holders -> m,Value t'
           | Local (contract,_) when List.mem m holders -> m,Local (contract,t')
           | _ -> m,b) env
-      end else env
+      end else (match e.node with
+        | Write (_,Name field,_) -> written_field env n field c
+        | _ -> env)
+    (* `x.f ??= e` leaves the field holding the value it yields: the old one
+       where it was present, the written one otherwise. *)
+    | Effect ({node=LogicalAssign (Nullish,{node=Read ({node=Id n;_},Name field);_},_);_} as e)
+      when (match List.assoc_opt n env with Some (Value _) -> true | _ -> false) ->
+      let c = expr env e in
+      written_field (after e env) n field c
     | Effect e -> ignore (expr env e);
       (* An assertion function's call leaves its actual at the promise's type. *)
       Refinement.promise_refine ~claimed:latest_claim

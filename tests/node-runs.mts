@@ -2221,6 +2221,12 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     ["invalid-slot-path-closure", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-alias", "String(keyText({ key: { kind: 'name', text: 'a' } }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }, 1))", "undefined"],
     ["invalid-slot-path-call", "(() => { const b = { key: { kind: 'name', text: 'a' } }; return String(keyText(b, 1, () => { b.key = { kind: 'paren', inner: b.key }; })); })()", "undefined"],
+    // A field holds what was written to it, and a path what its test saw,
+    // until a call or a write: a callback clearing the field, or an alias's
+    // write, gives `null` where the slots or a string are returned.
+    ["field-write-refinement", "(() => { const b = { name: 'T', resolution: null, span: 0 }; const c = { name: 'U', resolution: null, span: 1 }; return JSON.stringify([resolved(b, true), resolved(b, false), resolved(c, false), written(c).observation, result({ resolution: { observation: 'o', result: null } }), scope([b, c]).associated('U'), scope([b]).associated('V')]); })()", '["#resolve:T","#resolve:T",null,"#observe:U","",null,null]'],
+    ["invalid-field-write-call", "(() => { const b = { name: 'T', resolution: null }; return String(cached(b, () => { b.resolution = null; })); })()", "null"],
+    ["invalid-path-null-test-alias", "(() => { const s = { observation: 'o', result: 'r' }; return String(result({ resolution: s }, s)); })()", "null"],
     // A member of an intersection's operand holds what its test saw until
     // a write: one through an alias, or a call's, between the test and the
     // read gives `null` where a string is returned.

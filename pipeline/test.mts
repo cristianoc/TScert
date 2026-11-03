@@ -3101,6 +3101,14 @@ control(async (): Promise<void> => {
       p.current = [[["value"], pick(l)]];
       if (narrowed) p.type = [l.nullArm];
     }
+    // The narrowed entry's read of the field is claimed at the field's
+    // contract, which the null arm's field meets: the entry's edge is what
+    // the narrowing has to pass.
+    if (narrowed) {
+      const field = at + "return ".length;
+      for (const e of f.expressions.filter((e) => e.pos[0] === field && e.pos[1] === field + "cell.value".length))
+        e.type = l.every;
+    }
     return writeClaims(cellUnion, name, claims);
   };
   const edge = (span: [number, number]) => `source incoming edge obligation at [${span[0]},${span[1]})`;

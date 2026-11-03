@@ -1196,7 +1196,12 @@ closure entries and exceptional transfers establish none. A catch therefore
 cannot receive a witness link from the throwing computation. In a
 condition, a path's read whose receiver was read just before, into its
 prefix's witness as well, reads its field from that witness, which holds the
-same value, so the link it records is the one the entry states. Controls:
+same value, so the link it records is the one the entry states. A strict
+test of a path of two members or more against `null` or `undefined` re-reads
+the path's last member into a saved slot and dispatches on it; that slot is
+the path's witness on both edges, so the test's slice of it is the witness's
+type (`field-write-refinement`; `invalid-path-null-test-alias`, a write through
+an alias between the test and the read, run under Node). Controls:
 `compiler-api-entry-path` (two and three members, a loop's backedge, past a
 call), `invalid-compiler-api-entry-path-record` (a middle member a call
 replaces, run under Node), and in `pipeline/test.mts` forged chains of
