@@ -2630,6 +2630,7 @@ export const cases: Case[] = [
   { ...negative("invalid-slot-path-call", "a call between a slot root's path test and its read, through a program record's member, which no stable link keeps (run under Node)",
     /^unsupported: missing field text at \[640,655\)/), status: "unsupported", phase: "proposal" },
   positive("field-write-refinement", "a field of an immutable binding's object holds what `x.f = v` or `x.f ??= v` wrote until a call or another write, and a strict `null` test of a path of two members refines the path's witness, as `type-term.mts#quantified` caches a binder's resolution slots; a method writing a named field is within a stated `{value: any, store: keep}` (HOST-FAMILIES.md, \"Entries\"; FOOTPRINTS.md, \"The checked callback contract\"; run under Node)"),
+  positive("map-result-at-use", "an unannotated constant holding a `map` result is built at the array type its first use expects, a field of a returned object literal, as `type-term.mts#members` builds a class value's static fields"),
   negative("invalid-field-write-call", "a call between `x.f ??= v` and the read of `x.f` may write the field again: the read is at the field's contract (run under Node)",
     /return-contract claim\nobligation: The available claim for binder\.resolution is null \|/),
   negative("invalid-path-null-test-alias", "a write through an alias between a strict `null` test of a path of two members and its read ends the path's last read link (run under Node)",

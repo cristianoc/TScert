@@ -1320,7 +1320,7 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
   const isReadonly = (modifiers: readonly Node[] | undefined) =>
     modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
-  const named = (member: TypeElement & { name?: Node }, message: string): PropertyKey => {
+  const named = (member: TypeElement & { readonly name?: Node }, message: string): PropertyKey => {
     const key = propertyKey(scope, member.name) ?? scope.fail(member, message);
     const text = typeof key === "string" ? key : `[symbol ${key.symbol}]`;
     if (names.has(text)) scope.fail(member, "duplicate field name in a record");
@@ -1600,7 +1600,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
   // place in the instance's fields. Member names are distinct (`named`), so
   // the name finds the one field it replaces.
   const overloads = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
-  const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
+  const named = (member: ts.ClassElement & { readonly name?: Node }): PropertyKey => {
     const name = member.name;
     // A private name `#x` is a key of its own, a symbol no code outside the
     // class spells (SOURCE-CONTRACTS.md, "Classes").

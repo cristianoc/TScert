@@ -455,6 +455,25 @@ callback in `tools/fragment-classes.mts`.
   writable-field refusal. This repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### Readonly member names in the type reader's key helpers
+
+`members` and `classInstance` in `tools/type-term.mts` read each member's
+key through a local `named` helper, whose parameter was
+`TypeElement & { name?: Node }` (`ts.ClassElement & { name?: Node }` in
+`classInstance`). A writable optional field at `Node` would permit
+replacing a compiler node's narrower `name` with any node, so a property
+signature's node did not meet it ("no rule derives this invoke" at
+`named(member, message)`).
+
+- **Repair:** the parameters state `{ readonly name?: Node }`, the access
+  the helpers use, as the
+  [optional-parameter helper](#readonly-fields-in-the-optional-parameter-helper)
+  does; the record rules admit the nodes. The annotation changes no
+  execution.
+- **Scope:** the rule is the one `blocker-gap-round-optional-parameter`
+  shows. This repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### Mapped arms with a store-preserving callback
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
