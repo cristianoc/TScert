@@ -1978,23 +1978,26 @@ Every edge is still checked by the independent consumer. -/
             -- A merge that is not a cut states no requirement of its own; it
             -- keeps what every predecessor establishes, once all are available.
             -- Cycles pass through cuts, so waiting here cannot deadlock.
-            let mut projections : List HeapKnowledge.Knowledge := []
-            let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
-            let mut holding : List (List Nat) := []
-            let mut ready := true
-            for (pred,index,target) in preds do
-              match table.getD pred none, nodes[pred]? with
-              | some previous, some source =>
-                let o := ControlFlow.outFacts G previous
-                projections := projections ++ [HeapKnowledge.project
-                  (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
-                carried := carried ++ [(edgeContextOf G previous source.continuation index o,
-                  edgeImplicationsOf G previous source.continuation o, target.mapping)]
-                holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
-                  c.context.length]
-              | _, _ => ready := false
+            -- Whether every predecessor is produced is decided first: what a
+            -- predecessor's edge carries is read only once all are, and a
+            -- merge waiting for a later pass reads none of it.
+            let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome && (nodes[pred]?).isSome
             if !ready && !force then continue
             if ready then
+              let mut projections : List HeapKnowledge.Knowledge := []
+              let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
+              let mut holding : List (List Nat) := []
+              for (pred,index,target) in preds do
+                match table.getD pred none, nodes[pred]? with
+                | some previous, some source =>
+                  let o := ControlFlow.outFacts G previous
+                  projections := projections ++ [HeapKnowledge.project
+                    (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) o source.continuation index) target.mapping c.context.length]
+                  carried := carried ++ [(edgeContextOf G previous source.continuation index o,
+                    edgeImplicationsOf G previous source.continuation o, target.mapping)]
+                  holding := holding ++ [projectArguments (edgeArgumentsOf G previous source o) target.mapping
+                    c.context.length]
+                | _, _ => pure ()
               k := HeapKnowledge.meet projections
               implies := meetImplications G carried c.context.length c.context
               held := match holding with
