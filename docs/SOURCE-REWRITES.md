@@ -2621,6 +2621,18 @@ consumes it.
   Node an extra string-valued key survives its promised number dictionary.
   `invalid-json-stringify-record` exercises a hidden `toJSON` hook under
   Node. This repair adds no external assumption.
+- **Observation records:** `tools/files.mts#Noted` intersects its named
+  `observation` and `node` fields with `JsonObject`. The readonly string
+  index bounds every additional key by the recursive JSON-value contract;
+  the named writable fields retain their tuple and boolean contracts.
+  `noteIn` is the sole writer of the private recording's answer map and
+  allocates ordinary `{ observation, node }` records in that order.
+  `observedNoting` snapshots and sorts those records; the cache and ledger
+  retain that type. Every typed producer and consumer checks the complete
+  bound. `resolveObserved` compares their existing JSON serializations.
+  The annotations are erased, so allocation, traversal, key order and bytes
+  are identical. `blocker-next-noted-json` exercises serialization through
+  the retained index contract.
 - **Commit:** the introducing commit.
 
 ### A formatting callback narrowed by an earlier every statement

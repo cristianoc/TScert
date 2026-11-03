@@ -21,7 +21,7 @@ import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Json } from "./calculus.mts";
+import type { Json, JsonObject } from "./calculus.mts";
 import { fieldOf, ioFailure, ioFailureOf } from "./thrown.mts";
 import { loadObserved, resolutionConditions, resolveWithNode } from "./module-hooks.mts";
 import { pathToFileHref, resolveHref } from "./url-strings.mts";
@@ -67,7 +67,7 @@ export type Observation = readonly [Operation, string, string | null];
 
 /** An answer as noted: its observation, and whether Node's resolver or
  * loader may hold it in a cache. */
-export type Noted = { observation: Observation; node: boolean };
+export type Noted = { observation: Observation; node: boolean } & JsonObject;
 /** A record being made: the answers by operation and path, the cached
  * values whose observations it holds, why it is incomplete, if it is, and
  * why Node's caches may disagree with the file system, if they may. */
