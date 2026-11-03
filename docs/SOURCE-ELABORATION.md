@@ -3773,7 +3773,7 @@ assumption from each whose claims then do not show it; a body calling a
 quantified callee at an instance is not proposed. A forged effect fails at
 the first node that does not preserve the heap, in evidence production and
 in checking (`declaration-preserving-callback`,
-`invalid-declaration-write-callback`).
+`declaration-field-write-callback`, `invalid-declaration-pop-callback`).
 
 ### Stated effects
 

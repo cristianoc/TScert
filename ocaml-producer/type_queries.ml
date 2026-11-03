@@ -540,7 +540,7 @@ let added_contract declarations t name (rhs:Source.expr) value =
 let grown declarations t name c =
   match plain_arms declarations t with
   | Some atoms ->
-    let field = {name;optional=false;read=c;write=Some c;host=false;receivers=[];stable=false} in
+    let field = {name;optional=false;read=c;write=Some c;host=false;receivers=[];stable=false;generic=false} in
     let add fs = List.filter (fun (f:Semantic.field) -> f.name<>name) fs @ [field] in
     Atoms (List.map (function
       | Shape s -> Shape {s with fields=add s.fields}
@@ -940,9 +940,9 @@ let rec unfolded_arms declarations seen t = match t with
    member, the callee claimed at one atom, is not dispatched: each
    alternative reads the member from the one array prototype, at one row
    (Lean's `Lowering.sharedFieldRow`). Nor is a union of hosts each holding
-   the member as a method, the callee claimed at one atom: the member is
-   bound to the object by splitting its slot, and called (Lean's
-   `unionMemberHosts`, `memberHead`). *)
+   the member as a method, generic or not, the callee claimed at one atom:
+   the member is bound to the object by splitting its slot, and called
+   (Lean's `unionMemberHosts`, `memberHead`). *)
 let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty option) args =
   let arms = List.sort_uniq compare (unfolded_arms declarations [] object_claim) in
   let prototype_read = function
@@ -950,7 +950,7 @@ let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty opti
     | _ -> false in
   (* An intersection holds the members its operands hold. *)
   let rec host_method seen = function
-    | Atoms [Shape {fields; _}] -> List.exists (fun (f:field) -> f.name = k && f.host) fields
+    | Atoms [Shape {fields; _}] -> List.exists (fun (f:field) -> f.name = k && (f.host || f.generic)) fields
     | Meet (t,ts) as m when not (List.mem m seen) -> List.exists (fun part ->
         List.exists (host_method (m :: seen)) (unfolded_arms declarations [] part)) (t :: ts)
     | _ -> false in
@@ -958,6 +958,24 @@ let dispatches_call declarations (object_claim:ty) (k:key) (member_claim:ty opti
   plain_actuals args
   && List.length arms > 1
   && not (one_atom && (List.for_all prototype_read arms || List.for_all (host_method []) arms))
+(* Whether a write of field [k] of an object claimed at [object_claim] is a
+   typed write of a location holding a value (Lean's `fieldWriteWithin`):
+   every alternative of the claim, its declarations unfolded, is a record
+   holding [k] as a required writable field, whose type's alternatives are
+   source values (no `unknown`, no type parameter). *)
+let source_field_write declarations (object_claim:ty) (k:key) =
+  let source_values t = List.for_all (function
+    | Atoms [Top] | Rigid _ | Meet _ -> false
+    | Atoms [_] -> true
+    | _ -> false) (unfolded_arms declarations [] t) in
+  match unfolded_arms declarations [] object_claim with
+  | [] -> false
+  | arms -> List.for_all (function
+    | Atoms [Shape {fields; _}] ->
+      (match List.find_opt (fun (f:field) -> f.name = k) fields with
+       | Some f -> not f.host && not f.optional && f.write <> None && source_values f.read
+       | None -> false)
+    | _ -> false) arms
 (* `ToBoolean` of every value of an atom, through the declaration it names:
    a declaration all of whose arms settle it one way (a named union of
    records, always truthy) settles it so. *)

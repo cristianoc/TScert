@@ -36,7 +36,7 @@ open S
       let fields = List.map (fun (name,e) -> name,const_type expr ~nested:true env e) fs in
       if List.exists (fun (_,t) -> t = None) fields then None
       else Some (record (List.map (fun (name,t) ->
-        {name;optional=false;read=Option.get t;write=None;host=false;receivers=[];stable=false}) fields))
+        {name;optional=false;read=Option.get t;write=None;host=false;receivers=[];stable=false;generic=false}) fields))
     | _ when nested -> quietly (fun () -> expr env e)
     | _ -> None
   (* Explain an unsupported resolution contract. Bounded parameters are

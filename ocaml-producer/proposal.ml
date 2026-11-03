@@ -99,7 +99,12 @@ let declaration_footprint declarations values names (claim:function_claim) =
       List.exists (fun t -> Type_queries.dispatches_call declarations t k (one_atom callee.pos) args)
         (claims_at o.pos)
     | _ -> false in
-  Option.value (footprint_stmts ~dispatched ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
+  (* A field write every claim of its object types as a typed write of a
+     location holding a value (`Type_queries.source_field_write`). *)
+  let field_write (o:expr) k = match claims_at o.pos with
+    | [] -> false
+    | ts -> List.for_all (fun t -> Type_queries.source_field_write declarations t k) ts in
+  Option.value (footprint_stmts ~dispatched ~field_write ~callable ~no_return ~iteration ~readable g.body) ~default:top_footprint,
   throws_stmts ~callable g.body
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =

@@ -244,7 +244,7 @@ let rec source_type ctx j =
       | Some fs -> List.map (fun f -> let t = recur (field "type" f) in
           let readonly = List.mem_assoc "readonly" (obj f) in
           {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
-           host=false;receivers=[];stable=false}) (list fs) in
+           host=false;receivers=[];stable=false;generic=false}) (list fs) in
     Atoms [Ctors ([{call_effect=effect_of (field "effect" j);quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
@@ -291,6 +291,16 @@ let rec source_type ctx j =
          | _ -> [])
       | t -> [t] in
     let method_syntax t = forms t <> [] && List.for_all (fun f -> stated f <> None) (forms t) in
+    (* A generic method: a scheme whose signatures each take the declaration
+       as receiver (as Lean's `schemeMethod`). *)
+    let scheme_method t = match t with
+      | Object fs when List.assoc_opt "k" fs = Some (String "scheme") ->
+        (match List.assoc_opt "signatures" fs with
+         | Some (Array (_ :: _ as signatures)) -> List.for_all (function
+             | Object s -> (match List.assoc_opt "receiver" s with Some r -> is_self r | None -> false)
+             | _ -> false) signatures
+         | _ -> false)
+      | _ -> false in
     (* A family's stable members (HOST-FAMILIES.md, "Stable keys"), by name. *)
     let stable_names = match List.assoc_opt "stable" (obj j) with
       | Some names -> List.map str (list names)
@@ -314,7 +324,8 @@ let rec source_type ctx j =
       let t = recur ty in
       {name=property_key (field "name" f);optional;
        read=t;write=(if boolean (field "readonly" f) then None else Some t);
-       host;receivers;stable=(match field "name" f with String n -> List.mem n stable_names | _ -> false)})
+       host;receivers;stable=(match field "name" f with String n -> List.mem n stable_names | _ -> false);
+       generic=not optional && scheme_method (field "type" f)})
       (items "fields" j) in
     (* The string index, and the number and symbol indexes a term states only
        when it has them. *)
@@ -330,14 +341,14 @@ let rec source_type ctx j =
     (* Members held as own properties that are not enumerable, on the
        prototype the model gives the object (the library overlay's). *)
     let fields = match List.assoc_opt "prototype" (obj j) with
-      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[];stable=false}]
+      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[];stable=false;generic=false}]
       | None -> fields in
     (* A host family's marker: a required readonly view of `[[host]]` at the
        marker's string, which no allocation of the program owns. *)
     let fields = match List.assoc_opt "host" (obj j) with
       | Some (String marker) ->
         if indexes <> [] || calls <> [] then unsupported "a host family's marker on a record with indexes or calls";
-        fields @ [{name=Name "[[host]]";optional=false;read=Atoms [StrLit marker];write=None;host=false;receivers=[];stable=false}]
+        fields @ [{name=Name "[[host]]";optional=false;read=Atoms [StrLit marker];write=None;host=false;receivers=[];stable=false;generic=false}]
       | Some _ -> fail "invalid host marker"
       | None -> fields in
     Atoms [Shape {fields;indexes;calls;elements=None}]
@@ -857,8 +868,8 @@ let rec throw_only_stmts = function
       (falls_or_throws body && throw_only_stmts rest)
     | _ -> false
 
-let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
+let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ~callable ~no_return ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable in
   let calls ?(receiver_fresh=false) callee =
     Option.map (effects_footprint ~receiver_fresh) (callable callee) in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
@@ -919,19 +930,23 @@ let rec footprint_expr ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_
     if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
-  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
-  | WithObject (o,b) -> join_bound (go o) (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable:("?.object" :: readable) b)
-  | BlockBody body -> footprint_stmts ~fresh ~dispatched ~callable ~no_return ~iteration ~readable body
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable:("?." :: readable) b)
+  | WithObject (o,b) -> join_bound (go o) (footprint_expr ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable:("?.object" :: readable) b)
+  (* A write of a field whose contract, at every alternative of its
+     object's claim, is a writable field holding source values changes one
+     location, which holds a value (Lean's typed field write). *)
+  | Write (o,k,v) when field_write o k -> join_bound cell_write (all [o;v])
+  | BlockBody body -> footprint_stmts ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable body
   | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_return ~iteration ~readable = function
+and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ?(field_write=fun _ _ -> false) ~callable ~no_return ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable in
-    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~dispatched ~callable ~no_return ~iteration ~readable body in
+    let go = footprint_expr ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable in
+    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
     | Declare (mutable_,bindings) ->
@@ -942,7 +957,7 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_ret
             else List.filter ((<>) name) fresh in
           let written = if Hashtbl.mem early_bindings (name,init.pos) then cell_write else Some empty_footprint in
           add fresh (name::readable) (join_bound written
-            (join_bound acc (footprint_expr ~fresh ~dispatched ~callable ~no_return ~iteration ~readable init))) more in
+            (join_bound acc (footprint_expr ~fresh ~dispatched ~field_write ~callable ~no_return ~iteration ~readable init))) more in
       add fresh readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
@@ -956,7 +971,7 @@ and footprint_stmts ?(fresh=[]) ?(dispatched=fun _ _ -> false) ~callable ~no_ret
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
          [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
-            ~dispatched ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
+            ~dispatched ~field_write ~callable ~no_return ~iteration ~readable:(pattern_names target @ readable) rest])
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
@@ -1345,7 +1360,7 @@ and decode_program ast =
     | [parameter],[],Some (Atoms [Shape shape] as body) ->
       (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
-          write=Some (Rigid written);host=false;receivers=[];stable=false}],[],[],None
+          write=Some (Rigid written);host=false;receivers=[];stable=false;generic=false}],[],[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))
       | _ -> None)

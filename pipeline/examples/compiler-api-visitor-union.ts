@@ -1,7 +1,7 @@
 // A recursive visitor whose node the flow reads at several arms of its
 // family where it calls the node's `forEachChild` in an expression, passing
-// itself: the call is dispatched on the union in one node, and the visitor
-// verifies at the footprint its body shows.
+// itself: each arm holds the generic member, which the call binds to the
+// node, and the visitor verifies at the footprint its body shows.
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 

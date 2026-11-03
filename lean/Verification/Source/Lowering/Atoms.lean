@@ -966,7 +966,7 @@ Mappings discard only the temporaries introduced by this expression. -/
           if spreads.contains i then
             match PositiveRules.expand G Ai with
             | [.list ..] => pure (true, v)
-            | _ => pure (true, ← readCell G K SourceTypes.storeField v)
+            | _ => pure (true, ← arrayStoreAt G K (n-1-i))
           else pure (false, DirectProof.cast K E v)
         pure (DirectProof.node K (.arrLit (parts.map fun (s, p) => if s then .spread p.term else p.term)) S
           (.arrParts E (parts.map (·.1))) (parts.map (·.2)))

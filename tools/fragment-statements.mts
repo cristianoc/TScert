@@ -702,7 +702,7 @@ export function functionPlacement(gate: Gate, live: readonly Statement[]): Withi
  * the declaration is evaluated; an overloaded or repeated one; and one
  * naming a parameter of the function whose body holds it, which it
  * replaces there. */
-export function functionDeclarations(this: Gate, scope: readonly Statement[], live: number, placed: ReadonlyMap<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, Map<number, Stmt[]>> {
+export function functionDeclarations(this: Gate, scope: readonly Statement[], live: number, placed: Map<FunctionDeclaration, number>): Within<{ value: "any"; store: "grow" }, Map<number, Stmt[]>> {
   const gate: Gate = this;
   const declared = scope.filter((s): s is FunctionDeclaration => ts.isFunctionDeclaration(s));
   const bound = new Map<number, Stmt[]>();
@@ -1365,14 +1365,6 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
     }
   }
   const unwrap = (e: Expression): Expression => (ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e);
-  const plain = (e: Expression): boolean => {
-    const u = unwrap(e);
-    return ts.isIdentifier(u) || ts.isStringLiteral(u) || ts.isNumericLiteral(u) ||
-      u.kind === ts.SyntaxKind.TrueKeyword || u.kind === ts.SyntaxKind.FalseKeyword ||
-      u.kind === ts.SyntaxKind.NullKeyword ||
-      (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand)) ||
-      enumLabel(u);
-  };
   // A member of an enum, `E.M` or `ns.E.M`, a host family's tag enum
   // (`ts.SyntaxKind`) included: a read of a data field of the enum's object,
   // which writes nothing.
@@ -1385,6 +1377,14 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Within<{ value
     const member = u.name.text;
     return (gate.enums.has(enumName) && gate.enumMembers(enumName).some((m) => m.name === member)) ||
       !!gate.importedEnums.get(enumName)?.members.some((m) => m.name === member);
+  };
+  const plain = (e: Expression): boolean => {
+    const u = unwrap(e);
+    return ts.isIdentifier(u) || ts.isStringLiteral(u) || ts.isNumericLiteral(u) ||
+      u.kind === ts.SyntaxKind.TrueKeyword || u.kind === ts.SyntaxKind.FalseKeyword ||
+      u.kind === ts.SyntaxKind.NullKeyword ||
+      (ts.isPrefixUnaryExpression(u) && u.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(u.operand)) ||
+      enumLabel(u);
   };
   const outer = unwrap(node.expression);
   // `switch (typeof x)`: each test is the `typeof` test of `x` read again.

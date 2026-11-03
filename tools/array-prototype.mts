@@ -120,6 +120,11 @@ const callback = (value: TypeTerm, result: TypeTerm,
 const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
   callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+/** `reduce`'s and `reduceRight`'s callback: the accumulator, a present
+ * element, its index and the receiver, returning the next accumulator. */
+const reducer = (effect: CallEffect): TypeTerm =>
+  ({ k: "function", effect, receiver: null, rest: null, span: at,
+     params: [mappedElement, element, atomOf("number"), arrayOf(element, true)], result: mappedElement });
 /** The predicates `every` and `map` state an elements fact at, each with the
  * type of the values it admits (`CallEffects.ElemPred`). */
 const elementPredicates: readonly { kind: ElementKind; type: TypeTerm }[] = [
@@ -216,10 +221,18 @@ export const overlay: readonly OverlayEntry[] = [
   // and a prototype member is read as one scheme with one signature
   // (SOURCE-CONTRACTS.md, "Prototype contracts"). Its throw on an empty
   // array is no reason: a throw is an outcome (SOURCE-MODEL.md, "Throws").
+  // With an initial value each reads the length once, tests and reads the
+  // receiver's own numeric keys, data properties (`numericOwn`), in
+  // ascending (`reduce`) or descending (`reduceRight`) order, passes each
+  // present element with the accumulator, and returns the last answer: it
+  // writes nothing and allocates nothing, so beside the callback's calls it
+  // runs no client code, and it is within the callback's footprint.
   { name: "reduce", from: "ReadonlyArray",
-    signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
+    signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;",
+    stated: atEachFootprint((effect) => ({ params: [reducer(effect), mappedElement], result: mappedElement })) },
   { name: "reduceRight", from: "ReadonlyArray",
-    signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
+    signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;",
+    stated: atEachFootprint((effect) => ({ params: [reducer(effect), mappedElement], result: mappedElement })) },
   // These callbacks run only for properties still present when visited.
   // find/findIndex below instead visit every index in the original range.
   // Beside each callback's call, the member reads the length once, tests and

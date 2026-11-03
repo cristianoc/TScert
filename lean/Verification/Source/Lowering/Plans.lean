@@ -534,6 +534,21 @@ derived at each member (`unionVar`), each member one array contract. -/
     lengthOf (Γ.set i [label]) [label]
   pure (DirectProof.node Γ (.lenOf (.readAt SourceTypes.storeField (.var i))) N (.unionVar i) children)
 
+/-- The store of the array in slot `i`, the term `readAt store i`: of one
+array contract, its store's field read; of a union, the same term derived at
+each member (`unionVar`), at the union of what the members read. The term is
+a read of a value, which a literal's spread reads in place (`initTerm`). -/
+@[nospecialize] def arrayStoreAt (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
+    (i : Nat) : Compiler (DirectProof.Plan Tree) := do
+  let some C := Γ[i]? | throw "internal array-store slot mismatch"
+  if C.length ≤ 1 then return ← readCell G Γ SourceTypes.storeField (DirectProof.var Γ i C)
+  let alternatives ← (ProgramTyping.members G C).mapM fun label => do
+    let H := Γ.set i [label]
+    readCell G H SourceTypes.storeField (DirectProof.var H i [label])
+  let R := (alternatives.flatMap (·.type)).eraseDups
+  pure (DirectProof.node Γ (.readAt SourceTypes.storeField (.var i)) R (.unionVar i)
+    (alternatives.map fun plan => DirectProof.cast plan.goal.context R plan))
+
 /-- An array's `length` (`arrayLengthAt`), of the value a plan yields: of
 one array contract, its store read from that value; of a union, a slot's
 where the plan reads one, else the value held in a slot of its own. -/
