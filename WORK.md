@@ -17,6 +17,7 @@ each item's design and evidence, not its progress.
 | Splice insertion contract | closed through the [reviewed variadic contract](docs/SOURCE-CONTRACTS.md#prototype-contracts): `blocker-next-splice-insert-spread` and `array-splice-insert` verify; insertion that leaves a mapped-result hole and a sparse removed-result read are refused and throw under Node. Fresh 300 s slices on base `607d424` verify `declaration-graph.mts#settleDeclarations` at 0 of 1 → 1 of 1 functions and 0 of 5 → 5 of 5 statements; `globalNamespace` retains its function and 29 statements. The actual `collectDeclarations` dependent retains its earlier source refusal for a contextually `any` closure parameter at line 3800, column 66, with 0 of 2644 statements verified. The three slices take 46.55 → 45.43 s wall; producing search CPU is 24.5 → 28.3 s as the target completes, with no losses or timeouts (2026-11-03) | — |
 | Declaration-graph resolution helpers | open: [source rewrites](docs/SOURCE-REWRITES.md#merged-declaration-lists-stored-at-a-readonly-element-contract) and the entries after it, a `throw` and its operand left out of a closure's normal-return footprint, and a write of a cell the unit does not declare proposed as forgetting the other cells, verify 17 of the 26 functions of the cluster (16 of its 17 smallest), 0 → 389 statements, in a targeted census at a 600 s step limit on base `33d5faca` (2026-11-03). `compatibilityReviewed` calls a generic function value (`ProbeProgram`), whose call no rule derives; `collect`, `collectFrom` and `elaborateDeclaration` reach an incoming edge at `callbackResults`' union record; `inDeclarationSession` reaches its descriptor record holding `activeFamilies()`; `closeDeclarations`, `collectInstances`, `selectGlobal` and `collectDeclarations` keep their first refusals | each function verifies or its blocker has its own row |
 | Deferred gap candidates | open: six candidates retained from the 13-case round: compiler-enum ordinary-data provenance, error-message narrowing, compiler ancestor cells, AST JSON key bounds, table-classifier preservation and shadow-map provenance. Their private patches and handoffs are preserved; the owner defers their validation to conserve credits. | the selected candidates pass their targeted measurements, suites and independent review |
+| [Documentation cleanup](#documentation-cleanup) | open: the plan is stated; its second part waits for per-unit verification on main | each listed document states its subject once, at its level, as it currently is, and `node tests/docs.mts` passes |
 | Priority-deck refresh | open: the priority deck describes census `9bf8c463`; its revision for the complete `9fb116b8` census is deferred by the owner’s credit constraint. | the deck reflects the measured census and passes source review |
 | Loop head separation for a replaced record | open: a `for...of` loop that replaces a binding's record with a fresh one on each pass is refused at the loop's entry edge: the head's knowledge separates the fresh record from the loop's iterator, which the entry does not state (`blocker-for-of-fresh-record`). `template` avoids the form through `reduce` ([SOURCE-REWRITES.md](docs/SOURCE-REWRITES.md#a-loop-replacing-a-bindings-record-on-each-pass)). | `blocker-for-of-fresh-record` verifies |
 | Investigation: `blocker-round-binder-entries` near its stage limit | open: the case lowers all of `type-term.mts`, and its four searches share the 60 s case limit. With a fresh store, search CPU is 26.5 s and check CPU 10.7 s at `fba8a506`; under a load average of 85–150 the search exceeds 60 s, and it verifies when rerun by its pattern (2026-11-03). Which part of the search grows with load beyond its CPU is not established. | the case completes within its limit under suite load, or its limit is stated with its reason |
@@ -969,3 +970,44 @@ with its identity in the pre-key, makes them replay there. One case's
 parse executes on macOS too, its observations incomplete:
 `invalid-compiler-api-guard-subpath`, a specifier the package found does
 not resolve.
+
+### Documentation cleanup
+
+The top-level documents hold facts stated twice, detail below their level,
+and history. The cleanup applies AGENTS.md's writing rules to them. It has
+two parts.
+
+**Independent of per-unit verification:**
+
+- README states the coverage metrics and the release rule in one sentence
+  that links to DESIGN's definitions. Its "How it works" and DESIGN's
+  "Stages" describe the pipeline once, in one owner, with the other linking
+  to it.
+- DESIGN's "The pipeline entry point" keeps the outcomes. The tool-failure
+  detail, down to the compiler API's empty-tuple panic, moves to
+  [OBLIGATION-DIAGNOSTICS](docs/OBLIGATION-DIAGNOSTICS.md) or
+  [COMPILER-API](docs/COMPILER-API.md).
+- WORK.md's status rows state each item's current state and its last
+  measurement. Chains of earlier measurements are deleted, since the commit
+  records keep them.
+- `cases-report.md` (a report of 2026-10-25 on an index outside the
+  repository) is deleted or its content moved to its owner.
+- `docs/drafts/`:
+  - approved drafts move into their owning documents
+    (`certificate-sharing.md`'s landed stages);
+  - inventories of a past census are deleted (`method-effects-inventory.md`);
+  - drafts awaiting the owner's review are listed for that review
+    (`correctness-specs.md`, `canonicity.md`,
+    `heap-knowledge-canonical.md`).
+
+**After per-unit verification is on main:**
+
+- DESIGN's trust surface is reviewed row by row against each row's owning
+  document, with the verdict assembly's row added.
+- DESIGN's "Lasting decisions" is reviewed the same way.
+- The README's status section states the census scope as the per-unit
+  census defines it.
+- GLOSSARY's census terms (census, census record, slice, slice file) are
+  restated for units, and terms with no remaining referent are deleted.
+- AGENTS.md's coverage section and the gap-round skill and brief read a
+  unit's own refusal where they read a slice's first refusal.
