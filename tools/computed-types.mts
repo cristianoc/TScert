@@ -36,7 +36,7 @@ export type ComputedContext = {
   value(declarations: readonly Node[], what: string): { typeParams: readonly unknown[]; type: TypeTerm };
   /** The type alias a reference names, as TypeScript resolves it, if it
    * names one. */
-  alias(reference: TypeReferenceNode): TypeAliasDeclaration | null;
+  alias: (reference: TypeReferenceNode) => TypeAliasDeclaration | null;
   /** The declaration named by the current projected reference. */
   referenceAlias(reference: Extract<TypeTerm, { k: "reference" }>): TypeAliasDeclaration | null;
   /** The reader of type syntax inside `alias`'s declaration with its
@@ -55,7 +55,7 @@ export type ComputedContext = {
    * the `unique symbol` constant or well-known symbol declaring it among the
    * listed symbols, as a computed key `[k]` naming it is read. Throws the
    * reason where the symbol it holds is not known. */
-  unique(type: Type): number;
+  unique: (type: Type) => number;
 };
 
 /** Whether a checker type denotes class instances or an interface, including
@@ -452,11 +452,11 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
         throw Error(`${what} is a class inheriting static members of its base (${inherited.join(", ")}): its ` +
           "class value reaches them through its prototype, which no member of the class value's type states");
     }
-    if (!ts.isClassDeclaration(first) || !first.members.some(isStatic)) return value.type;
+    if (!ts.isClassDeclaration(first) || !first.members.some(member => isStatic(member))) return value.type;
     // A class value's static fields are own data properties of it, which its
     // type states; its static methods are bindings of their own, which no
     // member of its type states.
-    const statics = first.members.filter(isStatic).flatMap(member => {
+    const statics = first.members.filter(member => isStatic(member)).flatMap(member => {
       if (ts.isClassStaticBlockDeclaration(member)) return [];
       if (!ts.isPropertyDeclaration(member) || !ts.isIdentifier(member.name))
         throw Error(`${what} is a class with static methods or private statics: they are bindings of their own, ` +

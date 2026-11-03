@@ -2119,8 +2119,9 @@ own code of one parameter, which discards the actuals past it; the
 field's type did not state that.
 
 - **Rewrite:** each field of `PartMap` and `DocumentMap`, the functions
-  `deepPartMap` takes and the `identity` test `documentHolds`, `moduleHolds`
-  and `astHolds` take (passed to `some`), takes its further actuals at a
+  `deepPartMap` takes, the `identity` test `documentHolds`, `moduleHolds`
+  and `astHolds` take (passed to `some`) and the `go` that
+  `tools/type-term.mts#mapTypeParts` takes, takes its further actuals at a
   rest of `unknown`,
   `(e: Expr, ...further: unknown[]) => …`. A function of one parameter
   meets that type from its code, and `map` passes the index and the array
@@ -2132,8 +2133,45 @@ field's type did not state that.
   `mapDocument`, `deepPartMap`, `documentHolds`, `moduleHolds`, `astHolds`,
   `renamedModule`; `FamilyGraph.questioned` (`tools/host-families.mts`),
   passed to `some` in `familyTable`, whose local `flatten`, passed to
-  `flatMap`, is called by an arrow of one parameter instead.
-- **Commit:** the introducing commit.
+  `flatMap`, is called by an arrow of one parameter instead; `mapTypeParts`,
+  `substitute` and `settleTerm`.
+- **Commit:** the introducing commit; `mapTypeParts`'s, `Repair callback
+  arity and receiver contracts in the type readers`.
+
+### An imported predicate passed to `filter`
+
+`typeQuery` in `tools/computed-types.mts` and `lowerFile` in
+`tools/fragment-parse.mts` passed `isStatic`, imported from
+`tools/syntax.mts`, to `filter` and `some`, which call it with the element,
+its index and the array. An import is known by its type alone, and a
+function of the type `(node: Node) => boolean` may read a further optional
+parameter the index fills (`invalid-callable-field-callback`).
+
+- **Rewrite:** each call site passes `member => isStatic(member)`, a closure
+  of one parameter, offered the callback's signature. `isStatic` is an arrow
+  of one parameter, so it discards the index and the array either way, and
+  each element is tested once, in order, as before.
+- **Functions:** `typeQuery`, `lowerFile` and their callers.
+- **Commit:** `Repair callback arity and receiver contracts in the type readers`.
+
+### The computed-type context's hooks read as values
+
+`ComputedContext` (`tools/computed-types.mts`) declared `alias` and `unique`
+as methods. `computedType`, `aliasApplication` and `unionMembers` pass
+`context.alias` to `computedAlias`, and `literalUnion` receives
+`context.unique`: a method read off its object is no function value
+([method members](SOURCE-MODEL.md#method-members-are-host-relative)), so the
+reads were refused. The one implementation, `computedContext` in
+`tools/declaration-graph.mts`, allocates both as arrows, which use no
+receiver.
+
+- **Repair:** `alias` and `unique` are fields of function types, as
+  [a scope's hooks](#a-scopes-hook-read-as-an-optional-method) are. The
+  arrows are the same values, called with the same arguments; the
+  annotation changes no execution.
+- **Functions:** `computedType`, `aliasApplication`, `unionMembers`,
+  `distributed`, `typeQuery`.
+- **Commit:** `Repair callback arity and receiver contracts in the type readers`.
 
 ### Active recording membership
 
@@ -2469,6 +2507,54 @@ it selects the original type. `computedType` and
 - **Scope:** `blocker-prep-host-find-callback` exercises the returning loop
   over the same union of compiler arrays. This rewrite adds no host contract
   or external assumption.
+
+### An overlay entry's signatures tested by a conjunction and `every`
+
+`tools/shadow-contracts.mts#statedSignatures` returned `undefined` where
+`entry.stated === undefined && entry.forms === undefined`, and returned its
+printed list where `printed.every((p): p is string => p !== null)`. Where
+the conjunction is false, the producer claims the entry at the union of its
+record with `stated` present and its record with `forms` present; the
+verifier's evaluation of the conjunction joins the two outcomes before the
+`if` branches and keeps the record as declared, so the incoming edge of the
+next statement is refused. `every`'s `this is S[]` is no contract of the
+native ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
+
+- **Avoided form and cost:** the conjunction of two presence tests of
+  optional fields. Claiming the join the verifier keeps needs the producer
+  to model that join of field refinements; the census shows this one site.
+- **Equivalence:** `if (entry.stated === undefined) { if (entry.forms ===
+  undefined) return undefined; }` reads the same fields in the same order
+  and returns exactly where both are `undefined`. `printed` is a fresh array
+  no other reference holds; `printed.filter((p): p is string => p !==
+  null)` visits the same entries, and the comparison of lengths answers as
+  `every` does, so the function returns a fresh array of the same strings,
+  or `null`, where it returned `printed` or `null`. The overlay entries are
+  plain records whose `stated` and `forms` are data properties. Returns,
+  exceptions, mutations and receivers agree for every entry.
+- **Scope:** `stated-signatures-presence`. No host contract or external
+  assumption is added.
+
+### A command-line argument checked by a top-level statement
+
+`tools/unchecked.mts` read its `--project` argument into `projectDir` and
+then threw the usage error in a top-level `if (projectDir === undefined)`,
+a statement outside the fragment, which a census slice leaves out: its
+`runPart` then read `projectDir` at `string | undefined` where an argument
+list of strings is built, in the slices of `decodeResult` and `findIn`.
+
+- **Avoided form and cost:** a top-level test narrowing a module constant
+  that later closures read. Supporting top-level statements is a change of
+  the fragment; this one site needs none.
+- **Equivalence:** `projectDir` is initialized by `present(args[projectAt +
+  1])` where a `--project` flag is given, a module function that throws the
+  same `Error` with the same message where the argument is absent and
+  returns it otherwise. The throw happens during the constant's
+  initialization instead of the next statement; nothing runs between them,
+  and the module's later statements run in both forms exactly where no
+  error was thrown.
+- **Scope:** `module-argument-presence`. No host contract or external
+  assumption is added.
 
 ### A saved nullable session tested before its ledger
 

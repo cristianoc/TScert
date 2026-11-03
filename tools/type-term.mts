@@ -929,7 +929,7 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): Within<{ 
 }
 
 /** A term's parts each mapped by `go`. */
-export function mapTypeParts(term: TypeTerm, go: (part: TypeTerm) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
+export function mapTypeParts(term: TypeTerm, go: (part: TypeTerm, ...further: unknown[]) => Within<{ value: "any"; store: "grow" }, TypeTerm>): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
   const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
     params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });

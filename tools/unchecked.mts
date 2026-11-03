@@ -512,10 +512,15 @@ function objectMember(value: Json | undefined, key: "files" | "found" | "file" |
   return value[key];
 }
 
+/** The argument a flag names, or the usage error where it names none. */
+function present(argument: string | undefined): string {
+  if (argument === undefined) throw new Error("usage: unchecked.mts [--list] [--project DIR --expect]");
+  return argument;
+}
+
 const args = process.argv.slice(2);
 const projectAt = args.indexOf("--project");
-const projectDir = projectAt < 0 ? "tools" : args[projectAt + 1];
-if (projectDir === undefined) throw new Error("usage: unchecked.mts [--list] [--project DIR --expect]");
+const projectDir = projectAt < 0 ? "tools" : present(args[projectAt + 1]);
 const config = path.resolve(projectDir, "tsconfig.json");
 if (args.includes("--contracts")) {
   // The external `any` inputs the shadow program reads at a reviewed

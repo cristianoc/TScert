@@ -1864,7 +1864,7 @@ function lowerFile(file: string, carriesContext: boolean,
   if (!carriesContext) findRests(source);
   // A read `C.x` of a class with static members may be one of them:
   // TypeScript decides.
-  const withStatics = new Set(classNodes.filter(c => c.members.some(isStatic))
+  const withStatics = new Set(classNodes.filter(c => c.members.some(member => isStatic(member)))
     .flatMap(c => c.name ? [c.name.text] : []));
   const staticNodes: Identifier[] = [];
   const findStatics = (node: Node): void => {

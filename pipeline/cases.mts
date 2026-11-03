@@ -2156,6 +2156,8 @@ export const cases: Case[] = [
   gap("class-constructor-reads-this", "row a constructor statement reading `this` before the instance is complete: the instance is allocated at the constructor's end", "unsupported", "source",
     /a constructor statement that reads `this` is outside the fragment/),
   positive("equality-unknown", "strict equality compares arbitrary JavaScript values"),
+  positive("module-argument-presence", "A module constant whose initializer establishes its argument's presence is a string in a later closure."),
+  positive("stated-signatures-presence", "Two optional fields' absence tested by nested tests, and a printed list kept by a filter of its spelled entries and a length comparison."),
   positive("null-equality-slices", "a value found equal to null or undefined is that value, and unequal to null any other kind, of `unknown` by its kinds and of a named union by its arms, so a decoder's `reason !== null && typeof reason !== \"string\"` leaves null or a string"),
   negative("invalid-null-equality-call", "a call of a closure assigning a `let` found equal to null ends the refinement (run under Node)",
     /no derivation of its return-contract claim/),
