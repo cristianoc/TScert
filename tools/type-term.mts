@@ -62,7 +62,7 @@ export function someType(term: TypeTerm, test: (term: TypeTerm) => Within<{ valu
 /** Visit every source type constructor, with the generic method binders in scope.
  * Readers use the same walk for annotation admissibility and name checking. */
 export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: ReadonlySet<string>) => Within<{ value: "any"; store: "grow" }, void>,
-    bound: ReadonlySet<string> = new Set()): Within<{ value: "any"; store: "grow" }, void> {
+    bound: Set<string> = new Set()): Within<{ value: "any"; store: "grow" }, void> {
   visit(term, bound);
   // A scheme's binders are in scope in its bounds, defaults and signatures.
   let inner = bound;
@@ -228,7 +228,7 @@ export type TermScope = {
   /** An external declaration's type-level wildcard being read, a type
    * parameter's constraint: the reading of each `any` in it by its span
    * (`wildcardReadings`). */
-  wildcard?: ReadonlyMap<string, "unknown" | "never">;
+  wildcard?: Map<string, "unknown" | "never">;
   /** A declaration's own equation, when it is a type literal: its methods'
    * receiver is the declaration, as an interface's are. */
   body?: TypeNode;
@@ -1055,9 +1055,10 @@ function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterD
       return scope.named(node, span, read);
     },
   };
-  for (const [index, p] of typeParameters.entries()) {
+  for (let index = 0; index < typeParameters.length; index++) {
+    const p = typeParameters[index];
     const binder = binders[index];
-    if (!binder) return scope.fail(p, "missing type parameter");
+    if (!p || !binder) return scope.fail(p ?? at, "missing type parameter");
     binder.bound = p.constraint ? typeTerm(inner, p.constraint, p) : null;
     binder.default = p.defaultType ? typeTerm(inner, p.defaultType, p) : null;
   }
@@ -1086,7 +1087,9 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   const params: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   let alternatives: TypeTerm[][] | null = null;
-  for (const [index, p] of ordinary.entries()) {
+  for (let index = 0; index < ordinary.length; index++) {
+    const p = ordinary[index];
+    if (!p) return scope.fail(at, "missing parameter");
     const pattern = !declared && !!p.dotDotDotToken && ts.isArrayBindingPattern(p.name);
     if (!(ts.isIdentifier(p.name) || pattern) || (ts.isIdentifier(p.name) && p.name.text === "this") ||
         (p.initializer && !declared))

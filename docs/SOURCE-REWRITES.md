@@ -474,6 +474,29 @@ signature's node did not meet it ("no rule derives this invoke" at
   shows. This repair adds no external assumption.
 - **Commit:** the introducing commit.
 
+### The type reader's native collections typed as natives
+
+`visitType` in `tools/type-term.mts` states `{value: any, store: grow}` and
+extends the binder names in scope with `new Set([...bound, …])`; its
+`bound` parameter was a `ReadonlySet<string>`. `readTypeTerm` reads
+`scope.wildcard?.get(…)`, a `ReadonlyMap`. Each admits a program object
+whose iterator or `get` runs code, so the step could change any location
+("the footprint claimed for 'visitType' is not established by its body",
+then for `readTypeTerm`).
+
+- **Repair:** `bound` is a `Set<string>`, the native set every caller
+  passes (the default `new Set()` or the walk's own `new Set(…)`), and
+  `TermScope.wildcard` is a `Map`, the one `wildcardReadings` builds. A
+  native set's iterator and a native map's `get` run no client code
+  ([iteration intrinsics](../tools/intrinsics.mts),
+  [collection overlays](../tools/array-prototype.mts)), within
+  `{value: any, store: keep}`. The `visit` callback still receives the set
+  as a `ReadonlySet<string>`. The annotations change no execution and add
+  no assumption.
+- **Scope:** `set-spread-stated-footprint`; `invalid-readonly-set-has-effect`
+  keeps a program `ReadonlySet` whose iterator writes.
+- **Commit:** the introducing commit.
+
 ### Mapped arms with a store-preserving callback
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
@@ -2175,6 +2198,32 @@ construction; `newLedger` constructs a record without a stage key.
 - **Scope:** `blocker-round-recording-stage` checks both branches through
   the complete recording contract. No host contract or external assumption
   is added.
+
+### An array's entries iterated by index
+
+`quantified` and `signatures` in `tools/type-term.mts` walked an array with
+its positions, `for (const [index, p] of xs.entries())`, inside the type
+reader's stated `{value: any, store: grow}`. The overlay reads
+`ReadonlyArray.prototype.entries` as an `IterableIterator`, a structural
+iterator whose `next` states no effect, so the loop could change any
+location ("the footprint claimed for 'quantified' is not established by
+its body").
+
+- **Avoided form and cost:** support would read an array's `entries()` as
+  a native iterator stepping its array: a marked iterator kind whose step
+  reads the array's current length and element at the array's presence,
+  through the parser's iteration kinds and the overlay. Nine other loops
+  of `tools/` use the form; this round writes the two in the `quantified`
+  slice out.
+- **Equivalence:** `for (let index = 0; index < xs.length; index++) {
+  const p = xs[index]; … }` reads the array's length before each step and
+  its element at the index, as the array iterator's step does
+  (CreateArrayIterator), and runs the body with the same bindings; `continue`
+  steps the index as the iterator would. The added check of `p` answers
+  only at a hole, which neither array has: `typeParameters` is a compiler
+  node list and `ordinary` a fresh copy of one. Returns, exceptions,
+  mutations and receivers agree for every array its callers pass.
+- **Scope:** `array-index-loop-footprint`.
 
 ### A closure called by an earlier closure
 
