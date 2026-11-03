@@ -2157,6 +2157,32 @@ construction; `newLedger` constructs a record without a stage key.
   the complete recording contract. No host contract or external assumption
   is added.
 
+### A closure called by an earlier closure
+
+`tools/fragment-statements.mts#switchStmt` declares `plain`, which calls
+`enumLabel`, before `enumLabel`. `plain`'s body mentions a binding declared
+after it, an early binding ([lexical bindings before
+initialization](SOURCE-ELABORATION.md#lexical-bindings-before-initialization)),
+whose contract is the arrow its annotations write, which states no effect.
+So `plain`, and `switchStmt`'s call of `clauses.every` with it, are within
+no footprint, and `switchStmt`'s statement `{value: any, store: grow}` is
+refused.
+
+- **Avoided form and cost:** an early binding of a closure read by an
+  earlier closure. Carrying the closure's inferred effect onto its early
+  binding's contract needs the rounds of inference [recursive
+  constants](SOURCE-ELABORATION.md#recursive-constants) have, for every early binding; the census shows this one site.
+- **Equivalence:** `enumLabel` is declared before `plain`. Both
+  initializers are arrow functions: evaluating one creates a closure and
+  runs no code, so it neither throws nor writes. Nothing between the two
+  declarations calls either, and `plain` is first called after both are
+  initialized; each closure captures the same bindings. Returns,
+  exceptions, mutations, receivers, aliases and asynchronous effects agree
+  for every input.
+- **Scope:** `closure-declared-before-reader` verifies the equivalent form
+  inside a stated footprint. No host contract or external assumption is
+  added.
+
 ### A compiler stored after its opening counter
 
 `tools/fragment-parse.mts#projectFor` saves the return of
@@ -2754,6 +2780,21 @@ spread checks establish the fresh array's element contract.
   aliases and receivers are unchanged for every map this caller supplies.
 - **Scope:** `blocker-round-map-keys-spread` states the retained `Map`
   parameter. This repair adds no external assumption or rule.
+- **Commit:** the introducing commit.
+
+`tools/fragment-statements.mts#functionDeclarations` receives the same map
+from its sole caller, `statements`, and reads it by `get` inside its
+statement `{value: any, store: grow}`.
+
+- **Repair:** its parameter states `Map<FunctionDeclaration, number>`. A
+  structural `ReadonlyMap`'s `get` may be any client function, which states
+  no effect (`invalid-readonly-set-has-effect` shows the same of
+  `ReadonlySet`'s `has`); the native `get` changes no location.
+- **Behaviour:** the annotation is erased; the same map's `get` runs with
+  the same key and receiver, and its answers, returns, exceptions,
+  mutations and aliases are unchanged for the one map the caller supplies.
+- **Scope:** `map-parameter-get-footprint` states a `Map` parameter read by
+  `get` inside a stated footprint. No external assumption or rule is added.
 - **Commit:** the introducing commit.
 
 ### A live compiler overlay with checked read effects

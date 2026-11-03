@@ -2407,12 +2407,16 @@ result. Of `ArrayProto`, `slice`, `flat`, `join`, `toString`, `indexOf`,
 `entries` state it: they read the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
 only their result. `find`, `findIndex`, `filter`, `some`, `every`,
-`forEach` and `flatMap` call a callback; each reads the length once and the
+`forEach`, `flatMap`, and `reduce` and `reduceRight` with an initial value,
+call a callback; each reads the length once and the
 receiver's own numeric keys, data properties (`numericOwn`), and allocates
-only its result by ordinary construction, so beside the callback it runs no
+only its result by ordinary construction (`reduce` and `reduceRight` none:
+they return the callback's last answer, or the initial value), so beside the
+callback it runs no
 client code and is within the callback's footprint: it has one signature per
 closed footprint $`\varepsilon`$ (`array-preserving-callbacks`,
-`map-stable-filter-push`, `invalid-map-filter-pop`):
+`map-stable-filter-push`, `invalid-map-filter-pop`, `map-stable-reduce-push`,
+`invalid-map-reduce-pop`):
 
 ```math
 \frac{m\in\{\mathsf{filter},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}\mathtt{unknown}}
@@ -2878,7 +2882,7 @@ where the native is modelled and audited otherwise:
 | `%Iterate%` over an array; its step, called with the iterator as its receiver | the empty footprint, its result a fresh object (`freshObject`); the empty footprint on every location but the receiver's own (`receiverOwn`), which may change their values | creating the iterator runs no client code; the iterator is a fresh object holding its internal state (the array, the next index and whether it is done) at its own locations, none an array store; a step reads the array's current length and the element at the index, which runs no client code on an array of the program (no proxy, an element a data property, `Array.prototype` standard: the [trust surface](DESIGN.md#trust-surface)'s rows), writes only that state, and allocates what it yields (audited against [ECMA-262](REFERENCES.md#ecma-262)'s array iterator objects) |
 | an iteration intrinsic over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
-| `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap` at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
+| `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap`, and `reduce`, `reduceRight` with an initial value, at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
 | `new Set`, `new Map` of an array, a host collection or nothing | the empty footprint | they read the array or the collection through the host's iterator and allocate (audited) |
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 

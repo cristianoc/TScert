@@ -269,7 +269,7 @@ export function localClass(this: Gate, node: ClassDeclaration, name: ts.Identifi
   visit(gate.file, null, false);
 }
 
-export function classStmt(this: Gate, node: ClassDeclaration): Stmt {
+export function classStmt(this: Gate, node: ClassDeclaration): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const name = node.name;
   if (!name) return gate.fail(node, "an anonymous class is outside the fragment");

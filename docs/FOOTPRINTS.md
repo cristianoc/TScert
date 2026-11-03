@@ -135,7 +135,9 @@ locations below the heap the body started in; the runs compose by
 
 - an **inspection**: a read, test, arithmetic or allocation, an array
   literal's spread parts included, which read their stores' elements in
-  place, and a merge, which reads its operands' own properties and steps to
+  place (an operand that is one of several arrays reads the store of the
+  one its slot holds, the read derived at each alternative by `unionVar`:
+  `arrayStoreAt`), and a merge, which reads its operands' own properties and steps to
   the allocation of their copy, which preserves the heap
   (`ExpressionEffects.check`, `Purity.inspectTerm`; proved: `inspect_safe`,
   from `inspect_step`, whose merge case is `mergeParts_vals`: every copied
@@ -228,7 +230,10 @@ proved: `SourceRequests.checkRequests_async`):
 
 The producer proposes each footprint, untrusted: a body's is the join of its
 nodes' (`footprint_expr`, `footprint_stmts` in `ocaml-producer/source.ml`),
-a variable write `{value: any, store: keep}`, a call or construction the join
+a variable write `{value: any, store: keep}`, as is a field write whose
+object's claim gives every alternative the field as a required writable one
+holding source values (`Type_queries.source_field_write`, as Lean's typed
+write reads it), a call or construction the join
 of every signature its callee may take, a call its own typing claims at
 `never` the empty footprint, an async definition none, and a method call,
 in a function's or a closure's body, on an object whose claim has several
@@ -237,7 +242,9 @@ are names or literals none: the lowering may read and invoke its member in one
 node dispatched on the object (`Lowering.dispatchesCall`), which no bounded node rule above admits.
 A method call on a union of arrays none of which owns the member, the member
 claimed at one type, is not dispatched (each alternative reads it from the
-array prototype) and is proposed as a call; declarations are proposed at the least
+array prototype), nor is one on a union of hosts each holding the member as a
+method, generic (a scheme whose signatures take the declaration as receiver,
+as `forEachChild`) or not (`unionMemberHosts`); each is proposed as a call; declarations are proposed at the least
 fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
 every node.
 
@@ -252,8 +259,9 @@ at a comparator within one of its footprints (`{value: any, store: grow}`,
 regex's members, the array iterator, `new Set` and `new Map`, and the
 collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse`, `splice` and every native stated
-unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex` and
-`flatMap` have one signature per closed footprint, each within its callback's.
+unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
+`flatMap`, `reduce` and `reduceRight` have one signature per closed
+footprint, each within its callback's.
 `pop`, `shift`, `reverse` and `splice` state `{value: any, store: keep}` with their
 receiver's store excepted, so outside a fresh receiver they bound a call by
 the footprint letting everything change; `filter`, `map`, `flatMap`, `flat`,

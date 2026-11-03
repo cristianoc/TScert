@@ -143,7 +143,7 @@ let present key =
     when not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields) ->
     (match index_for s (Name key) with
      | Some i -> Shape {s with fields=fields @ [{name=Name key;optional=false;read=i.value;write=None;
-         host=false;receivers=[];stable=false}]}
+         host=false;receivers=[];stable=false;generic=false}]}
      | None -> Shape s)
   | Exact fields -> Exact (promote fields)
   | a -> a

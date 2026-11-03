@@ -34,7 +34,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | Atoms [Shape ({calls;_} as s)] ->
             Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Semantic.ordinary_effect}) calls}]
           | t -> t in
-        {name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false}) statics in
+        {name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false;generic=false}) statics in
   match e.node with
     | Ctor ({node=Lambda (None,[],ps,[],false,Some result,_,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no
@@ -297,9 +297,14 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | Some t -> dispatches_call declarations t k (latest_claim callee.pos) args
            | None -> false)
         | _ -> false in
+      (* A field write the claim of its object types as a typed write of a
+         location holding a value (`Type_queries.source_field_write`). *)
+      let field_write (o:expr) k = match latest_claim o.pos with
+        | Some t -> source_field_write declarations t k
+        | None -> false in
       let bound = if rest || Hashtbl.mem Source.async_closures e.pos then None else
-        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~no_return ~iteration ~readable d))
-          (footprint_expr ~dispatched ~callable ~no_return ~iteration ~readable body) defaults in
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~field_write ~callable ~no_return ~iteration ~readable d))
+          (footprint_expr ~dispatched ~field_write ~callable ~no_return ~iteration ~readable body) defaults in
       (* Where every node of the body and its defaults bounds its throw, the
          footprint is proposed on a throw too. *)
       let on_throw = List.for_all (fun (_,d) -> throws_expr ~callable d) defaults && throws_expr ~callable body in

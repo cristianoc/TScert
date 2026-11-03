@@ -883,9 +883,12 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
     "map-stable-collection-write: the callback's call writes the map");
   // The declaration called by the callback writes the counter it is passed.
-  assert.equal(runExample("invalid-declaration-write-callback",
+  assert.equal(runExample("declaration-field-write-callback",
     `(() => { const counter = { n: 0 }; counted(["a", "b"], counter); return counter.n; })()`), 2,
-    "invalid-declaration-write-callback: the declaration's call writes its parameter's field");
+    "declaration-field-write-callback: the declaration's call writes its parameter's field");
+  // The declaration called by the callback pops the mapped array.
+  assert.equal(runExample("invalid-declaration-pop-callback", `Object.keys(dropped(["a", "b", "c"])).length`), 2,
+    "invalid-declaration-pop-callback: the result has three positions, two present");
   // The `filter` callback's `push` writes the array it captures.
   assert.equal(runExample("map-stable-filter-push",
     `(() => { const kept = []; const r = words(["a b", "c"], kept); return kept.join() + ":" + Object.keys(r).length; })()`), "a,b,c:2",
@@ -1489,6 +1492,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,
     "invalid-map-filter-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-reduce-pop", "Object.keys(lengths([\"a\", \"b\", \"c\"])).length"), 2,
+    "invalid-map-reduce-pop: the result has three positions, two present");
   assert.throws(() => runExample("invalid-filter-sparse-callback", "run()"), /undefined/,
     "filter's callback receives the sparse source array");
   assert.equal(runExample("native-filter-sparse", 'JSON.stringify(compact([1, 2, 3]))'), "[1,2]");

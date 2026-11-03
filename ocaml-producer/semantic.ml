@@ -114,8 +114,12 @@ and key = Name of string | Key of int
 (* A host-relative method (`host`) is read off its object and invoked on it:
    a member, not a field holding a function value, as Lean reads method
    syntax. `receivers` are the types its host must meet, which a `this`
-   parameter states; none for any other field. *)
-and field = { name: key; optional: bool; read: ty; write: ty option; host: bool; receivers: ty list; stable: bool }
+   parameter states; none for any other field. A generic method (`generic`),
+   a required member whose signatures form one scheme each taking the
+   declaration as receiver, is a member too, as Lean reads it
+   (`schemeMethod`): its host binds it before the actuals run. *)
+and field = { name: key; optional: bool; read: ty; write: ty option; host: bool; receivers: ty list; stable: bool;
+              generic: bool }
 (* An index signature constrains the keys its class admits: every string key
    (`[k: string]`), the canonical numeric ones (`[k: number]`), or every symbol
    key (`[k: symbol]`); an index over a union of key types is one per member. *)
@@ -228,7 +232,7 @@ let top = Atoms [Top]
    its objects are ordinary, which a claim states as an own-key bound
    excluding the key. *)
 let host_key = Name "[[host]]"
-let host_mark : field = {name=host_key;optional=true;read=Atoms [];write=None;host=false;receivers=[];stable=false}
+let host_mark : field = {name=host_key;optional=true;read=Atoms [];write=None;host=false;receivers=[];stable=false;generic=false}
 (* `nonHost`: every value but a host object. *)
 let non_host = Atoms [Nul;Undef;True;False;Num;Str;Bigint;Symbol;
   Shape {fields=[host_mark];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]

@@ -395,9 +395,11 @@ fact of the value that makes the re-test's failing edge vacuous.
 `n.forEachChild` in an expression, where the flow reads `n` at several arms
 of its family (`ts.isIdentifier(n) && names.has(n.text) ? n :
 n.forEachChild(refers)`), verifies at the footprint its body shows
-(`compiler-api-visitor-union`): the producer proposes the call dispatched
-on the union in one node, as the lowering makes it
-(`Type_queries.dispatches_call`).
+(`compiler-api-visitor-union`): every arm holds the generic member, which
+the call binds to the node (`unionMemberHosts`), and the producer proposes
+it as a call (`Type_queries.dispatches_call`); so does a visitor whose node a
+guard and a flags test leave at several arms, inside a function stating its
+footprint (`compiler-api-visitor-generic-member`).
 
 <a id="assigned-parameter-patterns"></a>
 **Assigned parameter patterns.** A parameter pattern one of whose bindings
