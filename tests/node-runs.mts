@@ -29,6 +29,25 @@ assert.equal(runExample("branch-context-facts",
   '(() => { const kept = []; const result = boundRecord({ name: "n", bound: 2 }, kept); return result.name === "n" && result.bound === 2 && kept.length === 1 && kept[0] === 2; })()'), true,
   "the qualified call inside the record arm retains its observable mutation");
 
+assert.equal(runExample("blocker-next-splice-insert-spread",
+  '(() => { const xs = [1, 2, 3]; replace(xs, xs); return JSON.stringify(xs); })()'),
+  '[1,2,3]', "splice captures inserted values before mutating an aliased receiver");
+assert.equal(runExample("array-splice-insert", 'JSON.stringify([insert(["a","b","c"], -2, 1, ["x","y"]), omitted([1,2,3]), explicitUndefined([1,2,3]), local([1,2])])'),
+  '[["b"],[2,3],[],[1,2]]', "splice insertion, omitted and explicit undefined counts, fresh removed storage");
+assert.equal(runExample("array-splice-insert",
+  '(() => { const xs = [1,2,3]; const removed = ordered(xs, () => { xs.pop(); return 9; }); return JSON.stringify([xs, removed]); })()'),
+  '[[1,2,3,9,2],[1]]', "the spread is captured before a later argument changes the receiver");
+assert.equal(runExample("array-splice-insert",
+  '(() => { const xs = ["a", , "c"]; const removed = holes(xs, [, "z"]); return JSON.stringify([xs, Object.keys(xs), removed, Object.keys(removed)]); })()'),
+  '[[null,"z","c"],["0","1","2"],["a",null],["0"]]', "removed holes survive while spread holes become inserted undefined values");
+assert.equal(runExample("array-splice-insert",
+  '(() => { const value = {value:1}, xs = [value]; const removed = objects(xs, xs); removed[0].value = 2; return removed !== xs && removed[0] === xs[0] && xs[0].value === 2; })()'),
+  true, "removed storage is fresh and object elements retain their aliases");
+assert.throws(() => runExample("invalid-splice-insert-map-density", 'broken(["a","b","c"])[1].toUpperCase()'),
+  /TypeError/, "splice insertion can shrink the receiver and leave a mapped result hole");
+assert.throws(() => runExample("invalid-splice-insert-sparse", 'broken(["a","b","c"])'),
+  /TypeError/, "splice insertion retains a hole in its removed result");
+
 assert.equal(runExample("invalid-array-rest-own-iterator",
   '(() => { const xs = [1], victim = [2]; changed(xs, victim); return victim.length; })()'), 0,
   "an own array iterator can shrink another ordinary array during rest collection");

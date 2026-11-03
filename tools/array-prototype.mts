@@ -81,7 +81,7 @@ export type OverlayEntry = {
 };
 type Effect = CallEffect;
 /** A reviewed replacement signature of an overlay entry. */
-type StatedSignature = { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm; effect?: Effect };
+type StatedSignature = { receiver?: TypeTerm; params: TypeTerm[]; rest?: TypeTerm; result: TypeTerm; effect?: Effect };
 /** A stated signature with its own effect. */
 type EffectSignature = { params: TypeTerm[]; result: TypeTerm; effect: Effect };
 
@@ -384,14 +384,15 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
     effect: footprintEffect({ value: "any", store: "grow" }) },
   { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverStoreEffect },
-  // `splice` without items: it converts only numbers, copies the present
-  // elements of the deleted range to a fresh array (ordinary construction),
-  // holes where the receiver has them, so its result is read as the
-  // receiver's elements are, then moves or deletes each later index and sets
-  // the length: it changes the receiver's store arbitrarily and allocates its
-  // result. The overload with `items` is not listed.
-  { name: "splice", from: "Array", signature: "splice(start: number, deleteCount?: number): T[];",
-    effect: footprintEffect(receiverStoreEffect.footprint, { receiverStore: true, fresh: true }) },
+  // `splice` converts primitive numeric offsets, copies the removed range
+  // with its holes to fresh array storage, shifts the remaining indices and
+  // writes the already evaluated inserted values. Only its receiver's store
+  // and existing element values may change. One variadic contract covers
+  // both installed overloads: omission of deleteCount and explicit undefined
+  // have different deletion counts but the same result and effect contracts.
+  { name: "splice", from: "Array", signature: "splice(start: number, deleteCount: number, ...items: T[]): T[];",
+    stated: [{ params: [atomOf("number"), optionalNumber], rest: element, result: arrayOf(element, false),
+      effect: footprintEffect(receiverStoreEffect.footprint, { receiverStore: true, fresh: true }) }] },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
@@ -1137,7 +1138,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
       ? entry.stated.map(f => ({ k: "function", effect: f.effect ?? entry.effect ?? proto.effect, receiver: f.receiver ?? null,
-          params: f.params, rest: null, result: f.result,
+          params: f.params, rest: f.rest ?? null, result: f.result,
           span } satisfies Extract<TypeTerm, { k: "function" }>))
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated)
           .map(f => ({ ...f, effect: entry.effect ?? proto.effect }));
