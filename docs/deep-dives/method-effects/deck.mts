@@ -117,7 +117,7 @@ const slides: Slide[] = [
       ["getters and setters", "TScert refuses every accessor definition, with or without a statement"],
       [t("`Within` as the type of a parameter, a field or an array element itself (`x: Within<…>`)"), "a statement is the effect of the signature whose result it is"],
       ["F given as a named type alias", t("TScert reads F only from the literal written inside `Within`")],
-    ], [30, 70]) + para(`A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a ${t("`map`")} callback calling one gets ${t("`map`")}’s signature with holes (${c("generic-stated-declaration-refused.ts")}, a ${gap}: a known limit, recorded by its expected refusal).`, 24),
+    ], [30, 70]) + para(`A generic function declaration may carry a statement: its annotated parameters are its inputs, so it is certified over its whole written signature. Its callers ignore the statement, so a ${t("`map`")} callback calling one gets ${t("`map`")}’s signature with holes: the generic declaration’s instances carry no footprint at that call.`, 24),
   }),
   slide("forms", {
     label: "Where you can write it", note: "abridged; exclusions on “Forms that cannot carry a statement”", gap: 26,

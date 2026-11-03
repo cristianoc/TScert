@@ -1560,7 +1560,7 @@ operand in a product contributes all its signatures to one overloaded
 callable, so the producer's proposal is the same whether they are written
 flat or grouped through an alias; Lean's clause meet keeps both signature
 lists of two callables. Lean reads an alias of function types met with a
-record as an empty intersection (`spread-intersection-callable-alias`), so
+record as an empty intersection, so
 the verifier refuses that grouping.
 
 Within an intersection product, `Top` (`unknown`) is the identity; a source
@@ -2337,8 +2337,7 @@ the program defines (`declaration-list-order`). A read of a later
 declarator's binding is a read of an
 [early binding](#lexical-bindings-before-initialization)
 (`declaration-list-forward-read`, `declaration-list-capture`), refused where
-a pattern declares it (`declaration-list-pattern-forward-refused`). A `var`
-list is refused (`declaration-list-var-refused`), and so is such a list at a
+a pattern declares it. A `var` list is refused, and so is such a list at a
 module's top level or in a `for` initializer.
 
 A default replaces a read that is `undefined`, and only then runs. With
@@ -3148,9 +3147,8 @@ instantiated type is refused, save an object literal's at `undefined` alone
 (an array literal's records, each given the others' members so): the
 compiler's API gives an anonymous record's instance no instantiation of its
 declaration's binders, and the member's type carries the `undefined`
-optionality adds, from which the written contract is not recovered
-(`closure-contextual-anonymous-instance-refused`,
-`closure-contextual-nested-instance-refused`). Each index signature is read
+optionality adds, from which the written contract is not recovered.
+Each index signature is read
 by its key, string, number or symbol, with its capability. A method, an
 accessor, a symbol key or an index of another key of such
 a record is refused at the parameter (`closure-contextual-records`,
@@ -3262,7 +3260,7 @@ carry the closure's preservation onto its exceptional edge
 proposes the offered rows for the self entry of a plain closure, without
 type parameters, a rest or a written promise; the self entry of any other
 is read at its own signature, so its self read at a longer signature meets
-none and is refused (`recursive-guard-callback-refused`, a gap). A self read where a
+none and is refused. A self read where a
 signature with a parameter outside the closure's is expected is not
 offered and meets nothing, so it is refused, called at once or stored and
 called later with more arguments, both admitted by TypeScript, which

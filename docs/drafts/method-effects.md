@@ -421,9 +421,6 @@ Positive:
   object literal's method, called in a `find` callback, result at `T`;
 - `method-effect-arrow`: a stated arrow in a fresh literal's field;
 - `method-effect-static`: a stated static method;
-- `generic-stated-declaration-refused` (a gap): a stated generic
-  declaration, certified at its statement, whose instances callers read at
-  its declared signature without a footprint;
 - `method-effect-onthrow`: a statement with `onThrow` whose caller catches.
 
 Negative:

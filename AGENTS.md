@@ -223,6 +223,14 @@ extraction, producer, wire), and what Lean proves needs no test.
 - **Prefer a pipeline case.** A new feature's test is a source file with its
   expected outcome, positive and negative, not a unit test of an
   intermediate step.
+- **Feature gaps follow the census.** A safe feature-gap case with no
+  census association is not kept, unless another test depends on it or it
+  exercises an explicit, enforced fragment or contract restriction. Keep
+  those dependencies and boundary controls, and preserve negative cases
+  whose programs are unsafe under the project's stated assumptions.
+  Removing a feature case changes the test inventory, not the supported
+  fragment or measured front-end coverage; reconcile its documentation and
+  any work item whose sole obligation is that case.
 - **Research tests are temporary.** Tests written while working a feature out
   (a Lean `#guard` on a hand-built graph, a probe of one tool) are useful
   while researching it. Once a pipeline case covers the behaviour, retire

@@ -2658,8 +2658,7 @@ retains its guard and early return.
   their contracts. The callback can format null, though the preceding test
   returns before that call for an array containing null.
 - **Scope:** `blocker-round-every-map-narrowing` checks the written nullable
-  callback parameter. The statement-level elements fact has its own cases,
-  `every-elements-negated` and `every-elements-saved`.
+  callback parameter.
 - **Trust:** no external contract or assumption is added.
 - **Commit:** the introducing commit.
 
@@ -2982,8 +2981,7 @@ pattern's lowering, for this one site of the census of b81675f.
 The `Gate` constructor (`tools/fragment-parse.mts`) assigned its field
 `scope` from `this.termScope()`, a record of hooks closing over the gate.
 A constructor's statement or field assignment reading `this` is refused
-(`blocker-constructor-assignment-this`): the instance is allocated at the
-constructor's end from one value per field
+because the instance is allocated at the constructor's end from one value per field
 ([model limits](SOURCE-FRAGMENT.md#model-limits)). Support would allocate the
 instance before the call and add its remaining fields afterwards, writes
 adding keys to an object the method's closures already hold, for this one
@@ -3169,7 +3167,7 @@ snapshot request's type `NonNullable<Parameters<API["updateSnapshot"]>[0]>`,
 and `openCompiler`'s parameter `ConstructorParameters<typeof API>[0]`. An
 indexed access reads a member's declared annotation, which a method has
 none of (`blocker-api-indexed-method`), and `ConstructorParameters` of a
-generic class's `typeof` is refused (`returntype-generic-refused`). Support
+generic class's `typeof` is refused. Support
 would read a method member and the constructor of a generic host class at
 its instance's arguments through the class's view, for these three sites of
 the census of 4d25222, which block 245 statements of 13 functions.
