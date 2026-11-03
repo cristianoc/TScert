@@ -3314,6 +3314,30 @@ The compiler uses its declared request operations through the boundary.
   client's requests. A query of a held snapshot asked again is answered by
   reading back the earlier answer's JSON text, which assumes the compiler
   answers it the same each time (query omission, a conjecture).
+- **Method provenance in the front end:** TypeScript 7.0.2's
+  `dist/api/sync/api.js` allocates `API.prototype.updateSnapshot` as an
+  ordinary class method; `dist/api/sync/client.js` does the same for
+  `Client.prototype.close` and the six request methods. In the front end's
+  opening and wrapping paths, these function objects retain
+  `Function.prototype` and own no `call`, `apply` or `bind` property. This
+  follows from their audited allocation and the writes in those paths,
+  together with the standard-prototype policy.
+  `openCompiler` constructs the API, binds its `updateSnapshot`, then
+  installs the document-counting wrapper on that instance.
+  `guardClientRequests` captures the six original request methods before
+  replacing the prototype's slots; its sole front-end caller supplies the
+  ledger and failure-handling callback. `releaseCompiler` captures the
+  client's `close` before installing its wrapper. A repeated close wraps
+  that same front-end function. These wrappers are ordinary functions
+  created by the front end; they retain the saved methods and their
+  receivers, and write no invocation property of those functions.
+  This audit concerns the package-created instances and these permitted
+  replacements used by the front end. A callable signature or a `typeof`
+  test alone does not establish method-function provenance. F3's guard
+  identity, F5's unwritten bindings and T6's direct-call behavior have their
+  stated [host-contract scope](COMPILER-API.md#trust); the general source
+  [confinement requirement](SOURCE-ELABORATION.md#calls-through-functionprototypecall)
+  applies to escaped and caller-supplied functions.
 - **What depends on it:** the functions of `compiler-channel.mts` that check
   or guard the client, and every use of the compiler API in the process:
   every client shares the wrapped prototype, so each answer the package
