@@ -786,23 +786,25 @@ name their entries by position
 ([EvidenceWire.lean](../lean/Verification/Source/EvidenceWire.lean)):
 
 ```json
-{ "types": [T, …], "contexts": [[t, …], …], "links": [link, …], "separations": [fact, …],
+{ "types": [T, …], "contexts": [[t, …], …], "terms": [M, …], "links": [link, …], "separations": [fact, …],
   "valueSets": [V, …],
   "knowledge": [{"cells": [F, …], "values": [F, …], "links": [l, …], "depth": d, "separation": [s, …]}, …],
   "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
   "functions": [response, …], "obligations": [[p, …], …] }
 ```
 
-`T` is a type (a list of labels), `link` a [heap link](#heap-facts), `fact`
+`T` is a type (a list of labels), `M` a term, `link` a [heap link](#heap-facts), `fact`
 a [separation fact](#heap-facts), `V` a value set (a fact's
 [contents](#heap-facts)) and `r` a [rule](#rules); a fact reference `F` is
 `{"slot": i, "contents": v, "field": f}`, the heap fact on slot `i` and field
-`f` whose contents are `valueSets[v]`; `t`, `c`, `l`, `s` and `p` are
-positions in `types`, `contexts`, `links`, `separations` and `proofs`. A response is as in [evidence](#evidence),
+`f` whose contents are `valueSets[v]`; `t`, `c`, `m`, `l`, `s` and `p` are
+positions in `types`, `contexts`, `terms`, `links`, `separations` and `proofs`. A response is as in [evidence](#evidence),
 its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
 `"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
 `null`; `knowledge` and `output` are positions in `knowledge`; a step's
-`proof` is a position in `proofs`. Edges, handlers, promise facts and read
+`proof` is a position in `proofs`, and the value set `contents` of an
+`observedRead`, a `knownValue` or a `written` step a position in
+`valueSets` (`null` for a `written` step's unknown value). Edges, handlers, promise facts and read
 summaries are written in full. An obligation list names its derivations in
 `proofs`.
 
@@ -817,7 +819,7 @@ derivation's premises earlier entries of `proofs`:
 \mathit{knowledge}(k) &= \langle [\,\mathit{fact}(F) \mid F \in \vec f\,], [\,\mathit{fact}(F) \mid F \in \vec g\,], [\,D.\mathit{links}[l] \mid l \in \vec l\,],
   \langle d, [\,D.\mathit{separations}[s] \mid s \in \vec s\,]\rangle\rangle
   \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l, d, \vec s\rangle \\
-\mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), m, \mathit{type}(t)\rangle, r,
+\mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), D.\mathit{terms}[m], \mathit{type}(t)\rangle, r,
   [\,\mathit{proof}(p) \mid p \in \vec p\,])
   \quad\text{where } D.\mathit{proofs}[k] = \langle \langle c, m, t\rangle, r, \vec p\rangle
   \text{ and } p < k \text{ for every } p \in \vec p
@@ -831,10 +833,10 @@ no cycle. A document may state an entry twice or not use it: the bundle it
 denotes is the same. The decoder builds each table in order, each entry
 from the entries it names, so an entry named twice is one value of the
 decoded bundle (`EvidenceWire.decode`). Given the types and contexts it
-built, the derivations table satisfies the equation of $`\mathit{proof}`$
+built and its terms, the derivations table satisfies the equation of $`\mathit{proof}`$
 above (`EvidenceWire.proofs_unfold`), which has one solution
 (`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
-direct lookups, trusted code. Search writes each type, context, link,
+direct lookups, trusted code. Search writes each type, context, term, link,
 separation fact, value set, knowledge and derivation once (`EvidenceWire.encode`), an untrusted
 choice.
 

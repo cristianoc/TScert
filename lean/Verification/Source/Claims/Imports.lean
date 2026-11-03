@@ -350,4 +350,47 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
     return some ⟨m.location, ast, claims, reads⟩
   return ⟨ast.setObjVal! "modules" (Json.arr #[]), claims.setObjVal! "modules" (Json.arr #[]), qualified, modules⟩
 
+/-- Each qualified read of one document `qualifiedRead` refuses, worded as
+`planReads` words it, and the units of the reads it admits. -/
+private def readRefusals (declarations claims : Json) (fragmentModules : List Fragment.ModuleAst)
+    (claimModules : List Json) : Except String (List String × List (String × String)) := do
+  let values ← jArr declarations "values"
+  let importer ← Reading.of declarations
+  let mut refused : List String := []
+  let mut units : List (String × String) := []
+  for q in ← jArr claims "qualified" do
+    let location ← jStr (← jField q "module")
+    let name ← jStr (← jField q "name")
+    let span : Span ← fromJson? (← jField q "span")
+    match qualifiedRead importer values fragmentModules claimModules q location name span with
+    | .ok _ => units := units ++ [(location, name)]
+    | .error e => refused := refused ++ [s!"certified import {location}#{name}: {e}"]
+  return (refused, units)
+
+/-- **The plan's refusals**, for withdrawing reads: every qualified read of
+the importer, and of each module an admitted read names, that
+`qualifiedRead` refuses, a module's prefixed `module <location>: ` as
+`planImports` prefixes it. Each read is checked on its own. A diagnostic:
+the check plans by `planImports`. -/
+def planRefusals (ast claims : Json) : Except String (List String) := do
+  let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
+  let claimModules ← jArr claims "modules"
+  let (importerRefused, importerUnits) ← readRefusals (← jField ast "declarations") claims fragmentModules
+    claimModules
+  let mut refused := importerRefused
+  let mut units := importerUnits
+  let mut planned : List String := []
+  for _ in [0:fragmentModules.length + 1] do
+    let some location := (units.map (·.1)).find? fun l => !planned.contains l | break
+    planned := planned ++ [location]
+    let some m := fragmentModules.find? (·.location == location) | continue
+    let some c := claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location
+      | continue
+    match do readRefusals (← jField m.document "declarations") c fragmentModules claimModules with
+    | .ok (more, reached) =>
+      refused := refused ++ more.map (s!"module {location}: " ++ ·)
+      units := units ++ reached
+    | .error e => refused := refused ++ [s!"module {location}: {e}"]
+  return refused
+
 end Verification.SourceClaimJson

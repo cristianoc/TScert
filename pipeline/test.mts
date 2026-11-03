@@ -339,7 +339,7 @@ const jsonIndex = (v: JsonValue | undefined): number => {
 };
 /** The kinds of an evidence bundle's tables, in the order each names only
  * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
-const evidenceTables = ["types", "contexts", "links", "separations", "valueSets", "knowledge", "proofs"] as const;
+const evidenceTables = ["types", "contexts", "terms", "links", "separations", "valueSets", "knowledge", "proofs"] as const;
 /** Every bundle of an evidence document: the main one, then each module's. */
 const evidenceBundles = (document: JsonValue): JsonObject[] => [jsonObject(jsonObject(document).main),
   ...jsonArray(jsonObject(document).modules).map((m) => jsonObject(jsonObject(m).evidence))];
@@ -353,7 +353,7 @@ function unfoldedEvidence(path: string): JsonValue {
     const at = (table: JsonValue[], k: JsonValue | undefined): JsonValue =>
       structuredClone(must(table[jsonIndex(k)], "an entry of its table"));
     const types = jsonArray(b.types), links = jsonArray(b.links), separations = jsonArray(b.separations);
-    const valueSets = jsonArray(b.valueSets);
+    const valueSets = jsonArray(b.valueSets), terms = jsonArray(b.terms);
     const facts = (fs: JsonValue | undefined): JsonValue => jsonArray(fs).map((f) => {
       const e = jsonObject(f);
       return { slot: e.slot ?? null, contents: at(valueSets, e.contents), field: e.field ?? null };
@@ -367,7 +367,7 @@ function unfoldedEvidence(path: string): JsonValue {
     });
     const sequent = (s: JsonValue): JsonValue => {
       const e = jsonObject(s);
-      return { context: at(contexts, e.context), term: e.term ?? null, type: at(types, e.type) };
+      return { context: at(contexts, e.context), term: at(terms, e.term), type: at(types, e.type) };
     };
     const proofs: JsonValue[] = [];
     for (const p of jsonArray(b.proofs)) {
@@ -379,7 +379,9 @@ function unfoldedEvidence(path: string): JsonValue {
       if (s === null) return null;
       const [[name, fields]] = Object.entries(jsonObject(s));
       const f = jsonObject(fields);
-      return { [name]: "proof" in f ? { ...f, proof: at(proofs, f.proof) } : f };
+      // A step's value set, where it states one, is an entry of `valueSets`.
+      const g = "contents" in f && f.contents !== null ? { ...f, contents: at(valueSets, f.contents) } : f;
+      return { [name]: "proof" in g ? { ...g, proof: at(proofs, g.proof) } : g };
     };
     const node = (n: JsonValue): JsonValue => {
       const e = jsonObject(n);
@@ -424,7 +426,8 @@ function tabledEvidence(document: unknown): string {
     const type = (t: JsonValue | undefined): number => add("types", t ?? null);
     const sequent = (s: JsonValue | undefined): JsonValue => {
       const e = jsonObject(s);
-      return { context: add("contexts", jsonArray(e.context).map(type)), term: e.term ?? null, type: type(e.type) };
+      return { context: add("contexts", jsonArray(e.context).map(type)), term: add("terms", e.term ?? null),
+        type: type(e.type) };
     };
     const proof = (p: JsonValue | undefined): number => {
       const e = jsonObject(jsonObject(p).node);
@@ -450,7 +453,8 @@ function tabledEvidence(document: unknown): string {
       if (effect !== null) {
         const [[name, fields]] = Object.entries(jsonObject(effect));
         const f = jsonObject(fields);
-        step = { [name]: "proof" in f ? { ...f, proof: proof(f.proof) } : f };
+        const g = "contents" in f && f.contents !== null ? { ...f, contents: add("valueSets", f.contents ?? null) } : f;
+        step = { [name]: "proof" in g ? { ...g, proof: proof(g.proof) } : g };
       }
       return { ...e, ordinary: typeof ordinary === "object" && ordinary !== null && !Array.isArray(ordinary)
           ? { proof: { tree: proof(jsonObject(ordinary.proof).tree) } } : ordinary,

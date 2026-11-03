@@ -218,19 +218,23 @@ def deadHandler (dead : List Bool) (x : Option Target) : Bool :=
   (ExpressionEffects.emptyType G (result c) || deadContinuation dead node.continuation) &&
     deadHandler dead node.handler
 
-def deadIterate (nodes : List (Node × Bool)) : Nat → List Bool → List Bool
+/-- One refinement step after another, each reading the region by label in
+constant time, until a step changes nothing or the fuel runs out. -/
+def deadIterate (nodes : Array (Node × Bool)) : Nat → Array Bool → Array Bool
   | 0, dead => dead
   | fuel + 1, dead =>
+    let at_ := fun (l : Nat) => dead.getD l false
     let next := nodes.map fun (node, empty) =>
-      (empty || deadContinuation dead node.continuation) && deadHandler dead node.handler
+      (empty || (node.continuation != .ret && (destinations node.continuation).all fun t => at_ t.label)) &&
+        (match node.handler with | none => true | some t => at_ t.label)
     if next = dead then dead else deadIterate nodes fuel next
 
 /-- Candidate region, refined by removing nodes whose normal or exceptional
 successor may return. The independent node check validates the result. -/
 @[nospecialize] def inferDead (G : NormalGraph ι) (P : Program) (C : Certificate ι) (exc : Bool) : List Bool :=
   if exc then [] else
-  let nodes := (P.zip C).map fun (node, c) => (node, ExpressionEffects.emptyType G (result c))
-  deadIterate nodes (P.length + 1) (P.map fun _ => true)
+  let nodes := ((P.zip C).map fun (node, c) => (node, ExpressionEffects.emptyType G (result c))).toArray
+  (deadIterate nodes (P.length + 1) (Array.replicate P.length true)).toList
 
 /-- Whether a continuation binds the value it receives at slot 0 of its
 destinations. -/
