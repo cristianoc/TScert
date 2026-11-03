@@ -120,6 +120,21 @@ export type JsonObject = { readonly [key: string]: JsonValue };
 /** A read of a key of a `JsonObject`: its value, or `undefined` where the
  * object lacks the key. */
 export type JsonRead = JsonValue | undefined;
+/** A JSON value's array arm. */
+const isJsonList = (value: JsonValue): value is readonly JsonValue[] => Array.isArray(value);
+/** `String` of a JSON value or an absent read, by its arms: a primitive or
+ * `undefined` as `String` converts it; an array as `Array.prototype.toString`
+ * joins its elements with commas, `null` as the empty string; an object
+ * through `Object.prototype.toString`, `"[object Object]"`, unless it owns a
+ * `toString`, which, as JSON data, is not callable, so that `String` finds no
+ * callable conversion (its `valueOf` returns the object) and throws a
+ * `TypeError`, with the message Node gives. */
+export function stringOfJson(value: JsonRead): Within<{ value: "any"; store: "grow" }, string> {
+  if (typeof value !== "object" || value === null) return `${value}`;
+  if (isJsonList(value)) return value.map((x) => (x === null ? "" : stringOfJson(x))).join(",");
+  if (Object.hasOwn(value, "toString")) throw new TypeError("Cannot convert object to primitive value");
+  return "[object Object]";
+}
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
