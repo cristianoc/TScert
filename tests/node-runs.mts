@@ -9,6 +9,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
+// These source counterexamples exercise refused operations within the caller
+// contract: ordinary records, stable standard prototypes and native promises.
+assert.equal(runExample("let-object-narrowing-refused",
+  'typeof reassigned({ kind: "a", name: "text" }, { kind: "b", n: 1 })'), "undefined",
+  "a closure replaces the narrowed cell before its string member is read");
+assert.equal(runExample("invalid-object-growth-constructed", `(() => {
+  const dictionary = {};
+  class Existing { constructor() { return dictionary; } }
+  viaParameter(Existing);
+  return typeof dictionary.x;
+})()`), "number", "a received constructor can return an existing string dictionary whose alias observes the numeric key addition");
+assert.equal(runExample("invalid-object-assign-source", `(() => {
+  const proto = { get b() { return 5; }, set b(value) {} };
+  return typeof copy({ ["__proto__"]: proto, b: "text" }).b;
+})()`), "number", "assigning an open record's own __proto__ key installs the setter before copying its string member");
+assert.equal(runExample("reserved-key-refused", 'typeof h(true)'), "object",
+  "the reserved-key literal remains an ordinary object and is returned at number");
+assert.equal(runExample("spread-symbol-key-refused", `const tag = Symbol("field");
+  const input = {};
+  Object.defineProperty(input, tag, { value: 1, writable: true, enumerable: false });
+  typeof copy(input)[tag]`), "undefined",
+  "a nonenumerable symbol field meets the input view and is absent from the spread result");
+assert.equal(await runExample("promise-like", `(async () => {
+  const value = { then: callback => callback(5), tag: "text" };
+  return like(Promise.resolve(1)).then(() => value).then(result => JSON.stringify([typeof result, typeof result.tag]));
+})()`), '["number","undefined"]', "native then adopts the callback's object instead of passing that object to the next PromiseLike callback");
+
 assert.throws(() => runExample("invalid-footprint-factory-provider", 'broken([1, 2, 3])[2].result'),
   /TypeError/, "a shrinking factory provider leaves an absent mapped result position");
 assert.equal(runExample("blocker-next-footprint-factory", 'JSON.stringify(reviewed([1, 2]))'),
