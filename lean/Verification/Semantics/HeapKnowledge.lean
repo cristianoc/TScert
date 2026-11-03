@@ -714,6 +714,18 @@ def primitive : List (Clause (Ty ι)) → Option (List Atom)
 def atoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
   if G.plainTy A then primitive (expand G A) else none
 
+/-- `atoms`, deciding once that the type is of clause rows: `expand` would
+decide it again. The compiler runs it in place of `atoms` (`atoms_eq_once`). -/
+def atomsOnce (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
+  if G.plainTy A then primitive (clausesOf G A) else none
+
+@[csimp] theorem atoms_eq_once : @atoms = @atomsOnce := by
+  funext ι G A
+  unfold atoms atomsOnce
+  split
+  · next h => rw [expand_of_plain h]
+  · rfl
+
 theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (n W v) :
     semList (excOf G) (meaning G) (argMeaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
   induction cs generalizing R with

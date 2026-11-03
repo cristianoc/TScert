@@ -463,6 +463,39 @@ theorem ValueSet.mem_append (a b : ValueSet) (v : Tm) : (a.append b).mem v = (a.
 /-- A list of atoms denotes the union of their sets. -/
 def ofAtoms (as : List Atom) : ValueSet := as.foldr (fun a V => (ofAtom a).append V) ValueSet.bot
 
+/-- `(ofAtom a).append V`, a primitive atom's by updating the one component
+it names (`consAtom_eq`). -/
+def consAtom (a : Atom) (V : ValueSet) : ValueSet :=
+  match a with
+  | .nul => { V with nul := true }
+  | .undef => { V with undef := true }
+  | .tru => { V with tru := true }
+  | .fls => { V with fls := true }
+  | .numLit b => { V with num := Lit.append (.these [b]) V.num }
+  | .strLit s => { V with str := Lit.append (.these [s]) V.str }
+  | a => (ofAtom a).append V
+
+private theorem Lit.append_none {α : Type} [DecidableEq α] (l : Lit α) : Lit.append .none l = l := by
+  cases l <;> simp [Lit.append, Lit.none, Lit.join]
+
+private theorem Obj.join_none (o : Obj) : Obj.join none o = o := by
+  cases o <;> rfl
+
+theorem consAtom_eq (a : Atom) (V : ValueSet) : consAtom a V = (ofAtom a).append V := by
+  cases a <;> simp [consAtom, ofAtom, ValueSet.append, Lit.append_none, Obj.join_none]
+
+/-- `ofAtoms`, one atom at a time by `consAtom`. The compiler runs it in
+place of `ofAtoms` (`ofAtoms_eq_cons`). -/
+def ofAtomsCons : List Atom → ValueSet
+  | [] => ValueSet.bot
+  | a :: as => consAtom a (ofAtomsCons as)
+
+@[csimp] theorem ofAtoms_eq_cons : @ofAtoms = @ofAtomsCons := by
+  funext as
+  induction as with
+  | nil => rfl
+  | cons a as ih => simp only [ofAtoms, List.foldr_cons, ofAtomsCons, consAtom_eq] at ih ⊢; rw [ih]
+
 theorem ofAtoms_holds {as : List Atom} {v : Tm} (h : ∃ a ∈ as, a.holds v) : (ofAtoms as).mem v = true := by
   induction as with
   | nil => simp at h
