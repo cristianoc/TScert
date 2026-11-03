@@ -1694,7 +1694,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
             return scope.named(node, span, read);
           },
         };
-        const binders = typeParameters.map(p => ({
+        const binders = typeParameters.map((p): SchemeTerm["binders"][number] => ({
           name: p.name.text,
     resolution: null,
           bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,

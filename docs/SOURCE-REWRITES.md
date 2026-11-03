@@ -415,6 +415,24 @@ establish that full writable contract before the enclosing array reaches
   no external assumption.
 - **Commit:** the introducing commit.
 
+### A generic class method's binder records with their writable contract
+
+`classInstance` in `tools/type-term.mts` maps a generic method's type
+parameters to binder records with `resolution: null` and places the array
+in a scheme's `binders`, whose element is `SourceTypeParameter<TypeTerm>`
+with its `default` and `span`. Inferred from the literals, the array's
+writable element contract was narrower than the scheme's, which an
+invariant array does not meet ("no rule derives this makeAt").
+
+- **Repair:** the callback's result annotation states
+  `SchemeTerm["binders"][number]`, as
+  [mapped binder records](#mapped-binder-records-with-their-writable-contract)
+  do. The annotation is erased; the same records are allocated in the same
+  order.
+- **Scope:** the rule is the one `blocker-round-mapped-filter-length`
+  shows. The repair adds no external assumption.
+- **Commit:** the introducing commit.
+
 ### A conditional pair's fixed positions
 
 The callable `Object.assign` branch in `tools/fragment-expressions.mts#expr`

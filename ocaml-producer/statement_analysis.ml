@@ -86,9 +86,15 @@ let transfer (expr:Analysis_state.expression_infer) =
      statements after its declaration: where it is the whole value expected
      at a type (an annotated constant's initializer, a returned value, an
      argument of a call to a function of one plain signature, a field of an
-     object literal expected at a type), that type;
+     object literal expected at a type, a spread part of an array literal
+     expected at an array type), that type;
      any other first use, none. `None` where it is not used. *)
   let rec first_use env n rest = Option.join (List.find_map Fun.id (uses env n rest))
+  (* An array of the elements of the array type [expected]. *)
+  and spread_hint expected = Option.bind expected (fun t ->
+    match Semantic.array_element ~readonly:true (try declared_head declarations [] t with Json.Error _ -> t) with
+    | Some element -> Some (array {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Readable})
+    | None -> None)
   (* The type the records of [expected] that state field [k] give it, an
      optional one's without `undefined`, where they all give one type. *)
   and field_hint expected k = match expected with
@@ -139,6 +145,9 @@ let transfer (expr:Analysis_state.expression_infer) =
       | Alloc fields -> List.find_map (fun (k,v) -> sink (field_hint expected k) v) fields
       | Build parts -> List.find_map (fun (k,v) ->
           sink (Option.bind k (fun k -> field_hint expected (Name k))) v) parts
+      (* A spread part of an array literal expected at `T[]`, at a `T[]`. *)
+      | ArrayLiteral (es,spreads) -> List.find_map Fun.id (List.mapi (fun i v ->
+          sink (if List.mem i spreads then spread_hint expected else None) v) es)
       | _ -> List.find_map (sink None) (Source.children e) in
     let at (s:stmt) = match s.statement with
       | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
