@@ -3071,13 +3071,10 @@ claimed wider than the contract).
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
-properties of the global object other scripts can write; the slot rests on
-the trusted assumption that other code preserves the file's top-level
-bindings and their functions (the file runs as a module, or no other code
-writes its globals or gives one of its functions an own `call`, `apply` or
-`bind`), for a plain call
-and for `.call`, `.apply` and `.bind` alike
-([trust surface](DESIGN.md#trust-surface)).
+properties of the global object. The [trust surface](DESIGN.md#trust-surface)
+states the binding and ambient global-access assumptions. Calls through a
+function's `call`, `apply` or `bind` also require the function-object
+[provenance and confinement](#calls-through-functionprototypecall) below.
 
 ## Source closures and their annotations
 
@@ -3457,10 +3454,10 @@ A name means the declaration it resolves to, lexically (`resolve`): the
 nearest enclosing scope binding it, a loop's or a `catch` clause's binding
 included. A file-level function is known when not exported: an exported one is
 held by every importer, where other code may give it an own `call`. A
-script's top-level function is also a property of the global object, which
-the trusted assumption that other code preserves the file's top-level
-bindings and their functions' `call`, `apply` and `bind` covers (other code
-may still read it) ([trust surface](DESIGN.md#trust-surface)). Every value these rules follow is confined (`confined`): the
+script's top-level function has the ambient global-access assumption of the
+[trust surface](DESIGN.md#trust-surface). An explicit argument or export
+escapes through the program's own reference (`invalid-call-provenance-module-argument`,
+`invalid-call-provenance-module-export`). Every value these rules follow is confined (`confined`): the
 locals they read and the file's function declarations they reach. Each
 reference to one is the callee of a call, the object of `.call`, `.apply` or
 `.bind`, directly or through one member, the target of a plain assignment to
