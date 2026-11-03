@@ -19,7 +19,7 @@ import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
   iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSetName, iterateStringName,
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
-  instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName,
+  instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
   urlHrefName, pathToFileHrefName,
 } from "./intrinsics.mts";
@@ -143,6 +143,8 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [ordinaryHasInstanceName]: transparent("a prototype chain walk for a class's prototype, which no host prototype is; no proxy on the chain (DESIGN.md's no-proxy row)"),
   [ownKeysName]: obligated("the object", "runs its [[OwnPropertyKeys]], code of a host exotic object"),
   [prototypeIsObjectName]: obligated("the object", "runs its [[GetPrototypeOf]], code of a host exotic object"),
+  [ownStringName]: transparent("[[GetOwnProperty]], which runs no code, as `Object.hasOwn`'s; of a field's value only a "
+    + "string reaches the program, which holds none of the package's internal heap"),
   [symbolForName]: value, [symbolKeyForName]: value,
   [importMetaUrlName]: value, [importMetaDirnameName]: value, [importMetaFilenameName]: value,
   [importMetaResolveName]: value, [urlHrefName]: value, [pathToFileHrefName]: value,

@@ -40,6 +40,14 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     if (inlined !== undefined) return literalExpr(inlined, gate.span(node));
   }
 
+  // `Object.getOwnPropertyDescriptor(o, k)?.value` read only as a string,
+  // which the overlay reads as a call of the intrinsic with the call's
+  // arguments (`%OwnString%`): the global's reads run nothing.
+  if (ts.isPropertyAccessExpression(node) && node.questionDotToken && ts.isCallExpression(node.expression)) {
+    const own = gate.globalIntrinsics.get(gate.span(node).join(":"));
+    if (own) return gate.intrinsic(own, gate.span(node), gate.span(node.name), node.expression.arguments.map(a => gate.expr(a)));
+  }
+
   // A link of an optional chain: the chain up to it is one `optional`.
   if (
     (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ||

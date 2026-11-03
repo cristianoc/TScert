@@ -3185,6 +3185,30 @@ keeps from running.
 ```math
 \mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
 ```
+- The descriptor's `value` read only as a string admits any operand. Where
+  `Object.getOwnPropertyDescriptor(o, k)?.value` initializes a `const`,
+  unannotated or annotated `unknown`, that no export names, and each
+  reference of the constant is the operand of `typeof … === "string"` or
+  `!==` (either side) or a read TypeScript types `string`, which at that
+  declared type only those tests' narrowing gives, the initializer is a
+  call of $`\%\mathsf{OwnString}\%`$ at `o` and `k` (`ownStringRead` in
+  `declaration-graph.mts`). The intrinsic is the string `o` holds at its
+  own key `k` as a data property, and `undefined` otherwise: at every
+  admitted reference it agrees with the descriptor's value, so the
+  constant's reading is unchanged. Its steps are the descriptor's: ToObject
+  (a TypeError of `null` or `undefined`), the key's conversion and
+  [[GetOwnProperty]], which calls no getter and runs no code on any object,
+  a host object's included, as `Object.hasOwn` reads it, no object being a
+  proxy. Of the field's value only a string reaches the program, which
+  holds none of a host package's heap, so a host object is admitted
+  (`caught-message`). A constant read any other way, or declared at another
+  type, keeps the call's contract above
+  (`invalid-caught-message-declared`, run under Node: an `Error`-derived
+  object's `message` is a number):
+
+```math
+\%\mathsf{OwnString}\%:(\mathtt{unknown},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow_{\emptyset}\mathtt{string}\mid\mathtt{undefined}
+```
 - `Object.getOwnPropertyDescriptors(o)` converts `o` by ToObject, then
   takes its own keys by [[OwnPropertyKeys]] and looks each up by
   [[GetOwnProperty]]: neither calls a getter or runs code on the objects a

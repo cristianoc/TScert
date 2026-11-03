@@ -4864,6 +4864,59 @@ function hrefRead(made: Node): ts.PropertyAccessExpression | null {
   return access;
 }
 
+/** The read `?.value` written directly on `call`, where it initializes a
+ * `const`, unannotated (TypeScript's `any`) or annotated `unknown`, that no
+ * export names and whose every reference in the file is the operand of
+ * `typeof … === "string"` or `!==`, either side, or a read TypeScript types
+ * `string` (`GlobalEntry.ownString`), which at such a declared type only a
+ * narrowing by those tests gives. Null otherwise: a shorthand property or
+ * an export specifier naming the constant, or any other reference. A
+ * reference of a parenthesized operand counts as another reference. */
+function ownStringRead(checker: Checker, call: ts.CallExpression): ts.PropertyAccessExpression | null {
+  const access = call.parent;
+  if (!access || !ts.isPropertyAccessExpression(access) || access.expression !== call || !access.questionDotToken ||
+      !ts.isIdentifier(access.name) || access.name.text !== "value")
+    return null;
+  const declaration = access.parent;
+  const list = declaration?.parent;
+  const statement = list?.parent;
+  if (!declaration || !ts.isVariableDeclaration(declaration) || declaration.initializer !== access ||
+      !ts.isIdentifier(declaration.name) || (declaration.type && declaration.type.kind !== ts.SyntaxKind.UnknownKeyword) ||
+      !list || !ts.isVariableDeclarationList(list) ||
+      !(list.flags & ts.NodeFlags.Const) || !statement || !ts.isVariableStatement(statement) ||
+      statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
+    return null;
+  const name = declaration.name;
+  const symbol = checker.getSymbolAtLocation(name);
+  if (!symbol) return null;
+  const stringTest = (reference: Node): boolean => {
+    const test = reference.parent;
+    const comparison = test?.parent;
+    if (!test || !ts.isTypeOfExpression(test) || test.expression !== reference || !comparison ||
+        !ts.isBinaryExpression(comparison) ||
+        (comparison.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken &&
+         comparison.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsEqualsToken))
+      return false;
+    const other = comparison.left === test ? comparison.right : comparison.left;
+    return ts.isStringLiteral(other) && other.text === "string";
+  };
+  let admitted = true;
+  const visit = (node: Node): void => {
+    if (!admitted) return;
+    if (ts.isIdentifier(node) && node !== name && node.text === name.text) {
+      const parent = node.parent;
+      if (parent && (ts.isShorthandPropertyAssignment(parent) || ts.isExportSpecifier(parent))) admitted = false;
+      else if (checker.getSymbolAtLocation(node)?.id === symbol.id && !stringTest(node)) {
+        const type = checker.getTypeAtLocation(node);
+        if (!type || !(type.flags & TypeFlags.String)) admitted = false;
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(call.getSourceFile());
+  return admitted ? access : null;
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition; construct?: never } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -5094,6 +5147,15 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           throw Error(`the method ${what} is only called, on its host`);
         const overload = resolvedAmong(call, methods);
         if (!overload) throw Error(`TypeScript resolves the call of ${what} to no overload it declares`);
+        // `X.m(…)?.value` read only as a string (`GlobalEntry.ownString`):
+        // a call of the intrinsic with the call's arguments, the member
+        // joining no value for it.
+        const ownString = reviewedForms(key, overload, what)?.ownString;
+        const read = ownString !== undefined && !call.arguments.some(ts.isSpreadElement) ? ownStringRead(checker, call) : null;
+        if (read && ownString !== undefined) {
+          context.intrinsic(spanOf(read), ownString);
+          continue;
+        }
         chosen.set(overload, [...chosen.get(overload) ?? [], call]);
       }
       const selected = [...chosen].flatMap(([overload, calls]): (FunctionTerm | Extract<TypeTerm, { k: "scheme" }>)[] => {

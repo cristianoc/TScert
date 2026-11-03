@@ -1767,6 +1767,51 @@ having run its constructor (`instanceof-unknown-refused`).
   table its maker fills, rather than read off the caught value.
 - **Commit:** the introducing commit, `Caught errors' fields are found in their maker's weak table; WeakMap gets a contract`.
 
+### A caught value's message read by its descriptor
+
+`messageOf` (`tools/thrown.mts`) supplies the text of what was thrown to
+`ioFailure`, `CompilerFailure`, `stackExhaustion` and the front end's
+reports. It read `thrown.message` after `thrown instanceof Error`, and
+`String(thrown)` otherwise. `instanceof Error` constrains only the prototype
+chain, so `message` may hold any value (`invalid-instanceof-error-message`,
+run under Node: a number); the read may run a getter; and `String` of an
+object runs its `toString`, `valueOf` or `Symbol.toPrimitive`.
+
+- **Route:** a runtime check, with no assumption about what code throws.
+- **Source:** a primitive is converted by `String`, which runs no code of a
+  primitive's. Of an object or a function, `messageOf` binds
+  `Object.getOwnPropertyDescriptor(thrown, "message")?.value` to a constant
+  and returns it where `typeof` says it is a string. An `Error` owning no
+  `message` gives `""`, the message `Error.prototype` holds; any other
+  object gives the fixed text `a thrown object that owns no string
+  message`. `stackExhaustion` compares `messageOf(thrown)`.
+- **Behaviour:** an error's own string message, the empty message of
+  `new Error()` and a primitive's text are unchanged. A message that is no
+  own data string, an object's own conversion hooks and a function give the
+  fixed text, where they gave the hook's or the getter's result, or threw
+  its exception. An object deriving from an error inherits no text but
+  `""`. No getter, conversion hook or proxy `get`, `has` or
+  `getPrototypeOf` trap runs.
+- **Support:** the descriptor of a value that may be a host object hands
+  its field to the program only as a string: the constant's read is the
+  intrinsic `%OwnString%`
+  ([`Object` and `Reflect`](SOURCE-CONTRACTS.md#object-and-reflect)),
+  which admits any operand. It extends the descriptor's contract and states
+  no new assumption: [[GetOwnProperty]] runs no code, as `Object.hasOwn`'s
+  admission of host objects states, and no object is a proxy
+  ([trust surface](DESIGN.md#trust-surface)).
+- **Evidence:** `caught-message` and `invalid-caught-message-declared`
+  (run under Node: a number declared `string`); `tests/tool-failures.mts`
+  runs the real formatter and `ioFailure` on a number message, a message
+  getter, a proxy, own conversion hooks, a function, primitives and errors,
+  and checks that no code of the thrown value ran and that the wrapper keeps
+  its cause's identity.
+- **Pattern:** a caught value's text is read by its own data descriptor,
+  tested a string, never by a lookup or a conversion of the object.
+- **Functions:** `messageOf`, `stackExhaustion`, `CompilerFailure`,
+  `IoFailure` and `ioFailure`, and the functions reaching them.
+- **Commit:** the introducing commit, `Read a caught value's message by its own data descriptor`.
+
 ### A type term's text made by a replacer
 
 Three keys of type terms, a term's text with its spans aside, were made by
