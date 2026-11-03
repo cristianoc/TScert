@@ -53,8 +53,9 @@ import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { inDeclarationSession, noteAutomaticCollection } from "./declaration-session.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
-const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
-  isTypeAlias(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
+function isTypeDeclaration(node: Node): node is TypeDeclaration {
+  return isTypeAlias(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
+}
 
 /** Whether `file` is a declaration of the compiler API's installation, the
  * one where the compiler-API contract's tables by name (its branded strings,
@@ -106,8 +107,8 @@ export interface SeenDiagnostic {
   file: string;
   client: boolean;
   pos: Span;
-  start: { line: number; character: number };
-  end: { line: number; character: number };
+  start: { readonly line: number; readonly character: number };
+  end: { readonly line: number; readonly character: number };
   text: string;
 }
 
@@ -503,7 +504,7 @@ function exportedName(nodes: readonly Node[]): string | null {
  * member's first occurrence (`members`). */
 function importBindings(client: SourceFile, members: readonly NamespaceMemberSpans[]): { name: string; at: Identifier;
   imported: string; specifier: string; span: Span; typeOnly: boolean }[] {
-  const named = client.statements.filter(isImport).flatMap(node => {
+  const named = client.statements.filter((n): n is ImportDeclaration => isImport(n)).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
     if (!clause || (!clause.name && !clause.namedBindings) || !ts.isStringLiteral(node.moduleSpecifier))
@@ -1006,7 +1007,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
-    const errors = new Map<string, readonly { pos: number; end: number; text: string }[]>();
+    const errors = new Map<string, readonly { readonly pos: number; readonly end: number; readonly text: string }[]>();
     const clean = (node: Node, what: string): void => resolutionClean(program, client, errors, observations, node, what);
     // The host's branded strings met (reading rule 5), by identity.
     const brands = new Set<string>();
@@ -1526,7 +1527,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // declaration stating the longest list is its identity. A same-named
     // value declaration, a constant or a function, is the name's other
     // meaning, which a type reference does not denote.
-    const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
+    const partners = new Map<TypeDeclaration, readonly TypeDeclaration[]>();
     // The type aliases a name resolved to, by identity: a rest parameter
     // typed by one, and an indexed access into one's application, read it
     // through its equation (`restTerm`, `computed-types.mts`).
@@ -4486,7 +4487,7 @@ function finalizeDeclarations(roots: TypeRoot[], definitions: TypeDefinition[], 
  * the exception: its instances are the program's values, whose conformance
  * external code preserves (DESIGN.md, "Trust surface"). */
 function externalStatements(externals: readonly { what: string; type: TypeTerm }[],
-    definitions: readonly TypeDefinition[], stated: ReadonlySet<string>, classes: ReadonlySet<string>): void {
+    definitions: readonly TypeDefinition[], stated: Set<string>, classes: Set<string>): void {
   const keyOf = (id: DeclarationIdentity) => `${id.module}#${id.span[0]}:${id.span[1]}`;
   const byKey = new Map(definitions.map(d => [keyOf(d.declaration), d] as const));
   for (const { what, type } of externals) {
@@ -4511,7 +4512,7 @@ function externalStatements(externals: readonly { what: string; type: TypeTerm }
  * ambient class declares without a type: nothing defines the class here, so
  * the field is only read, at `unknown` (`classInstance`), never at the `any`
  * TypeScript gives it. */
-function untypedAmbientField(file: SourceFile, d: { code: number; pos: number; end: number }): boolean {
+function untypedAmbientField(file: SourceFile, d: { readonly code: number; readonly pos: number; readonly end: number }): boolean {
   if (d.code !== 7008) return false;
   const inside = (node: Node) => node.getStart(file) <= d.pos && d.end <= node.end;
   return file.statements.some(s => ts.isClassDeclaration(s) && inside(s) &&
@@ -5471,7 +5472,7 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
         type: typeTerm(scope, member.type, member), span });
       continue;
     }
-    if (!ts.isMethodSignatureDeclaration(member) || member.typeParameters?.length || member.postfixToken)
+    if (!ts.isMethodSignatureDeclaration(member) || !!member.typeParameters?.length || member.postfixToken)
       throw Error(`${where}.${entry.name} is not a plain method`);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
@@ -5805,7 +5806,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
       const stated = table.description.footprints.find(m => m.owner === f.owner.name.text && m.member === f.name);
       const type = stated ? footprintReading(stated.kind, substituted) : substituted;
       return { ...field, readonly: true,
-        optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
+        optional: field.optional || table.optional(f, tags) || f.members.some(m => readsAsOptionalUnknown(m)),
         type: hostBrands(type, true, context.isBrand,
           message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
     };
@@ -5845,11 +5846,22 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
       }
       return made.term;
     };
-    const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => methods.map(methodBase);
+    const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => {
+      const owners: TypeTerm[] = [];
+      for (let index = 0; index < methods.length; index++) {
+        const method = methods[index];
+        if (method !== undefined) owners.push(methodBase(method));
+      }
+      return owners;
+    };
     const arm = (a: FamilyArm): TypeTerm => {
       if (a.k === "declaration") return reference(a.declaration, []);
       if (a.k === "generic") {
-        const parts = a.declarations.map(g => reference(g, [tagTerm(a.values)]));
+        const parts: TypeTerm[] = [];
+        for (let index = 0; index < a.declarations.length; index++) {
+          const g = a.declarations[index];
+          if (g !== undefined) parts.push(reference(g, [tagTerm(a.values)]));
+        }
         const [only] = parts;
         return only && parts.length === 1 ? only : { k: "intersection", parts, span };
       }
@@ -5876,7 +5888,11 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
             written.push(first.member);
             continue;
           }
-          const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
+          const read: Field[] = [];
+          for (let index = 0; index < s.sources.length; index++) {
+            const source = s.sources[index];
+            if (source !== undefined) read.push(readMember(source.member, [source.value], source.value));
+          }
           const types: TypeTerm[] = [];
           for (const r of read) if (!types.some(t => termText(t) === termText(r.type))) types.push(r.type);
           const [one] = types;
@@ -5894,7 +5910,14 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
     if (tag.k === "open") {
       const arms = table.arms(node, selection);
       const union = (selected: readonly FamilyArm[]): TypeTerm => {
-        const parts = selected.map(arm);
+        // `arm` defines the arms it reads, a call stating no effect: the
+        // parts are collected by index (SOURCE-REWRITES.md, "Headings
+        // collected by index around a cached file-system read").
+        const parts: TypeTerm[] = [];
+        for (let index = 0; index < selected.length; index++) {
+          const selectedArm = selected[index];
+          if (selectedArm !== undefined) parts.push(arm(selectedArm));
+        }
         const [only] = parts;
         return only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
       };
@@ -6117,7 +6140,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
 }
 
 /** Check overlapping declaration errors and report each file’s diagnostics once. */
-function resolutionClean(program: Program, client: SourceFile, errors: Map<string, readonly { pos: number; end: number; text: string }[]>, observations: Pick<DeclarationObservations, "seen">, node: Node, what: string): void {
+function resolutionClean(program: Program, client: SourceFile, errors: Map<string, readonly { readonly pos: number; readonly end: number; readonly text: string }[]>, observations: Pick<DeclarationObservations, "seen">, node: Node, what: string): void {
   const file = node.getSourceFile();
   let found = errors.get(file.fileName);
   if (!found) {
@@ -6181,7 +6204,7 @@ function resolutionResolveDeclaration(resolveDeclarations: (identifier: Identifi
 }
 
 /** Choose the class or longest parameter list and record the ordered merged parts. */
-function resolutionDeclarationOf(clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>, aliasNodes: Map<string, ts.TypeAliasDeclaration>, identityOf: (node: TypeDeclaration) => DeclarationIdentity, nodes: readonly Node[], what: string): TypeDeclaration {
+function resolutionDeclarationOf(clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, readonly TypeDeclaration[]>, aliasNodes: Map<string, ts.TypeAliasDeclaration>, identityOf: (node: TypeDeclaration) => DeclarationIdentity, nodes: readonly Node[], what: string): TypeDeclaration {
   // A class merged with interfaces is the class; otherwise the
   // declaration binding the longest parameter list is the identity.
   const types0 = nodes.filter(isTypeDeclaration);
@@ -6231,13 +6254,19 @@ function resolutionStatedType(libraryFile: (file: SourceFile) => boolean, nodes:
   const [first] = parts;
   const name = first?.name?.text;
   if (!first || !name || parts.some(p => p.name?.text !== name)) return null;
-  const entry = typeEntry(name, parts.map(part => {
+  // Each origin is read through the file system's cache, a call stating no
+  // effect: the headings are collected by index (SOURCE-REWRITES.md,
+  // "Headings collected by index around a cached file-system read").
+  const headings: { origin: string; heading: string }[] = [];
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index];
+    if (part === undefined) continue;
     const file = part.getSourceFile();
-    const end = isTypeAlias(part) ? part.end : part.members.pos;
-    return { origin: declarationOrigin(file, libraryFile),
-      heading: reviewedText(file.text.slice(part.getStart(file), end)) };
-  }));
-  return entry;
+    const end = ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part) ? part.members.pos : part.end;
+    headings.push({ origin: declarationOrigin(file, libraryFile),
+      heading: reviewedText(file.text.slice(part.getStart(file), end)) });
+  }
+  return typeEntry(name, headings);
 }
 
 /** Read a library type through its overlay, array contract or mapped template. */
@@ -6289,7 +6318,8 @@ function resolutionLibrary(checker: Checker, statedType: (nodes: readonly (Node 
   const source = first.getSourceFile();
   const where = `${idOf(source)}#${name}`;
   const parameters = (first.typeParameters ?? []).map(p => p.name.text);
-  const template = mapped({ source, annotation: false, ...exactOptional,
+  const template = mapped({ source, annotation: false,
+    ...(exactOptional.exactOptional === undefined ? {} : { exactOptional: exactOptional.exactOptional }),
     fail: (_node, message) => { throw Error(`${message} in ${where} for ${what}`); },
     named: (node, span) => {
       const index = ts.isIdentifier(node.typeName) ? parameters.indexOf(node.typeName.text) : -1;
@@ -6310,13 +6340,14 @@ function resolutionSymbolOf(resolveDeclaration: (identifier: Identifier, what: s
   const name = ts.isIdentifier(written) ? written : written.name;
   if (!ts.isIdentifier(name)) throw Error("a computed key names a symbol");
   const what = `[${ts.isIdentifier(written) ? written.text : `${written.expression.getText()}.${name.text}`}]`;
-  const node = resolveDeclaration(name, what);
-  const type = ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node) ? node.type : undefined;
-  const constant = ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent) &&
+  const resolved = resolveDeclaration(name, what);
+  const node = ts.isVariableDeclaration(resolved) || ts.isPropertySignatureDeclaration(resolved) ? resolved : null;
+  const type = node?.type;
+  const constant = !!node && ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent) &&
     !!(node.parent.flags & ts.NodeFlags.Const);
-  const property = ts.isPropertySignatureDeclaration(node) && !node.postfixToken &&
+  const property = !!node && ts.isPropertySignatureDeclaration(node) && !node.postfixToken &&
     node.modifiers?.length === 1 && node.modifiers[0]?.kind === ts.SyntaxKind.ReadonlyKeyword;
-  if (!(constant || property) || !node.name || !ts.isIdentifier(node.name) ||
+  if (!node || !(constant || property) || !node.name || !ts.isIdentifier(node.name) ||
       !type || !ts.isTypeOperatorNode(type) || type.operator !== ts.SyntaxKind.UniqueKeyword ||
       type.type.kind !== ts.SyntaxKind.SymbolKeyword)
     throw Error(`the computed key ${what} is not a unique symbol constant`);
@@ -6404,7 +6435,7 @@ function resolutionParametersOf(typeDeclarationsOf: (name: Identifier) => Node[]
 }
 
 /** Resolve the checked library interface and record its ordered parts. */
-function resolutionLibraryInterface(checker: Checker, client: SourceFile, libraryFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>, name: string): TypeDeclaration {
+function resolutionLibraryInterface(checker: Checker, client: SourceFile, libraryFile: (file: SourceFile) => boolean, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, readonly TypeDeclaration[]>, name: string): TypeDeclaration {
   const symbol = checker.resolveName(name, SymbolFlags.Interface, client, false);
   const parts = (symbol?.declarations ?? []).map(d => d.resolve())
     .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
@@ -6468,7 +6499,7 @@ function compatibilityMappedReadonly(property: CompilerSymbol): boolean {
 }
 
 /** Resolve Promise’s ordered declarations for an intrinsic or resolution descriptor. */
-function resolutionPromise(checker: Checker, client: SourceFile, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, TypeDeclaration[]>): InterfaceDeclaration {
+function resolutionPromise(checker: Checker, client: SourceFile, clean: (node: Node, what: string) => void, idOf: (file: SourceFile) => string, partners: Map<TypeDeclaration, readonly TypeDeclaration[]>): InterfaceDeclaration {
   const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
   const parts = (symbol?.declarations ?? []).map(d => d.resolve())
     .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
@@ -6489,7 +6520,7 @@ function elaborationComputedMembers(partners: ReadonlyMap<TypeDeclaration, reado
     (part.forEachChild(c => mentions(c) || undefined) ?? false);
   const computed = (part: Node): boolean => {
     const alias = ts.isTypeReferenceNode(part) ? aliasOf(part) : null;
-    if (ts.isTypeNode(part) && (computedForm(part) !== null ||
+    if (ts.isTypeNode(part) && !ts.isExpressionWithTypeArguments(part) && (computedForm(part) !== null ||
         (alias !== null && computedAlias(alias, aliasOf))) && mentions(part)) return true;
     return part.forEachChild(c => computed(c) || undefined) ?? false;
   };

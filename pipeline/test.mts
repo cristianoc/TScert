@@ -3997,7 +3997,9 @@ control(async (): Promise<void> => {
 // `{value: any, store: grow}` and not `{value: any, store: keep}`. A `sort`
 // comparator reading its arguments is within the empty footprint; one popping
 // another array is refused at `grow`, the footprint `sort`'s growing
-// signature asks of it. A refused control marked `consumed` also checks the
+// signature asks of it. A callback whose unrestricted call makes the error
+// it throws is within the empty footprint; one whose handler catches that
+// throw and returns normally is not. A refused control marked `consumed` also checks the
 // fixture's honest evidence against the forged claim, which must refuse; its
 // fixture verifies, so that evidence exists: program 7 at a result type
 // admitting holes (`map-unstable-pop-sparse`) is consumed so. A negative
@@ -4044,6 +4046,8 @@ control(async (): Promise<void> => {
     ["compiler-api-visitor-pop-sparse", "(n) => {", 3, false, growStores, true],
     ["blocker-fresh-sort-effect", "(a, b) => a", 2, true, keepAll, true],
     ["invalid-sort-comparator-shrink", "(a, b) => {", 2, false, growStores, false],
+    ["map-throw-operand-footprint", "(x, at) =>", 3, true, keepAll, true],
+    ["invalid-map-throw-operand-caught", "(x, at) =>", 3, false, keepAll, false],
   ] as const) {
     const artifacts = run(file);
     const claims = readClaims(artifacts);

@@ -187,6 +187,16 @@ open S
           | _ -> false)
        | None -> false)
     | _ -> false
+  (* A write of a cell's contents may be a write of any location the unit
+     does not know apart from it, another cell's or a field's: Lean's
+     `writeOutput` keeps an observation only of a location known apart, and
+     the read links through stable members. A cell the unit declares is
+     apart from every older location; after a write of any other cell, the
+     other cells are known by their contracts, as after a step that may
+     write cells. *)
+  and cell_written env name =
+    if List.mem name !unit_cells then env
+    else forget ~keep:(Refinement.stable_path declarations env) env
   and step env operation = match operation.Execution.impact with
       (* A completed member read narrows its receiver: reading a member of
          `null` or `undefined` throws, so past it the constant or owned local
@@ -203,12 +213,12 @@ open S
       | Execution.Havoc -> forget ~keep:(Refinement.stable_path declarations env) env
       | Execution.CellWrite (name,value) ->
         (match List.assoc_opt name env,claimed_type value with
-         | Some (Storage _),Some t -> assign env name t
+         | Some (Storage _),Some t -> assign (cell_written env name) name t
          (* A slot holds the value at its declared arms, as a constant does:
             a guard then keeps or drops each. *)
          | Some (Local (contract,_)),Some t ->
            assign env name (slot_holds declarations contract t (expression_hint value))
-         | Some (Storage _),None -> forget ~only:(( = ) name) env
+         | Some (Storage _),None -> forget ~only:(( = ) name) (cell_written env name)
          | Some (Local (contract,_)),None -> assign env name contract
          | _ -> env)
       | Execution.CellUpdate (name,source) ->
@@ -216,12 +226,12 @@ open S
          | Some (Storage (contract,_)),Some {node=Update (op,_,rhs,_);_} ->
            let right=match rhs with None -> contract | Some rhs ->
              Option.value (claimed_type rhs.pos) ~default:contract in
-           assign env name (operation_result declarations op contract right)
+           assign (cell_written env name) name (operation_result declarations op contract right)
          | Some (Local (contract,current)),Some {node=Update (op,_,rhs,_);_} ->
            let right=match rhs with None -> contract | Some rhs ->
              Option.value (claimed_type rhs.pos) ~default:contract in
            assign env name (operation_result declarations op current right)
-         | Some (Storage _),_ -> forget ~only:(( = ) name) env
+         | Some (Storage _),_ -> forget ~only:(( = ) name) (cell_written env name)
          | Some (Local (contract,_)),_ -> assign env name contract
          | _ -> env)
 

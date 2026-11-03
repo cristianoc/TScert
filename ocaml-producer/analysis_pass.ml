@@ -23,7 +23,11 @@ let infer diagnostics flows offered declarations module_functions arities bounds
   (* A function's constants holding a condition's value are its own. *)
   let enclosing = !Refinement.condition_constants in
   Refinement.condition_constants := [];
-  Fun.protect ~finally:(fun () -> Refinement.condition_constants := enclosing) (fun () ->
+  (* So are the cells it declares. *)
+  let enclosing_cells = !Environment.unit_cells in
+  Environment.unit_cells := [];
+  Fun.protect ~finally:(fun () -> Refinement.condition_constants := enclosing;
+      Environment.unit_cells := enclosing_cells) (fun () ->
     ignore (T.statements expr bindings owner_span Owner.initial_environment f.body));
   (* An expression the lowering reaches on two paths (the fields the arms of a
      constructor's last `if` share) is claimed once when both claims agree;

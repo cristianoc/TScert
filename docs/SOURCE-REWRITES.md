@@ -1594,6 +1594,9 @@ TypeScript files, where neither other kind occurs at those points
   obligations); `blocker-compiler-api-type-node` is the guard's refusal as a
   case. `namespaceMembers` (`tools/namespace-members.mts`) calls `isImport`
   in its three import filters, whose predicates promise `ImportDeclaration`.
+  `elaborationComputedMembers` tests the same before passing a member's
+  descendant to `computedForm`, which answers `null` at kind 234, so the
+  walk takes the same steps.
 - **Commit:** the introducing commit, `A type node and an import are recognised by their kinds`;
   `namespaceMembers`, `Repairs and loop forms for the host cluster's own functions`.
 
@@ -2246,6 +2249,12 @@ cloned fields, null expressions, exceptions and mutations are unchanged.
 same boundary. This uses the existing native-set contract and adds no
 external assumption.
 
+The same repair passes `stated` and `classes` to
+`tools/declaration-graph.mts#externalStatements` as `Set<string>`: its sole
+caller builds both with `new Set`, and its `visitType` callback tests them
+with `has` inside the visitor's stated `{value: any, store: grow}`, which a
+structural `has` stating no effect does not meet. The annotation is erased.
+
 ### A request's method named by converting an unknown argument
 
 `guard` in `tools/compiler-channel.mts` names a failed `apiRequest` or
@@ -2411,6 +2420,175 @@ returns `undefined` as its `number[]`).
   erased.
 - **Scope:** `blocker-next-table-predicate-preservation`. No external
   assumption is added.
+- **Commit:** the introducing commit.
+
+### Merged declaration lists stored at a readonly element contract
+
+`collectDeclarations` in `tools/declaration-graph.mts` keeps `partners`,
+each declaration's ordered merged parts. `resolutionPromise` and
+`resolutionLibraryInterface` store their `InterfaceDeclaration[]` there,
+at the map's `TypeDeclaration[]` values; every reader of the map only reads
+the lists. A writable array's element contract is invariant
+([arrays](POSITIVE-TYPES.md#arrays)), so the stored list was refused.
+
+- **Repair:** the map and the helpers' parameters state
+  `readonly TypeDeclaration[]` values, which each stored list meets. The
+  annotation is erased.
+- **Functions:** `resolutionPromise`, `resolutionLibraryInterface`.
+- **Commit:** the introducing commit.
+
+### A built-in module test stating its empty footprint
+
+`builtinModule` in `tools/files.mts` calls `node:module`'s `isBuiltin`,
+whose [entry](SOURCE-CONTRACTS.md#library-modules) states the empty
+footprint, and its annotation stated no effect. `nodeOrigin`
+(`tools/declaration-graph.mts`) calls it in a `map` callback, whose result
+then admitted holes ([the stable set](FOOTPRINTS.md#the-stable-set-for-density)).
+
+- **Repair:** the arrow's result states `Within<{ value: "keep"; store:
+  "keep" }, boolean>`, which its body establishes. Its value is unchanged.
+- **Functions:** `nodeOrigin`.
+- **Commit:** the introducing commit.
+
+### A guard passed to `filter` by name
+
+`filter` takes its guard overload at a callback stating a promise. A guard
+passed by name meets it where its code discards the actuals past its
+parameters: a module function without a rest parameter. A module constant
+holding an arrow, and an imported function, are known by their types, which
+admit a function reading the index and the array as well. So
+`nodes.filter(isTypeDeclaration)`, with `isTypeDeclaration` a constant
+arrow in `tools/declaration-graph.mts`, and
+`client.statements.filter(isImport)`, with `isImport` imported from
+`tools/syntax.mts`, kept their receivers' element types.
+
+- **Repair:** `isTypeDeclaration` is a function declaration, its body the
+  arrow's; it is defined before any module code runs, and every call
+  returns the same answer. `importBindings` passes
+  `(n): n is ImportDeclaration => isImport(n)`, which calls the same guard
+  with the same node, once per element.
+  The host-family reading tests `f.members.some(m => readsAsOptionalUnknown(m))`,
+  an imported predicate passed to `some` the same way.
+- **Functions:** `resolutionParametersOf`, `resolutionDeclarationOf`,
+  `importBindings`.
+- **Commit:** the introducing commit.
+
+### Compiler diagnostics read at readonly field contracts
+
+`resolutionClean` in `tools/declaration-graph.mts` filters the compiler's
+diagnostics with `untypedAmbientField`, keeps them in a map of
+`{ pos; end; text }` lists, and reports each as a `SeenDiagnostic` whose
+`start` and `end` are `getLineAndCharacterOfPosition`'s results;
+`clientErrors` builds the same records. The compiler's `Diagnostic` and
+`LineAndCharacter` fields are readonly, and a writable field's contract
+does not admit them.
+
+- **Repair:** `untypedAmbientField`'s parameter, the map's elements and
+  `SeenDiagnostic`'s `start` and `end` state readonly fields. No reader
+  writes them: `pipeline/parse-stage.mts` decodes fresh records, and
+  `verify-source.mts` reads `line` and `character`. The annotations are
+  erased.
+- **Functions:** `resolutionClean`, `clientErrors`.
+- **Commit:** the introducing commit.
+
+### A record argument copying an optional field by name
+
+`resolutionLibrary` in `tools/declaration-graph.mts` built its template
+scope as `{ source, annotation: false, ...exactOptional, fail, named }`,
+with `exactOptional` at the open record `{ exactOptional?: boolean }`, which
+may own `source` or `annotation` and replace the fields before it
+([an open record spread](#an-open-record-spread-over-the-fields-written-before-it)).
+
+- **Repair:** the scope copies `exactOptional.exactOptional` by name,
+  through a conditional spread where it is defined. Its one producer,
+  `withProject`, makes either `{}` or `{ exactOptional: b }`, a fresh literal
+  with no other key, so the scope has the same keys, in the same order,
+  at the same values.
+- **Functions:** `resolutionLibrary`.
+- **Commit:** the introducing commit.
+
+### Headings collected by index around a cached file-system read
+
+`resolutionStatedType` in `tools/declaration-graph.mts` mapped its parts to
+`{ origin, heading }` records, each origin read by `declarationOrigin`,
+which consults a cache of file-system observations and states no effect:
+the mapped array admitted holes, and `typeEntry` reads a readable list. Its
+heading's end was `isTypeAlias(part) ? part.end : part.members.pos`; a
+user guard's false edge refines nothing, so `members` was read at the whole
+`TypeDeclaration`.
+
+- **Repair:** a loop over the indices below `parts.length` pushes each
+  record onto a fresh array, skipping a hole, which `parts`, a fresh
+  `filter` result no callee reaches, has none of. The end tests
+  `ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)` first,
+  which holds exactly where `isTypeAlias` does not, the parts being type
+  declarations. Each record is made from the same calls in the same order.
+- **Functions:** `resolutionStatedType`.
+- **Commit:** the introducing commit.
+
+The host-family reading of `collectDeclarations` collects four more lists
+so, each over an array no callee reaches, each element made by a local
+function stating no effect: an open declaration's union parts (`arm`), a
+residual field's readings (`readMember`), a generic arm's references
+(`reference`) and the method owners (`methodBase`). Each is the same calls
+in the same order.
+
+### A session fault read once per collection step
+
+`collect` and `restore` in `tools/declaration-session.mts` tested the
+module's `let fault`, a union of fault records, and then read a member
+of the variant the test selected. A test does not narrow a cell holding an
+object ("a read of document on a `let` holding a union of objects").
+
+- **Repair:** each reads `fault` once into a constant `injected`, where it
+  first tested it, and tests and reads the constant. Only
+  `injectSessionFaultForTests` and these branches assign `fault`, and none
+  runs between the read and the tests, so each test sees the same record.
+- **Functions:** `restore`, `collect`, `inDeclarationSession`.
+- **Commit:** the introducing commit.
+
+### A collection's result checked before its return
+
+`collect` in `tools/declaration-session.mts` kept `use`'s result in
+`let value: T | undefined` across a `try` whose `catch` saves the error,
+and returned `value as T` where no error was saved: an assertion of what
+the control flow established.
+
+- **Runtime check:** the result is kept as `{ value }` in a `let` starting
+  at `null`, and after the rethrow of a saved error a `null` result throws.
+  A `try` without a saved error assigned the record, so the check never
+  fails; returns, exceptions and effects are those of the assertion's form.
+- **Functions:** `collect`, `inDeclarationSession`.
+- **Commit:** the introducing commit.
+
+### Telemetry restored by its binding
+
+`asideForTests` in `tools/declaration-session.mts` restored the counters
+with `Object.assign(telemetry, counts)`, an assignment onto an object
+another reference may hold.
+
+- **Repair:** `telemetry` is a `let`, and `asideForTests` assigns it the
+  copy it took. The object is the module's own: `declarationSessionTelemetry`
+  returns a copy and every other read goes through the binding, so each
+  later read sees the same counts.
+- **Functions:** `asideForTests`.
+- **Commit:** the introducing commit.
+
+### A numeric disjunct tested before a member path's refinement
+
+`overlaidInterface` in `tools/declaration-graph.mts` refused a member with
+`!ts.isMethodSignatureDeclaration(member) || member.typeParameters?.length
+|| member.postfixToken`. The graph computes the first two disjuncts' value
+and tests it twice, before the last disjunct and for the `if`; the second
+test's false edge, reachable only at a falsy number, joins the statement
+after the `if` without `postfixToken`'s refinement, which the producer
+claims there ("the edge … does not establish the claims at this point").
+
+- **Repair:** the second disjunct is `!!member.typeParameters?.length`, a
+  Boolean with the same truthiness, so the value's true test refines it to
+  `true` and its second false edge has no value.
+- **Functions:** `overlaidInterface`, and through it `collect` and
+  `collectFrom`.
 - **Commit:** the introducing commit.
 
 ## Constructs avoided
