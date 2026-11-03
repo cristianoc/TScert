@@ -61,14 +61,16 @@ let rec typeof_slice shape holds = function
   | Union ts -> unions (List.map (typeof_slice shape holds) ts)
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
-(* A declaration's arm stays on both arms of a `typeof` test, its shape not
-   known there. Where the test decides some arm of its definition, the
-   definition is sliced instead, arm by arm: `Key = string | { sym: number }`
-   where `typeof k === "string"` fails is `{ sym: number }`. A type
+(* A declaration's arm stays on both arms of a `typeof` test, or of a test
+   against `null` or `undefined`, its shape not known there. Where the test
+   decides some arm of its definition, the definition is sliced instead, arm
+   by arm: `Key = string | { sym: number }` where `typeof k === "string"`
+   fails is `{ sym: number }`, and `Json` where `j === null` holds is
+   `null`. A type
    parameter's or an intersection's arm in a definition is sliced as
    `typeof_slice` slices it, so it stays where the test cannot decide it. *)
-let typeof_refine declarations shape holds t =
-  let sliced = typeof_slice shape holds t in
+let refine_unfolding declarations slice t =
+  let sliced = slice t in
   let rec named = function
     | Atoms xs -> List.exists (function Named _ -> true | _ -> false) xs
     | Union ts -> List.exists named ts | Rigid _ | Meet _ -> false in
@@ -83,8 +85,10 @@ let typeof_refine declarations shape holds t =
     | Union ts -> unions (List.map (unfold seen) ts)
     | t -> t in
   let unfolded = unfold [] sliced in
-  let resliced = typeof_slice shape holds unfolded in
+  let resliced = slice unfolded in
   if resliced = unfolded then sliced else resliced
+let typeof_refine declarations shape holds t =
+  refine_unfolding declarations (typeof_slice shape holds) t
 (* Where `Array.isArray` holds, an open record's arm and `unknown`'s are an
    array of the built-ins: record types and `unknown` are of values meeting the
    array invariant, so one owning an array's store holds a possibly sparse
@@ -547,9 +551,9 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->
     let equal = truth=(op=LooseEqual) in
-    refine_value env name (fun t ->
+    refine_value env name (refine_unfolding declarations (fun t ->
       if equal then union (restrict ~declarations Nul true t) (restrict ~declarations Undef true t)
-      else restrict ~declarations Undef false (restrict ~declarations Nul false t))
+      else restrict ~declarations Undef false (restrict ~declarations Nul false t)))
   | Equality ((LooseEqual | LooseUnequal as op),{node=Read ({node=Id name;_},Name field);_},{node=Literal (LNull | LUndefined);_})
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Read ({node=Id name;_},Name field);_}) ->
     let equal = truth=(op=LooseEqual) in
@@ -586,6 +590,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
          | None,None -> Option.bind (modules n) (fun t ->
              try Some (field_type bounds declarations [] t (Name f)) with Json.Error _ -> None))
       | _ -> claimed e.pos) (fun t -> match singleton_atom t,t with
+        | Some ((Nul | Undef) as a),_ -> Some (refine_unfolding declarations (restrict ~declarations a equal),true)
         | Some a,_ -> Some ((fun t -> restrict ~declarations a equal t),true)
         | None,Atoms (_::_ as atoms) when equal
             && List.for_all (fun a -> singleton_atom (Atoms [a]) <> None) atoms ->

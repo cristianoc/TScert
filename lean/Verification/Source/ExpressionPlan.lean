@@ -93,6 +93,14 @@ def leftTestForm : Expr → Bool
   | .not _ e => testForm e
   | e => testForm e
 
+/-- Whether a condition's operand is dispatched as a test where it becomes a
+left operand: `&&` or `||` where both its operands are, any other operand as
+a left operand is (`leftTestForm`). `!g(x)` is none where `g(x)` is no test,
+nor is `!g(x) || !g(y)`. -/
+def dispatchedTest : Expr → Bool
+  | .logical _ _ a b => dispatchedTest a && dispatchedTest b
+  | e => leftTestForm e
+
 private def effect : Expr → Effect
   | .assign _ name _ rhs => .cellWrite name rhs.span
   | .construct .. | .call .. | .invoke .. | .callWithReceiver .. | .applyWithReceiver ..
@@ -317,11 +325,12 @@ private partial def truthOf (root : Span) (cond : Expr) (observed : Bool := true
   -- in turn, the same operator's right operand its new right one's. The
   -- regrouped whole computes the whole's value where it starts and keeps
   -- its span; `b || c`, evaluated where `a` answered, is a residual.
-  -- A left operand stays grouped where both its operands are tests, its
-  -- first judged as a left operand (`leftTestForm`): `(!g(x) || b) || c`,
-  -- `g(x)` a guard's call, regroups as `!g(x) || (b || c)`.
+  -- A left operand stays grouped where both its operands are tests, each
+  -- judged as a left operand (`dispatchedTest`):
+  -- `(!g(x) || b) || c` and `(b || !g(x)) || c`, `g(x)` a guard's call,
+  -- regroup as `!g(x) || (b || c)` and `b || (!g(x) || c)`.
   | .logical p andOp (.logical _ andOp' l1 l2) right =>
-    if andOp == andOp' && !(leftTestForm l1 && testForm l2) then
+    if andOp == andOp' && !(dispatchedTest l1 && dispatchedTest l2) then
       truthOf root (.logical p andOp l1 (.logical (residual l2) andOp l2 right)) observed
     else logicalTruth root cond observed
   | _ => logicalTruth root cond observed
@@ -347,11 +356,12 @@ where
       let keep := Plan.atom mark (.evaluate decided decided .none)
       return .choose truth left.span .truthy binding lhs
         (if andOp then keep else rhs) (if andOp then rhs else keep)
-  -- A test's left operand whose right one is no test, `a != null && (b &&
-  -- c)` as an optional chain's condition regroups: the test is dispatched
-  -- as a Boolean, then the right operand is read for its truthiness alone.
+  -- A test's left operand whose right one is no test (`dispatchedTest`),
+  -- `a != null && (b && c)` as an optional chain's condition regroups or
+  -- `t || (!g(x) || c)`: the test is dispatched as a Boolean, then the
+  -- right operand is read for its truthiness alone.
   | .logical _ andOp left right =>
-    if leftTestForm left && !testForm right then do
+    if leftTestForm left && !dispatchedTest right then do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "condition"
       let lhs ← expression root left

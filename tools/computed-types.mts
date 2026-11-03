@@ -17,6 +17,10 @@ import type { TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, numericKey, optionalTerm } from "./type-term.mts";
 import { passToolFailure } from "./thrown.mts";
 
+/** A reader of type syntax: it may read the checker and grow the stores it
+ * reaches, as the type reader does, and changes no other value. */
+export type TypeReader = (node: TypeNode) => Within<{ value: "any"; store: "grow" }, TypeTerm>;
+
 /** What the evaluator reads with: the project's checker, and the reader of a
  * declaration's own annotation, in that declaration's scope, with the binders
  * of the functions enclosing it (`binders`), or of the value a name denotes, as
@@ -36,13 +40,13 @@ export type ComputedContext = {
   value(declarations: readonly Node[], what: string): { typeParams: readonly unknown[]; type: TypeTerm };
   /** The type alias a reference names, as TypeScript resolves it, if it
    * names one. */
-  alias(reference: TypeReferenceNode): TypeAliasDeclaration | null;
+  alias: (reference: TypeReferenceNode) => TypeAliasDeclaration | null;
   /** The declaration named by the current projected reference. */
   referenceAlias(reference: Extract<TypeTerm, { k: "reference" }>): TypeAliasDeclaration | null;
   /** The reader of type syntax inside `alias`'s declaration with its
    * parameters read as `args`, in the alias's own scope, a computed form
    * naming them evaluated by TypeScript at the application `use`. */
-  applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[], use: Node): (node: TypeNode) => TypeTerm;
+  applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[], use: Node): TypeReader;
   /** A generic alias's equation at a reference's arguments, when it is an
    * array, a tuple or another alias's application; null otherwise. */
   equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
@@ -55,7 +59,7 @@ export type ComputedContext = {
    * the `unique symbol` constant or well-known symbol declaring it among the
    * listed symbols, as a computed key `[k]` naming it is read. Throws the
    * reason where the symbol it holds is not known. */
-  unique(type: Type): number;
+  unique: (type: Type) => number;
 };
 
 /** Whether a checker type denotes class instances or an interface, including
@@ -137,7 +141,7 @@ const describe = (checker: Checker, type: Type): string => checker.typeToString(
 /** The type term of a computed type `node` (`computedForm`), located at
  * `span`; `read` reads an operand in the scope `node` is written in. */
 export function computedType(context: ComputedContext, node: TypeNode, span: Span,
-    read: (node: TypeNode) => TypeTerm): TypeTerm {
+    read: TypeReader): TypeTerm {
   const { checker } = context;
   const form = computedForm(node) ?? "a computed type";
   context.captures(node);
@@ -163,13 +167,13 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
  * reference is written. Where TypeScript computes a union of literals and
  * primitives for the reference, that union was taken already. */
 function aliasApplication(context: ComputedContext, node: TypeReferenceNode, span: Span,
-    read: (node: TypeNode) => TypeTerm, computed: string): TypeTerm {
+    read: TypeReader, computed: string): TypeTerm {
   const alias = context.alias(node);
   if (!alias || !computedAlias(alias, context.alias))
     throw Error(`${computed} is not an application of a type alias TypeScript computes`);
   // An omitted argument is its parameter's default, read at the earlier
   // arguments.
-  const applied = parameterMembers(context, alias, node, read, new Map());
+  const applied = parameterMembers(context, alias, node, read, new Map<Node, Member>());
   if (!applied) throw Error(`${computed} omits an argument of ${alias.name.text} that has no default`);
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
@@ -185,13 +189,13 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
 
 /** A union member as written: its type node, the reader of the scope it
  * is written in, and the members the parameters it may name stand for. */
-type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm; params: ReadonlyMap<Node, Member> };
+type Member = { node: TypeNode; read: TypeReader; params: ReadonlyMap<Node, Member> };
 
 /** The members `alias`'s parameters stand for at `reference`: each written
  * argument where it is written, each omitted one its default, read at the
  * earlier ones; null where one has neither. */
 function parameterMembers(context: ComputedContext, alias: TypeAliasDeclaration, reference: TypeReferenceNode,
-    read: (node: TypeNode) => TypeTerm, params: ReadonlyMap<Node, Member>): { args: TypeTerm[]; members: Map<Node, Member> } | null {
+    read: TypeReader, params: ReadonlyMap<Node, Member>): { args: TypeTerm[]; members: Map<Node, Member> } | null {
   const args: TypeTerm[] = [];
   const members = new Map<Node, Member>();
   for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
@@ -211,8 +215,8 @@ function parameterMembers(context: ComputedContext, alias: TypeAliasDeclaration,
  * where that alias is declared, with its parameters read as the reference's
  * arguments or their defaults; a parameter standing alone is the members of
  * what it stands for (`params`). Any other type is one member. */
-function unionMembers(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
-    seen: Set<Node> = new Set(), params: ReadonlyMap<Node, Member> = new Map()): Member[] {
+function unionMembers(context: ComputedContext, node: TypeNode, read: TypeReader,
+    seen: Set<Node> = new Set<Node>(), params: ReadonlyMap<Node, Member> = new Map<Node, Member>()): Member[] {
   while (ts.isParenthesizedTypeNode(node)) node = node.type;
   if (ts.isUnionTypeNode(node)) return node.types.flatMap(t => unionMembers(context, t, read, seen, params));
   if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && !node.typeArguments?.length) {
@@ -227,7 +231,7 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: (node: Typ
     return [{ node, read, params }];
   const applied = parameterMembers(context, alias, node, read, params);
   if (!applied) return [{ node, read, params }];
-  return unionMembers(context, alias.type, context.applied(alias, applied.args, node), new Set([...seen, alias]), applied.members);
+  return unionMembers(context, alias.type, context.applied(alias, applied.args, node), new Set<Node>([...seen, alias]), applied.members);
 }
 
 /** An application of an alias whose equation is a conditional type
@@ -252,7 +256,7 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
     throw Error(`the conditional type ${alias.name.text} decides a type other than one of its parameters, ` +
       `${computed}: it distributes over no union`);
   const argument = decided.node;
-  const members = unionMembers(context, argument, decided.read, new Set(), decided.params);
+  const members = unionMembers(context, argument, decided.read, new Set<Node>(), decided.params);
   const inferred = inferredResult(context, alias, body, members, span);
   if (inferred) return inferred;
   const results = isUnionType(type) ? type.getTypes() : [type];
@@ -452,11 +456,11 @@ function typeQuery(context: ComputedContext, node: ts.TypeQueryNode, type: Type,
         throw Error(`${what} is a class inheriting static members of its base (${inherited.join(", ")}): its ` +
           "class value reaches them through its prototype, which no member of the class value's type states");
     }
-    if (!ts.isClassDeclaration(first) || !first.members.some(isStatic)) return value.type;
+    if (!ts.isClassDeclaration(first) || !first.members.some(member => isStatic(member))) return value.type;
     // A class value's static fields are own data properties of it, which its
     // type states; its static methods are bindings of their own, which no
     // member of its type states.
-    const statics = first.members.filter(isStatic).flatMap(member => {
+    const statics = first.members.filter(member => isStatic(member)).flatMap(member => {
       if (ts.isClassStaticBlockDeclaration(member)) return [];
       if (!ts.isPropertyDeclaration(member) || !ts.isIdentifier(member.name))
         throw Error(`${what} is a class with static methods or private statics: they are bindings of their own, ` +
@@ -588,7 +592,7 @@ function receivedBy(type: TypeTerm, receiver: TypeTerm): TypeTerm {
 }
 
 function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode, type: Type, span: Span,
-    read: (node: TypeNode) => TypeTerm): TypeTerm {
+    read: TypeReader): TypeTerm {
   const { checker } = context;
   const computed = describe(checker, type);
   const keyType = checker.getTypeFromTypeNode(node.indexType);
@@ -640,7 +644,8 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
           const field = object.fields.find(f => f.name === key.text);
           return field ? (field.optional ? optionalTerm(field.type, span) : field.type) : null;
         });
-        if (parts.every((p): p is TypeTerm => p !== null)) return union(parts);
+        const found = parts.filter((p): p is TypeTerm => p !== null);
+        if (found.length === parts.length) return union(found);
         break;
       }
       case "parameter": case "binder":

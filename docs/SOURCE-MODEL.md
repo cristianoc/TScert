@@ -93,7 +93,11 @@ $`\mathrm{cl}(B)`$ also as its two singletons. A type parameter's row or a
 meet row is no clause row, so `T ∩ unknown` is not sliced. So
 `typeof x === "object"` leaves `null` and $`J_{\mathrm{ref}}`$, then
 `x !== null` leaves $`J_{\mathrm{ref}}`$; a truthy answer leaves every kind
-but `null` and `undefined`; `x != null` every kind but those two. The
+but `null` and `undefined`; `x != null` every kind but those two;
+`x === null` leaves `null` and `x === undefined` leaves `undefined`. A
+named union's label is sliced through its definition's arms where the test
+decides some of them, so `x !== null` of a `Json` leaves its other arms
+(`null-equality-slices`). The
 members of each kind meet the built-ins' invariant as members of `source`
 do. Proved: `BranchRefinement.sourceKinds_cover` (the kinds cover `source`)
 and `sourceSlice_sound`, part of `checkObservedSub_sound`. A key test
