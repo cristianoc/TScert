@@ -26,7 +26,7 @@
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
+import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName, urlHrefName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
@@ -88,6 +88,13 @@ export type GlobalEntry = {
    * this intrinsic at `e` (negated for `!==`), and the member's result
    * reaches the program in no other way. */
   prototypeTest?: string;
+  /** A read `?.value` of the call's result, bound to a `const` declaration
+   * each reference of which is the operand of `typeof … === "string"` (or
+   * `!==`, either side) or a read TypeScript types `string`, is a call of
+   * this intrinsic with the call's arguments: the string the descriptor's
+   * value is, `undefined` otherwise. At every such reference the two agree,
+   * and no other value of the object's field reaches the program. */
+  ownString?: string;
   /** Reflect.apply: invoke the target with its receiver and array-like list. */
   receiverApply?: true;
   /** The signature read instead of the declared one: its own binders, its
@@ -570,7 +577,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `writable`, or `get` and `set`. Nothing is known of `value`, a getter or
   // a setter: each is `unknown`, and the fields are stated readonly.
   { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptor",
-    signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;",
+    signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;", ownString: ownStringName,
     stated: { binders: [], params: [atom("nonHost"),
       { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
       result: optional(propertyDescriptor) } },

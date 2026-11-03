@@ -4,12 +4,21 @@
  * them.
  */
 
-/** The message of what was thrown, or the value itself where it is not an
- * error. `instanceof Error` is the check that says which; a tool that reported
- * `(e as Error).message` was asserting that and would have printed `undefined`
- * for anything else thrown. */
-export const messageOf = (thrown: unknown): string =>
-  thrown instanceof Error ? thrown.message : String(thrown);
+/** What a thrown value that says nothing readable is reported as. */
+const unreadableMessage = "a thrown object that owns no string message";
+
+/** The message of what was thrown. A primitive is converted by `String`,
+ * which runs no code of a primitive's. Of an object, the string it holds at
+ * its own `message` as a data property, read by its descriptor, which calls
+ * no getter; an `Error` owning no `message`, as `new Error()`, inherits
+ * `Error.prototype`'s, `""`; any other object, whose getter or conversion
+ * would run its own code, is the fixed `unreadableMessage`. */
+export const messageOf = (thrown: unknown): string => {
+  if (thrown === null || typeof thrown !== "object" && typeof thrown !== "function") return String(thrown);
+  const message: unknown = Object.getOwnPropertyDescriptor(thrown, "message")?.value;
+  if (typeof message === "string") return message;
+  return thrown instanceof Error && !Object.hasOwn(thrown, "message") ? "" : unreadableMessage;
+};
 
 /** One field of what was thrown, where a caller looks for one a child process
  * attaches — `stderr`, `code`, `killed`. A thrown value is `unknown` until
@@ -22,7 +31,7 @@ export const fieldOf = (thrown: unknown, key: string): unknown =>
 
 /** Whether what was thrown is the engine exhausting the call stack. */
 const stackExhaustion = (thrown: unknown): boolean =>
-  thrown instanceof RangeError && thrown.message === "Maximum call stack size exceeded";
+  thrown instanceof RangeError && messageOf(thrown) === "Maximum call stack size exceeded";
 
 /** A failure of a request to the compiler: whatever its call into the
  * compiler's package threw (`compiler-channel.mts` makes every request's

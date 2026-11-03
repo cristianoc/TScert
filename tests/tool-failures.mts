@@ -10,12 +10,44 @@ import { syncBuiltinESMExports } from "node:module";
 import { isHostFile } from "../tools/family-activation.mts";
 import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
-import { messageOf } from "../tools/thrown.mts";
+import { ioFailure, ioFailureOf, messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
 import { present, sharingForTests } from "../tools/files.mts";
 import { runStep } from "../pipeline/verify-source.mts";
 import { verifierCall } from "../pipeline/stage-execution.mts";
+
+// The formatter reads an object's own string `message` by its descriptor
+// and runs no code of what was thrown: no getter, no conversion, none of a
+// proxy's `has` or `getPrototypeOf` traps (its `getOwnPropertyDescriptor`
+// trap would run: no thrown object is a proxy, DESIGN.md's trust surface).
+// A primitive is converted; an `Error` owning no message reads
+// `Error.prototype`'s `""`; any other object is the fixed text.
+const unreadable = "a thrown object that owns no string message";
+let ran: number = 0;
+assert.equal(messageOf(new Error("ordinary")), "ordinary");
+assert.equal(messageOf(new Error()), "");
+assert.equal(messageOf(new RangeError("range")), "range");
+assert.equal(messageOf("thrown text"), "thrown text");
+assert.equal(messageOf(5), "5");
+assert.equal(messageOf(Symbol("thrown")), "Symbol(thrown)");
+assert.equal(messageOf(undefined), "undefined");
+assert.equal(messageOf(null), "null");
+const malformed: unknown = Object.assign(new Error("replaced"), { message: 5 });
+assert.equal(messageOf(malformed), unreadable);
+assert.equal(messageOf({ get message(): string { ran++; return "got"; } }), unreadable);
+assert.equal(messageOf({ toString: (): string => { ran++; return "converted"; } }), unreadable);
+assert.equal(messageOf({ [Symbol.toPrimitive]: (): string => { ran++; return "converted"; } }), unreadable);
+assert.equal(messageOf((): void => { ran++; }), unreadable);
+assert.equal(messageOf(new Proxy(new Error("proxied"), {
+  has: (): boolean => { ran++; return true; }, getPrototypeOf: (): object => { ran++; return Error.prototype; } })), "proxied");
+assert.equal(messageOf(Object.create(new Error("inherited"))), "");
+assert.equal(messageOf({ message: "owned" }), "owned");
+assert.equal(ran, 0, "no code of a thrown value ran");
+const wrapped = ioFailure("read", "broken", malformed);
+assert.equal(wrapped.message, `read broken: ${unreadable}`);
+assert.strictEqual(wrapped.cause, malformed);
+assert.strictEqual(ioFailureOf(wrapped)?.cause, malformed);
 
 const dir = runDirectory("tscert-tool-failures-");
 const config = join(dir, "tsconfig.json");

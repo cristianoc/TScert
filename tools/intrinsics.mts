@@ -151,6 +151,15 @@ export const ownKeysName = "%OwnKeys%";
  * `Object.prototype`, a Boolean that hands the program no prototype and
  * states nothing of `o`; `!==` is its negation. */
 export const prototypeIsObjectName = "%PrototypeIs:Object%";
+/** `Object.getOwnPropertyDescriptor(o, k)?.value` bound to a `const` read
+ * only through `typeof … === "string"`: the string `o` holds at its own
+ * key `k` as a data property, `undefined` where `o` owns no data property
+ * there or holds another value (SOURCE-CONTRACTS.md, "`Object` and
+ * `Reflect`"). ToObject of `o` (a TypeError of `null` or `undefined`), the
+ * key's conversion, which runs no code of a string, number or symbol, and
+ * [[GetOwnProperty]], which calls no getter and runs no code (no object is
+ * a proxy): no value of `o`'s fields reaches the program but a string. */
+export const ownStringName = "%OwnString%";
 /** A failing `assert(v, m)` of `node:assert/strict`, lowered as `if (!v)
  * throw %AssertionFailure%(m)`: the fresh `AssertionError`. */
 export const assertionFailureName = "%AssertionFailure%";
@@ -549,6 +558,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: { ...fn([atom("nonHost")], { k: "array", presence: "dense", readonly: false,
         element: either(atom("string"), atom("symbol")), span }), effect: emptyEffect } }),
     [prototypeIsObjectName]: () => ({ typeParams: [], type: { ...fn([atom("nonHost")], atom("boolean")), effect: emptyEffect } }),
+    [ownStringName]: () => ({ typeParams: [], type: { ...fn([atom("unknown"),
+      either(atom("string"), atom("number"), atom("symbol"))], either(atom("string"), atom("undefined"))), effect: emptyEffect } }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an
     // array holds a data property (`numericOwn`), and neither

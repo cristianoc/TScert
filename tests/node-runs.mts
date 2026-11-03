@@ -1264,6 +1264,22 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runExample("invalid-instanceof-error-message",
     "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
     "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  assert.equal(runExample("invalid-caught-message-declared",
+    "typeof messageOf(Object.create(Error.prototype, { message: { value: 5 } }))"),
+    "number", "invalid-caught-message-declared: the descriptor's value declared string is a number");
+  // A caught message read by its own data descriptor: no getter, no
+  // conversion, no proxy `get` trap runs; a primitive is converted.
+  assert.equal(runExample("caught-message", `(() => {
+    let ran = 0;
+    const getter = Object.create(Error.prototype, { message: { get() { ran++; return "g"; } } });
+    const converted = { toString() { ran++; return "custom"; } };
+    const proxy = new Proxy(new Error("p"), { get(t, k) { ran++; return Reflect.get(t, k); } });
+    return JSON.stringify([messageOf(new Error("e")), messageOf(new Error()), messageOf("s"), messageOf(Symbol("x")),
+      messageOf(Object.create(Error.prototype, { message: { value: 5 } })), messageOf(getter), messageOf(converted),
+      messageOf(proxy), firstLine(new Error("a\\nb")), ran]);
+  })()`), JSON.stringify(["e", "", "s", "Symbol(x)", "a thrown object that owns no string message",
+    "a thrown object that owns no string message", "a thrown object that owns no string message", "p", "a", 0]),
+    "caught-message: own data messages, the inherited empty message, primitives and the fixed text, no code run");
   // An `Error`-derived message: read through the chain, `""` where omitted,
   // seen by `in`, left out of keys and spreads, serialized where a replacer
   // names it.
