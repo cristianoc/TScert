@@ -120,6 +120,56 @@ export type JsonObject = { readonly [key: string]: JsonValue };
 /** A read of a key of a `JsonObject`: its value, or `undefined` where the
  * object lacks the key. */
 export type JsonRead = JsonValue | undefined;
+/** A JSON value's array arm. */
+const isJsonList = (value: JsonValue): value is readonly JsonValue[] => Array.isArray(value);
+/** `String` of a JSON value that holds no array: a primitive or `undefined`
+ * as `String` converts it; an object through `Object.prototype.toString`,
+ * `"[object Object]"`, unless it owns a `toString`, which, as JSON data, is
+ * not callable, so that `String` finds no callable conversion (its `valueOf`
+ * returns the object) and throws a `TypeError`, with the message Node gives. */
+function scalarText(value: JsonRead): Within<{ value: "any"; store: "grow" }, string> {
+  if (typeof value !== "object" || value === null) return `${value}`;
+  if (Object.hasOwn(value, "toString")) throw new TypeError("Cannot convert object to primitive value");
+  return "[object Object]";
+}
+/** A position in a nested array: the list, the index of its next element,
+ * and the position the list was entered from. */
+interface ListPosition {
+  readonly list: readonly JsonValue[];
+  readonly at: number;
+  readonly below: ListPosition | null;
+}
+/** `String` of a JSON value or an absent read. An array converts as
+ * `Array.prototype.toString` joins it: its elements' conversions in order,
+ * separated by commas, `null` and a hole as the empty string, an array
+ * element converted the same way. The nested arrays are walked through a
+ * chain of positions, so the conversion's depth costs no call stack: where
+ * `String` exhausts the call stack on a deep array (a `RangeError`), this
+ * returns the text. Every other result and exception is `String`'s. */
+export function stringOfJson(value: JsonRead): Within<{ value: "any"; store: "grow" }, string> {
+  if (value === undefined || !isJsonList(value)) return scalarText(value);
+  let text = "";
+  let position: ListPosition | null = { list: value, at: 0, below: null };
+  while (position !== null) {
+    const list = position.list;
+    const at = position.at;
+    const below: ListPosition | null = position.below;
+    if (at >= list.length) {
+      position = below;
+      continue;
+    }
+    if (at > 0) text += ",";
+    const next: ListPosition = { list, at: at + 1, below };
+    const element: JsonRead = list[at];
+    if (element !== undefined && element !== null && isJsonList(element))
+      position = { list: element, at: 0, below: next };
+    else {
+      if (element !== undefined && element !== null) text += scalarText(element);
+      position = next;
+    }
+  }
+  return text;
+}
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */

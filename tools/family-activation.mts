@@ -18,7 +18,7 @@ import { pathToFileHref } from "./url-strings.mts";
 // files.mts makes every file-system failure a tool failure.
 import { findPackage, listDirectory, loadModule, manifestMember, moduleLocation, nodeResolve, orAbsent, readBytes, readText, realPath, remembered,
   runtimeConditions, type Remembered } from "./files.mts";
-import type { Json } from "./calculus.mts";
+import { stringOfJson, type Json } from "./calculus.mts";
 export { nodeResolve, runtimeConditions } from "./files.mts";
 
 /** The reviewed family descriptions the front end activates: each a
@@ -90,20 +90,6 @@ function digestOf(real: string, inventory: readonly string[]): string {
   }
   return hash.digest("hex");
 }
-/** `String` of a JSON value, by its arms: a primitive as `String` converts
- * it; an array as `Array.prototype.toString` joins its elements with
- * commas, `null` as the empty string; an object through
- * `Object.prototype.toString`, `"[object Object]"`, unless it owns a
- * `toString`, which, as JSON data, is not callable, so that `String` finds
- * no callable conversion (its `valueOf` returns the object) and throws a
- * `TypeError`, with the message Node gives. */
-function stringOfJson(value: Json): string {
-  if (typeof value !== "object" || value === null) return String(value);
-  if (Array.isArray(value)) return value.map((x: Json) => (x === null ? "" : stringOfJson(x))).join(",");
-  if (Object.hasOwn(value, "toString")) throw new TypeError("Cannot convert object to primitive value");
-  return "[object Object]";
-}
-
 /** The directory of a description's package: the package of the
  * description's name, as Node's `node_modules` lookup finds its manifest
  * from the description's directory (`installation.from`, relative to the

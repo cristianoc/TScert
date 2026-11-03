@@ -434,7 +434,7 @@ export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
  * a string (reading rule 5), and `get` and `has`, the standard `Map`
  * methods, take any key: a string the client produces reads the entry the
  * map stores or nothing. Any other signature is refused. */
-export function tableReading(type: TypeTerm, isLibraryMap: (id: DeclarationIdentity) => boolean,
+export function tableReading(type: TypeTerm, isLibraryMap: (id: DeclarationIdentity) => Within<{ value: "keep"; store: "keep" }, boolean>,
     brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): TypeTerm {
   if (type.k !== "function" || type.params.length || type.rest || type.result.k !== "reference" ||
       !isLibraryMap(type.result.reference.target) || type.result.args.length !== 2)

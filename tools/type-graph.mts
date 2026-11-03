@@ -22,10 +22,10 @@ export function codePointLess(a: string, b: string): boolean {
   }
   return xs.length < ys.length;
 }
-export function isArrayPresence(value: unknown): value is ArrayPresence {
+export function isArrayPresence(value: unknown): value is Within<{ value: "keep"; store: "keep" }, ArrayPresence> {
   return value === "dense" || value === "readable" || value === "sparse";
 }
-export function presencePrefix(value: ArrayPresence): string {
+export function presencePrefix(value: ArrayPresence): Within<{ value: "keep"; store: "keep" }, string> {
   return value === "readable" ? "" : `${value} `;
 }
 /** A union of labels. A table's labels are its row indices; the source
@@ -82,7 +82,7 @@ const sameKinds = (a: ElementKinds | null, b: ElementKinds | null): boolean =>
   a === null || b === null ? a === b : a.length === b.length && a.every((k, i) => k === b[i]);
 /** An elements predicate a value states: `null`, or kinds in their order,
  * each once; `undefined` where the value states neither. */
-function decodeKinds(v: JsonRead): ElementKinds | null | undefined {
+function decodeKinds(v: JsonRead): Within<{ value: "any"; store: "grow" }, ElementKinds | null | undefined> {
   if (v === null) return null;
   if (!Array.isArray(v)) return undefined;
   const kinds: ElementKind[] = [];
@@ -101,7 +101,7 @@ const isObject = (v: JsonRead): v is JsonObject =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 /** The closed footprint a value states, as a fresh object of its fields, or
  * `undefined` where the value states none. */
-export function decodeClosedFootprint(v: JsonRead): ClosedFootprint | undefined {
+export function decodeClosedFootprint(v: JsonRead): Within<{ value: "any"; store: "grow" }, ClosedFootprint | undefined> {
   if (!isObject(v) || Object.keys(v).length !== 2) return undefined;
   const value = v.value;
   const store = v.store;
@@ -116,7 +116,7 @@ function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
 }
 /** The call effect a value states, as fresh objects of its fields, or
  * `undefined` where the value states none. */
-export function decodeCallEffect(v: JsonRead): CallEffect | undefined {
+export function decodeCallEffect(v: JsonRead): Within<{ value: "any"; store: "grow" }, CallEffect | undefined> {
   if (!isObject(v) || Object.keys(v).length !== 9) return undefined;
   const requires = decodeKinds(v.requires);
   const elements = decodeKinds(v.elements);
@@ -310,7 +310,7 @@ type OnlyStringClauses = Covers<Exclude<(typeof STRING_CLAUSE_KEYS)[number], Str
 
 /** The number a literal's bit pattern denotes. Readers show the number; the
  * bits are its identity, not its display. */
-export const numberOfBits = (bits: string): number => {
+export const numberOfBits = (bits: string): Within<{ value: "keep"; store: "keep" }, number> => {
   const view = new DataView(new ArrayBuffer(8));
   view.setBigUint64(0, BigInt(bits));
   return view.getFloat64(0);

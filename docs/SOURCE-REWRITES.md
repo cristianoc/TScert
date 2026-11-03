@@ -1314,19 +1314,20 @@ discarded.
   `"k" in v` and `v[k]` agree with these where neither `Object.prototype`
   nor `Array.prototype` holds the key, which the keys' types restrict them
   to, and a parsed array owns only its indices and its length.
-  `stringOfJson` (`tools/family-activation.mts`) converts a member as
-  `String` does, by its arms: a primitive by `String`; an array by joining
-  its elements' conversions with commas, an element `null` as the empty
-  string; an object as `"[object Object]"`, or a `TypeError` with Node's
+  `stringOfJson` (`tools/calculus.mts`) converts a member as
+  `String` does, by its arms: a primitive by a template literal; an array by
+  joining its elements' conversions with commas, an element `null` or a hole
+  as the empty string, nested arrays walked through a chain of positions; an
+  object as `"[object Object]"`, or a `TypeError` with Node's
   message where the object owns `toString`, which JSON data never makes
   callable. Each reader throws where the original threw: `JSON.parse`'s `SyntaxError` of a text that is no
   JSON, in `digestOf`, `checkInventory`, `checkedGuards` and `originOf`;
   `manifestField` catches it and answers undefined, as the original did;
   `decodeResult` answers null where `isResult` answered false. One
-  behaviour differs: the conversion of nested arrays recurses on the call
-  stack, so the depth at which it exhausts the stack, a `RangeError`,
-  differs from Node's own `Array.prototype.join`, as any change of the
-  frames would.
+  behaviour differs: the conversion of nested arrays uses no call stack, so
+  an array nested deeply enough that Node's own `Array.prototype.join`
+  exhausts the stack (a `RangeError`; 10,000 levels do under Node 26)
+  converts to its text.
 
   `decodeResult`'s objects hold only the fields its callers read, where the
   original passed on the parsed object with any further members.
@@ -2271,6 +2272,85 @@ record whose `result` is a `string`, in a binder's writable
   `ResolutionSlots`; the result binder still reads `resolvableSlots`'s
   `result`. No code compares resolutions by identity.
 - **Functions:** `intrinsics`.
+
+### The claim printers and lifter with stated growth
+
+The printers of `tools/claim-text.mts` (`atomText`, `bareAtomText`,
+`typeText`) and its lifter (`cell`, `liftClause`, `liftSignatures`,
+`liftType`, `liftLabels`, `treeAtom`) read producer JSON, write only the
+print state, fresh arrays and records and the table's memo, and map arrays
+with callbacks that call one another. A map result is dense only at a
+callback whose footprint is at most `grow`
+([`map`](SOURCE-CONTRACTS.md#prototype-contracts)), and the lifter's records
+are passed at `JsonValue`.
+
+- **Repair:** each of these functions, each callback the lifter maps with,
+  and `textOf`, the text of a lifted part, state
+  `Within<{ value: "any"; store: "grow" }, T>`, with the
+  [stated-effect](SOURCE-ELABORATION.md#stated-effects) rule checking every
+  body. The imported helpers they call state their footprints, each checked
+  at its own definition: `isArrayPresence` and `presencePrefix` the empty
+  one, `decodeCallEffect`, `decodeClosedFootprint` and `decodeKinds`
+  (`tools/type-graph.mts`) and `stringOfJson` (`tools/calculus.mts`)
+  growth. `isOrdinary` compares a decoded effect with `ordinaryEffect`
+  field by field. The report types `Shown`, `ShownField` and `ShownRecord`
+  and the record's `indexes` state the index signature
+  `readonly [key: string]: JsonValue` that their fields meet, so a record is
+  passed at `JsonValue` without an implicit index signature; the dictionary
+  branch of `liftClause` builds its record from the record's six named
+  fields, the keys the record holds. The table's `names` is a `Map`, the
+  native `lift` builds, whose `get` runs no client code
+  ([native collections](#the-type-readers-native-collections-typed-as-natives)).
+- **Repair:** a value read and then tested is read once into a constant:
+  `rowAt` reads `types.rows`, `cell`'s callbacks read a pair's key, and
+  `primitiveKind` finds the kind in the primitive table and returns it
+  ([a guard that promises more](#a-guard-that-promises-more-than-its-body-checks)).
+  `atomText` collects its metadata as entries and builds the object with
+  `Object.fromEntries`, so it writes only a fresh array. Every conversion of
+  a JSON value or an absent read to text is `stringOfJson`, which converts
+  as `String` does ([a parsed JSON value](#a-parsed-json-value-read-as-unknown)),
+  and the memo key of an absent label list is the text `"undefined"`, the
+  interpolation of an absent serialization.
+- **Equivalence:** the annotations are erased. A read once is the value the
+  repeated reads gave: no code runs between them that writes the read
+  object. `Object.fromEntries` defines the same keys in the same order as
+  separate writes, and `JSON.stringify` serializes the same object.
+  `stringOfJson` and `String` agree on every JSON value and on `undefined`,
+  in result and in exception, except on an array nested deeply enough that
+  `String` exhausts the call stack, where `stringOfJson` returns the text
+  (`tests/claim-text.mts` compares them on a 3,000-level array, which an
+  unknown atom kind prints as `«1»`).
+  `isOrdinary`'s comparisons are `sameEffect`'s at `ordinaryEffect`, whose
+  promise and kind lists are `null`. `textOf` is `printType`'s text without
+  the claim decoding, whose answer the text does not read; the two differ
+  only where the decoding exhausts the call stack, a `RangeError`
+  `printType` passes on. Returns, other exceptions, mutations and aliases
+  are unchanged.
+- **Trust:** `numberOfBits` (`tools/type-graph.mts`) states the empty
+  footprint. Its body, which no rule admits (`DataView` has no reviewed
+  entry), allocates an `ArrayBuffer` and a `DataView` over it, converts its
+  string argument by `BigInt`, which runs no client code and throws a
+  `SyntaxError` on a malformed one, and writes and reads only the fresh
+  buffer, under the untampered standard objects assumption.
+- **Scope:** `blocker-claim-lift-forms` checks a growing memoized lift
+  over a dense receiver returning a record that states its index signature.
+- **Commit:** the introducing commit.
+
+### A symbol table's map predicate stating the empty footprint
+
+`tableReading` in `tools/compiler-api.mts` tests `type.result` and reads
+its `reference` and `args` across a call of its `isLibraryMap` parameter.
+A parameter typed `(id) => boolean` may replace `type.result` before the
+second read, which then reads a field of the declared union
+(`invalid-next-table-predicate-mutation`: run under Node, the classifier
+returns `undefined` as its `number[]`).
+
+- **Repair:** the parameter states
+  `Within<{ value: "keep"; store: "keep" }, boolean>`, which its one caller's
+  predicate, a module-name and name comparison, meets. The annotation is
+  erased.
+- **Scope:** `blocker-next-table-predicate-preservation`. No external
+  assumption is added.
 - **Commit:** the introducing commit.
 
 ## Constructs avoided
@@ -3539,6 +3619,42 @@ and observes the collected length; the generic tuple parameter contributes
 no further observation. The equivalent function returns `2`. This case
 exercises the ordinary rest-array check; generic argument-pack rest closures
 retain the [model limit](SOURCE-FRAGMENT.md#model-limits).
+
+### A map over a literal holding a possibly absent first element
+
+`liftClause` in `tools/claim-text.mts` lifted a reference clause's cells as
+`[first, ...rest].map((c, i) => cell(types, c, depth - 1, i === 0 ? views : []))`,
+`first` a `JsonValue | undefined`. An array literal is stated `readable`
+where no type is expected of it, and a readable array whose elements admit
+`undefined` is not known to be dense, so the map result may hold holes and
+does not meet `shown`'s `ReadonlyArray<JsonValue>`.
+
+- **Avoided form and cost:** support would state a literal written without
+  holes as dense, a change to every unannotated array literal's contract.
+- **Equivalent form:** `[cell(types, first, depth - 1, views), ...rest.map(later)]`,
+  with `later` stating `{value: any, store: grow}`. `rest` is a
+  `readonly JsonValue[]`, whose readable elements exclude `undefined`, so it
+  holds no hole; the cells are lifted in the same order with the same views,
+  and the literal holds the same records. Returns, exceptions and mutations
+  agree.
+- **Scope:** `blocker-claim-lift-forms`.
+
+### A closure reading a binding narrowed outside it
+
+`liftLabels` in `tools/claim-text.mts` tested `both && label === falseLabel`
+and `name !== undefined` and returned closures reading `name`. A closure
+reads a captured binding at its declared type, and a binding tested only
+outside it keeps that type inside.
+
+- **Avoided form and cost:** support would carry an enclosing narrowing
+  into a closure's captures.
+- **Equivalent form:** `pairTrue` and `pairFalse` hold the pair's labels
+  where both are present and `undefined` otherwise; a label, a `JsonValue`,
+  is never `undefined`, so `label === pairFalse` holds exactly where
+  `both && label === falseLabel` held. The tested name is copied into a
+  constant typed `string` that the closure captures. Returns, exceptions
+  and mutations agree.
+- **Scope:** `blocker-claim-lift-forms`.
 
 ## Host boundaries
 

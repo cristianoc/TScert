@@ -3,14 +3,18 @@
  * nondefault object modes and conjunction metadata explicitly. The text always
  * determines its type. */
 import { decodeClaimType, type Atom } from "./claim.mts";
-import type { JsonObject, JsonRead, JsonValue } from "./calculus.mts";
+import {
+  stringOfJson,
+  type JsonObject,
+  type JsonRead,
+  type JsonValue,
+} from "./calculus.mts";
 import { passToolFailure } from "./thrown.mts";
 import {
   numberOfBits,
   isArrayPresence,
   decodeCallEffect,
   ordinaryEffect,
-  sameEffect,
   presencePrefix,
   type ClauseKey,
   type StringClause,
@@ -34,9 +38,24 @@ const members = (v: JsonValue): readonly JsonValue[] =>
         ? [...v]
         : [];
 /** An ordinary arrow's effect, the one a structural function atom states. */
+/** Each field is compared with `ordinaryEffect`'s, whose promise and kind
+ * lists are `null`, so `===` is `sameEffect`'s comparison of them. */
 const isOrdinary = (effect: JsonRead): boolean => {
-  const decoded = decodeCallEffect(effect);
-  return decoded !== undefined && sameEffect(decoded, ordinaryEffect);
+  const d = decodeCallEffect(effect);
+  const o = ordinaryEffect;
+  return (
+    d !== undefined &&
+    d.footprint.value === o.footprint.value &&
+    d.footprint.store === o.footprint.store &&
+    d.promise === o.promise &&
+    d.fresh === o.fresh &&
+    d.receiverStore === o.receiverStore &&
+    d.onThrow === o.onThrow &&
+    d.receiverOwn === o.receiverOwn &&
+    d.freshObject === o.freshObject &&
+    d.requires === o.requires &&
+    d.elements === o.elements
+  );
 };
 /** A list where the producer sends one of records: an array of any
  * values, each checked where it is read. */
@@ -60,8 +79,10 @@ const PRIMITIVE: BareKind<Atom>[] = [
   "undefined",
   "void",
 ];
-const isPrimitive = (v: JsonRead): v is BareKind<Atom> =>
-  PRIMITIVE.some((p) => p === v);
+/** The primitive kind `v` names, found in the table; undefined where it
+ * names none. */
+const primitiveKind = (v: JsonRead): BareKind<Atom> | undefined =>
+  PRIMITIVE.find((p) => p === v);
 
 /* ---------- printing ---------- */
 /** Printing never fails; it records whether the text says the whole type. */
@@ -72,28 +93,33 @@ interface PrintState {
 /** The keys of an atom's metadata, literals naming no member of
  * `Object.prototype`. */
 type MetadataKey = "call" | "construct" | "array";
-function atomText(atom: JsonRead, state: PrintState): string {
+function atomText(atom: JsonRead, state: PrintState): Within<{ value: "any"; store: "grow" }, string> {
   const text = bareAtomText(atom, state);
   if (!isObject(atom)) return text;
-  const metadata: { [key: string]: JsonValue } = {};
+  // The metadata's entries are collected, each key once, and the object is
+  // built from them.
+  const entries: [string, JsonValue][] = [];
   const keys: readonly MetadataKey[] = ["call", "construct", "array"];
   for (const key of keys) {
     const value = atom[key];
-    if (value !== undefined && value !== "unknown") metadata[key] = value;
+    if (value !== undefined && value !== "unknown") entries.push([key, value]);
   }
   // Index markers other than all absent are shown, malformed ones too.
   const indexes = atom.indexes;
   if (indexes !== undefined && members(indexes).some((v) => v !== "absent"))
-    metadata.indexes = indexes;
+    entries.push(["indexes", indexes]);
   const and = atom.and;
-  if (and !== undefined) metadata.and = and;
-  return Object.keys(metadata).length
+  if (and !== undefined) entries.push(["and", and]);
+  return entries.length
     ? (atom.a === "function" ? "(" + text + ")" : text) +
         " @" +
-        JSON.stringify(metadata)
+        JSON.stringify(Object.fromEntries(entries))
     : text;
 }
-function bareAtomText(atom: JsonRead, state: PrintState): string {
+function bareAtomText(
+  atom: JsonRead,
+  state: PrintState,
+): Within<{ value: "any"; store: "grow" }, string> {
   // An array where an atom belongs is no atom of any kind.
   if (isList(atom)) {
     state.printable = false;
@@ -114,7 +140,9 @@ function bareAtomText(atom: JsonRead, state: PrintState): string {
     state.printable = false;
     return "(unavailable)";
   }
-  if (isPrimitive(atom.a) && Object.keys(atom).join() === "a") return atom.a;
+  const primitive = primitiveKind(atom.a);
+  if (primitive !== undefined && Object.keys(atom).join() === "a")
+    return primitive;
   if (
     (atom.a === "array" || atom.a === "store") &&
     isList(atom.required) &&
@@ -237,10 +265,10 @@ function bareAtomText(atom: JsonRead, state: PrintState): string {
     );
   }
   state.printable = false;
-  return atom.a ? "«" + String(atom.a) + "»" : "«type»";
+  return atom.a ? "«" + stringOfJson(atom.a) + "»" : "«type»";
 }
 
-function typeText(type: JsonRead, state: PrintState): string {
+function typeText(type: JsonRead, state: PrintState): Within<{ value: "any"; store: "grow" }, string> {
   if (type === undefined || type === null) {
     state.printable = false;
     return "«missing»";
@@ -280,6 +308,13 @@ interface Printed {
   printable: boolean;
 }
 
+/** A type's text alone, for a lifted part, whose completeness the whole
+ * report's `printType` states. */
+const textOf = (
+  type: JsonValue,
+): Within<{ value: "any"; store: "grow" }, string> =>
+  typeText(type, { printable: true });
+
 function printType(type: JsonValue): Printed {
   const state: PrintState = { printable: true };
   try {
@@ -304,12 +339,14 @@ class TypeSyntaxError extends Error {}
  * text where an atom belongs. The printers above take that in stride. It is
  * a `JsonValue`: a part the graph lacks is written as `null` or left out. */
 type Shown = {
+  readonly [key: string]: JsonValue;
   top: boolean;
   atoms: JsonValue[];
 };
 
 /** A record field as a report shows it. */
 type ShownField = {
+  readonly [key: string]: JsonValue;
   name: string;
   optional: boolean;
   read: Shown;
@@ -319,8 +356,14 @@ type ShownField = {
 /** A record atom as a report shows it: its fields, and no index, call,
  * construct or array part. */
 type ShownRecord = {
+  readonly [key: string]: JsonValue;
   a: "record";
-  indexes: { string: "absent"; number: "absent"; symbol: "absent" };
+  indexes: {
+    readonly [key: string]: JsonValue;
+    string: "absent";
+    number: "absent";
+    symbol: "absent";
+  };
   call: "unknown";
   construct: "unknown";
   array: "unknown";
@@ -334,19 +377,37 @@ const cell = (
   contract: JsonRead,
   depth: number,
   views: JsonRead = [],
-): ShownRecord => {
+): Within<{ value: "any"; store: "grow" }, ShownRecord> => {
   const entries: readonly JsonValue[] = isList(contract) ? contract : [];
   // A view field reads at its bound and accepts no write.
   const viewed: readonly JsonValue[] = isList(views) ? views : [];
-  const readonly = viewed.map((entry) => {
+  const viewField = (
+    entry: JsonValue,
+  ): Within<{ value: "any"; store: "grow" }, ShownField> => {
     const pair: readonly JsonValue[] = isList(entry) ? entry : [];
+    const key = pair[0];
     return {
-      name: typeof pair[0] === "string" ? pair[0] : "",
+      name: typeof key === "string" ? key : "",
       optional: false,
       read: liftType(types, pair[1], depth),
       write: { top: false, atoms: [] },
     };
-  });
+  };
+  const contractField = (
+    entry: JsonValue,
+  ): Within<{ value: "any"; store: "grow" }, ShownField> => {
+    const pair: readonly JsonValue[] = isList(entry) ? entry : [];
+    const key = pair[0];
+    const invariant = pair[1];
+    const name = typeof key === "string" ? key : "";
+    return {
+      name,
+      optional: false,
+      read: liftType(types, invariant, depth),
+      write: liftType(types, invariant, depth),
+    };
+  };
+  const readonly = viewed.map(viewField);
   return {
     a: "record",
     indexes: { string: "absent", number: "absent", symbol: "absent" },
@@ -355,26 +416,16 @@ const cell = (
     array: "unknown",
     fields: [
       ...readonly,
-      ...entries.map((entry) => {
-        const pair: readonly JsonValue[] = isList(entry) ? entry : [];
-        const invariant = pair[1];
-        const name = typeof pair[0] === "string" ? pair[0] : "";
-        return {
-          name,
-          optional: false,
-          read: liftType(types, invariant, depth),
-          write: liftType(types, invariant, depth),
-        };
-      }),
+      ...entries.map(contractField),
     ],
   };
 };
 
 // An intersection of contracts has no surface form; it is shown as text and
 // stays on the JSON path, like anything else the surface cannot name.
-const shown = (atoms: readonly JsonValue[]): string =>
+const shown = (atoms: readonly JsonValue[]): Within<{ value: "any"; store: "grow" }, string> =>
   atoms
-    .map((atom) => printType({ top: false, atoms: [atom] }).text)
+    .map((atom) => textOf({ top: false, atoms: [atom] }))
     .join(" & ");
 
 // Every clause kind this lifter names. The graph arrives untyped, so the
@@ -412,7 +463,7 @@ void _handled;
 // shown by its name, not expanded.
 interface Table {
   rows: JsonValue;
-  names: ReadonlyMap<number, string>;
+  names: Map<number, string>;
   /** The depth a lift starts at: a union below it shows its first
    * `nestedArms` arms, then `…`. */
   top: number;
@@ -427,14 +478,15 @@ const nestedArms = 8;
 // A row, where the table has one under that label. Both arrive from the
 // document, so neither is trusted to be there.
 // A label is a row's index, as a number or as its canonical decimal string.
-const rowAt = (types: Table, label: JsonValue): JsonRead =>
-  !isList(types.rows)
-    ? undefined
-    : typeof label === "number"
-      ? types.rows[label]
-      : typeof label === "string" && /^(0|[1-9][0-9]*)$/.test(label)
-        ? types.rows[Number(label)]
-        : undefined;
+const rowAt = (types: Table, label: JsonValue): JsonRead => {
+  // The rows are read once, so that the list test holds at the index read.
+  const rows = types.rows;
+  if (!isList(rows)) return undefined;
+  if (typeof label === "number") return rows[label];
+  if (typeof label === "string" && /^(0|[1-9][0-9]*)$/.test(label))
+    return rows[Number(label)];
+  return undefined;
+};
 
 // A tag set's literal clauses; any other clause, itself.
 function setLiterals(clause: JsonValue): JsonValue[] {
@@ -450,7 +502,11 @@ function setLiterals(clause: JsonValue): JsonValue[] {
  * result for other values. */
 const encoding = (clause: JsonValue): string => JSON.stringify(clause) ?? "";
 
-function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
+function liftClause(
+  types: Table,
+  clause: JsonValue,
+  depth: number,
+): Within<{ value: "any"; store: "grow" }, JsonValue> {
   if (clause === "nul") return { a: "null" };
   if (clause === "bool") return { a: "boolean" };
   if (clause === "undef") return { a: "undefined" };
@@ -470,7 +526,7 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
   if (boolLit)
     return {
       a: "booleanlit",
-      v: String(isObject(boolLit) ? boolLit.value : undefined),
+      v: stringOfJson(isObject(boolLit) ? boolLit.value : undefined),
     };
   // The surface names the number, not the bit pattern that identifies it.
   const numLit = body("numLit");
@@ -478,19 +534,19 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
     return {
       a: "numberlit",
       v: String(
-        numberOfBits(String(isObject(numLit) ? numLit.bits : undefined)),
+        numberOfBits(stringOfJson(isObject(numLit) ? numLit.bits : undefined)),
       ),
     };
   const bigintLit = body("bigintLit");
   if (bigintLit)
     return {
       a: "bigintlit",
-      v: String(isObject(bigintLit) ? bigintLit.value : undefined),
+      v: stringOfJson(isObject(bigintLit) ? bigintLit.value : undefined),
     };
   // A symbol singleton has no claim form; the reader names it.
   const symbolLit = body("symbolLit");
   if (symbolLit)
-    return `unique symbol ${String(isObject(symbolLit) ? symbolLit.id : undefined)}`;
+    return `unique symbol ${stringOfJson(isObject(symbolLit) ? symbolLit.id : undefined)}`;
   // A tag set is the union of its literals, which `liftType` lists as atoms;
   // met elsewhere, it is shown as that union's text.
   if (body("numIn") !== undefined || body("strIn") !== undefined)
@@ -501,7 +557,7 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
   if (strLit)
     return {
       a: "stringlit",
-      v: String(isObject(strLit) ? strLit.value : undefined),
+      v: stringOfJson(isObject(strLit) ? strLit.value : undefined),
     };
   // The graph is finite but may be cyclic, so lifting stops rather than recursing.
   if (depth <= 0) return "…";
@@ -529,9 +585,13 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
     const rest: readonly JsonValue[] =
       isObject(refs) && isList(refs.rest) ? refs.rest : [];
     const views = isObject(refs) ? refs.views : undefined;
-    const cells = [first, ...rest].map((c, i) =>
-      cell(types, c, depth - 1, i === 0 ? views : []),
-    );
+    // The first cell, possibly absent, takes the views; the rest, JSON
+    // values, are mapped.
+    const later = (
+      c: JsonValue,
+    ): Within<{ value: "any"; store: "grow" }, ShownRecord> =>
+      cell(types, c, depth - 1, []);
+    const cells = [cell(types, first, depth - 1, views), ...rest.map(later)];
     const [only] = cells;
     if (only === undefined || cells.length !== 1) return shown(cells);
     const [f] = only.fields;
@@ -564,8 +624,15 @@ function liftClause(types: Table, clause: JsonValue, depth: number): JsonValue {
     )
       return encoding(clause);
     const record = cell(types, dict.first, depth - 1, dict.views);
+    // The record's fields are named: a spread of `ShownRecord`, a
+    // dictionary, states no keys.
     return {
-      ...record,
+      a: record.a,
+      indexes: record.indexes,
+      call: record.call,
+      construct: record.construct,
+      array: record.array,
+      fields: record.fields,
       indexSignature: {
         read: liftType(types, index[1], depth - 1),
         write: { top: false, atoms: [] },
@@ -618,13 +685,13 @@ function liftSignatures(
   fixed: JsonRead,
   variadic: JsonRead,
   depth: number,
-): JsonObject[] {
+): Within<{ value: "any"; store: "grow" }, JsonObject[]> {
   const atom = (
     receiver: JsonRead,
     domain: JsonRead,
     result: JsonRead,
     element?: JsonRead,
-  ): JsonObject => {
+  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
     const domains: readonly JsonValue[] = isList(domain) ? domain : [];
     return {
       a: "function",
@@ -640,25 +707,24 @@ function liftSignatures(
   };
   const arrows: readonly JsonValue[] = isList(fixed) ? fixed : [];
   const sigs: readonly JsonValue[] = isList(variadic) ? variadic : [];
-  return [
-    ...arrows.map((arrow) => {
-      if (!isObject(arrow) || !isOrdinary(arrow.effect))
-        throw new TypeSyntaxError(
-          "a qualified signature has no structural form",
-        );
-      return atom(arrow.receiver, arrow.arguments, arrow.result);
-    }),
-    ...sigs.map((sig) => {
-      if (!isObject(sig) || !isOrdinary(sig.effect))
-        throw new TypeSyntaxError(
-          "a qualified signature has no structural form",
-        );
-      const [domain, rest]: readonly JsonRead[] = isList(sig.arguments)
-        ? sig.arguments
-        : [];
-      return atom(sig.receiver, domain, sig.result, restElement(types, rest));
-    }),
-  ];
+  const fixedAtom = (
+    arrow: JsonValue,
+  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
+    if (!isObject(arrow) || !isOrdinary(arrow.effect))
+      throw new TypeSyntaxError("a qualified signature has no structural form");
+    return atom(arrow.receiver, arrow.arguments, arrow.result);
+  };
+  const variadicAtom = (
+    sig: JsonValue,
+  ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
+    if (!isObject(sig) || !isOrdinary(sig.effect))
+      throw new TypeSyntaxError("a qualified signature has no structural form");
+    const [domain, rest]: readonly JsonRead[] = isList(sig.arguments)
+      ? sig.arguments
+      : [];
+    return atom(sig.receiver, domain, sig.result, restElement(types, rest));
+  };
+  return [...arrows.map(fixedAtom), ...sigs.map(variadicAtom)];
 }
 
 /** The element of an element rest: a type whose one clause is the pack of
@@ -686,8 +752,14 @@ function restElement(types: Table, rest: JsonRead): JsonRead {
 
 // A lift is a function of its labels and depth within one table, so a label
 // list lifted once at a depth is reused there.
-function liftType(types: Table, labels: JsonRead, depth: number): Shown {
-  const at = `${depth}:${JSON.stringify(labels)}`;
+function liftType(
+  types: Table,
+  labels: JsonRead,
+  depth: number,
+): Within<{ value: "any"; store: "grow" }, Shown> {
+  // An absent list is keyed as the text an interpolation of the absent
+  // serialization gives.
+  const at = `${depth}:${labels === undefined ? "undefined" : JSON.stringify(labels)}`;
   const held = types.lifted.get(at);
   if (held !== undefined) return held;
   const lifted = liftLabels(types, labels, depth);
@@ -695,7 +767,11 @@ function liftType(types: Table, labels: JsonRead, depth: number): Shown {
   return lifted;
 }
 
-function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
+function liftLabels(
+  types: Table,
+  labels: JsonRead,
+  depth: number,
+): Within<{ value: "any"; store: "grow" }, Shown> {
   if (!isList(labels)) return { top: false, atoms: ["(no type recorded)"] };
   if (
     labels.some((label) => {
@@ -717,21 +793,29 @@ function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
   const trueLabel = literalLabel(true),
     falseLabel = literalLabel(false);
   const both = trueLabel !== undefined && falseLabel !== undefined;
+  // The labels of a pair, each absent without the pair: a label is never
+  // absent, so it matches neither then.
+  const pairTrue = both ? trueLabel : undefined;
+  const pairFalse = both ? falseLabel : undefined;
   // Each label's arms, lifted on demand: below the top, a union shows its
   // first `nestedArms` arms, and the arms past them are counted, not lifted.
-  const armOf = (label: JsonValue): Within<{ value: "any"; store: "grow" }, { count: number; lift: (limit?: number) => JsonValue[] }> => {
-    if (both && label === falseLabel) return { count: 0, lift: () => [] };
-    if (both && label === trueLabel)
+  const armOf = (label: JsonValue): Within<{ value: "any"; store: "grow" }, { count: number; lift: (limit?: number) => Within<{ value: "any"; store: "grow" }, JsonValue[]> }> => {
+    if (label === pairFalse) return { count: 0, lift: () => [] };
+    if (label === pairTrue)
       return { count: 1, lift: () => [{ a: "boolean" }] };
     if (isObject(label))
       return { count: 1, lift: () => [treeAtom(types, label, depth)] };
     if (isList(label))
       return { count: 1, lift: () => ["type " + JSON.stringify(label)] };
     const name = typeof label === "number" ? types.names.get(label) : undefined;
-    if (name !== undefined) return { count: 1, lift: () => [name] };
+    if (name !== undefined) {
+      // The closure captures the name at the type the test gives it.
+      const named: string = name;
+      return { count: 1, lift: () => [named] };
+    }
     const row = rowAt(types, label);
     if (!isList(row))
-      return { count: 1, lift: () => ["type " + String(label)] };
+      return { count: 1, lift: () => ["type " + stringOfJson(label)] };
     const clauses = row.flatMap(setLiterals);
     return {
       count: clauses.length,
@@ -755,9 +839,13 @@ function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
 // shown by what it names: a binder by its name, an array over its store, an
 // application by its declaration's position and its arguments, and an
 // intersection as text, as an intersection of contracts is.
-function treeAtom(types: Table, label: JsonObject, depth: number): JsonValue {
-  const text = (labels: JsonValue) =>
-    printType(liftType(types, labels, depth - 1)).text;
+function treeAtom(
+  types: Table,
+  label: JsonObject,
+  depth: number,
+): Within<{ value: "any"; store: "grow" }, JsonValue> {
+  const text = (labels: JsonValue): Within<{ value: "any"; store: "grow" }, string> =>
+    textOf(liftType(types, labels, depth - 1));
   if (typeof label.binder === "string")
     return { a: "param", name: label.binder };
   if (isList(label.array)) {
