@@ -85,30 +85,42 @@ Its certification is that unit's.
 
 ```
 fileFront   : (ast claims : Json) → fileKey → qualified → Except String Front
-extractUnit : Front → UnitId → Except String (List (FunctionPlan …))
+extractUnit : Front → UnitId → Except String (EquationStore.State × List (FunctionPlan …))
 ```
 
 `fileFront` is the shared part of today's `extractPlans`: the equations
 (`equationFront`), the module environment, the generic instances, the
 initialization's claims and `checkInitializationOrder`, and the unit
 graph. `extractUnit` extracts the members of one group from the front's
-store, threading a store only through that group's members: a unit's
-extraction sees what the front computed and nothing another unit's
-extraction added. Every input a unit's extraction reads beside its own
-bodies and claims is a field of `Front`.
+store, threading a store only through that group's members, and returns
+the store it ends with, which `freezePlans` freezes: a unit's extraction
+sees what the front computed and nothing another unit's extraction added.
+Every input a unit's extraction reads beside its own bodies and claims is
+a field of `Front`. `extractPlans`, which a module run's check uses, is
+the front followed by every unit's extraction in turn.
 
 A failure of the front refuses every unit of the file. A failure of a
 member's extraction (missing claims, a refused scheme, a lowering refusal)
 refuses its group alone, located.
 
-**The mention graph.** A function's edges are the module functions its
-lowered body names (`Fragment.stmtsFreeNames`, after the parser's renames)
-and, where it names a module constant, cell, class or enum, the
-initialization; the initialization's edges are the functions its
-statements name. Mentions over-approximate reads, as
-`checkInitializationOrder` already relies on. A unit's **dependencies** are
-the groups its members' edges reach outside the group, and the module
-runs of the qualified reads its members name.
+**The mention graph.** A unit's edges come from every name its members'
+code mentions, bound or not (`stmtNames` over the bodies, parameter
+defaults and nested closures included):
+
+- the name of a module function, generic ones included: that function's
+  group;
+- the name of a module constant, cell, class, enum or generic class, or a
+  name the parser makes for a class's parts or its self binding: the
+  initialization;
+- the local name of a qualified read: the module runs of the file;
+- for the initialization, every module function its statements name.
+
+Mentions over-approximate reads, as `checkInitializationOrder` already
+relies on. A function value that reaches a unit as an input (a callback, a
+field) is created by code of a unit that mentions it, so the owner of its
+code is in the closure of whatever unit created it. A unit's
+**dependencies** are the groups its edges reach outside its own group,
+the initialization included, and the module runs its members name.
 
 ## 3. Search, check and the headline theorem
 
@@ -154,11 +166,15 @@ file is verified when every unit is accepted. A case's expectation is
 unchanged.
 
 **Certified imports and withdrawal.** A qualified read stays eligible as
-`planImports` decides. The withdrawal loop stays per file: a read is
-withdrawn when the plan refuses it, when its module run's search or check
-fails, or when a unit's search refusal names it, and the file is then
-proposed, searched and checked again. Every check of a verdict is of the
-last round's (Fragment, claims) pair.
+`planImports` decides. A module run is a unit named by its location
+within one (Fragment, claims) pair, whose `planImports` fixes its
+document and claims; its dependencies are the other module runs and, for
+deep status, its module's own census units (§4). The withdrawal loop stays
+per file: a read is withdrawn when the plan refuses it, when its module
+run's search or check fails, or when a unit's search or check refusal
+names it, and the file is then proposed, searched and checked again. The
+checks run inside that loop, and every check of a verdict is of the last
+round's (Fragment, claims) pair.
 
 ## 4. Shallow and deep
 
@@ -174,16 +190,26 @@ every external value at its declared or modelled contract.
 
 **Deep verified:** shallow verified, and every unit of its dependency
 closure is accepted. The closure follows the `depends` lists of accepted
-checks, and across files each import of a census-directory function to
-that function's group, and of any other value of a census-directory
-module to that module's initialization, each in its own file's census. A
-unit not accepted, or not in the census, blocks deep status; the census
-names the first such unit, breadth-first, as the **deep blocker**, with
-its own result.
+checks; its own file's initialization; and, across files, each import of
+a census-directory function to that function's group, of any other value
+to its module's initialization, and, for every census-directory module
+loaded with the file (an import of any kind, a side-effect import, a
+re-export, transitively), that module's initialization. A unit not
+accepted, a mention the census cannot resolve to a unit, or a unit outside
+the census blocks deep status; the census names the first such unit,
+breadth-first, as the **deep blocker**, with its own result.
+
+Deep status states that every obligation of the closure has an accepted
+check. Each check gives the safety of its unit conditional on its inputs
+meeting their contracts (`EnvOk`); combining the checks into the safety of
+the composed execution, recursive groups and initialization included, is
+[module composition](../../WORK.md#module-composition), open. A group
+checked together supplies the certificates that argument needs, not the
+argument.
 
 **What blocks deep status, by assumption:**
 
-| Assumption of a unit's check | Discharged by | Blocks deep when |
+| Assumption of a unit's check | Certificate it needs | Blocks deep when |
 | --- | --- | --- |
 | a same-file function at its claimed signature and effect | that function's group, same front | its group is not accepted |
 | a module constant, cell or class at its claimed contract | the initialization | the initialization is not accepted |
@@ -217,36 +243,59 @@ before initialization throws the checked access's `ReferenceError`
 
 ## 5. The census
 
-The census checks each file of the directory, whole, through the pipeline.
+The census checks the directory's files themselves, with no slices: each
+file is parsed once and has one front; its units are its functions, its
+recursive groups and its initialization; each unit has its own search and
+check; deep status comes from the `depends` closure. `make census
+FILES=… FUNCTIONS=…` selects units, with their dependency closure where
+deep status is wanted.
 
-**Refused units and rounds.** The parser, the control-flow lowering and
-the producer refuse a file at its first refusal. Where that refusal is
-located inside a census function, the census records it as that
-function's own result and checks the file again with that function's body
-removed and its declaration kept as an ambient `declare function` of its
-written signature (a defaulted parameter stated optional, overloads kept,
-`async` and `*` dropped with the result written): a value known only by
-its type, read under the import assumption, so its callers check against
-its declared type. Each round removes one function; the rounds end within
-the number of functions plus one. A refusal located outside every census
-function, or in a signature, refuses every unit of the file. A refused
-function blocks the deep status of every unit mentioning it, through the
-census's own mention scan.
+**Refused functions: the absent-function boundary.** The parser leaves a
+module run's function out where its gate refuses it, with the reason
+([certified imports, failure boundary](../SOURCE-CONTRACTS.md#certified-imports)).
+For the checked file, the census uses the same boundary with the
+function's signature kept:
 
-**The record.** Per file: its rounds and their refusals; per unit its
-members, own result, `depends` and its stage invocations. Per census
-function: its group, its own result, and, computed from the record alone
-with no verification run, its deep status and deep blocker. `report`
-prints shallow and deep counts and statement coverage by each, and their
-movement between two records; `refusals` groups the units whose own
-result is a refusal by its first blocker, weighted as today, and lists for
-each function blocked only by a dependency the unit blocking it.
+- the parser takes the file's **absent** functions as an input, extends
+  that set to the recursive groups of the source's mention graph (a
+  refused member refuses its group), and reads each absent function as it
+  reads an ambient `declare function`: a value at its declared signature,
+  read under the import assumption, its body neither scanned nor lowered,
+  so its callers are checked against that signature and are not left out
+  with it;
+- every scan of the source over binding facts (`eval`, `arguments`, the
+  writes of a function's binding) still reads the absent bodies;
+- the fragment lists each absent function with its reason (`absent`, as a
+  module's does).
 
-**Cross-file edges.** The census resolves each import a unit's file names
-and the unit's members mention to the census-directory declaration it
-binds (a named, default or namespace import, the last reaching every unit
-of the module), syntactically and over-approximately; a mention of a
-binding the census cannot resolve to a unit blocks deep status.
+A parse, control-flow lowering or proposal refusal located inside a
+function of the file makes that function absent, its reason the refusal,
+and the file is parsed again; each round adds a group, so the rounds end
+within the number of functions plus one. A refusal located outside every
+function, or in an absent function's signature, refuses every unit of the
+file. An absent function's own result is its refusal; its callers depend
+on it by name, so it blocks their deep status.
+
+**The record.** Outcomes are keyed by unit identity (file, then the
+function's name or the initialization). Per file: its rounds with the
+functions each made absent; per unit its members, own result, `depends`
+and stage invocations. Per census function: its unit, its own result and,
+computed from the record alone with no verification run, its deep status
+and deep blocker. Statement coverage classifies each statement by the
+unit that owns it (a statement of the module's top-level code by the
+initialization) under shallow and under deep. `report` prints shallow and
+deep counts and statement coverage by each, and their movement between
+two records; `refusals` groups the units whose own result is a refusal by
+its first blocker, weighted as today, and lists for each function blocked
+only by a dependency the unit blocking it.
+
+**Cross-file edges.** The census resolves each import of a file to the
+census-directory declaration it binds (a named, default or namespace
+import, the last reaching every unit of the module, and a side-effect
+import or re-export the module's initialization), syntactically and
+over-approximately: every import a unit's members mention, and every
+module the file loads for its initialization. A mention the census cannot
+resolve to a unit blocks deep status.
 
 ## 6. Cases and controls
 
