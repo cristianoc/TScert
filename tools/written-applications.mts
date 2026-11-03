@@ -647,7 +647,8 @@ function pairOf(d: Node): Node[] {
       !ts.isObjectLiteralExpression(owner))
     return [];
   const name = d.name.getText(d.getSourceFile());
-  return owner.properties.filter(m => m !== d && (ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m)) &&
+  const properties: readonly Node[] = owner.properties;
+  return properties.filter(m => m !== d && (ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m)) &&
     m.name.getText(m.getSourceFile()) === name);
 }
 

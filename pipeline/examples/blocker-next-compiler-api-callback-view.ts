@@ -5,7 +5,8 @@ export function matching(
   d: ts.Node,
   name: string,
 ): ts.Node[] {
-  return owner.properties.filter(
+  const properties: readonly ts.Node[] = owner.properties;
+  return properties.filter(
     (m) =>
       m !== d &&
       (ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m)) &&
