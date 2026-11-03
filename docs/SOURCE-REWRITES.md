@@ -1314,19 +1314,20 @@ discarded.
   `"k" in v` and `v[k]` agree with these where neither `Object.prototype`
   nor `Array.prototype` holds the key, which the keys' types restrict them
   to, and a parsed array owns only its indices and its length.
-  `stringOfJson` (`tools/family-activation.mts`) converts a member as
-  `String` does, by its arms: a primitive by `String`; an array by joining
-  its elements' conversions with commas, an element `null` as the empty
-  string; an object as `"[object Object]"`, or a `TypeError` with Node's
+  `stringOfJson` (`tools/calculus.mts`) converts a member as
+  `String` does, by its arms: a primitive by a template literal; an array by
+  joining its elements' conversions with commas, an element `null` or a hole
+  as the empty string, nested arrays walked through a chain of positions; an
+  object as `"[object Object]"`, or a `TypeError` with Node's
   message where the object owns `toString`, which JSON data never makes
   callable. Each reader throws where the original threw: `JSON.parse`'s `SyntaxError` of a text that is no
   JSON, in `digestOf`, `checkInventory`, `checkedGuards` and `originOf`;
   `manifestField` catches it and answers undefined, as the original did;
   `decodeResult` answers null where `isResult` answered false. One
-  behaviour differs: the conversion of nested arrays recurses on the call
-  stack, so the depth at which it exhausts the stack, a `RangeError`,
-  differs from Node's own `Array.prototype.join`, as any change of the
-  frames would.
+  behaviour differs: the conversion of nested arrays uses no call stack, so
+  an array nested deeply enough that Node's own `Array.prototype.join`
+  exhausts the stack (a `RangeError`; 10,000 levels do under Node 26)
+  converts to its text.
 
   `decodeResult`'s objects hold only the fields its callers read, where the
   original passed on the parsed object with any further members.
@@ -2314,7 +2315,11 @@ are passed at `JsonValue`.
   repeated reads gave: no code runs between them that writes the read
   object. `Object.fromEntries` defines the same keys in the same order as
   separate writes, and `JSON.stringify` serializes the same object.
-  `stringOfJson` and `String` agree on every JSON value and on `undefined`.
+  `stringOfJson` and `String` agree on every JSON value and on `undefined`,
+  in result and in exception, except on an array nested deeply enough that
+  `String` exhausts the call stack, where `stringOfJson` returns the text
+  (`tests/claim-text.mts` compares them on a 3,000-level array, which an
+  unknown atom kind prints as `«1»`).
   `isOrdinary`'s comparisons are `sameEffect`'s at `ordinaryEffect`, whose
   promise and kind lists are `null`. `textOf` is `printType`'s text without
   the claim decoding, whose answer the text does not read; the two differ
