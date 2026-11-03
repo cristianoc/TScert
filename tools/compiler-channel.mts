@@ -45,10 +45,11 @@ export function compilerLedger(api: API): Ledger {
 /** Each request of a client prototype guarded once: what it throws becomes a
  * `CompilerFailure` naming the request. */
 function guard(api: API): void {
-  // A request is named by its method, the first argument of the API's two;
-  // the others by their member.
+  // A request is named by its method, the first argument of the API's two,
+  // a string; the others by their member.
   guardClientRequests(api, (member, receiver, args, send) => {
-    const named = member === "apiRequest" || member === "apiRequestBinary";
+    const method = args[0];
+    const name = (member === "apiRequest" || member === "apiRequestBinary") && typeof method === "string" ? method : member;
     takeQueryFailure();
     try {
       const ledger = receiver && typeof receiver === "object" ? ledgers.get(receiver) : undefined;
@@ -59,7 +60,7 @@ function guard(api: API): void {
       // A file-system query the front end answered failed: that failure.
       const query = takeQueryFailure();
       if (query !== null) throw query;
-      throw error instanceof CompilerFailure ? error : new CompilerFailure(named ? String(args[0]) : member, error);
+      throw error instanceof CompilerFailure ? error : new CompilerFailure(name, error);
     }
   });
 }

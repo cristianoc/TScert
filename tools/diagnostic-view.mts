@@ -48,8 +48,8 @@ function searchOutcome(outcome: DiagnosticOutcome, fuel: number): string {
 // diagnostic's `names`) is shown by its name.
 /** A type a record mentions, through the record's table and names. */
 interface Table {
-  types: JsonValue;
-  names?: readonly (readonly [number, string])[];
+  readonly types: JsonValue;
+  readonly names?: readonly (readonly [number, string])[];
 }
 function recordType(table: Table, labels: JsonRead): string {
   if (!isList(labels)) return "(no type recorded)";
@@ -80,7 +80,8 @@ const bindingsOf = (map: SourceMapEntry | null, source: string): string[] =>
 const requiresKnowledge = (knowledge: HeapKnowledge | null): boolean =>
   !!knowledge && knowledge.cells.length + knowledge.values.length + knowledge.links.length > 0;
 
-const sameType = (a: JsonRead, b: JsonRead): boolean => JSON.stringify(a) === JSON.stringify(b);
+const sameType = (a: JsonRead, b: JsonRead): boolean =>
+  a === undefined || b === undefined ? a === b : JSON.stringify(a) === JSON.stringify(b);
 
 /* ---------- terms ---------- */
 /** A part of a term: a term, a list of terms, or call code. */
@@ -147,10 +148,15 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const mapping = ob.transfer.target.mapping;
       const required = ob.destination.claim?.context ?? [];
       const names = bindingsOf(ob.destination.sourceMap, source);
-      const slot = required.findIndex((need, i) =>
-        !sameType(mapping === null ? available[i] : available[mapping[i]], need));
+      // The available labels target slot i takes; none where the mapping
+      // names no source slot for it.
+      const availableAt = (i: number): readonly number[] | undefined => {
+        const at = mapping === null ? i : mapping[i];
+        return at === undefined ? undefined : available[at];
+      };
+      const slot = required.findIndex((need: readonly number[], i: number) => !sameType(availableAt(i), need));
       if (slot >= 0) {
-        const have = recordType(ob, mapping === null ? available[slot] : available[mapping[slot]]);
+        const have = recordType(ob, availableAt(slot));
         const need = recordType(ob, required[slot]);
         const binding = names[slot] || "slot " + slot;
         if (need)

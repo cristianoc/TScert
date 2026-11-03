@@ -10,6 +10,7 @@
  * keeps by its ordinary rules. */
 import type { GuardClosure } from "./guard-closure.mts";
 import { createHash } from "node:crypto";
+import * as ts from "typescript/unstable/ast";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
 import type { TypeTerm } from "./declaration-types.mts";
 import { emptyFootprint, closedFootprints, footprintEffect, type CallEffect } from "./type-graph.mts";
@@ -19,8 +20,8 @@ export type TagValue = number | string;
 /** The order of tag values: numbers by value, strings by code point, numbers
  * before strings. */
 export const compareTags = (a: TagValue, b: TagValue): number =>
-  typeof a === "number" && typeof b === "number" ? a - b
-    : typeof a !== typeof b ? (typeof a === "number" ? -1 : 1)
+  typeof a === "number" ? (typeof b === "number" ? a - b : -1)
+    : typeof b === "number" ? 1
     : a < b ? -1 : a > b ? 1 : 0;
 
 /** A rule of the shape table, tried in order for each tag value. */
@@ -101,7 +102,7 @@ export function footprintReading(kind: FootprintMember["kind"], type: TypeTerm):
   if (type.k === "scheme")
     return { ...type, signatures: type.signatures.flatMap((s): Extract<TypeTerm, { k: "function" | "constructor" }>[] =>
       s.k === "function" ? each(s) : [s]) };
-  if (type.k === "function") return { k: "intersection", parts: each(type), span: type.span };
+  if (type.k === "function") return { k: "intersection", parts: [...each(type)], span: type.span };
   throw Error("a method read at each callback footprint is a function or a generic method");
 }
 
@@ -202,7 +203,7 @@ export type FamilyGraph = {
   /** The name of a declaration's tag parameter, or null. */
   tagParameter: (declaration: InterfaceDeclaration) => string | null;
   /** Whether a member is declared optional, `name?: T`. */
-  questioned: (member: TypeElement) => boolean;
+  questioned: (member: TypeElement, ...further: unknown[]) => boolean;
   /** A member's name, where it is an identifier. */
   name: (member: TypeElement) => string | null;
   /** The text of a member as reviewed against (`getText`, trimmed). */
@@ -214,7 +215,7 @@ export type FamilyGraph = {
 
 /** One member of a flattened declaration: its name, the declaration
  * stating it, and its signatures there (a method may have several). */
-export type FlatMember = { name: string; owner: InterfaceDeclaration; members: readonly TypeElement[] };
+export type FlatMember = { readonly name: string; readonly owner: InterfaceDeclaration; readonly members: readonly TypeElement[] };
 
 /** Where a tag value's shape comes from. */
 export type ShapeSource =
@@ -254,34 +255,34 @@ export type SyntheticField = { name: string; sources: readonly { member: FlatMem
 
 /** The interpreter's reading of one family. */
 export type FamilyTable = {
-  description: FamilyDescription;
-  tagOf: (declaration: InterfaceDeclaration) => FamilyTag;
+  readonly description: FamilyDescription;
+  readonly tagOf: (declaration: InterfaceDeclaration) => FamilyTag;
   /** A declaration's members, its bases' included, the nearest declaration
    * of each name, without the members whose read allocates. */
-  flatten: (declaration: InterfaceDeclaration) => readonly FlatMember[];
+  readonly flatten: (declaration: InterfaceDeclaration) => readonly FlatMember[];
   /** Whether a flattened member is optional in a reading covering the tag
    * values `values`: so declared, or corrected at one of them. */
-  optional: (member: FlatMember, values: readonly TagValue[]) => boolean;
+  readonly optional: (member: FlatMember, values: readonly TagValue[]) => boolean;
   /** Whether the stable-member rule names a flattened property member:
    * every one the description does not exclude. A shape states it stable
    * where it is required there. */
-  stable: (member: FlatMember) => boolean;
+  readonly stable: (member: FlatMember) => boolean;
   /** Whether a synthetic shape over these tag values states its tag stable:
    * where every source shape's tag member is. */
-  tagStable: (values: readonly TagValue[]) => boolean;
+  readonly tagStable: (values: readonly TagValue[]) => boolean;
   /** The tag values a declaration's values can have: its literals, its tag
    * parameter's bound, or the members of an open declaration. */
-  tagsOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
+  readonly tagsOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
   /** The family's shape sources, by tag value. */
-  shapes: ReadonlyMap<TagValue, ShapeSource>;
+  readonly shapes: ReadonlyMap<TagValue, ShapeSource>;
   /** A shape source's flattened members: each generic declaration's, the
    * declaration's, or the audited shape's. */
-  sourceMembers: (source: ShapeSource) => readonly FlatMember[];
+  readonly sourceMembers: (source: ShapeSource) => readonly FlatMember[];
   /** `members_F(A)`: the tag values whose shape source reaches `A`. */
-  membersOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
+  readonly membersOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
   /** The arms of an open declaration's reading under a selection, in tag
    * order, the residual last. */
-  arms: (declaration: InterfaceDeclaration, selection: ReadonlySet<TagValue>) => readonly FamilyArm[];
+  readonly arms: (declaration: InterfaceDeclaration, selection: ReadonlySet<TagValue>) => readonly FamilyArm[];
 };
 
 /** The interpreter: the table and membership on the declaration graph as
@@ -355,7 +356,8 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
       const value = graph.values.find(t => graph.constantName(t) === shape.kind);
       if (value === undefined) graph.fail(`the audited shape ${shape.kind} names no tag`);
       if (audited.has(value)) graph.fail(`the tag ${shape.kind} has two audited shapes`);
-      const own = shape.members.map((m): FlatMember => {
+      const own: FlatMember[] = [];
+      for (const m of shape.members) {
         const owner = named(m.owner);
         const members = owner.members.filter(x => graph.name(x) === m.member);
         const [only] = members;
@@ -365,9 +367,10 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
           graph.fail(`the audited shape ${shape.kind} states ${m.owner}.${m.member}, the tag or an omitted member`);
         if (shape.members.filter(x => x.member === m.member).length !== 1)
           graph.fail(`the audited shape ${shape.kind} states ${m.member} twice`);
-        return { name: m.member, owner, members: [only] };
-      });
-      const bases = shape.bases.map(named);
+        own.push({ name: m.member, owner, members: [only] });
+      }
+      const bases: InterfaceDeclaration[] = [];
+      for (const b of shape.bases) bases.push(named(b));
       audited.set(value, { rule: "audited", shape, bases, members: combine(shape.kind, own, bases) });
     }
   }
@@ -376,9 +379,9 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   const tagOf = (d: InterfaceDeclaration): FamilyTag => {
     const member = tagMember(d);
     const [signature] = member?.members ?? [];
-    if (!member || !signature || member.members.length !== 1 || !("type" in signature) || !signature.type)
+    const type = signature && ts.isPropertySignatureDeclaration(signature) ? signature.type : undefined;
+    if (!member || !type || member.members.length !== 1)
       return graph.fail(`${d.name.text} states no ${description.tag.field} of one type`);
-    const type = signature.type as TypeNode; // asserted: a property signature's `type`, which `in` found
     const parameter = member.owner === d ? graph.tagParameter(d) : null;
     if (parameter !== null) return { k: "parameter", parameter };
     const values = graph.literals(type);
@@ -523,14 +526,14 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   // A synthetic shape's members: those every source has, each joining the
   // distinct declarations of it, optional where one is.
   const sourceMembers = (source: ShapeSource): readonly FlatMember[] =>
-    source.rule === "generic" ? source.declarations.flatMap(flatten)
+    source.rule === "generic" ? source.declarations.flatMap(d => flatten(d))
     : source.rule === "audited" ? source.members : flatten(source.declaration);
   const synthetic = (base: string, values: readonly TagValue[]): FamilyArm => {
-    const per = values.map(t => {
+    const per: { t: TagValue; members: readonly FlatMember[] }[] = [];
+    for (const t of values) {
       const source = shapes.get(t);
-      if (!source) return graph.fail(`no shape for ${t}`);
-      return { t, members: sourceMembers(source) };
-    });
+      per.push(source ? { t, members: sourceMembers(source) } : graph.fail(`no shape for ${t}`));
+    }
     const [first] = per;
     const fields: SyntheticField[] = [];
     for (const f of first?.members ?? []) {

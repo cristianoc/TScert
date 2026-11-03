@@ -2245,6 +2245,9 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // entry of its text (`library-modules.mts`). Every mention is a call of
     // the value or of a member.
     const assertionSpans: Span[] = [];
+    // `pathToFileURL(p).href` and the like: a call of a module function whose
+    // entry is `serialized`, read at `href` directly, by the read's span.
+    const serializedReads: { span: Span; name: string }[] = [];
     const namespaceFunction = (binding: { name: string; at: Identifier; specifier: string; imported: string },
         nodes: readonly Node[]): Omit<ValueRoot, "binding"> | null => {
       const member = binding.imported === "default" ? undefined : binding.imported.slice("default.".length);
@@ -2422,6 +2425,28 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           continue;
         }
         if (!binding.typeOnly && reviewed.length) {
+          if (reviewed.some(e => e.serialized !== undefined)) {
+            const symbol = checker.getSymbolAtLocation(binding.at);
+            const find = (n: Node): void => {
+              const call = n.parent;
+              if (symbol && ts.isIdentifier(n) && n !== binding.at && checker.getSymbolAtLocation(n)?.id === symbol.id &&
+                  call && ts.isCallExpression(call) && call.expression === n && !call.questionDotToken &&
+                  !call.arguments.some(ts.isSpreadElement)) {
+                const declaration = checker.getResolvedSignature(call)?.declaration?.resolve();
+                const written = declaration ? declaration.getText(declaration.getSourceFile()) : "";
+                const entry = reviewed.find(e => reviewedTexts(e).includes(written));
+                const read = entry?.serialized !== undefined && call.arguments.length <= entry.stated.params.length
+                  ? hrefRead(call) : null;
+                if (read && entry?.serialized !== undefined) {
+                  const span: Span = [read.getStart(client), read.end];
+                  serializedReads.push({ span, name: entry.serialized });
+                  operationAnswers.globalIntrinsic?.(span, entry.serialized);
+                }
+              }
+              n.forEachChild(find);
+            };
+            find(client);
+          }
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
           continue;
@@ -2939,6 +2964,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     };
     if (rootsRequested.intrinsics) listIntrinsics(rootsRequested.intrinsics.span, rootsRequested.intrinsics.names);
     for (const span of assertionSpans) listIntrinsics(span, [assertionFailureName]);
+    for (const { span, name } of serializedReads) listIntrinsics(span, [name]);
     if (resolutionContextAt) listStable(resolutionContextAt);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
@@ -4816,6 +4842,27 @@ function originOf(path: string): string {
   return origin;
 }
 
+/** The read of `href` written directly on `made`, a construct or a call
+ * (`new URL(…).href`, `pathToFileURL(p).href`), where that read is a plain
+ * read: no optional chain, no assignment, update or `delete` of it, no
+ * call of it. Null otherwise. */
+function hrefRead(made: Node): ts.PropertyAccessExpression | null {
+  const access = made.parent;
+  if (!access || !ts.isPropertyAccessExpression(access) || access.expression !== made || access.questionDotToken ||
+      !ts.isIdentifier(access.name) || access.name.text !== "href")
+    return null;
+  const user = access.parent;
+  if (!user) return access;
+  if (ts.isBinaryExpression(user) && user.left === access &&
+      user.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && user.operatorToken.kind <= ts.SyntaxKind.LastAssignment)
+    return null;
+  if ((ts.isPrefixUnaryExpression(user) || ts.isPostfixUnaryExpression(user)) &&
+      (user.operator === ts.SyntaxKind.PlusPlusToken || user.operator === ts.SyntaxKind.MinusMinusToken))
+    return null;
+  if (ts.isDeleteExpression(user) || (ts.isCallExpression(user) && user.expression === access)) return null;
+  return access;
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition; construct?: never } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -4907,6 +4954,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         throw Error(`the global ${name} is only constructed`);
       if ((parent.arguments?.length ?? 0) > form.params.length || parent.arguments?.some(ts.isSpreadElement))
         throw Error(`new ${name}(…) is read with at most ${form.params.length} argument(s)`);
+      const read = constructed.serialized === undefined ? null : hrefRead(parent);
+      if (read && constructed.serialized !== undefined) context.intrinsic(spanOf(read), constructed.serialized);
     }
     const source = declaration.getSourceFile();
     return { construct: { declaration: { module: context.identityOf(source), name,

@@ -21,6 +21,7 @@ import {
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
+  urlHrefName, pathToFileHrefName,
 } from "./intrinsics.mts";
 
 /** The key capability for an open read, independent of the receiver's
@@ -144,7 +145,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [prototypeIsObjectName]: obligated("the object", "runs its [[GetPrototypeOf]], code of a host exotic object"),
   [symbolForName]: value, [symbolKeyForName]: value,
   [importMetaUrlName]: value, [importMetaDirnameName]: value, [importMetaFilenameName]: value,
-  [importMetaResolveName]: value,
+  [importMetaResolveName]: value, [urlHrefName]: value, [pathToFileHrefName]: value,
   [iterateName]: store,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,
   [iterateRegExpStringName]: value,

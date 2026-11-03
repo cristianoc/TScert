@@ -12,6 +12,7 @@
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { pathToFileHrefName } from "./intrinsics.mts";
 import { bigIntStats, buffer, bytes, definitions as stated, dirent, url } from "./library-types.mts";
 
 export type ModuleEntry = {
@@ -43,6 +44,10 @@ export type ModuleEntry = {
    * message or a literal one, `assert(v, m)` is `if (!v) throw
    * %AssertionFailure%(m)`, narrowing `v` as an `if` does. */
   lowering?: "test";
+  /** A read of `href` written directly on a call at this entry,
+   * `f(…).href`, is a call of this intrinsic with the call's arguments. No
+   * other code reaches the object the call returns before the read. */
+  serialized?: string;
   /** Declarations the stated signature names that no library declares, such
    * as the `Hash` `createHash` returns: they join the document when the
    * entry is read. */
@@ -537,8 +542,10 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // replace, keeps a trailing `/`, and returns a fresh URL of the `file:`
   // protocol whose path is the resolved one, its URL control characters
   // encoded. Stated at one argument: `options.windows` selects Windows
-  // paths. The call states no effect.
-  { module: "url", name: "pathToFileURL",
+  // paths. The call states no effect. `pathToFileURL(path).href` reads the
+  // fresh URL's serialization: the URL reaches no other code before the
+  // read, so `URL.prototype`'s `href` getter serializes its parsed record.
+  { module: "url", name: "pathToFileURL", serialized: pathToFileHrefName,
     signature: "function pathToFileURL(path: string, options?: PathToFileUrlOptions): URL;",
     stated: { binders: [], params: [atom("string")], result: url }, definitions: [stated.url] },
   // `node:path`'s `sep`, the separator of the platform's paths: a data

@@ -195,6 +195,9 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runImporting("node-url-strings", 'pathOf("file:///tmp/x")'), "/tmp/x");
   assert.equal(runImporting("node-url-strings", 'file("/tmp/x")'), "file:///tmp/x");
   assert.equal(runImporting("node-url-strings", 'relative("file:///tmp/")'), "file:///tmp/x");
+  assert.equal(runImporting("node-url-fresh-href", 'resolve("b", "file:///a/")'), "file:///a/b");
+  assert.equal(runImporting("node-url-fresh-href", 'absolute("http://example.com/a?q#f")'), "http://example.com/a?q#f");
+  assert.equal(runImporting("node-url-fresh-href", 'fileHref("/x")'), "file:///x");
   assert.equal(runImporting("invalid-node-url-input", '(() => { let n = 0; const u = new URL("file:///x"); Object.defineProperty(u, "pathname", { get() { n++; return "/hook"; } }); return pathOf(u) + n; })()'), "/hook1");
   assert.equal(runImporting("invalid-node-url-base", '(() => { let n = 0; const u = new URL("file:///tmp/"); const p = u.searchParams; p.toString = () => { n++; return "a=b"; }; p.append("a", "b"); relative(u); return n; })()'), 1);
   assert.equal(runImporting("invalid-node-url-read", '(() => { let n = 0; const u = new URL("file:///tmp/"); const p = u.searchParams; p.toString = () => { n++; return "a=b"; }; p.append("a", "b"); hrefOf(u); return n; })()'), 1);

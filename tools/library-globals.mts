@@ -27,7 +27,7 @@ import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
-  symbolKeyForName } from "./intrinsics.mts";
+  symbolKeyForName, urlHrefName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 import { buffer, bytes, definitions as stated, textDecoder, url } from "./library-types.mts";
@@ -78,6 +78,11 @@ export type GlobalEntry = {
    * the same step: the parser writes `Promise.resolve(v)` as
    * `%PromiseResolve%(v)`, and the member joins no value. */
   intrinsic?: string;
+  /** For a global only constructed: a read of `href` written directly on
+   * the `new` expression, `new X(…).href`, is a call of this intrinsic with
+   * the construct's arguments. No other code reaches the object the
+   * construct makes before the read. */
+  serialized?: string;
   /** The member is read only in `X.m(e) === X.prototype` or `!==`, either
    * side, `X` the global at both references: the comparison is a call of
    * this intrinsic at `e` (negated for `!==`), and the member's result
@@ -345,10 +350,14 @@ const urlEntries: GlobalEntry[] = [
   // String input and string base go directly to the native parser.
   // A URL base could serialize externally aliased search parameters and
   // run client callbacks. The admitted strings avoid that path. The empty
-  // footprint holds only on normal return.
+  // footprint holds only on normal return. `new URL(…).href` reads the
+  // fresh URL's serialization: Node's construction publishes the URL to no
+  // other code, and `URL.prototype`'s `href` getter of a URL whose search
+  // parameters no code has read serializes its parsed record, running no
+  // other code under the untampered-standard-objects policy.
   { host: contract, origin: node, global: "URL", constructs: true, effect: emptyEffect,
     signature: "URL: typeof globalThis extends {\n            onmessage: any;\n            URL: infer T;\n        } ? T\n            : typeof _URL",
-    stated: { binders: [], params: [atom("string"), optional(atom("string"))],
+    serialized: urlHrefName, stated: { binders: [], params: [atom("string"), optional(atom("string"))],
       result: url }, definitions: [stated.url] },
 ];
 

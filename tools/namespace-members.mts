@@ -28,6 +28,7 @@
  * the named export `x`, and any other mention is refused as a namespace
  * import's is. The binding `fs` itself is never read. */
 import { moduleEntries, moduleObjectDefault } from "./library-modules.mts";
+import { isImport } from "./syntax.mts";
 import type { Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Expression, Identifier, ImportDeclaration, Node, SourceFile } from "typescript/unstable/ast";
@@ -51,16 +52,16 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     fail: (node: Node, message: string) => never): Map<string, NamespaceMember> {
   const members = new Map<string, NamespaceMember>();
   const imports = file.statements.filter((s): s is ImportDeclaration =>
-    ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings));
+    isImport(s) && !!s.importClause?.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings));
   // Default imports of a function merged with a namespace the overlay reviews.
   const functions = file.statements.filter((s): s is ImportDeclaration =>
-    ts.isImportDeclaration(s) && !!s.importClause?.name &&
+    isImport(s) && !!s.importClause?.name &&
     (!s.importClause.namedBindings || ts.isNamedImports(s.importClause.namedBindings)) &&
     ts.isStringLiteral(s.moduleSpecifier) &&
     moduleEntries(s.moduleSpecifier.text, "default").some(e => e.member !== undefined));
   // Default imports of a module whose default export is its object.
   const objects = file.statements.filter((s): s is ImportDeclaration =>
-    ts.isImportDeclaration(s) && !!s.importClause?.name && ts.isStringLiteral(s.moduleSpecifier) &&
+    isImport(s) && !!s.importClause?.name && ts.isStringLiteral(s.moduleSpecifier) &&
     moduleObjectDefault(s.moduleSpecifier.text));
   if (!imports.length && !functions.length && !objects.length) return members;
   const occurrences = new Map<string, Identifier[]>();
@@ -95,7 +96,7 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
       else members.set(local, { local, imported: `default.${parent.name.text}`, specifier, uses: [use] });
     });
   }
-  const namespaces = [
+  const namespaces: { declaration: ImportDeclaration; namespace: Identifier; what: string }[] = [
     ...imports.flatMap(declaration => {
       const clause = declaration.importClause;
       const bindings = clause?.namedBindings;
@@ -103,7 +104,10 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
       if (clause.name) fail(declaration, "a default import beside a namespace import is outside the source fragment");
       return [{ declaration, namespace: bindings.name, what: "namespace import" }];
     }),
-    ...objects.flatMap(declaration => declaration.importClause?.name ? [{ declaration, namespace: declaration.importClause.name, what: "default import" }] : [])];
+    ...objects.flatMap(declaration => {
+      const name = declaration.importClause?.name;
+      return name ? [{ declaration, namespace: name, what: "default import" }] : [];
+    })];
   for (const { declaration, namespace, what } of namespaces) {
     const clause = declaration.importClause;
     if (!clause) continue;

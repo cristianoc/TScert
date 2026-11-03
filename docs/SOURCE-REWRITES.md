@@ -1591,8 +1591,10 @@ TypeScript files, where neither other kind occurs at those points
 - **Functions:** `typeNodeAt`, `computedAt`, `statementsOnPath` (verified
   after the rewrite), `importBindings`, `lowerFile` (refused at later
   obligations); `blocker-compiler-api-type-node` is the guard's refusal as a
-  case.
-- **Commit:** the introducing commit, `A type node and an import are recognised by their kinds`.
+  case. `namespaceMembers` (`tools/namespace-members.mts`) calls `isImport`
+  in its three import filters, whose predicates promise `ImportDeclaration`.
+- **Commit:** the introducing commit, `A type node and an import are recognised by their kinds`;
+  `namespaceMembers`, `Repairs and loop forms for the host cluster's own functions`.
 
 ### A binder bounded by a record with a writable field
 
@@ -1839,7 +1841,11 @@ that the narrower element contract excludes.
 - **Cases:** `blocker-flat-map-narrow-field` states that contract;
   `invalid-flat-map-narrow-field` keeps the inferred narrower array and
   its refused widening.
-- **Functions:** `expr` and the expression readers that call it.
+- **Functions:** `expr` and the expression readers that call it;
+  `footprintReading` (`tools/host-families.mts`) places a fresh copy,
+  `[...each(type)]`, of its array of function terms in an intersection's
+  writable `parts: TypeTerm[]`, where `each`'s result is also a scheme's
+  signatures.
 - **Commit:** the introducing commit.
 
 ### Construct signatures collected at one writable record contract
@@ -2124,7 +2130,9 @@ field's type did not state that.
   passed than its type names takes them at a rest of `unknown`.
 - **Functions:** `mapExprParts`, `mapStmtParts`, `mapFunctionParts`,
   `mapDocument`, `deepPartMap`, `documentHolds`, `moduleHolds`, `astHolds`,
-  `renamedModule`.
+  `renamedModule`; `FamilyGraph.questioned` (`tools/host-families.mts`),
+  passed to `some` in `familyTable`, whose local `flatten`, passed to
+  `flatMap`, is called by an arrow of one parameter instead.
 - **Commit:** the introducing commit.
 
 ### Active recording membership
@@ -2177,11 +2185,132 @@ cloned fields, null expressions, exceptions and mutations are unchanged.
 same boundary. This uses the existing native-set contract and adds no
 external assumption.
 
+### A request's method named by converting an unknown argument
+
+`guard` in `tools/compiler-channel.mts` names a failed `apiRequest` or
+`apiRequestBinary` by `String(args[0])`, where `args` is
+`readonly unknown[]`. Converting an object runs its `toString` or
+`Symbol.toPrimitive`, code no type states.
+
+- **Repair:** the request is named by its first argument where that is a
+  string, and by its member otherwise. The package passes the method name,
+  a string, so the failure's message is unchanged for every request it
+  sends.
+- **Functions:** `guard`.
+- **Commit:** the introducing commit.
+
+### Record fields a reader takes at a wider contract
+
+`familyTable` in `tools/host-families.mts` passes its own members, records
+holding a writable `TypeElement[]`, to `combine`, which takes
+`FlatMember`'s `members: readonly TypeElement[]`; `presentObligation` in
+`tools/diagnostic-view.mts` passes a diagnostic record holding `types: Json`
+to `recordType`, which takes `Table`'s `types: JsonValue`. A writable
+field's contract is invariant, so neither argument meets its parameter.
+Neither reader writes these fields.
+
+`familyTable` also returns its local functions, `flatten` among them
+returning `FlatMember[]`, in `FamilyTable`'s fields, which state
+`readonly FlatMember[]` results.
+
+- **Repair:** `FlatMember`'s three fields, `Table`'s two and
+  `FamilyTable`'s eleven are readonly. No code writes them; the values,
+  reads and calls are unchanged.
+- **Functions:** `familyTable`, `presentObligation`.
+- **Commit:** the introducing commit.
+
+### A tag member's type read through `in` and an assertion
+
+`familyTable` read a tag member's type by `"type" in signature`, then
+asserted `signature.type as TypeNode`. The `in` test admits a method, an
+index or a call signature, each of which has a `type`, and the open read
+gives `unknown`, so the assertion stood for a missing check.
+
+- **Repair:** the member is tested with
+  `ts.isPropertySignatureDeclaration`, and its `type` read at that kind. A
+  tag is a property; a family stating its tag by another member fails with
+  the same message as one stating none.
+- **Functions:** `familyTable`.
+- **Commit:** the introducing commit.
+
+### Tag values ordered after a test of one operand's kind
+
+`compareTags` in `tools/host-families.mts` compared two tag values with
+`<` after `typeof a !== typeof b` was false, a test that narrows neither
+operand, so the comparison was of a `number | string` with a
+`number | string`, which converts a string compared with a number.
+
+- **Repair:** each operand's kind is tested on its own: a number before a
+  string, two numbers by difference, two strings by `<` and `>`. Every
+  answer is the same.
+- **Functions:** `compareTags`, read by `familyTable`.
+- **Commit:** the introducing commit.
+
+### A mapped slot read at an index the mapping may lack
+
+`presentObligation` compares each required slot with
+`available[mapping[i]]` and serialized both sides with `JSON.stringify`.
+`mapping[i]` is `undefined` past the mapping's length, and `JSON.stringify`
+takes a `JsonValue`, never `undefined`.
+
+- **Repair:** `availableAt(i)` answers `undefined` where the mapping names
+  no source slot, and `sameType` compares `undefined` by identity before
+  serializing. `available[undefined]` read the absent key `"undefined"`, so
+  every answer is the same.
+- **Functions:** `presentObligation`.
+- **Commit:** the introducing commit.
+
+### Resolution slots built at their field's contract
+
+`intrinsics` in `tools/intrinsics.mts` stored `resolvableSlots("X")`, a
+record whose `result` is a `string`, in a binder's writable
+`resolution: ResolutionSlots | null`, whose `result` is `string | null`.
+
+- **Repair:** the binder's resolution is `resolutionSlots("X",
+  "resolvable")`, a fresh record of the same two strings at
+  `ResolutionSlots`; the result binder still reads `resolvableSlots`'s
+  `result`. No code compares resolutions by identity.
+- **Functions:** `intrinsics`.
+- **Commit:** the introducing commit.
+
 ## Constructs avoided
 
 Constructs TScert's code once used, refused because sound support is not
 proportionate to their use, and written out of the code by an equivalent
 form ([deciding](#deciding-what-a-refusal-of-tscerts-code-calls-for)).
+
+### Results of an unrestricted callback collected by a loop
+
+`iterationIntrinsic` and `intrinsics` in `tools/intrinsics.mts` and
+`familyTable` in `tools/host-families.mts` built arrays with `map` whose
+callbacks call functions of no stated effect (the type readers `view` and
+`nativeCollection`, a definition's maker, the family graph's `fail`,
+`name` and `text`), then read the results as readable arrays: mapped
+again, spread or passed at `readonly T[]`. Such a callback may remove a
+later element of the receiver, so the
+[native map contract](SOURCE-CONTRACTS.md#prototype-contracts) gives the
+result holes ([an inferred map result with an unrestricted callback](#an-inferred-map-result-with-an-unrestricted-callback)).
+
+- **Avoided form and cost:** `xs.map(f)` with `f` of no stated effect, its
+  result read as dense. Support needs each callback's preservation stated
+  and checked through the readers' parameters and the family graph's
+  fields, a contract change to every caller.
+- **Equivalent form:** `const out: T[] = []; for (const x of xs)
+  out.push(f(x, …))`, the position `i` read as `out.length`. Each receiver
+  (`kinds`, the description's `values`, `members` and `bases`, the snapshot
+  `[...needed]`) is an array no callback reaches: a fresh local, or data of
+  a family description no callback writes. So the loop visits the same
+  elements in the same order as `map` with the same arguments, the
+  callbacks run the same calls, and the result holds the same values at
+  the same positions; exceptions leave at the same call. Alongside,
+  `iterationIntrinsic`'s `[param, element]`, destructured from either of
+  two array literals, is read as `only[1]` and `only[2]` of the single part
+  or the two unions in the same order; `intrinsics`' three `import.meta`
+  entries, spread from `Object.fromEntries`, are written as computed keys in
+  the same position, and its `{ name, ...make() }` copies the maker's two
+  fields explicitly, the maker's fresh record owning exactly them.
+- **Scope:** `unrestricted-callback-loop-results` verifies the loop form;
+  `blocker-round-inferred-map-result` keeps the map form's refusal.
 
 ### An optional literal field added before a record escapes
 
@@ -3582,9 +3711,15 @@ each URL it makes inside one function.
   encoded as `%00`;
   `resolveHref` throws a `TypeError` where its input is no URL relative to
   the base, or the base is no URL.
+- **Its own functions:** both verify. Each body is the composite read
+  `new URL(…).href` or `pathToFileURL(…).href`, which the overlays state as
+  a call of an intrinsic from strings to a string
+  ([Node's `URL`](SOURCE-CONTRACTS.md#nodes-url), `node-url-fresh-href`):
+  the contract above, stated where the read is written.
 - **What depends on it:** `files.mts#observeResolution`,
   `files.mts#resolveObserved` and `family-activation.mts`'s module URLs.
-- **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`.
+- **Commit:** the introducing commit, `node:url and URL overlay contracts; host boundaries for URL strings and a child's output`;
+  the serializing reads, `Repairs and loop forms for the host cluster's own functions`.
 
 ### A child's output
 
