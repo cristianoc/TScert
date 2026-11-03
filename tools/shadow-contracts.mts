@@ -111,7 +111,7 @@ export const reviewed: readonly Reviewed[] = [
 /* ------------------------------------------------- the overlay's contracts -- */
 
 /** The definitions the overlay's contracts name, as global type aliases. */
-const definitions: ReadonlyMap<string, TypeDefinition> = new Map(globalsOverlay
+const definitions: Map<string, TypeDefinition> = new Map(globalsOverlay
   .flatMap((entry) => entry.definitions ?? []).map((definition) => [definition.declaration.name, definition]));
 
 /** The TypeScript a type term writes, or `null` for a term TypeScript has no

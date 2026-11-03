@@ -515,6 +515,23 @@ then for `readTypeTerm`).
   keeps a program `ReadonlySet` whose iterator writes.
 - **Commit:** the introducing commit.
 
+### The shadow prelude's definitions typed as a native map
+
+`prelude` in `tools/shadow-contracts.mts` spreads
+`[...definitions.values()]`, where the module constant `definitions` is the
+`new Map(…)` built from the library overlay's definitions; its annotation
+was `ReadonlyMap<string, TypeDefinition>`. A spread keeps the host's
+collection iteration, which a program's object meeting the `ReadonlyMap`
+view need not give ("no derivation of its node-typing claim" at the spread,
+as in `spread-readonly-map-values-refused`).
+
+- **Repair:** `definitions` is a `Map<string, TypeDefinition>`, the native
+  map its initializer builds; no code writes it. The annotation changes no
+  execution and adds no assumption.
+- **Scope:** `spread-readonly-map-values-refused` keeps the spread of a
+  `ReadonlyMap`'s values refused.
+- **Commit:** the introducing commit.
+
 ### Mapped arms with a store-preserving callback
 
 `liftLabels` in `tools/claim-text.mts` binds its `map` callback as `armOf`,
