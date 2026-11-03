@@ -2154,6 +2154,28 @@ parameter the index fills (`invalid-callable-field-callback`).
 - **Functions:** `typeQuery`, `lowerFile` and their callers.
 - **Commit:** `Repair callback arity and receiver contracts in the type readers`.
 
+### The type syntax readers' effect
+
+The computed-type evaluator (`tools/computed-types.mts`) reads each member
+of a union with the reader its alias application gives it,
+`kept.map(member => member.read(member.node))` in `distributed`, and
+passes the result to a union's `parts`. The readers were typed
+`(node: TypeNode) => TypeTerm`, which states no effect, so the `map`
+callback could change any store and its result could hold holes; the
+union's record was refused at its `parts`. Every reader the evaluator
+receives is the type reader's, which grows stores and changes nothing else.
+
+- **Repair:** the readers are of the type `TypeReader`, `(node: TypeNode)
+  => Within<{ value: "any"; store: "grow" }, TypeTerm>`, in
+  `ComputedContext.applied`, the alias members and every function of the
+  evaluator taking one, so `map` keeps a dense result
+  ([`map`'s stable callback](SOURCE-CONTRACTS.md#prototype-contracts)). The
+  `Set` and `Map` the evaluator constructs state their type arguments, as
+  [a `Map` constructed with no type arguments](#a-map-constructed-with-no-type-arguments)
+  does. The annotations change no execution.
+- **Functions:** `distributed`, `computedType`, `aliasApplication`.
+- **Commit:** `State the type syntax readers' effect and commit flatMap results at a later use`.
+
 ### The computed-type context's hooks read as values
 
 `ComputedContext` (`tools/computed-types.mts`) declared `alias` and `unique`
@@ -2534,6 +2556,12 @@ native ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
   exceptions, mutations and receivers agree for every entry.
 - **Scope:** `stated-signatures-presence`. No host contract or external
   assumption is added.
+- **The same list in `indexedAccess`:** `tools/computed-types.mts#indexedAccess`
+  kept the fields an object type gives a list of keys by `every`'s guard
+  before `union(parts)`; it compares the length of
+  `parts.filter((p): p is TypeTerm => p !== null)` with `parts`'s and
+  passes the filtered list. `parts` is the fresh result of a `map` no other
+  reference holds, and `union` receives the same terms in the same order.
 
 ### A command-line argument checked by a top-level statement
 

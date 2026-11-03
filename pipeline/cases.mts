@@ -3448,6 +3448,8 @@ export const cases: Case[] = [
     /source expression obligation at \[128,149\): evidence search failed: no derivation of its node-typing claim/),
   positive("nullable-binder-inference", "a binder in a union with ground atoms, `A | null`, is inferred from what the actual holds beside them, inline, through an alias, and as a construct signature's instance"),
   negative("invalid-nullable-binder-inference", "`A := number` from `number | null` gives a number, not a string", /source expression obligation at \[205,221\)/),
+  positive("flat-map-result-at-later-use", "an unannotated constant holding a `flatMap` result is built at the array type the first of its uses that expects one expects it at: a field of a record a conditional returns, after a `length` read, as `computed-types.mts#typeQuery` builds a class value's static fields"),
+  negative("invalid-flat-map-later-use", "the first use expecting a type, after a `length` read, commits the `flatMap` result to `number[]`, which is no pair", /no derivation of its binding-annotation claim/),
   positive("array-first-use", "an unannotated constant's fresh array is built at the array type its first use expects: an annotated constant, a call's parameter, a return"),
   negative("invalid-array-first-use", "a first use at `number[]` commits the literal there, which is no pair", /source expression obligation at \[245,251\)/),
   positive("readonly", "a readonly view of a parameter object read after a write through the object, and a mutable array returned as a readonly array of a wider element type"),

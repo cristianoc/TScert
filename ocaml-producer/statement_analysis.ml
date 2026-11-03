@@ -90,6 +90,9 @@ let transfer (expr:Analysis_state.expression_infer) =
      expected at an array type), that type;
      any other first use, none. `None` where it is not used. *)
   let rec first_use env n rest = Option.join (List.find_map Fun.id (uses env n rest))
+  (* The first mention of the constant that expects it whole at a type, past
+     mentions that expect none (an array pattern reading it, a `length`). *)
+  and first_typed_use env n rest = List.find_map Option.join (uses ~typed:true env n rest)
   (* An array of the elements of the array type [expected]. *)
   and spread_hint expected = Option.bind expected (fun t ->
     match Semantic.array_element ~readonly:true (try declared_head declarations [] t with Json.Error _ -> t) with
@@ -112,7 +115,12 @@ let transfer (expr:Analysis_state.expression_infer) =
   (* Each statement's use of the constant: `Some` of where its first
      mention in the statement is the whole value expected at a type, as
      [first_use] reads it. *)
-  and uses env n rest =
+  and uses ?(typed=false) env n rest =
+    (* The first mention among [xs], or with [typed] the first expecting a
+       type. *)
+    let first f xs = if typed then List.find_map (fun x -> match f x with
+        | Some (Some _) as found -> found | _ -> None) xs
+      else List.find_map f xs in
     let rec sink expected (e:expr) = match e.node with
       | Id m when m = n -> Some expected
       | Call ({node=Id g;_},None,args,[],[]) when g <> n ->
@@ -139,18 +147,20 @@ let transfer (expr:Analysis_state.expression_infer) =
                else []
              | exception Json.Error _ -> [])
           | _ -> [] in
-        List.find_map Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
+        first Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
       (* A field of an object literal, at the type every record of the
          expected type stating that field gives it, where they agree. *)
-      | Alloc fields -> List.find_map (fun (k,v) -> sink (field_hint expected k) v) fields
-      | Build parts -> List.find_map (fun (k,v) ->
+      | Alloc fields -> first (fun (k,v) -> sink (field_hint expected k) v) fields
+      | Build parts -> first (fun (k,v) ->
           sink (Option.bind k (fun k -> field_hint expected (Name k))) v) parts
       (* A spread part of an array literal expected at `T[]`, at a `T[]`. *)
-      | ArrayLiteral (es,spreads) -> List.find_map Fun.id (List.mapi (fun i v ->
+      | ArrayLiteral (es,spreads) -> first Fun.id (List.mapi (fun i v ->
           sink (if List.mem i spreads then spread_hint expected else None) v) es)
-      | _ -> List.find_map (sink None) (Source.children e) in
+      (* A conditional's value is either branch's. *)
+      | Conditional (c,a,b) -> first Fun.id [sink None c;sink expected a;sink expected b]
+      | _ -> first (sink None) (Source.children e) in
     let at (s:stmt) = match s.statement with
-      | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
+      | Declare (_,bs) -> first (fun (_,written,e) -> sink written e) bs
       | Return e -> sink (expected_result ()) e
       | Effect e -> sink None e
       | _ -> if stmt_mentions n s then Some None else None in
@@ -194,14 +204,15 @@ let transfer (expr:Analysis_state.expression_infer) =
          activation: every point claims what it holds there. *)
       let slot = mutable_ && not (held_in_cell n s.span) in
       if String.ends_with ~suffix:".[[class]]" n then mark_fresh_constructor ();
-      (* An unannotated constant's fresh array, a literal or a `map` call's
-         result, is built at the array type its first use expects it at, where that use is one (TypeScript widens it
-         at the declaration, and refuses the use when that differs). A
-         proposal: Lean checks the elements against it and every use against
-         the binding. *)
+      (* An unannotated constant's fresh array, a literal or a `map` or
+         `flatMap` call's result, is built at the array type the first of its
+         uses that expects one expects it at (TypeScript widens it at the
+         declaration, and refuses the use when that differs). A proposal:
+         Lean checks the elements against it and every use against the
+         binding. *)
       let committed = match mutable_,written,init.node with
-        | false,None,(ArrayLiteral (_::_,_) | Invoke ({node=Read (_,Name "map");_},[_],[],[])) ->
-          (match first_use env n (following_statements s.span) with
+        | false,None,(ArrayLiteral (_::_,_) | Invoke ({node=Read (_,Name ("map" | "flatMap"));_},[_],[],[])) ->
+          (match first_typed_use env n (following_statements s.span) with
            | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
              | Atoms atoms when atoms <> [] && List.for_all (function
                  | Shape {elements=Some _;_} -> true | _ -> false) atoms -> Some t
