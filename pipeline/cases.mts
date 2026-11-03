@@ -71,7 +71,7 @@ export const cases: Case[] = [
   gap("blocker-next-splice-insert-spread", "Replacing an array through splice with inserted spread values", "unsupported", "proposal", /a spread argument needs a tuple of required positions/),
   positive("blocker-next-variadic-context-branch", "An immutable function retains its variadic offer across a logical branch"),
   positive("branch-context-facts", "Immutable callable contracts survive logical, nullish and conditional arms, including an effect-qualified call in a record initializer"),
-  gap("blocker-next-noted-json", "Resolution observations serialized as open named-field records", "unverified", "search", /source expression obligation.*no derivation of its node-typing claim/s),
+  positive("blocker-next-noted-json", "Resolution notes retain the JSON dictionary invariant established by their sole producer"),
   positive("blocker-next-indexed-refinement", "A saved array element is tested before filling a required object field"),
   positive("blocker-next-guard-filter-map-density", "A preserving guard filter retains the enclosing map's dense result"),
   positive("guard-filter-footprints", "Guard filters retain pure, writing and growing callback footprints while copying selected values"),
