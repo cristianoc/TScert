@@ -377,11 +377,15 @@ export interface Guard {
  * throw rejects (SOURCE-CONTRACTS.md, "Async functions and await"). */
 export type Completion = "sync" | "async";
 
+/** A function declaration's parameter: its fragment name, where it is
+ * written, its contract, and whether it collects the rest. */
+export type FunctionParamAst = { name: string; pos: Span; type: TypeTerm; rest?: true };
+
 export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: TypeTerm; rest?: true }[];
+  params: FunctionParamAst[];
   /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
   guard: Guard | null;

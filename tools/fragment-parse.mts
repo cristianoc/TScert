@@ -677,7 +677,7 @@ export class Gate {
    * of the gate's hooks. A name is a binder of an enclosing function or a
    * declaration root; every declaration root was resolved by TypeScript's
    * checker. */
-  termScope(): TermScope {
+  termScope(): Within<{ value: "any"; store: "grow" }, TermScope> {
     return {
       source: this.file,
       annotation: true,
@@ -937,7 +937,7 @@ export class Gate {
    * required positions written as one. The body sees the fresh array at
    * that bound, the elements every instance's list has; the parameter types
    * nothing else, since the collected array is no value of it. */
-  moduleRestType(p: ParameterDeclaration, node: FunctionDeclaration): TypeTerm {
+  moduleRestType(p: ParameterDeclaration, node: FunctionDeclaration): Within<{ value: "any"; store: "grow" }, TypeTerm> {
     const name = p.type && ts.isTypeReferenceNode(p.type) && ts.isIdentifier(p.type.typeName) &&
       !p.type.typeArguments ? p.type.typeName.text : null;
     const own = node.typeParameters?.find(tp => tp.name.text === name);

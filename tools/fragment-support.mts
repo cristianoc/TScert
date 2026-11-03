@@ -216,7 +216,7 @@ export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods:
 /** The standard `Error` as a base: its construction takes an optional
  * message, a string, and optional options, at `errorOptions`; its prototype
  * holds no method the file reads. */
-export const errorBase = (span: Span): ClassRecord => ({ params: [{ name: "message",
+export const errorBase = (span: Span): Within<{ value: "any"; store: "grow" }, ClassRecord> => ({ params: [{ name: "message",
   type: { k: "union", parts: [{ k: "atom", name: "string", span }, { k: "atom", name: "undefined", span }], span } },
   { name: "options", type: errorOptions(span) }],
   methods: new Map(), fresh: "", proto: null, binders: [], error: "native" });
@@ -323,7 +323,7 @@ export const iterationLabel = (node: ts.ForStatement, file: SourceFile): Within<
  * enclosing loop, or for a `break` also `switch`, not crossing into another
  * function. */
 export function jumpTarget(node: ts.BreakStatement | ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Node | undefined> {
-  for (let parent = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
+  for (let parent: Node | undefined = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
     if (ts.isWhileStatement(parent) || ts.isForStatement(parent) || ts.isForOfStatement(parent) ||
         ts.isForInStatement(parent) || (ts.isBreakStatement(node) && ts.isSwitchStatement(parent)))
       return parent;
@@ -373,7 +373,7 @@ export function completes(ss: Stmt[]): Within<{ value: "any"; store: "grow" }, b
 
 export function firstOptional(
   parameters: readonly { readonly questionToken?: unknown; readonly initializer?: unknown }[],
-): Within<{ value: "any"; store: "grow" }, number> {
+): Within<{ value: "keep"; store: "keep" }, number> {
   const i = parameters.findIndex((p) => !!p.questionToken);
   return i < 0 ? parameters.length : i;
 }
@@ -452,7 +452,7 @@ export function writtenElement(node: ts.ElementAccessExpression | ts.PropertyAcc
  * `except`: its signature, its body, a nested function's (one declaring a
  * type parameter of the same name hides it there). */
 export function typeParameterMentioned(node: FunctionDeclaration, parameter: TypeParameterDeclaration,
-    except: Node): boolean {
+    except: Node): Within<{ value: "any"; store: "grow" }, boolean> {
   const name = parameter.name.text;
   const visit = (n: Node): boolean => {
     if (n === except || n === parameter) return false;
@@ -504,8 +504,8 @@ export function nameSlot(id: Identifier): Within<{ value: "any"; store: "grow" }
 /** The first identifier of `within` reading a value binding whose fragment
  * name (`local`) is in `names`. A type, and a name that reads no binding
  * (`nameSlot`), read none. */
-export function readOf(within: Node, names: ReadonlySet<string>,
-  local: (id: Identifier) => string): Within<{ value: "any"; store: "grow" }, Identifier | null> {
+export function readOf(within: Node, names: Set<string>,
+  local: (id: Identifier) => Within<{ value: "any"; store: "grow" }, string>): Within<{ value: "any"; store: "grow" }, Identifier | null> {
   const visit = (n: Node): Identifier | null => {
     if (ts.isTypeNode(n)) return null;
     if (ts.isIdentifier(n)) return !nameSlot(n) && names.has(local(n)) ? n : null;

@@ -132,6 +132,32 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false;generic=false} : Semantic.field) in
       let group fs = {empty_alternative with afields=fs} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
+      (* A spread operand written as a record literal, or a conditional
+         between record literals (`...(c ? { f: [a, b] } : {})`), is built at
+         the fields the contract, or every admitted arm, gives a type, each
+         optional, as TypeScript types the operand from the contextual type:
+         a tuple field there is a tuple. A construction hint only: Lean
+         checks the copy against the expected type. *)
+      let rec literal (e:expr) = match e.node with
+        | Alloc _ -> true
+        | Conditional (_,a,b) -> literal a && literal b
+        | _ -> false in
+      let spread_expected =
+        let shapes = match contract with Some s -> [s] | None -> arms in
+        let names = List.sort_uniq compare (List.concat_map (fun (s:shape) ->
+          List.filter_map (fun (f:Semantic.field) -> if f.host then None else Some f.name) s.fields) shapes) in
+        let field name = match List.sort_uniq compare (List.filter_map (fun (s:shape) ->
+            Option.map (fun (f:Semantic.field) -> f.read)
+              (List.find_opt (fun (f:Semantic.field) -> f.name = name) s.fields)) shapes) with
+          | [t] when name <> Name proto_key ->
+            Some ({name;optional=true;read=t;write=Some t;host=false;receivers=[];stable=false;generic=false} : Semantic.field)
+          | _ -> None in
+        match List.filter_map field names with
+        | [] -> None
+        | fields -> Some (Atoms [Shape {fields;indexes=[];calls=[];elements=None}]) in
+      let operand (e:expr) = match spread_expected with
+        | Some expected when literal e -> expr ~expected env e
+        | _ -> expr env e in
       let alts,fields = List.fold_left (fun (alts,fields) (name,e) -> match name with
         | Some name -> alts,fields @ [field_of (name,e)]
         | None ->
@@ -139,7 +165,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> [group fields]
             | Some alts -> if fields = [] then alts else merge alts [group fields] in
           mark_exact e;
-          Some (merge alts (source_alternatives ~bound:S.rigid_bound ~site:e.pos declarations [] (expr env e))),[]) (None,[]) parts in
+          Some (merge alts (source_alternatives ~bound:S.rigid_bound ~site:e.pos declarations [] (operand e))),[]) (None,[]) parts in
       let alts = match alts with
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in

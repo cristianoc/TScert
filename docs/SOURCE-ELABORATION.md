@@ -3758,9 +3758,10 @@ signature states its footprint beside the promise (`moduleArrow`;
 `guard-footprint`, `invalid-guard-footprint`). A unit qualified by a
 resolution descriptor is refused such a claim. A code entry's signature
 follows the same rule (`GraphCode.effectCheckedResult`): a guard closure's
-promise signature a longer callback offers it states the footprint its body
-proposes beside the promise, its graph checked at both
-(`blocker-compiler-api-find-promise`). With $`P`$ the unit's graph, $`\Gamma`$ its
+promise signatures, its own and one a longer callback offers it, state the
+footprint its body proposes beside the promise, its graph checked at each
+(`blocker-compiler-api-find-promise`, `guard-closure-footprint`,
+`invalid-guard-closure-footprint`). With $`P`$ the unit's graph, $`\Gamma`$ its
 inputs and $`B`$ its result,
 
 ```math
@@ -4073,7 +4074,12 @@ over the module, for a declaration whose every node bounds its throw
 and no `finally`, is within the join of the block's and the handler's
 footprints. A handler whose every completion throws permits the guarded
 block's normal-return footprint without including the handler's mutations;
-the graph checker independently certifies its region. Implementation:
+a `try` with a `finally` and no catch, whose finalizer has no `return`,
+`break` or `continue`, is within the join of the block's and the
+finalizer's footprints, since the finalizer completes normally only where
+the block did (`closure-finally-footprint`,
+`invalid-closure-finally-footprint`); the graph checker independently
+certifies its region. Implementation:
 `HeapObservations.SafePostExc`,
 `CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
 `GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`

@@ -407,7 +407,10 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           when quantified=[] && element=None ->
           let row (s:Semantic.signature) = collect_overload_row_claims (fun () ->
             ignore (infer_closure_body ~expected:result (if rest then inner else bind_params (leading s)))) in
-          let calls = call :: {call with call_effect=promise_effect;result=promised} :: offered in
+          (* The promise is claimed at the footprint the body proposes, as
+             its plain signature is: Lean checks the body at both. *)
+          let calls = call :: {call with call_effect={call_effect with promise=promise_effect.promise};result=promised}
+            :: offered in
           publish_arrow e.pos (List.map row calls);
           Atoms [Shape {shape with calls}]
         | Some _,_ -> Proposal_diagnostics.unsupported "a guard closure with binders or a rest" in

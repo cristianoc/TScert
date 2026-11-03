@@ -220,7 +220,7 @@ export function enumRead(this: Gate, node: Expression): Within<{ value: "any"; s
  * it may run before the class statement, where JavaScript's binding is
  * uninitialized: a read after it in the block, or in code the block creates
  * after it. */
-export function localClass(this: Gate, node: ClassDeclaration, name: ts.Identifier): void {
+export function localClass(this: Gate, node: ClassDeclaration, name: ts.Identifier): Within<{ value: "any"; store: "grow" }, void> {
   const gate: Gate = this;
   const block = node.parent;
   if (!block || !ts.isBlock(block))
@@ -335,7 +335,7 @@ export function classStmt(this: Gate, node: ClassDeclaration): Within<{ value: "
 
 export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifier, declaration: DeclarationIdentity,
     typeParams: TypeParamAst[], heritage: ts.HeritageClause | undefined, base: ClassRecord | null,
-    extended: boolean): Stmt {
+    extended: boolean): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   const binders = node.typeParameters ?? [];
   const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: gate.span(name),
@@ -524,7 +524,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     const staticFields: { name: PropertyKey; binding: string; pos: Span; type: TypeTerm }[] = [];
     // The prototype's methods, in member order: every instance holds the
     // prototype object under its prototype key, and reads a method there.
-    const prototype: { name: PropertyKey; e: Expr }[] = [];
+    const prototype: { name: PropertyKey; e: Expr; computed?: true }[] = [];
     for (const member of node.members) {
       if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
       // A static block is code the definition runs where it stands among
@@ -730,7 +730,9 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           f.bind = null;
         }
       };
-      for (const [i, statement] of body.entries()) {
+      for (let i = 0; i < body.length; i++) {
+        const statement = body[i];
+        if (statement === undefined) continue;
         const assigning = assignment(statement);
         if (assigning) {
           const field = uninitialized.get(assigning.field);
@@ -868,7 +870,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         if (base.error === "derived")
           prelude.push({ k: "const", pos: extendsAt, bindings: [{ early: false, name: messageName(name.text),
             namePos: extendsAt, annot: null,
-            init: { k: "read", pos: [extendsAt[0], extendsAt[0] + 1], field: "message", e: { ...derivedBase, pos: extendsAt } } }] });
+            init: { k: "read", pos: [extendsAt[0], extendsAt[0] + 1], field: "message", e: { k: "id", pos: extendsAt, name: slot } } }] });
       }
     }
     // The class value is its constructor as construct-only code, which only

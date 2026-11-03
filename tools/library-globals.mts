@@ -143,7 +143,7 @@ export const reviewedErrorMembers: readonly string[] =
  * `Object.prototype` owns no `cause` (DESIGN.md, the trust surface). A
  * type not stating `cause` is open at it: the object may own an accessor
  * there, whose getter `Get` would run. */
-export function errorOptions(span: Span): TypeTerm {
+export function errorOptions(span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "union", span, parts: [{ k: "object", stringIndex: null, calls: [], span, fields: [{ name: "cause",
     optional: true, readonly: true, type: { k: "atom", name: "unknown", span }, span }] }, { k: "atom", name: "undefined", span }] };
 }
