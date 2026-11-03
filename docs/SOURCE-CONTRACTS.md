@@ -3516,15 +3516,43 @@ later read of `href` or a conversion to a string then runs that code
 number), and so do `fileURLToPath`'s reads of `auth`, `path`, `hostname`
 and `pathname` (`invalid-node-url-input`, run under Node). `href` is a
 setter too, which parses again (`invalid-node-url-write`,
-`invalid-node-url-write-only`, run under Node). The front end reads a
-URL's serialization through the host boundary
-[URLs as strings](SOURCE-REWRITES.md#urls-as-strings), which keeps each URL
-it makes inside one function. The approved policy is that standard objects
+`invalid-node-url-write-only`, run under Node).
+
+One read of a URL is admitted: `href` written directly on the expression
+that makes it, `new URL(e₁, e₂).href` or `pathToFileURL(e).href`, a plain
+read (no optional chain, no write, update, `delete` or call of it). Between
+the construction and the read no code but Node's runs: Node's construction
+publishes the URL to no other code (no diagnostics channel), so no code has
+given it an own member or read its search parameters, and the getter
+`URL.prototype` holds serializes the parsed record. The read is a call of
+an intrinsic at the construction's arguments, the entry's `serialized`
+(`library-globals.mts`, `library-modules.mts`):
+
+```math
+\mathtt{new\ URL}(e_1, e_2)\mathtt{.href}\;\equiv\;\%\mathsf{URL{:}href}\%(e_1, e_2)
+\qquad
+\%\mathsf{URL{:}href}\%:(\mathtt{string},\ \mathtt{string}^?)\Rightarrow_\emptyset\mathtt{string}
+```
+
+```math
+\mathtt{pathToFileURL}(e)\mathtt{.href}\;\equiv\;\%\mathsf{PathToFileURL{:}href}\%(e)
+\qquad
+\%\mathsf{PathToFileURL{:}href}\%:(\mathtt{string})\Rightarrow\mathtt{string}
+```
+
+The first keeps the constructor's empty footprint on normal return; the
+second states no effect, as `pathToFileURL`'s entry does (it reads
+`process.cwd()`, a writable property). That the receiver is the
+construction itself is checked by the front end, which writes the call; the
+same URL bound to a name, passed on or parenthesized is read as before and
+refused (`node-url-fresh-href`, `invalid-node-url-fresh-escape`). The front
+end's own reads are of this form
+([URLs as strings](SOURCE-REWRITES.md#urls-as-strings)). The approved policy is that standard objects
 and prototypes are not tampered with ([trust surface](DESIGN.md#trust-surface)):
 `URL.prototype` and `Object.prototype` hold their standard properties.
 `tests/node-runs.mts` executes the serialization and own-getter
 counterexamples and the fixtures `blocker-node-url-import`,
-`node-url-strings`, `invalid-node-url-write`, `invalid-node-url-spread`,
+`node-url-strings`, `node-url-fresh-href`, `invalid-node-url-write`, `invalid-node-url-spread`,
 `invalid-node-url-member`, `invalid-node-url-program-object` and
 `invalid-node-url-replaced`.
 

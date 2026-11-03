@@ -166,6 +166,14 @@ export const importMetaUrlName = "%ImportMeta:url%";
 export const importMetaDirnameName = "%ImportMeta:dirname%";
 export const importMetaFilenameName = "%ImportMeta:filename%";
 export const importMetaResolveName = "%ImportMeta:resolve%";
+/** `new URL(input, base).href` and `pathToFileURL(path).href`, the `href`
+ * read directly on the URL the call makes (SOURCE-CONTRACTS.md, "Node's
+ * `URL`"): the URL's serialization, a string. The URL reaches no other
+ * code, so its `href` getter is `URL.prototype`'s and serializes the parsed
+ * record. The construction's effect is the entry's: empty on normal return
+ * for `new URL`, none stated for `pathToFileURL`. */
+export const urlHrefName = "%URL:href%";
+export const pathToFileHrefName = "%PathToFileURL:href%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -264,10 +272,13 @@ export function iterationIntrinsic(name: string, view: (kind: "Set" | "Map", arg
   // A union's iteration (`unionIterationName`) takes any of its kinds'
   // iterables and steps it as that kind's intrinsic does.
   const kinds = spread ? [kind] : unionIterationKinds(kind) ?? [kind];
-  const parts = kinds.map((k, i) => part(k, kinds.length > 1 ? String(i) : ""));
+  // Each kind's part, its suffix its position among several.
+  const parts: [SourceTypeParameter<TypeTerm>[], TypeTerm, TypeTerm][] = [];
+  for (const k of kinds) parts.push(part(k, kinds.length > 1 ? String(parts.length) : ""));
   const typeParams = parts.flatMap(([q]) => q);
-  const [param, element] = parts.length === 1 && parts[0] ? [parts[0][1], parts[0][2]]
-    : [either(...parts.map(([, p]) => p)), either(...parts.map(([, , e]) => e))];
+  const only = parts.length === 1 ? parts[0] : undefined;
+  const param = only ? only[1] : either(...parts.map(([, p]) => p));
+  const element = only ? only[2] : either(...parts.map(([, , e]) => e));
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
   const changesValues = footprintEffect({ value: "any", store: "keep" });
@@ -449,7 +460,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
   // `X : Awaitable`: a binder owning its observation.
   const resolvedSlots = resolvableSlots("X");
   const awaitableSlots = resolutionSlots("X", "awaitable");
-  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: resolvedSlots };
+  const resolvable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: resolutionSlots("X", "resolvable") };
   const awaitable: SourceTypeParameter<TypeTerm> = { name: "X", bound: null, resolution: awaitableSlots };
   const input: TypeTerm = { k: "binder", name: "X", span };
   const observed: TypeTerm = { k: "binder", name: awaitableSlots.observation, span };
@@ -509,9 +520,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // (`require.cache[p]`): its `url` may hold any value, and a getter it
     // defines there runs. A member's value is `unknown`, and no effect is
     // stated; `resolve` runs the resolve hooks as well.
-    ...Object.fromEntries([importMetaUrlName, importMetaDirnameName, importMetaFilenameName].map(name =>
-      [name, () => ({ typeParams: [], type: fn([], atom("unknown")) })])),
+    [importMetaUrlName]: () => ({ typeParams: [], type: fn([], atom("unknown")) }),
+    [importMetaDirnameName]: () => ({ typeParams: [], type: fn([], atom("unknown")) }),
+    [importMetaFilenameName]: () => ({ typeParams: [], type: fn([], atom("unknown")) }),
     [importMetaResolveName]: () => ({ typeParams: [], type: fn([atom("string")], atom("unknown")) }),
+    [urlHrefName]: () => ({ typeParams: [],
+      type: { ...fn([atom("string"), either(atom("string"), atom("undefined"))], atom("string")), effect: emptyEffect } }),
+    [pathToFileHrefName]: () => ({ typeParams: [], type: fn([atom("string")], atom("string")) }),
     // OrdinaryHasInstance walks the operand's prototype chain, which runs no
     // code, no object being a proxy, and writes nothing.
     // Building the error reads no argument but the message, a string, yet
@@ -555,9 +570,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
   };
   // Each needed name is looked up in a Map, which holds no inherited member.
   const byName = new Map(Object.entries(definitions));
-  return [...needed].map(name => {
+  const names = [...needed];
+  const made: { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }[] = [];
+  for (const name of names) {
     const make = byName.get(name);
     if (!make) throw Error(`no intrinsic ${name}`);
-    return { name, ...make() };
-  });
+    const { typeParams, type } = make();
+    made.push({ name, typeParams, type });
+  }
+  return made;
 }

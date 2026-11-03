@@ -104,6 +104,16 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
     const read = gate.globalIntrinsics.get(gate.span(node).join(":"));
     if (read) return gate.intrinsic(read, gate.span(node), gate.span(node.name), []);
   }
+  // `new URL(…).href` and `pathToFileURL(p).href`, which the overlays read
+  // as a call of the intrinsic serializing the URL the call makes, with the
+  // call's arguments (SOURCE-CONTRACTS.md, "Node's `URL`").
+  if (ts.isPropertyAccessExpression(node) &&
+      (ts.isNewExpression(node.expression) || ts.isCallExpression(node.expression))) {
+    const serialized = gate.globalIntrinsics.get(gate.span(node).join(":"));
+    if (serialized)
+      return gate.intrinsic(serialized, gate.span(node), gate.span(node.name),
+        (node.expression.arguments ?? []).map(a => gate.expr(a)));
+  }
 
   if (ts.isNewExpression(node)) {
     // `new Promise(e)`, which the overlay reads as a call of the intrinsic
