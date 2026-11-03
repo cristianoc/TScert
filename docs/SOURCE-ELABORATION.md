@@ -4078,8 +4078,11 @@ a `try` with a `finally` and no catch, whose finalizer has no `return`,
 `break` or `continue`, is within the join of the block's and the
 finalizer's footprints, since the finalizer completes normally only where
 the block did (`closure-finally-footprint`,
-`invalid-closure-finally-footprint`); the graph checker independently
-certifies its region. Implementation:
+`invalid-closure-finally-footprint`). The proposal is of the normal return
+only: a finalizer's change after a throw is no part of it, and a caller
+catching the throw and returning holds no footprint
+(`invalid-closure-finally-throw-footprint`); the graph checker
+independently certifies its region. Implementation:
 `HeapObservations.SafePostExc`,
 `CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
 `GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`

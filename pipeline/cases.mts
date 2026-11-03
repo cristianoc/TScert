@@ -3032,6 +3032,8 @@ export const cases: Case[] = [
   positive("closure-finally-footprint", "a closure whose `finally` only falls through or throws claims the footprint its block and finalizer stay within: a `map` callback calling it stays dense"),
   negative("invalid-closure-finally-footprint", "a closure whose finalizer pops an array it captures keeps no dense prefix: a `map` calling it may leave holes (run under Node)",
     /no derivation of its return-contract claim/),
+  negative("invalid-closure-finally-throw-footprint", "a closure whose finalizer pops a captured array after its block throws: a `map` callback catching the throw and returning may leave holes, and the closure's throw states no footprint (run under Node)",
+    /no derivation of its return-contract claim/),
   positive("in-test-preserving", "a `map` callback testing a literal key with `in`, directly and through a declaration, writes nothing: the result is dense"),
   positive("object-entries-sparse", "`Object.entries` of an interface's object, the overload stating no preservation: a `map` calling it is read at its unrestricted signature, whose result admits holes"),
   negative("invalid-object-entries-preserving", "`Object.entries` of an interface's object may run an external getter: a `map` calling it may leave holes, which `number[]` does not hold"),

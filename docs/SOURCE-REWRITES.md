@@ -2437,12 +2437,33 @@ was read at an unrestricted contract, so the caller's statement `{value: any, st
 was refused ("the footprint claimed for … is not established by its body").
 
 - **Repair:** each function type states the footprint the functions passed
-  there meet, `Within<{ value: "any"; store: "grow" }, R>`; the arguments
-  (`gate.local`, `gate.chainLink`, `gate.expr`, `gate.lambda` closures) and
-  the method bodies are certified within it
+  there meet, `Within<{ value: "any"; store: "grow" }, R>`
   ([stated effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
+  A caller checked in a slice relies on the statement as written; the
+  statement is established where the stating function's own slice
+  verifies. `signature`, `errorOptions` and `localClass` have such slices.
   `readOf` takes its names as the native `Set` its callers build, whose
   `has` has a reviewed contract, as `functionDeclarations`' map does.
+- **Statements no slice checks:** the census slices neither gate methods
+  nor every module constant, and one slice is refused, so these statements
+  are assumed by their callers and audited by reading:
+  - `nameOf` (`tools/syntax.mts`, `{value: keep, store: keep}`): returns
+    `childOf(node, "name")`, whose statement its slice verifies.
+  - `errorBase` (`tools/fragment-support.mts`): allocates a fresh record, a
+    fresh array of two fresh records and a fresh `Map`, and calls
+    `errorOptions`, whose slice verifies.
+  - `Gate.termScope`: allocates a record of arrow functions over the gate;
+    it calls none of them.
+  - `Gate.moduleRestType`: reads the parameter's syntax and types it
+    through `typeOf`, `restType`, `typeParameterMentioned` and
+    `restPositions`, each stating `{value: any, store: grow}`, and `find`
+    at a callback that only reads; it writes nothing.
+  - `classBody` (`tools/fragment-classes.mts`): its slice is refused at the
+    footprint of its `construct` closure. Its body writes fields of records
+    and arrays it allocates (`push`, field writes on fresh records), calls
+    gate methods stating `{value: any, store: grow}`, and reads the
+    compiler's nodes; the audit found no operation outside that footprint,
+    which the slice does not yet confirm.
 - **Behaviour:** the annotations are erased; every call, argument and
   result is unchanged.
 - **Commit:** the introducing commit.
@@ -2490,7 +2511,9 @@ call that may grow stores does not keep as the loop's head states it.
 
 - **Repair:** each states `{value: keep, store: keep}`, which its body,
   kind tests, field reads and a `findIndex` at a callback within the same
-  footprint, establishes.
+  footprint, establishes: the slices of `childOf` and `firstOptional`
+  verify it; `nameOf`'s rests on its delegation to `childOf`
+  ([statements no slice checks](#effects-stated-where-the-expression-front-end-calls-through-a-function-type)).
 - **Behaviour:** the annotations are erased.
 - **Commit:** the introducing commit.
 
