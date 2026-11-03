@@ -3901,3 +3901,22 @@ success alternative carries the identity record.
   callbacks execute; object keys and serialized JSON agree.
 - **Example:** `blocker-next-current-identification` carries the absent key
   through the conditional implementation record.
+
+### A readonly compiler-node list view for accessor filtering
+
+`tools/written-applications.mts#pairOf` reads an object literal's properties
+through a `readonly Node[]` local before filtering for matching accessors.
+The [compiler node-list contract](COMPILER-API.md#node-lists) supplies the
+readonly element view; the existing accessor guards refine each callback
+argument before its accessor-specific members are read.
+
+- **Avoidance:** the local annotation gives the callback the general node
+  domain admitted by the compiler model. The more specific contextual
+  object-element domain requires a callable relation the model does not
+  establish for that invocation. Readonly covariance supports the local
+  view without changing the element contract of writable storage.
+- **Behaviour:** the local holds the same list read at the same point.
+  The same filter method, receiver, callback, guards and property reads
+  execute in the same order. The binding allocates no array.
+- **Example:** `blocker-next-compiler-api-callback-view` exercises the
+  readonly view and the accessor-name comparison.
