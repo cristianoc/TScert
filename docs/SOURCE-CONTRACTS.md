@@ -2597,15 +2597,45 @@ receiver's and its arrays' lengths and own numeric data properties, runs no
 client code, writes no existing location, and allocates its result by
 ordinary construction.
 
-`splice(start, deleteCount?)`, the overload without items, converts only
-numbers, copies the present elements of the deleted range to a fresh array
-by ordinary construction, a hole where the receiver has one, so its result
-reads as the receiver's elements do, at $`T[\,]`$; it then moves or deletes
-each later index and sets the receiver's length. It is stated at the
-mutable receiver $`T[\,]`$, with the footprint of `pop`, `shift` and
-`reverse` and a fresh result. A tuple, whose positions a removal would
-lose, is no such receiver (`invalid-array-splice-tuple`). The overload with
-items is not listed.
+The installed `splice(start: number, deleteCount?: number): T[]` and
+`splice(start: number, deleteCount: number, ...items: T[]): T[]` overloads
+share one reviewed variadic contract: fixed `number` and
+`number | undefined` parameters, rest elements $`T`$, a mutable readable
+$`T[\,]`$ receiver and a readable $`T[\,]`$ result. An omitted deletion
+count removes the remaining suffix; explicit `undefined` removes nothing.
+Both behaviors meet the same result and effect contract. The source's
+argument count and evaluation order are retained.
+
+[ECMA-262's splice algorithm](REFERENCES.md#ecma-262) captures the receiver's length, converts only those primitive
+offsets, and copies the removed range to fresh array storage by ordinary
+construction. Presence tests preserve holes in that range; the result has
+the receiver's readable element contract. Holes are readable where the
+element contract admits `undefined`; a sparse string receiver does not meet
+this contract (`invalid-splice-insert-sparse`). It shifts or deletes remaining
+indices, inserts the already evaluated values, and sets the new length.
+Its normal-return footprint permits value writes and changes to the
+receiver's store, while keeping other existing stores. It states a fresh
+result store and no exceptional preservation. A tuple, whose required
+positions a removal would lose, is no such receiver
+(`invalid-array-splice-tuple`). Insertion can accompany shrinking;
+`invalid-splice-insert-map-density` leaves a hole in an enclosing map's
+result and throws under Node.
+
+Inserted values are captured before the call mutates its receiver, including
+when a spread aliases that receiver. The existing spread snapshot also
+captures values before a later argument runs client code. Object elements
+retain their identities in both the receiver and removed result; freshness
+concerns array storage. `blocker-next-splice-insert-spread` and
+`array-splice-insert` exercise alias replacement, legacy calls, insertion,
+argument order, holes and mutation of fresh removed storage.
+
+A reviewed signature's optional rest element passes through the same
+`TypeTerm` function contract as declared variadic functions. Its fixed
+parameters, receiver, result and effect travel with it through instantiation
+and checking. Forged claims widening splice's rest or erasing its
+receiver-store exception are refused in evidence production and consumption.
+The standard constructor/species, numeric-data and prototype restrictions
+below apply to both overloads.
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the

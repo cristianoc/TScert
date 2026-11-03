@@ -348,6 +348,9 @@ Language Specification* as of this writing). Sections relied on by name:
 - [Map constructor](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-iterable),
   including the return for an undefined input and `AddEntriesFromIterable`,
   for [native collection construction](SOURCE-CONTRACTS.md#library-globals);
+- [Array.prototype.splice](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.splice),
+  including argument counts, removed holes and inserted values, for the
+  [native splice contract](SOURCE-CONTRACTS.md#prototype-contracts);
 - [WeakMap objects](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-weakmap-objects),
   including construction and `get`, `set`, `has`, `delete`, for the
   [weak-table native contract](SOURCE-CONTRACTS.md#weak-tables);

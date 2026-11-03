@@ -71,6 +71,43 @@ const mutationControl = (body: () => Promise<void>): void => {
 const serving: boolean = process.argv[2] === "--controls";
 
 control(async (): Promise<void> => {
+  // A native variadic member keeps both its fixed numeric prefix and its
+  // inserted element contract. A producer cannot widen that rest or erase
+  // the exception allowing the receiver's store to change.
+  const artifacts = run("blocker-next-splice-insert-spread");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("a.splice");
+  for (const variant of ["rest", "footprint"] as const) {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "replace"), "replace's claims");
+    const member = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "a.splice".length),
+      "the splice member claim");
+    assert.ok(Array.isArray(member.type));
+    const label = member.type[0];
+    assert.ok(typeof label === "number");
+    const arrow = must(must(claims.types[label], "the member's row").flatMap(clause =>
+      typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
+      "the variadic splice signature");
+    assert.equal(arrow.arguments[0].length, 2, "the fixed start and deletion count");
+    if (variant === "rest") {
+      const packLabel = arrow.arguments[1][0];
+      assert.ok(typeof packLabel === "number");
+      const pack = must(must(claims.types[packLabel], "the rest's row").flatMap(clause =>
+        typeof clause === "object" && "pack" in clause ? [clause.pack] : [])[0], "the argument pack");
+      must(pack.first.rest, "the inserted element contract").push(rowOf(claims, "str"));
+    } else {
+      assert.ok(arrow.effect.receiverStore, "the receiver store may change");
+      arrow.effect = { ...arrow.effect, receiverStore: false };
+    }
+    const forged = writeClaims(artifacts, `splice-insert-${variant}`, claims);
+    refusedAt(artifacts, forged, `splice-insert-${variant}`,
+      `source expression obligation at [${start},${start + "a.splice".length})`);
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+  }
+  process.stdout.write("splice insertion: widened rest and erased receiver-store exception refused in search and checking\n");
+});
+
+control(async (): Promise<void> => {
   // An arm's read claim may refine a callable only where the incoming
   // edge establishes it. The known identity closure has its checked
   // numeric signatures; an additional string-result signature is false.
