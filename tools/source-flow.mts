@@ -136,7 +136,8 @@ export type ExecutionOperation =
       right: SavedValue;
       final: boolean;
       assign: boolean;
-    };
+    }
+  | { kind: "outcome"; source: Span; truth: boolean };
 export type ExecutionPlan =
   | { kind: "observe"; source: Span; evaluate: ExecutionPlan }
   | { kind: "atom"; source: Span; operation: ExecutionOperation }
@@ -463,6 +464,11 @@ const operationOf = (value: unknown): ExecutionOperation => {
         final: op.final,
         assign: op.assign,
       };
+    }
+    case "outcome": {
+      exact(op, ["kind", "source", "truth"]);
+      if (typeof op.truth !== "boolean") invalid("condition outcome");
+      return { kind: op.kind, source, truth: op.truth };
     }
     default:
       invalid("unknown execution operation");

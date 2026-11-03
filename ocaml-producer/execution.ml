@@ -55,6 +55,7 @@ let operation j =
    | "addField" -> ignore (saved (Json.field "base" j)); ignore (Json.field "key" j);
      ignore (saved (Json.field "value" j)); ignore (Json.boolean (Json.field "final" j)); None_
    | "mergeObjects" -> ignore (saved (Json.field "left" j)); ignore (saved (Json.field "right" j)); ignore (Json.boolean (Json.field "final" j)); ignore (Json.boolean (Json.field "assign" j)); None_
+   | "outcome" -> ignore (Json.boolean (Json.field "truth" j)); None_
    | kind -> Json.fail ("unknown expression operation " ^ kind) in
   let result = match Json.str (Json.field "kind" j) with
     | "evaluate" ->
@@ -66,6 +67,7 @@ let operation j =
        | "negated" -> Saved (Json.str (Json.field "name" r),true)
        | kind -> Json.fail ("unknown execution result " ^ kind))
     | "referenceWrite" -> Saved ((saved (Json.field "value" j)).name,false)
+    | "outcome" -> Boolean (Json.boolean (Json.field "truth" j))
     | _ -> Unknown in
   {source;impact;result}
 let rec decode j =

@@ -760,45 +760,163 @@ a\mathbin{\Vert}b\;\equiv\;\mathsf{if}\ a\ \mathsf{then}\ \mathsf{true}\ \mathsf
 They share the source conditional proof builder, including null refinement within
 the right operand;
 the synthetic constant arm requires a literal proof, not a source claim.
-At statement guards the source compiler instead emits short-circuit graph paths,
-whose Boolean/null observations justify the intermediate and successor contexts.
-It also checks the complete expression claim using the derived expression form.
-Thus graph decomposition cannot silently discard the producer's condition type.
+In a test position the operators are decomposed instead
+([conditions](#conditions)).
 
-### Conditions read for truthiness
+### Conditions
 
-A condition read for its truthiness alone, a statement guard's or a
-conditional expression's test, is a short-circuit dispatch whatever its left
-operand's type. Where that operand is no test (a comparison, a shape or
-singleton test, `!`, `in`), the operator's value may be it, not a Boolean;
-read for its truthiness, the value is that truthiness:
+A condition in a test position is lowered by the short-circuit translation
+of a Boolean condition into branches
+([Aho et al. 2006](REFERENCES.md#aho-lam-sethi-and-ullman-2006),
+`ExpressionPlan.jump`). Write $`\mathcal{C}[\![e]\!](t,f)`$ for the plan of
+$`e`$ that continues with $`t`$ where $`e`$ is truthy and with $`f`$ where it
+is falsy:
 
 ```math
-\mathsf{truth}(a\mathbin{\&\&}b)=\mathsf{truthy}(a)\land\mathsf{truth}(b),
-\qquad
-\mathsf{truth}(a\mathbin{\Vert}b)=\mathsf{truthy}(a)\lor\mathsf{truth}(b).
+\begin{aligned}
+\mathcal{C}[\![a\mathbin{\&\&}b]\!](t,f) &= \mathcal{C}[\![a]\!](\mathcal{C}[\![b]\!](t,f),\ f)\\
+\mathcal{C}[\![a\mathbin{\Vert}b]\!](t,f) &= \mathcal{C}[\![a]\!](t,\ \mathcal{C}[\![b]\!](t,f))\\
+\mathcal{C}[\![!a]\!](t,f) &= \mathcal{C}[\![a]\!](f,\ t)\\
+\mathcal{C}[\![c\ ?\ a : b]\!](t,f) &= \mathcal{C}[\![c]\!](\mathcal{C}[\![a]\!](t,f),\ \mathcal{C}[\![b]\!](t,f))\\
+\mathcal{C}[\![(x,\ a)]\!](t,f) &= x;\ \mathcal{C}[\![a]\!](t,f)\\
+\mathcal{C}[\![e]\!](t,f) &= \mathsf{let}\ v=e\ \mathsf{in}\ \mathsf{if}\ \mathsf{truthy}(v)\ \mathsf{then}\ t\ \mathsf{else}\ f
+\quad\text{(any other } e\text{)}
+\end{aligned}
 ```
 
-Each arm of the left operand's dispatch rebinds its outcome, `true` or
-`false`, and the right operand runs where the left is truthy (`&&`) or falsy
-(`||`), in the context the left operand's outcome leaves: a tested variable
+The test positions are the conditions of `if`, `while`, `do` and `for`, a
+conditional expression's condition, and every operand the translation
+reaches. A statement's condition $`e`$ is
+$`\mathcal{C}[\![e]\!](\mathsf{T},\mathsf{F})`$, each outcome the statement's
+destination for that answer; a conditional expression
+$`c\ ?\ a : b`$ in a value position is $`\mathcal{C}[\![c]\!](a, b)`$, its
+value the value of the arm each path reaches. In the last line, $`e`$ is
+evaluated by its value plan and observed at its span, and the dispatch on its
+truthiness is the operand's own: a predicate (a test, a guard's call, a read
+of a field of an immutable binding's object) refines on each edge as
+[guards](#guards) state, a value is split by its type's slices
+([logical operators](#logical-operators)). Where an outcome is the arm of a
+dispatch, the dispatch's edge goes to that outcome's destination itself, so
+the destination's entry claims are checked against what the operand's answer
+establishes.
+
+**Evaluation.** Each equation holds of JavaScript's evaluation
+([ECMA-262](REFERENCES.md#ecma-262), the evaluation of a condition), by
+induction on $`e`$: $`\mathcal{C}[\![e]\!](t,f)`$ evaluates the operands
+JavaScript evaluates for $`e`$, in its order and once each, then runs $`t`$
+exactly where $`\mathsf{ToBoolean}(e)`$ is true and $`f`$ where it is false.
+`&&` evaluates its right operand exactly where its left one is truthy, and
+its value there is the right operand's; `||` exactly where the left one is
+falsy; `!a` is `true` exactly where $`a`$ is falsy; a conditional evaluates
+one arm by its condition's truth; a comma evaluates its left operand for its
+effects. An operand's exception leaves the plan where it leaves JavaScript's
+evaluation, through the operand's own operation.
+
+**Values.** An operator the translation decomposes yields no value: `&&`,
+`||`, `!`, a conditional and a comma in a test position are evaluated for
+their truth alone, which the dispatches carry. A statement's condition
+yields the outcome literal of each path, `true` or `false`, at the empty span
+where the condition starts, which no claim names
+(`SourceExecution.Operation.outcome`, typed `[true]` or `[false]`). The
+claims of the decomposed operators' expressions stay admissible sites and
+are no obligations: the lowering reads none. Every operand the translation
+reaches as a leaf keeps its own observation, and an operator in a value
+position keeps its value plan and its claim
+([logical operators](#logical-operators)).
+
+**Contexts.** The right operand of `&&` runs in the context the left
+operand's truthy answer leaves, of `||` its falsy one's: a tested variable
 is a Boolean outcome where it is a Boolean, and otherwise the labels of its
 type its truthiness admits (`conditionContext`). So `s && r !== "a" ? r : x`
 sees `r` at `"b"` in its first arm (`logical-truth-narrowing`), and
-`s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`).
-The dispatch's value is that truth, which no program reads but the test:
-it carries no obligation about the operator's value, whose claim is checked
-where the operator is read as a value, and each operand keeps its own
-(`logical-string-values`: `s && s` of a string in a condition).
-
-A test's right operand that is no test, judged as a left operand is (see
-[negated operands](#negated-operands)), is read for its truthiness the same
-way: in $`t\mathbin{\&\&}b`$ with $`t`$ a test, the test is dispatched as a
-Boolean and $`b`$ as $`\mathsf{truth}(b)`$. An optional chain read as a
-condition, `p?.length && g(n)`, is `p != null && p.length && g(n)`, which
-regroups as `p != null && (p.length && g(n))`, so `p.length` is a left
-operand read for its truthiness and the guard's refinement reaches the
+`s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`). A
+negated guard's call as `||`'s left operand is a dispatch on the call, its
+arms exchanged: where it answered `true` the right operand, a closure it
+creates and the statement after read the actual at the promised type
+(`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
+nothing (`invalid-guard-negated-and`). Where `m.n` is truthy in
+`!(m.kind === "method") || m.n || m.q` the condition holds, so past it `m.q`
+is falsy (`condition-short-circuit`, `invalid-condition-retested-operand`).
+An optional chain read as a condition, `p?.length && g(n)`, is
+`p != null && p.length && g(n)`, so the guard's refinement reaches the
 branch (`compiler-api-optional-length-guard`).
+
+**A known Boolean.** A leaf whose value plan reads an immutable binding (a
+`const` or a parameter never written) whose type in the leaf's context
+answers the test one way takes that arm alone, as a tested value whose claim
+answers it does (`knownAnswer`). The context type is established by every
+incoming edge. In `(c && d) || !c`, where `c && d` failed with `c` true, the
+leaf `c` of `!c` holds `[true]`, so only the arm where `!c` is false is
+built, and no edge carries `c` true where `!c` held (`condition-short-circuit`'s
+`retested`; `invalid-condition-known`).
+
+<a id="residuals"></a>
+**Placement.** A leaf's dispatch is placed at the span of the innermost
+`&&` or `||` it is an operand of, else at the span of the conditional
+expression or statement condition whose test it is, and a statement's
+outcomes at the empty span where its condition starts, which no source
+expression and no claim has. A plan observes a nonempty span exactly at the
+entry of the source expression owning it, and the producer types that
+expression in the state found there. So in `rest && rest.kind === 1 &&
+rest.dot`, the first read of `rest` is typed where `rest` is still untested
+(`logical-chain-entry`, `invalid-logical-chain-entry`).
+
+**Size.** The plan is a tree: $`\mathcal{C}[\![(a\mathbin{\Vert}b)\mathbin{\&\&}c]\!]`$
+holds $`\mathcal{C}[\![c]\!]`$ under both exits of $`a\mathbin{\Vert}b`$, so
+the graph has a path per choice of deciding operands, as the per-path
+compilation of a dispatch's continuation has
+(`condition-disjunction-chain`).
+
+**Entries of an arm.** A slice of the labels cannot refine `unknown`, which
+no label decomposes. An arm's entry therefore takes, for each binding its
+operand reads, the producer's claim at that read as a candidate, which the
+incoming dispatch edge checks under the edge's own observation, as it checks
+a statement entry. The read is the binding's first in the arm before any
+choice. For a binding that may change, it is the first before any other
+operation. A value binding (a parameter, a `const`) holds one value
+throughout, so its first read may also follow reads of members, references
+and positions, effect-free evaluations, and calls of native intrinsics,
+which state no promise. A call of a source function ends the search, since
+an assertion function's promise may narrow the binding there. So
+`typeof v === "number" && Number.isSafeInteger(v)` reads `v` at `number`
+(`logical-narrowing-past-reads`). A read claimed narrower than the edge
+establishes is refused when evidence is produced and when it is checked
+(the forged operand entry in `pipeline/test.mts`).
+
+A negation of tests, `!(a || b)`, is $`\mathcal{C}[\![a\mathbin{\Vert}b]\!](f,t)`$
+in a condition: where `k.name === "a"` failed, the fact that `k.name` holds
+the rest of its literals types the next read of `k.name`, which the declared
+field does not; in the arm of `!(a || b)` where `a` held, no dispatch reaches
+the true branch (`negated-disjunction-test`, each function run under Node).
+Where the negation fails, one of the tests held, and where a call, the
+test's own operand or a getter may have written the field, its read is not
+narrowed (`invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`,
+`-getter` and `invalid-negated-conjunction`, run under Node; a forged claim
+of a re-read refused in search and in checking, `pipeline/test.mts`). As a
+value, `!a` is $`\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{false}\ \mathsf{else}\ \mathsf{true}`$
+of $`a`$'s value; a negation whose operand's type answers its truthiness one
+way, $`q`$, proposes the part of its claim $`A`$ answering the other way as
+the node's type (`decidedNegation`):
+
+```math
+\Gamma\vdash a:B,\qquad \text{every clause of }B\text{ answers }q,\qquad T_{\neg q}(A)\neq\emptyset
+\qquad\Longrightarrow\qquad
+\text{proposed type }T_{\neg q}(A).
+```
+
+The node `if a then false else true` must derive this proposed type under
+the existing typing rules; the following effect node checks the claim
+$`A`$ separately (a negation as `&&`'s left operand in a value position,
+forged claims of it refused in search and in checking,
+`pipeline/test.mts`).
+
+Pure dispatch of a leaf can read a saved [path witness](HOST-FAMILIES.md#entries).
+The internal variable uses its slot's type in the current checked graph
+context. Its empty source span needs no expression claim: ordinary variable
+typing checks the read, and the graph's incoming-edge and read-link checks
+establish the slot's type and its relation to the source member. The type is
+available during predicate compilation; subsequent effects use their resulting
+context and links.
 
 ### A guard's Boolean return
 
@@ -822,140 +940,6 @@ The parser writes the literals at the first two code units of the `return`
 keyword (an arrow's `=>`), which no expression has, each the span of its own
 `return` (`booleanReturn`), and the producer claims them as it claims any
 literal (`guard-boolean-return`, `invalid-guard-boolean-return`).
-
-### Negated operands
-
-A negated left operand that is no test, `!a`, is a dispatch on `a` itself,
-its arms exchanged, and a left operand that is the same operator's
-application is regrouped:
-
-```math
-\begin{aligned}
-\mathsf{truth}(!a\mathbin{\Vert}b)&=\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{truth}(b)\ \mathsf{else}\ \mathsf{true},\\
-\mathsf{truth}(!a\mathbin{\&\&}b)&=\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{false}\ \mathsf{else}\ \mathsf{truth}(b),\\
-\mathsf{truth}((a\mathbin{op}b)\mathbin{op}c)&=\mathsf{truth}(a\mathbin{op}(b\mathbin{op}c)).
-\end{aligned}
-```
-
-Each equation holds of JavaScript's evaluation: `!a` is `true` exactly where
-`a` is falsy, `||` evaluates its right operand exactly where its left is
-falsy and `&&` where it is truthy, and grouping the same operator either way
-evaluates the operands once each, left to right, and stops at the same one.
-So `a` is evaluated once, then `b` exactly where `!a` does not decide, and
-the truth is the operator's. The decided outcome is a literal, `true` for
-`||` and `false` for `&&`, at the span of the `!` (`negationMark`), which no
-source expression has: the producer claims it there for every negated
-operand of `||` or `&&` that is no test, a right one's included, which
-regrouping makes a left one (`ExpressionPlan.truthOf`, `Claims.Sites`). The
-arm where `a` answered `true` is the arm a guard call narrows on, so
-`if (!isRecord(v) || n > 3) throw …; return v` reads `v` at the promised
-type, a closure in the right operand included
-(`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
-nothing (`invalid-guard-negated-and`). A left operand `a op b` stays grouped
-where both its operands are tests, each judged as a left operand is: `!a`
-is a test where `a` is one, and `a op b` where both its operands are. So
-`(!g(v) || b) || c` regroups as `!g(v) || (b || c)`, and `v` is at the
-promised type where the whole is false (`guard-disjunction-middle-test`);
-`(t || !g(v)) || !g(w)`, `t` a test, regroups as `t || (!g(v) || !g(w))`,
-whose right operand is no test, so `v` and `w` are at the promised types
-where the whole is false (`guard-disjunction-after-test`, and
-`invalid-guard-disjunction-after-test-write` with a disjunct writing the
-field, checked with its twin's claims); and a field the guard tested is at
-the promised type past a middle disjunct whose call keeps the heap, but not
-past one whose call may write it (`invalid-guard-disjunction-middle-write`,
-checked with its twin's claims); a conjunction inside a
-disjunction, `!g(v) && b || c`, is no application of the same operator and
-promises nothing where it is false
-(`invalid-guard-disjunction-mixed-prettier-ignore`, checked with its
-twin's claims).
-
-<a id="a-negation-of-tests"></a>
-A negation of tests, `!(a || b)` or `!(a && b)`, is evaluated as a value:
-its operand's dispatch, then the negation of the value each arm leaves.
-A condition then dispatches on the predicate each arm leaves, its arms
-exchanged. The negation's claim is checked where the evaluation computes
-it, and each read the dispatch makes again by the dispatch's own node, with
-the knowledge its incoming edge carries: where `k.name === "a"` failed, the
-fact that `k.name` holds the rest of its literals types the next read of
-`k.name`, which the declared field does not. A negation whose operand's type
-answers its truthiness one way, $`q`$, proposes the part of its claim $`A`$
-answering the other way as the node's type (`decidedNegation`):
-
-```math
-\Gamma\vdash a:B,\qquad \text{every clause of }B\text{ answers }q,\qquad T_{\neg q}(A)\neq\emptyset
-\qquad\Longrightarrow\qquad
-\text{proposed type }T_{\neg q}(A).
-```
-
-The node `if a then false else true` must derive this proposed type under
-the existing typing rules; the following effect node checks the claim
-$`A`$ separately.
-
-In the arm of `!(a || b)` where `a` held, the negation is `false` and
-decides the condition there, and no dispatch reaches the true branch from
-that arm (`negated-disjunction-test`, each function run under Node). Where
-the negation fails, one of the tests held, and where a call, the test's own
-operand or a getter may have written the field, its read is not narrowed
-(`invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`, `-getter`
-and `invalid-negated-conjunction`, run under Node; forged claims of a
-re-read and of the negation refused in search and in checking,
-`pipeline/test.mts`).
-
-A slice of the labels cannot refine `unknown`, which no label
-decomposes. An arm's entry therefore takes, for each binding its operand
-reads, the producer's claim at that read as a candidate, which the incoming
-dispatch edge checks under the edge's own observation, as it checks a
-statement entry. The read is the binding's first in the arm before any
-choice. For a binding that may change, it is the first before any other
-operation. A value binding (a parameter, a `const`) holds one value
-throughout, so its first read may also follow reads of members, references
-and positions, effect-free evaluations, and calls of native intrinsics,
-which state no promise. A call of a source function ends the search, since
-an assertion function's promise may narrow the binding there. So
-`typeof v === "number" && Number.isSafeInteger(v)` reads `v` at `number`
-(`logical-narrowing-past-reads`). A read claimed narrower than the edge
-establishes is refused when evidence is produced and when it is checked
-(the forged operand entry in `pipeline/test.mts`).
-
-A chain of one operator is read right-nested, the parser's left nesting
-reassociated:
-
-```math
-(a\mathbin{\&\&}b)\mathbin{\&\&}c\;\equiv\;a\mathbin{\&\&}(b\mathbin{\&\&}c),
-\qquad
-(a\mathbin{\Vert}b)\mathbin{\Vert}c\;\equiv\;a\mathbin{\Vert}(b\mathbin{\Vert}c),
-```
-
-which JavaScript evaluates in the same order to the same value (a falsy
-$`a`$ is the result either way, and so on). Read so, $`c`$ is checked where $`a`$
-and $`b`$ each answered. A variable tested by both $`a`$
-and $`b`$ is split twice; the inner split takes, of its planned arms, those
-of the labels the outer one left.
-
-<a id="residuals"></a>
-The inner $`b\mathbin{\&\&}c`$ is a residual: an expression the derived
-form builds that the source does not contain, as are
-$`b\mathbin{op}c`$ of $`(a, b)\mathbin{op}c\equiv a, (b\mathbin{op}c)`$
-and $`!b`$ of $`!(a, b)`$. A plan observes a nonempty span exactly at the
-entry of the source expression owning it, and the producer types that
-expression in the state found there. The inner operator of a regrouped
-chain yields no source expression's value: it is observed at the empty
-span where its first operand starts (`ExpressionPlan.residual`), which no
-source expression and no claim has, and its value, read for its
-truthiness, is typed by its operands' claims. A comma's residual yields
-the value of the expression it is derived from, after the comma's left
-operand: it is typed at that expression's claim and not observed. So in
-`rest && rest.kind === 1 && rest.dot`, the first read of `rest` is typed
-where `rest` is still untested (`logical-chain-entry`,
-`invalid-logical-chain-entry`).
-
-Pure dispatch of a residual can read a saved [path witness](HOST-FAMILIES.md#entries).
-The internal variable uses its slot's type in the current checked graph
-context. Its empty source span needs no expression claim: ordinary variable
-typing checks the read, and the graph's incoming-edge and read-link checks
-establish the slot's type and its relation to the source member. The type is
-available during predicate compilation; subsequent effects use their resulting
-context and links.
 
 ### Closure branches
 

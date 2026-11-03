@@ -252,7 +252,8 @@ open S
   end)
   (* Each observation retains the dependency-list prefix that produced its
      environment. Claims read later in the statement cannot invalidate that
-     entry. A repeated observation joins its environments and retains all
+     entry. A repeated observation joins its environments, an immutable
+     value at what either path refined it to (`merge`), and retains all
      dependencies read up to that join. The root owns the plan and initial
      environment; a pass owns the cache and its immutable source hints. *)
   let entry_cache = Roots.create 16
@@ -277,7 +278,7 @@ open S
           | Some (previous,_) ->
             let impossible env=List.exists (fun (n,b) -> not (is_field n) && binding_type b=Atoms []) env in
             if impossible previous then env else if impossible env then previous else
-              join previous previous env in
+              merge ~refine:true previous previous env in
         Hashtbl.replace entries span (env,!checks) in
       let saved = !dependencies in
       dependencies := Some checks;

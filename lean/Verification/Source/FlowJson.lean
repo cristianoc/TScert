@@ -69,6 +69,8 @@ private def operationJson : SourceExecution.Operation → Json
       ("source",toJson original.span),("base",savedJson base),("key",toJson key),("value",savedJson value),("final",toJson final)]
   | .mergeObjects source left right final assign => Json.mkObj [("kind",toJson "mergeObjects"),
       ("source",toJson source),("left",savedJson left),("right",savedJson right),("final",toJson final),("assign",toJson assign)]
+  | .outcome source truth => Json.mkObj [("kind",toJson "outcome"),
+      ("source",toJson source),("truth",toJson truth)]
 
 private def testJson : SourceExecution.Test → Json
   | .truthy => toJson "truthy"

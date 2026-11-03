@@ -192,6 +192,7 @@ held in a slot. -/
       throw (locatedRefusal (← table) source .bindingAnnotation reason)
   | .arrayRest source _ _ _ => claimAt fc source
   | .emptyObject _ => groupType [] []
+  | .outcome _ truth => pure [if truth then Labels.tru else Labels.fls]
   | .addField original base key value final =>
     let .str key := key | throw "internal execution plan: object literal field is not a string"
     let A ← claimAt fc original.span
@@ -623,6 +624,7 @@ one for an increment), and the slot of the old value. -/
         (S::Γ) A "pattern-rest" (scope := temporary)
       emitAt source store (.bind object) Γ S "pattern-rest" (scope := scope)
   | .emptyObject _ => emitAt source (.makeAt .absent [] []) (.bind next) Γ A (scope := scope)
+  | .outcome _ truth => emitAt source (if truth then .tru else .fls) (.bind next) Γ A (scope := scope)
   | .addField original base key value _ =>
     let .str key := key | throw "internal execution plan: object literal field is not a string"
     let (baseIndex, _) ← executionSaved scope Γ base
@@ -712,6 +714,19 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
   | .inKeys p k e => .inKeys p (executionPredicate G Γ scope origins k) (executionPredicate G Γ scope origins e)
   | _ => e
 
+/-- The answer a test of `origin` has where `origin` reads an immutable
+binding whose slot type in `Δ` answers it one way: `true` where every label
+of it answers `answer`, `false` where none does. The slot type is the
+context the graph checker establishes on every incoming edge. -/
+private def knownAnswer (G : PositiveGraphs.NormalGraph Tree) (scope : List (ScopeBinding Tree))
+    (Δ : List (Ty Tree)) (origin : Fragment.Expr) (tag : Tag) (answer : Bool) : Option Bool := do
+  let .var _ name := origin | none
+  let (i, .value) ← resolve scope name | none
+  let T ← Δ[i]?
+  if decide (Answers G T tag answer) then some true
+  else if decide (Answers G T tag (!answer)) then some false
+  else none
+
 private partial def executionBranches : SourceExecution.Plan → Bool
   | .atom .. => false
   | .observe _ evaluate => executionBranches evaluate
@@ -791,10 +806,16 @@ compilation, so later effects cannot retain a stale witness type. -/
 
 /-- A terminal continuation sees the result first and all evaluated operands.
 Only the plan traverses source execution; the continuation can inspect the
-prepared predicate without replaying an effectful source operand. -/
+prepared predicate without replaying an effectful source operand. A
+condition's plan (`SourceExecution.buildCondition`) may name its outcomes'
+destinations (`exit`): a dispatch whose arm is an outcome then goes to that
+destination itself, in the dispatch's own scope, so the edge's refinement is
+the one the graph checker computes for the dispatch. -/
 @[nospecialize] partial def executePlanTail (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (plan : SourceExecution.Plan)
-    (k : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Compiler Target) : Compiler Target := do
+    (k : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Compiler Target)
+    (exit : Option (List (ScopeBinding Tree) → List (Ty Tree) → Bool → Compiler Target) := none) :
+    Compiler Target := do
   -- Defaults and expression bodies also enter here, without a statement
   -- graph's ambient witnesses. Reserve the missing paths before their tests.
   let missing := (testedPaths plan).eraseDups.filter fun p => !scope.any (·.witness == some p)
@@ -806,7 +827,7 @@ prepared predicate without replaying an effectful source operand. -/
       { source := ⟨s!".path:{source.1}:{source.2}:{scope.length}:{i}", some source⟩,
         fixed := some [top], witness := some p }
     let mut target ← executePlanTail recursive fc (witnesses ++ scope)
-      (List.replicate witnesses.length [top] ++ Γ) plan k
+      (List.replicate witnesses.length [top] ++ Γ) plan k exit
     for i in List.range witnesses.length do
       target ← emitAt source .undef (.bind target)
         (List.replicate (witnesses.length-i-1) [top] ++ Γ) [top]
@@ -893,7 +914,7 @@ prepared predicate without replaying an effectful source operand. -/
       let origins := previous.origins.filter fun (_, origin) =>
         !origin.freeNames.any rebound.contains
       let after ← withExecutionBindings { types := (binding.name,A)::previous.types, origins }
-        (executePlanTail recursive fc (bound::scope) (A::Γ) next k)
+        (executePlanTail recursive fc (bound::scope) (A::Γ) next k exit)
       return ← executePlanTail recursive fc scope Γ evaluate fun _ Δ _ => do
         let offset := Δ.length - Γ.length
         return ⟨after.label,some ((after.mapping.getD (List.range (Γ.length+1))).map
@@ -913,7 +934,7 @@ prepared predicate without replaying an effectful source operand. -/
             (scope'[i]?).map fun (b : ScopeBinding Tree) => b.source.name
         | _ => none
       let rest := withExecutionBindings ⟨(binding.name,A)::previous.types,(binding.name,origin)::previous.origins⟩
-        (executePlanTail recursive fc (bound :: scope'.tail) Δ next k)
+        (executePlanTail recursive fc (bound :: scope'.tail) Δ next k exit)
       match witness with
       | some w => withExecutionWitness binding.name w rest
       | none => rest
@@ -977,13 +998,19 @@ prepared predicate without replaying an effectful source operand. -/
         let bindingOrigin := if correlated && truthOnly then Fragment.Expr.lit binding.source (.vbool truth)
           else origin
         withExecutionBindings ⟨(binding.name,T)::savedTypes,(binding.name,bindingOrigin)::previous.origins⟩ do
-          let target ← executePlanTail recursive fc sc types body k
+          let target ← executePlanTail recursive fc sc types body k exit
           if correlated then
             let mapping := (target.mapping.getD (List.range types.length)).map
               (fun i => if i == 0 then 0 else i+1)
             emitAt source (if truth then .tru else .fls) (.bind ⟨target.label,some mapping⟩)
               base T "condition-result" (scope := scope')
           else pure target
+      -- An arm that is a condition's outcome goes to that outcome's
+      -- destination (`exit`).
+      let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) =>
+        match exit, body with
+        | some destination, .atom _ (.outcome _ outcome) => destination scope' Δ outcome
+        | _, _ => arm truth T body
       -- A proved answer admits only its selected execution. Keeping A retains
       -- the evaluated value and avoids elaborating observations in a dead arm.
       if decide (Answers G A tag answer) then
@@ -991,6 +1018,11 @@ prepared predicate without replaying an effectful source operand. -/
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
       if decide (Answers G A tag (!answer)) then
         let selected ← arm false A no
+        return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
+      -- So does a read of an immutable binding whose slot type, the
+      -- context every incoming edge establishes, answers the test.
+      if let some truth := knownAnswer G scope' Δ origin tag answer then
+        let selected ← arm truth A (if truth then yes else no)
         return ← emitAt source (.var 0) (.effect selected) Δ A "expression-dispatch" (scope := scope')
       let yes ← arm true Y yes
       let no ← arm false N no
@@ -1004,37 +1036,23 @@ prepared predicate without replaying an effectful source operand. -/
         else .tagBind tag (adapt no) (adapt yes)
       emitAt source (.var 0) continuation Δ A "expression-dispatch" (scope := scope')
 
-/-- A statement condition follows the same operand plan as a value expression.
-The final pure predicate uses the retained operands to justify refinements.
-Each destination is elaborated only when the test's claimed type admits its
-answer: a test always truthy (`for (;;)`, `while (true)`) has no edge to the
-statement after its loop, which is then no point of the graph. -/
+/-- A statement condition is its short-circuit plan
+(`SourceExecution.buildCondition`): each dispatch whose arm is an outcome
+goes to that outcome's destination, the dispatch's edge refining what the
+operand's answer establishes. A destination no path answers is not
+elaborated (`for (;;)`, `while (true)`: no edge to the statement after the
+loop, which is then no point of the graph). -/
 @[nospecialize] partial def compileCondition (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (cond : Fragment.Expr)
     (yes no : Compiler Target) : Compiler Target :=
-  executePlanTail recursive fc scope Γ (SourceExecution.buildCondition cond) fun inner Δ origin => do
+  let destination := fun (Δ : List (Ty Tree)) (truth : Bool) => do
     let offset := Δ.length - Γ.length
-    let adapt := fun (target : Target) =>
-      ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩
-    let predicate := executionPredicate (SourceTypes.graph (← table)) Δ inner (← executionOrigins) origin
-    let A := Δ.headD []
-    let G := SourceTypes.graph (← table)
-    if decide (Answers G A .truthy true) then
-      return ← emitAt cond.span (.var 0) (.effect (adapt (← yes))) Δ A (scope := inner)
-    if decide (Answers G A .truthy false) then
-      return ← emitAt cond.span (.var 0) (.effect (adapt (← no))) Δ A (scope := inner)
-    let yes ← yes
-    let no ← no
-    let unsettled := !(BranchRefinement.tagSlice G A .truthy true).isEmpty &&
-      !(BranchRefinement.tagSlice G A .truthy false).isEmpty
-    if unsettled && readOnly predicate && !predicate.freeNames.contains "" then
-      withPredicateWitnessTypes inner Δ
-        (LoweringAtoms.compileConditionAtom recursive fc inner Δ predicate (adapt yes) (adapt no))
-    else
-      let drop := fun (target : Target) =>
-        ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+(offset+1)))⟩
-      let transfer := Continuation.tagBind .truthy (drop yes) (drop no)
-      emitAt cond.span (.var 0) transfer Δ A (scope := inner)
+    let target ← if truth then yes else no
+    return (⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩ : Target)
+  -- Every outcome of the plan is a dispatch's arm, which `exit` consumes.
+  executePlanTail recursive fc scope Γ (SourceExecution.buildCondition cond)
+    (fun _ _ _ => throw "internal execution plan: a condition's outcome outside a dispatch")
+    (exit := some fun _ Δ truth => destination Δ truth)
 
 /-- Source operand scheduling is owned by ExpressionPlan. Atomic elaboration
     receives only saved operands and source annotation metadata. -/

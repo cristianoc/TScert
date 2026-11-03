@@ -377,6 +377,13 @@ Language Specification* as of this writing). Sections relied on by name:
   `IsStrictlyEqual`, [IsLooselyEqual](https://tc39.es/ecma262/multipage/abstract-operations.html#sec-islooselyequal),
   `StringToNumber`, `StringToBigInt`, `ToString`/`Number::toString`, `ToPropertyKey`,
   `ToBoolean`, `typeof`;
+- the evaluation of a condition: [binary logical operators](https://tc39.es/ecma262/#sec-binary-logical-operators),
+  [logical NOT](https://tc39.es/ecma262/#sec-logical-not-operator),
+  the [conditional operator](https://tc39.es/ecma262/#sec-conditional-operator),
+  the [comma operator](https://tc39.es/ecma262/#sec-comma-operator) and
+  the [`if` statement](https://tc39.es/ecma262/#sec-if-statement) (each
+  operand evaluated at most once, left to right, the condition read by
+  `ToBoolean`);
 - [OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis),
   [EvaluateCall](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-evaluatecall),
   [bound function exotic objects](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-bound-function-exotic-objects-call-thisargument-argumentslist),
@@ -588,6 +595,23 @@ Yogu. *Strict await.* microsoft/TypeScript issue #35419, opened 2019-11-29.
 
 **Context** for refusing `await` of a non-promise object. **Cited in**
 [TRUST-REDUCTION: illustration](TRUST-REDUCTION.md#illustration-nested-promises).
+
+## Compilation
+
+### Aho, Lam, Sethi and Ullman 2006
+
+Alfred V. Aho, Monica S. Lam, Ravi Sethi and Jeffrey D. Ullman.
+*Compilers: Principles, Techniques, and Tools*, second edition.
+Addison-Wesley, 2006.
+
+**Used for** the short-circuit ("jumping code") translation of a Boolean
+condition into branches (section 6.6.3, flow-of-control statements, and
+6.6.4, control-flow translation of Boolean expressions): `B.true` and
+`B.false` passed down, `!` exchanging them, `&&` and `||` evaluating their
+right operand only where the left one does not decide. The translation there
+is of a three-address language; the correspondence with JavaScript's
+evaluation is argued where it is used.
+**Discussed in** [SOURCE-ELABORATION: conditions](SOURCE-ELABORATION.md#conditions).
 
 ## Tools
 
