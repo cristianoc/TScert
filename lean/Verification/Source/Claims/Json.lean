@@ -514,7 +514,7 @@ check (`DocumentSafe`); for a group, its plans crossing the exhaustive
 certification boundary and every certified request safe, and within its
 footprint where it claims one (`RequestsSafe`). -/
 def UnitSafe (e : FileEvidence) (budget : PositiveCertificates.SearchBudget) (unit : String) : Prop :=
-  (∃ parts m evidence, e.modules = .ok parts ∧ (m, evidence) ∈ parts ∧
+  (∃ parts m evidence, e.modules = .ok parts ∧ (m, evidence) ∈ parts ∧ "module:" ++ m.location = unit ∧
     DocumentSafe m.ast m.claims m.location evidence budget m.qualified) ∨
   (∃ i certified b, e.fr.unitId i = unit ∧ e.certified (e.fr.group i) = .ok certified ∧ e.b = .ok b ∧
     RequestsSafe e.F (CertifiedPlan.requests certified) (bundleOf b (e.fr.group i)))
@@ -529,13 +529,17 @@ theorem unitVerdict_safe {e : FileEvidence} {budget : PositiveCertificates.Searc
     | ok parts =>
       simp only [hp, Bind.bind, Except.bind] at h
       split at h
-      · rename_i m0 _ _ _ m' evidence rest hfilter
+      · rename_i m0 tail hm0 _ m' evidence rest hfilter
         have hin : (m', evidence) ∈ parts.filter (fun x => x.1.location == m0.location) := by
           rw [hfilter]; exact List.mem_cons_self
-        have hmem := (List.mem_filter.mp hin).1
+        obtain ⟨hmem, hloc⟩ := List.mem_filter.mp hin
+        have hin0 : m0 ∈ e.p.modules.filter (fun m => "module:" ++ m.location == unit) := by
+          rw [hm0]; exact List.mem_cons_self
+        have hunit : "module:" ++ m0.location = unit := by simpa using (List.mem_filter.mp hin0).2
+        have hsame : m'.location = m0.location := by simpa using hloc
         cases hd : checkDocument m'.ast m'.claims m'.location evidence budget m'.qualified with
         | error err => simp [hd, Except.mapError] at h
-        | ok u => exact ⟨parts, m', evidence, rfl, hmem, checkDocument_safe hd⟩
+        | ok u => exact ⟨parts, m', evidence, rfl, hmem, by rw [hsame]; exact hunit, checkDocument_safe hd⟩
       · simp at h
   · right
     cases hi : (List.range e.fr.units.length).find? (e.fr.unitId · == unit) with

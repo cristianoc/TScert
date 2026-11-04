@@ -39,7 +39,7 @@ import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
 import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type UnitResult } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
-import { classify, coverageComparison, coverageReport, inventory, type Outcomes, type Unit, type UnitRecord,
+import { classify, coverageComparison, coverageReport, inventory, type Outcomes, type Unit,
   type UnitScope } from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -97,6 +97,10 @@ type SourceModel = {
   reexports: { name: string; target: ImportTarget }[];
   /** The names its declarations that run nothing bind: types, interfaces, `const` and ambient enums. */
   types: Set<string>;
+  /** The values its initialization binds: constants, cells, classes and enums. */
+  values: Set<string>;
+  /** The function its `export default function` declares, if any. */
+  defaultFunction: string | null;
   lineStarts: number[];
 };
 
@@ -126,11 +130,14 @@ function sourceModel(root: string, file: string): SourceModel {
   const functions = new Map<string, { mentions: Set<string>; group: string[] }>();
   const initMentions = new Set<string>();
   const types = new Set<string>();
+  const values = new Set<string>();
+  let defaultFunction: string | null = null;
   let hasInit = false;
   for (const s of tree.statements) {
     const span = { start: s.getStart(tree), end: s.end };
     if (ts.isFunctionDeclaration(s) && s.name) {
       statements.push({ ...span, kind: "function", name: s.name.text });
+      if (childrenOf(s, "modifiers").some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)) defaultFunction = s.name.text;
       if (s.body) functions.set(s.name.text, { mentions: identifiers(s, new Set()), group: [] });
     } else if (ts.isImportDeclaration(s)) {
       const clause = s.importClause;
@@ -163,6 +170,9 @@ function sourceModel(root: string, file: string): SourceModel {
     } else if (runsInInit(s)) {
       hasInit = true;
       for (const m of identifiers(s, new Set())) initMentions.add(m);
+      if (ts.isVariableStatement(s))
+        for (const d of s.declarationList.declarations) for (const n of identifiers(d.name, new Set())) values.add(n);
+      if ((ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)) && s.name) values.add(s.name.text);
       statements.push({ ...span, kind: "init" });
     } else statements.push({ ...span, kind: "other" });
   }
@@ -183,7 +193,7 @@ function sourceModel(root: string, file: string): SourceModel {
   const lineStarts = [0];
   for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
   return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, types,
-    lineStarts };
+    values, defaultFunction, lineStarts };
 }
 
 /** The omissions a refusal located in a census file makes: the function
@@ -217,13 +227,27 @@ function importNodes(models: (file: string) => SourceModel, t: ImportTarget, dep
   if (t === null) return [];
   const m = models(t.file);
   const init = [nodeKey(m.file, initOmission)];
-  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), ...init];
+  if (depth > 8) return "unresolved";
+  // A namespace: every function and the initialization, and every re-exported binding.
+  if (t.imported === "*") {
+    const out = [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), ...init];
+    for (const r of m.reexports) {
+      if (r.target === null) continue;
+      const nodes = importNodes(models, r.name === "*" ? r.target : r.target, depth + 1);
+      if (nodes === "unresolved") return "unresolved";
+      out.push(...nodes);
+    }
+    return out;
+  }
+  if (t.imported === "default")
+    return m.defaultFunction !== null ? [nodeKey(m.file, m.defaultFunction)] : init;
   if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
   if (m.types.has(t.imported)) return [];
+  if (m.values.has(t.imported)) return init;
   const re = m.reexports.find((r) => r.name === t.imported) ?? null;
-  if (re) return depth > 8 ? "unresolved" : importNodes(models, re.target, depth + 1);
-  if (m.reexports.some((r) => r.name === "*")) return "unresolved";
-  return init;
+  if (re) return importNodes(models, re.target, depth + 1);
+  // A binding a star re-export may bind, or one the census cannot place.
+  return "unresolved";
 }
 
 /** The nodes the census adds to a unit's own dependencies: its file's
@@ -300,11 +324,20 @@ function ownResult(runs: ReadonlyMap<string, FileRun>, file: string, name: strin
 function nodeDepends(runs: ReadonlyMap<string, FileRun>, key: NodeKey): NodeKey[] | "unresolved" {
   const at = key.indexOf("#");
   const file = key.slice(0, at), name = key.slice(at + 1);
-  const own = ownResult(runs, file, name)?.depends ?? [];
-  if (name.startsWith("module:")) return own;
-  const edges = runs.get(file)?.model.find((x) => x.name === name)?.edges ?? [];
-  if (edges === "unresolved") return "unresolved";
-  return [...new Set([...own, ...edges])];
+  const own = ownResult(runs, file, name);
+  if (name.startsWith("module:")) return own?.depends ?? [];
+  // The census's edges of every member of the unit the check certified the node with.
+  const run = runs.get(file);
+  const unit = run?.units.find((u) => u.unit === own?.unit);
+  const members = unit ? unit.members.map(memberName) : [name];
+  const out = new Set<NodeKey>(own?.depends ?? []);
+  for (const member of members) {
+    const edges = run?.model.find((x) => x.name === member)?.edges ?? [];
+    if (edges === "unresolved") return "unresolved";
+    for (const e of edges) out.add(e);
+  }
+  out.delete(key);
+  return [...out];
 }
 
 /** The first node of a node's closure, breadth-first, whose unit is not
@@ -531,6 +564,27 @@ async function census(args: string[]): Promise<void> {
   const runs = new Map<string, FileRun>();
   const omissions = new Map<string, Map<string, OwnResult>>();
   const ran = new Map<string, string>();
+  // The statement inventory, read once; the record, written after each round, so a stopped census keeps its rounds.
+  const units: Unit[] = [];
+  const fileHashes: { file: string; sourceSha256: string }[] = [];
+  for (const file of chosen) {
+    const text = readFileSync(join(root, file), "utf8");
+    units.push(...inventory(file, openText(join(root, file), text)));
+    fileHashes.push({ file, sourceSha256: sha256(text) });
+  }
+  closeParser();
+  const setting = storeSetting();
+  const writeRecord = (): void => {
+    const record: CensusRecord = {
+      source: { commit, dirty, directory, files, functions },
+      policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
+      started: new Date(Date.now() - (performance.now() - started)).toISOString(),
+      elapsedMs: performance.now() - started,
+      files: [...runs.values()],
+      inventory: { files: fileHashes, units },
+    };
+    writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
+  };
   for (let round = 1; ; round++) {
     // A file whose initialization runs nothing has nothing to check for it.
     const checked = (file: string, names: Set<string>): string[] =>
@@ -557,6 +611,7 @@ async function census(args: string[]): Promise<void> {
         : `${run.units.filter((u) => u.status === "verified").length} of ${run.units.length} units accepted`}` +
         `${known.size ? `, ${known.size} omitted` : ""}\n`);
     }));
+    writeRecord();
     if (shallowOnly) break;
     for (const [file, names] of [...want])
       for (const name of [...names]) {
@@ -568,24 +623,7 @@ async function census(args: string[]): Promise<void> {
         }
       }
   }
-  const units: Unit[] = [];
-  const fileHashes: { file: string; sourceSha256: string }[] = [];
-  for (const file of chosen) {
-    const text = readFileSync(join(root, file), "utf8");
-    units.push(...inventory(file, openText(join(root, file), text)));
-    fileHashes.push({ file, sourceSha256: sha256(text) });
-  }
-  closeParser();
-  const setting = storeSetting();
-  const record: CensusRecord = {
-    source: { commit, dirty, directory, files, functions },
-    policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
-    started: new Date(Date.now() - (performance.now() - started)).toISOString(),
-    elapsedMs: performance.now() - started,
-    files: [...runs.values()],
-    inventory: { files: fileHashes, units },
-  };
-  writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
+  writeRecord();
   process.stdout.write(summary(readCensus(recordPath), false));
   process.stdout.write(`record: ${recordPath}\n`);
 }
