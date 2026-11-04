@@ -79,9 +79,21 @@ async function writer(store: Store, kind: string, attempt: string, invocation: r
   const args = invocation.length ? ["--paused-invocation", ...invocation] : ["--writer", store.root, kind, attempt];
   const child = spawn(process.execPath, [import.meta.filename, ...args],
     { env: { ...process.env, TSCERT_STAGE_STORE: store.root }, timeout: 30_000, killSignal: "SIGKILL" });
+  const started = Date.now();
+  let errors = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: unknown) => {
+    errors += String(chunk);
+  });
   const closed = new Promise<number | null>((done, fail) => {
     child.on("error", fail);
-    child.on("close", done);
+    child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+      // A writer ended by a signal, a test's own kill or another, says which and when.
+      if (code === null)
+        process.stderr.write(`writer ${args.join(" ")} ended by ${String(signal)} after ${Date.now() - started} ms${
+          errors ? `; its standard error: ${errors.trim().slice(0, 2000)}` : ""}\n`);
+      done(code);
+    });
   });
   const directory = await new Promise<string>((done, fail) => {
     let out = "";
