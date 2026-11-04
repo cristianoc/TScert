@@ -1,11 +1,16 @@
-<p align="center"><img src="assets/logo.svg" width="128" alt="TScert logo"></p>
-
-# TScert
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/lockup-dark.png">
+    <img src="assets/readme/lockup-light.png" width="560" alt="TScert: TypeScript functions accepted only with a proof">
+  </picture>
+</p>
 
 TScert checks that TypeScript functions are type-safe, and accepts a function
 only with a proof. A checker whose soundness is proved in Lean validates that
 proof. It never trusts the types that TypeScript or the proposing tools infer;
 what it does trust is listed under [What acceptance means](#what-acceptance-means).
+
+https://github.com/user-attachments/assets/cd5e8498-c72a-4287-a7af-412689d98cbf
 
 ## Why
 
@@ -13,12 +18,14 @@ TypeScript's type checker is deliberately unsound in places: `any`, type
 assertions, unchecked index reads and covariant arrays let programs that pass
 `tsc` still read `undefined` where a type says `string`. TScert gives a stronger
 answer for the code it accepts: for every input that meets its annotations, the
-function's translation into a formal model never applies an operation to a value it does not fit, and never
-returns a value outside its result type. A theorem in Lean states that
-guarantee, and the checker that decides acceptance is the code the theorem is
-about.
+function's translation into a formal model never applies an operation to a value
+it does not fit, and never returns a value outside its result type. A theorem in
+Lean states that guarantee, and the checker that decides acceptance is the code
+the theorem is about.
 
 ## An example
+
+<img src="assets/readme/checker.png" width="110" align="right" alt="The checker, a turnstile with a magnifying glass">
 
 TypeScript accepts this function (under `strict`, which leaves
 `noUncheckedIndexedAccess` off). TScert refuses it:
@@ -46,7 +53,10 @@ and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element
 
 ## How it works
 
-![Architecture: source parsing, Lean execution plans, OCaml type proposals, Lean typed elaboration, evidence search and certificate checking.](diagrams/architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/architecture-dark.png">
+  <img src="assets/readme/architecture-light.png" alt="Parse, plan and elaborate are trusted on review; propose and search are proposals that may be wrong; check is proved sound and receives the certificate and the same request elaboration produced.">
+</picture>
 
 1. **Parse.** A front end on TypeScript's compiler API reads the source and the
    declarations it uses.
@@ -59,14 +69,8 @@ and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element
    small formal language (the *calculus*) whose execution and safety are
    defined in Lean.
 5. **Search, then check.** An untrusted search in Lean looks for a
-   *certificate*, a derivation that the program meets its types; the trusted
-   checker validates it against the exact translated program.
-
-Colours in the diagram: blue parts propose and may be wrong; green parts check,
-with a proved safety consequence; amber parts translate source and are trusted
-on review and tests. Grey boxes are the documents passed between stages: the
-*Fragment* is the parsed source, *SourceClaims* the producer's claims, and the
-*calculus request* the translated program with the obligations it must meet.
+   *certificate*, a derivation that the program meets its types; the checker
+   validates it against the same request elaboration produced.
 
 ## What acceptance means
 
@@ -89,27 +93,12 @@ exactly.
 
 ## Status
 
-TScert is a research project. It handles a substantial subset of TypeScript;
-the [status table](WORK.md#status) records what works and what is open,
-including how much of TScert's own front end it verifies, the benchmark that
-drives its development.
-
-Coverage reports distinguish these metrics:
-
-| Metric | What is counted | Purpose |
-| --- | --- | --- |
-| Front-end function coverage | Verified named top-level function declarations with bodies / all such declarations in `tools/` | Headline benchmark and release threshold |
-| Front-end statement coverage | Verified executable statements / counted statements inside those function bodies | Separate measure of source coverage |
-| Multi-directory coverage | Counts across explicitly named directories, such as `tools/`, `dev/`, `tests/` and `pipeline/` | Broader project comparison, reported separately |
-
-Every percentage is reported with its numerator, denominator and scope.
-A percentage of functions does not state the percentage of statements
-verified. Class members, module initializers and functions held by module
-bindings are outside the function census. A release `v0.N` requires at least
-`N × 10%` front-end function coverage in the complete `tools/` census on main. The
-[release metric](docs/DESIGN.md#function-coverage-and-release-thresholds) and
-[statement coverage](docs/DESIGN.md#statement-coverage) have separate definitions.
-The [status table](WORK.md#status) owns the dated measurements.
+TScert is a research project, unfinished by design. Its benchmark is its own
+front end: at [v0.9](https://github.com/cristianoc/TScert/releases/tag/v0.9),
+628 of the 684 functions of `tools/` verify (census of `1589e590`,
+2026-11-03). The [coverage metrics](docs/DESIGN.md#function-coverage-and-release-thresholds)
+and the [status table](WORK.md#status) give the definitions and the dated
+measurements.
 
 In outline, the supported subset covers:
 
@@ -129,6 +118,16 @@ In outline, the supported subset covers:
 unsupported form is refused with a reason and a location. The
 [fragment boundary](docs/SOURCE-FRAGMENT.md#fragment-boundary) lists what is
 refused and why.
+
+## On the shoulders of
+
+TScert builds on decades of work on types and semantics, among them Appel and
+McAllester's indexed model for foundational proof-carrying code, Ahmed's
+semantics of types for mutable state, Wright and Felleisen's syntactic type
+soundness, Reynolds's parametricity, Abadi and Cardelli's theory of objects,
+semantic subtyping (Frisch, Castagna and Benzaken), JSCert, the ECMAScript
+specification and Lean 4. [REFERENCES](docs/REFERENCES.md) lists every work, with
+what TScert takes from it and where.
 
 ## Try it
 
