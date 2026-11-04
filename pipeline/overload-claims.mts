@@ -94,14 +94,14 @@ export function checkOverloads(verifier: string, artifacts: string): void {
     edit(claims);
     const file = join(artifacts, "forged-overload.json");
     writeFileSync(file, JSON.stringify(claims));
-    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    for (const mode of ["--produce-units", "--check-units"]) {
       const p = tested(verifierCall(verifier, [
           mode,
           join(artifacts, "fragment.json"),
           file,
           sourceKey(artifacts),
-          join(artifacts, "evidence.json"),
-          ...(mode === "--produce-source-claims" ? ["12"] : []),
+          join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
+          ...(mode === "--produce-units" ? ["12"] : []),
         ]));
       assert.ifError(p.error);
       assert.equal(p.signal, null);

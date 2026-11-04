@@ -445,79 +445,6 @@ function planRefused(recorder: Recorder, ast: string, reads: QualifiedRead[], us
   }))];
 }
 
-/** The search of a document with certified imports, run by run: the plan
-stage's runs (`--plan-imports`) searched in its order, the importer's under
-its file key `snapshot`, then each module run's under its location, up to
-the first that fails. Each run is a stage of its own, so a run whose
-document, claims and qualified reads are unchanged replays. The stages share
-one step limit, each given what the earlier ones left, and a failure of a
-tool is reported as the whole document's search's (`--produce-source-claims`)
-is. Its refusal is that search's: the plan's, the importer's, or a module
-run's prefixed `module <location>: `; on success the evidence is written to
-`evidence` as that search writes it, and the log is the last run's. */
-function searchRuns(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
-    evidence: string, budget: string[]): { produced: Ran; refusal: string | null } {
-  const program = [basename(verifier), ...budget.filter((a) => a.startsWith("--"))].join(" ");
-  const whole = `${program} --produce-source-claims`;
-  // A failure of a tool names the stage as `runStep` (`tool failure: <program> <mode>`)
-  // or `refusalOf` (`tool failure: verifier <mode>`) states it, renamed as the whole search's.
-  const renamed = (message: string, named: string, as: string): string => {
-    for (const mode of ["--plan-imports", "--produce-run"]) {
-      const at = `tool failure: ${named} ${mode}`;
-      if (message.startsWith(at)) return `tool failure: ${as}${message.slice(at.length)}`;
-    }
-    return message;
-  };
-  const deadline = performance.now() + stepTimeoutMs;
-  const timeout = `timeout: ${whole} did not finish within ${stepTimeoutMs / 1000} s`;
-  const step = (args: string[]): Ran => {
-    const left = Math.floor(deadline - performance.now());
-    if (left <= 0) throw Error(timeout);
-    try {
-      return runStep(verifierCall(verifier, [...budget, ...args]), recorder, left);
-    } catch (error) {
-      const message = messageOf(error);
-      // A timeout, fresh or replayed, is the whole search's at its limit.
-      if (message.startsWith("timeout: "))
-        throw Error(message.replace(/^timeout: .*? did not finish within [0-9.]+ s/, () => timeout));
-      throw Error(renamed(message, program, whole));
-    }
-  };
-  const named = (text: string): string => renamed(text, "verifier", "verifier --produce-source-claims");
-  const refusalOfStep = (ran: Ran, mode: string): string | null => {
-    try {
-      return verifierRefusal(ran, mode);
-    } catch (error) {
-      throw Error(named(messageOf(error)));
-    }
-  };
-  const planned = step(["--plan-imports", ast, claims]);
-  const planRefusal = refusalOfStep(planned, "--plan-imports");
-  if (planRefusal !== null) return { produced: planned, refusal: planRefusal };
-  const runs = planned.out.split("\n").filter((line) => line !== "");
-  const parts: string[] = [];
-  let last: Ran = planned;
-  for (const [index, text] of runs.entries()) {
-    const location = index === 0 ? null : field(JSON.parse(text), "location");
-    if (location !== null && typeof location !== "string") throw Error("a planned module run names no location");
-    const run = join(artifacts, `run-${index}.json`), runEvidence = join(artifacts, `run-${index}.evidence.json`);
-    writeFileSync(run, text);
-    const produced = step(["--produce-run", run, location ?? snapshot, runEvidence, String(searchDepth)]);
-    const refusal = refusalOfStep(produced, "--produce-run");
-    if (refusal !== null) {
-      if (location === null) return { produced, refusal };
-      // The location is inserted as written: a replacement function reads no `$` pattern in it.
-      const inModule = (text: string): string => text.replace(/^reject: /, () => `reject: module ${location}: `);
-      return { produced: { ...produced, detail: inModule(produced.detail) }, refusal: inModule(refusal) };
-    }
-    last = produced;
-    parts.push(readFileSync(runEvidence, "utf8").trimEnd());
-  }
-  // Spliced as text, as the claims assembly is: a bigint literal's digits pass through unrounded.
-  writeFileSync(evidence, `{"main":${parts[0] ?? "null"},"modules":[${parts.slice(1).join(",")}]}\n`);
-  return { produced: last, refusal: null };
-}
-
 /** The parse stage of `source`, read in the project `tsconfigPath` (or a
  * snapshot's own), its log and the TypeScript errors its gate read written
  * under `artifacts`: the parse, the source's bytes, the snapshot it parsed and the file its
@@ -569,71 +496,114 @@ function failedRun(artifacts: string, reason: string): RunFailure {
   }
 }
 
-/** One round of a check of each unit: the file's units as its front lists
- * them (`--units`), then each unit's search (`--produce-unit`) and check
- * (`--check-unit`), each a stage of its own with its own step limit. A
- * refusal naming a certified import asks for that import's withdrawal; a
- * refused front refuses every unit. */
+/** One round of a check of each unit: the search of the file's selected
+units (`--produce-units`) and their check (`--check-units`), each over the
+file's one front. Where the search of the file does not finish within its
+limit, each unit is searched and checked on its own, so the limit is each
+unit's. A refusal naming a certified import asks for that import's
+withdrawal; a refused front refuses every unit. */
 function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
     budget: string[], select: string[] | null): { withdraw: string } | { front: string } | { results: UnitResult[] } {
-  const listed = runStep(verifierCall(verifier, [...budget, "--units", ast, claims, snapshot]), recorder);
-  const front = verifierRefusal(listed, "--units");
-  if (front !== null) {
-    const failed = failedImport(front);
-    return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front };
-  }
+  const named = select === null ? [] : [select.join(",")];
+  const search = (evidence: string, names: string[]): { refused: Map<string, string>; front: string | null } => {
+    const produced = runStep(verifierCall(verifier, [...budget, "--produce-units", ast, claims, snapshot, evidence,
+      String(searchDepth), ...names]), recorder);
+    writeFileSync(join(artifacts, "search.log"), produced.detail);
+    const refusal = verifierRefusal(produced, "--produce-units");
+    const lines = produced.out.split("\n");
+    if (refusal !== null && !lines.some((l) => l.startsWith("checked source evidence written: ")))
+      return { refused: new Map(), front: refusal };
+    return { front: null, refused: new Map(lines.filter((l) => l.startsWith("refused: ")).map((l): [string, string] => {
+      const value: unknown = JSON.parse(l.slice("refused: ".length));
+      const unit = field(value, "unit"), detail = field(value, "refusal");
+      if (typeof unit !== "string" || typeof detail !== "string")
+        throw Error("tool failure: verifier --produce-units printed a malformed refusal");
+      return [unit, detail];
+    })) };
+  };
   const strings = (value: unknown): string[] => {
     if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
-      throw Error("tool failure: verifier --units listed a unit without its members or dependencies");
+      throw Error("tool failure: verifier listed a unit without its members or dependencies");
     return value;
   };
-  const listing = listed.out.split("\n").filter((line) => line !== "").map((line) => {
-    const value: unknown = JSON.parse(line);
-    const unit = field(value, "unit");
-    if (typeof unit !== "string") throw Error("tool failure: verifier --units listed a unit without its identity");
-    return { unit, members: strings(field(value, "members")) };
-  });
-  const results: UnitResult[] = [];
-  for (const [index, { unit, members }] of listing.entries()) {
-    // A module run is checked whenever its file is: the units reading it qualified depend on it.
-    if (select !== null && !unit.startsWith("module:") && !members.some((m) => select.includes(memberName(m)))) continue;
-    const evidence = join(artifacts, `unit-${index}.evidence.json`);
-    const refused = (phase: "search" | "check", detail: string): { withdraw: string } | UnitResult => {
-      const failed = failedImport(detail);
-      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` }
-        : { unit, members, status: refusalStatus(detail), phase, detail, depends: [] };
-    };
-    let result: { withdraw: string } | UnitResult;
-    try {
-      const produced = runStep(verifierCall(verifier, [...budget, "--produce-unit", ast, claims, snapshot, evidence, unit,
-        String(searchDepth)]), recorder);
-      const searchRefusal = verifierRefusal(produced, "--produce-unit");
-      if (searchRefusal !== null) result = refused("search", searchRefusal);
-      else {
-        const checked = runStep(verifierCall(verifier, [...budget, "--check-unit", ast, claims, snapshot, evidence, unit]),
-          recorder);
-        const checkRefusal = verifierRefusal(checked, "--check-unit");
-        if (checkRefusal !== null) result = refused("check", checkRefusal);
-        else {
-          const line = checked.out.split("\n").find((l) => l.startsWith("depends: "));
-          if (line === undefined) throw Error("tool failure: verifier --check-unit accepted without its dependencies");
-          result = { unit, members, status: "verified", phase: "check", detail: "",
-            depends: strings(JSON.parse(line.slice("depends: ".length))) };
-        }
-      }
-    } catch (error) {
-      result = { unit, members, status: "error", phase: "search", detail: messageOf(error), depends: [] };
+  const check = (evidence: string, names: string[], refused: Map<string, string>): UnitResult[] | string => {
+    const checked = runStep(verifierCall(verifier, [...budget, "--check-units", ast, claims, snapshot, evidence, ...names]),
+      recorder);
+    writeFileSync(join(artifacts, "check.log"), checked.detail);
+    const verdicts = checked.out.split("\n").filter((l) => l.startsWith("{"));
+    const refusal = verifierRefusal(checked, "--check-units");
+    if (refusal !== null && verdicts.length === 0) return refusal;
+    return verdicts.map((line): UnitResult => {
+      const value: unknown = JSON.parse(line);
+      const unit = field(value, "unit"), members = strings(field(value, "members"));
+      if (typeof unit !== "string") throw Error("tool failure: verifier --check-units printed a verdict without its unit");
+      if (field(value, "accepted") === true)
+        return { unit, members, status: "verified", phase: "check", detail: "", depends: strings(field(value, "depends")) };
+      const searchRefusal = refused.get(unit);
+      const reason = searchRefusal ?? field(value, "refusal");
+      if (typeof reason !== "string") throw Error("tool failure: verifier --check-units printed a verdict without its refusal");
+      // A unit's refusal reads as the verifier's refusal of a command does.
+      const detail = `reject: ${reason}`;
+      return { unit, members, status: refusalStatus(detail), phase: searchRefusal !== undefined ? "search" : "check",
+        detail, depends: [] };
+    });
+  };
+  const withdrawal = (results: UnitResult[]): { withdraw: string } | null => {
+    for (const r of results) {
+      const failed = r.status === "verified" ? null : failedImport(r.detail);
+      if (failed) return { withdraw: `${failed.module}#${failed.name ?? "*"}` };
     }
-    if ("withdraw" in result) return result;
-    results.push(result);
+    return null;
+  };
+  const evidence = join(artifacts, "evidence.json");
+  let results: UnitResult[];
+  try {
+    const searched = search(evidence, named);
+    if (searched.front !== null) {
+      const failed = failedImport(searched.front);
+      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front: searched.front };
+    }
+    const checked = check(evidence, named, searched.refused);
+    if (typeof checked === "string") {
+      const failed = failedImport(checked);
+      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front: checked };
+    }
+    results = checked;
+  } catch (error) {
+    if (!messageOf(error).startsWith("timeout: ")) throw error;
+    // Each unit on its own: the units as the front lists them, each searched and checked by its first member's name.
+    const listed = runStep(verifierCall(verifier, [...budget, "--units", ast, claims, snapshot, ...named]), recorder);
+    const front = verifierRefusal(listed, "--units");
+    if (front !== null) return { front };
+    results = [];
+    for (const [index, line] of listed.out.split("\n").filter((l) => l !== "").entries()) {
+      const value: unknown = JSON.parse(line);
+      const unit = field(value, "unit"), members = strings(field(value, "members"));
+      if (typeof unit !== "string") throw Error("tool failure: verifier --units listed a unit without its identity");
+      const first = members[0];
+      // A module run is checked with every unit of its file.
+      if (first === undefined) continue;
+      const own = join(artifacts, `unit-${index}.evidence.json`);
+      try {
+        const searched = search(own, [memberName(first)]);
+        const checked = searched.front ?? check(own, [memberName(first)], searched.refused);
+        if (typeof checked === "string")
+          results.push({ unit, members, status: refusalStatus(checked), phase: "search", detail: checked, depends: [] });
+        else results.push(...checked.filter((r) => r.unit === unit || (r.unit.startsWith("module:") &&
+          !results.some((x) => x.unit === r.unit))));
+      } catch (unitError) {
+        results.push({ unit, members, status: "error", phase: "search", detail: messageOf(unitError), depends: [] });
+      }
+    }
   }
-  return { results };
+  return withdrawal(results) ?? { results };
 }
 
 /** A completed run releases its artifacts. A file consumer requests retention
  * and uses `using result = check(...)` to release them after consumption. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection | null = null): Outcome & Disposable {
+    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection = { omitted: [], select: null }):
+    Outcome & Disposable {
   const artifacts = runDirectory("pipeline-");
   try {
     return ownedRun(checkUnowned(artifacts, source, tsconfigPath, typescriptErrors, subtypeRounds, units), retainArtifacts);
@@ -645,7 +615,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
 function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, units: UnitSelection | null = null): Outcome {
+    subtypeRounds?: number, units: UnitSelection = { omitted: [], select: null }): Outcome {
   using directoryScope = withinRunDirectory(artifacts);
   // Every stage invocation's attempt, in order (`stages.mts`).
   const recorder = new Recorder(join(artifacts, invocationLog));
@@ -655,7 +625,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
       throw Error("subtype rounds must be a natural number");
-    const { parsed, bytes, snapshot, resolution } = parseSource(source, tsconfigPath, artifacts, recorder, units?.omitted ?? []);
+    const { parsed, bytes, snapshot, resolution } = parseSource(source, tsconfigPath, artifacts, recorder, units.omitted);
     const refusedErrors = () =>
       typescriptErrors
         ? typeScriptErrors(recorder, resolution, tsconfigPath)
@@ -710,11 +680,8 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     // (`searchRuns`), so a later round replays the runs it leaves unchanged.
     const modules = new ModuleRuns(recorder, artifacts, parsedData);
     const withdrawn = new Set<string>();
-    const claims = join(artifacts, "claims.json"),
-      evidence = join(artifacts, "evidence.json");
+    const claims = join(artifacts, "claims.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
-    let produced: Ran;
-    let searchRefusal: string | null = null;
     for (;;) {
       phase = "proposal";
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
@@ -742,66 +709,27 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
       phase = "search";
-      if (units !== null) {
-        const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
-        if ("withdraw" in round) {
-          if (withdrawn.has(round.withdraw)) return { status: "error", artifacts, phase,
-            detail: `a refusal names the certified import ${round.withdraw} again after its withdrawal`, units: null };
-          withdrawn.add(round.withdraw);
-          continue;
-        }
-        if ("front" in round)
-          return { status: refusalStatus(round.front), artifacts, phase, detail: round.front, units: null };
-        const refused = round.results.find((u) => u.status !== "verified");
-        if (refused === undefined)
-          return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results };
-        return { status: refused.status === "verified" ? "error" : refused.status, artifacts, phase: refused.phase,
-          detail: refused.detail, units: round.results };
+      const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
+      if ("withdraw" in round) {
+        if (withdrawn.has(round.withdraw)) return { status: "error", artifacts, phase,
+          detail: `a refusal names the certified import ${round.withdraw} again after its withdrawal`, units: null };
+        withdrawn.add(round.withdraw);
+        continue;
       }
-      if (reads.length > 0)
-        ({ produced, refusal: searchRefusal } = searchRuns(recorder, artifacts, ast, claims, snapshot, evidence, budget));
-      else {
-        produced = runStep(verifierCall(verifier, [
-          ...budget,
-          "--produce-source-claims",
-          ast,
-          claims,
-          snapshot,
-          evidence,
-          String(searchDepth),
-        ]), recorder);
-        searchRefusal = verifierRefusal(produced, "--produce-source-claims");
-      }
-      const failed = searchRefusal !== null ? failedImport(searchRefusal) : null;
-      if (!failed) break;
-      const key = `${failed.module}#${failed.name ?? "*"}`;
-      if (withdrawn.has(key)) break;
-      withdrawn.add(key);
-    }
-    writeFileSync(join(artifacts, "search.log"), produced.detail);
-    if (searchRefusal !== null)
-      return {
-        status: refusalStatus(searchRefusal),
-        artifacts,
-        phase,
-        detail: refusedByName(namingTheObligation(searchRefusal, bytes.toString("utf8")),
+      if ("front" in round)
+        return { status: refusalStatus(round.front), artifacts, phase, detail: round.front, units: null };
+      const first = round.results.find((u) => u.status !== "verified");
+      if (first === undefined)
+        return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results };
+      // The file's refusal is its first unit's, a search's named as a whole-file search names it.
+      const detail = first.phase === "search" && first.status !== "error"
+        ? refusedByName(namingTheObligation(first.detail, bytes.toString("utf8")),
           () => readExplanations(runStep(producerCall(producerExecutable, ["--explain", ast, flow]), recorder)),
-          refusedErrors),
-      };
-    phase = "check";
-    const checked = runStep(verifierCall(verifier, [
-      ...budget,
-      "--check-source-claims",
-      ast,
-      claims,
-      snapshot,
-      evidence,
-    ]), recorder);
-    writeFileSync(join(artifacts, "check.log"), checked.detail);
-    const checkRefusal = verifierRefusal(checked, "--check-source-claims");
-    if (checkRefusal !== null)
-      return { status: refusalStatus(checkRefusal), artifacts, phase, detail: checkRefusal };
-    return { status: "verified", artifacts, phase, functions, initialization };
+          refusedErrors)
+        : first.detail;
+      return { status: first.status === "verified" ? "error" : first.status, artifacts, phase: first.phase,
+        detail, units: round.results };
+    }
   } catch (e) {
     return {
       status: "error",
@@ -851,7 +779,7 @@ function readUnitResults(value: unknown): UnitResult[] {
 }
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
 type Request = { artifacts: string; source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number;
-  retainArtifacts: boolean; units: UnitSelection | null };
+  retainArtifacts: boolean; units: UnitSelection };
 function readRequest(value: unknown): Request {
   if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
       !("artifacts" in value) || typeof value.artifacts !== "string" ||
@@ -865,10 +793,8 @@ function readRequest(value: unknown): Request {
   const strings = (x: unknown): string[] | null =>
     Array.isArray(x) && x.every((u): u is string => typeof u === "string") ? x : null;
   const omitted = strings(field(given, "omitted")), select = field(given, "select");
-  const units: UnitSelection | null = given === null ? null
-    : omitted && (select === null || strings(select)) ? { omitted, select: select === null ? null : strings(select) }
-    : null;
-  if (given !== null && units === null) throw Error("not a request");
+  if (!omitted || !(select === null || strings(select))) throw Error("not a request");
+  const units: UnitSelection = { omitted, select: select === null ? null : strings(select) };
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
     retainArtifacts: value.retainArtifacts, units };
 }
@@ -971,9 +897,8 @@ function give(worker: ChildProcess, job: Job): void {
   const died = () => settle(() => fail(timedOut
     ? `timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`
     : `no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`));
-  // A check of each unit runs a search and a check per unit, each under its
-  // own step limit: only a whole-file check is bounded as one.
-  const timer = job.request.units !== null ? undefined : setTimeout(() => {
+  // A check whose search runs each unit on its own is bounded by its steps' limits alone.
+  const timer = job.request.units.select !== null ? undefined : setTimeout(() => {
     timedOut = true;
     stopWorker(worker);
   }, checkTimeoutMs);
@@ -989,7 +914,8 @@ function give(worker: ChildProcess, job: Job): void {
  * `typescriptErrors`, whether a failed search is named by TypeScript's errors
  * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection | null = null): Promise<Outcome & Disposable> {
+    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection = { omitted: [], select: null }):
+    Promise<Outcome & Disposable> {
   runRoot();
   requireDiskSpace();
   return new Promise<Outcome>((done, fail) => {
@@ -1032,16 +958,15 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   const all = process.argv.slice(2);
   const budgetAt = all.indexOf("--subtype-rounds");
   const subtypeRounds = budgetAt < 0 ? undefined : Number(all.splice(budgetAt, 2)[1]);
-  const unitsAt = all.indexOf("--units");
-  // `--units` checks each unit on its own; `--omit f,g` reads those functions at their declared signatures.
+  // `--omit f,g` reads those functions at their declared signatures.
   const omitAt = all.indexOf("--omit");
   const omitted = omitAt < 0 ? [] : (all.splice(omitAt, 2)[1] ?? "").split(",").filter((n) => n !== "");
-  const units = unitsAt < 0 && omitAt < 0 ? null : { omitted, select: null };
+  const units = { omitted, select: null };
   const typescriptErrors = all.includes("--typescript-errors");
-  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--units");
+  const args = all.filter((a) => a !== "--typescript-errors");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n] [--units] [--omit f,g]\n");
+      " [--subtype-rounds n] [--omit f,g]\n");
     process.exitCode = 2;
   } else {
     // The printed outcome names the run's directory, kept for inspection.

@@ -64,7 +64,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Outcomes and acceptance
 
 - **binding-annotation** (obligation): a refusal's obligation kind for a binding whose initializer must meet its annotation ([node and expression obligations](OBLIGATION-DIAGNOSTICS.md#node-and-expression-obligations)).
-- **checkJson_safe**: the one headline theorem, whose premise is the verifier's exact success condition and whose conclusion is safety of every accepted function ([acceptance invariant](../AGENTS.md#acceptancesoundness-invariant)).
+- **checkUnitJson_safe**: the one headline theorem, whose premise is the verifier's exact success condition and whose conclusion is safety of every accepted function ([acceptance invariant](../AGENTS.md#acceptancesoundness-invariant)).
 - **error** / **tool failure**: an outcome certifying nothing: a crashed, killed or timed-out stage, or a failed file-system or compiler request ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **exhausted**: a verification budget was reached before the obligation was decided ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **gap**: a case or a construct that stays unsupported for a reason open work states, not a principled refusal ([the record](../.claude/skills/review/SKILL.md#the-record)).

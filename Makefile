@@ -47,8 +47,8 @@ check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 clean-store: ## remove stage entries, timeouts and the source snapshots no running process holds; FORGET_HOST=h counts host h's owners stopped (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
 	node pipeline/stages.mts clean $(if $(FORGET_HOST),--forget-host=$(FORGET_HOST))
 
-census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n, MODE=units (each unit checked on its own, with its dependency closure; SHALLOW=1 without it); a record per run; each stage limited to 300 s unless TSCERT_STEP_LIMIT says otherwise; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
-	TSCERT_STEP_LIMIT=$${TSCERT_STEP_LIMIT:-300} node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD)) $(if $(filter units,$(MODE)),--units) $(if $(SHALLOW),--shallow)
+census: ## the census of a directory's units: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,… (with their dependency closure; SHALLOW=1 without it), SHARD=i/n; a record per run; each stage limited to 300 s unless TSCERT_STEP_LIMIT says otherwise; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
+	TSCERT_STEP_LIMIT=$${TSCERT_STEP_LIMIT:-300} node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD)) $(if $(SHALLOW),--shallow)
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)

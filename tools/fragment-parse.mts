@@ -1273,8 +1273,8 @@ function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: st
   return { ast: main.ast, modules };
 }
 
-/** The omission naming the checked file's initialization: its statements
- * run nothing, and its bindings are read at their declared types. */
+/** The name of the checked file's initialization among omissions; a refused
+ * statement of it is omitted as `initOmission@<its start>`. */
 export const initOmission = ":init";
 
 /** A lowered file: its fragment, the module entry it is as an imported
@@ -1362,14 +1362,31 @@ function lowerFile(file: string, carriesContext: boolean,
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is
   // neither lowered nor read by the scans that collect what the lowering
-  // needs. With the initialization omitted (`initOmission`), its statements
-  // run nothing: a class is read as a `declare class`, an annotated module
-  // constant as a `declare const`, and no other binding of it is a value.
-  // The scans over binding facts (`eval`, `arguments`, shadowing, the names
+  // needs. An omitted statement of the initialization is a step whose
+  // effects are unknown, after which nothing it could change is known: the
+  // statement is not lowered, and a module constant keeps the value its own
+  // initializer gives it only where no statement can change that value, a
+  // function or a primitive literal. Any other constant is read as a
+  // `declare const` at its annotation, and without one is no value. The
+  // scans over binding facts (`eval`, `arguments`, shadowing, the names
   // bound) still read every omitted body.
   const isOmitted = (s: Node): s is FunctionDeclaration & { name: Identifier } =>
     ts.isFunctionDeclaration(s) && !!s.name && omitted.has(s.name.text);
-  const omitInit = omitted.has(initOmission);
+  const omittedSteps = new Set([...omitted].flatMap(n => n.startsWith(`${initOmission}@`)
+    ? [Number(n.slice(initOmission.length + 1))] : []));
+  const unchangeable = (e: Expression | undefined): boolean => {
+    let x = e;
+    while (x && ts.isParenthesizedExpression(x)) x = x.expression;
+    return !!x && (ts.isArrowFunction(x) || ts.isFunctionExpression(x) || ts.isStringLiteral(x) ||
+      ts.isNoSubstitutionTemplateLiteral(x) || ts.isNumericLiteral(x) || ts.isBigIntLiteral(x) ||
+      x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword ||
+      (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand)));
+  };
+  // A statement left out: an omitted step, or, once one is, a module constant whose value a step may change.
+  const stepLeftOut = (s: Statement): boolean => omittedSteps.size > 0 && isInitStatement(s) &&
+    (omittedSteps.has(s.getStart(source)) || (ts.isVariableStatement(s) &&
+      !!(s.declarationList.flags & ts.NodeFlags.Const) &&
+      !s.declarationList.declarations.every(d => unchangeable(d.initializer))));
   // The initialization's statements: every top-level statement but the
   // declarations that run nothing and the imports.
   const isInitStatement = (s: Statement): boolean =>
@@ -1396,7 +1413,7 @@ function lowerFile(file: string, carriesContext: boolean,
   };
   const scanOne = (s: Statement, find: (node: Node) => void): void => {
     if (isOmitted(s)) s.forEachChild((c) => { if (c !== s.body) find(c); });
-    else if (!(omitInit && isInitStatement(s))) find(s);
+    else if (!stepLeftOut(s)) find(s);
   };
   const scan = (find: (node: Node) => void): void => {
     for (const s of source.statements) scanOne(s, find);
@@ -1460,12 +1477,8 @@ function lowerFile(file: string, carriesContext: boolean,
   evalForms(source);
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
-    if (omitInit && isInitStatement(s)) {
-      if (ts.isClassDeclaration(s) && s.name) {
-        classNodes.push(s);
-        ambientNames.push(s.name);
-      }
-      if (ts.isVariableStatement(s) && s.declarationList.flags & ts.NodeFlags.Const)
+    if (stepLeftOut(s)) {
+      if (ts.isVariableStatement(s) && !!(s.declarationList.flags & ts.NodeFlags.Const))
         for (const d of s.declarationList.declarations) if (d.type && ts.isIdentifier(d.name)) ambientNames.push(d.name);
       continue;
     }

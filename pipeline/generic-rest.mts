@@ -25,19 +25,19 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     const parsed = join(artifacts, `${name}-ast.json`);
     writeFileSync(claimed, JSON.stringify(changed));
     writeFileSync(parsed, JSON.stringify(tree));
-    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    for (const mode of ["--produce-units", "--check-units"]) {
       const p = tested(verifierCall(verifier, [
           mode,
           parsed,
           claimed,
           sourceKey(artifacts),
-          join(artifacts, "evidence.json"),
-          ...(mode === "--produce-source-claims" ? ["12"] : []),
+          join(artifacts, mode === "--produce-units" ? "produced-evidence.json" : "evidence.json"),
+          ...(mode === "--produce-units" ? ["12"] : []),
         ]));
       assert.ifError(p.error);
       assert.equal(p.signal, null);
       assert.equal(p.status, 1, p.stdout + p.stderr);
-      assert.match(p.stdout + p.stderr, mode === "--produce-source-claims" ? reason : reusedReason);
+      assert.match(p.stdout + p.stderr, mode === "--produce-units" ? reason : reusedReason);
     }
   };
   const retyped = structuredClone(claims);

@@ -342,17 +342,6 @@ def extractMember (fr : Front) (T : EquationStore.State)
   let .graph _ _ r := plan
   return (r.types, plan)
 
-/-- The plans of a group of the front's units, by their indices, each
-extracted in turn from the front's store, and the store they end with: a
-unit's extraction sees what the front computed and nothing another unit's
-extraction added. -/
-def extractUnit (fr : Front) (members : List Nat) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) :=
-  members.foldlM (init := (fr.d.types, [])) fun (T, plans) i => do
-    let some u := fr.units[i]? | throw s!"no unit {i}"
-    let (next, plan) ← extractMember fr T u
-    return (next, plans ++ [plan])
-
 /-- A unit's identity on the wire: a function's name and its name's start,
 or `init` for the module's initialization. -/
 def Front.unitId (fr : Front) (i : Nat) : String :=

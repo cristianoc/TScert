@@ -24,9 +24,9 @@ The protocol has three documents:
 ```sh
 lean/.lake/build/bin/verifier --lower-control-flow ast.json
 lean/.lake/build/bin/verifier --lower-program ast.json source-claims.json file-key
-lean/.lake/build/bin/verifier --produce-source-claims \
+lean/.lake/build/bin/verifier --produce-units \
   ast.json source-claims.json file-key evidence.json 10
-lean/.lake/build/bin/verifier --check-source-claims \
+lean/.lake/build/bin/verifier --check-units \
   ast.json source-claims.json file-key evidence.json
 ```
 
@@ -34,11 +34,14 @@ lean/.lake/build/bin/verifier --check-source-claims \
 (`sourceKey` in `verify-source.mts`). `--lower-control-flow` prints the
 execution document; `--lower-program` prints the program graph each unit
 lowers to under the claims (`make lowering`).
-`--produce-source-claims` searches for evidence of the reconstructed obligations.
-`--check-source-claims` checks supplied evidence against those obligations.
+`--produce-units` searches for evidence of the reconstructed obligations, unit
+by unit. `--check-units` checks supplied evidence against those obligations,
+a verdict per unit
+([the modes](REQUEST-PROTOCOL.md#run-the-verifier)).
 Any mode may be preceded by `--subtype-rounds n`.
-`SourceClaimJson.checkJson_safe` proves calculus safety for every accepted
-function, at every permitted interpretation of its type parameters. The
+`SourceClaimJson.checkUnitJson_safe` proves calculus safety for every function
+of an accepted unit, at every permitted interpretation of its type
+parameters. The
 theorem concerns the extracted calculus graph; correspondence with the source
 is a separate boundary, specified below.
 

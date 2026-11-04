@@ -464,7 +464,7 @@ correspondence between the units' sources and the host's objects (F1′): a
 marked value with the tag $`t`$ meets $`S_t`$. It is an external obligation
 of the import rule's assumption that a separately verified function meets
 its importer's reading. It is no premise of any checker proof, no conjunct of
-`WorldAdm`, and no subtyping between the units' residuals; `checkJson_safe`
+`WorldAdm`, and no subtyping between the units' residuals; `checkUnitJson_safe`
 keeps its statement.
 
 ### Host objects
@@ -675,8 +675,8 @@ checker's rules for those steps and parameters require
 $`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
 against the families. An operation without a certified rule fails
 its plan's certification, so no recognizer's completeness is assumed. The
-headline theorem is `SourceClaimJson.checkJson_safe`, its premise
-exactly `checkJson ast claims fileKey evidence budget = .ok ()`; its
+headline theorem is `SourceClaimJson.checkUnitJson_safe`, its premise
+a unit's accepted verdict in `checkUnitsJson ast claims fileKey evidence budget names`; its
 conclusion, over the classified semantics, gives every certified function
 and closure, at every admissible instantiation of its type parameters,
 safety, so no stuck step, so no host object at an obligated operand,

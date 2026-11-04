@@ -8,7 +8,7 @@ read as JavaScript directly and tested against node.
 
 ## The bridges
 
-[`checkJson_safe`](DESIGN.md#what-verified-means) proves the extracted
+[`checkUnitJson_safe`](DESIGN.md#what-verified-means) proves the extracted
 calculus program safe. Between the source a user writes and that program,
 four bridges rest on review; the [trust surface](DESIGN.md#trust-surface)
 lists them with the rest of what the theorem assumes:
@@ -110,7 +110,7 @@ is in $`⟦X⟧_M`$. Every row of the trust surface that names ECMA behaviour,
 such as `%Await%`, `%Iterate%`, `%ForIn%`, `Array.prototype`'s members,
 `JSON`, `BigInt` and `Set`/`Map`/`Date`, becomes a proof obligation.
 
-**End to end.** Composing [`checkJson_safe`](DESIGN.md#what-verified-means)
+**End to end.** Composing [`checkUnitJson_safe`](DESIGN.md#what-verified-means)
 with faithfulness and the host lemmas gives: for a source unit that
 `verify-source.mts` verifies, run in M from any state whose environment values are in
 the M-meanings of the unit's declared inputs, every value observed at a

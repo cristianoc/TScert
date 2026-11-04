@@ -1252,7 +1252,7 @@ premise reads certified facts and no TypeScript type or narrowing.
   proto-free clause owns `[[proto]]`, at every interpretation of the
   clause's operands (any `Ξ`, `X`, `P` of `semWithArgs`), and
   `ProtoFree.list_sound` lifts it to a union of clauses. Refusing more keeps
-  `checkJson_safe`; it does not by itself establish that a source write
+  `checkUnitJson_safe`; it does not by itself establish that a source write
   corresponds to the model's, which is what the next item argues.
 - **Why the premise excludes an instance of the family.** In the model an
   instance owns `[[proto]]` where the fragment builds it: an instance a
@@ -3702,7 +3702,7 @@ unrestricted results. `PromiseWith.bound` is the common forwarding proof for
 fixed and variadic binding: saving a receiver and prefix changes the admitted
 arguments, not the forwarded call's heap guarantee.
 
-Source acceptance runs this checker, and `SourceClaimJson.checkJson_safe`
+Source acceptance runs this checker, and `SourceClaimJson.checkUnitJson_safe`
 states its conclusion. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
@@ -3753,7 +3753,7 @@ inputs and $`B`$ its result,
      {\vdash P:\Gamma\to B\;!\;\Phi}\ \textsf{declaration-effect}
 ```
 
-and `SourceClaimJson.checkJson_safe` states, for each such unit, that its
+and `SourceClaimJson.checkUnitJson_safe` states, for each such unit, that its
 graph run as code from inputs it admits returns with a heap its claimed
 footprint relates to its entry heap, and a value meeting its goal
 (`SourceExtraction.checkRequests_footprint_at`).
@@ -3880,9 +3880,8 @@ of its type, so the importer relies on it under the import assumption
 importer verifies relative to it whether or not the exporting module's run
 certifies it (`stated-assumed-value-import`, whose control runs the
 exporting module's refusal). A certified import's unit claims within its
-statement. A census slice's own definitions are a copy of its module's, so
-a verified slice certifies their statements relative to the statements of
-what it imports.
+statement. A census checks each module whole, so an accepted unit certifies
+its definitions' statements relative to the statements of what it imports.
 
 **Producer.** OCaml proposes, for a stated definition, the footprint its
 body shows where that is within the statement, and the statement otherwise,
@@ -4007,7 +4006,7 @@ prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
 type no value meets is never entered, so it is within any bound
 (`GraphCode.unreachableEntry`; `never-parameter-calls`).
 
-#### What `checkJson_safe` states
+#### What `checkUnitJson_safe` states
 
 Its premise is the exact CLI success
 condition. Its first conclusion is plain safety; its second, for each
@@ -4071,7 +4070,7 @@ independently certifies its region. Implementation:
 `CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
 `GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
 (its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose
-statement `checkJson_safe`'s second conclusion is.
+statement `checkUnitJson_safe`'s second conclusion is.
 
 ## Parameter initialization order
 

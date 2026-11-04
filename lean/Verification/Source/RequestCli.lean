@@ -221,14 +221,15 @@ def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
   | .ok j => IO.println j.compress; return 0
   | .error e => refuse e
 
-/-- The runs a document's search consists of (`SourceClaimJson.planJson`),
-one per line; a plan refused is a refusal. Plan output is never a source
-acceptance or an evidence file. -/
+/-- The certified imports a document's claims plan (`SourceClaimJson.planImports`):
+silent where the plan holds; a plan refused is a refusal, with each other read
+it refuses on a line of its own. Plan output is never a source acceptance or
+an evidence file. -/
 def planFile (astPath claimsPath : String) : IO UInt32 := do
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.planJson (← ast) (← claims) with
-  | .ok runs => runs.forM (IO.println ·.compress); return 0
+  match do SourceClaimJson.planImports (← ast) (← claims) with
+  | .ok _ => return 0
   | .error e =>
     -- The plan's first refusal, then each other read it refuses, a line
     -- each, so the pipeline withdraws them in one round.
@@ -237,82 +238,67 @@ def planFile (astPath claimsPath : String) : IO UInt32 := do
       | .error _ => []
     refuse ("\n".intercalate (e :: others))
 
-/-- Search evidence for one planned run (`SourceClaimJson.produceRunJson`),
-written to `evidencePath`. -/
-def runFile (runPath fileKey evidencePath : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
-  if evidencePath == runPath then return ← refuse "evidence output must differ from the input files"
-  let run ← readJson runPath
-  match do SourceClaimJson.produceRunJson (← run) fileKey fuel budget with
-  | .ok evidence =>
-    IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
-    IO.println s!"checked source evidence written: {evidencePath}"
-    return 0
-  | .error e => refuse e
+/-- A selection of units by their members' names, comma-separated; every
+unit without one. -/
+def selection : Option String → Option (List String)
+  | none => none
+  | some names => some ((names.splitOn ",").filter (· != ""))
 
 /-- A file's units (`SourceClaimJson.unitsJson`), one per line; a front
 refused is a refusal of every unit. -/
-def unitsFile (astPath claimsPath fileKey : String) (budget : PositiveCertificates.SearchBudget := {}) :
-    IO UInt32 := do
+def unitsFile (astPath claimsPath fileKey : String) (names : Option String)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.unitsJson (← ast) (← claims) fileKey budget with
+  match do SourceClaimJson.unitsJson (← ast) (← claims) fileKey budget (selection names) with
   | .ok units => units.forM (IO.println ·.compress); return 0
   | .error e => refuse e
 
-/-- Search evidence for one unit (`SourceClaimJson.produceUnitJson`),
-written to `evidencePath`. -/
-def produceUnitFile (astPath claimsPath fileKey evidencePath unit : String) (fuel : Nat)
+/-- Search evidence for a file's selected units (`SourceClaimJson.produceUnitsJson`),
+written to `evidencePath`, and each unit the search refuses on a line
+`refused: {"unit","refusal"}`; any refused, the first refusal is the
+command's. -/
+def produceUnitsFile (astPath claimsPath fileKey evidencePath : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   if evidencePath == astPath || evidencePath == claimsPath then
     return ← refuse "evidence output must differ from the input files"
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.produceUnitJson (← ast) (← claims) fileKey fuel budget unit with
-  | .ok evidence =>
+  match do SourceClaimJson.produceUnitsJson (← ast) (← claims) fileKey fuel budget (selection names) with
+  | .error e => refuse e
+  | .ok (evidence, refusals) =>
+    -- A file that cannot be written is no refusal: its error is thrown.
     IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
     IO.println s!"checked source evidence written: {evidencePath}"
-    return 0
-  | .error e => refuse e
+    for (unit, reason) in refusals do
+      IO.println s!"refused: {(Json.mkObj [("unit", toJson unit), ("refusal", toJson reason)]).compress}"
+    match refusals with
+    | [] => return 0
+    | (_, reason) :: _ => refuse reason
 
-/-- Check one unit (`SourceClaimJson.checkUnitJson`): on acceptance, its
-dependencies on a `depends:` line. -/
-def checkUnitFile (astPath claimsPath fileKey evidencePath unit : String)
+/-- Check a file's selected units at their evidence (`SourceClaimJson.checkUnitsJson`):
+each unit's verdict on a line, `{"unit","members","accepted","depends"}`
+or `{"unit","members","refusal"}`, whose acceptance `checkUnitJson_safe`
+states; any refused, the command's refusal is the first the check meets: a
+unit's extraction, then the evidence's, then a unit's. -/
+def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   let ast ← readJson astPath
   let claims ← readJson claimsPath
   let evidence ← readJson evidencePath
-  match do SourceClaimJson.checkUnitJson (← ast) (← claims) fileKey (← evidence) budget unit with
-  | .ok deps =>
-    IO.println s!"accept: unit {unit} of {fileKey}"
-    IO.println s!"depends: {(toJson deps).compress}"
-    return 0
+  match do SourceClaimJson.checkUnitsJson (← ast) (← claims) fileKey (← evidence) budget (selection names) with
   | .error e => refuse e
-
-def sourceFiles (astPath claimsPath fileKey evidencePath : String)
-    (fuel : Option Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
-  if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
-    return ← refuse "evidence output must differ from the input files"
-  let ast ← readJson astPath
-  let claims ← readJson claimsPath
-  match fuel with
-  | none =>
-    let evidence ← readJson evidencePath
-    let checked := do
-      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) budget
-    match checked with
-    | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
-    | .error e => refuse e
-  | some depth =>
-    let produced := do
-      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth budget
-    match produced with
-    | .error e => refuse e
-    | .ok evidence =>
-      -- A file that cannot be written is no refusal: its error is thrown.
-      IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
-      IO.println s!"checked source evidence written: {evidencePath}"
+  | .ok (verdicts, first) =>
+    for (unit, members, verdict) in verdicts do
+      IO.println (match verdict with
+        | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
+            ("depends", toJson deps)]
+        | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
+            ("refusal", toJson reason)]).compress
+    match first with
+    | some reason => refuse reason
+    | none =>
+      IO.println s!"accept: stateful source {fileKey}"
       return 0
 
 end Verification.RequestCli

@@ -486,7 +486,7 @@ default:
 (`ClauseSelection.mem_candidates`), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
 `compareStepState_sound` hold with their statements unchanged, as does
-`checkJson_safe`. Completeness of the restricted table search alone is the
+`checkUnitJson_safe`. Completeness of the restricted table search alone is the
 open bridge of [§2.2](#22-what-every-rule-inherits); in a check the rerun
 stands in for it.
 

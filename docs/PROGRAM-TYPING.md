@@ -2945,7 +2945,7 @@ is `onFalse`. A `branchBind` edge on `false` refines its context by the
 edge leaves them out, and an implication on the pushed Boolean is made of a
 conditional yield alone. `memberYield_sound` proves the rule from
 `member_run` and the slices' soundness; `yieldFollows_sound` carries it to
-`checkJson_safe`. The false slice subtracts the tags from what the slot
+`checkUnitJson_safe`. The false slice subtracts the tags from what the slot
 already holds: a broad `number` stays `number`, since no tag test
 contradicts it nor covers it, and a slot is never replaced by a family's
 other tags.
