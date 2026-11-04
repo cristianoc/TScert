@@ -1,0 +1,67 @@
+# Build, then the fast checks and controls (`make test`) and the pipeline
+# cases (`make suite`), on every pull request and every push to main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      TSCERT_STAGE_MEMORY: "4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.3"
+
+      - name: Install Dune
+        run: opam install -y dune
+
+      - name: Restore the Lean build
+        id: lake
+        uses: actions/cache/restore@v4
+        with:
+          path: lean/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-${{ hashFiles('lean/**/*.lean', 'lean/c/**', 'lean/lakefile.toml') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('lean/lean-toolchain') }}-
+
+      - name: Install the node dependencies
+        run: make setup
+
+      - name: Build
+        run: opam exec -- make build
+
+      - name: Save the Lean build
+        if: steps.lake.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: lean/.lake
+          key: ${{ steps.lake.outputs.cache-primary-key }}
+
+      - name: Fast checks and controls
+        run: opam exec -- make test
+
+      - name: Pipeline cases
+        run: opam exec -- make suite
