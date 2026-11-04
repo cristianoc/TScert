@@ -360,10 +360,14 @@ source's functions mention): the parser reads it as it reads an ambient
 declaration, at its declared signature, so its callers are checked against
 that signature, and the function's own result is the refusal. Where it lies
 in a top-level statement, the census omits that statement. A constant
-bound to functions only runs nothing: omitted, it is read as an omitted
-function is, at its functions' signatures, and a unit's refusal located in
-it omits it too, since its functions are code of their own. Any other
-statement is omitted as a step whose effects are unknown: after it, nothing
+whose every binding is a name bound to an arrow function or function
+expression writing its parameters' and result's types runs nothing:
+omitted, each binding is read as an omitted function is, at its annotation
+where it has one, else at its function's written signature, and a unit's
+refusal located in such a constant omits it too, since its functions are
+code of their own. Any other statement, a constant bound to a function
+without written types included, is omitted as a step whose effects are
+unknown: after it, nothing
 it could change is known, as after a write to a module cell the unit does
 not declare. A module constant keeps
 the value its own initializer gives it only where no statement can change
