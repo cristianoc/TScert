@@ -58,19 +58,15 @@ and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element
   <img src="diagrams/architecture-light.png" alt="Parse, plan and elaborate are trusted on review; propose and search are proposals that may be wrong; check is proved sound and receives the certificate and the same request elaboration produced.">
 </picture>
 
-1. **Parse.** A front end on TypeScript's compiler API reads the source and the
-   declarations it uses.
-2. **Plan.** Lean turns the source into execution plans: control flow, operand
-   order, bindings.
-3. **Propose.** An OCaml program, the *producer*, proposes the type of every
-   expression and variable over those plans. Its answers are *claims*, and
-   nothing it says is trusted.
-4. **Elaborate.** Lean translates the function, with the proposed types, into a
-   small formal language (the *calculus*) whose execution and safety are
-   defined in Lean.
-5. **Search, then check.** An untrusted search in Lean looks for a
-   *certificate*, a derivation that the program meets its types; the checker
-   validates it against the same request elaboration produced.
+A front end on TypeScript's compiler API reads the source and the
+declarations it uses, and Lean plans its execution. An OCaml program, the
+*producer*, proposes the type of every expression and variable; its answers
+are *claims*, and none is trusted. Lean translates the function, with those
+types, into a small formal language (the *calculus*) whose execution and
+safety are defined in Lean. An untrusted search proposes a *certificate*, a
+derivation that the program meets its types, and the checker validates it
+against the same translation. [The stages](docs/DESIGN.md#stages) describe
+each step.
 
 ## What acceptance means
 

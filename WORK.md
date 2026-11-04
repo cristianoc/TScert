@@ -992,8 +992,6 @@ two parts.
 
 **Independent of per-unit verification:**
 
-- README's "How it works" and DESIGN's "Stages" describe the pipeline
-  once, in one owner, with the other linking to it.
 - DESIGN's "The pipeline entry point" keeps the outcomes. The tool-failure
   detail, down to the compiler API's empty-tuple panic, moves to
   [OBLIGATION-DIAGNOSTICS](docs/OBLIGATION-DIAGNOSTICS.md) or
