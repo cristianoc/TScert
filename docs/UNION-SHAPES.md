@@ -473,7 +473,7 @@ default:
   not expanded, with or without selection (`structurallyHopeless`); a row
   reachable only through such a row is not discovered, though another row's
   `TabRen` premise could read it, so this narrows discovery, which the cases
-  and the census slices measure;
+  and the census measure;
 - in a check, a structural comparison or a comparison step not established
   with selection is redone with selection off (`InstanceImageCheck.general`,
   in `compareStructural` and `compareStepState`), so the restricted search

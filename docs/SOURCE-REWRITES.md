@@ -1257,8 +1257,8 @@ through `new Promise<{ files: string[]; found: Found[] }>((done, fail) =>
 …)`. TypeScript types the unannotated executor parameters from
 `PromiseConstructor`: `done` as `(value: T | PromiseLike<T>) => void` and
 `fail` as `(reason?: any) => void`, so `fail` has no stated contract and
-its slices (`check`, `findIn`, `decodeResult` in the census of b81675f) are
-refused with the reason `blocker-contextual-any` shows.
+the functions reading it (`check`, `findIn`, `decodeResult` in the census
+of b81675f) are refused with the reason `blocker-contextual-any` shows.
 
 - **Rewrite:** the executor states its parameters,
   `done: (result: { files: string[]; found: Found[] }) => void` and
@@ -1267,8 +1267,8 @@ refused with the reason `blocker-contextual-any` shows.
   so the executor's calls and the promise's settlement are unchanged.
 - **Pattern:** a callback whose context types a parameter `any` states the
   weakest contract its body uses.
-- **Functions:** the module's top level, read by the slices of `check`,
-  `findIn` and `decodeResult`.
+- **Functions:** the module's top level, read by `check`, `findIn` and
+  `decodeResult`.
 - **Commit:** the introducing commit, `A promise executor of unchecked.mts states its resolving functions`.
 
 ### An import phase read through an undeclared host field
@@ -2523,31 +2523,32 @@ was refused ("the footprint claimed for … is not established by its body").
 - **Repair:** each function type states the footprint the functions passed
   there meet, `Within<{ value: "any"; store: "grow" }, R>`
   ([stated effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
-  A caller checked in a slice relies on the statement as written; the
-  statement is established where the stating function's own slice
-  verifies. `signature`, `errorOptions` and `localClass` have such slices.
+  A caller's unit relies on the statement as written, reading the function
+  at its claimed signature and effect; the statement is established where
+  the unit certifying the stating function is accepted
+  ([modules and code units](DESIGN.md#modules-and-code-units)). In the
+  census of `17db34ea` the units of `signature`, `errorOptions` and
+  `localClass` are accepted, and so are the initializations of
+  `tools/syntax.mts` and `tools/fragment-support.mts`, which certify the
+  closures `nameOf` and `errorBase`.
   `readOf` takes its names as the native `Set` its callers build, whose
   `has` has a reviewed contract, as `functionDeclarations`' map does.
-- **Statements no slice checks:** the census slices neither gate methods
-  nor every module constant, and one slice is refused, so these statements
-  are assumed by their callers and audited by reading:
-  - `nameOf` (`tools/syntax.mts`, `{value: keep, store: keep}`): returns
-    `childOf(node, "name")`, whose statement its slice verifies.
-  - `errorBase` (`tools/fragment-support.mts`): allocates a fresh record, a
-    fresh array of two fresh records and a fresh `Map`, and calls
-    `errorOptions`, whose slice verifies.
+- **Statements no accepted unit establishes:** in the census of
+  `17db34ea` the initialization of `tools/fragment-parse.mts`, which
+  certifies `Gate`'s methods, and the unit of `classBody` are refused, so
+  these statements are assumed by their callers and audited by reading:
   - `Gate.termScope`: allocates a record of arrow functions over the gate;
     it calls none of them.
   - `Gate.moduleRestType`: reads the parameter's syntax and types it
     through `typeOf`, `restType`, `typeParameterMentioned` and
     `restPositions`, each stating `{value: any, store: grow}`, and `find`
     at a callback that only reads; it writes nothing.
-  - `classBody` (`tools/fragment-classes.mts`): its slice is refused at the
-    footprint of its `construct` closure. Its body writes fields of records
+  - `classBody` (`tools/fragment-classes.mts`): its unit is refused at the
+    footprint it states. Its body writes fields of records
     and arrays it allocates (`push`, field writes on fresh records), calls
     gate methods stating `{value: any, store: grow}`, and reads the
     compiler's nodes; the audit found no operation outside that footprint,
-    which the slice does not yet confirm.
+    which no accepted unit confirms.
 - **Behaviour:** the annotations are erased; every call, argument and
   result is unchanged.
 - **Commit:** the introducing commit.
@@ -2595,9 +2596,10 @@ call that may grow stores does not keep as the loop's head states it.
 
 - **Repair:** each states `{value: keep, store: keep}`, which its body,
   kind tests, field reads and a `findIndex` at a callback within the same
-  footprint, establishes: the slices of `childOf` and `firstOptional`
-  verify it; `nameOf`'s rests on its delegation to `childOf`
-  ([statements no slice checks](#effects-stated-where-the-expression-front-end-calls-through-a-function-type)).
+  footprint, establishes: the units of `childOf` and `firstOptional` and
+  the initialization of `tools/syntax.mts`, which certifies `nameOf`, are
+  accepted in the census of `17db34ea`
+  ([effects stated](#effects-stated-where-the-expression-front-end-calls-through-a-function-type)).
 - **Behaviour:** the annotations are erased.
 - **Commit:** the introducing commit.
 
@@ -2918,7 +2920,8 @@ its body").
   a native iterator stepping its array: a marked iterator kind whose step
   reads the array's current length and element at the array's presence,
   through the parser's iteration kinds and the overlay. Nine other loops
-  of `tools/` use the form; the two in the `quantified` slice and the walk
+  of `tools/` use the form; the two in `quantified` and its same-file callees
+  and the walk
   over a constructor's statements in `fragment-classes.mts#classBody` are
   written out.
 - **Equivalence:** `for (let index = 0; index < xs.length; index++) {
@@ -3067,9 +3070,9 @@ native ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
 
 `tools/unchecked.mts` read its `--project` argument into `projectDir` and
 then threw the usage error in a top-level `if (projectDir === undefined)`,
-a statement outside the fragment, which a census slice leaves out: its
-`runPart` then read `projectDir` at `string | undefined` where an argument
-list of strings is built, in the slices of `decodeResult` and `findIn`.
+a statement outside the fragment, which the census omits: its `runPart`
+then read `projectDir` at `string | undefined` where an argument list of
+strings is built, in `decodeResult` and `findIn`.
 
 - **Avoided form and cost:** a top-level test narrowing a module constant
   that later closures read. Supporting top-level statements is a change of
@@ -3095,7 +3098,7 @@ saved local `s` holds a session through the writes to module state.
 - **Avoided form and cost:** `s?.ledger === ledger` requires carrying the
   correlation between the optional-chain result and its receiver to the
   call after `retained = null`. The supplied census names one test shared
-  by two slices. An explicit receiver test uses the existing narrowing
+  by two functions. An explicit receiver test uses the existing narrowing
   checks; extending correlation inference for this single test has little
   reach relative to that rewrite.
 - **Equivalence:** `s` is a saved local of type `Session | null`, and
@@ -4715,7 +4718,7 @@ literal's tuple type, a [tool failure](OBLIGATION-DIAGNOSTICS.md#tool-failures)
 ([the package at run time](COMPILER-API.md#the-package-at-run-time)).
 `forInEntryReads` destructured
 `ts.isVariableStatement(s) ? s.declarationList.declarations : []`, so every
-slice including it ended in that tool failure.
+check including it ended in that tool failure.
 
 - **Change:** read the first declaration by index, forming no empty tuple.
 - **Commit:** f704fdb (`tools/fragment-support.mts`).

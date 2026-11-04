@@ -197,9 +197,9 @@ that JavaScript runs and the calculus's read does not, and no test the
 guards write establishes it. Source `object` holds classes, and `k in C` of
 a class is refused (measured 2026-10-19), so a guard promising `object`
 loses the slice its body tested. The guards over `unknown` in
-`claim-text.mts`, `claim.mts`, `type-graph.mts` and `diagnostic-view.mts`
-(6 slices refused at their promise, 3 more behind them) wait on the slices
-and on their own promises.
+`claim-text.mts`, `claim.mts`, `type-graph.mts` and `diagnostic-view.mts`,
+6 of them refused at their promise in the census of 2026-10-19, verify in
+their own units in the census of `17db34ea`.
 
 <a id="key-on-open-object"></a>
 **A key found on an open object.** A value that `typeof v === "object"`,
