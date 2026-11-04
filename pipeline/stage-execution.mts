@@ -433,6 +433,16 @@ export type ProcessCall = {
  * group (`GRACE_MS` of `runner/stage-runner.c`), and how long past that the
  * runner itself is killed, when its watchdog kills the stage's group. */
 const graceMs = 250, runnerBackstopMs = 2_000;
+/** The memory a process stage's program may use, its physical footprint
+ * as the runner reads it: `TSCERT_STAGE_MEMORY` gibibytes, 8 by default. A
+ * program over it is stopped as at its time limit, and the stage fails as
+ * a tool failure, published nowhere. */
+export const memoryLimitBytes: number = (() => {
+  const given = process.env["TSCERT_STAGE_MEMORY"];
+  const gib = given === undefined ? 8 : Number(given);
+  if (!Number.isFinite(gib) || gib <= 0) throw Error(`TSCERT_STAGE_MEMORY is no positive number of gibibytes: ${given}`);
+  return Math.round(gib * 2 ** 30);
+})();
 /** What, beside the limit, decides whether a process stage times out. */
 export const resourcePolicy: string = canonical({ output: "files", killSignal: "SIGTERM", graceMs, kill: "process group",
   spawn: "spawnSync" });
@@ -602,16 +612,19 @@ export type ProcessRun = {
 };
 
 /** The runner's report (`runner/stage-runner.c`): the errno of a program
- * that did not execute, a failure of the runner's own, whether the limit
- * expired, and the CPU time and peak memory of the stage's processes. */
+ * that did not execute, a failure of the runner's own, whether the time
+ * limit expired, the memory read where the memory limit was exceeded, and
+ * the CPU time and peak memory of the stage's processes. */
 function readReport(report: string):
-    { execErrno: number | null; runnerFailure: string | null; expired: boolean; cpu: Cpu } {
+    { execErrno: number | null; runnerFailure: string | null; expired: boolean; exceeded: number | null; cpu: Cpu } {
   const exec = /^exec (\d+)$/m.exec(report);
   const failed = /^runner (\S+) (\d+)$/m.exec(report);
   const used = /^cpu (\d+) (\d+) (\d+)$/m.exec(report);
+  const memory = /^memory (\d+)$/m.exec(report);
   return { execErrno: exec ? Number(exec[1]) : null,
     runnerFailure: failed ? `${failed[1]} ${errnoNames.get(Number(failed[2])) ?? failed[2]}` : null,
     expired: /^deadline$/m.test(report),
+    exceeded: memory ? Number(memory[1]) : null,
     cpu: used ? { userMs: Number(used[1]) / 1000, systemMs: Number(used[2]) / 1000, peakBytes: Number(used[3]),
       covers: "the stage's program and the descendants it waited for" }
       : { unavailable: "the stage runner reported no CPU time" } };
@@ -627,7 +640,8 @@ const errnoNames = new Map(Object.entries(constants.errno).map(([name, n]) => [n
 /** Run a bound process stage in `directory`, a fresh empty directory: its
  * inputs written there under their roles' names, the program run there with
  * the argument vector and the call's environment under the runner, which
- * signals its process group at `limitMs` and kills it `graceMs` later, its
+ * signals its process group at `limitMs`, or once the program's memory
+ * exceeds `memoryLimitBytes`, and kills it `graceMs` later, its
  * exit classified by its protocol; its outputs delivered to
  * the caller's paths. The program's standard output and standard error, and
  * the runner's report, go to files unlinked before the program starts, so a
@@ -644,7 +658,7 @@ export function executeProcess(bound: BoundProcess, directory: string, limitMs: 
       unlinkSync(path);
     }
     const [stdoutFile, stderrFile, reportFile] = files;
-    p = spawnSync(runnerBuild, [String(limitMs), bound.program, ...bound.argv], {
+    p = spawnSync(runnerBuild, [String(limitMs), String(memoryLimitBytes), bound.program, ...bound.argv], {
       cwd: directory,
       env: { ...bound.environment },
       timeout: limitMs + graceMs + runnerBackstopMs,
@@ -659,13 +673,17 @@ export function executeProcess(bound: BoundProcess, directory: string, limitMs: 
   }
   if (p.error && "code" in p.error && p.error.code === "ENOENT" && p.error.message.includes(runnerBuild))
     throw Error("the stage runner is not built (make build-runner)");
-  const { execErrno, runnerFailure, expired, cpu } = readReport(report);
+  const { execErrno, runnerFailure, expired, exceeded, cpu } = readReport(report);
+  const gib = (bytes: number): string =>
+    bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)} GiB` : `${Math.round(bytes / 2 ** 20)} MiB`;
   // A program that did not execute fails as a spawn failure does; a failure
   // of the runner's own fails the run.
   const error = p.error ?? (execErrno !== null
     ? Object.assign(Error(`spawnSync ${bound.program} ${errnoNames.get(execErrno) ?? execErrno}`),
       { code: errnoNames.get(execErrno) ?? String(execErrno), errno: -execErrno })
-    : runnerFailure !== null ? Error(`the stage runner failed: ${runnerFailure}`) : undefined);
+    : runnerFailure !== null ? Error(`the stage runner failed: ${runnerFailure}`)
+    : exceeded !== null ? Error(`memory limit: its footprint reached ${gib(exceeded)}, over the limit of ` +
+      `${gib(memoryLimitBytes)} (TSCERT_STAGE_MEMORY)`) : undefined);
   const status = execErrno === null && runnerFailure === null ? p.status : null;
   const stdout = text(stdoutBytes), stderr = text(stderrBytes);
   // A timeout is the expiry of this attempt's own enforced limit.

@@ -2,17 +2,22 @@
  * it runs a stage's program and reports the CPU time of the processes the
  * stage ran and their peak memory, which Node's spawnSync does not report.
  *
- *   stage-runner <limit ms> <program> [argument…]
+ *   stage-runner <limit ms> <memory bytes> <program> [argument…]
  *     runs <program> with the arguments, the environment, the working
  *     directory and the standard streams it was given, in a process group
  *     of its own, led by a watchdog that kills the group when the runner
- *     ends in any way. At the limit, or on SIGTERM, SIGINT, SIGHUP or
- *     SIGQUIT, the program, by its process id, and the group are continued
- *     and signalled (SIGTERM at the limit), and killed 250 ms later. A
+ *     ends in any way. The program's memory, its current physical footprint
+ *     (on macOS, compressed and swapped pages included; on Linux, its
+ *     resident set and swap), is read every POLL_MS. At the time limit,
+ *     when that memory exceeds the memory limit, or on SIGTERM, SIGINT,
+ *     SIGHUP or SIGQUIT, the program, by its process id, and the group are
+ *     continued and signalled (SIGTERM at a limit), and killed 250 ms later. A
  *     descendant that left the group (setsid) is not signalled, nor is the
  *     program once the runner itself has died. When the program ends, what remains of its
  *     group is killed, and the runner writes to file descriptor 3, which the
- *     program does not inherit, `deadline` where the limit expired and
+ *     program does not inherit, `deadline` where the time limit expired,
+ *     `memory <bytes>` where the memory limit was exceeded, with the memory
+ *     read, and
  *     `cpu <user µs> <system µs> <peak bytes>`: the CPU time of the program
  *     and of every descendant it waited for, and the largest peak resident
  *     set among them (RUSAGE_CHILDREN). It then ends as the program did:
@@ -36,6 +41,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <time.h>
 #ifdef __APPLE__
 #include <libproc.h>
 #include <mach/mach_time.h>
@@ -87,11 +93,43 @@ static int cpu_of(const char *text) {
 #endif
 }
 
+/* The program's current physical footprint in bytes, or -1 where it is
+ * not read (the program has ended). */
+static long long footprint(pid_t pid) {
+#ifdef __APPLE__
+  struct rusage_info_v4 info;
+  if (proc_pid_rusage((int)pid, RUSAGE_INFO_V4, (rusage_info_t *)&info) != 0) return -1;
+  return (long long)info.ri_phys_footprint;
+#elif defined(__linux__)
+  char path[64], line[256];
+  snprintf(path, sizeof path, "/proc/%ld/status", (long)pid);
+  FILE *f = fopen(path, "r");
+  if (!f) return -1;
+  unsigned long long kb, total = 0;
+  while (fgets(line, sizeof line, f))
+    if (sscanf(line, "VmRSS: %llu kB", &kb) == 1 || sscanf(line, "VmSwap: %llu kB", &kb) == 1) total += kb;
+  fclose(f);
+  return (long long)total * 1024;
+#else
+  (void)pid;
+  return -1;
+#endif
+}
+
+/* Milliseconds since an arbitrary fixed point. */
+static long long now_ms(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
 static void wake(int sig) { (void)sig; }
 
 /* How long a program may run past SIGTERM before it and its group are
  * killed. */
 #define GRACE_MS 250
+/* How often the program's memory is read. */
+#define POLL_MS 200
 
 /* The stage's process group (the watchdog's process id once it exists), the
  * program's process id, and whether the program has been reaped, with its
@@ -159,10 +197,13 @@ static void signal_stage(int sig) {
 
 int main(int argc, char **argv) {
   if (argc == 3 && strcmp(argv[1], "--cpu") == 0) return cpu_of(argv[2]);
-  char *end = NULL;
-  long limit = argc >= 3 ? strtol(argv[1], &end, 10) : 0;
-  if (argc < 3 || *argv[1] == '\0' || *end != '\0' || limit <= 0 || fcntl(3, F_GETFD) < 0) {
-    fprintf(stderr, "usage: stage-runner <limit ms> <program> [argument…], with file descriptor 3 open for the report\n");
+  char *end = NULL, *mend = NULL;
+  long limit = argc >= 4 ? strtol(argv[1], &end, 10) : 0;
+  long long memory = argc >= 4 ? strtoll(argv[2], &mend, 10) : 0;
+  if (argc < 4 || *argv[1] == '\0' || *end != '\0' || limit <= 0 || *argv[2] == '\0' || *mend != '\0' ||
+      memory <= 0 || fcntl(3, F_GETFD) < 0) {
+    fprintf(stderr, "usage: stage-runner <limit ms> <memory bytes> <program> [argument…], with file descriptor 3 open "
+      "for the report\n");
     return 125;
   }
   if (fcntl(3, F_SETFD, FD_CLOEXEC) != 0) fail("fcntl");
@@ -230,7 +271,7 @@ int main(int argc, char **argv) {
       dprintf(3, "runner child %d\n", errno);
       _exit(125);
     }
-    execvp(argv[2], argv + 2);
+    execvp(argv[3], argv + 3);
     dprintf(3, "exec %d\n", errno);
     _exit(127);
   }
@@ -238,9 +279,11 @@ int main(int argc, char **argv) {
    * exits with 125. Before it has joined, the program is reached by its
    * process id, which every signal of the stage also goes to. */
 
-  /* At the limit, or on a forwarded signal, the program and its group are
-   * signalled; GRACE_MS later they are killed. */
-  arm(limit);
+  /* At a limit, or on a forwarded signal, the program and its group are
+   * signalled; GRACE_MS later they are killed. The timer wakes the runner
+   * every POLL_MS to read the program's memory, and at the time limit. */
+  long long started = now_ms(), exceeded = -1;
+  arm(limit < POLL_MS ? limit : POLL_MS);
   int terminating = 0, expired = 0, killed = 0;
   while (!reaped) {
     int sig;
@@ -267,7 +310,16 @@ int main(int argc, char **argv) {
       kill_group(SIGKILL);
       continue;
     }
-    if (sig == SIGALRM) expired = 1;
+    if (sig == SIGALRM) {
+      long long elapsed = now_ms() - started, used = footprint(child);
+      if (elapsed >= limit) expired = 1;
+      else if (used > memory) exceeded = used;
+      else {
+        long long left = limit - elapsed;
+        arm(left < POLL_MS ? (long)left : POLL_MS);
+        continue;
+      }
+    }
     signal_stage(sig == SIGALRM ? SIGTERM : sig);
     if (!terminating) {
       terminating = 1;
@@ -296,7 +348,7 @@ int main(int argc, char **argv) {
     if (setrlimit(RLIMIT_CORE, &none) != 0) fail("setrlimit");
     if (sig != SIGKILL && signal(sig, SIG_DFL) == SIG_ERR) fail("signal");
   }
-  if ((expired && dprintf(3, "deadline\n") < 0) ||
+  if ((expired && dprintf(3, "deadline\n") < 0) || (exceeded >= 0 && dprintf(3, "memory %lld\n", exceeded) < 0) ||
       dprintf(3, "cpu %lld %lld %lld\n", micros(used.ru_utime), micros(used.ru_stime), peak) < 0)
     fail("dprintf");
   if (close(3) != 0) fail("close");

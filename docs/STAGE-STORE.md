@@ -586,7 +586,9 @@ A finished entry contains the complete input
 manifest, exit status, stdout, stderr and a manifest of output files with
 their digests. This includes parser diagnostics and auxiliary stage outputs.
 Only a complete success or recognized refusal is a finished result.
-Operational failures are not reusable results.
+Operational failures are not reusable results. A stage stopped at its memory limit is
+an operational failure: it is reported as a tool failure naming the memory
+read and the limit, and nothing is published.
 
 A timeout is a separate immutable observation recording its stage key,
 attempt identity, elapsed execution time, CPU time up to the kill, enforced
@@ -741,9 +743,13 @@ unavailable, with its reason.
   ([`pipeline/runner/stage-runner.c`](../pipeline/runner/stage-runner.c),
   built by `make build-runner`), which starts it with the invocation's
   arguments, environment, working directory and standard streams in a
-  process group led by a watchdog. The runner enforces the limit: at the
-  limit, or on SIGTERM, SIGINT, SIGHUP or SIGQUIT, it continues and signals
-  the program, by its process id, and the group (SIGTERM at the limit), and
+  process group led by a watchdog. The runner enforces two limits: the
+  time limit, and a memory limit on the program's current physical
+  footprint, read every 200 ms (on macOS compressed and swapped pages
+  included, on Linux the resident set and swap; `TSCERT_STAGE_MEMORY`
+  gibibytes, 8 by default). At either limit, or on SIGTERM, SIGINT, SIGHUP
+  or SIGQUIT, it continues and signals the program, by its process id, and
+  the group (SIGTERM at a limit), and
   250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
   the group ends too. Its standard output and standard error are files the
   adapter opens and unlinks before the runner starts and reads whole when

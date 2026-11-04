@@ -55,6 +55,10 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
   `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
   again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
   it again at the same limit.
+- Each process stage is also stopped once its program's memory exceeds
+  8 GiB, a tool failure that is never published;
+  `TSCERT_STAGE_MEMORY=<gibibytes>` sets that limit
+  ([the runner](docs/STAGE-STORE.md#entries-and-timeouts)).
 - A run's directory holds `invocations.jsonl`, each stage invocation's
   attempt: its stage key, limit, outcome and elapsed time.
 

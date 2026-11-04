@@ -437,7 +437,7 @@ if (eligible) {
   const started = join(dir, "runner-orphan-pid");
   const orphan = script("runner-orphan.sh", `echo $$ > ${started}; exec /bin/sleep 30`, ["/bin/sleep"]);
   const report = openSync(join(dir, "runner-orphan-report"), "w+");
-  const runner = spawn(runnerBuild, ["10000", orphan], { stdio: ["ignore", "ignore", "ignore", report] });
+  const runner = spawn(runnerBuild, ["10000", String(2 ** 33), orphan], { stdio: ["ignore", "ignore", "ignore", report] });
   const exited = new Promise<void>((done) => runner.on("exit", () => done()));
   for (let i = 0; i < 100 && !existsSync(started); i++) await wait(20);
   const program = pidOf(started);
@@ -445,9 +445,24 @@ if (eligible) {
   await exited;
   closeSync(report);
   assert.ok(await ends(program), "the program of a killed runner survived");
+  // A program over the memory limit is stopped, and the report names the
+  // memory read; under the limit the same program finishes.
+  if (existsSync("/usr/bin/perl")) {
+    const hungry = ["-e", `$x = "a" x 600_000_000; sleep 3; print "done"`];
+    const overLimit = spawnSync(runnerBuild, ["20000", String(100 * 2 ** 20), "/usr/bin/perl", ...hungry],
+      { stdio: ["ignore", "pipe", "ignore", "pipe"], encoding: "utf8" });
+    const said = String(overLimit.output[3]);
+    assert.ok(/^memory \d+$/m.test(said) && !/^deadline$/m.test(said), `memory limit report: ${said}`);
+    assert.equal(overLimit.stdout, "", "a program over its memory limit finished");
+    const underLimit = spawnSync(runnerBuild, ["20000", String(2 ** 32), "/usr/bin/perl", ...hungry],
+      { stdio: ["ignore", "pipe", "ignore", "pipe"], encoding: "utf8" });
+    assert.equal(underLimit.stdout, "done", "a program under its memory limit was stopped");
+    assert.ok(!/^memory /m.test(String(underLimit.output[3])), "a program under its memory limit was reported over it");
+  }
   process.stdout.write("runner: output bytes, status and signal pass through; CPU time reported, up to a timeout's " +
     "kill at the runner's own deadline, which leaves no process of the stage running, also of a program ignoring " +
-    "SIGTERM, stopped or out of its group; descendants end with the program; a killed runner's stage is killed\n");
+    "SIGTERM, stopped or out of its group; descendants end with the program; a killed runner's stage is killed; " +
+    "a program over its memory limit is stopped and reported\n");
 }
 
 if (eligible) {
