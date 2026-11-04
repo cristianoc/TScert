@@ -24,6 +24,7 @@ A case naming a project reads its imports and declarations from it:
 | Project | Holds, for which cases |
 | --- | --- |
 | `pipeline/imports-project/` | value imports |
+| `pipeline/blocker-project/` | the front end's own regime (ES2022, bundler resolution) with its installed Node declarations, for the `blocker-*` cases and the others its `tsconfig.json` names |
 | `pipeline/library-project/` | a typed library of reactive collections (`collections.ts`) with Node's pinned types, for the `collections-*` cases |
 | `pipeline/compiler-api-project/` | the compiler API, the package `typescript` the front end pins, for the `*compiler-api*` cases |
 | `pipeline/augmented-project/` | an augmentation of `ObjectConstructor` from a module of its own, for the `*augmented*` cases |

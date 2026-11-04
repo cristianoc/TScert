@@ -995,8 +995,6 @@ two parts.
 - WORK.md's status rows state each item's current state and its last
   measurement. Chains of earlier measurements are deleted, since the commit
   records keep them.
-- `cases-report.md` (a report of 2026-10-25 on an index outside the
-  repository) is deleted or its content moved to its owner.
 - `docs/drafts/`:
   - approved drafts move into their owning documents
     (`certificate-sharing.md`'s landed stages);
