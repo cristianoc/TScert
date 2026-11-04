@@ -156,15 +156,15 @@ execution of a replay-eligible invocation retains its complete stage key.
 
 | Stage | Inputs in addition to its implementation and execution context |
 | --- | --- |
-| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
+| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the functions read at their declared signatures (`omitted`); the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
 | module | an imported module's path and identity in the importer's documents; the project; active host-family descriptions; whether the run gives a tag selection; its observations, its reads of the selection by family among them ([shared work](#shared-work)) |
 | lower | the exact Fragment document |
 | propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
 | assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
-| plan | the exact Fragment and assembled claims |
+| plan | the exact Fragment and assembled claims; for a listing of units, its file identity |
 | search of a run | the exact run the plan printed; its file key; search depth and subtype rounds |
-| search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds |
-| check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
+| search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds; the unit, for a unit's search |
+| check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds; the unit, for a unit's check |
 | explain | the Fragment and flow passed to the producer's `--explain` mode |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
 

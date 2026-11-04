@@ -474,7 +474,10 @@ const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported:
 /** A verifier invocation, its command line read by its modes:
  * `[--subtype-rounds n] --lower-control-flow <fragment>`,
  * `… --produce-source-claims <fragment> <claims> <file-key> <evidence-out> <depth>`,
- * `… --check-source-claims <fragment> <claims> <file-key> <evidence>`. */
+ * `… --check-source-claims <fragment> <claims> <file-key> <evidence>`,
+ * `… --units <fragment> <claims> <file-key>`,
+ * `… --produce-unit <fragment> <claims> <file-key> <evidence-out> <unit> <depth>`,
+ * `… --check-unit <fragment> <claims> <file-key> <evidence> <unit>`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
@@ -494,6 +497,15 @@ export function verifierCall(program: string, args: readonly string[],
   if (mode === "--check-source-claims" && rest.length === 4)
     return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
       { text: rest[2] }, { input: "evidence.json", path: rest[3] }]);
+  if (mode === "--units" && rest.length === 3)
+    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+      { text: rest[2] }]);
+  if (mode === "--produce-unit" && rest.length === 6)
+    return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, { text: rest[4] }, { text: rest[5] }]);
+  if (mode === "--check-unit" && rest.length === 5)
+    return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
+      { text: rest[2] }, { input: "evidence.json", path: rest[3] }, { text: rest[4] }]);
   throw Error(`not a verifier stage: ${args.join(" ")}`);
 }
 

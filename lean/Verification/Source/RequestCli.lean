@@ -250,6 +250,45 @@ def runFile (runPath fileKey evidencePath : String) (fuel : Nat)
     return 0
   | .error e => refuse e
 
+/-- A file's units (`SourceClaimJson.unitsJson`), one per line; a front
+refused is a refusal of every unit. -/
+def unitsFile (astPath claimsPath fileKey : String) (budget : PositiveCertificates.SearchBudget := {}) :
+    IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.unitsJson (← ast) (← claims) fileKey budget with
+  | .ok units => units.forM (IO.println ·.compress); return 0
+  | .error e => refuse e
+
+/-- Search evidence for one unit (`SourceClaimJson.produceUnitJson`),
+written to `evidencePath`. -/
+def produceUnitFile (astPath claimsPath fileKey evidencePath unit : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  if evidencePath == astPath || evidencePath == claimsPath then
+    return ← refuse "evidence output must differ from the input files"
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match do SourceClaimJson.produceUnitJson (← ast) (← claims) fileKey fuel budget unit with
+  | .ok evidence =>
+    IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
+    IO.println s!"checked source evidence written: {evidencePath}"
+    return 0
+  | .error e => refuse e
+
+/-- Check one unit (`SourceClaimJson.checkUnitJson`): on acceptance, its
+dependencies on a `depends:` line. -/
+def checkUnitFile (astPath claimsPath fileKey evidencePath unit : String)
+    (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  let evidence ← readJson evidencePath
+  match do SourceClaimJson.checkUnitJson (← ast) (← claims) fileKey (← evidence) budget unit with
+  | .ok deps =>
+    IO.println s!"accept: unit {unit} of {fileKey}"
+    IO.println s!"depends: {(toJson deps).compress}"
+    return 0
+  | .error e => refuse e
+
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do

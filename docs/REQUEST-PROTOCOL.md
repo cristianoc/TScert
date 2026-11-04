@@ -24,6 +24,9 @@ verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evi
 verifier --check-source-claims   <ast.json> <source-claims.json> <file-key> <evidence.json>
 verifier --plan-imports          <ast.json> <source-claims.json>
 verifier --produce-run           <run.json> <file-key> <evidence.json> <depth>
+verifier --units                 <ast.json> <source-claims.json> <file-key>
+verifier --produce-unit          <ast.json> <source-claims.json> <file-key> <evidence.json> <unit> <depth>
+verifier --check-unit            <ast.json> <source-claims.json> <file-key> <evidence.json> <unit>
 verifier --lower-program         <ast.json> <source-claims.json> <file-key>
 verifier --lower-control-flow    <ast.json>
 ```
@@ -50,6 +53,18 @@ verifier --lower-control-flow    <ast.json>
   run, and writes its evidence: the importer's run's as that mode's `main`,
   a module run's as an entry of its `modules`, `{"evidence","location"}`.
   Neither mode accepts anything.
+- `--units` prints the file's units, one per line,
+  `{"unit","members","depends"}`: each group of its functions that reach
+  each other by name (its identity its first member's, `name@offset`, or
+  `init` for the module's initialization), with the units it reaches,
+  then each module run of its certified imports, `module:<location>`
+  (`SourceClaimJson.unitsJson`, the file front of
+  [the units draft](drafts/shallow-deep-census.md#2-the-file-front-and-per-unit-extraction)).
+- `--produce-unit` searches one unit's evidence and writes it;
+  `--check-unit` checks one unit at its evidence
+  (`SourceClaimJson.checkUnitJson`, whose success `checkUnitJson_safe`
+  states), printing `accept: unit <unit> of <file-key>` and, on a line
+  `depends: `, the unit's dependencies as a JSON list.
 - `--lower-program` prints the program graph each unit lowers to, with the
   graph code it creates (`SourceClaimJson.lowerJson`), for inspection;
   `make lowering` runs it.

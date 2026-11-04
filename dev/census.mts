@@ -28,10 +28,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { close as closeParser, openText } from "../tools/fragment-parse.mts";
-import { syntax as ts, isTypeAlias } from "../tools/syntax.mts";
+import { close as closeParser, initOmission, openText } from "../tools/fragment-parse.mts";
+import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
-import { checkApart, RunFailure, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
+import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type UnitResult } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
 import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
@@ -253,6 +253,7 @@ function reference(r: AttemptRecord): InvocationReference {
 }
 
 async function census(args: string[]): Promise<void> {
+  if (args.includes("--units")) return unitCensus(args);
   startEviction();
   const directory = option(args, "--dir") ?? "tools";
   const files = option(args, "--files")?.split(",") ?? null;
@@ -394,6 +395,361 @@ function summarize(slices: readonly SliceRecord[]): void {
     blockers.set(blocker(s.detail), (blockers.get(blocker(s.detail)) ?? 0) + 1);
   for (const [b, n] of [...blockers].sort((a, b) => b[1] - a[1])) process.stdout.write(`${String(n).padStart(4)} ${b}\n`);
   process.stdout.write(`verified: ${slices.filter((s) => s.status === "verified").map((s) => `${s.file}#${s.fn}`).join(", ")}\n`);
+}
+
+// ---------------------------------------------------------------------------
+// The census of units: each file checked whole, each unit on its own
+
+/** A top-level statement of a census file, for locating a refusal: a
+ * function by its name, the initialization's, an import with the names it
+ * binds, or another declaration. */
+type Statement = { start: number; end: number } &
+  ({ kind: "function"; name: string } | { kind: "init" } | { kind: "import"; names: string[] } | { kind: "other" });
+/** What an import binding names in the census directory: a file and an
+ * export, `*` for a namespace, or null where it binds outside the directory. */
+type ImportTarget = { file: string; imported: string } | null;
+/** A census file read for its units: its statements, its functions' recursive
+ * groups by the names their code mentions, its imports, and the modules of
+ * the directory it loads. */
+type SourceModel = {
+  file: string;
+  text: string;
+  statements: Statement[];
+  functions: Map<string, { mentions: Set<string>; group: string[] }>;
+  initMentions: Set<string>;
+  hasInit: boolean;
+  imports: Map<string, ImportTarget>;
+  loads: string[];
+  reexports: { name: string; target: ImportTarget }[];
+  lineStarts: number[];
+};
+
+/** Whether a top-level statement runs in the module's initialization. */
+function runsInInit(s: ts.Statement): boolean {
+  const modifiers = childrenOf(s, "modifiers").map((m) => m.kind);
+  const declared = modifiers.includes(ts.SyntaxKind.DeclareKeyword);
+  return !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || ts.isImportDeclaration(s) ||
+    ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && declared) ||
+    (ts.isEnumDeclaration(s) && (declared || modifiers.includes(ts.SyntaxKind.ConstKeyword))) ||
+    (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined));
+}
+
+function sourceModel(root: string, directory: string, file: string): SourceModel {
+  const text = readFileSync(join(root, file), "utf8");
+  const tree = openText(join(root, file), text);
+  const target = (specifier: ts.Expression | undefined, imported: string): ImportTarget => {
+    if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith(".")) return null;
+    const path = resolve(root, specifier.text);
+    return dirname(path) === resolve(root) && existsSync(path) ? { file: basename(path), imported } : null;
+  };
+  const statements: Statement[] = [];
+  const imports = new Map<string, ImportTarget>();
+  const loads = new Set<string>();
+  const reexports: SourceModel["reexports"] = [];
+  const mentionsOf = (node: ts.Node): Set<string> => identifiers(node, new Set());
+  const functions = new Map<string, { mentions: Set<string>; group: string[] }>();
+  const initMentions = new Set<string>();
+  let hasInit = false;
+  for (const s of tree.statements) {
+    const span = { start: s.getStart(tree), end: s.end };
+    if (ts.isFunctionDeclaration(s) && s.name) {
+      statements.push({ ...span, kind: "function", name: s.name.text });
+      if (s.body) functions.set(s.name.text, { mentions: mentionsOf(s), group: [] });
+    } else if (ts.isImportDeclaration(s)) {
+      const clause = s.importClause;
+      const bindings = clause?.namedBindings;
+      const pair = (local: string, imported: string): [string, string] => [local, imported];
+      const names: [string, string][] = [...(clause?.name ? [pair(clause.name.text, "default")] : []),
+        ...(!bindings ? [] : ts.isNamedImports(bindings)
+          ? bindings.elements.map((e) => pair(e.name.text, (e.propertyName ?? e.name).text))
+          : [pair(bindings.name.text, "*")])];
+      for (const [local, imported] of names) imports.set(local, target(s.moduleSpecifier, imported));
+      const loaded = target(s.moduleSpecifier, "*");
+      if (loaded) loads.add(loaded.file);
+      statements.push({ ...span, kind: "import", names: names.map(([n]) => n) });
+    } else if (ts.isExportDeclaration(s) && s.moduleSpecifier) {
+      const loaded = target(s.moduleSpecifier, "*");
+      if (loaded) loads.add(loaded.file);
+      const clause = s.exportClause;
+      if (!clause) reexports.push({ name: "*", target: loaded });
+      else if (ts.isNamedExports(clause))
+        for (const e of clause.elements)
+          reexports.push({ name: e.name.text, target: target(s.moduleSpecifier, (e.propertyName ?? e.name).text) });
+      statements.push({ ...span, kind: "other" });
+    } else if (runsInInit(s)) {
+      hasInit = true;
+      for (const m of mentionsOf(s)) initMentions.add(m);
+      statements.push({ ...span, kind: "init" });
+    } else statements.push({ ...span, kind: "other" });
+  }
+  // Recursive groups: functions that reach each other by the names their code mentions.
+  const reach = new Map<string, Set<string>>();
+  for (const name of functions.keys()) {
+    const seen = new Set<string>();
+    for (let work = [name], next = work.pop(); next !== undefined; next = work.pop())
+      for (const m of functions.get(next)?.mentions ?? [])
+        if (functions.has(m) && !seen.has(m)) {
+          seen.add(m);
+          work.push(m);
+        }
+    reach.set(name, seen);
+  }
+  for (const [name, f] of functions)
+    f.group = [...functions.keys()].filter((g) => g === name || (reach.get(name)?.has(g) && reach.get(g)?.has(name)));
+  const lineStarts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
+  void directory;
+  return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, lineStarts };
+}
+
+/** The units a refusal located in a census file makes absent: the function
+ * whose code holds it, with its recursive group; the initialization for a
+ * statement of it; for an import, every unit mentioning its bindings. Empty
+ * where the refusal names no place, or one no unit owns. */
+function absentFor(m: SourceModel, detail: string): string[] {
+  const span = /at \[(\d+),(\d+)\)/.exec(detail);
+  const line = /\(line (\d+), col (\d+)\)/.exec(detail);
+  const at = span ? Number(span[1]) : line ? (m.lineStarts[Number(line[1]) - 1] ?? 0) + Number(line[2]) - 1 : null;
+  if (at === null) return [];
+  const s = m.statements.find((x) => x.start <= at && at < x.end);
+  if (!s) return [];
+  if (s.kind === "function") return m.functions.get(s.name)?.group ?? [];
+  if (s.kind === "init") return [initOmission];
+  if (s.kind === "import")
+    return [...new Set([...m.functions].flatMap(([, f]) => s.names.some((n) => f.mentions.has(n)) ? f.group : [])
+      .concat(s.names.some((n) => m.initMentions.has(n)) ? [initOmission] : []))];
+  return [];
+}
+
+/** A unit's own result, as a census record keeps it. */
+type OwnResult = { status: string; phase: string; detail: string };
+/** A census file's units as one check gives them: the rounds that made units
+ * absent, each with the refusal that did; the front's refusal of every unit
+ * left, or the units' results; and the stage invocations of every round. */
+type FileRun = {
+  file: string;
+  sourceSha256: string;
+  rounds: { absent: string[]; refusal: OwnResult }[];
+  /** Every unit absent from the file's last check, with its refusal. */
+  absent?: { name: string; refusal: OwnResult }[];
+  front: OwnResult | null;
+  units: UnitResult[];
+  invocations: InvocationReference[];
+};
+
+/** The node of a unit in the census's dependency closure: a file and a
+ * function's name, `initOmission`, or a module run's identity. */
+type NodeKey = string;
+const nodeKey = (file: string, name: string): NodeKey => `${file}#${name}`;
+
+/** A file checked by units, absent units added round by round. */
+async function runFile(root: string, project: string, m: SourceModel, select: string[], absent: Map<string, OwnResult>):
+    Promise<FileRun> {
+  const rounds: FileRun["rounds"] = [];
+  const invocations: InvocationReference[] = [];
+  for (;;) {
+    let outcome: { status: string; phase: string; detail: string; units: UnitResult[] | null };
+    try {
+      using o = await checkApart(join(root, m.file), project, false, undefined, true,
+        { omitted: [...absent.keys()], select });
+      invocations.push(...readInvocationLog(join(o.artifacts, invocationLog)).map(reference));
+      outcome = o.status === "verified" ? { status: o.status, phase: o.phase, detail: "", units: o.units ?? null }
+        : { status: o.status, phase: o.phase, detail: o.detail.split("\n")[0] ?? "", units: o.units ?? null };
+    } catch (error) {
+      if (error instanceof RunFailure) invocations.push(...error.invocations.map(reference));
+      outcome = { status: "error", phase: "-", detail: String(error).split("\n")[0] ?? "", units: null };
+    }
+    if (outcome.units !== null)
+      return { file: m.file, sourceSha256: sha256(m.text), rounds, front: null, units: outcome.units, invocations };
+    const refusal = { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
+    const next = outcome.status === "error" ? [] : absentFor(m, outcome.detail).filter((n) => !absent.has(n));
+    if (next.length === 0)
+      return { file: m.file, sourceSha256: sha256(m.text), rounds, front: refusal, units: [], invocations };
+    for (const n of next) absent.set(n, refusal);
+    rounds.push({ absent: next, refusal });
+  }
+}
+
+/** The census record of units. */
+type UnitCensusRecord = {
+  source: CensusRecord["source"];
+  policy: CensusRecord["policy"];
+  started: string;
+  elapsedMs: number;
+  files: FileRun[];
+  /** Each census function: its own result and, from the record, its deep
+   * status and the first unit of its closure not accepted. */
+  functions: { file: string; fn: string; unit: string | null; own: OwnResult; deep: boolean; blocker: string | null }[];
+};
+
+/** A unit's own result, by its node, in the census's runs. */
+function ownResult(runs: Map<string, FileRun>, absent: Map<string, Map<string, OwnResult>>, file: string, name: string):
+    { unit: string | null; own: OwnResult; depends: NodeKey[] } | null {
+  const notRun = null;
+  const omitted = absent.get(file)?.get(name);
+  if (omitted) return { unit: null, own: omitted, depends: [] };
+  const run = runs.get(file);
+  if (!run) return notRun;
+  if (run.front) return { unit: null, own: run.front, depends: [] };
+  const u = run.units.find((x) => x.unit === name || x.members.some((mem) => memberName(mem) === name));
+  if (!u) return notRun;
+  const toNode = (d: string): NodeKey => nodeKey(file, d.startsWith("module:") ? d : memberName(d));
+  return { unit: u.unit, own: { status: u.status, phase: u.phase, detail: u.detail }, depends: u.depends.map(toNode) };
+}
+
+/** Where an import binding of a census file leads: a function of the
+ * directory, the initialization of the module that binds it, or null
+ * outside the directory; `unresolved` where a re-export cannot be followed. */
+function importNode(models: (file: string) => SourceModel, t: ImportTarget, depth: number = 0): NodeKey[] | "unresolved" {
+  if (t === null) return [];
+  const m = models(t.file);
+  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), nodeKey(m.file, initOmission)];
+  if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
+  const re = m.reexports.find((r) => r.name === t.imported) ?? null;
+  if (re) return depth > 8 ? "unresolved" : importNode(models, re.target, depth + 1);
+  if (m.reexports.some((r) => r.name === "*")) return "unresolved";
+  return [nodeKey(m.file, initOmission)];
+}
+
+/** The nodes a node depends on: its unit's dependencies, its file's
+ * initialization, the units its code reaches through imports, and, for an
+ * initialization, the initialization of every census module it loads. */
+function nodeDepends(models: (file: string) => SourceModel, runs: Map<string, FileRun>,
+    absent: Map<string, Map<string, OwnResult>>, key: NodeKey): NodeKey[] | "unresolved" {
+  const [file = "", name = ""] = key.split("#");
+  const m = models(file);
+  const own = ownResult(runs, absent, file, name);
+  const out = new Set<NodeKey>(own?.depends ?? []);
+  if (m.hasInit && name !== initOmission) out.add(nodeKey(file, initOmission));
+  const mentions = name === initOmission ? m.initMentions : name.startsWith("module:") ? new Set<string>()
+    : new Set((m.functions.get(name)?.group ?? []).flatMap((g) => [...(m.functions.get(g)?.mentions ?? [])]));
+  for (const [local, t] of m.imports)
+    if (mentions.has(local)) {
+      const nodes = importNode(models, t);
+      if (nodes === "unresolved") return "unresolved";
+      for (const n of nodes) out.add(n);
+    }
+  if (name === initOmission) for (const l of m.loads) if (models(l).hasInit) out.add(nodeKey(l, initOmission));
+  out.delete(key);
+  return [...out];
+}
+
+async function unitCensus(args: string[]): Promise<void> {
+  startEviction();
+  const directory = option(args, "--dir") ?? "tools";
+  const files = option(args, "--files")?.split(",") ?? null;
+  const functions = option(args, "--functions")?.split(",") ?? null;
+  const shallowOnly = args.includes("--shallow");
+  const out = resolve(option(args, "--out") ?? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), directory));
+  const commit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const dirty = execFileSync("git", ["-C", repository, "status", "--porcelain", "--", "tools", directory, "pipeline"],
+    { encoding: "utf8" }).trim() !== "";
+  const recordPath = resolve(option(args, "--record") ??
+    join(out, "..", `units-${directory}-${commit.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`));
+  const rest = args.filter((a) => a !== "--units" && a !== "--shallow");
+  if (rest.length) throw Error(`unknown arguments: ${rest.join(" ")}`);
+  const started = performance.now();
+  prepare(out, directory);
+  const root = join(out, directory);
+  const project = join(out, "tools");
+  const cache = new Map<string, SourceModel>();
+  const models = (file: string): SourceModel => {
+    const known = cache.get(file);
+    if (known) return known;
+    const m = sourceModel(root, directory, file);
+    cache.set(file, m);
+    return m;
+  };
+  const all = readdirSync(root).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort();
+  const want = new Map<string, Set<string>>();
+  const add = (file: string, name: string): boolean => {
+    const set = want.get(file) ?? new Set<string>();
+    want.set(file, set);
+    if (set.has(name)) return false;
+    set.add(name);
+    return true;
+  };
+  for (const file of all) {
+    if (files && !files.includes(file)) continue;
+    for (const fn of models(file).functions.keys()) if (!functions || functions.includes(fn)) add(file, fn);
+  }
+  const runs = new Map<string, FileRun>();
+  const absent = new Map<string, Map<string, OwnResult>>();
+  const ran = new Map<string, string>();
+  for (let round = 1; ; round++) {
+    const due = [...want].filter(([file, names]) => ran.get(file) !== [...names].sort().join(","));
+    if (due.length === 0) break;
+    process.stderr.write(`round ${round}: ${due.length} files, ${due.reduce((n, [, s]) => n + s.size, 0)} units wanted\n`);
+    await Promise.all(due.map(async ([file, names]) => {
+      const select = [...names].sort();
+      ran.set(file, select.join(","));
+      const known = absent.get(file) ?? new Map<string, OwnResult>();
+      absent.set(file, known);
+      runs.set(file, await runFile(root, project, models(file), select, known));
+      const run = runs.get(file);
+      process.stderr.write(`  ${file}: ${run?.front ? `refused: ${run.front.detail.slice(0, 100)}`
+        : `${run?.units.filter((u) => u.status === "verified").length} of ${run?.units.length} units accepted`}` +
+        `${known.size ? `, ${known.size} absent` : ""}\n`);
+    }));
+    if (shallowOnly) break;
+    for (const [file, names] of [...want])
+      for (const name of [...names]) {
+        const deps = nodeDepends(models, runs, absent, nodeKey(file, name));
+        if (deps === "unresolved") continue;
+        for (const d of deps) {
+          const [f = "", n = ""] = d.split("#");
+          if (!n.startsWith("module:")) add(f, n);
+        }
+      }
+  }
+  // Deep status: every node of the closure accepted; the first one not, breadth-first, blocks it.
+  const deepOf = (start: NodeKey): string | null => {
+    const seen = new Set<NodeKey>([start]);
+    for (let queue = [start], next = queue.shift(); next !== undefined; next = queue.shift()) {
+      const [file = "", name = ""] = next.split("#");
+      const own = ownResult(runs, absent, file, name);
+      if (!own) return `${next} (not run)`;
+      if (own.own.status !== "verified") return `${next} (${own.own.status}/${own.own.phase}: ${own.own.detail.slice(0, 120)})`;
+      const deps = nodeDepends(models, runs, absent, next);
+      if (deps === "unresolved") return `${next} (an import the census cannot resolve)`;
+      for (const d of deps) if (!seen.has(d)) {
+        seen.add(d);
+        queue.push(d);
+      }
+    }
+    return null;
+  };
+  const rows: UnitCensusRecord["functions"] = [];
+  for (const [file, names] of want)
+    for (const fn of names) {
+      if (fn === initOmission || (files && !files.includes(file)) || (functions && !functions.includes(fn))) continue;
+      const own = ownResult(runs, absent, file, fn);
+      const blocker = shallowOnly ? "(not computed)" : deepOf(nodeKey(file, fn));
+      rows.push({ file, fn, unit: own?.unit ?? null, own: own?.own ?? { status: "not run", phase: "-", detail: "" },
+        deep: blocker === null, blocker });
+    }
+  rows.sort((a, b) => a.file.localeCompare(b.file) || a.fn.localeCompare(b.fn));
+  const setting = storeSetting();
+  const record: UnitCensusRecord = {
+    source: { commit, dirty, directory, files, functions },
+    policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: null },
+    started: new Date(Date.now() - (performance.now() - started)).toISOString(),
+    elapsedMs: performance.now() - started,
+    files: [...runs.values()].map((run) => ({ ...run,
+      absent: [...(absent.get(run.file) ?? [])].map(([name, refusal]) => ({ name, refusal })) })),
+    functions: rows,
+  };
+  writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
+  const shallow = rows.filter((r) => r.own.status === "verified").length;
+  process.stdout.write(`functions: ${rows.length}; shallow verified ${shallow}; deep verified ${rows.filter((r) => r.deep).length}\n`);
+  for (const r of rows)
+    process.stdout.write(`  ${r.file}#${r.fn}: ${r.own.status}/${r.own.phase}${r.deep ? " deep" : ""}` +
+      `${r.own.status !== "verified" ? ` ${blocker(r.own.detail)}` : ""}${!r.deep && r.blocker ? ` · blocked by ${r.blocker}` : ""}\n`);
+  process.stdout.write(costReport([...runs.values()].map((run): SliceRecord => ({ slice: run.file, file: run.file, fn: "(file)",
+    lines: models(run.file).text.split("\n").length, sourceSha256: run.sourceSha256,
+    status: run.front ? run.front.status : "units", phase: run.front ? run.front.phase : "-",
+    detail: run.front?.detail ?? "", functions: run.units.length, invocations: run.invocations, artifactBytes: null }))));
+  process.stdout.write(`record: ${recordPath}\n`);
 }
 
 // ---------------------------------------------------------------------------

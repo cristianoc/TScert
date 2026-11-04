@@ -30,8 +30,19 @@ def command (args : List String) : IO UInt32 := do
       match depth.toNat? with
       | some fuel => Verification.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath (some fuel) budget
       | none => IO.eprintln "usage: search depth must be a natural number"; return 2
+  | ["--units", astPath, claimsPath, fileKey] =>
+      Verification.RequestCli.unitsFile astPath claimsPath fileKey budget
+  | ["--produce-unit", astPath, claimsPath, fileKey, evidencePath, unit, depth] =>
+      match depth.toNat? with
+      | some fuel => Verification.RequestCli.produceUnitFile astPath claimsPath fileKey evidencePath unit fuel budget
+      | none => IO.eprintln "usage: search depth must be a natural number"; return 2
+  | ["--check-unit", astPath, claimsPath, fileKey, evidencePath, unit] =>
+      Verification.RequestCli.checkUnitFile astPath claimsPath fileKey evidencePath unit budget
   | _ =>
       IO.eprintln "usage: verifier --lower-control-flow <ast.json>"
+      IO.eprintln "       verifier --units <ast.json> <source-claims.json> <file-key>"
+      IO.eprintln "       verifier --produce-unit <ast.json> <source-claims.json> <file-key> <evidence.json> <unit> <depth>"
+      IO.eprintln "       verifier --check-unit <ast.json> <source-claims.json> <file-key> <evidence.json> <unit>"
       IO.eprintln "       verifier --lower-program <ast.json> <source-claims.json> <file-key>"
       IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --plan-imports <ast.json> <source-claims.json>"

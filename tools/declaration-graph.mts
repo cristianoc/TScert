@@ -581,6 +581,11 @@ export interface RootRequests {
    * `declare const x: T`, `declare class C`, one span per name (overloads
    * once): each joins its values at the type its declarations state. */
   ambient?: readonly Span[];
+  /** The client's import bindings that only omitted code reads (a function
+   * the parser reads at its declared signature, or an omitted
+   * initialization): no value of the client reads them, so they join no
+   * graph. */
+  unread?: readonly string[];
   /** The first construct of the client that reaches the graph, where a
    * declaration merging into `Object` or `Function` is refused. */
   root?: Span;
@@ -2376,7 +2381,8 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
       return !!description && !!bound && bound.description === description && bound.value !== undefined && bound.value === hostEnumObject(description, first?.name.text ?? "");
     };
-    for (const binding of importBindings(client, rootsRequested.namespaceMembers ?? [])) {
+    const unread = new Set(rootsRequested.unread ?? []);
+    for (const binding of importBindings(client, rootsRequested.namespaceMembers ?? []).filter(b => !unread.has(b.name))) {
       try {
         // A function with overloads is its several declarations; any other
         // name must have one.
