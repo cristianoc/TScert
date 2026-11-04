@@ -7,7 +7,7 @@
 // running an invocation here and returning an entry whose stored description
 // is its own.
 import { observed, type Observation } from "../tools/files.mts";
-import { canonical, codeFailure, inProcessCode, nodeIdentity, osBuild, sha256, type Canonical, type StageName }
+import { canonical, codeFailure, inProcessCode, nodeIdentity, sha256, systemIdentity, type Canonical, type StageName }
   from "./stage-execution.mts";
 
 /** A compiler's identity as an observed stage states it: its installation's
@@ -43,7 +43,7 @@ export type BoundInProcess = {
 };
 
 /** Bind an in-process call: its description names the stage, the node
- * side's keyed code (`inProcessCode`), the runtime, its inputs' digests and, for an observed stage, its compiler and the system's build. */
+ * side's keyed code (`inProcessCode`), the runtime, its inputs' digests and, for an observed stage, its compiler and the system's identity (`systemIdentity`). */
 export function bindInProcess<T>(call: InProcessCall<T>): BoundInProcess {
   const runtime = nodeIdentity();
   const compiler = call.observed ? call.observed.compiler() : null;
@@ -52,12 +52,12 @@ export function bindInProcess<T>(call: InProcessCall<T>): BoundInProcess {
     code: "identity" in inProcessCode ? inProcessCode.identity : null,
     runtime: "identity" in runtime ? runtime.identity : null,
     inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
-    ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: osBuild() } : {}),
+    ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: systemIdentity() } : {}),
   };
   const identityFailure = (): string | null => codeFailure(inProcessCode) ?? ("unidentified" in runtime ? runtime.unidentified
     : compiler && "unobserved" in compiler ? compiler.unobserved
     : compiler && compiler.changed() ? "the loaded compiler differs from disk"
-    : compiler && osBuild() === null ? "the system's build is not identified"
+    : compiler && systemIdentity() === null ? "the system's build is not identified"
     : null);
   return { manifest, input: canonical(manifest), identityFailure };
 }

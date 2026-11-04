@@ -148,6 +148,17 @@ function profile(executablePackage: string, launcher: string, directory: string,
   ].join("\n");
 }
 const shellQuoted = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`;
+/** Linux's sandbox, bubblewrap: the compiler installed in
+ * `executablePackage` runs in new namespaces (mount, process, network, user,
+ * IPC, host name) whose file system holds only that installation, read-only,
+ * the empty directory `directory`, read-only, and minimal `/dev` and `/proc`:
+ * any other path names nothing, so the compiler reaches the user's files only
+ * through the queries the client answers. Its environment is empty. */
+const bubblewrap = "/usr/bin/bwrap";
+const confinement = (executablePackage: string, directory: string): string[] => [
+  "--unshare-all", "--die-with-parent", "--clearenv", "--setenv", "PWD", directory,
+  "--ro-bind", executablePackage, executablePackage, "--ro-bind", directory, directory, "--chdir", directory,
+  "--dev", "/dev", "--proc", "/proc"];
 /** The case sensitivity of the executable's file system, as the compiler
  * probes it: whether the executable's path with each letter's case swapped
  * names nothing. */
@@ -164,13 +175,20 @@ export type CompilerImplementation =
 type Identification = { identity: { [field: string]: string | boolean }; unobserved?: never } | { unobserved: string; identity?: never };
 function identify(at: Installation): Identification & JsonObject {
   if (at.missing !== undefined) return { unobserved: at.missing };
-  if (process.platform !== "darwin" || !installed("/usr/bin/sandbox-exec"))
-    return { unobserved: "the compiler's own reads are confined on macOS only (sandbox-exec)" };
+  const macOS = process.platform === "darwin" && installed("/usr/bin/sandbox-exec");
+  const linux = process.platform === "linux" && installed(bubblewrap);
+  if (!macOS && !linux)
+    return { unobserved: "the compiler's own reads are confined on macOS (sandbox-exec) and on Linux (bubblewrap) only" };
   const packageDigest = treeDigest(at.package), executableDigest = treeDigest(at.executablePackage);
   if (packageDigest === null || executableDigest === null) return { unobserved: "the compiler's installation is missing" };
-  return { identity: { executable: at.executable, packagePath: at.package, package: packageDigest, executablePackage: executableDigest,
-    caseSensitive: !installed(swapCase(at.executable)),
-    profile: profile(at.executablePackage, "<launcher>", "<directory>", userInfo().homedir) } };
+  const identity: { [field: string]: string | boolean } = { executable: at.executable, packagePath: at.package,
+    package: packageDigest, executablePackage: executableDigest, caseSensitive: !installed(swapCase(at.executable)) };
+  if (macOS) identity["profile"] = profile(at.executablePackage, "<launcher>", "<directory>", userInfo().homedir);
+  else {
+    identity["confinement"] = confinement(at.executablePackage, "<directory>").join(" ");
+    identity["bubblewrap"] = treeDigest(bubblewrap) ?? "missing";
+  }
+  return { identity };
 }
 /** The installation in use, its implementation and its launcher. */
 type Current = { installation: Installation; implementation: CompilerImplementation; launcher: string | null };
@@ -207,8 +225,10 @@ function launcher(): string | null {
   using.launcher ??= privateLauncher((directory, script) => [
     "#!/bin/sh",
     `cd ${shellQuoted(directory)} || exit 70`,
-    `exec /usr/bin/env -i PWD=${shellQuoted(directory)} /usr/bin/sandbox-exec -p ${
-      shellQuoted(profile(executablePackage, script, directory, userInfo().homedir))} ${shellQuoted(executable)} "$@"`,
+    process.platform === "linux"
+      ? `exec /usr/bin/env -i ${bubblewrap} ${confinement(executablePackage, directory).map(shellQuoted).join(" ")} ${shellQuoted(executable)} "$@"`
+      : `exec /usr/bin/env -i PWD=${shellQuoted(directory)} /usr/bin/sandbox-exec -p ${
+        shellQuoted(profile(executablePackage, script, directory, userInfo().homedir))} ${shellQuoted(executable)} "$@"`,
     "",
   ].join("\n")).launcher;
   return using.launcher;

@@ -9,7 +9,7 @@
 // code reads the file system only through tools/files.mts. Replay controls
 // use fresh processes, and the parse's run real compilers: they are a suite
 // of pipeline/test.mts. The retirement control reuses one process.
-// --node-only runs the controls that do not require sandbox-exec; --reads
+// --node-only runs the controls that do not require the sandbox; --reads
 // only the check that the stages' code reads through tools/files.mts, a fast
 // check of test-all.sh.
 import assert from "node:assert/strict";
@@ -628,12 +628,19 @@ if (process.argv[2] !== "--node-only") {
   const directReads: readonly (readonly [string, string])[] = [["a file", main], ["a missing file", join(fixture, "absent", "x.ts")]];
   for (const [what, read] of directReads) {
     const direct: SpawnSyncReturns<string> = spawnSync(launcher, ["--noEmit", read], { encoding: "utf8" });
-    assert.equal(direct.signal, "SIGKILL", `the compiler reading ${what} itself: ${JSON.stringify(direct)}`);
+    // macOS's sandbox kills the compiler; Linux's shows it no such path.
+    if (process.platform === "linux") {
+      assert.ok(direct.status !== 0 && direct.signal === null, `the compiler reading ${what} itself: ${JSON.stringify(direct)}`);
+      assert.match(direct.stdout + direct.stderr, /TS6053|not found/, `the compiler reading ${what} finds nothing`);
+    } else assert.equal(direct.signal, "SIGKILL", `the compiler reading ${what} itself: ${JSON.stringify(direct)}`);
   }
   // Through the API, with directory queries the client declines.
   const declining = openCompiler({ cwd: fixture, tsserverPath: launcher,
     fs: { readFile: () => undefined, fileExists: () => undefined } });
-  assert.throws(() => declining.updateSnapshot({ openProjects: [project] }), "a query the client declines kills the compiler");
+  if (process.platform === "linux")
+    assert.equal(declining.updateSnapshot({ openProjects: [project] }).getProject(project), undefined,
+      "a query the client declines finds nothing");
+  else assert.throws(() => declining.updateSnapshot({ openProjects: [project] }), "a query the client declines kills the compiler");
 
 }
 

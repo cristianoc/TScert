@@ -200,7 +200,7 @@ freshStore("probe");
 const probe = invoke(lower(script("probe.sh", '/bin/cat "$2"'), file("probe.json", "probe")));
 const eligible = probe.record.key !== null;
 if (!eligible) {
-  assert.match(probe.record.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_/);
+  assert.match(probe.record.ineligible ?? "", /macOS and Linux only|Node import, require or loader|Node DYLD_|Node LD_|ld\.so\.preload/);
   assert.equal(probe.record.execution, "executed");
   process.stdout.write(`replay ineligible: ${probe.record.ineligible}; invocations execute without keys\n`);
 }
@@ -219,14 +219,26 @@ const replayExecution = eligible ? "replayed" : "executed";
         JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
       assert.equal(record.key, null);
       assert.equal(record.execution, "executed");
-      assert.match(record.ineligible ?? "", eligible ? /Node DYLD_/ : /macOS only|Node DYLD_/);
+      assert.match(record.ineligible ?? "", eligible ? /Node DYLD_/ : /macOS and Linux only|Node DYLD_/);
       const result = invoke({ ...lower(program, input), environment: { [name]: "" } });
       assert.equal(result.record.key, null);
       assert.equal(result.record.execution, "executed");
-      assert.match(result.record.ineligible ?? "", eligible ? /child DYLD_/ : /macOS only|child DYLD_/);
+      assert.match(result.record.ineligible ?? "", eligible ? /child DYLD_/ : /macOS and Linux only|child DYLD_/);
     }
   }
-  process.stdout.write("DYLD overrides: Node and stage-child environments execute without keys\n");
+  for (const name of ["LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT"]) {
+    const child = spawnSync(process.execPath, [import.meta.filename, "--runtime-child", program, input],
+      { encoding: "utf8", env: { ...process.env, [name]: "" } });
+    assert.equal(child.status, 0, child.stderr);
+    const [record] = readInvocationLog(file("ld-log.jsonl",
+      JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
+    assert.equal(record.key, null);
+    assert.match(record.ineligible ?? "", eligible ? /Node LD_/ : /macOS and Linux only|Node LD_/);
+    const result = invoke({ ...lower(program, input), environment: { [name]: "" } });
+    assert.equal(result.record.key, null);
+    assert.match(result.record.ineligible ?? "", eligible ? /child LD_/ : /macOS and Linux only|child LD_/);
+  }
+  process.stdout.write("DYLD and LD overrides: Node and stage-child environments execute without keys\n");
 }
 
 {
@@ -718,6 +730,17 @@ if (platform() === "darwin") {
   universal(fat, 1, [[library], [other]]);
   assert.match(String(linkedLibraries(fat)), /architectures differ/, "an arm64 slice after the table is read");
   process.stdout.write("linked libraries: a library replaced or relinked changes the identity; a universal file's architectures must agree\n");
+} else if (platform() === "linux") {
+  // The loader's own list: Node loads its interpreter and the C library.
+  const node = linkedLibraries(process.execPath);
+  assert.ok(typeof node !== "string", String(node));
+  const listed = canonical(node);
+  assert.match(listed, /ld-linux/, "the program interpreter is identified");
+  assert.match(listed, /libc\.so/, "the C library is identified");
+  const notElf = join(dir, "not-elf");
+  writeFileSync(notElf, "#!/bin/sh\n# a script, which no ELF header starts\n");
+  assert.match(String(linkedLibraries(notElf)), /ELF header/, "a file that is no ELF file is not identified");
+  process.stdout.write("linked libraries: the loader's list names the interpreter and the C library; a file that is no ELF file has none\n");
 }
 {
   // Each identity control owns the modules it edits. An edit of a keyed
