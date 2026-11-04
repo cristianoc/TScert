@@ -464,7 +464,10 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         (* A ground arm naming a declaration, `M0` for `{ k: 0 }`, takes the
            parts its declaration names. *)
         let ground a = if Semantic.mentions_rigid a then a else opened 4 a in
-        let owner piece = match List.find_opt (fun a -> local a = None && (heads piece a || heads piece (ground a))) arms with
+        let names_part piece a = match piece,ground a with
+          | Atoms [x],Atoms ys -> List.mem x ys
+          | _ -> false in
+        let owner piece = match List.find_opt (fun a -> local a = None && (heads piece a || names_part piece a)) arms with
           | Some a -> a
           | None -> List.find (fun a -> local a <> None) arms in
         (* A part holding a generic member, a library interface read as its
