@@ -149,11 +149,10 @@ proposes.
    against the exact extracted request. Success establishes safety for that
    calculus program under its stated input and host assumptions.
 
-The OCaml producer analyzes the early execution plans; it does not need a
-finished typed calculus graph. This ordering avoids the circularity in which
-expression lowering needs types that the producer has yet to infer. The
-exported execution-plan document is an input to proposal generation. Acceptance
-uses the plans Lean reconstructs from source, rather than trusting that document.
+The OCaml producer analyzes the execution plans of stage 2, which precede
+types, so the plans it reads never wait on the types it infers. The exported
+execution-plan document is an input to proposal generation alone; acceptance
+uses the plans Lean reconstructs from the Fragment.
 
 Implementation entry points are [the parser](../tools/fragment-parse.mts),
 [the execution-plan writer](../lean/Verification/Source/FlowJson.lean),
