@@ -1,7 +1,7 @@
 # Draft: separation facts for heap knowledge
 
-The design of [certificate sharing's](certificate-sharing.md#stage-4-allocation-freshness-and-slot-relative-heap-knowledge)
-stage 4; its status and measurements are the Certificate size row of
+The design of [certificate sharing's](certificate-sharing.md)
+separation facts; its status and measurements are the Certificate size row of
 [WORK](../../WORK.md#status). The rules are stated formally in
 [separation facts](../PROGRAM-TYPING.md#separation-facts), the wire in the
 [evidence document](../REQUEST-PROTOCOL.md#evidence-document). Claims are
