@@ -77,8 +77,10 @@ async function writer(store: Store, kind: string, attempt: string, invocation: r
   process: ChildProcessWithoutNullStreams; directory: string; closed: Promise<number | null>;
 }> {
   const args = invocation.length ? ["--paused-invocation", ...invocation] : ["--writer", store.root, kind, attempt];
+  // A guard against a writer that hangs: it waits at its barrier while the
+  // test's other sections run, which takes about a minute on a 4-CPU runner.
   const child = spawn(process.execPath, [import.meta.filename, ...args],
-    { env: { ...process.env, TSCERT_STAGE_STORE: store.root }, timeout: 30_000, killSignal: "SIGKILL" });
+    { env: { ...process.env, TSCERT_STAGE_STORE: store.root }, timeout: 300_000, killSignal: "SIGKILL" });
   const started = Date.now();
   let errors = "";
   child.stderr.setEncoding("utf8");
