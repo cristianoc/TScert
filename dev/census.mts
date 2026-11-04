@@ -644,6 +644,7 @@ async function census(args: string[]): Promise<void> {
       }
     if (due.length === 0) break;
     process.stderr.write(`round ${round}: ${due.length} files, ${due.reduce((n, [, s]) => n + s.size, 0)} units wanted\n`);
+    let finished = 0;
     await Promise.all(due.map(async ([file, names]) => {
       const select = checked(file, names);
       ran.set(file, select.join(","));
@@ -651,7 +652,7 @@ async function census(args: string[]): Promise<void> {
       omissions.set(file, known);
       const run = await runFile(root, project, models, models(file), select, known);
       runs.set(file, run);
-      process.stderr.write(`  ${file}: ${run.front ? `refused: ${run.front.detail.slice(0, 100)}`
+      process.stderr.write(`  [${++finished}/${due.length}] ${file}: ${run.front ? `refused: ${run.front.detail.slice(0, 100)}`
         : `${run.units.filter((u) => u.status === "verified").length} of ${run.units.length} units accepted`}` +
         `${known.size ? `, ${known.size} omitted` : ""}\n`);
     }));
