@@ -219,11 +219,11 @@ const replayExecution = eligible ? "replayed" : "executed";
         JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
       assert.equal(record.key, null);
       assert.equal(record.execution, "executed");
-      assert.match(record.ineligible ?? "", /Node DYLD_/);
+      assert.match(record.ineligible ?? "", eligible ? /Node DYLD_/ : /macOS only|Node DYLD_/);
       const result = invoke({ ...lower(program, input), environment: { [name]: "" } });
       assert.equal(result.record.key, null);
       assert.equal(result.record.execution, "executed");
-      assert.match(result.record.ineligible ?? "", /child DYLD_/);
+      assert.match(result.record.ineligible ?? "", eligible ? /child DYLD_/ : /macOS only|child DYLD_/);
     }
   }
   process.stdout.write("DYLD overrides: Node and stage-child environments execute without keys\n");

@@ -8433,7 +8433,10 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     assert.ok(project !== null || warm.records.some((r) => r.stage === "explain"), `${name}: its explanation replayed`);
     // The drivers' worker processes hold their source snapshots until they stop.
     const stored = (part: string): number => present(join(store, part)) ? readdirSync(join(store, part)).length : 0;
-    assert.ok(stored("sources") > 0 && stored("entries") > 0, `${name}: snapshots and entries stored`);
+    // A platform where no stage has a key stores no entry (`ineligible`).
+    if (cold.records.some((r) => r.key !== null))
+      assert.ok(stored("sources") > 0 && stored("entries") > 0, `${name}: snapshots and entries stored`);
+    else assert.equal(stored("entries"), 0, `${name}: no entry stored without keys`);
     let pass = new Store(store).evictionPass(0);
     for (const started = Date.now(); pass && pass.held > 0 && Date.now() - started < 30_000;) {
       await new Promise((done) => setTimeout(done, 200));
