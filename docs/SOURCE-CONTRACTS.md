@@ -547,7 +547,7 @@ classification among them. Each of the following is refused, named by the
 unit's origin: a qualified read naming no unit, a unit of another origin, a
 unit not eligible, a structural mismatch, a module's claims about other bytes
 than its document's, and a module run whose check fails. The
-importer's evidence and the units' are checked by one `checkUnitsJson` call,
+importer's evidence and the units' are checked by one `--check-units` run,
 whose module-run units are the module documents, so the evidence that
 certifies the effect is evidence about that declaration's code, not about a
 name.
@@ -580,7 +580,7 @@ importer, and of each module an admitted read names, whose two readings it
 refuses (`planRefusals`), a line each. Each read is checked on its own, at
 that round's documents and claims, as `planImports` checks it. The plan reads of the importer's claims only the list of its
 qualified reads, so its answer is the search's at those reads. The final check is one
-`checkUnitsJson` call over the whole document, a verdict per unit. Dense `map` needs a callback
+`--check-units` run over the whole document, a verdict per unit. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 

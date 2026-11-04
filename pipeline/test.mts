@@ -340,16 +340,39 @@ const jsonIndex = (v: JsonValue | undefined): number => {
 /** The kinds of an evidence bundle's tables, in the order each names only
  * the ones before it (REQUEST-PROTOCOL.md, "Evidence document"). */
 const evidenceTables = ["types", "contexts", "terms", "links", "separations", "valueSets", "knowledge", "proofs"] as const;
-/** Every bundle of an evidence document: the main one, then each module's. */
-const evidenceBundles = (document: JsonValue): JsonObject[] => [jsonObject(jsonObject(document).main),
-  ...jsonArray(jsonObject(document).modules).map((m) => jsonObject(jsonObject(m).evidence))];
-/** An evidence document with every reference unfolded: each bundle spelled
- * as the responses and obligations the tables stand for, every occurrence
- * a copy of its own, for a control to edit one occurrence. */
+/** An evidence document's lines (REQUEST-PROTOCOL.md, "Evidence document"):
+ * each unit and its evidence. */
+const evidenceLines = (text: string): { unit: string; evidence: JsonValue }[] =>
+  text.split("\n").filter((l) => l !== "").map((l) => {
+    const parsed: unknown = JSON.parse(l);
+    const line = jsonObject(jsonValue(parsed));
+    assert.ok(typeof line.unit === "string", "a unit's line");
+    return { unit: line.unit, evidence: line.evidence ?? null };
+  });
+/** An evidence document with every reference unfolded, for a control to edit
+ * one occurrence: the groups' responses and obligations in one list each, in
+ * the document's order (`main`), each group's unit with how many it holds
+ * (`lines`), and each module run's evidence (`modules`), every bundle spelled
+ * as the responses and obligations its tables stand for, every occurrence a
+ * copy of its own. */
 function unfoldedEvidence(path: string): JsonValue {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-  const document = jsonValue(parsed);
-  for (const b of evidenceBundles(document)) {
+  const functions: JsonValue[] = [], obligations: JsonValue[] = [];
+  const lines: JsonValue[] = [], modules: JsonValue[] = [];
+  for (const { unit, evidence } of evidenceLines(readFileSync(path, "utf8"))) {
+    if (evidence !== null && !Array.isArray(evidence) && typeof evidence === "object") unfoldBundle(evidence);
+    if (unit.startsWith("module:")) modules.push({ unit, evidence });
+    else {
+      const b = jsonObject(evidence);
+      functions.push(...jsonArray(b.functions));
+      obligations.push(...jsonArray(b.obligations));
+      lines.push({ unit, count: jsonArray(b.functions).length });
+    }
+  }
+  return { main: { functions, obligations }, lines, modules };
+}
+/** A bundle with every reference of its tables unfolded, in place. */
+function unfoldBundle(b: JsonObject): void {
+  {
     const at = (table: JsonValue[], k: JsonValue | undefined): JsonValue =>
       structuredClone(must(table[jsonIndex(k)], "an entry of its table"));
     const types = jsonArray(b.types), links = jsonArray(b.links), separations = jsonArray(b.separations);
@@ -399,7 +422,6 @@ function unfoldedEvidence(path: string): JsonValue {
     b.obligations = jsonArray(b.obligations).map((o) => jsonArray(o).map((p) => at(proofs, p)));
     for (const table of evidenceTables) delete b[table];
   }
-  return document;
 }
 /** A JSON value's text. */
 function jsonText(v: JsonValue): string {
@@ -407,11 +429,34 @@ function jsonText(v: JsonValue): string {
   assert.ok(typeof text === "string", "a JSON value has a text");
   return text;
 }
-/** An unfolded evidence document written with tables again, each entry once:
- * the text the verifier reads. */
+/** An unfolded evidence document written with tables again, a line per unit,
+ * each entry of a line's tables once: the text the verifier reads. */
 function tabledEvidence(document: unknown): string {
-  const copy = jsonValue(document);
-  for (const b of evidenceBundles(copy)) {
+  const copy = jsonObject(jsonValue(document));
+  const main = jsonObject(copy.main);
+  const functions = jsonArray(main.functions), obligations = jsonArray(main.obligations);
+  const out: string[] = [];
+  let at = 0;
+  for (const l of jsonArray(copy.lines)) {
+    const line = jsonObject(l);
+    const count = line.count;
+    assert.ok(typeof count === "number", "a line's count");
+    const b: JsonObject = { functions: functions.slice(at, at + count), obligations: obligations.slice(at, at + count) };
+    at += count;
+    tableBundle(b);
+    out.push(jsonText({ unit: line.unit ?? null, evidence: b }));
+  }
+  for (const m of jsonArray(copy.modules)) {
+    const line = jsonObject(m);
+    const evidence = line.evidence ?? null;
+    if (evidence !== null && !Array.isArray(evidence) && typeof evidence === "object") tableBundle(evidence);
+    out.push(jsonText({ unit: line.unit ?? null, evidence }));
+  }
+  return out.join("\n") + "\n";
+}
+/** A bundle written with tables, in place, each entry once. */
+function tableBundle(b: JsonObject): void {
+  {
     const tables = new Map<string, { keys: Map<string, number>; entries: JsonValue[] }>(
       evidenceTables.map((t) => [t, { keys: new Map(), entries: [] }]));
     const add = (table: string, value: JsonValue): number => {
@@ -469,7 +514,6 @@ function tabledEvidence(document: unknown): string {
     b.obligations = jsonArray(b.obligations).map((o) => jsonArray(o).map(proof));
     for (const table of evidenceTables) b[table] = must(tables.get(table), table).entries;
   }
-  return jsonText(copy);
 }
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
  * require a refusal; its words, for the caller to match. */
@@ -6143,7 +6187,7 @@ control(async (): Promise<void> => {
     const artifacts = run(file);
     const text = readFileSync(sourceKey(artifacts), "utf8");
     const index = readClaims(artifacts).functions.findIndex((f) => f.name === function_);
-    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
     assert.ok(isObject(evidence) && isObject(evidence.main) && Array.isArray(evidence.main.functions), "the case's evidence");
     const unit: unknown = evidence.main.functions[index];
     assert.ok(isObject(unit) && Array.isArray(unit.certificate), `${function_}'s certificate`);
@@ -6151,7 +6195,7 @@ control(async (): Promise<void> => {
     forge(unit.certificate as Certificate); // asserted: a certificate of the case's evidence, decoded by Lean; the forgery writes yields only
     assert.notEqual(JSON.stringify(unit.certificate), before, `${name}: a yield forged`);
     const path = join(artifacts, `${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(evidence));
+    writeFileSync(path, tabledEvidence(evidence));
     const start = text.indexOf(call);
     assert.ok(start >= 0, `${name}: the call`);
     const refusal = invoke(join(artifacts, "claims.json"), path, artifacts);
@@ -7037,10 +7081,15 @@ control(async (): Promise<void> => {
   // accepted: they denote the same bundle.
   const artifacts = run("aliases");
   const check = (name: string, change: (b: JsonObject) => void): Invoked => {
-    const document = jsonValue(JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")));
-    change(evidenceBundles(document)[0] ?? {});
+    // The unit's line with the most derivations is the one changed.
+    const lines = evidenceLines(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    const size = (e: JsonValue): number =>
+      e !== null && typeof e === "object" && !Array.isArray(e) && Array.isArray(e.proofs) ? e.proofs.length : -1;
+    const changed = lines.filter((l) => !l.unit.startsWith("module:"))
+      .reduce((best, l) => size(l.evidence) > size(best.evidence) ? l : best);
+    change(jsonObject(changed.evidence));
     const path = join(artifacts, `forged-reference-${name}-evidence.json`);
-    writeFileSync(path, jsonText(document));
+    writeFileSync(path, lines.map((l) => jsonText({ unit: l.unit, evidence: l.evidence })).join("\n") + "\n");
     return tested(verifierCall(verifier, ["--check-units", join(artifacts, "fragment.json"),
       join(artifacts, "claims.json"), sourceKey(artifacts), path]));
   };

@@ -658,7 +658,7 @@ corruption; they do not authenticate results supplied by an untrusted
 writer.
 
 `SourceClaimJson.checkUnitJson_safe` establishes safety from the corresponding
-successful `checkUnitsJson` evaluation. The memoizer must preserve that premise
+accepted `unitVerdict` evaluation. The memoizer must preserve that premise
 when replaying a check. This is an additional implementation obligation,
 outside that theorem.
 
