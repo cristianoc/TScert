@@ -421,6 +421,8 @@ type SourceModel = {
   imports: Map<string, ImportTarget>;
   loads: string[];
   reexports: { name: string; target: ImportTarget }[];
+  /** The names its declarations that run nothing bind: types, interfaces, `const` and ambient enums. */
+  types: Set<string>;
   lineStarts: number[];
 };
 
@@ -450,6 +452,7 @@ function sourceModel(root: string, directory: string, file: string): SourceModel
   const functions = new Map<string, { mentions: Set<string>; group: string[] }>();
   const initMentions = new Set<string>();
   let hasInit = false;
+  const types = new Set<string>();
   for (const s of tree.statements) {
     const span = { start: s.getStart(tree), end: s.end };
     if (ts.isFunctionDeclaration(s) && s.name) {
@@ -459,9 +462,11 @@ function sourceModel(root: string, directory: string, file: string): SourceModel
       const clause = s.importClause;
       const bindings = clause?.namedBindings;
       const pair = (local: string, imported: string): [string, string] => [local, imported];
-      const names: [string, string][] = [...(clause?.name ? [pair(clause.name.text, "default")] : []),
+      // A type-only import reads no value.
+      const typeOnly = clause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
+      const names: [string, string][] = typeOnly ? [] : [...(clause?.name ? [pair(clause.name.text, "default")] : []),
         ...(!bindings ? [] : ts.isNamedImports(bindings)
-          ? bindings.elements.map((e) => pair(e.name.text, (e.propertyName ?? e.name).text))
+          ? bindings.elements.filter((e) => !e.isTypeOnly).map((e) => pair(e.name.text, (e.propertyName ?? e.name).text))
           : [pair(bindings.name.text, "*")])];
       for (const [local, imported] of names) imports.set(local, target(s.moduleSpecifier, imported));
       const loaded = target(s.moduleSpecifier, "*");
@@ -475,6 +480,11 @@ function sourceModel(root: string, directory: string, file: string): SourceModel
       else if (ts.isNamedExports(clause))
         for (const e of clause.elements)
           reexports.push({ name: e.name.text, target: target(s.moduleSpecifier, (e.propertyName ?? e.name).text) });
+      // A re-export links and loads its module as the initialization runs.
+      hasInit = true;
+      statements.push({ ...span, kind: "init" });
+    } else if ((isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isEnumDeclaration(s)) && !runsInInit(s)) {
+      types.add(s.name.text);
       statements.push({ ...span, kind: "other" });
     } else if (runsInInit(s)) {
       hasInit = true;
@@ -499,7 +509,8 @@ function sourceModel(root: string, directory: string, file: string): SourceModel
   const lineStarts = [0];
   for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
   void directory;
-  return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, lineStarts };
+  return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, types,
+    lineStarts };
 }
 
 /** The units a refusal located in a census file makes absent: the function
@@ -603,12 +614,14 @@ function ownResult(runs: Map<string, FileRun>, absent: Map<string, Map<string, O
 function importNode(models: (file: string) => SourceModel, t: ImportTarget, depth: number = 0): NodeKey[] | "unresolved" {
   if (t === null) return [];
   const m = models(t.file);
-  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), nodeKey(m.file, initOmission)];
+  const init = m.hasInit ? [nodeKey(m.file, initOmission)] : [];
+  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), ...init];
   if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
+  if (m.types.has(t.imported)) return [];
   const re = m.reexports.find((r) => r.name === t.imported) ?? null;
   if (re) return depth > 8 ? "unresolved" : importNode(models, re.target, depth + 1);
   if (m.reexports.some((r) => r.name === "*")) return "unresolved";
-  return [nodeKey(m.file, initOmission)];
+  return init;
 }
 
 /** The nodes a node depends on: its unit's dependencies, its file's
