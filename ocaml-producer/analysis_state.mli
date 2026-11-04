@@ -11,13 +11,6 @@ val create : Proposal_diagnostics.state -> Flow.graph list ->
   (Json.t * Semantic.ty) list -> Source.fn -> t
 
 
-type candidate_snapshot = {
-  point: string;
-  speculative: bool;
-  output: Analysis_capabilities.node_output;
-  metadata: Proposal_flow.metadata;
-}
-
 module Access (_ : sig val state : t end) : sig
   include Analysis_capabilities.Queries
   include Analysis_capabilities.Observations
@@ -39,9 +32,6 @@ module Access (_ : sig val state : t end) : sig
   val speculate : (unit -> 'a) -> 'a option
   val with_block_context : Semantic.ty option -> (unit -> 'a) -> 'a * Semantic.ty list
   val output : unit -> Analysis_capabilities.node_output
-  val snapshot : unit -> candidate_snapshot
-  val block_returns : unit -> Semantic.ty list
   val writes : unit -> (Json.t * Semantic.ty) list
   val uses : unit -> (Json.t * Semantic.ty) list
-  val explanations : unit -> (Json.t * string) list
 end

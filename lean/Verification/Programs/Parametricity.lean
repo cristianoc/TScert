@@ -89,12 +89,6 @@ theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEv
       checkMappedUsing G images Γ Δ m ps := by
   cases m <;> simp only [checkMappedUsing_eq, checkEdge_reassign, check_fun_reassign]
 
-theorem allocBuiltins_reassign (parts : List (PropKey × List ι)) :
-    allocBuiltins (reassign G η) parts = allocBuiltins G parts := by
-  unfold allocBuiltins
-  simp only [builtinsFree_reassign]
-  rfl
-
 theorem allocBuiltinsUsing_reassign (parts : List (PropKey × List ι)) :
     allocBuiltinsUsing (images.reassign η) parts = allocBuiltinsUsing images parts := by
   unfold allocBuiltinsUsing

@@ -866,7 +866,7 @@ exception family holds (`ErrorsIn`, `builtinExc_errors`).
 
 Every composition lemma takes, beside its context's step rule, the context's
 throw rule (`bind`, `bind_list` with `ArgRaises`, `ctx_bind`,
-`HeapObservations.bind`); `thrown_safe` makes a term throwing a value of
+`SafePostExc.bind`); `thrown_safe` makes a term throwing a value of
 $`\Xi`$ safe at every type. `SafePost` adds a postcondition on the heap a
 value is produced in, and none on a throw; `SafePostExc` adds one on the heap
 a throw is raised in too
@@ -1134,8 +1134,7 @@ value it additionally requires `Q h e`; its step case uses exactly the same
 operational step, truncated-world extension, admissibility and heap satisfaction.
 At budget zero it is true. Divergence is permitted.
 [HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
-defines it: `erase` yields ordinary safety, and `forget` embeds ordinary
-safety with `Q = True`.
+defines it: `erase` yields ordinary safety.
 
 Current contents depend on the heap, so they are not a value type, and an
 observation does not narrow a cell's invariant: a Boolean cell currently

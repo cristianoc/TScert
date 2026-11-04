@@ -4,7 +4,6 @@
 // fragment-statements.mts#protocolPattern
 // fragment-statements.mts#hoistTarget
 // fragment-statements.mts#readScope
-// fragment-statements.mts#readCannotThrow
 // fragment-statements.mts#unassigned
 // fragment-statements.mts#block
 // fragment-statements.mts#statements

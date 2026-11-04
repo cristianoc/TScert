@@ -29,18 +29,6 @@ theorem HeapOk.stable_value {n : Nat} {W : WorldT n} {h : Heap}
   have he := hc 0 hn (trunc 0 (Nat.zero_le n) W) u (hm 0 hn)
   simpa [he] using hu
 
-/-- The stable-location frame over extensions of truncated worlds. External
-calls receiving a host node satisfy this model property conditionally on the
-modeled realization F1′ (T1′) and execution correspondence T8; this theorem
-does not establish those runtime obligations. -/
-theorem HeapOk.stable_value_future {n m : Nat} {W : WorldT n}
-    {U : WorldT m} {h : Heap} {l : Nat} {c : Ctr n} {v : Val}
-    (hm : m ≤ n) (hpos : 0 < m) (hx : WExt (trunc m hm W) U)
-    (hl : lookup W l = some c) (hc : CtrStable c v) (hh : HeapOk m U h) :
-    h[l]? = some v := by
-  exact hh.stable_value hpos (WExt_lookup hx (lookup_trunc hm W l c hl))
-    (hc.restrict hm)
-
 /-- Heap satisfaction survives dropping a level, with the world truncated. -/
 theorem HeapOk_trunc (n : Nat) (W : WorldT (n + 1)) (h : Heap)
     (hok : HeapOk (n + 1) W h) : HeapOk n (trunc n (Nat.le_succ n) W) h := by

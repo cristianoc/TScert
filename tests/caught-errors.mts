@@ -1,20 +1,11 @@
 // Observable behaviour of the real makers and handlers; no miniature table.
 import assert from "node:assert/strict";
-import { refusal, refusalOf } from "../tools/diagnostic-gate.mts";
 import { ioFailure, ioFailureOf, toolFailureOf } from "../tools/thrown.mts";
 import { orAbsent } from "../tools/files.mts";
 
-const gateError = refusal("blocked", [3, 8]);
-assert.deepEqual(refusalOf(gateError), { pos: [3, 8], message: "blocked" });
-assert.strictEqual(refusalOf(gateError), refusalOf(gateError));
-assert.equal(gateError.message, "blocked");
-assert.equal("pos" in gateError, false);
-for (const foreign of [null, undefined, 1, "blocked", {}, new Error("blocked"), () => {}]) {
-  assert.equal(refusalOf(foreign), undefined);
+for (const foreign of [null, undefined, 1, "blocked", {}, new Error("blocked"), () => {}])
   assert.equal(ioFailureOf(foreign), undefined);
-}
 const trapped = new Proxy({}, { get() { throw Error("lookup reads no field"); } });
-assert.equal(refusalOf(trapped), undefined);
 assert.equal(ioFailureOf(trapped), undefined);
 
 const cause = { code: "ENOENT" };

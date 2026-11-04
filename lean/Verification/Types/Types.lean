@@ -181,12 +181,6 @@ theorem StableAt.present {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)}
     ∃ (c : Ctr n) (value : Val), lookup W l = some c ∧ CtrStable c value := by
   simpa [StableAt, hl] using h
 
-/-- An absent stable key's object has no prototype. -/
-theorem StableAt.absent {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)} {key : PropKey}
-    (h : StableAt W flds key) (hl : flds.lookup key = none) :
-    flds.lookup CallArguments.protoField = none := by
-  simpa [StableAt, hl] using h
-
 /-- The stable keys: each read one way for the object's life (`StableAt`), a
 required one owned, since it is also a view, an optional one owned or not. -/
 def stableKeysT (keys : List PropKey) : Fam := fun _ W v =>

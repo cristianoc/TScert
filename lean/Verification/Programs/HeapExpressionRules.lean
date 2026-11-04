@@ -866,16 +866,6 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       HeapSeparation.allocate_holds hk.2.2.2.1 (fresh_apart he hh),
       HeapKnowledge.elemsHolds_extend _ (HeapKnowledge.elemsHolds_extend _ hshift.2.2.2.2)⟩
 
-theorem slots_lookup_ge {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
-    (h : (slots base ns).lookup f = some l) : base ≤ l := by
-  induction ns generalizing base with
-  | nil => simp [slots] at h
-  | cons g ns ih =>
-    simp only [slots, List.lookup] at h
-    split at h
-    · cases h; exact Nat.le_refl _
-    · have := ih h; omega
-
 /-- An object allocated past the heap's end keeps what was known of the old
 heap, and its own locations are separated from every contract field of the
 context's record-typed slots. -/

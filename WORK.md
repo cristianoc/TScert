@@ -740,7 +740,7 @@ certificate valid under selection. That the selected search finds it needs
 the certificate restricted to the root and the dependencies of its
 coverings, with every premise and piece of evidence kept, and a selected
 discovery whose universe contains that restriction, its pruning monotone on
-it. The engine does not represent those dependencies: `demandPairs`
+it. The engine does not represent those dependencies: `demandPairsIn`
 enumerates `clausesOf` where coverage reads `sourceClauses ++ meetSources`;
 `TabRen` discharges a premise through another row; `rowArrows` derives arrow
 evidence from every row, and `compareStepStateCore` reads instance members

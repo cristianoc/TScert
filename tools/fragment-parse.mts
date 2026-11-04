@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { refusal } from "./diagnostic-gate.mts";
 /*
  * Trusted front end for the verification experiment (see DESIGN.md).
  *
@@ -569,7 +568,7 @@ export class Gate {
   }
 
   fail(node: Node | null, message: string): never {
-    throw refusal(this.refusal(node, message), node ? this.span(node) : [0, this.file.end]);
+    throw new Error(this.refusal(node, message));
   }
 
   /** The gate's refusal `message`, located at `node`. */
@@ -1024,7 +1023,6 @@ export class Gate {
   collect: typeof statements.collect = statements.collect;
 
   hoistTarget: typeof statements.hoistTarget = statements.hoistTarget;
-  readCannotThrow: typeof statements.readCannotThrow = statements.readCannotThrow;
   readScope: typeof statements.readScope = statements.readScope;
 
   unassigned: typeof statements.unassigned = statements.unassigned;

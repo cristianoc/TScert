@@ -1283,10 +1283,10 @@ The semantic predicate `stableKeysT` in
 each key's reading by `StableAt`. `stableKeysT_at` supplies the object and
 its reading, `StableAt.present` a present key's stable contract;
 `stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
-admissibility, forgetting keys and conjunction. The theorem
-`HeapFacts.stable_key_frame` in
+admissibility, forgetting keys and conjunction.
+`ReadGave.stable_frame` in
 [HeapFacts.lean](../lean/Verification/Semantics/HeapFacts.lean) frames what a
-read of a stated key gives on normal return (`ReadGave.stable_frame`). A record or
+read of a stated key gives on normal return. A record or
 dictionary clause states its stable keys (`Clause.refs`'s last part), whose
 meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
 a marked object term states them as `"stable": [key, …]`, nonempty, which
@@ -1350,8 +1350,7 @@ its heap holds $`v_0`$ there too:
      {\mathrm{SafePost}(T,\ \lambda h'\,v.\ Q(h',v)\land h'(\ell)=v_0,\ n{+}1,W,h,t)}\ \textsf{stable-frame}
 ```
 
-The semantic lemmas are `HeapOk.stable_value_future` in
-[Heaps.lean](../lean/Verification/Semantics/Heaps.lean),
+The semantic lemmas are
 `HeapObservations.stable_frame` in
 [HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
 and `ReadGave.stable_frame` in

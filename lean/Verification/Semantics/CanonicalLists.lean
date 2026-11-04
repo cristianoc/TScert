@@ -100,8 +100,6 @@ omit [StrictTotal α] in
 theorem mem_canon {a : α} {l : List α} : a ∈ canon l ↔ a ∈ l := by
   rw [canon, mem_dedupSorted, (List.mergeSort_perm l notAbove).mem_iff]
 
-omit [StrictTotal α] in
-@[simp] theorem canon_nil : canon ([] : List α) = [] := by simp [canon, dedupSorted]
 
 theorem pairwise_canon (l : List α) : (canon l).Pairwise (· < ·) :=
   (dedupSorted_spec _ (List.pairwise_mergeSort notAbove_trans notAbove_total l)).1
@@ -194,69 +192,5 @@ instance {β : Type} [LT β] [DecidableLT β] [StrictTotal β] [DecidableEq β] 
     have : Trans (α := β) (· < ·) (· < ·) (· < ·) := ⟨StrictTotal.trans⟩
     exact List.lt_trans h₁ h₂
   total := lex_total
-
-/-! ### Sorting by a key computed once -/
-
-/-- An element with its key, ordered by the key and then the element. -/
-structure Keyed (β α : Type) where
-  key : β
-  val : α
-  deriving DecidableEq
-
-section keyed
-variable {β : Type} [LT β] [DecidableLT β] [StrictTotal β] [DecidableEq β]
-
-instance : LT (Keyed β α) := ⟨fun p q => p.key < q.key ∨ (p.key = q.key ∧ p.val < q.val)⟩
-instance : DecidableLT (Keyed β α) := fun p q =>
-  inferInstanceAs (Decidable (p.key < q.key ∨ (p.key = q.key ∧ p.val < q.val)))
-
-instance : StrictTotal (Keyed β α) where
-  irrefl p h := by
-    rcases h with h | ⟨-, h⟩
-    · exact StrictTotal.irrefl _ h
-    · exact StrictTotal.irrefl _ h
-  trans {p q r} h₁ h₂ := by
-    rcases h₁ with h₁ | ⟨e₁, h₁⟩ <;> rcases h₂ with h₂ | ⟨e₂, h₂⟩
-    · exact Or.inl (StrictTotal.trans h₁ h₂)
-    · exact Or.inl (e₂ ▸ h₁)
-    · exact Or.inl (e₁ ▸ h₂)
-    · exact Or.inr ⟨e₁.trans e₂, StrictTotal.trans h₁ h₂⟩
-  total {p q} h := by
-    by_cases hk : p.key = q.key
-    · have hv : p.val ≠ q.val := fun e => h (by cases p; cases q; simp_all)
-      rcases StrictTotal.total hv with h' | h'
-      · exact Or.inl (Or.inr ⟨hk, h'⟩)
-      · exact Or.inr (Or.inr ⟨hk.symm, h'⟩)
-    · rcases StrictTotal.total hk with h' | h'
-      · exact Or.inl (Or.inl h')
-      · exact Or.inr (Or.inl h')
-
-/-- `canon`, comparing keys computed once per element. -/
-def canonOn (k : α → β) (l : List α) : List α :=
-  (canon (l.map fun a => (⟨k a, a⟩ : Keyed β α))).map (·.val)
-
-/-- Where the order on elements is the order on their keys, sorting by the
-precomputed keys gives the canonical list. -/
-theorem canonOn_eq {k : α → β} (hk : ∀ a b, a < b ↔ k a < k b) (l : List α) : canonOn k l = canon l := by
-  apply eq_of_pairwise _ (pairwise_canon l)
-  · intro a
-    simp only [canonOn, List.mem_map, mem_canon]
-    constructor
-    · rintro ⟨p, ⟨b, hb, rfl⟩, rfl⟩; exact hb
-    · intro ha; exact ⟨⟨k a, a⟩, ⟨a, ha, rfl⟩, rfl⟩
-  · have hp := pairwise_canon (l.map fun a => (⟨k a, a⟩ : Keyed β α))
-    have hm : ∀ p ∈ canon (l.map fun a => (⟨k a, a⟩ : Keyed β α)), p.key = k p.val := by
-      intro p hp
-      obtain ⟨b, -, rfl⟩ := List.mem_map.mp (mem_canon.mp hp)
-      rfl
-    unfold canonOn
-    rw [List.pairwise_map]
-    refine List.Pairwise.imp_of_mem ?_ hp
-    intro p q hpm hqm hpq
-    rcases hpq with h | ⟨e, h⟩
-    · exact (hk _ _).mpr (by rw [← hm p hpm, ← hm q hqm]; exact h)
-    · exact h
-
-end keyed
 
 end Verification.CanonicalLists

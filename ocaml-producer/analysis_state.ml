@@ -143,13 +143,6 @@ let with_block_context state result f =
     state.block_result := saved_result;
     state.block_returned := saved_returned) (fun () -> let result = f () in result,!returned)
 
-type candidate_snapshot = {
-  point: string;
-  speculative: bool;
-  output: node_output;
-  metadata: Proposal_flow.metadata;
-}
-
 (* The owner builds operation capabilities. Functor consumers receive restricted
    Inputs signatures and cannot recover this owner or its mutable storage. *)
 module Access (S : sig val state : t end) = struct
@@ -187,10 +180,8 @@ module Access (S : sig val state : t end) = struct
   let expected_result () = !(state.block_result)
   let speculative_typing () = (!local).speculative_typing
   let typing_roots () = !(state.typing_roots)
-  let block_returns () = !(!(state.block_returned))
   let writes () = !(state.writes)
   let uses () = !(state.uses)
-  let explanations () = !(state.diagnostics.Proposal_diagnostics.explanations)
   let observations () : observations = {
     for_in_keys= !(state.diagnostics.Proposal_diagnostics.for_in_keys);
     method_callees= !(state.diagnostics.Proposal_diagnostics.method_callees);
@@ -232,8 +223,6 @@ module Access (S : sig val state : t end) = struct
     (!local).contracts <- o.contracts; (!local).arrows <- o.arrows;
     (!local).requests <- o.requests; (!local).instances <- o.instances;
     (!local).instantiations <- o.instantiations
-  let snapshot () = {point=current_point ();speculative=speculative_typing ();
-    output=output ();metadata=path_facts ()}
   let with_output point action =
     let enclosing_point=current_point () and enclosing_output=output () in
     Fun.protect ~finally:(fun () -> restore_output enclosing_output;

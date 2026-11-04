@@ -257,45 +257,4 @@ theorem dense_classOk {x n ρ h} (hd : Dense x n ρ h) : ClassOk (denseClass x) 
     exact dense_class hd (by simp [Region.mem, hl])
   · cases hc
 
-/-- **Class evidence from contracts.** Evidence that names, for each field it
-covers, a location whose world contract admits only source values (class
-`value`) or only stores (class `store`) holds at a heap meeting the world.
-This is the class theorem of a `cell` or `read` fact's support, which the
-fact's own meaning does not give. -/
-theorem classOk_of_contracts {n W h ρ} {cl : ClassEvidence} (hh : HeapOk (n+1) W h)
-    (hcl : ∀ x k c l, cl x k = some c → (fieldsOf (ρ x)).lookup k = some l →
-      ∃ ctr, lookup W l = some ctr ∧
-        (c = .value → ∀ U u, ctr 0 (Nat.zero_lt_succ n) U u → isSourceVal u = true) ∧
-        (c = .store → ∀ U u, ctr 0 (Nat.zero_lt_succ n) U u → isArr u = true)) :
-    ClassOk cl ρ h := by
-  intro x k c l hc hl hlt
-  obtain ⟨ctr, hw, hv, hs⟩ := hcl x k c l hc hl
-  have hget : h[l]? = some h[l] := List.getElem?_eq_getElem hlt
-  cases c with
-  | value => simp [Region.mem, hget, Cls.has, contract_class hh hw (hv rfl) hget]
-  | store => simp [Region.mem, hget, Cls.has, contract_store hh hw (hs rfl) hget]
-
-/-! ## Allocation of arrays and closures
-
-An array literal allocates its element locations at the heap's length and
-beyond, so they are fresh too. A closure is allocated by `makeAt` with its
-code (`alloc_after` covers every call code). -/
-
-theorem elemSlots_ge (b n : Nat) : ∀ l, some l ∈ elemSlots b n → b ≤ l := by
-  intro l hl
-  simp only [elemSlots, List.mem_map, List.mem_range, Option.some.injEq] at hl
-  obtain ⟨i, -, rfl⟩ := hl
-  exact Nat.le_add_right b i
-
-theorem arrLit_fresh {h vs h' r} (st : Step h (.arrLit vs) h' r) (hv : ∀ v ∈ vs, isVal v = true) :
-    ∃ ls, r = .arr ls ∧ ∀ l, some l ∈ ls → h.length ≤ l := by
-  cases st with
-  | arrArg _ _ s =>
-    rename_i i a _ hi _
-    exact absurd s (value_no_step (hv a (List.mem_of_getElem? hi)))
-  | arrAlloc => exact ⟨_, rfl, elemSlots_ge h.length vs.length⟩
-  | arrSpread he _ _ =>
-    have := hv _ (by rw [he]; exact List.mem_append_right _ (List.mem_cons_self ..))
-    simp [isVal] at this
-
 end Verification.Footprints

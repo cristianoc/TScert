@@ -3628,9 +3628,6 @@ also admits arbitrary internal values. -/
   .top ∈ clausesOf G T ∨
     (.source ∈ clausesOf G T ∧ G.params i = false ∧ (G.schemes i).isSome = true)
 
-instance [DecidableEq ι] (G : NormalGraph ι) (T : List ι) (i : ι) :
-    Decidable (OpaqueUniverse G T i) := by unfold OpaqueUniverse; infer_instance
-
 /-- The clauses of the source's meet rows the target does not name, split as
 source clauses are: a member of a meet row `p ⊓ cs` is in one of `cs`, so the
 row is below a target covering each of them. A bounded binder read as its

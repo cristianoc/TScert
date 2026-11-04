@@ -79,9 +79,7 @@ later heap `h'`:
 (`Closed.Holds`, through `Closed.holds_iff`). Its extremes: the empty
 footprint `{value: keep, store: keep}` is heap preservation and
 `{value: any, store: any}` is growth (proved: `Closed.holds_empty`,
-`Closed.holds_top`), which every safe run meets (proved: `Closed.top_safe`).
-Runs compose: two runs within $`\Phi`$ are a run within $`\Phi`$ (proved:
-`Closed.Holds.trans`). The entrywise order is exactly the semantic order
+`Closed.holds_top`), which every safe run meets (proved: `Closed.top_safe`). The entrywise order is exactly the semantic order
 (proved: `closed_order_exact`, with a one-location heap witnessing each
 failure; `Closed.Holds.mono`).
 
@@ -154,7 +152,7 @@ locations below the heap the body started in; the runs compose by
 - a **selected call or construction** whose signature's footprint is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
   `ExpressionEffects.selected_sound`, through `CallEffects.call_safe` and
-  `CallEffects.construct_safe`): a fixed call, a variadic call and a
+  `CallEffects.construct_safe_exc`): a fixed call, a variadic call and a
   construction, each at the signature the evidence selects; a variadic
   call's spreads read their stores in the heap the call starts in
   (`spread_values_post`, `spread_head_post`). A signature excepting its

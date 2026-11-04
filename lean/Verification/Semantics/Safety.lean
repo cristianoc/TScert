@@ -75,25 +75,6 @@ theorem Safe_nul {Ξ : Fam} : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe Ξ n
   | 0, _, _ => trivial
   | _ + 1, _, _ => Or.inl (Or.inl ⟨rfl, rfl⟩)
 
-/-- Safety depends on the exception family and the type only through their
-behaviour at the budgets it can still reach. -/
-theorem Safe_congr' {Ξ Ξ' B C : Fam} (n : Nat) (hΞ : Agree Ξ Ξ' n) (hag : Agree B C n) :
-    ∀ (j : Nat), j < n → ∀ (W : WorldT j) (h : Heap) (t : Tm),
-      Safe Ξ B j W h t ↔ Safe Ξ' C j W h t := by
-  intro j
-  induction j with
-  | zero => intro _ _ _ _; exact Iff.rfl
-  | succ p ih =>
-    intro hj W h t
-    simp only [Safe]
-    constructor <;> rintro ((⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hs, hok, hsafe⟩)
-    · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mp hB⟩)
-    · exact Or.inl (Or.inr (hr.mono fun v => (hΞ (p + 1) hj W v).mp))
-    · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mp hsafe⟩
-    · exact Or.inl (Or.inl ⟨hv, (hag (p + 1) hj W t).mpr hB⟩)
-    · exact Or.inl (Or.inr (hr.mono fun v => (hΞ (p + 1) hj W v).mpr))
-    · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mpr hsafe⟩
-
 /-- Safety is monotone in the exception family and the type, at every budget
 it can still reach. -/
 theorem Safe_mono' {Ξ Ξ' B C : Fam} : ∀ (j : Nat),

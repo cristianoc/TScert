@@ -199,44 +199,6 @@ theorem MarksOk.push {μ b h M} (hm : MarksOk μ b h) (hM : 0 < M) {h' : Heap} (
 
 /-! ## Classes of contents -/
 
-theorem isArr_of_source {v : Val} (h : isSourceVal v = true) : isArr v = false := by
-  cases v <;> simp_all [isSourceVal, isArr]
-
-/-- A location whose contract admits only source values holds no store. -/
-theorem contract_class {n W h l c v} (hh : HeapOk (n+1) W h) (hc : lookup W l = some c)
-    (hsrc : ∀ U u, c 0 (Nat.zero_lt_succ n) U u → isSourceVal u = true) (hv : h[l]? = some v) :
-    isArr v = false := by
-  obtain ⟨u, hu, hcu⟩ := hh.2 l c hc
-  rw [hv] at hu; cases hu
-  exact isArr_of_source (hsrc _ _ (hcu 0 (Nat.zero_lt_succ n)))
-
-/-- A location whose contract admits only stores holds one. -/
-theorem contract_store {n W h l c v} (hh : HeapOk (n+1) W h) (hc : lookup W l = some c)
-    (hst : ∀ U u, c 0 (Nat.zero_lt_succ n) U u → isArr u = true) (hv : h[l]? = some v) :
-    isArr v = true := by
-  obtain ⟨u, hu, hcu⟩ := hh.2 l c hc
-  rw [hv] at hu; cases hu
-  exact hst _ _ (hcu 0 (Nat.zero_lt_succ n))
-
-/-- **Entry-valid class.** A contract the current world states at a location
-the entry heap has is the entry world's, so the entry heap's contents meet
-it: a source-valued contract gives class `value` at the entry heap. -/
-theorem contract_class_entry {N n W₀ h₀ l c} {W : WorldT (n+1)} (hn : n + 1 ≤ N + 1)
-    (hh₀ : HeapOk (N+1) W₀ h₀) (hx : WExt (trunc (n+1) hn W₀) W) (hc : lookup W l = some c)
-    (hl : l < h₀.length) (hsrc : ∀ U u, c 0 (Nat.zero_lt_succ n) U u → isSourceVal u = true) :
-    (Region.cls .value).mem ρ h₀ l = true := by
-  obtain ⟨c₀, hc₀⟩ : ∃ c₀, lookup W₀ l = some c₀ := by
-    have : l < (toList W₀).length := by rw [← hh₀.1]; exact hl
-    exact ⟨_, List.getElem?_eq_getElem this⟩
-  have ht := lookup_trunc hn W₀ l c₀ hc₀
-  have hW := WExt_lookup hx ht
-  rw [hc] at hW; cases hW
-  have hv : h₀[l]? = some h₀[l] := List.getElem?_eq_getElem hl
-  have := contract_class hh₀ hc₀ (fun U u hu => hsrc U u hu) hv
-  simp [Region.mem, hv, Cls.has, this]
-
-/-! ## Density -/
-
 /-- `x`'s store holds an array whose first `n` indices are present. -/
 def Dense (x n : Nat) (ρ : Env) (h : Heap) : Prop :=
   ∃ s ls, (fieldsOf (ρ x)).lookup arrayStoreKey = some s ∧ h[s]? = some (.arr ls) ∧ DensePrefix n ls
@@ -292,46 +254,5 @@ theorem stableDenseClosed_sound {x n ρ h h' Φ} (hc : stableDenseClosed Φ = tr
   · exact hle
 
 /-! ## Elements -/
-
-theorem source_of_elements {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {l : Nat}
-    (hT : listT T k W (.arr ls)) (hl : some l ∈ ls) :
-    ∃ (A : Fam) (c : Ctr k), (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) ∧
-      lookup W l = some c ∧
-      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (A j W' u) := by
-  obtain ⟨ls', heq, -, -, -, hreq, hopt, hrest⟩ := hT
-  cases heq
-  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hl
-  by_cases hr : i < T.required.length
-  · obtain ⟨A, hA⟩ : ∃ A, T.required[i]? = some A := ⟨_, List.getElem?_eq_getElem hr⟩
-    obtain ⟨l', c, hl', hw, hag⟩ := hreq i A hA
-    rw [hi] at hl'; cases hl'
-    exact ⟨A, c, .inl (List.mem_of_getElem? hA), hw, hag⟩
-  · by_cases ho : i < T.required.length + T.optional.length
-    · obtain ⟨A, hA⟩ : ∃ A, T.optional[i - T.required.length]? = some A :=
-        ⟨_, List.getElem?_eq_getElem (by omega)⟩
-      obtain ⟨c, hw, hag⟩ := hopt (i - T.required.length) A l hA
-        (by rw [show T.required.length + (i - T.required.length) = i by omega]; exact hi)
-      exact ⟨A, c, .inr (.inl (List.mem_of_getElem? hA)), hw, hag⟩
-    · obtain ⟨E, c, hE, hw, hag⟩ := hrest i l (by omega) hi
-      exact ⟨E, c, .inr (.inr hE), hw, hag⟩
-
-/-- **The class of an element location**, two levels down: at level 1 the
-store's contract relates each element location's contract to its element
-family, observed at level 0. -/
-theorem elems_class {n W h s cs ls l} {T : TupleF} (hh : HeapOk (n+2) W h)
-    (hs : lookup W s = some cs)
-    (hcs : ∀ U v, cs 1 (by omega) U v → listT T 1 U v)
-    (hsrc : ∀ A, (A ∈ T.required ∨ A ∈ T.optional ∨ T.rest = some A) →
-      ∀ U u, A 0 U u → isSourceVal u = true)
-    (hv : h[s]? = some (.arr ls)) (hl : some l ∈ ls) :
-    ∃ u, h[l]? = some u ∧ isArr u = false := by
-  obtain ⟨v, hv', hcv⟩ := hh.2 s cs hs
-  rw [hv] at hv'; cases hv'
-  have hT := hcs _ _ (hcv 1 (by omega))
-  obtain ⟨A, c', hA, hw', hag⟩ := source_of_elements hT hl
-  obtain ⟨c, hw, rfl⟩ := lookup_trunc_inv (by omega) W l c' hw'
-  obtain ⟨u, hu, hcu⟩ := hh.2 l c hw
-  exact ⟨u, hu, isArr_of_source (hsrc A hA _ u
-    ((hag 0 (by omega) (trunc 0 (by omega) W) u).1 (hcu 0 (by omega))))⟩
 
 end Verification.Footprints

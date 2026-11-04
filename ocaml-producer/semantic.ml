@@ -45,9 +45,6 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
 let bound_effect e = if e.receiver_store || e.receiver_own then
     {e with footprint=top_footprint; receiver_store=false; receiver_own=false; elements=None}
   else {e with elements=None}
-(* Whether binding keeps a signature: one about its receiver's elements is
-   not kept (Lean's `Effect.keeps`). *)
-let bindable_effect e = e.requires = None && e.elements = None
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
