@@ -99,7 +99,7 @@ const snapshotQueries: ReadonlySet<string> = new Set([
  * by method and parameters: a query asked again of the same snapshot is
  * answered as it was first (query omission, a conjecture), and a snapshot's
  * answers go with its release. */
-const answers = new WeakMap<object, Map<unknown, Map<string, string>>>();
+const answers: WeakMap<object, Map<unknown, Map<string, string>>> = new WeakMap();
 /** How many queries of a snapshot were made in this process, and how many of
  * them its earlier answer served, for the controls. */
 const queries: { asked: number; served: number } = { asked: 0, served: 0 };

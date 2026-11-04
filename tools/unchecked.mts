@@ -128,7 +128,7 @@ const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotate
 
 /** A comment directive that silences the checker: `@ts-ignore`,
  * `@ts-expect-error`, `@ts-nocheck`. */
-const SUPPRESSION = /^\/(\/+|\*+)[\s*]*@ts-(ignore|expect-error|nocheck)\b/;
+const SUPPRESSION: RegExp = /^\/(\/+|\*+)[\s*]*@ts-(ignore|expect-error|nocheck)\b/;
 
 /** Where each comment of a file starts: the scanner's leading and trailing
  * comment ranges of every node and of the file's end. */
@@ -165,13 +165,13 @@ const WRITTEN: [number, Kind][] = [
   [ts.SyntaxKind.NonNullExpression, "!"],
 ];
 
-const REASON = /\/\/ asserted: (\S.*)$/;
+const REASON: RegExp = /\/\/ asserted: (\S.*)$/;
 
 /** The reason given for what is written on `line` (0-based) of `lines`: at
  * the end of that line, or as the whole of the line above. */
 function reasonAt(lines: string[], line: number): string | null {
-  const own = REASON.exec(lines[line] ?? "");
-  if (own?.[1]) return own[1];
+  const own = REASON.exec(lines[line] ?? "")?.[1];
+  if (own) return own;
   const above = (lines[line - 1] ?? "").trim();
   const alone = above.startsWith("//") ? REASON.exec(above) : null;
   return alone?.[1] ?? null;
