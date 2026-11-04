@@ -239,7 +239,7 @@ function importNodes(models: (file: string) => SourceModel, t: ImportTarget, dep
     }
     return out;
   }
-  if (t.imported === "default")
+  if (t.imported === "default" && !m.reexports.some((r) => r.name === "default"))
     return m.defaultFunction !== null ? [nodeKey(m.file, m.defaultFunction)] : init;
   if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
   if (m.types.has(t.imported)) return [];
@@ -251,13 +251,16 @@ function importNodes(models: (file: string) => SourceModel, t: ImportTarget, dep
 }
 
 /** The nodes the census adds to a unit's own dependencies: its file's
- * initialization, the units its code reaches through imports, and, for the
+ * initialization, the same-file functions its code names, the units its code
+ * reaches through imports, and, for the
  * initialization, the initialization of every census module it loads. */
 function censusEdges(models: (file: string) => SourceModel, m: SourceModel, name: string): NodeKey[] | "unresolved" {
   const out = new Set<NodeKey>();
   if (name !== initOmission) out.add(nodeKey(m.file, initOmission));
   const mentions = name === initOmission ? m.initMentions
     : new Set((m.functions.get(name)?.group ?? []).flatMap((g) => [...(m.functions.get(g)?.mentions ?? [])]));
+  // The same-file functions its code names, an omitted one included, which the check reads at its signature.
+  for (const f of m.functions.keys()) if (mentions.has(f)) out.add(nodeKey(m.file, f));
   for (const [local, t] of m.imports)
     if (mentions.has(local)) {
       const nodes = importNodes(models, t);
