@@ -397,9 +397,13 @@ behavior; `Array.prototype` and `Object.prototype` have no `then`. External code
 and across calls. Every array is also writable and extensible: no array is
 frozen, sealed or made non-extensible, so an element write at an array index
 succeeds, as the calculus's `setElem` does. The program's own code cannot
-change that, since `Object.freeze`, `Object.seal`, `Object.preventExtensions`
-and `Object.defineProperty` are outside the reviewed overlay of library
-globals (`tools/library-globals.mts`); external code must supply such arrays.
+change that, since `Object.seal`, `Object.preventExtensions` and
+`Object.defineProperty` are outside the reviewed overlay of library globals
+(`tools/library-globals.mts`), and `Object.freeze` is admitted only of an
+object literal written as its argument, whose result holds its fields as
+readonly views, so that no write of the program reaches the frozen object
+([library globals](SOURCE-CONTRACTS.md#library-globals)); external code
+must supply such arrays.
 This is an explicit host assumption, like the restrictions on
 proxies and accessors; it is not a theorem about arbitrary JavaScript.
 

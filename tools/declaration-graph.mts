@@ -23,7 +23,7 @@ import { wildcardReadings, classInstance, computedAlias, computedForm, expandMap
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, nativeCollectionView, nativeCollectionViewDefinition, type CollectionKind, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateName, unionIterationName, unionIterationParts, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  iterationIntrinsic, hasPropertyName, openReadIntrinsic, elementAtName, freezeName, byteAtName, byteLengthName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, footprintReading, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, nodeListMembers, hostViews, readsAsOptionalUnknown, requestReading, tableReading } from "./compiler-api.mts";
@@ -5169,6 +5169,31 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
             if (!argument || more.length || ts.isSpreadElement(argument) || call.typeArguments?.length)
               throw Error(`${what} is a test of one argument`);
             context.test(spanOf(call), entry.test);
+          }
+          return [];
+        }
+        // `Object.freeze` of a fresh object literal of named fields, a call
+        // of `%Freeze:K%` (`freezeIntrinsic`), `K` the fields' names: no
+        // other reference to the literal exists. Any other argument is
+        // refused.
+        if (entry?.freezes) {
+          for (const call of calls) {
+            const [argument, ...more] = call.arguments;
+            let literal: Node | undefined = argument;
+            while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+            if (!literal || more.length || !ts.isObjectLiteralExpression(literal))
+              throw Error(`${what} is admitted of one object literal only, which no other reference holds`);
+            const keys: string[] = [];
+            for (const member of literal.properties) {
+              const named = ts.isPropertyAssignment(member) ? member.name : ts.isShorthandPropertyAssignment(member) &&
+                !member.objectAssignmentInitializer ? member.name : undefined;
+              const key = named && (ts.isIdentifier(named) || ts.isStringLiteral(named)) ? named.text : undefined;
+              if (key === undefined || key === "__proto__" || keys.includes(key))
+                throw Error(`${what} is admitted of a literal of named fields only: no method, accessor, spread, ` +
+                  "computed key or `__proto__`");
+              keys.push(key);
+            }
+            context.intrinsic(spanOf(call), freezeName(keys));
           }
           return [];
         }

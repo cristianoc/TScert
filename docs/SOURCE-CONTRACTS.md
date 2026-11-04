@@ -3150,6 +3150,28 @@ keeps from running.
   parameter types converts by code.
 - `Math.random()` reads no argument and writes no location a program
   reaches: as declared, within the empty footprint (`library-math-random`).
+- `Object.freeze(o)` of an ordinary object makes every own property
+  non-writable and non-configurable and the object non-extensible, runs no
+  code and returns `o` (ECMA-262, SetIntegrityLevel); a later write to it,
+  or a key added to it, throws, which no write of the model does. It is
+  admitted of an object literal written as its argument whose members are
+  named fields `k: e` or `k`, `k` an identifier or a string other than
+  `__proto__`, and refused of anything else
+  ([refusal index](SOURCE-FRAGMENT.md#fragment-boundary)). The call is one
+  of the intrinsic for the fields' names $`k_1,\ldots,k_n`$:
+
+  $`\%\mathsf{Freeze}{:}[k_1,\ldots,k_n]\%:\forall A_1\ldots A_n.\ \{\mathtt{readonly}\ k_i{:}A_i\}_i\Rightarrow\{\mathtt{readonly}\ k_i{:}A_i\}_i`$,
+  stating no effect. No other reference to the literal exists, so the
+  call's result is the only one to the frozen object, and it holds the
+  fields as readonly views: a writable field is covered only by a writable
+  field, a writable index by no record without an own-key bound, and a
+  key-adding write and `Object.assign` copy only onto an allocation its
+  holders own, which a call's result is not. So no write the program makes
+  reaches the frozen object (`object-freeze-literal`;
+  `invalid-object-freeze-writable-alias`,
+  `invalid-object-freeze-writable-parameter`,
+  `invalid-object-freeze-key-add`, `invalid-object-freeze-assign-target`,
+  run under Node). An object a field holds is not frozen.
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
