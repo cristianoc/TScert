@@ -54,8 +54,8 @@ and `afterPop` in [`array-last-element.ts`](pipeline/examples/array-last-element
 ## How it works
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/architecture-dark.png">
-  <img src="assets/readme/architecture-light.png" alt="Parse, plan and elaborate are trusted on review; propose and search are proposals that may be wrong; check is proved sound and receives the certificate and the same request elaboration produced.">
+  <source media="(prefers-color-scheme: dark)" srcset="diagrams/architecture-dark.png">
+  <img src="diagrams/architecture-light.png" alt="Parse, plan and elaborate are trusted on review; propose and search are proposals that may be wrong; check is proved sound and receives the certificate and the same request elaboration produced.">
 </picture>
 
 1. **Parse.** A front end on TypeScript's compiler API reads the source and the
@@ -121,13 +121,18 @@ refused and why.
 
 ## On the shoulders of
 
-TScert builds on decades of work on types and semantics, among them Appel and
-McAllester's indexed model for foundational proof-carrying code, Ahmed's
-semantics of types for mutable state, Wright and Felleisen's syntactic type
-soundness, Reynolds's parametricity, Abadi and Cardelli's theory of objects,
-semantic subtyping (Frisch, Castagna and Benzaken), JSCert, the ECMAScript
-specification and Lean 4. [REFERENCES](docs/REFERENCES.md) lists every work, with
-what TScert takes from it and where.
+TScert builds on decades of work on types and semantics, among them
+[Appel and McAllester's indexed model](docs/REFERENCES.md#appel-and-mcallester-2001)
+for foundational proof-carrying code,
+[Ahmed's semantics of types for mutable state](docs/REFERENCES.md#ahmed-2004),
+[Wright and Felleisen's syntactic type soundness](docs/REFERENCES.md#wright-and-felleisen-1994),
+[Reynolds's parametricity](docs/REFERENCES.md#reynolds-1983),
+[Abadi and Cardelli's theory of objects](docs/REFERENCES.md#abadi-and-cardelli-1996),
+[semantic subtyping](docs/REFERENCES.md#frisch-castagna-and-benzaken-2008),
+[JSCert](docs/REFERENCES.md#bodin-et-al-2014-jscert), the
+[ECMAScript specification](docs/REFERENCES.md#ecma-262) and
+[Lean 4](docs/REFERENCES.md#lean-4). [REFERENCES](docs/REFERENCES.md) lists
+every work, with what TScert takes from it and where.
 
 ## Try it
 

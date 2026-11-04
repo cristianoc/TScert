@@ -10,7 +10,7 @@ TScert communicates in four forms, with one visual and verbal language:
 - **Card:** a single image that explains one fact for a post or a
   document.
 - **Diagram:** a drawing in the documentation, such as
-  [the architecture](../diagrams/architecture.svg).
+  [the architecture](../diagrams/architecture-light.png).
 
 All four use the tokens and roles below, a colour means the same thing in
 each, and the words follow [the voice](#the-voice).

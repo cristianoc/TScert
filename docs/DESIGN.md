@@ -104,12 +104,17 @@ lowering, meaning translation into a simpler program representation. The first
 fixes execution order without needing types; the second constructs the typed
 calculus program that the verifier checks.
 
-![Architecture: source parsing, Lean execution plans, OCaml type proposals, Lean typed elaboration, evidence search and certificate checking.](../diagrams/architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../diagrams/architecture-dark.png">
+  <img src="../diagrams/architecture-light.png" alt="Architecture: parsing, Lean execution plans and Lean typed elaboration are trusted on review; OCaml type proposals and Lean evidence search are proposals; the Lean certificate checker receives the certificate and the same request elaboration produced.">
+</picture>
 
-[Open the full-size diagram](../diagrams/architecture.svg). Amber marks translation
-whose correspondence with JavaScript is reviewed and tested. Blue marks
-replaceable proposals. Green marks checking with a proved safety consequence
-for the extracted calculus program.
+The diagram uses the [roles](STYLE.md#roles) of the design language. Maroon
+marks translation whose correspondence with JavaScript is reviewed and tested.
+Grey dashed boxes mark replaceable proposals. Green marks checking with a
+proved safety consequence for the extracted calculus program, which the
+checker receives from elaboration itself, beside the certificate the search
+proposes.
 
 ### Stages
 
