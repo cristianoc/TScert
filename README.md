@@ -105,8 +105,8 @@ In outline, the supported subset covers:
 - object literals with spreads, records, index signatures, arrays and tuples,
   optional chaining, enums, and classes with fields, methods and a base class;
 - functions, closures, optional, default and rest parameters, generic functions
-  certified for every admissible type argument, `async` and `await` of promises of
-  primitives;
+  certified for every admissible type argument, `async` and `await` of native
+  promises;
 - declared types: aliases, interfaces, unions, intersections and library types
   through reviewed contracts.
 

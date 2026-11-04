@@ -616,7 +616,8 @@ One line each; the reason is the one the design keeps.
   and `.apply` consume that read guarantee; sparse stores need a separate
   `undefined` alternative. `find` needs
   `undefined` even on dense input because callbacks can remove later elements.
-- **Arrays own neither `constructor` nor any of `ArrayProto`'s keys.** An exact
+- **Arrays own neither `constructor`, `then`, `toJSON` nor any of `ArrayProto`'s
+  keys.** An exact
   bound would make every tagged array type empty and verify its readers
   vacuously. At a numeric key that is no index, an own property holds an
   element, as `Array<T>`'s number index declares: a read at a `number` key is
@@ -646,8 +647,9 @@ One line each; the reason is the one the design keeps.
   field never meets a writable one.
 - **A throw is an outcome.** Trusted steps are assumed to return a value of
   their result or throw, never a wrong value.
-- **`await` is a trusted step; an async result is a primitive.** Thenable
-  adoption is never modelled.
+- **`await` is a trusted step; an async return is of a stable non-thenable
+  type.** `await` observes a native promise's payload; thenable adoption is
+  never modelled.
 - **A host iterable's iteration is one intrinsic family, picked by the
   iterable's type**: `%Iterate:K%` per host iterable kind, none with a
   `return`. **A program's iterable runs the iterator protocol** as ordinary
@@ -662,10 +664,13 @@ One line each; the reason is the one the design keeps.
   contract's ([rest packs](PROGRAM-TYPING.md#judgments-and-constructor-views)).
 - **Closure parameters without a type take TypeScript's contextual type as
   an annotation**, checked like any other; `any` is refused.
-- **A module is the unit of verification; obligations stay per code unit.**
+- **A file is checked over one front; acceptance is per unit.** Each unit's
+  verdict is its own, under the signatures of the module values it reads
+  ([modules and code units](#modules-and-code-units)).
 - **Statement entries are exact interfaces**; no invariant is inferred and no
   join computed by the checker.
-- **A call forgets heap facts.** No reachability or capture analysis is
+- **A call forgets heap facts but those through stable keys.** No
+  reachability or capture analysis is
   justified by the model's open record types: a value of an open type may
   name any location. A mutable binding every closure mentioning it sees at
   its value when created is no heap location: it is a slot of its

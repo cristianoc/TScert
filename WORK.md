@@ -868,4 +868,3 @@ not resolve.
 The top-level documents hold facts stated twice, detail below their level,
 and history. The cleanup applies AGENTS.md's writing rules to them:
 
-- DESIGN's "Lasting decisions" is reviewed the same way.
