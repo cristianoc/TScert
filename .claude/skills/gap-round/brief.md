@@ -12,7 +12,7 @@ first. It is the authority, and this brief only fills in the round.
 - Case `<case>`: `pipeline/examples/<case>.ts`, a gap in `pipeline/cases.mts`.
 - Its reason: `<reason>`.
 - The census sites it stands for: `<sites>`. They come from `<census record>`,
-  with the slices beside it (`tools/tools/slice-<file>-<fn>.mts`).
+  each a unit's refusal at its span in `tools/<file>`.
 
 The goal is that the case is closed: decided, never left a gap. Answer it
 by the first route of
@@ -77,9 +77,9 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
   ```
 
   Release the lock on failure too.
-- **Measuring:** take the slice of the function the case blocks most and
-  one that depends on it, before and after, under the lock. Run
-  `make census FILES=f.mts FUNCTIONS=fn,other`, with `TSCERT_STAGE_STORE`
+- **Measuring:** take the function the case blocks most and one that
+  depends on it, before and after, under the lock. Run
+  `make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`, with `TSCERT_STAGE_STORE`
   naming a fresh directory in your scratch. Run no full census.
 - **Committing:**
   - `make suite` and `make test` pass before each commit.
@@ -96,6 +96,6 @@ avoidance or a host boundary in SOURCE-REWRITES.md in the same commit.
 - The commits: hashes and subjects.
 - The route you took, and why.
 - The Effect lines: each case before → after.
-- The slices before → after.
+- The measured functions before → after.
 - Any model of external code, with the trust it states.
 - Anything still open.
