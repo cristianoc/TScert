@@ -10,7 +10,7 @@ only with a proof. A checker whose soundness is proved in Lean validates that
 proof. It never trusts the types that TypeScript or the proposing tools infer;
 what it does trust is listed under [What acceptance means](#what-acceptance-means).
 
-https://github.com/user-attachments/assets/c4850356-c07b-44cf-84e3-7dafb37386ab
+https://github.com/user-attachments/assets/c539cf25-8956-4bd5-88ca-795873acab34
 
 ## Why
 
