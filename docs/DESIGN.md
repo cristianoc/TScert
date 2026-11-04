@@ -319,9 +319,11 @@ one front per file, each unit searched and checked on its own
   and the declared or certified signatures of what it imports;
 - **deep verified** when it is shallow verified and so is every unit of its
   dependency closure: the dependencies each accepted check prints, its
-  file's initialization, the unit of each census-directory declaration an
+  file's initialization, the same-file functions its unit's members name
+  (an omitted one, read at its signature, included), the unit of each
+  census-directory declaration an
   import mentioned by its unit's members binds (a function's unit, a default
-  import the `export default function`'s, any other value the
+  import the `export default function`'s or the default re-export's target, any other value the
   initialization, a namespace import every unit of its module and of what it
   re-exports, a type nothing), and the initialization of every
   census-directory module a loaded module loads. A unit not accepted, not run
