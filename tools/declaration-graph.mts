@@ -581,6 +581,10 @@ export interface RootRequests {
    * `declare const x: T`, `declare class C`, one span per name (overloads
    * once): each joins its values at the type its declarations state. */
   ambient?: readonly Span[];
+  /** The client's re-exports, each statement's span: module declarations
+   * no step runs, each binding the export of its module TypeScript resolves
+   * it to, without an error. */
+  reexports?: readonly Span[];
   /** The client's import bindings that only omitted code reads (a function
    * the parser reads at its declared signature, or an omitted
    * initialization): no value of the client reads them, so they join no
@@ -2538,6 +2542,16 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           span: at }, ...valueOf(emptyDeclarationReading, resolveDeclarations(identifier, identifier.text), identifier.text) });
       } catch (error) {
         refuseAt(at, error);
+      }
+    }
+    // The client's re-exports bind only what their modules export.
+    for (const span of rootsRequested.reexports ?? []) {
+      const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);
+      if (!statement) throw declarationError(span, "TypeScript re-export missing");
+      try {
+        clean(statement, "a re-export");
+      } catch (error) {
+        refuseAt(span, error);
       }
     }
     let resolutionContextAt: Span | undefined;

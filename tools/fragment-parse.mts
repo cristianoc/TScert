@@ -1391,6 +1391,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // declarations that run nothing and the imports.
   const isInitStatement = (s: Statement): boolean =>
     !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || isImport(s) ||
+      (ts.isExportDeclaration(s) && !!s.moduleSpecifier) ||
       ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && ambient(s)) ||
       (ts.isEnumDeclaration(s) && !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword ||
         m.kind === ts.SyntaxKind.ConstKeyword)));
@@ -1439,6 +1440,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const classNodes: ClassDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
   const importNodes: ImportDeclaration[] = [];
+  const reexportNodes: Statement[] = [];
   const enumNodes: ts.EnumDeclaration[] = [];
   // Top-level code other than declarations: the module's initialization, run
   // once, in order, after its function declarations are instantiated.
@@ -1503,6 +1505,12 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (isImport(s) && !carriesContext) importNodes.push(s);
+    // A re-export (`export { a, b as c } from "m"`, `export * from "m"`,
+    // `export * as n from "m"`) is a module declaration, which the host links
+    // before the module runs and after "m" has run: no step of the
+    // initialization. An importer reads a re-exported binding as an import of
+    // "m"'s export.
+    else if (ts.isExportDeclaration(s) && s.moduleSpecifier) reexportNodes.push(s);
     // An enum is a module constant bound to its object where it is written;
     // a `const enum` runs nothing, its reads being its members' values. An
     // ambient enum runs nothing either: its object is the environment's,
@@ -2074,7 +2082,7 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findComputed);
   };
   if (!carriesContext) scan(findComputed);
-  if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length || importMetaNodes.length ||
+  if (importNodes.length || reexportNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length || importMetaNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       staticTypeNodes.length ||
@@ -2082,7 +2090,7 @@ function lowerFile(file: string, carriesContext: boolean,
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || lengthReadNodes.length || openReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
-    const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? firstArray ??
+    const first =importNodes[0] ?? reexportNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
@@ -2113,6 +2121,7 @@ function lowerFile(file: string, carriesContext: boolean,
         importMeta: importMetaNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
         unread: unread(),
+        reexports: reexportNodes.map(node => gate.span(node)),
         root: gate.span(first),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: { span: gate.span(firstAsync), names: [...intrinsicNames] } } : {}),

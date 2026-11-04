@@ -101,13 +101,14 @@ type SourceModel = {
 };
 
 /** Whether a top-level statement runs in the module's initialization: a
- * re-export links and loads its module as the initialization runs. */
+ * re-export is a module declaration, which runs nothing. */
 function runsInInit(s: ts.Statement): boolean {
   const modifiers = childrenOf(s, "modifiers").map((m) => m.kind);
   const declared = modifiers.includes(ts.SyntaxKind.DeclareKeyword);
   return !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || ts.isImportDeclaration(s) ||
     ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && declared) ||
-    (ts.isEnumDeclaration(s) && (declared || modifiers.includes(ts.SyntaxKind.ConstKeyword))));
+    (ts.isEnumDeclaration(s) && (declared || modifiers.includes(ts.SyntaxKind.ConstKeyword))) ||
+    (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined));
 }
 
 function sourceModel(root: string, file: string): SourceModel {
@@ -154,8 +155,8 @@ function sourceModel(root: string, file: string): SourceModel {
         for (const e of clause.elements)
           reexports.push({ name: e.name.text, target: target(s.moduleSpecifier, (e.propertyName ?? e.name).text) });
       else reexports.push({ name: clause.name.text, target: loaded });
-      hasInit = true;
-      statements.push({ ...span, kind: "init" });
+      // A module declaration, no step: its module loads before this one runs.
+      statements.push({ ...span, kind: "other" });
     } else if ((isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isEnumDeclaration(s)) && !runsInInit(s)) {
       types.add(s.name.text);
       statements.push({ ...span, kind: "other" });

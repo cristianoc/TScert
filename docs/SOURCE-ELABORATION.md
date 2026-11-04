@@ -320,6 +320,27 @@ that does is refused where it is written. Any other mention of `ns`
 mention, and so is a write of a member, which JavaScript refuses with a
 `TypeError`.
 
+### Re-exports
+
+`export { a, b as c } from M`, `export * from M` and `export * as n from M`
+are module declarations ([ECMA-262](REFERENCES.md#ecma-262)'s
+ExportDeclaration): the host links them before the module runs, and $`M`$
+has run before it, as any module the module loads. They are no step of the
+initialization, which runs nothing for them. A re-export binds only what
+TypeScript resolves it to, an export of $`M`$, without an error, or the file
+is refused (`invalid-reexport-missing-binding-value-import`). An importer
+reads a re-exported binding as an import of $`M`$'s export, at its declared
+contract under the import assumption
+([imported values](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)),
+by the declaration TypeScript resolves the import to through the re-export:
+
+```math
+\frac{\Gamma(a@M)=T\qquad \mathtt{export}\ \{\,a\ \mathtt{as}\ c\,\}\ \mathtt{from}\ M\ \text{in}\ R}
+     {\Gamma(c@R)=T}\ \textsf{re-export}
+```
+
+(`reexport-declarations-value-import`).
+
 ### A `let` nothing assigns
 
 A `let` statement whose bindings are all
