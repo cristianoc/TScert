@@ -286,12 +286,15 @@ int main(int argc, char **argv) {
   arm(limit < POLL_MS ? limit : POLL_MS);
   int terminating = 0, expired = 0, killed = 0;
   while (!reaped) {
-    int sig;
+    /* macOS's sigwait returns 0 on an interrupted wait (EINTR) and leaves
+     * its signal unset: a wait that names no signal is waited again. */
+    int sig = 0;
     int e = sigwait(&taken, &sig);
     if (e != 0) {
       errno = e;
       fail("sigwait");
     }
+    if (sig == 0) continue;
     if (sig == SIGCHLD) {
       // The watchdog ends early only where the runner has killed the group.
       if (watching && wait_for(watchdog, NULL, WNOHANG) == watchdog) {
