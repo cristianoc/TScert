@@ -364,6 +364,30 @@ export function openReadIntrinsic(key: string):
     type: { ...fn([{ k: "object", fields: [], stringIndex: null, calls: [], span }], atom("unknown")), effect: emptyEffect } };
 }
 
+export const freezePrefix = "%Freeze:";
+/** The intrinsic of `Object.freeze` of a fresh literal of the named fields
+ * `keys`, in order. */
+export const freezeName = (keys: readonly string[]): string => `${freezePrefix}${JSON.stringify(keys)}%`;
+/** `%Freeze:[k₁,…,kₙ]%`, `∀A₁…Aₙ. ({readonly k₁: A₁, …, readonly kₙ: Aₙ})
+ * => {readonly k₁: A₁, …, readonly kₙ: Aₙ}`: `Object.freeze` of a fresh
+ * object literal of those named fields (SOURCE-CONTRACTS.md, "Library
+ * globals"). On an ordinary object the host makes every own property
+ * non-writable and non-configurable and the object non-extensible, runs no
+ * code, and returns the object. The literal is the call's argument, so the
+ * result is the only reference to it, at a type of views alone: no write
+ * the model performs reaches it. No effect is stated. */
+export function freezeIntrinsic(name: string):
+    { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
+  const written: unknown = JSON.parse(name.slice(freezePrefix.length, -1));
+  if (!Array.isArray(written) || !written.every((k): k is string => typeof k === "string"))
+    throw Error(`no freeze intrinsic ${name}`);
+  const keys: readonly string[] = written;
+  const typeParams = keys.map((_, i): SourceTypeParameter<TypeTerm> => ({ name: `A${i}`, bound: null, resolution: null }));
+  const record = (): TypeTerm => ({ k: "object", stringIndex: null, calls: [], span,
+    fields: keys.map((key, i) => ({ name: key, optional: false, readonly: true, type: { k: "binder", name: `A${i}`, span }, span })) });
+  return { name, typeParams, type: fn([record()], record()) };
+}
+
 /** A number's spelling as a literal: its `Number::toString`, which reads back
  * as the same double, and `-0` for negative zero, which that spells `0`. */
 export function numberText(value: number): Within<{ value: "any"; store: "grow" }, string> {
@@ -584,7 +608,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
   const names = [...needed];
   const made: { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: TypeTerm }[] = [];
   for (const name of names) {
-    const make = byName.get(name);
+    const make = byName.get(name) ?? (name.startsWith(freezePrefix) ? () => freezeIntrinsic(name) : undefined);
     if (!make) throw Error(`no intrinsic ${name}`);
     const { typeParams, type } = make();
     made.push({ name, typeParams, type });

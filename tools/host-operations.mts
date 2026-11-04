@@ -127,8 +127,8 @@ export const patternForms: { readonly [K in PatternAst["k"]]: HostClass } = {
   object: obligated("the source, where the pattern has a rest", "a rest is a fresh record of the source's other members"),
 };
 
-/** The intrinsics the parser writes, by name; `%Spread:K%` and
- * `%RestFrom:k%` and `%Read:k%` by their prefixes, a union's iteration by
+/** The intrinsics the parser writes, by name; `%Spread:K%`,
+ * `%RestFrom:k%`, `%Read:k%` and `%Freeze:K%` by their prefixes, a union's iteration by
  * its `|`. */
 export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [awaitName]: transparent("a value at a Promise type: a realm promise by the await assumption"),
@@ -158,6 +158,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [elementAtName]: store,
   "%Spread:": transparent("a string, Set, Map or iterator: no host value"),
   "%RestFrom:": store,
+  "%Freeze:": transparent("a fresh object literal, no host value"),
   "%Read:": transparent("the value at a key in auditedOpenReadKeys, at unknown: absence, a data property or an audited transparent getter "
     + "for every admitted host family, including through erasure; external objects obey the open-read restriction"),
 };

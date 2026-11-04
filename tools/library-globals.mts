@@ -78,6 +78,11 @@ export type GlobalEntry = {
    * the same step: the parser writes `Promise.resolve(v)` as
    * `%PromiseResolve%(v)`, and the member joins no value. */
   intrinsic?: string;
+  /** The call freezes its argument, admitted of a fresh object literal of
+   * named fields alone: the parser writes `Object.freeze({…})` as
+   * `%Freeze:K%({…})` (`freezeIntrinsic`), whose result holds the fields as
+   * readonly views, and the member joins no value. */
+  freezes?: true;
   /** For a global only constructed: a read of `href` written directly on
    * the `new` expression, `new X(…).href`, is a call of this intrinsic with
    * the construct's arguments. No other code reaches the object the
@@ -514,6 +519,17 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
   { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
+  // `Object.freeze(o)` of an ordinary object makes every own property
+  // non-writable and non-configurable and the object non-extensible, runs no
+  // code (no object is a proxy) and returns `o`; a later write to it, or a
+  // key added to it, throws, which no write of the model does. Admitted of a
+  // fresh object literal of named fields alone, the overloads TypeScript
+  // resolves such a call to, read as `%Freeze:K%`: its result, the only
+  // reference to the object, holds the fields as readonly views, so no write
+  // the program makes reaches it (SOURCE-FRAGMENT.md).
+  ...["freeze<T extends { [idx: string]: U | null | undefined | object; }, U extends string | bigint | number | boolean | symbol>(o: T): Readonly<T>;",
+    "freeze<T>(o: T): Readonly<T>;"].map((signature): GlobalEntry => ({ host: transparent("a fresh object literal, no host value"),
+    global: "Object", member: "freeze", signature, freezes: true })),
   // `Object.hasOwn(o, k)`: ToObject of `o`, an object here, then the key, which
   // a string, number or symbol converts to without running code, then `o`'s
   // own lookup of it, [[GetOwnProperty]], which runs no code (no object is a
@@ -719,7 +735,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     (signature): GlobalEntry => ({ host: contract,
       origin: node, global: "structuredClone", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
-  // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
+  // `Math.abs(x)` and `Math.ceil(x)` of a number, a primitive: no conversion
+  // code runs.
+  { host: contract, global: "Math", member: "abs", signature: "abs(x: number): number;", effect: emptyEffect },
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
   // `Math.random()`: a number in [0, 1); it reads no argument and writes no
   // location a program can reach.
