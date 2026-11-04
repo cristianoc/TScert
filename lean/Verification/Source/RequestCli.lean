@@ -254,51 +254,117 @@ def unitsFile (astPath claimsPath fileKey : String) (names : Option String)
   | .ok units => units.forM (IO.println ·.compress); return 0
   | .error e => refuse e
 
-/-- Search evidence for a file's selected units (`SourceClaimJson.produceUnitsJson`),
-written to `evidencePath`, and each unit the search refuses on a line
-`refused: {"unit","refusal"}`; any refused, the first refusal is the
-command's. -/
+/-- Search evidence for a file's selected units over its one front
+(`SourceClaimJson.filePlans`), written to `evidencePath` a line per unit as
+each is searched (`SourceClaimJson.unitLine`), each group's then each module
+run's; each unit the search refuses on a line `refused: {"unit","refusal"}`;
+any refused, the first refusal is the command's. A unit's search state is
+released once its line is written. -/
 def produceUnitsFile (astPath claimsPath fileKey evidencePath : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   if evidencePath == astPath || evidencePath == claimsPath then
     return ← refuse "evidence output must differ from the input files"
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  match do SourceClaimJson.produceUnitsJson (← ast) (← claims) fileKey fuel budget (selection names) with
+  match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
   | .error e => refuse e
-  | .ok (evidence, refusals) =>
+  | .ok f =>
     -- A file that cannot be written is no refusal: its error is thrown.
-    IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
+    let refusals ← IO.FS.withFile evidencePath .write fun h => do
+      let mut refusals : Array (String × String) := #[]
+      for i in f.fr.selected (selection names) do
+        let unit := f.fr.unitId i
+        let (evidence, refusal) := f.produceGroup fuel (f.fr.group i)
+        h.putStrLn (SourceClaimJson.unitLine unit evidence).compress
+        if let some reason := refusal then refusals := refusals.push (unit, reason)
+      for m in f.p.modules do
+        let unit := "module:" ++ m.location
+        let (evidence, refusal) := SourceClaimJson.produceModule m fuel budget
+        h.putStrLn (SourceClaimJson.unitLine unit evidence).compress
+        if let some reason := refusal then refusals := refusals.push (unit, reason)
+      return refusals
     IO.println s!"checked source evidence written: {evidencePath}"
     for (unit, reason) in refusals do
       IO.println s!"refused: {(Json.mkObj [("unit", toJson unit), ("refusal", toJson reason)]).compress}"
-    match refusals with
+    match refusals.toList with
     | [] => return 0
     | (_, reason) :: _ => refuse reason
 
-/-- Check a file's selected units at their evidence (`SourceClaimJson.checkUnitsJson`):
-each unit's verdict on a line, `{"unit","members","accepted","depends"}`
+/-- Each line of the file at `path`, its bytes without the line feed, in
+order, read a block at a time: a line is held only while `each` reads it. -/
+partial def forEachLine (path : String) (each : ByteArray → IO Unit) : IO Unit :=
+  IO.FS.withFile path .read fun h => do
+    let rec go (pending : ByteArray) : IO Unit := do
+      let block ← h.read 1048576
+      if block.isEmpty then
+        if !pending.isEmpty then each pending
+        return
+      let mut line := pending
+      let mut start := 0
+      for i in [0:block.size] do
+        if block[i]! == 10 then
+          each (line ++ block.extract start i)
+          line := ByteArray.empty
+          start := i + 1
+      go (line ++ block.extract start block.size)
+    go ByteArray.empty
+
+/-- A line of an evidence document read as `readJson` reads a document. -/
+def lineJson (bytes : ByteArray) : Except String Json := do
+  let some text := String.fromUTF8? bytes
+    | throw "evidence: a text that is not valid UTF-8 is refused"
+  if let some what := wireSurrogate text then
+    throw s!"evidence: a string that is not well-formed Unicode, {what}, is refused"
+  Json.parse text
+
+/-- Check a file's selected units over its one front
+(`SourceClaimJson.filePlans`), each at the evidence its line gives
+(`SourceClaimJson.unitVerdict`), a line of the evidence held only while it is
+checked: each unit's verdict on a line, `{"unit","members","accepted","depends"}`
 or `{"unit","members","refusal"}`, whose acceptance `checkUnitJson_safe`
-states; any refused, the command's refusal is the first the check meets: a
-unit's extraction, then the evidence's, then a unit's. -/
+states; a selected unit no line gives is refused. Any refused, the command's
+refusal is the first the check meets: a selected unit's extraction, then a
+line's or a unit's, in the evidence's order. -/
 def checkUnitsFile (astPath claimsPath fileKey evidencePath : String) (names : Option String)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   let ast ← readJson astPath
   let claims ← readJson claimsPath
-  let evidence ← readJson evidencePath
-  match do SourceClaimJson.checkUnitsJson (← ast) (← claims) fileKey (← evidence) budget (selection names) with
+  match do SourceClaimJson.filePlans (← ast) (← claims) fileKey budget with
   | .error e => refuse e
-  | .ok (verdicts, first) =>
-    for (unit, members, verdict) in verdicts do
+  | .ok f =>
+    let wanted := (f.fr.selected (selection names)).map (fun i => (f.fr.unitId i, (f.fr.group i).map f.fr.unitId)) ++
+      f.p.modules.map fun m => ("module:" ++ m.location, [])
+    let print (unit : String) (members : List String) (verdict : Except String (List String)) : IO Unit :=
       IO.println (match verdict with
         | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
             ("depends", toJson deps)]
         | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
             ("refusal", toJson reason)]).compress
-    match first with
+    let seen ← IO.mkRef ({} : Std.HashSet String)
+    let refused ← IO.mkRef (none : Option String)
+    let note (reason : String) : IO Unit := refused.modify (·.orElse fun _ => some reason)
+    forEachLine evidencePath fun bytes => do
+      match lineJson bytes >>= SourceClaimJson.readUnitLine with
+      | .error reason => note reason
+      | .ok (unit, evidence) =>
+        if let some (_, members) := wanted.find? (·.1 == unit) then
+          let verdict := SourceClaimJson.unitVerdict f budget unit evidence
+          print unit members verdict
+          seen.modify (·.insert unit)
+          if let .error reason := verdict then note reason
+    let seen ← seen.get
+    for (unit, members) in wanted do
+      if !seen.contains unit then
+        let reason := s!"no evidence for unit {unit}"
+        print unit members (.error reason)
+        note reason
+    match f.extractionRefusal (selection names) with
     | some reason => refuse reason
     | none =>
-      IO.println s!"accept: stateful source {fileKey}"
-      return 0
+      match ← refused.get with
+      | some reason => refuse reason
+      | none =>
+        IO.println s!"accept: stateful source {fileKey}"
+        return 0
 
 end Verification.RequestCli

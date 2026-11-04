@@ -676,7 +676,8 @@ $`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
 against the families. An operation without a certified rule fails
 its plan's certification, so no recognizer's completeness is assumed. The
 headline theorem is `SourceClaimJson.checkUnitJson_safe`, its premise
-a unit's accepted verdict in `checkUnitsJson ast claims fileKey evidence budget names`; its
+a unit's accepted verdict `unitVerdict f budget unit evidence` over the file's plans
+`filePlans ast claims fileKey budget = .ok f`; its
 conclusion, over the classified semantics, gives every certified function
 and closure, at every admissible instantiation of its type parameters,
 safety, so no stuck step, so no host object at an obligated operand,

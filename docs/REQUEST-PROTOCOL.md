@@ -41,17 +41,19 @@ verifier --lower-control-flow <ast.json>
   are always selected.
 - `--produce-units` searches each selected unit's evidence over the file's
   one front and writes the evidence document to `<evidence.json>`, which
-  must differ from both inputs, an empty entry for each unit not selected.
-  It prints each unit its search refuses on a line
+  must differ from both inputs, a line per unit as each unit's search ends,
+  the unit's search state released then. It prints each unit its search
+  refuses on a line
   `refused: {"refusal","unit"}`; with any, the first is the command's
   refusal, the document written still. `<depth>` limits expression
   proof-search depth; it is not an execution budget and is not part of the
   request, evidence or safety theorem.
 - `--check-units` never invokes the producer: it checks each selected unit's
-  certified requests at its entries of the submitted evidence, printing a
-  verdict per unit, `{"accepted","depends","members","unit"}` or
-  `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
-  states. With every unit accepted it prints
+  certified requests at the evidence its line gives, reading one line at a
+  time, and prints a verdict per unit, `{"accepted","depends","members","unit"}`
+  or `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
+  states; a selected unit no line gives is refused. With every unit accepted
+  it prints
   `accept: stateful source <file-key>`; otherwise the first refusal is the
   command's.
 - `--units` prints the selected units, one per line,
@@ -766,18 +768,19 @@ depth, with names for applications
 
 ## Source evidence bundle
 
-The evidence file of the source commands is
-`{"main": bundle, "modules": [{"location": l, "evidence": bundle}, …]}`: the
-checked file's bundle, and one per module run of its
-[certified imports](SOURCE-CONTRACTS.md#certified-imports), in the order of the
-Fragment's `modules`, each named by its location
-(`SourceClaimJson.evidenceParts`). Each module run is checked as a document
-of its own, over its own store.
+The evidence file of the source commands holds a line per unit, each
+`{"unit": u, "evidence": bundle}` (`SourceClaimJson.unitLine`): for a group
+of the checked file, its bundle; for a module run of its
+[certified imports](SOURCE-CONTRACTS.md#certified-imports), `u` its
+`module:<location>`, the bundle of the module's document. Each module run is
+checked as a document of its own, over its own store; each group at its own
+line, the other lines unread meanwhile.
 
-A bundle is a strict object with `functions` and `obligations` arrays.
-`functions` contains one response per reconstructed code unit in source
-order. `obligations` contains one evidence list per unit, including empty
-lists, in the same order. Each evidence tree must establish the corresponding
+A bundle is a strict object with `functions` and `obligations` arrays. In a
+group's bundle, `functions` contains one response per member, in the
+group's order, and `obligations` one evidence list per member, including
+empty lists, in the same order; in a document's, one per reconstructed code
+unit in source order. Each evidence tree must establish the corresponding
 expression or annotation judgment reconstructed by extraction. Counts, graph
 claims and root judgments must agree exactly with those reconstructed
 requests. The order of functions in the producer's claims document does not
@@ -786,10 +789,10 @@ determine this evidence order.
 [SourceRequests.Bundle](../lean/Verification/Source/SourceRequests.lean)
 declares the bundle and checks its graph interfaces and expression
 obligations.
-[SourceClaimJson.checkUnitsJson](../lean/Verification/Source/Claims/Json.lean)
-reconstructs the plans from Fragment and SourceClaims over one front, decodes
-the bundles (`EvidenceWire.decode`) and checks each selected unit's certified
-requests at its entries of the bundle, one verdict per unit.
+[SourceClaimJson.filePlans](../lean/Verification/Source/Claims/Json.lean)
+reconstructs the plans from Fragment and SourceClaims over one front;
+`SourceClaimJson.unitVerdict` decodes a unit's bundle (`EvidenceWire.decode`)
+and checks the unit's certified requests at it, one verdict per unit.
 
 ### Evidence document
 

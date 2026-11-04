@@ -569,8 +569,9 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     if (typeof checked === "string") return withdrawal([checked]) ?? { front: checked };
     results = checked;
   } catch (error) {
-    if (!messageOf(error).startsWith("timeout: ")) throw error;
-    // Each unit on its own: the units as the front lists them, each searched and checked by its first member's name.
+    if (!overLimit(messageOf(error))) throw error;
+    // Each unit on its own, under the same limits: the units as the front lists them, each searched and checked by
+    // its first member's name.
     const listed = runStep(verifierCall(verifier, [...budget, "--units", ast, claims, snapshot, ...named]), recorder);
     const front = verifierRefusal(listed, "--units");
     if (front !== null) return { front };
@@ -596,6 +597,12 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
     }
   }
   return withdrawal(results.filter((r) => r.status !== "verified").map((r) => r.detail)) ?? { results };
+}
+
+/** Whether a whole-file search or check ended at a limit: its time limit, or
+ * its memory limit, at which the runner stopped it (`stage-execution.mts`). */
+function overLimit(message: string): boolean {
+  return message.startsWith("timeout: ") || /^tool failure: [^:]* --(produce|check)-units\b[^:]*: memory limit: /.test(message);
 }
 
 /** A completed run releases its artifacts. A file consumer requests retention
