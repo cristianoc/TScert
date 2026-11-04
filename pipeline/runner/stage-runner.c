@@ -28,8 +28,9 @@
  *   stage-runner --cpu <pid>
  *     prints `cpu <user µs> <system µs> <peak bytes>`: the CPU time process
  *     <pid> has used so far and its peak memory (on macOS its lifetime
- *     maximum physical footprint, on Linux its peak resident set), or exits
- *     with 1 where it is not read.
+ *     maximum physical footprint; on Linux, with its descendants, which a
+ *     sandbox runs its program as, their peak resident sets summed), or
+ *     exits with 1 where it is not read.
  */
 #include <errno.h>
 #include <signal.h>
@@ -49,6 +50,46 @@
 
 static long long micros(struct timeval t) { return (long long)t.tv_sec * 1000000 + t.tv_usec; }
 
+#ifdef __linux__
+#include <dirent.h>
+/* Process `pid`'s parent; its user and system times with its waited-for
+ * children's, in clock ticks; and its peak resident set (VmHWM), in kB.
+ * Each output may be NULL. Returns 0, or -1 where the process is not read. */
+static int proc_stat(long pid, long *parent, unsigned long long times[2], unsigned long long *hwm) {
+  char path[64], line[4096];
+  snprintf(path, sizeof path, "/proc/%ld/stat", pid);
+  FILE *f = fopen(path, "r");
+  if (!f) return -1;
+  size_t n = fread(line, 1, sizeof line - 1, f);
+  fclose(f);
+  line[n] = '\0';
+  /* The fields after the command's closing parenthesis: state, ppid, ...;
+   * utime, stime, cutime and cstime are the 14th to 17th fields. */
+  char *rest = strrchr(line, ')');
+  long ppid;
+  unsigned long long utime, stime;
+  long long cutime, cstime;
+  if (!rest || sscanf(rest + 1, " %*c %ld %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu %lld %lld",
+                      &ppid, &utime, &stime, &cutime, &cstime) != 5)
+    return -1;
+  if (parent) *parent = ppid;
+  if (times) {
+    times[0] = utime + (unsigned long long)(cutime > 0 ? cutime : 0);
+    times[1] = stime + (unsigned long long)(cstime > 0 ? cstime : 0);
+  }
+  if (hwm) {
+    snprintf(path, sizeof path, "/proc/%ld/status", pid);
+    f = fopen(path, "r");
+    if (f) {
+      while (fgets(line, sizeof line, f))
+        if (sscanf(line, "VmHWM: %llu kB", hwm) == 1) break;
+      fclose(f);
+    }
+  }
+  return 0;
+}
+#endif
+
 static int cpu_of(const char *text) {
   char *end;
   long pid = strtol(text, &end, 10);
@@ -64,27 +105,43 @@ static int cpu_of(const char *text) {
   printf("cpu %llu %llu %llu\n", user, system, (unsigned long long)info.ri_lifetime_max_phys_footprint);
   return 0;
 #elif defined(__linux__)
-  char path[64];
-  snprintf(path, sizeof path, "/proc/%ld/stat", pid);
-  FILE *f = fopen(path, "r");
-  if (!f) return 1;
-  char line[4096];
-  size_t n = fread(line, 1, sizeof line - 1, f);
-  fclose(f);
-  line[n] = '\0';
-  /* The fields after the command's closing parenthesis: state is the 3rd
-   * field, utime and stime the 14th and 15th, in clock ticks. */
-  char *rest = strrchr(line, ')');
-  unsigned long long user, system, peak = 0;
-  if (!rest || sscanf(rest + 1, " %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", &user, &system) != 2)
-    return 1;
-  /* The peak resident set, VmHWM of its status, in kB. */
-  snprintf(path, sizeof path, "/proc/%ld/status", pid);
-  f = fopen(path, "r");
-  if (!f) return 1;
-  while (fgets(line, sizeof line, f))
-    if (sscanf(line, "VmHWM: %llu kB", &peak) == 1) break;
-  fclose(f);
+  /* The process and its descendants: a sandbox (bubblewrap) runs the
+   * program it confines as a descendant. Each live process counts its own
+   * times and its waited-for children's (cutime, cstime), so an ended
+   * descendant counts once, through the process that waited for it. */
+  unsigned long long user = 0, system = 0, peak = 0;
+  long pids[4096], parents[4096];
+  int count = 0;
+  DIR *proc = opendir("/proc");
+  if (!proc) return 1;
+  struct dirent *entry;
+  while ((entry = readdir(proc)) != NULL && count < 4096) {
+    char *tail;
+    long id = strtol(entry->d_name, &tail, 10);
+    if (*entry->d_name == '\0' || *tail != '\0' || id <= 0) continue;
+    long parent;
+    if (proc_stat(id, &parent, NULL, NULL) == 0) {
+      pids[count] = id;
+      parents[count++] = parent;
+    }
+  }
+  closedir(proc);
+  long tree[4096];
+  int members = 0;
+  tree[members++] = pid;
+  for (int i = 0; i < members; i++)
+    for (int j = 0; j < count && members < 4096; j++)
+      if (parents[j] == tree[i]) tree[members++] = pids[j];
+  int read = 0;
+  for (int i = 0; i < members; i++) {
+    unsigned long long times[2], hwm = 0;
+    if (proc_stat(tree[i], NULL, times, &hwm) != 0) continue;
+    user += times[0];
+    system += times[1];
+    peak += hwm;
+    read++;
+  }
+  if (read == 0) return 1;
   long ticks = sysconf(_SC_CLK_TCK);
   printf("cpu %llu %llu %llu\n", user * 1000000 / ticks, system * 1000000 / ticks, peak * 1024);
   return 0;

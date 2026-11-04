@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync }
   from "node:fs";
-import { arch, constants, platform } from "node:os";
+import { arch, constants, platform, release } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
 import type { Cpu } from "./stage-store.mts";
@@ -140,6 +140,15 @@ export function osBuild(): string | null {
   }
   return systemBuild;
 }
+/** What identifies the system files a confined compiler can read: on macOS
+ * the build of the sealed system volume it may read; on Linux, where its
+ * sandbox shows it no system file but `/dev` and `/proc`, the kernel's
+ * release; null elsewhere. */
+export function systemIdentity(): string | null {
+  if (platform() === "darwin") return osBuild();
+  if (platform() === "linux") return `linux ${release()}`;
+  return null;
+}
 /** The directories of macOS's sealed system volume. */
 const systemPrefixes = ["/usr/lib/", "/System/", "/bin/", "/usr/bin/"];
 const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => path.startsWith(s));
@@ -149,8 +158,9 @@ const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => pat
  * they are not identified. A file's libraries are the names its Mach-O load
  * commands state (`loadCommands`). */
 export function linkedLibraries(executable: string): Canonical | string {
+  if (platform() === "linux") return loaderLibraries(executable);
   const build = osBuild();
-  if (platform() !== "darwin" || build === null) return "dynamic libraries are identified on macOS only";
+  if (platform() !== "darwin" || build === null) return "dynamic libraries are identified on macOS and Linux only";
   const identified: Canonical[] = [];
   const seen = new Set<string>();
   // Each file to read: the executable as named, then each library by its
@@ -183,6 +193,92 @@ export function linkedLibraries(executable: string): Canonical | string {
     }
   }
   return identified;
+}
+
+/** The libraries an ELF executable loads on Linux, each by its digest: the
+ * program interpreter its `PT_INTERP` header names, and every library that
+ * interpreter lists for it (`--list`, the resolution `ldd` reports: run
+ * paths, the loader's cache and its default directories), in an environment
+ * with no variable, the one a keyed stage's program runs in as far as `LD_`
+ * variables go (`executableIdentity` refuses them); an executable with no
+ * interpreter loads none. Or why they are not identified: a preload list
+ * (`/etc/ld.so.preload`), which every program loads, or a library the
+ * interpreter does not find. Memoized by the executable's digest. */
+const loaderLibrariesOf = new Map<string, Canonical | string>();
+function loaderLibraries(executable: string): Canonical | string {
+  try {
+    statSync("/etc/ld.so.preload");
+    return "/etc/ld.so.preload names libraries every program loads";
+  } catch {
+    // No preload list.
+  }
+  let real: string;
+  try {
+    real = realpathSync(executable);
+  } catch {
+    return `${executable} does not resolve`;
+  }
+  const digest = fileDigest(real);
+  const held = loaderLibrariesOf.get(digest);
+  if (held !== undefined) return held;
+  const interpreter = programInterpreter(real);
+  let found: Canonical | string;
+  if (interpreter === null) found = [];
+  else if (interpreter.startsWith("its ")) found = `${executable}: ${interpreter}`;
+  else {
+    const listed = spawnSync(interpreter, ["--list", real], { encoding: "utf8", env: {} });
+    if (listed.status !== 0) found = `${interpreter} --list ${executable} fails: ${(listed.stderr || listed.stdout).trim().slice(0, 200)}`;
+    else {
+      const identified: Canonical[] = [[interpreter, fileDigest(realpathSync(interpreter))]];
+      found = identified;
+      for (const line of listed.stdout.split("\n")) {
+        const at = /^\s*(?:(\S+) => )?(\S+) \(0x[0-9a-f]+\)\s*$/.exec(line);
+        if (/=> not found/.test(line)) { found = `${executable}: the loader finds no ${line.trim().split(" ")[0]}`; break; }
+        // The kernel's virtual library has no file.
+        if (at === null || !(at[2] ?? "").startsWith("/")) continue;
+        const path = at[2] ?? "";
+        if (path === interpreter || identified.some((i) => Array.isArray(i) && i[0] === path)) continue;
+        identified.push([path, fileDigest(realpathSync(path))]);
+      }
+    }
+  }
+  if (fileDigest(real) === digest) loaderLibrariesOf.set(digest, found);
+  return found;
+}
+
+/** The program interpreter an ELF file's `PT_INTERP` header names, null for
+ * one without, or why it is not read (a string starting "its "). */
+function programInterpreter(file: string): string | null {
+  const descriptor = openSync(file, "r");
+  try {
+    const bytes = (offset: number, length: number): Buffer => {
+      const buffer = Buffer.alloc(length);
+      const read = readSync(descriptor, buffer, 0, length, offset);
+      if (read !== length) throw Error(`the file ends at ${offset + read} before ${offset + length}`);
+      return buffer;
+    };
+    const ident = bytes(0, 16);
+    if (ident.readUInt32BE(0) !== 0x7f454c46) return "its ELF header is missing";
+    const wide = ident[4] === 2;
+    if (ident[5] !== 1) return "its ELF data is not little-endian";
+    const header = bytes(0, wide ? 64 : 52);
+    const phoff = wide ? Number(header.readBigUInt64LE(32)) : header.readUInt32LE(28);
+    const phentsize = header.readUInt16LE(wide ? 54 : 42), phnum = header.readUInt16LE(wide ? 56 : 44);
+    for (let i = 0; i < phnum; i++) {
+      const entry = bytes(phoff + i * phentsize, phentsize);
+      if (entry.readUInt32LE(0) !== 3) continue; // PT_INTERP
+      const offset = wide ? Number(entry.readBigUInt64LE(8)) : entry.readUInt32LE(4);
+      const size = wide ? Number(entry.readBigUInt64LE(32)) : entry.readUInt32LE(16);
+      const name = bytes(offset, size);
+      const nul = name.indexOf(0);
+      return name.toString("utf8", 0, nul < 0 ? size : nul);
+    }
+    return null;
+  } catch (error) {
+    return `its program headers are not read: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 /** The load commands of a Mach-O file that name libraries (its own install
@@ -331,6 +427,8 @@ function executableIdentity(program: string, environment: Readonly<Record<string
     { identity: Canonical } | { unidentified: string } {
   if (Object.keys(environment).some((name) => name.startsWith("DYLD_")))
     return { unidentified: "child DYLD_ environment variables have unidentified code dependencies" };
+  if (Object.keys(environment).some((name) => name.startsWith("LD_")))
+    return { unidentified: "child LD_ environment variables have unidentified code dependencies" };
   let real: string;
   try {
     real = realpathSync(program);
@@ -382,6 +480,8 @@ function runnerIdentity(): { identity: Canonical } | { unidentified: string } {
 function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } {
   if (Object.keys(process.env).some((name) => name.startsWith("DYLD_")))
     return { unidentified: "Node DYLD_ environment variables have unidentified code dependencies" };
+  if (Object.keys(process.env).some((name) => name.startsWith("LD_")))
+    return { unidentified: "Node LD_ environment variables have unidentified code dependencies" };
   const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
   if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
     return { unidentified: "Node import, require or loader options have unidentified code dependencies" };

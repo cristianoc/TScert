@@ -31,6 +31,16 @@ and `tools/`, with the exclusions below. It involves no import discovery.
   and, for an observed stage, the compiler's packages and the system's
   build.
 
+An executable's libraries are those its platform's loader loads, each by
+its digest: on macOS the libraries its Mach-O load commands name,
+transitively, resolved as dyld resolves them, a library of the sealed system
+volume by the system's build instead; on Linux the program interpreter its
+ELF header names and every library that interpreter lists for it
+(`ld.so --list`). A process whose environment, or whose stage child's,
+holds a `DYLD_` or `LD_` variable, and on Linux a system with a preload list
+(`/etc/ld.so.preload`), have no key: those load code the identity does not
+name. Other platforms have no key.
+
 A file within the universe is keyed by default: a new or renamed keyed
 module changes every key it falls under. The exclusions are the lists
 `unkeyed` and `inProcessOnly` of `pipeline/stage-execution.mts`, which the
@@ -222,15 +232,21 @@ and the module hooks it runs Node's resolver and loader through
   working directory of the process's own, each allowed as named and as
   named through those links; three probes of the system's libraries
   (`~/.CFUserTextEncoding`, `/AppleInternal`, `/Library/Preferences/Logging`)
-  are denied without the kill, answering absent every time. Its environment
-  is empty and it inherits no file but its standard streams. The allowed
-  paths are fixed by the pre-key: the operating system's build, the
-  installation's digest, the profile's text and the case sensitivity of the
-  executable's file system (the compiler's own probe). A compiler run that
-  finishes therefore reached the user's files only through the five
-  queries; a direct read, of an existing file or of a missing one, ends the
-  run as an operational failure (`tests/observed-stages.mts` makes both).
-  Elsewhere the observations are incomplete.
+  are denied without the kill, answering absent every time. On Linux it runs
+  under bubblewrap, in new namespaces whose file system holds only its
+  executable package and the empty working directory, both read-only, and
+  minimal `/dev` and `/proc`: any other path names nothing to it. Its
+  environment is empty and it inherits no file but its standard streams. The
+  allowed paths are fixed by the pre-key: the system's identity (macOS's
+  build, Linux's kernel release), the installation's digest, the sandbox's
+  configuration (the profile's text; bubblewrap's arguments and its
+  executable's digest) and the case sensitivity of the executable's file
+  system (the compiler's own probe). A compiler run that finishes therefore
+  reached the user's files only through the five queries; on macOS a direct
+  read, of an existing file or of a missing one, ends the run as an
+  operational failure, and on Linux it finds no file
+  (`tests/observed-stages.mts` makes both). Elsewhere the observations are
+  incomplete.
 - *Node's resolver.* A resolution of a specifier from module `m` observes the
   reads of [Node's resolution algorithm](REFERENCES.md#nodejs-modules). Each
   resolution first reads `m`'s package scope (`kind a/package.json` for each
@@ -646,7 +662,7 @@ The parser is part of the trusted source boundary.
 Replaying its output and replaying a successful check additionally trust
 the store implementation, its binding of results to exact inputs and the
 integrity of its stored results. A replayed parse further trusts that its
-observations are complete: the sandbox profile and the compiler API's five
+observations are complete: the compiler's sandbox and the compiler API's five
 queries for the compiler, the resolution algorithm's reads for Node's
 resolver, and the process's first-answer consistency for its caches
 ([observed stages](#observed-stages)); a parse executed in a retained
@@ -789,7 +805,9 @@ unavailable, with its reason.
   enclosing attempt's. The reading is
   `proc_pid_rusage` on macOS, to the microsecond, with the compiler's
   lifetime maximum physical footprint as its peak memory, and
-  `/proc/<pid>/stat` and `VmHWM` on Linux, to the clock tick; an attempt with
+  `/proc/<pid>/stat` and `VmHWM` on Linux, to the clock tick, over the
+  compiler's process and its descendants, since its sandbox runs it as one
+  (their peaks summed); an attempt with
   a reading not taken records its CPU time as unavailable. The pipeline
   process's own peak memory is not attributed to a stage.
 

@@ -8424,7 +8424,7 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     for (const r of warm.records) {
       assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
       if (replayed.has(r.stage) && r.key === null) {
-        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_|confined on macOS/,
+        assert.match(r.ineligible ?? "", /macOS and Linux only|Node import, require or loader|Node DYLD_|Node LD_|ld\.so\.preload|confined on macOS/,
           `${name}: ${r.stage} explains its unidentified dependencies`);
         process.stdout.write(`${name}: ${r.stage} executes without a key: ${r.ineligible}\n`);
       }
