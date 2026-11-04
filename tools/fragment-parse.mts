@@ -1595,7 +1595,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // Every module body is strict, including one whose only module syntax is a
   // type-only import. This decides the receiver rule for nested ordinary
   // functions when imported declarations become certifiable.
-  gate.strict = prologue.strict || importNodes.length > 0 ||
+  gate.strict = prologue.strict || importNodes.length > 0 || reexportNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     source.statements.some(fn => ts.isFunctionDeclaration(fn) && fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   let declarations: Ast["declarations"] = { roots: [], definitions: [], values: [], symbols: [], applications: [] };

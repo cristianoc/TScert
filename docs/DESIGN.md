@@ -320,11 +320,14 @@ one front per file, each unit searched and checked on its own
 - **deep verified** when it is shallow verified and so is every unit of its
   dependency closure: the dependencies each accepted check prints, its
   file's initialization, the unit of each census-directory declaration an
-  import its code mentions binds (a namespace import every unit of its
-  module, a type nothing), and the initialization of every census-directory
-  module a loaded module loads. A unit not accepted, not run or not resolved
-  blocks deep status; the first such unit, breadth-first, is the function's
-  deep blocker.
+  import mentioned by its unit's members binds (a function's unit, a default
+  import the `export default function`'s, any other value the
+  initialization, a namespace import every unit of its module and of what it
+  re-exports, a type nothing), and the initialization of every
+  census-directory module a loaded module loads. A unit not accepted, not run
+  or an import not resolved (a binding a `export *` may give) blocks deep
+  status; the first such unit, breadth-first, is the function's deep
+  blocker.
 
 Deep status is the certificates a [composed module execution](../WORK.md#module-composition)
 needs, not that composition: each accepted check gives its unit's safety
