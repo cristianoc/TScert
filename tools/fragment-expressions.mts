@@ -388,6 +388,15 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
         field: { symbol },
         e: gate.expr(node.expression),
       };
+    // `o[n.toString()]` of a number `n` is `o[n]`: `Number.prototype.toString`
+    // of no argument spells `ToString(n)`, the key `o[n]` converts `n` to,
+    // and runs nothing else.
+    if (gate.numberKeys.has(gate.span(node).join(":"))) {
+      let call: Node = node.argumentExpression;
+      while (ts.isParenthesizedExpression(call)) call = call.expression;
+      if (ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression))
+        return { k: "index", pos: gate.span(node), e: gate.expr(node.expression), key: gate.expr(call.expression.expression) };
+    }
     return {
       k: "index",
       pos: gate.span(node),

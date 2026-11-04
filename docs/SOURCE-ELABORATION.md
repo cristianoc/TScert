@@ -1017,6 +1017,28 @@ converts it, where `a` is claimed only at records owning no array store
 
 ([index signatures](SOURCE-CONTRACTS.md#index-signatures)).
 
+### Keyed access at a number's string
+
+A read `o[n.toString()]` whose `toString` TypeScript resolves to
+`Number.prototype.toString`, called with no argument on an `n` it types as
+`number`, is the read `o[n]` (`numberKeys`, answered by the declaration
+graph):
+
+```math
+o[n.\mathtt{toString}()]\ \leadsto\ o[n]
+```
+
+Both evaluate `o`, then `n`, and read the key $`\mathsf{ToString}(n)`$:
+`Number.prototype.toString` of no radix spells `ToString(n)` and runs
+nothing else, under the [untampered standard objects](DESIGN.md#trust-surface)
+every unit assumes, and `o[n]` converts `n` to that key. A canonical numeric
+key is no member of `Object.prototype`, so the read at an index signature
+gives its value or `undefined` (`index-number-string-key`; ReScript compiles
+`Dict.get(d, Int.toString(k))` to it). A key TypeScript types otherwise is
+read as written: `invalid-index-union-string-key` refuses `k.toString()` of a
+`string | number`, which at `"toString"` reads the inherited function under
+Node.
+
 ### Guarded returns
 
 A statement `if` whose arm is one `return` of the read its singleton test
@@ -3094,6 +3116,38 @@ properties of the global object. The [trust surface](DESIGN.md#trust-surface)
 states the binding and ambient global-access assumptions. Calls through a
 function's `call`, `apply` or `bind` also require the function-object
 [provenance and confinement](#calls-through-functionprototypecall) below.
+
+A function declared with overloads $`S_1,\ldots,S_n`$ before its
+implementation is one code meeting every overload, the instance of
+[overloads](CALLABLES.md#overloads-polymorphism-and-binding) for a module
+function: each overload is a unit of its own, the implementation's body
+checked at that overload's parameters and result, and the slot holds the
+conjunction, as an imported declaration with overloads is read
+([overloads](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)). The
+implementation's own signature, which no caller sees, is no unit's. Every
+overload states the implementation's type parameters, as written, and as
+many parameters, none a rest or `this`; a generic one's binders are then the
+same in every unit and in the slot:
+
+```math
+\frac{f\ \text{declared with overloads}\ \forall\vec p.\,S_1,\ldots,\forall\vec p.\,S_n\ \text{and code}\ t
+      \qquad \forall i.\ t\ \text{is certified at}\ \forall\vec p.\,S_i}
+     {\Gamma(f)=\forall\vec p.\ S_1\wedge\cdots\wedge S_n}\ \textsf{overloaded-function}
+```
+
+The conclusion holds because the value is the one code each unit checks: it
+meets each $`\forall\vec p.\,S_i`$, and a value meeting each meets their
+conjunction under the shared binders
+([call schemes](PROGRAM-TYPING.md#call-schemes)). The verifier refuses units
+of one name that do not run one code: their parameters' names, body, type
+parameters, completion and strictness are the same (`sameCodeOverloads`;
+the forged control of `pipeline/test.mts`). `overloaded-function` holds a
+generic and a plain declaration; `invalid-overloaded-function` refuses an
+overload the code does not meet, which TypeScript checks at the
+implementation's signature alone (a `TypeError` under Node). A statement
+(`Within`) on an overload, a type predicate, an async implementation, and
+an overload stating other type parameters (`overloaded-function-renamed`)
+are refused.
 
 ## Source closures and their annotations
 

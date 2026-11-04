@@ -835,6 +835,24 @@ control(async (): Promise<void> => {
   process.stdout.write("a call through `function` and a construction through `class`, forged at a signature: refused\n");
 });
 control(async (): Promise<void> => {
+  // The units of one name are the overloads of one declaration: a parser
+  // document giving one of `pick`'s units another function's code is
+  // refused, whatever the claims.
+  const artifacts = run("overloaded-function");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const units = ast.functions.filter(f => f.name === "pick");
+  assert.equal(units.length, 2, "pick's overload units");
+  const other = must(ast.functions.find(f => f.name === "count"), "count");
+  const second = must(units[1], "pick's second unit");
+  second.body = other.body;
+  const forged = join(artifacts, "forged-overload-code.json");
+  writeFileSync(forged, JSON.stringify(ast));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-overload-code", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /the units of pick are no overloads of one declaration's code/);
+  process.stdout.write("overload units forged at another function's code: refused\n");
+});
+control(async (): Promise<void> => {
   // A module document whose kept function reads a function the document
   // leaves out, which no source makes: the parser leaves the reader out with
   // it (`invalid-absent-callee-value-import`). The producer's run of the

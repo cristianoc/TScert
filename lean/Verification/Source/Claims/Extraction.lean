@@ -24,6 +24,39 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
     moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none, false, none⟩ footprint onThrow
   | _ => throw "a certified import needs one fixed call signature"
 
+/-- The units of one name are the overloads of one declaration: each runs the
+implementation's code, so they share their parameters' names, their body,
+their type parameters, their completion and their strictness. -/
+def sameCodeOverloads (functionJsons : Array Json) : Except String Unit := do
+  let named := functionJsons.toList.filterMap fun f => (f.getObjValAs? String "name").toOption.map (·, f)
+  let names (j : Json) : List Json :=
+    ((j.getObjValAs? (Array Json) "params").toOption.getD #[]).toList.map (·.getObjValD "name")
+  for (name, f) in named do
+    if let some (_, g) := named.find? (·.1 == name) then
+      if ["body", "typeParams", "completion", "strict"].any (fun k => g.getObjValD k != f.getObjValD k) ||
+          names g != names f then
+        throw s!"the units of {name} are no overloads of one declaration's code"
+
+/-- A module function's slot from its units' signatures (`moduleArrow`), one
+unit's or, for a declaration with overloads, every overload's: one function
+holding them all, as an imported declaration with overloads is read. -/
+def overloadSlot (arrows : List Json) : Except String Json := do
+  let atoms ← arrows.mapM fun a => match a.getObjValD "atoms" with
+    | .arr #[atom] => pure atom
+    | _ => throw "a module function's slot is one function"
+  let conjuncts (atom : Json) : List Json := ((atom.getObjValAs? (Array Json) "and").toOption.getD #[]).toList
+  let alone : Json → Json
+    | .obj kvs => Json.mkObj (kvs.toList.filter (·.1 != "and"))
+    | j => j
+  match atoms with
+  | [] => throw "a module function has a unit"
+  | [_] => match arrows with
+    | [a] => pure a
+    | _ => throw "a module function's slot is one function"
+  | first :: rest =>
+    let extra := conjuncts first ++ rest.flatMap fun atom => alone atom :: conjuncts atom
+    return Json.mkObj [("top", toJson false), ("atoms", toJson [(alone first).setObjVal! "and" (toJson extra)])]
+
 /-- What a file's units share: its document and claims read once (the
 equations, the module environment, the generic instances, the
 initialization's claims and order), and its units, each a function or the
@@ -94,9 +127,17 @@ def fileFront (ast claims : Json) (fileKey : String)
     ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.footprint)).getD .top
   let onThrowOf (g : Fragment.Fn) : Bool :=
     ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.onThrow)).getD false
+  -- A declaration with overloads is one unit per overload, each its code at
+  -- that overload's signature (SOURCE-ELABORATION.md, "Module functions"):
+  -- the units of one name run one code, and its slot holds every overload.
+  sameCodeOverloads functionJsons
+  let ordinary := (all.filter (·.2.isEmpty)).map (·.1)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
-    (all.filterMap fun (g, tps) => if tps.isEmpty then
-      some (g.name, g.namePos, (moduleArrow g (footprintOf g) (onThrowOf g)).map .written) else none) ++
+    ((ordinary.map (·.name)).eraseDups.filterMap fun name => do
+      let units := ordinary.filter (·.name == name)
+      let g ← units.head?
+      some (name, g.namePos, (do
+        overloadSlot (← units.mapM fun u => moduleArrow u (footprintOf u) (onThrowOf u))).map .written)) ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
       | some (footprint, onThrow) => (importedArrow d.types U footprint onThrow).map .written
       | none => .ok (.written (graphClaim U)))) ++

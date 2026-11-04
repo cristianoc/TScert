@@ -907,6 +907,17 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           s.call_effect.requires <> None || s.call_effect.elements <> None) proposals in
         let matches_actuals ((s:Semantic.signature),substitution,_) =
           let at = Inference.substitute substitution in
+          (* An instance a binder's bound excludes is not the call's, as
+             TypeScript skips an overload whose inferred type argument fails
+             its constraint. *)
+          let rec within bound (t:ty) = match t with
+            | Union ts -> List.for_all (within bound) ts
+            | Meet (t,ts) -> List.exists (within bound) (t :: ts)
+            | Rigid r -> (match rigid_bound r with Some b -> within bound b | None -> false)
+            | Atoms _ -> plausible_subtype_declared declarations t bound in
+          List.for_all (fun (q:Semantic.quantifier) -> match q.bound,List.assoc_opt q.identity substitution with
+            | Some (ValueArgument bound),Some (ValueArgument t) -> within (at bound) t
+            | _ -> true) s.quantified &&
           List.for_all Fun.id (List.mapi (fun i (arg,(t,_)) ->
             match List.nth_opt s.params i with
             | Some p -> plausible_subtype_declared declarations t (at p)
