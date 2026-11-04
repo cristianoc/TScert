@@ -76,8 +76,8 @@ Tests: +positive-case -negative-case forged:what-was-forged
 Co-Authored-By: <attribution>
 ```
 
-- **Kinds:** `Rule`, `Semantics`, `Definition`, `Typing` (rendered as
-  mathematics), `Lowering` (source ⇝ term), `Refusal`, `Trust`, `Wire`,
+- **Kinds:** `Rule`, `Semantics`, `Definition`, `Typing`, `Theorem`
+  (rendered as mathematics), `Lowering` (source ⇝ term), `Refusal`, `Trust`, `Wire`,
   `Docs` (prose), `Example`, `Counterexample` (code), `Tooling` (lines as
   written). An added or removed object has one form; a modified one has
   `Before:` and `After:`.
@@ -89,6 +89,17 @@ Co-Authored-By: <attribution>
   `name(x) = …`, by cases where it has them, each symbol defined where it
   appears. A sentence about a concept is prose, not a definition: state the
   concept, or describe the change under another kind.
+- **A `Theorem` is a statement proved in Lean:** its premises, `⟹`, its
+  conclusion, with the definitions it goes through unfolded as far as the
+  change shows, and each symbol defined where it appears, as for a
+  `Definition`: a predicate named after its Lean definition (`Holds`) is
+  defined in words or written in the standard notation (`ρ, h ⊨ K`). A commit that changes what a theorem states, its premise or
+  its conclusion, directly or through a definition the statement goes
+  through, records `Theorem modified (<name>)` with the statement before and
+  after; a change to what `checkUnitJson_safe` states always does, since it
+  is what acceptance means. A proof changed under the same statement is no
+  theorem change, and a new theorem that is the conclusion of the commit's
+  argument is `Theorem added`.
 - **`Tooling`** is a change to how the project is built, tested or laid out:
   the runner, a make target, a script, the module structure. It is never a
   `Definition`, since it changes no concept of the calculus or the pipeline.

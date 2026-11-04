@@ -62,12 +62,12 @@ if (( ${#subject} > 100 )); then
 fi
 while IFS= read -r heading; do
     problems+=("a change heading must close on its own line with '):' — '$heading' wraps")
-done < <(printf '%s\n' "$body" | grep -E '^(Rule|Semantics|Definition|Typing|Lowering|Refusal|Trust|Wire|Docs|Tooling|Example|Counterexample) (added|modified|removed) \(' | grep -v '):')
+done < <(printf '%s\n' "$body" | grep -E '^(Rule|Semantics|Definition|Typing|Theorem|Lowering|Refusal|Trust|Wire|Docs|Tooling|Example|Counterexample) (added|modified|removed) \(' | grep -v '):')
 if ! printf '%s\n' "$body" | grep -q '^Why:'; then
     problems+=("no 'Why:' section (the problem this commit addresses)")
 fi
 if [[ "$outcome" != "no-behaviour-change" ]] &&
-    ! printf '%s\n' "$body" | grep -Eq '^(Rule|Semantics|Definition|Typing|Lowering|Refusal|Trust|Wire) (added|modified|removed)'; then
+    ! printf '%s\n' "$body" | grep -Eq '^(Rule|Semantics|Definition|Typing|Theorem|Lowering|Refusal|Trust|Wire) (added|modified|removed)'; then
     problems+=("no change block such as 'Rule added (name):' or 'Lowering modified (name):'")
 fi
 
