@@ -1,5 +1,5 @@
 # Build, then the fast checks and controls (`make test`) and the pipeline
-# cases (`make suite`), on every pull request and every push to main.
+# cases (`make suite`), on every pull request and every push to main, on Linux.
 name: CI
 
 on:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
       TSCERT_STAGE_MEMORY: "4"
