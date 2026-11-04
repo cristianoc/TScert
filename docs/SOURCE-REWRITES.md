@@ -4930,3 +4930,31 @@ argument before its accessor-specific members are read.
   execute in the same order. The binding allocates no array.
 - **Example:** `blocker-next-compiler-api-callback-view` exercises the
   readonly view and the accessor-name comparison.
+
+### Module constants read at their annotations beside an omitted step
+
+`tools/fragment-parse.mts` keeps the compiler's overlay texts and open files
+in `contents` and `opened`, `tools/unchecked.mts` its comment patterns in
+`SUPPRESSION` and `REASON`, and `tools/client-prototype.mts` the answers it
+records in `answers`. Each file holds a top-level statement a census omits
+as a step of unknown effect: a command's main block (`if` at the top level,
+outside the fragment) in the first two, a `WeakSet` no reviewed entry
+admits in the third. After it, a module constant that is neither a
+function nor a primitive literal is read at its annotation, and without one
+is no value ([units](DESIGN.md#function-coverage-and-release-thresholds)).
+The five had none ("unbound name contents", `opened`, `SUPPRESSION`,
+`REASON`, `answers`).
+
+- **Repair:** `contents: Map<string, string>`, `opened: Set<string>`,
+  `SUPPRESSION: RegExp`, `REASON: RegExp` and
+  `answers: WeakMap<object, Map<unknown, Map<string, string>>>`, the types of
+  the values their initializers build. Read at `RegExp`, a match's group is
+  `string | undefined` at each read, so `reasonAt` keeps the group it tests
+  (`REASON.exec(…)?.[1]`) and returns that value rather than reading the
+  match again.
+- **Behaviour:** the annotations are erased; the same maps, sets and
+  patterns are built and read. `reasonAt` returns the same group of the
+  same match.
+- **Scope:** `projectFor`, `openText`, `openFile` and `release` of
+  `fragment-parse.mts`; `reasonAt` and `findIn` of `unchecked.mts`;
+  `heldSnapshots` and `query` of `client-prototype.mts`.
