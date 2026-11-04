@@ -281,6 +281,39 @@ There are no retained mutable-heap observations. A form with obligations of its
 own, as generics and overloads have, gets its own obligation roles rather than
 an `in / claim / out` triple or a role inferred by a reader.
 
+## Tool failures
+
+A **tool failure** is the entry point's `error` outcome
+([the pipeline entry point](DESIGN.md#the-pipeline-entry-point)), and
+certifies nothing. It is any of:
+
+- a subprocess killed by a signal, past its time limit, or exiting without
+  its complete refusal record. A refusal record is the verifier's exit
+  status 1 or the producer's 2, with a first line `reject: …` or
+  `unsupported: …` and a last line `end of refusal`; each tool exits 3 with
+  a first line `error: …` on an operational failure, a file it cannot read
+  or write among them;
+- the producer's `--explain` failing or printing no explanations;
+- a failure of a file-system operation of the front end, each made in one
+  module (`tools/files.mts`), other than a path naming nothing where that
+  absence has a meaning;
+- a failed request to the compiler's API, which names the query, the front
+  end's call site and the compiler's reason.
+
+Every request to the compiler goes through one guard
+(`tools/compiler-channel.mts`), which makes whatever it throws a
+`CompilerFailure`: a reply the compiler sent as an error, a transport or
+native I/O failure, before or after the request was written, or the front
+end exhausting the call stack, which may interrupt a query mid-reply. Every
+front-end catch passes a tool failure on, so it never becomes a refusal, an
+absence or an unknown answer; one caught within a located read keeps that
+location. After a panic the compiler replied, its channel stays readable;
+after any other tool failure the compiler is abandoned without a further
+request, its process killed, and the next parse opens another. A failure
+closing the compiler is a tool failure that names what was in flight. The
+compiler API's panics include [the empty-tuple
+panic](COMPILER-API.md#the-package-at-run-time).
+
 ## Presentation
 
 `presentObligation` (`tools/diagnostic-view.mts`) turns a decoded record into
