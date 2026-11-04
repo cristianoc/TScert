@@ -19,13 +19,14 @@ import { invokeNested } from "./stages.mts";
  * under the active family descriptions: an observed stage. Each imported
  * module is lowered by a stage of its own (`moduleCall`), nested in the
  * parse. */
-export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | undefined, resolution: string):
-    InProcessCall<Parsed> {
+export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | undefined, resolution: string,
+    omitted: readonly string[] = []): InProcessCall<Parsed> {
   return {
     stage: "parse",
     inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
-      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
-    run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution)),
+      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) },
+      { role: "omitted", bytes: JSON.stringify([...omitted].sort()) }],
+    run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution, omitted)),
     codec: parsedCodec,
     observed: { compiler: compilerImplementation },
   };
@@ -72,13 +73,15 @@ export type Parsed = { code: number; out: string; detail: string; seen: SeenDiag
 
 /** The parser run on `file`, read in the project `tsconfigPath` (or its own)
  * with imports resolved as `resolution`'s, by a compiler opened for it and
- * released after it, each imported module lowered by its stage. */
-function parseStage(file: string, tsconfigPath: string | undefined, resolution: string): Parsed {
+ * released after it, each imported module lowered by its stage, the
+ * `omitted` functions read at their declared signatures. */
+function parseStage(file: string, tsconfigPath: string | undefined, resolution: string,
+    omitted: readonly string[]): Parsed {
   const seen: SeenDiagnostic[] = [];
   closeParser();
   try {
     return { code: 0, out: parseFragment(file, tsconfigPath, resolution, (d) => seen.push(d),
-      (request) => invokeNested(moduleCall(request)).value), detail: "", seen };
+      (request) => invokeNested(moduleCall(request)).value, new Set(omitted)), detail: "", seen };
   } catch (error) {
     // A tool failure is no result: the stage fails, and nothing is stored.
     passToolFailure(error);

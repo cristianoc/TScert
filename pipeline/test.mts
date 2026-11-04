@@ -527,6 +527,51 @@ const run = (file: string): string => {
 };
 
 control(async (): Promise<void> => {
+  // Each unit checked on its own over its file's one front (`--units`, `--produce-unit`, `--check-unit`): the
+  // front lists each unit with the units it depends on; one unit's evidence is no evidence of another; and a unit
+  // whose claimed footprint its code does not establish is refused alone, the units relying on that claim
+  // accepted, so their deep status is what its refusal blocks.
+  const artifacts = run("module-cells");
+  const fragment = join(artifacts, "fragment.json"), claimsPath = join(artifacts, "claims.json");
+  const units = (claims: string): { unit: string; depends: string[] }[] => {
+    const p = tested(verifierCall(verifier, ["--units", fragment, claims, sourceKey(artifacts)]));
+    assert.equal(p.status, 0, p.stdout + p.stderr);
+    return p.stdout.split("\n").filter((line) => line !== "").map((line) => {
+      const v = jsonObject(JSON.parse(line));
+      return { unit: String(v.unit), depends: jsonArray(v.depends).map(String) };
+    });
+  };
+  const searched = (claims: string, unit: string, name: string): Invoked & { evidence: string } => {
+    const evidence = join(artifacts, `${name}.evidence.json`);
+    return { ...tested(verifierCall(verifier, ["--produce-unit", fragment, claims, sourceKey(artifacts), evidence, unit,
+      "12"])), evidence };
+  };
+  const checked = (claims: string, evidence: string, unit: string): Invoked =>
+    tested(verifierCall(verifier, ["--check-unit", fragment, claims, sourceKey(artifacts), evidence, unit]));
+  const listed = units(claimsPath);
+  const id = (name: string): string => must(listed.find((u) => u.unit.startsWith(`${name}@`)), name).unit;
+  assert.deepEqual(listed.map((u) => u.unit.replace(/@\d+$/, "")), ["bump", "cached", "limited", "afterCall", "init"]);
+  assert.deepEqual(listed.find((u) => u.unit === id("afterCall"))?.depends, [id("bump"), "init"]);
+  const bump = searched(claimsPath, id("bump"), "unit-bump");
+  assert.equal(bump.status, 0, bump.stdout + bump.stderr);
+  const accepted = checked(claimsPath, bump.evidence, id("bump"));
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  assert.ok(accepted.stdout.includes(`depends: ["init"]`), accepted.stdout);
+  const other = checked(claimsPath, bump.evidence, id("cached"));
+  assert.equal(other.status, 1, other.stdout + other.stderr);
+  // `bump` writes the cell `count`: claimed to keep every location, its own unit is refused.
+  const claims = readClaims(artifacts);
+  const forged = writeClaims(artifacts, "unit-forged", { ...claims, functions: claims.functions.map((f) =>
+    f.name === "bump" ? { ...f, footprint: { value: "keep", store: "keep" } } : f) });
+  const refused = searched(forged, id("bump"), "unit-forged-bump");
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr);
+  const caller = searched(forged, id("afterCall"), "unit-forged-after");
+  assert.equal(caller.status, 0, caller.stdout + caller.stderr);
+  const callerChecked = checked(forged, caller.evidence, id("afterCall"));
+  assert.equal(callerChecked.status, 0, callerChecked.stdout + callerChecked.stderr);
+});
+
+control(async (): Promise<void> => {
   // A producer normally gives each array alternative its own label. One
   // label containing both clauses reaches the read's derivation refusal.
   const artifacts = run("length-array-or-record");

@@ -19,6 +19,7 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
+import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assemblyCall } from "./claims-assembly.mts";
@@ -84,13 +85,35 @@ export type Outcome =
        * has no initialization code. */
       initialization: [number, number][];
       phase: "check";
+      units?: UnitResult[];
     }
   | {
       status: "unsupported" | "unverified" | "exhausted" | "error";
       artifacts: string;
       detail: string;
       phase: Phase;
+      /** A check of each unit's own (`checkUnits`): each unit's result, or
+       * null where the file's front refused every unit. */
+      units?: UnitResult[] | null;
     };
+/** A check of each unit: the functions of the file read at their declared
+ * signatures (`initOmission` for its initialization), and the units to
+ * search and check, by a member's function name (`initOmission` for the
+ * initialization), or all. */
+export type UnitSelection = { omitted: string[]; select: string[] | null };
+/** A unit member's name as a selection names it. */
+export const memberName = (member: string): string => member === "init" ? initOmission : member.replace(/@\d+$/, "");
+/** A unit's own result in a check of each unit: its identity and members as
+ * the verifier's front names them (`--units`), its outcome, the phase that
+ * decided it, its refusal, and, accepted, its dependencies. */
+export type UnitResult = {
+  unit: string;
+  members: string[];
+  status: "verified" | "unverified" | "exhausted" | "error";
+  phase: "search" | "check";
+  detail: string;
+  depends: string[];
+};
 /** The fuel proof search is given. */
 const searchDepth = 12;
 /** Wall-clock limit on each external step (the producer, the lowering, the
@@ -499,8 +522,8 @@ function searchRuns(recorder: Recorder, artifacts: string, ast: string, claims: 
  * snapshot's own), its log and the TypeScript errors its gate read written
  * under `artifacts`: the parse, the source's bytes, the snapshot it parsed and the file its
  * imports resolve as. */
-export function parseSource(source: string, tsconfigPath: string | undefined, artifacts: string, recorder: Recorder):
-    { parsed: Parsed; bytes: Buffer; snapshot: string; resolution: string } {
+export function parseSource(source: string, tsconfigPath: string | undefined, artifacts: string, recorder: Recorder,
+    omitted: readonly string[] = []): { parsed: Parsed; bytes: Buffer; snapshot: string; resolution: string } {
   // Parse a snapshot, not a path whose contents may change during verification.
   const bytes = readFileSync(resolve(source));
   const configuration = Buffer.from(JSON.stringify({
@@ -522,7 +545,7 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   // declarations reached.
   const resolution = tsconfigPath ? resolve(source) : snapshot;
   // The parse stage, an observed stage.
-  const parsed = invokeInProcess(parseCall(bytes, snapshot, tsconfigPath, resolution), { force: false, recorder }).value;
+  const parsed = invokeInProcess(parseCall(bytes, snapshot, tsconfigPath, resolution, omitted), { force: false, recorder }).value;
   // The TypeScript errors the parser's gate read are kept beside its log,
   // accepted or not: they are where a refusal over one of them points.
   writeFileSync(join(artifacts, "typescript-diagnostics.json"), JSON.stringify(parsed.seen, null, 1) + "\n");
@@ -546,13 +569,74 @@ function failedRun(artifacts: string, reason: string): RunFailure {
   }
 }
 
+/** One round of a check of each unit: the file's units as its front lists
+ * them (`--units`), then each unit's search (`--produce-unit`) and check
+ * (`--check-unit`), each a stage of its own with its own step limit. A
+ * refusal naming a certified import asks for that import's withdrawal; a
+ * refused front refuses every unit. */
+function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
+    budget: string[], select: string[] | null): { withdraw: string } | { front: string } | { results: UnitResult[] } {
+  const listed = runStep(verifierCall(verifier, [...budget, "--units", ast, claims, snapshot]), recorder);
+  const front = verifierRefusal(listed, "--units");
+  if (front !== null) {
+    const failed = failedImport(front);
+    return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front };
+  }
+  const strings = (value: unknown): string[] => {
+    if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
+      throw Error("tool failure: verifier --units listed a unit without its members or dependencies");
+    return value;
+  };
+  const listing = listed.out.split("\n").filter((line) => line !== "").map((line) => {
+    const value: unknown = JSON.parse(line);
+    const unit = field(value, "unit");
+    if (typeof unit !== "string") throw Error("tool failure: verifier --units listed a unit without its identity");
+    return { unit, members: strings(field(value, "members")) };
+  });
+  const results: UnitResult[] = [];
+  for (const [index, { unit, members }] of listing.entries()) {
+    // A module run is checked whenever its file is: the units reading it qualified depend on it.
+    if (select !== null && !unit.startsWith("module:") && !members.some((m) => select.includes(memberName(m)))) continue;
+    const evidence = join(artifacts, `unit-${index}.evidence.json`);
+    const refused = (phase: "search" | "check", detail: string): { withdraw: string } | UnitResult => {
+      const failed = failedImport(detail);
+      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` }
+        : { unit, members, status: refusalStatus(detail), phase, detail, depends: [] };
+    };
+    let result: { withdraw: string } | UnitResult;
+    try {
+      const produced = runStep(verifierCall(verifier, [...budget, "--produce-unit", ast, claims, snapshot, evidence, unit,
+        String(searchDepth)]), recorder);
+      const searchRefusal = verifierRefusal(produced, "--produce-unit");
+      if (searchRefusal !== null) result = refused("search", searchRefusal);
+      else {
+        const checked = runStep(verifierCall(verifier, [...budget, "--check-unit", ast, claims, snapshot, evidence, unit]),
+          recorder);
+        const checkRefusal = verifierRefusal(checked, "--check-unit");
+        if (checkRefusal !== null) result = refused("check", checkRefusal);
+        else {
+          const line = checked.out.split("\n").find((l) => l.startsWith("depends: "));
+          if (line === undefined) throw Error("tool failure: verifier --check-unit accepted without its dependencies");
+          result = { unit, members, status: "verified", phase: "check", detail: "",
+            depends: strings(JSON.parse(line.slice("depends: ".length))) };
+        }
+      }
+    } catch (error) {
+      result = { unit, members, status: "error", phase: "search", detail: messageOf(error), depends: [] };
+    }
+    if ("withdraw" in result) return result;
+    results.push(result);
+  }
+  return { results };
+}
+
 /** A completed run releases its artifacts. A file consumer requests retention
  * and uses `using result = check(...)` to release them after consumption. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, retainArtifacts: boolean = false): Outcome & Disposable {
+    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection | null = null): Outcome & Disposable {
   const artifacts = runDirectory("pipeline-");
   try {
-    return ownedRun(checkUnowned(artifacts, source, tsconfigPath, typescriptErrors, subtypeRounds), retainArtifacts);
+    return ownedRun(checkUnowned(artifacts, source, tsconfigPath, typescriptErrors, subtypeRounds, units), retainArtifacts);
   } catch (error) {
     throw failedRun(artifacts, messageOf(error));
   }
@@ -561,7 +645,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
 function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number): Outcome {
+    subtypeRounds?: number, units: UnitSelection | null = null): Outcome {
   using directoryScope = withinRunDirectory(artifacts);
   // Every stage invocation's attempt, in order (`stages.mts`).
   const recorder = new Recorder(join(artifacts, invocationLog));
@@ -571,7 +655,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
       throw Error("subtype rounds must be a natural number");
-    const { parsed, bytes, snapshot, resolution } = parseSource(source, tsconfigPath, artifacts, recorder);
+    const { parsed, bytes, snapshot, resolution } = parseSource(source, tsconfigPath, artifacts, recorder, units?.omitted ?? []);
     const refusedErrors = () =>
       typescriptErrors
         ? typeScriptErrors(recorder, resolution, tsconfigPath)
@@ -658,6 +742,22 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
       phase = "search";
+      if (units !== null) {
+        const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
+        if ("withdraw" in round) {
+          if (withdrawn.has(round.withdraw)) return { status: "error", artifacts, phase,
+            detail: `a refusal names the certified import ${round.withdraw} again after its withdrawal`, units: null };
+          withdrawn.add(round.withdraw);
+          continue;
+        }
+        if ("front" in round)
+          return { status: refusalStatus(round.front), artifacts, phase, detail: round.front, units: null };
+        const refused = round.results.find((u) => u.status !== "verified");
+        if (refused === undefined)
+          return { status: "verified", artifacts, phase: "check", functions, initialization, units: round.results };
+        return { status: refused.status === "verified" ? "error" : refused.status, artifacts, phase: refused.phase,
+          detail: refused.detail, units: round.results };
+      }
       if (reads.length > 0)
         ({ produced, refusal: searchRefusal } = searchRuns(recorder, artifacts, ast, claims, snapshot, evidence, budget));
       else {
@@ -722,17 +822,36 @@ export function readOutcome(value: unknown): Outcome {
       !("phase" in value) || typeof value.artifacts !== "string" || !isPhase(value.phase))
     throw Error("not an outcome");
   const { status, artifacts, phase } = value;
+  const units = "units" in value ? value.units : undefined;
   if (status === "verified" && phase === "check" && "functions" in value && Array.isArray(value.functions) &&
       value.functions.every((f: unknown) => typeof f === "string") && "initialization" in value &&
       Array.isArray(value.initialization) && value.initialization.every(isSpan))
-    return { status, artifacts, phase, functions: value.functions, initialization: value.initialization };
+    return { status, artifacts, phase, functions: value.functions, initialization: value.initialization,
+      ...(units === undefined ? {} : { units: readUnitResults(units) }) };
   if ((status === "unsupported" || status === "unverified" || status === "exhausted" || status === "error") &&
       "detail" in value && typeof value.detail === "string")
-    return { status, artifacts, phase, detail: value.detail };
+    return { status, artifacts, phase, detail: value.detail,
+      ...(units === undefined ? {} : { units: units === null ? null : readUnitResults(units) }) };
   throw Error("not an outcome");
 }
+const unitStatuses: readonly UnitResult["status"][] = ["verified", "unverified", "exhausted", "error"];
+/** A list of unit results, read field by field. */
+function readUnitResults(value: unknown): UnitResult[] {
+  if (!Array.isArray(value)) throw Error("not an outcome: its units are no list");
+  const strings = (x: unknown): string[] | null =>
+    Array.isArray(x) && x.every((s): s is string => typeof s === "string") ? x : null;
+  return value.map((u: unknown): UnitResult => {
+    const unit = field(u, "unit"), members = strings(field(u, "members")), status = unitStatuses.find((s) => s === field(u, "status"));
+    const phase = field(u, "phase"), detail = field(u, "detail"), depends = strings(field(u, "depends"));
+    if (typeof unit !== "string" || !members || !status || (phase !== "search" && phase !== "check") ||
+        typeof detail !== "string" || !depends)
+      throw Error("not an outcome: a unit result is malformed");
+    return { unit, members, status, phase, detail, depends };
+  });
+}
 /** What one check is asked: the arguments of `check`, as they cross to a worker. */
-type Request = { artifacts: string; source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number; retainArtifacts: boolean };
+type Request = { artifacts: string; source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number;
+  retainArtifacts: boolean; units: UnitSelection | null };
 function readRequest(value: unknown): Request {
   if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
       !("artifacts" in value) || typeof value.artifacts !== "string" ||
@@ -742,11 +861,20 @@ function readRequest(value: unknown): Request {
   const project = "project" in value && typeof value.project === "string" ? value.project : undefined;
   const subtypeRounds = "subtypeRounds" in value && typeof value.subtypeRounds === "number"
     ? value.subtypeRounds : undefined;
+  const given = "units" in value ? value.units : null;
+  const strings = (x: unknown): string[] | null =>
+    Array.isArray(x) && x.every((u): u is string => typeof u === "string") ? x : null;
+  const omitted = strings(field(given, "omitted")), select = field(given, "select");
+  const units: UnitSelection | null = given === null ? null
+    : omitted && (select === null || strings(select)) ? { omitted, select: select === null ? null : strings(select) }
+    : null;
+  if (given !== null && units === null) throw Error("not a request");
   return { artifacts: value.artifacts, source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds,
-    retainArtifacts: value.retainArtifacts };
+    retainArtifacts: value.retainArtifacts, units };
 }
 const checkRequest = (r: Request): Outcome =>
-  checkUnowned(r.artifacts, r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds);
+  checkUnowned(r.artifacts, r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds,
+    r.units);
 
 /** A whole check is killed after this long: the parser runs inside the worker,
  * so its step has no limit of its own. */
@@ -843,7 +971,9 @@ function give(worker: ChildProcess, job: Job): void {
   const died = () => settle(() => fail(timedOut
     ? `timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`
     : `no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`));
-  const timer = setTimeout(() => {
+  // A check of each unit runs a search and a check per unit, each under its
+  // own step limit: only a whole-file check is bounded as one.
+  const timer = job.request.units !== null ? undefined : setTimeout(() => {
     timedOut = true;
     stopWorker(worker);
   }, checkTimeoutMs);
@@ -859,11 +989,11 @@ function give(worker: ChildProcess, job: Job): void {
  * `typescriptErrors`, whether a failed search is named by TypeScript's errors
  * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
-    subtypeRounds?: number, retainArtifacts: boolean = false): Promise<Outcome & Disposable> {
+    subtypeRounds?: number, retainArtifacts: boolean = false, units: UnitSelection | null = null): Promise<Outcome & Disposable> {
   runRoot();
   requireDiskSpace();
   return new Promise<Outcome>((done, fail) => {
-    queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts }, done, fail });
+    queue.push({ request: { source, project, typescriptErrors, subtypeRounds, retainArtifacts, units }, done, fail });
     dispatch();
   }).then(result => ownedRun(result, retainArtifacts));
 }
@@ -902,11 +1032,16 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   const all = process.argv.slice(2);
   const budgetAt = all.indexOf("--subtype-rounds");
   const subtypeRounds = budgetAt < 0 ? undefined : Number(all.splice(budgetAt, 2)[1]);
+  const unitsAt = all.indexOf("--units");
+  // `--units` checks each unit on its own; `--omit f,g` reads those functions at their declared signatures.
+  const omitAt = all.indexOf("--omit");
+  const omitted = omitAt < 0 ? [] : (all.splice(omitAt, 2)[1] ?? "").split(",").filter((n) => n !== "");
+  const units = unitsAt < 0 && omitAt < 0 ? null : { omitted, select: null };
   const typescriptErrors = all.includes("--typescript-errors");
-  const args = all.filter((a) => a !== "--typescript-errors");
+  const args = all.filter((a) => a !== "--typescript-errors" && a !== "--units");
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
     process.stderr.write("usage: node verify-source.mts file.ts [--project tsconfig-or-directory] [--typescript-errors]" +
-      " [--subtype-rounds n]\n");
+      " [--subtype-rounds n] [--units] [--omit f,g]\n");
     process.exitCode = 2;
   } else {
     // The printed outcome names the run's directory, kept for inspection.
@@ -914,7 +1049,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     // The check's collections share a declaration session, released at its end.
     retainDeclarationSessions(true);
     try {
-      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds);
+      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds, false,
+        units);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

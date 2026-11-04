@@ -177,10 +177,11 @@ Claim agreement is checked before this diagnostic is selected. -/
           return some s!"source incoming edge obligation at [{m.pos.1},{m.pos.2}): evidence fails {if !typed then "type coverage" else "heap knowledge"} from node {label}, edge {index}"
   return none
 
-def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
-    (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
-  let (T, plans) ← extractPlans ast claims fileKey budget qualified
+/-- Check extracted plans at their evidence: freeze them, cross the
+exhaustive certification boundary, decode the evidence and check every
+request. -/
+def checkPlans (T : EquationStore.State) (plans : List (FunctionPlan EquationStore.State Tree))
+    (evidence : Json) : Except String Unit := do
   let ⟨F, frozen⟩ ← freezePlans T plans
   let certified ← certifyPlans frozen
   let rs := CertifiedPlan.requests certified
@@ -196,6 +197,12 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
       | .graph name namePos r => footprintRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
       | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|> typingRefusal r c)).getD fallback)
+
+def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
+  let (T, plans) ← extractPlans ast claims fileKey budget qualified
+  checkPlans T plans evidence
 
 /-- Search and check supplied frozen plans. This returns evidence only; the
 ordinary acceptance path independently extracts and certifies its source. -/
@@ -368,13 +375,12 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   let parts ← evidenceParts evidence p
   checkModules (p.modules.zip parts) budget
 
-/-- What a document's successful check gives: its plans cross the
+/-- What a successful check of extracted plans gives: they cross the
 exhaustive certification boundary, and every certified request is safe, and
-within its footprint where it claims one, as `checkDocument_safe` states. -/
-def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
-    (budget : PositiveCertificates.SearchBudget) (qualified : List (String × Footprints.Closed × Bool)) : Prop :=
-    ∃ T plans, extractPlans ast claims fileKey budget qualified = .ok (T, plans) ∧
-      ∃ F : EquationStore.Frozen, ∃ frozen certified b,
+within its footprint where it claims one, as `checkPlans_safe` states. -/
+def PlansSafe (T : EquationStore.State) (plans : List (FunctionPlan EquationStore.State Tree))
+    (evidence : Json) : Prop :=
+    ∃ F : EquationStore.Frozen, ∃ frozen certified b,
       freezePlans T plans = .ok ⟨F, frozen⟩ ∧
       certifyPlans frozen = .ok certified ∧
       EvidenceWire.decode evidence = .ok b ∧
@@ -395,7 +401,13 @@ def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
             (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
-              r.start L d)) 
+              r.start L d))
+
+/-- What a document's successful check gives: its plans, and what checking
+them gives (`PlansSafe`). -/
+def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget) (qualified : List (String × Footprints.Closed × Bool)) : Prop :=
+    ∃ T plans, extractPlans ast claims fileKey budget qualified = .ok (T, plans) ∧ PlansSafe T plans evidence
 
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
 graph request proves the enclosing execution safe at every assignment admitted
@@ -406,6 +418,34 @@ its footprint relates to its entry heap, and a value meeting its goal (a
 guard's or an assertion function's promise included).
 The graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
+theorem checkPlans_safe {T : EquationStore.State} {plans : List (FunctionPlan EquationStore.State Tree)}
+    {evidence : Json} (h : checkPlans T plans evidence = .ok ()) : PlansSafe T plans evidence := by
+  unfold PlansSafe
+  unfold checkPlans at h
+  cases hf : freezePlans T plans with
+  | error e => rw [hf] at h; contradiction
+  | ok Ff =>
+    obtain ⟨F, frozen⟩ := Ff
+    rw [hf] at h
+    simp only [Bind.bind, Except.bind] at h
+    cases hc : certifyPlans frozen with
+    | error e => rw [hc] at h; contradiction
+    | ok certified =>
+      rw [hc] at h
+      cases hb : (EvidenceWire.decode evidence : Except String
+          (Bundle (EquationStore.CheckedLabel F.equations F.primitive))) with
+      | error e => rw [hb] at h; contradiction
+      | ok b =>
+        rw [hb] at h
+        by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
+        · refine ⟨F, frozen, certified, b, rfl, hc, hb, hx, ?_, ?_⟩
+          · intro r c hm η admitted n W heap ρ he hw hh
+            exact checkRequests_safe_at hx hm η admitted n W heap ρ he hw hh
+          · intro r c hm heffect η n W heap L d he hw hh hvalues hd
+            exact checkRequests_footprint_at hx hm heffect η n W heap L d he hw hh hvalues hd
+        · simp only [checkRequests] at hx
+          simp [hx] at h
+
 theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
     {budget : PositiveCertificates.SearchBudget} {qualified : List (String × Footprints.Closed × Bool)}
     (h : checkDocument ast claims fileKey evidence budget qualified = .ok ()) :
@@ -418,29 +458,7 @@ theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
     obtain ⟨T, plans⟩ := tp
     rw [he] at h
     simp only [Bind.bind, Except.bind] at h
-    cases hf : freezePlans T plans with
-    | error e => rw [hf] at h; contradiction
-    | ok Ff =>
-      obtain ⟨F, frozen⟩ := Ff
-      rw [hf] at h
-      simp only at h
-      cases hc : certifyPlans frozen with
-      | error e => rw [hc] at h; contradiction
-      | ok certified =>
-        rw [hc] at h
-        cases hb : (EvidenceWire.decode evidence : Except String
-            (Bundle (EquationStore.CheckedLabel F.equations F.primitive))) with
-        | error e => rw [hb] at h; contradiction
-        | ok b =>
-          rw [hb] at h
-          by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
-          · refine ⟨T, plans, rfl, F, frozen, certified, b, hf, hc, hb, hx, ?_, ?_⟩
-            · intro r c hm η admitted n W heap ρ he hw hh
-              exact checkRequests_safe_at hx hm η admitted n W heap ρ he hw hh
-            · intro r c hm heffect η n W heap L d he hw hh hvalues hd
-              exact checkRequests_footprint_at hx hm heffect η n W heap L d he hw hh hvalues hd
-          · simp only [checkRequests] at hx
-            simp [hx] at h
+    exact ⟨T, plans, rfl, checkPlans_safe h⟩
 
 /-- **The acceptance theorem.** A successful CLI check gives, for the
 importer, what a document's check gives (`DocumentSafe`), its qualified
@@ -472,5 +490,85 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
         cases u
         refine ⟨p, parts, rfl, he, checkDocument_safe hd, fun m e hme => ?_⟩
         exact checkDocument_safe (checkModules_each h m e hme)
+
+/-- A unit of a file, by its identity on the wire (`Front.unitId`, or
+`module:` and a module run's location): its plans, the store they end with,
+and its dependencies, each a unit's identity. A group's dependencies are the
+groups its members reach and, where its code mentions a qualified read, the
+module runs; a module run's are the other module runs, where it reads one
+qualified. -/
+def unitPlans (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (unit : String) :
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree) × List String) := do
+  let p ← planImports ast claims
+  let runs := p.modules.map ("module:" ++ ·.location)
+  if let some location := unit.dropPrefix? "module:" then
+    let some m := p.modules.find? (·.location == location.toString)
+      | throw s!"no module run {location}"
+    let (T, plans) ← (extractPlans m.ast m.claims m.location budget m.qualified).mapError
+      (s!"module {m.location}: " ++ ·)
+    return (T, plans, if m.qualified.isEmpty then [] else runs.filter (· != unit))
+  let fr ← fileFront p.ast p.claims fileKey budget p.qualified
+  let some i := (List.range fr.units.length).find? (fr.unitId · == unit)
+    | throw s!"no unit {unit}"
+  let group := fr.group i
+  let (T, plans) ← extractUnit fr group
+  return (T, plans, (fr.dependencies group).map fr.unitId ++ (if fr.readsQualified group then runs else []))
+
+/-- **The check of a unit.** Its plans, extracted from its file's front,
+checked at its evidence; its dependencies on success. -/
+def checkUnitJson (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget := {}) (unit : String) : Except String (List String) := do
+  let (T, plans, deps) ← unitPlans ast claims fileKey budget unit
+  checkPlans T plans evidence
+  return deps
+
+/-- Search evidence for one unit. -/
+def produceUnitJson (ast claims : Json) (fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) (unit : String) : Except String Json := do
+  let (T, plans, _) ← unitPlans ast claims fileKey budget unit
+  let ⟨F, frozen⟩ ← freezePlans T plans
+  produceFrozenPlans F frozen fuel
+
+/-- A file's units, one per line: each group by its first member, with its
+members and dependencies, then each module run. -/
+def unitsJson (ast claims : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget := {}) :
+    Except String (List Json) := do
+  let p ← planImports ast claims
+  let fr ← fileFront p.ast p.claims fileKey budget p.qualified
+  let runs := p.modules.map ("module:" ++ ·.location)
+  let groups := fr.leaders.map fun i =>
+    let group := fr.group i
+    Json.mkObj [("unit", toJson (fr.unitId i)), ("members", toJson (group.map fr.unitId)),
+      ("depends", toJson ((fr.dependencies group).map fr.unitId ++ (if fr.readsQualified group then runs else [])))]
+  let modules := p.modules.map fun m =>
+    Json.mkObj [("unit", toJson ("module:" ++ m.location)), ("members", toJson ([] : List String)),
+      ("depends", toJson (if m.qualified.isEmpty then [] else runs.filter (· != "module:" ++ m.location)))]
+  return groups ++ modules
+
+/-- **The acceptance theorem of a unit.** A successful check of a unit gives
+the unit's plans and dependencies as `unitPlans` extracts them, and what
+checking its plans gives (`PlansSafe`): each certified request safe under
+its inputs, its file's module values and qualified reads among them, and
+within its footprint where it claims one. -/
+theorem checkUnitJson_safe {ast claims evidence : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {unit : String} {deps : List String}
+    (h : checkUnitJson ast claims fileKey evidence budget unit = .ok deps) :
+    ∃ T plans, unitPlans ast claims fileKey budget unit = .ok (T, plans, deps) ∧ PlansSafe T plans evidence := by
+  unfold checkUnitJson at h
+  cases hu : unitPlans ast claims fileKey budget unit with
+  | error e => rw [hu] at h; contradiction
+  | ok tpd =>
+    obtain ⟨T, plans, deps'⟩ := tpd
+    rw [hu] at h
+    simp only [Bind.bind, Except.bind] at h
+    cases hc : checkPlans T plans evidence with
+    | error e => rw [hc] at h; contradiction
+    | ok u =>
+      rw [hc] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      cases u
+      exact ⟨T, plans, rfl, checkPlans_safe hc⟩
 
 end Verification.SourceClaimJson

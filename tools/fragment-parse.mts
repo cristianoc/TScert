@@ -1175,9 +1175,10 @@ export function parseFile(file: string, carriesContext: boolean = false,
  * same value. The first string that is not well-formed Unicode is refused
  * in document order, as `parseFile` refuses it. */
 export function parseFragment(file: string, tsconfigPath: string | undefined, resolutionFile: string,
-  seen: (diagnostic: SeenDiagnostic) => void, lower: (request: ModuleRequest) => LoweredModule<ModuleText>): string {
+  seen: (diagnostic: SeenDiagnostic) => void, lower: (request: ModuleRequest) => LoweredModule<ModuleText>,
+  omitted: ReadonlySet<string> = new Set()): string {
   return failingAsTool(file, () => {
-    const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower);
+    const { ast, modules } = parseModules(file, false, tsconfigPath, resolutionFile, seen, lower, omitted);
     const text = JSON.stringify(ast);
     requireWellFormedText(text, "gate");
     for (const m of modules) if (m.illFormed !== null) throw Error(m.illFormed);
@@ -1246,11 +1247,13 @@ export function lowerModuleText(request: ModuleRequest): LoweredModule<ModuleTex
  * it, in the order the run reaches it; a module `lower` refuses left out. */
 function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: string | undefined,
   resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined,
-  lower: (request: ModuleRequest) => LoweredModule<M>): { ast: Ast; modules: M[] } {
+  lower: (request: ModuleRequest) => LoweredModule<M>, omitted: ReadonlySet<string> = new Set()):
+  { ast: Ast; modules: M[] } {
   // One tag selection of each host family for the run (HOST-FAMILIES.md,
   // "Residuals"): the checked file's, every imported module lowered with it.
   let selection: ReadonlyMap<string, readonly TagValue[]> | undefined;
-  const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } });
+  const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } },
+    omitted);
   // The file's parser compiler is released before any module is lowered: a
   // module's lowering uses none of its state, and a stage nested in this one
   // holds the ledger of every compiler it uses (STAGE-STORE.md, "Shared
@@ -1269,6 +1272,10 @@ function parseModules<M>(file: string, carriesContext: boolean, tsconfigPath: st
   }
   return { ast: main.ast, modules };
 }
+
+/** The omission naming the checked file's initialization: its statements
+ * run nothing, and its bindings are read at their declared types. */
+export const initOmission = ":init";
 
 /** A lowered file: its fragment, the module entry it is as an imported
  * module, and the program modules it imports functions from. */
@@ -1346,11 +1353,54 @@ function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
   family: { given?: (marker: string) => readonly TagValue[] | undefined;
-    selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void }): Lowered {
+    selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void },
+  omitted: ReadonlySet<string> = new Set()): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
+  // An omitted function, one a census refused in an earlier round, is read
+  // as an ambient declaration is, at its declared signature: its body is
+  // neither lowered nor read by the scans that collect what the lowering
+  // needs. With the initialization omitted (`initOmission`), its statements
+  // run nothing: a class is read as a `declare class`, an annotated module
+  // constant as a `declare const`, and no other binding of it is a value.
+  // The scans over binding facts (`eval`, `arguments`, shadowing, the names
+  // bound) still read every omitted body.
+  const isOmitted = (s: Node): s is FunctionDeclaration & { name: Identifier } =>
+    ts.isFunctionDeclaration(s) && !!s.name && omitted.has(s.name.text);
+  const omitInit = omitted.has(initOmission);
+  // The initialization's statements: every top-level statement but the
+  // declarations that run nothing and the imports.
+  const isInitStatement = (s: Statement): boolean =>
+    !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || isImport(s) ||
+      ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && ambient(s)) ||
+      (ts.isEnumDeclaration(s) && !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword ||
+        m.kind === ts.SyntaxKind.ConstKeyword)));
+  // The import bindings no code but omitted code mentions.
+  const unread = (): string[] => {
+    if (omitted.size === 0) return [];
+    const read = new Set<string>();
+    const mention = (n: Node): void => {
+      if (ts.isIdentifier(n)) read.add(n.text);
+      n.forEachChild(mention);
+    };
+    for (const st of source.statements) if (!isImport(st)) scanOne(st, mention);
+    return importNodes.flatMap(node => {
+      const clause = node.importClause;
+      const bindings = clause?.namedBindings;
+      const names = [...(clause?.name ? [clause.name.text] : []),
+        ...(!bindings ? [] : ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [bindings.name.text])];
+      return names.filter(n => !read.has(n));
+    });
+  };
+  const scanOne = (s: Statement, find: (node: Node) => void): void => {
+    if (isOmitted(s)) s.forEachChild((c) => { if (c !== s.body) find(c); });
+    else if (!(omitInit && isInitStatement(s))) find(s);
+  };
+  const scan = (find: (node: Node) => void): void => {
+    for (const s of source.statements) scanOne(s, find);
+  };
   // The members read through namespace imports, each a binding of its own.
   const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
   gate.namespaceUses = memberUses(members, source);
@@ -1410,6 +1460,15 @@ function lowerFile(file: string, carriesContext: boolean,
   evalForms(source);
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
+    if (omitInit && isInitStatement(s)) {
+      if (ts.isClassDeclaration(s) && s.name) {
+        classNodes.push(s);
+        ambientNames.push(s.name);
+      }
+      if (ts.isVariableStatement(s) && s.declarationList.flags & ts.NodeFlags.Const)
+        for (const d of s.declarationList.declarations) if (d.type && ts.isIdentifier(d.name)) ambientNames.push(d.name);
+      continue;
+    }
     if (isTypeAlias(s)) aliasNodes.push(s);
     else if (ts.isInterfaceDeclaration(s) && !carriesContext) interfaceNodes.push(s);
     // A class declaration declares its instance type, and its value is part of
@@ -1425,6 +1484,9 @@ function lowerFile(file: string, carriesContext: boolean,
     // at its declared signatures, like an import's. It runs nothing.
     else if (ts.isFunctionDeclaration(s) && ambient(s) && !carriesContext) {
       if (s.name && !ambientNames.some(n => n.text === s.name?.text)) ambientNames.push(s.name);
+    }
+    else if (isOmitted(s)) {
+      if (!ambientNames.some(n => n.text === s.name.text)) ambientNames.push(s.name);
     }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (isImport(s) && !carriesContext) importNodes.push(s);
@@ -1508,13 +1570,13 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findLocalClasses);
   };
-  if (!carriesContext) findLocalClasses(source);
+  if (!carriesContext) scan(findLocalClasses);
   // Every module body is strict, including one whose only module syntax is a
   // type-only import. This decides the receiver rule for nested ordinary
   // functions when imported declarations become certifiable.
   gate.strict = prologue.strict || importNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
-    fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
+    source.statements.some(fn => ts.isFunctionDeclaration(fn) && fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   let declarations: Ast["declarations"] = { roots: [], definitions: [], values: [], symbols: [], applications: [] };
   const statable = (node: TypeAliasDeclaration): boolean => {
     const params = node.typeParameters;
@@ -1549,7 +1611,7 @@ function lowerFile(file: string, carriesContext: boolean,
       blockNames.add(node.name.text);
     node.forEachChild(findBlockTypes);
   };
-  findBlockTypes(source);
+  scan(findBlockTypes);
   const blockReference = (node: Node): node is ts.TypeReferenceNode =>
     ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && blockNames.has(node.typeName.text);
   const blockNodes: ts.TypeReferenceNode[] = [];
@@ -1558,7 +1620,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (blockReference(node)) blockNodes.push(node);
     node.forEachChild(findBlockReferences);
   };
-  if (blockNames.size) findBlockReferences(source);
+  if (blockNames.size) scan(findBlockReferences);
   // A spelling a block's type may bind is listed at every reference, since
   // its first one may be bound to that block's type.
   const globalNodes: Identifier[] = [];
@@ -1569,7 +1631,7 @@ function lowerFile(file: string, carriesContext: boolean,
       globalNodes.push(typeName);
     node.forEachChild(findGlobals);
   };
-  if (!carriesContext) findGlobals(source);
+  if (!carriesContext) scan(findGlobals);
   // A value name the file neither imports nor binds may be a global variable,
   // such as Node's `process`: TypeScript decides, and a global variable joins
   // the values, read at the members and call signatures its references
@@ -1602,7 +1664,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (ts.isPrivateIdentifier(node)) privateNodes.push(node);
     node.forEachChild(findPrivate);
   };
-  if (!carriesContext) findPrivate(source);
+  if (!carriesContext) scan(findPrivate);
   const bindingNodes: Identifier[] = [];
   // Reads of a shadowing local above its declaration (`bindingRead`).
   const early: Identifier[] = [];
@@ -1614,7 +1676,7 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findBindingReads);
   };
   for (const [key, id] of shadowing) gate.renames.set(key, shadowName(id, source));
-  if (shadowing.size && !carriesContext) findBindingReads(source);
+  if (shadowing.size && !carriesContext) scan(findBindingReads);
   const globalValueNodes: Identifier[] = [];
   const findGlobalValues = (node: Node): void => {
     if (ts.isTypeNode(node) || ts.isComputedPropertyName(node) || ts.isImportDeclaration(node) ||
@@ -1634,7 +1696,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findGlobalValues);
   };
-  if (!carriesContext) findGlobalValues(source);
+  if (!carriesContext) scan(findGlobalValues);
   // The module's `import.meta`, a value the declaration graph reads at the
   // members the references select.
   const importMetaNodes: ts.MetaProperty[] = [];
@@ -1643,7 +1705,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword) importMetaNodes.push(node);
     node.forEachChild(findImportMeta);
   };
-  if (!carriesContext) findImportMeta(source);
+  if (!carriesContext) scan(findImportMeta);
   // An array reaches `Array.prototype`, whose contract then joins the graph;
   // the first array the file writes stands for it. `Array<T>` is written by
   // name: if TypeScript binds the name elsewhere, the contract is unused.
@@ -1662,7 +1724,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findArray);
   };
-  findArray(source);
+  scan(findArray);
   // `async`, `await`, `for...of` and `for...in` are calls of intrinsics,
   // which then join the declarations; the first such construct stands for
   // them.
@@ -1693,7 +1755,7 @@ function lowerFile(file: string, carriesContext: boolean,
       add(asyncReturnName, asyncCompleteName);
     node.forEachChild(findAsync);
   };
-  if (!carriesContext) findAsync(source);
+  if (!carriesContext) scan(findAsync);
   // The keys of `k in o` tests: TypeScript's type of each decides whether
   // the test is the model's key test or the host's `%HasProperty%`.
   const inKeyNodes: Node[] = [];
@@ -1704,7 +1766,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findInKeys);
   };
-  if (!carriesContext) findInKeys(source);
+  if (!carriesContext) scan(findInKeys);
   // The member names of `o.m.call(…)`, `.apply` and `.bind`: TypeScript
   // decides which is a method, whose receiver is its host.
   // The names the gate lowers specially where they are the standard
@@ -1734,7 +1796,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findLibraryNames);
   };
-  if (!carriesContext) findLibraryNames(source);
+  if (!carriesContext) scan(findLibraryNames);
   const receiverTargetNodes: Node[] = [];
   const findReceiverTargets = (node: Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -1745,7 +1807,7 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     node.forEachChild(findReceiverTargets);
   };
-  if (!carriesContext) findReceiverTargets(source);
+  if (!carriesContext) scan(findReceiverTargets);
   // Element reads `e[k]`, links of an optional chain (`r?.[k]`, `r?.a[k]`)
   // among them, other than a write's target and a call's callee, whose call
   // passes the object as its receiver: TypeScript's types of the object and
@@ -1756,7 +1818,7 @@ function lowerFile(file: string, carriesContext: boolean,
       elementReadNodes.push(node);
     node.forEachChild(findElementReads);
   };
-  if (!carriesContext) findElementReads(source);
+  if (!carriesContext) scan(findElementReads);
   // Reads `e.length` other than a write's target: TypeScript's type of the
   // object decides whether `%ByteLength%` reads it.
   const lengthReadNodes: Node[] = [];
@@ -1766,7 +1828,7 @@ function lowerFile(file: string, carriesContext: boolean,
       lengthReadNodes.push(node);
     node.forEachChild(findLengthReads);
   };
-  if (!carriesContext) findLengthReads(source);
+  if (!carriesContext) scan(findLengthReads);
   // Reads `e.k` at a key some `"k" in o` test of the file writes, other than
   // a write's target and a call's callee, at a key no member of
   // `Object.prototype` names: TypeScript's type of the object decides
@@ -1779,7 +1841,7 @@ function lowerFile(file: string, carriesContext: boolean,
       openReadNodes.push(node);
     node.forEachChild(findOpenReads);
   };
-  if (!carriesContext && inLiteralKeys.size) findOpenReads(source);
+  if (!carriesContext && inLiteralKeys.size) scan(findOpenReads);
   // Regular expression literals: each is a call of the intrinsic its shape
   // names, which the declaration graph lists.
   const regexpNodes: Node[] = [];
@@ -1787,7 +1849,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) regexpNodes.push(node);
     node.forEachChild(findRegExps);
   };
-  if (!carriesContext) findRegExps(source);
+  if (!carriesContext) scan(findRegExps);
   // Calls of the string methods that dispatch to an object argument: their
   // types decide whether the call is `%Dispatch:m%`.
   const dispatchNodes: Node[] = [];
@@ -1798,7 +1860,7 @@ function lowerFile(file: string, carriesContext: boolean,
       dispatchNodes.push(node);
     node.forEachChild(findDispatches);
   };
-  if (!carriesContext) findDispatches(source);
+  if (!carriesContext) scan(findDispatches);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
   // constant, and `e[S.k]` a `unique symbol` property, such as the
   // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
@@ -1817,7 +1879,7 @@ function lowerFile(file: string, carriesContext: boolean,
       keyNodes.push(node.expression);
     node.forEachChild(findKeys);
   };
-  if (!carriesContext) findKeys(source);
+  if (!carriesContext) scan(findKeys);
   // A member read of a primitive, `s.length` or `n.toString()`, reads through
   // its wrapper's prototype: TypeScript's type of the receiver decides.
   const receiverNodes: Node[] = [];
@@ -1826,7 +1888,7 @@ function lowerFile(file: string, carriesContext: boolean,
       receiverNodes.push(node.expression);
     node.forEachChild(findReceivers);
   };
-  if (!carriesContext) findReceivers(source);
+  if (!carriesContext) scan(findReceivers);
   // A `for...of` loop steps the iteration intrinsic of its iterable's kind:
   // TypeScript's type of the iterable decides.
   const iterableNodes: Node[] = [];
@@ -1843,7 +1905,7 @@ function lowerFile(file: string, carriesContext: boolean,
       iterableNodes.push(node.initializer);
     node.forEachChild(findIterables);
   };
-  if (!carriesContext) findIterables(source);
+  if (!carriesContext) scan(findIterables);
   // An array pattern's rest is a slice where TypeScript types its target as
   // no one tuple of required positions: TypeScript's type decides.
   const restTargets: { node: Node; index: number }[] = [];
@@ -1861,7 +1923,7 @@ function lowerFile(file: string, carriesContext: boolean,
       });
     node.forEachChild(findRests);
   };
-  if (!carriesContext) findRests(source);
+  if (!carriesContext) scan(findRests);
   // A read `C.x` of a class with static members may be one of them:
   // TypeScript decides.
   const withStatics = new Set(classNodes.filter(c => c.members.some(member => isStatic(member)))
@@ -1873,7 +1935,7 @@ function lowerFile(file: string, carriesContext: boolean,
       staticNodes.push(node.name);
     node.forEachChild(findStatics);
   };
-  if (!carriesContext && withStatics.size) findStatics(source);
+  if (!carriesContext && withStatics.size) scan(findStatics);
   // `x instanceof C` of a class the file declares: TypeScript decides which
   // right operands name it.
   const classNames = new Set(classNodes.flatMap(c => c.name ? [c.name.text] : []));
@@ -1884,7 +1946,7 @@ function lowerFile(file: string, carriesContext: boolean,
       classTestNodes.push(node.right);
     node.forEachChild(findClassTests);
   };
-  if (!carriesContext && classNames.size) findClassTests(source);
+  if (!carriesContext && classNames.size) scan(findClassTests);
   // `x instanceof c` of another name: TypeScript decides whether the type of
   // `c` states `[Symbol.hasInstance]`.
   const hookTestNodes: Identifier[] = [];
@@ -1894,7 +1956,7 @@ function lowerFile(file: string, carriesContext: boolean,
       hookTestNodes.push(node.right);
     node.forEachChild(findHookTests);
   };
-  if (!carriesContext) findHookTests(source);
+  if (!carriesContext) scan(findHookTests);
   // A class's own name in its body: TypeScript decides which name it.
   const classReadNodes: Identifier[] = [];
   for (const c of classNodes) {
@@ -1929,7 +1991,7 @@ function lowerFile(file: string, carriesContext: boolean,
       contextualClosures.push(node);
     node.forEachChild(findContextual);
   };
-  if (!carriesContext) findContextual(source);
+  if (!carriesContext) scan(findContextual);
   // `Object.assign(arrow, literal)` without type arguments is the callable
   // form at the two TypeScript infers.
   const assignNodes: Node[] = [];
@@ -1938,7 +2000,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (assign && !assign.call.typeArguments) assignNodes.push(node);
     node.forEachChild(findAssign);
   };
-  if (!carriesContext) findAssign(source);
+  if (!carriesContext) scan(findAssign);
   // A read `X.y` or `X["y"]` of a `const enum` is its member's value:
   // TypeScript decides which reads are.
   const inlined = new Set(enumNodes.filter(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword))
@@ -1950,7 +2012,7 @@ function lowerFile(file: string, carriesContext: boolean,
       constEnumNodes.push(node);
     node.forEachChild(findConstEnumReads);
   };
-  if (inlined.size) findConstEnumReads(source);
+  if (inlined.size) scan(findConstEnumReads);
   // A type TypeScript computes from others, `typeof x`, `keyof T`, `T[K]` or
   // a template literal type, is the type its evaluation denotes: each
   // outermost one in an annotation is evaluated where it is written. Those
@@ -1998,7 +2060,7 @@ function lowerFile(file: string, carriesContext: boolean,
       keyTypeNodes.push(...(node.typeArguments ?? []));
     node.forEachChild(findComputed);
   };
-  if (!carriesContext) findComputed(source);
+  if (!carriesContext) scan(findComputed);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length || importMetaNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
@@ -2037,6 +2099,7 @@ function lowerFile(file: string, carriesContext: boolean,
         globalValues: globalValueNodes.map(node => gate.span(node)),
         importMeta: importMetaNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
+        unread: unread(),
         root: gate.span(first),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: { span: gate.span(firstAsync), names: [...intrinsicNames] } } : {}),

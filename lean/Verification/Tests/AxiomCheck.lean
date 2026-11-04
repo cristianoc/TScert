@@ -16,3 +16,6 @@ run_cmd do
   for axiom_ in used do
     unless standard.contains axiom_ do
       throwError "checkJson_safe depends on the axiom {axiom_}"
+  for axiom_ in ← liftCoreM <| collectAxioms ``Verification.SourceClaimJson.checkUnitJson_safe do
+    unless standard.contains axiom_ do
+      throwError "checkUnitJson_safe depends on the axiom {axiom_}"
