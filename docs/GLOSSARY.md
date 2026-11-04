@@ -36,7 +36,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **checker** / **verifier**: the Lean program that validates a certificate against the exact translated program; its success is what acceptance means ([stages](DESIGN.md#stages), [the CLI](REQUEST-PROTOCOL.md#run-the-verifier)).
 - **claim**: a type or state description the producer proposes at a program point; it becomes an obligation where extraction uses it ([claims](DESIGN.md#claims-and-the-claim-reader)).
 - **claims document** / **SourceClaims**: the producer's output, every claim with its identity ([source claims](SOURCE-CLAIMS.md)).
-- **code unit** / **unit**: a function or a module's initialization body, the piece a verdict is given for ([what "verified" means](DESIGN.md#what-verified-means)).
+- **code unit** / **unit**: a function, a group of functions that reach each other by name, or a module's initialization body, certified together and given one verdict ([modules and code units](DESIGN.md#modules-and-code-units), [what "verified" means](DESIGN.md#what-verified-means)).
 - **declaration graph** / **declaration document**: the types and external values a source uses, as the front end collects them ([stages](DESIGN.md#stages)).
 - **declaration reader**: the type reader's part that reads the declarations a type reaches ([source contracts](SOURCE-CONTRACTS.md)).
 - **elaboration** / **extraction**: Lean's translation of a function, with the proposed types, into a calculus graph and its obligations ([stages](DESIGN.md#stages)).
@@ -88,10 +88,10 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 ## Stage store, census and measurement
 
 - **attempt**: one execution of a stage invocation; within it, an observed stage's record is being made ([shared work](STAGE-STORE.md#shared-work)).
-- **census**: every named top-level function declaration with a body in a directory (`tools/` by default), sliced and run through the pipeline, the benchmark of front-end coverage ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main), [the goal](../WORK.md#coverage-of-the-front-end)).
-- **census record**: a census's persistent record: each slice's source identity, outcome and stage invocations with their timings ([census records](STAGE-STORE.md#census-records)).
+- **census**: every named top-level function declaration with a body in a directory (`tools/` by default), each module checked whole, unit by unit, the benchmark of front-end coverage ([function coverage](DESIGN.md#function-coverage-and-release-thresholds), [measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
+- **census record**: a census's persistent record: per file its rounds, its units' results, its omitted units and its stage invocations with their timings ([census records](STAGE-STORE.md#census-records)).
 - **entry**: a stored stage result, published under its key and replayed when the key matches ([entries and timeouts](STAGE-STORE.md#entries-and-timeouts)).
-- **front-end function coverage**: verified census functions divided by all census functions in `tools/`, the headline and release metric ([counting and release thresholds](DESIGN.md#function-coverage-and-release-thresholds)).
+- **front-end function coverage**: shallow verified census functions divided by all census functions in `tools/`, the headline and release metric ([counting and release thresholds](DESIGN.md#function-coverage-and-release-thresholds)).
 - **invocation**: one call of a stage through the common mechanism, with its input description and recorded result ([the stage store](STAGE-STORE.md)).
 - **key** / **stage key**: the digest of a stage, its implementation and its complete input description ([keys](STAGE-STORE.md#keys)).
 - **ledger**: every answer the file system gave one compiler over its lifetime, noted in each record that uses it ([shared work](STAGE-STORE.md#shared-work)).
@@ -107,10 +107,9 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **record** (of an observed stage): the observations a stage collects while it runs; a record *being made* belongs to a stage still running ([shared work](STAGE-STORE.md#shared-work)).
 - **replay**: serving a stored result whose key matches instead of executing the stage ([replay and trust](STAGE-STORE.md#replay-and-trust)).
 - **retained declaration session**: a worker's compiler of a named project, kept between declaration collections ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions)).
-- **shard** (`SHARD=i/n`): one of n processes splitting a census ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
+- **shallow verified** / **deep verified**: a census function whose own unit is accepted / whose unit and every unit of its dependency closure are ([function coverage](DESIGN.md#function-coverage-and-release-thresholds)).
+- **shard** (`SHARD=i/n`): one of n processes splitting a census by files ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
 - **shared work**: front-end work served again within a process at the lifetime its inputs fix: attempt answers, resolutions, query answers ([shared work](STAGE-STORE.md#shared-work)).
-- **slice**: one census function, cut into a file of its own with the same-file declarations it uses and their imports ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
-- **slice file** / **slice text**: the text a slice is cut into; the functions of one mutually recursive group share one, checked once ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
 - **snapshot**: a state of a compiler's program that queries are asked of, held until the front end releases it ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions), [shared work](STAGE-STORE.md#shared-work)).
 - **stage**: one step of the pipeline (parse, propose, search, check) or one operation of a control, run through one invocation mechanism ([the stage store](DESIGN.md#the-stage-store)).
 - **stage store**: the content-addressed store from which every stage replays ([the stage store](STAGE-STORE.md)).

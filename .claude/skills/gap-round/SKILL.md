@@ -1,6 +1,6 @@
 ---
 name: gap-round
-description: One round of gap work on TScert's own code, run on main without stops - the census, reasons confirmed from its first refusals, a case example for each reason no case shows, then the next 10 cases by priority, at most 5 agents at a time, merged locally, then the census and the deck rebuild. Use when the owner asks for a gap round, for "the next 10 cases", or to "follow the process" on gaps.
+description: One round of gap work on TScert's own code, run on main without stops - the census, reasons confirmed from its units' refusals, a case example for each reason no case shows, then the next 10 cases by priority, at most 5 agents at a time, merged locally, then the census and the deck rebuild. Use when the owner asks for a gap round, for "the next 10 cases", or to "follow the process" on gaps.
 ---
 
 # A gap round
@@ -37,7 +37,7 @@ node dev/census.mts refusals <record>
 ```
 
 The census prints the record's path. `refusals` groups the refused
-functions by the blocker their first refusal names and the source text it
+functions by the blocker their unit's refusal names and the source text it
 refuses, with each group's functions, statements and weight.
 
 ## 2. The reasons, confirmed from the record
@@ -45,8 +45,8 @@ refuses, with each group's functions, statements and weight.
 Read the record and its refusals, not a new run. For each of the top
 reasons, in the order of step 4:
 
-- Read the refusal at its site in the census slices
-  (`<census dir>/tools/tools/slice-<file>-<fn>.mts`).
+- Read the refusal at its site in the source file, at the span the
+  record gives for the unit's refusal.
 - Confirm that the reason names one construct.
 - Split a reason that stands for several causes (a failed search, an
   expression with no claimed type) by the functions it meets.

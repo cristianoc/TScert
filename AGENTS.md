@@ -89,12 +89,13 @@ loaded is rerun by its pattern, not with the whole suite.
 
 Coverage reports follow [function coverage and release thresholds](docs/DESIGN.md#function-coverage-and-release-thresholds): state the count, denominator and scope; label statement coverage and aggregates separately.
 
-The census of the front end's own functions (each top-level function of
-`tools/` sliced and run through the pipeline) runs once on main, after a
+The census of the front end's own functions (each module of `tools/`
+checked whole, unit by unit, over one front per file; a function is
+shallow verified when its own unit is accepted) runs once on main, after a
 merge, and its movement is recorded then. A branch runs no census, over
 `tools/` or over a file. To show a change does what it is for, it runs the
-slice of the function the change targets and one slice depending on it,
-before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
+function the change targets and one function depending on it, before and
+after (`make census FILES=f.mts FUNCTIONS=fn,other SHALLOW=1`).
 
 ### Choosing the gap cases to work on
 
@@ -102,10 +103,10 @@ A round of this work runs in the order of the
 [gap-round skill](.claude/skills/gap-round/SKILL.md), its agents briefed by
 [its brief](.claude/skills/gap-round/brief.md).
 Work on coverage follows two steps, both from the census of main
-(`make census`), whose record keeps each refused slice's first refusal:
+(`make census`), whose record keeps each refused unit's own refusal:
 
 1. **Where proofs fail:** `node dev/census.mts refusals <record>` groups
-   the refused functions by the blocker their first refusal names, with
+   the refused functions by the blocker their unit's refusal names, with
    the statements each group blocks. Every reason
    that names one construct counts, whatever stage refuses it, the
    producer's included; a reason that may stand for several causes (a
@@ -139,19 +140,21 @@ Work on coverage follows two steps, both from the census of main
 set, so a slow search reports the outcome it reaches rather than a
 timeout; the pipeline cases keep the 60 s default.
 
-[`dev/census.mts`](dev/census.mts) writes a census record per run (each
-slice's outcome and its stage invocations with their timings) and prints
-its path. `SHARD=i/n` runs every n-th distinct slice file from the i-th, so n processes
-or agents split a census and share the stage store; a later run replays
-what an earlier one computed. `node dev/census.mts report <before>
-<after>` compares two censuses, each one record or its shards' records
-separated by commas: slices gained and lost, timeouts, changed outcomes,
-each stage's time and the movement of
+[`dev/census.mts`](dev/census.mts) writes a census record per run (per
+file its rounds, its units' results, its omitted units and its stage
+invocations with their timings) and prints its path. `SHARD=i/n` checks
+every n-th file from the i-th, shallow only, so n processes split a
+census and share the stage store; a later run replays what an earlier one
+computed. `node dev/census.mts report <before> <after>` compares two
+censuses, each one record or its shards' records separated by commas:
+functions gained and lost, timeouts, changed outcomes, each stage's time
+and the movement of
 [statement coverage](docs/DESIGN.md#statement-coverage). `report <record>`
-prints a census's verified statement coverage per directory and file
+prints the shallow and deep counts, the initializations blocking deep
+status, and statement coverage per directory and file under both
 (`--per-function` adds each function), and `coverage <record>
 [--sources checkout|commit]` computes it for a record from the sources of
-the record's commit or of the checkout, running no slice. A census rerun with a longer `TSCERT_STEP_LIMIT`
+the record's commit or of the checkout, running no stage. A census rerun with a longer `TSCERT_STEP_LIMIT`
 executes the stages that timed out again and replays the finished ones.
 
 A branch is ready to merge when `make test` and `make suite` pass; it
@@ -280,8 +283,8 @@ where a check goes.
 
 ### Acceptance/soundness invariant
 
-The verifier's successful CLI outcome must imply the modeled safety property
-for every extracted function. Preserve this by construction:
+A unit's accepted verdict from the verifier's CLI must imply the modeled
+safety property for every function of that unit. Preserve this by construction:
 
 - The acceptance path consumes the complete `FunctionPlan` sum through one
   exhaustive conversion to `CertifiedPlan`. It must never use `filterMap`, an
@@ -290,9 +293,9 @@ for every extracted function. Preserve this by construction:
   become a certified constructor only with a checker and a theorem connecting
   its successful check to the semantic property. Until then it is a located
   gap, never `verified`.
-- Keep one headline theorem, `SourceClaimJson.checkJson_safe`, whose
-  premise is the exact CLI success condition and whose conclusion gives safety
-  for every accepted function. A theorem about a retained subset, decoded
+- Keep one headline theorem, `SourceClaimJson.checkUnitJson_safe`, whose
+  premise is the exact CLI condition for a unit's accepted verdict and whose
+  conclusion gives safety for every function of that unit. A theorem about a retained subset, decoded
   bundle, or Boolean alone is not an acceptance soundness theorem.
 - The axiom check checks how a theorem was proved, not whether it proves the
   required statement. Review the theorem's premise and conclusion whenever the
@@ -465,7 +468,7 @@ increasing trust silently.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms.
   [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
-  when `checkJson_safe` depends on an axiom other than `propext`,
+  when `checkUnitJson_safe` depends on an axiom other than `propext`,
   `Classical.choice` and `Quot.sound`. No warnings: `lakefile.toml` sets
   `warningAsError`, so a warning fails the build; fix it (a deprecated name's
   replacement, an unused variable as `_`, an unused simp argument dropped)
