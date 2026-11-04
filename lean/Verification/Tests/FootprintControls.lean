@@ -159,7 +159,9 @@ Source stamps: `after 0 = 1`, `before 1 = 2`, with marks `0, 5, 10`, and
 location 7 both an own location of slot 0 and slot 1's typed field. A target
 merging marks 1 and 2 would make them apart. The check refuses every way to
 state it, as it refuses a reordering and a moved mark 0, and each merge it
-refuses is false. -/
+refuses is false.The mark-map check belongs to the deferred provenance stamps
+([FOOTPRINTS](../../../docs/FOOTPRINTS.md#deferred-extra-precision)), which no checker
+uses yet; these controls keep its counterexamples beside it. -/
 
 private def source : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 2 else none⟩
 private def merged : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 1 else none⟩

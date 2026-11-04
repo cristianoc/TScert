@@ -603,63 +603,6 @@ theorem apartBy_sound {M : Nat → List Nat} {S ρ i f s g} (hM : ∀ x, ∀ y �
 
 /-! ## The residual representation -/
 
-/-- Pairs of slots' fields, each one explicit fact at depth `d`. -/
-def ofPairs (d : Nat) (ps : List (Nat × PropKey × Nat × PropKey)) : Separation :=
-  ⟨d, ps.map fun q => (⟨d - 1 - q.1, some [q.2.1], [(d - 1 - q.2.2.1, [q.2.2.2])]⟩ : Fact)⟩
-
-/-- Any set of distinct links, each a pair of slots below `d`, has a
-separation of the same meaning. -/
-theorem ofPairs_iff {d ps ρ} (hd : ∀ q ∈ ps, q.1 < d ∧ q.2.2.1 < d) :
-    Holds (ofPairs d ps) ρ ↔ ∀ q ∈ ps, Apart ρ q.1 (some [q.2.1]) q.2.2.1 q.2.2.2 := by
-  show (∀ a ∈ _, Fact.Holds d ρ a) ↔ _
-  constructor
-  · intro h q hq
-    have hh := h _ (List.mem_map.mpr ⟨q, hq, rfl⟩)
-    have hp := (hh.2 _ (List.mem_singleton_self _)).2 q.2.2.2 (List.mem_singleton_self _)
-    have h1 : d - 1 - (d - 1 - q.1) = q.1 := by have := (hd q hq).1; omega
-    have h2 : d - 1 - (d - 1 - q.2.2.1) = q.2.2.1 := by have := (hd q hq).2; omega
-    simpa only [h1, h2] using hp
-  · intro h a ha
-    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp ha
-    refine ⟨by show d - 1 - q.1 < d; have := (hd q hq).1; omega, fun p hp => ?_⟩
-    simp only [List.mem_singleton] at hp
-    subst hp
-    refine ⟨by have := (hd q hq).2; omega, fun g hg => ?_⟩
-    simp only [List.mem_singleton] at hg
-    subst hg
-    have h1 : d - 1 - (d - 1 - q.1) = q.1 := by have := (hd q hq).1; omega
-    have h2 : d - 1 - (d - 1 - q.2.2.1) = q.2.2.1 := by have := (hd q hq).2; omega
-    simpa only [h1, h2] using h q hq
-
-/-- Completeness of allocation against the pairwise rule: the query answers
-for every field of the fresh object and every listed field of a slot below
-`n`. -/
-theorem allocate_apart {S n fields s g f} (hm : (s, g) ∈ fields) (hs : s < n) :
-    apart (allocate S n fields) 0 f (s + 1) g = true := by
-  have hp : (max S.depth n - 1 - s, (fields.filter (·.1 == s)).map (·.2)) ∈ partnersOf fields (max S.depth n) :=
-    List.mem_filterMap.mpr ⟨s, List.mem_eraseDups.mpr (List.mem_map.mpr ⟨_, hm, rfl⟩), by rw [if_pos (by omega)]⟩
-  have hnew : freshFact fields (max S.depth n) ∈
-      ((rebase S (max S.depth n)).facts ++ [freshFact fields (max S.depth n)]).filter (fun a => !a.partners.isEmpty) := by
-    refine List.mem_filter.mpr ⟨by simp, ?_⟩
-    cases hq : partnersOf fields (max S.depth n) with
-    | nil => rw [hq] at hp; simp at hp
-    | cons _ _ => simp [freshFact, hq]
-  have hne : (((rebase S (max S.depth n)).facts ++ [freshFact fields (max S.depth n)]).filter
-      (fun a => !a.partners.isEmpty)).isEmpty = false := by
-    cases hl : (((rebase S (max S.depth n)).facts ++ [freshFact fields (max S.depth n)]).filter
-      (fun a => !a.partners.isEmpty)) with
-    | nil => rw [hl] at hnew; simp at hnew
-    | cons _ _ => rfl
-  unfold allocate norm
-  simp only [hne, Bool.false_eq_true, if_false]
-  simp only [apart, Bool.and_eq_true, decide_eq_true_eq, List.any_eq_true, Bool.or_eq_true, beq_iff_eq]
-  refine ⟨⟨by omega, by omega⟩, _, hnew, .inl ⟨⟨by simp [freshFact], rfl⟩, ?_⟩⟩
-  refine List.any_eq_true.mpr ⟨_, hp, ?_⟩
-  simp only [Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem]
-  exact ⟨by omega, List.mem_map.mpr ⟨(s, g), List.mem_filter.mpr ⟨hm, by simp⟩, rfl⟩⟩
-
-/-! ## The producer's projection and join (untrusted: every edge is checked) -/
-
 /-- Each fact at every target slot the mapping takes from its subject's slot,
 each partner at every target slot taken from its slot, at depth `count`. -/
 def project (M : Nat → List Nat) (S : Separation) (m : PointClaims.Mapping) (count : Nat) : Separation :=

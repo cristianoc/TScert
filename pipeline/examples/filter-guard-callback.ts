@@ -1,7 +1,7 @@
 // `filter` at a guard closure keeps the values the guard answers `true` for,
 // each at the promise's type: the closures over its result read their
 // parameter there, a nested optional call included, as the front end's
-// `readCannotThrow` reads its declarations.
+// `readScope` reads its declarations.
 type Modifier = { kind: "declare" | "export" };
 type Declaration = {
   kind: "declaration";

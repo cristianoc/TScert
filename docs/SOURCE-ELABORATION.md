@@ -3810,8 +3810,8 @@ within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
 field every alternative of the object's type gives a type of source values,
 within `{value: any, store: keep}` since the location holds a value
 (`ExpressionEffects.write_within`); or as a fixed call at a selected signature
-whose footprint is within $`\Phi`$. Runs within a closed footprint compose
-(`Closed.Holds.trans`), so the graph is (`GraphCode.goto_bounded`), its
+whose footprint is within $`\Phi`$. The graph's run is then within $`\Phi`$
+(`GraphCode.goto_bounded`), its
 return meeting the goal. A guard's or an assertion function's promise
 signature states its footprint beside the promise (`moduleArrow`;
 `guard-footprint`, `invalid-guard-footprint`). A unit qualified by a

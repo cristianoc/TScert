@@ -74,18 +74,6 @@ theorem ReadGave.stable_frame {T Q} {flds : List (PropKey × Nat)} {field : Prop
       exact HeapObservations.consequence (fun _ _ _ h => h)
         (fun _ _ hq => ⟨hq.1, ReadGave.present hl hq.2⟩) (HeapObservations.stable_frame hw hc hh hp)
 
-/-- A semantic stable-key requirement frames the read of that key through a
-normally returning execution. -/
-theorem stable_key_frame {T Q} {keys : List PropKey} {key : PropKey}
-    {n : Nat} {W : WorldT n} {h : Heap} {object t : Tm}
-    (hk : key ∈ keys) (ho : stableKeysT keys n W object)
-    (hh : HeapOk n W h) (hs : HeapObservations.SafePost Ξ T Q n W h t) :
-    ∃ (flds : List (PropKey × Nat)) (oid : Nat), object = .objAt flds .absent oid ∧
-      ∀ u, ReadGave flds key h u →
-        HeapObservations.SafePost Ξ T (fun h' v => Q h' v ∧ ReadGave flds key h' u) n W h t := by
-  obtain ⟨flds, oid, he, hst⟩ := stableKeysT_at ho hk
-  exact ⟨flds, oid, he, fun _ hr => ReadGave.stable_frame hst hh hr hs⟩
-
 /-- A property-read observation at the current heap. The field may be absent.
 Value facts reuse the shape and ignore the field. -/
 structure Fact where

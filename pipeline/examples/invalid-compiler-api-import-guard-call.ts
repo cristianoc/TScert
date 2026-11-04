@@ -1,5 +1,5 @@
 // Census: fragment-statements.mts#patternStmt, #protocolPattern, #hoistTarget,
-// #readScope, #readCannotThrow, #unassigned, #block, #statements, #markEarly,
+// #readScope, #unassigned, #block, #statements, #markEarly,
 // #hoisting, #letPattern, #forStmt, #perIterationFor, #forInStmt,
 // #protocolForOf, #switchStmt, #tryStmt, #abrupt, #stmt, #declarations,
 // #declarator, #mutableList, #declarationsOf, #neverAssigned, #controlStmt.

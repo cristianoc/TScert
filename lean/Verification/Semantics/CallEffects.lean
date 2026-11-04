@@ -61,11 +61,6 @@ theorem ElemPred.le_sound {a b : ElemPred} (h : a.le b = true) {v : Tm} (hv : a.
   simp only [ElemPred.le, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
   cases v <;> simp_all [ElemPred.mem] <;> omega
 
-/-- The predicate either of two holds of. -/
-def ElemPred.join (a b : ElemPred) : ElemPred :=
-  ⟨a.nul || b.nul, a.undef || b.undef, a.bool || b.bool, a.num || b.num, a.str || b.str,
-    a.big || b.big, a.sym || b.sym, a.obj || b.obj⟩
-
 /-- **The elements fact** of a value `r` at a heap: `r`'s array store exists
 and every element location it lists holds a value meeting `R`. A hole lists
 no location, so the fact is about present elements. -/
@@ -350,15 +345,6 @@ theorem Effect.result_mono (e : Effect) {R T : Fam} {a : Tm} {k W u}
   | some (.guards _) => exact fun hu => hu.imp (fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩) id
   | some (.asserts _) => exact fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩
 
-theorem Effect.result_agree (e : Effect) {R T : Fam} {a : Tm} {n}
-    (h : Agree R T n) : Agree (e.result R a) (e.result T a) n := by
-  intro m hm W u
-  unfold Effect.result
-  match e.promise with
-  | none => exact h m hm W u
-  | some (.guards _) => exact or_congr (and_congr Iff.rfl (h m hm W a)) Iff.rfl
-  | some (.asserts _) => exact and_congr Iff.rfl (h m hm W a)
-
 /-- A promise's parameter, counted after `n` saved actuals: what a bound
 signature promises of its own actuals. Defined where the promise is about one
 of them. -/
@@ -377,14 +363,6 @@ def Effect.keeps (n : Nat) (e : Effect) : Bool :=
   e.elementFree && match e.promise with
   | some p => n ≤ p.param
   | none => true
-
-theorem Effect.drop_zero {e : Effect} (h : e.receiverStore = false) (ho : e.receiverOwn = false)
-    (hel : e.elements = none) : e.drop 0 = e := by
-  rcases e with ⟨c, _ | (_ | _), f, s, o, w, fo, rq, el⟩ <;> simp_all [Effect.drop, TypePromise.drop]
-
-theorem Effect.keeps_zero {e : Effect} (h : e.elementFree = true) : e.keeps 0 = true := by
-  simp only [Effect.keeps, h, Bool.true_and]
-  split <;> simp
 
 theorem Effect.keeps_elementFree {e : Effect} {n : Nat} (h : e.keeps n = true) : e.elementFree = true := by
   simp only [Effect.keeps, Bool.and_eq_true] at h; exact h.1
@@ -846,19 +824,6 @@ theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
   rw [Effect.result_plain hp] at hs
   exact ⟨result, hc, HeapObservations.erase hs.post⟩
 
-/-- A safe construction meets the ordinary effect, which states no more. -/
-theorem ConstructPromise.ordinary {P R k W v}
-    (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-        ∀ args, CallArguments.Values args → P j U args →
-          ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result) :
-    ConstructPromise Ξ Effect.ordinary P R k W v := by
-  intro j hj U hx hu heap hh args hv ha
-  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
-  exact ⟨result, hc, SafePostExc.of_post (fun _ h => absurd h (by simp [Effect.ordinary, Effect.ofFootprint]))
-    (HeapObservations.weaken (fun _ _ h => (Effect.post_ofFootprint _ _ _ _ _).mpr h)
-    (Footprints.Closed.top_safe hs))⟩
-
 /-- **Construct signatures.** Values meeting every signature `(parameters,
 result)` under `new`, each with its effect (`ConstructPromise`). The code is
 construct-only, so a plain call cannot run it, and no code without
@@ -1062,14 +1027,6 @@ theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : Ar
     exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, hs⟩
 
-theorem construct_safe {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
-    (hP : Adm P) {n W heap v vs pad}
-    (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
-    (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    SafePost Ξ R (effect.post .undef heap) n W heap (.construct v vs) :=
-  (construct_safe_exc hpl hP hf hv hpad ha hw hh).post
-
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.
 The safety proof supplies the same worlds and result contract at every step. -/
@@ -1115,13 +1072,6 @@ theorem prefix_safe_exc {P : Tm → Prop} {R : Fam} {r : Tm}
     · exact .inl (.inr ⟨hr, Footprints.Closed.holds_empty.mpr hpre⟩)
     · obtain ⟨hprefix, hp'⟩ := hstep hp step
       exact .inr ⟨U, h', t', hx, hu, step, hh, ih hp' (hpre.trans hprefix) hs⟩
-
-/-- The conservative executable purity check enriches independently proved
-safety. It cannot manufacture safety or a return type on its own. -/
-theorem pure_safe {R : Fam} {r : Tm} {n W heap t}
-    (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
-    SafePost Ξ R ((Effect.ofFootprint .empty).post r heap) n W heap t :=
-  prefix_safe Purity.CollectingRun.step (.pure hp) hs
 
 theorem pure_safe_exc {R : Fam} {r : Tm} {n W heap t}
     (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :

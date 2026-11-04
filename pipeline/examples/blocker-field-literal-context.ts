@@ -9,7 +9,7 @@
 // fragment-statements.mts#neverAssigned, fragment-statements.mts#patternStmt,
 // fragment-statements.mts#protocolForOf,
 // fragment-statements.mts#protocolPattern,
-// fragment-statements.mts#readCannotThrow, fragment-statements.mts#readScope,
+// fragment-statements.mts#readScope,
 // fragment-statements.mts#statements, fragment-statements.mts#stmt,
 // fragment-statements.mts#switchStmt, fragment-statements.mts#tryStmt,
 // fragment-statements.mts#unassigned.

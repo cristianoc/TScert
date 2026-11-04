@@ -86,8 +86,6 @@ def step (cs : Partition) (r : Link × Link) : Partition :=
 give one value. -/
 def key (cs : Partition) (g : Link) : List Nat × PropKey := (cls cs g.cell, g.field)
 
-instance : LawfulHashable PropKey := ⟨fun a b h => by rw [eq_of_beq h]⟩
-
 /-- The first read of each key, by hash. -/
 def table (cs : Partition) (ls : Links) : Std.HashMap (List Nat × PropKey) Link :=
   (ls.filter (!·.alias)).foldl (fun m g => m.insertIfNew (key cs g) g) ∅
@@ -720,12 +718,5 @@ def mayMissIn (ls : Links) (cs : Partition) (g : Link) : Bool :=
 def linksIn (ls : Links) (cs : Partition) : Links :=
   (slots ls).filterMap (fun x => if repIn cs x = x then none else some ⟨repIn cs x, x, true, valueField, false⟩) ++
   ls.filterMap fun g => if g.alias then none else some ⟨repIn cs g.cell, repIn cs g.value, false, g.field, mayMissIn ls cs g⟩
-
-/-- `norm`, computing the closure once. -/
-def normFast (ls : Links) : Links := canon (linksIn ls (closure ls))
-
-theorem repIn_closure (ls : Links) : repIn (closure ls) = rep ls := rfl
-
-theorem normFast_eq (ls : Links) : normFast ls = norm ls := rfl
 
 end Verification.LinkClasses

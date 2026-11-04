@@ -91,18 +91,6 @@ inductive Steps : Nat → Heap → Tm → Heap → Tm → Prop where
   | refl : Steps 0 h t h t
   | next : Step h t h' t' → Steps k h' t' h'' t'' → Steps (k+1) h t h'' t''
 
-/-- An ordinary arrow supplies no heap postcondition. Forgetting observations
-lets its existing safety theorem be used without strengthening its meaning. -/
-theorem forget {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ _ => True) n W h t := by
-  intro n; induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h t hs
-    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
-    · exact Or.inl (Or.inl ⟨hv,ht,trivial⟩)
-    · exact Or.inl (Or.inr hr)
-    · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
-
 /-- Add a postcondition entailed by the final value's type. This preserves the
 same operational behavior and does not assume that the initial heap survives. -/
 theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
@@ -179,35 +167,6 @@ theorem one_step {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
     · exact absurd step hr.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step step'
       exact Or.inr ⟨U,h',v,hx,hu,step',hh,refine_value hv hq hs'⟩
-
-/-- Composition passes facts about the heap actually produced by the subterm,
-not facts about the initial heap. Works for every existing evaluation context. -/
-theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
-    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → SafePost Ξ A Q n W h t →
-    (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q h' v →
-        SafePost Ξ B R j U h' (C v)) → SafePost Ξ B R n W h (C t) := by
-  intro n; induction n with
-  | zero => intros; trivial
-  | succ p ih =>
-    intro W h t hw hh hs hc
-    rcases hs with (⟨hv,ha,hq⟩ | hr) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
-    · exact hc (p+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ha hq
-    · exact Or.inl (Or.inr (hr.lift raise))
-    · refine Or.inr ⟨U,h',C t',hx,hu,lift step,hh',ih U h' t' hu hh' hs' ?_⟩
-      intro j hj V he hv h'' v hh'' hval ha hq
-      apply hc j (by omega) V _ hv h'' v hh'' hval ha hq
-      have he' := WExt_trunc hj hx
-      rw [trunc_trunc] at he'
-      exact WExt_trans he' he
-
-theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
-    (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : SafePost Ξ T Q n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
-    SafePost Ξ T Q (n+1) W h (.letE a b) :=
-  Or.inr ⟨_,h,_,WExt_refl _,WorldAdm_trunc _ hw,.letV hv,HeapOk_trunc n W h hh,hs⟩
 
 theorem write_new {h : Heap} {l v} (hlt : l < h.length) : Observes (h.set l v) l v := by
   simp [Observes,hlt]

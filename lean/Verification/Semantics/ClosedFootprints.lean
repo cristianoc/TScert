@@ -18,13 +18,6 @@ namespace Verification.Footprints
 theorem step_length_le {h t h' t'} (st : Step h t h' t') : h.length ≤ h'.length := by
   induction st <;> simp_all [List.length_append, List.length_set] <;> omega
 
-theorem steps_grow {k h t h' t'} (st : HeapObservations.Steps k h t h' t') : h.length ≤ h'.length := by
-  induction st with
-  | refl => exact Nat.le_refl _
-  | next s _ ih => exact Nat.le_trans (step_length_le s) ih
-
-/-! ## Closed footprints -/
-
 /-- A closed footprint: a change for each class of contents. -/
 structure Closed where
   value : Change
@@ -206,21 +199,6 @@ private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v
   have := Change.Holds.same_class hne h .store
   simp only [Cls.has] at this
   simp only [Closed.at, this]
-
-/-- **A closed footprint composes with itself**: two runs each within it are
-within it together. -/
-theorem Closed.Holds.trans {c : Closed} {h₀ h h' : Heap} (h₁ : c.Holds h₀ h) (h₂ : c.Holds h h') :
-    c.Holds h₀ h' := by
-  rw [Closed.holds_iff] at h₁ h₂ ⊢
-  refine ⟨Nat.le_trans h₁.1 h₂.1, fun l v hv => ?_⟩
-  obtain ⟨v₁, hv₁, hc₁⟩ := h₁.2 l v hv
-  obtain ⟨v₂, hv₂, hc₂⟩ := h₂.2 l v₁ hv₁
-  refine ⟨v₂, hv₂, ?_⟩
-  by_cases hany : c.at v = .any
-  · rw [hany]; trivial
-  · have heq := Closed.at_of_holds hc₁ hany
-    rw [heq] at hc₂
-    exact hc₁.trans h₁.1 hc₂
 
 theorem Closed.Holds.refl (c : Closed) (h : Heap) : c.Holds h h :=
   Closed.Holds.mono (Closed.empty_le c) (Closed.holds_empty.mpr (List.prefix_refl h))

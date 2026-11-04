@@ -801,7 +801,7 @@ $`\varphi=\overline{k_i{:}A_i}`$, empty for a class with none):
 
 A plain effect has no promise, so its result operand is the result's type. A
 construction with value operands runs within its selected signature's
-footprint $`\varepsilon`$ (`CallEffects.construct_safe`), which is how a body
+footprint $`\varepsilon`$ (`CallEffects.construct_safe_exc`), which is how a body
 checked against a bound consumes it, as it consumes a call's
 ([FOOTPRINTS.md](FOOTPRINTS.md#the-checked-callback-contract)).
 
@@ -3141,7 +3141,6 @@ exact appended heap, and preserves existing facts (`alloc_frames`).
 | Rule             | Premise and consequence                                                                                                                                                          |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | test             | A current lookup links the tested value to the cell; a predicate on that value then refines current contents. An old snapshot alone does not suffice.                            |
-| `forget`         | Ordinary safety embeds with postcondition `True`, so an ordinary arrow call supplies no retained observation.                                                                    |
 | `bind`           | For an evaluation context that lifts steps, its continuation receives the actual resulting heap, value membership and postcondition in the future world at the remaining budget. |
 | `consequence`    | Implication weakens the result family and postcondition.                                                                                                                         |
 | write then read  | The immediate subsequent read returns the written value; there is no ownership or non-escape premise.                                                                            |
@@ -3793,10 +3792,9 @@ $`\tau(\ell)=d_s-1-m(d_t-1-\ell)`$ with $`m(d_t-1-\ell)<d_s`$, and each of its
 pairs is a source pair in one orientation: for $`F=\star`$ the pair
 $`(\tau x,\star,\tau y,g)`$, for $`f\in F`$ any of $`(\tau x,\star,\tau y,g)`$,
 $`(\tau x,f,\tau y,g)`$, $`(\tau y,\star,\tau x,f)`$, $`(\tau y,g,\tau x,f)`$
-(`HeapSeparation.check`, `check_sound`). Any set of pairwise inequalities has a
-representation of the same meaning, one explicit fact each (`ofPairs_iff`),
-and after an allocation the query answers for every pair of a field of the
-fresh object and a contract field of $`\Gamma`$ (`allocate_apart`). Calls,
+(`HeapSeparation.check`, `check_sound`). An allocation adds the fresh
+object's fields, apart from the fields the separation already states
+(`allocate_holds`). Calls,
 reads, observations and a handler's edge keep the separation, pushed past
 their result; a handler's edge carries the node's entry knowledge, so no fact
 of the throwing expression's own allocation reaches it.
@@ -4033,11 +4031,8 @@ Boolean guards use the following rule, proved by `observeBoolean_holds`:
 The points-to atom must hold in the current heap. Note that
 $`\mathrm{read}(x)`$ is the language's read expression, and $`x\mapsto y`$ the
 points-to assertion. A tag observation does the same with
-what it leaves of $`y`$'s predicate (`observeTag_holds`): each atom whose clause
-answers the other way is dropped, and a family found equal to one of its
-values is that value (`observeAtom`: `number` equal to a number other than a
-zero is that number, `string` equal to a string is that string; equal to a
-zero it stays `number`, the zeros being two values). An optional read link
+what it leaves of $`y`$'s predicate (`observeTag_holds`): the saved value set
+meets the set the tag answers (`ValueSets.ofTag`). An optional read link
 gives the fact only where what remains rules `undefined` out, which then says
 the key is present (`linkFacts_holds`):
 

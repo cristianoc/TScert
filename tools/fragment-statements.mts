@@ -374,11 +374,6 @@ export function readScope(this: Gate, id: ts.Identifier): Within<{ value: "any";
   return gate.libraryValues.has(gate.span(id).join(":")) ? gate.file : null;
 }
 
-/** Whether reading the name `id` cannot throw nor run code (`readScope`). */
-export function readCannotThrow(this: Gate, id: ts.Identifier): Within<{ value: "any"; store: "grow" }, boolean> {
-  return this.readScope(id) !== null;
-}
-
 /** Whether every read of the name `id` gives one value: its read cannot
  * throw nor run code (`readScope`), and no write in its binding's scope names
  * the binding (`writesName`), a nested closure's included. Code outside that

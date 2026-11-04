@@ -96,20 +96,6 @@ theorem SafePostExc.cross_upto {Ξ} {B C D : Fam} {Q Q' : Post} {R R' : Heap →
       exact .inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
         ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
 
-/-- A heap condition that each step keeps, and that holds where the run
-starts, holds wherever it raises. -/
-theorem SafePostExc.of_invariant {Ξ T Q} {R : Heap → Prop}
-    (hstep : ∀ {h t h' t'}, R h → Step h t h' t' → R h') :
-    ∀ {n W h t}, R h → SafePost Ξ T Q n W h t → SafePostExc Ξ T Q R n W h t := by
-  intro n; induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h t hR hs
-    rcases hs with (hv | hr) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl hv)
-    · exact .inl (.inr ⟨hr, hR⟩)
-    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih (hstep hR step) hs⟩
-
 /-- Composition through an evaluation context: a throw of the subterm is a
 throw of the whole at the same heap, so the subterm's throw postcondition is
 the whole's. -/

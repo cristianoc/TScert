@@ -4107,7 +4107,7 @@ call.
 - **Equivalent form:** `nodeModule.stripTypeScriptTypes`. An ES module
   namespace's named export is an own data property, so its value is the
   descriptor's value. An absent export gives `undefined` in both forms;
-  the callable check, Bun branch and conversion of the result remain. The
+  the callable check and conversion of the result remain. The
   call reads the export directly under the standard-object assumption
   that the Node built-in and its exported function are untampered. The
   native function ignores its receiver.

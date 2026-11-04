@@ -536,14 +536,6 @@ theorem opaqueFamilyWith_iff [DecidableEq ι] {G : NormalGraph ι} {sub : Option
   simp only [opaqueFamilyWith, OpaqueFamily, OpaqueUniverse, hcl, List.all_eq_true, Bool.or_eq_true,
     decide_eq_true_eq, or_assoc]
 
-set_option synthInstance.maxSize 1024 in
-instance [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
-    {R : List ι → List ι → Prop} [DecidableRel R] {known : Known ι}
-    {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
-    [∀ L S M, Decidable (arrows L S M)] (hyps : List (ι × ι)) (S T : List ι) :
-    Decidable (OpaqueFamily G sub R known arrows hyps S T) :=
-  decidable_of_iff _ (opaqueFamilyWith_iff (cl := Thunk.mk fun _ => clausesOf G T) rfl)
-
 /-- A bucket of a clause for membership tests: its constructor, the literal it
 names, and a record's keys with their operands under the graph's label hash.
 Any function of the clause serves; lookups compare by equality within the
@@ -761,25 +753,6 @@ inductive ComparisonResult (α : Type) where
 @[nospecialize] def ComparisonResult.accepted : ComparisonResult α → Bool
   | .established _ => true
   | .notEstablished | .exhausted _ _ => false
-
-/-- Conjunction stops at the first unsuccessful premise, retaining its outcome. -/
-@[nospecialize] def ComparisonResult.all (f : β → ComparisonResult Unit) :
-    List β → ComparisonResult Unit
-  | [] => .established ()
-  | x :: xs => match f x with
-    | .established () => all f xs
-    | .notEstablished => .notEstablished
-    | .exhausted rounds visited => .exhausted rounds visited
-
-@[simp] theorem ComparisonResult.accepted_all (f : β → ComparisonResult Unit) (xs : List β) :
-    (all f xs).accepted = xs.all (fun x => (f x).accepted) := by
-  induction xs with
-  | nil => rfl
-  | cons x xs ih =>
-    cases h : f x with
-    | established u => cases u; simpa only [all, h, accepted, List.all_cons, Bool.true_and] using ih
-    | notEstablished => simp only [all, h, accepted, List.all_cons, Bool.false_and]
-    | exhausted rounds visited => simp only [all, h, accepted, List.all_cons, Bool.false_and]
 
 /-- Alternative rules share success; exhaustion survives when neither succeeds. -/
 @[nospecialize] def ComparisonResult.orElse (a : ComparisonResult α)
@@ -1243,12 +1216,6 @@ structure TargetClauses (ι : Type) where
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
     | _, _ => []
-
-/-- The pairs a row's coverage compares: its clauses' against the target's,
-and a scheme's signatures against a target scheme's binding the same rows. -/
-@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
-    (select : Bool := false) : List (List ι × List ι) :=
-  demandPairsIn G known X Y select (TargetClauses.of G Y)
 
 /-- How deep a pair's rows follow `Var`: search only. -/
 def varDepthDefault : Nat := 8

@@ -92,9 +92,6 @@ theorem Change.le_max_right (a b : Change) : b.le (a.max b) = true := by
 theorem Change.max_cases (a b : Change) : a.max b = a ∨ a.max b = b := by
   cases a <;> cases b <;> simp [Change.max]
 
-theorem Change.le_trans {a b c : Change} (h₁ : a.le b = true) (h₂ : b.le c = true) : a.le c = true := by
-  cases a <;> cases b <;> cases c <;> simp_all [Change.le]
-
 /-- Two changes in sequence are within their join. -/
 theorem Change.Holds.seq {δ₁ δ₂ : Change} {b b' v v' v''} (hb : b ≤ b')
     (h₁ : δ₁.Holds b v v') (h₂ : δ₂.Holds b' v' v'') : (δ₁.max δ₂).Holds b v v'' :=
@@ -166,15 +163,6 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | none => false
   | .all, _ => true
 
-/-- `field` and `own` do not depend on the heap. -/
-def Region.timeless : Region → Bool
-  | .field .. | .own _ | .all => true
-  | .elems _ | .cls _ => false
-
-theorem Region.mem_timeless {r : Region} (ht : r.timeless = true) (ρ : Env) (h h' : Heap) (l : Nat) :
-    r.mem ρ h l = r.mem ρ h' l := by
-  cases r <;> simp_all [Region.timeless, Region.mem]
-
 theorem lookup_mem_snd {fs : List (PropKey × Nat)} {k : PropKey} {l : Nat}
     (h : fs.lookup k = some l) : l ∈ fs.map Prod.snd := by
   induction fs with
@@ -232,18 +220,6 @@ theorem Post.empty_iff {ρ : Env} {h h' : Heap} : Post [] ρ h h' ↔ h.IsPrefix
     refine ⟨by simp, fun l v hv => ⟨v, ?_, .inl rfl⟩⟩
     rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
 
-theorem Post.all_iff {ρ : Env} {h h' : Heap} : Post [(.all, .any)] ρ h h' ↔ h.length ≤ h'.length := by
-  refine ⟨fun hp => hp.1, fun hlen => ⟨hlen, fun l v hv => ?_⟩⟩
-  have hl := (List.getElem?_eq_some_iff.mp hv).1
-  exact ⟨h'[l], List.getElem?_eq_getElem (Nat.lt_of_lt_of_le hl hlen),
-    .inr ⟨(.all, .any), by simp, rfl, trivial⟩⟩
-
-/-! ## Containment and order
-
-A region containment that depends on contents is justified by class
-evidence: for a slot and a key, the class of the contents at that field's
-location, at the heap the footprint is read at. -/
-
 abbrev ClassEvidence := Nat → PropKey → Option Cls
 
 /-- The class evidence holds at `h` for every location `h` has. -/
@@ -288,20 +264,6 @@ theorem Allowed.mono {cl Φ Ψ ρ h l v v'} (hle : Footprint.le cl Φ Ψ = true)
   · obtain ⟨f, hf, hfe⟩ := List.any_eq_true.mp (List.all_eq_true.mp hle e he)
     simp only [Bool.and_eq_true] at hfe
     exact .inr ⟨f, hf, Region.sub_mem hfe.2 hc hl hm, hh.mono hfe.1⟩
-
-theorem Post.mono {cl Φ Ψ ρ h h'} (hle : Footprint.le cl Φ Ψ = true) (hc : ClassOk cl ρ h)
-    (hp : Post Φ ρ h h') : Post Ψ ρ h h' := by
-  refine ⟨hp.1, fun l v hv => ?_⟩
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  exact ⟨v', hv', ha.mono hle hc (List.getElem?_eq_some_iff.mp hv).1⟩
-
-/-! ## Transport to the entry heap
-
-An entry footprint is read at the invocation's entry heap `h₀`. A step
-footprint is read at the heap its action starts in. `transport` maps a step
-region to entry regions; `transport_sound` says that every location of `h₀`
-in the step region is in the transported one at `h₀`, unless the entry
-footprint already lets that location change arbitrarily. -/
 
 /-- What transport may use, at the heap the step starts in: the slots whose
 own locations are at least the entry heap's length, and the slots whose
@@ -503,11 +465,5 @@ theorem postB_iff {Φ ρ h h'} : postB Φ ρ h h' = true ↔ Post Φ ρ h h' := 
     obtain ⟨v', hv', ha⟩ := hall l _ hv
     rw [hv, hv']
     exact allowedB_iff.mpr ha
-
-/-- `ClassOk` on a finite set of slots and keys, decided at a heap. -/
-def classOkB (cl : ClassEvidence) (ρ : Env) (h : Heap) (slots : List Nat) (keys : List PropKey) : Bool :=
-  slots.all fun x => keys.all fun k => match cl x k, (fieldsOf (ρ x)).lookup k with
-    | some c, some l => !decide (l < h.length) || (Region.cls c).mem ρ h l
-    | _, _ => true
 
 end Verification.Footprints

@@ -233,9 +233,6 @@ def inspectTerm : Tm → Bool
 theorem inspect_value {v : Tm} (hv : isVal v = true) : inspectTerm v = true := by
   cases v <;> simp_all [inspectTerm, isVal]
 
-theorem pure_inspect {t : Tm} (hp : pureTerm t = true) : inspectTerm t = true := by
-  induction t using Tm.induct <;> simp_all [pureTerm, inspectTerm, isVal]
-
 private theorem subst_value {v : Tm} (hv : isVal v = true) (j : Nat) (a : Tm) :
     isVal (subst j a v) = true := by
   cases v <;> simp_all [isVal, subst]
@@ -282,13 +279,6 @@ private theorem init_subst {t a : Tm} {j : Nat} (ht : initTerm t = true)
   · have ho : operandTerm t = true := by
       cases t <;> simp_all [initTerm]
     exact init_of_operand (operand_subst ho ha)
-
-private theorem operands_subst {xs : List Tm} {a : Tm} {j : Nat}
-    (hx : xs.all operandTerm = true) (ha : isVal a = true) :
-    (xs.map (subst j a)).all operandTerm = true := by
-  simp only [List.all_eq_true, List.mem_map] at hx ⊢
-  rintro _ ⟨x, hm, rfl⟩
-  exact operand_subst (hx x hm) ha
 
 /-- Immutable binding substitutes a value without introducing an effect. -/
 theorem inspect_subst {t a : Tm} {j : Nat}

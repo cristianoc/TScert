@@ -179,9 +179,5 @@ theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' U U' : Fam}
   subst hp hn hu
   rfl
 
-namespace OperationContract
-
-end OperationContract
-
 
 end Verification.ResolutionCapabilities

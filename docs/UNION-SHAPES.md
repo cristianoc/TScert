@@ -453,7 +453,7 @@ leave for the source clause $`a`$. With `SearchBudget.select` on, the
 default:
 
 - table growth adds only the demand pairs of candidate clause pairs
-  (`demandPairs`), and the greatest fixed point's coverage test reads only
+  (`demandPairsIn`), and the greatest fixed point's coverage test reads only
   candidates (`coveredIn`);
 - the table check first accepts a source clause that is a target clause
   (`Same`), then reads the candidates and then every target clause
@@ -462,7 +462,7 @@ default:
   their index under the graph's label hash (`ClauseIndex.has_of`), and
   decides its opaque rows reading the target's clauses at most once
   (`opaqueFamilyWith_iff`);
-- a source clause that is a target clause demands no pair (`demandPairs`);
+- a source clause that is a target clause demands no pair (`demandPairsIn`);
   growth computes a row's demand once, when it inserts the row
   (`growTableFrom`), reading the row's target clauses with their index once
   for its demand and its hopelessness (`TargetClauses`), and deletion reads
@@ -530,7 +530,7 @@ In `Types/ClauseSelection.lean`: `excludes`, `candidates`, `mem_candidates`,
 `covers_boundExcl` (Lemma 5), `covers_candidate`. In
 `Types/SelectionPreservation.lean`: `prem_sound_closed`, `valid_selected`.
 In `Types/PositiveCertificates.lean`: `SearchBudget.select`,
-`InstanceImageCheck.general`, `demandPairs`, `coveredIn`, `checkEntries`,
+`InstanceImageCheck.general`, `demandPairsIn`, `coveredIn`, `checkEntries`,
 `compareStructural`, `compareStepState` and their soundness theorems,
 `checkStructural_sound`, `compareUsing_sound`. Elsewhere in the library:
 `semWithArgs_shape`, `meet_sound`, `sourceClause_sound`
