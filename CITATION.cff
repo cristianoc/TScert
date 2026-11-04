@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use TScert, please cite it as below."
-title: "TScert: TypeScript functions accepted only with a proof"
+title: "TScert: a sound core for TypeScript"
 abstract: >-
   TScert is a research verifier for type claims about TypeScript programs. A
   producer proposes the types of a function's expressions; an independent

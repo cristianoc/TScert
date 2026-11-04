@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/lockup-dark.png">
-    <img src="assets/readme/lockup-light.png" width="560" alt="TScert: TypeScript functions accepted only with a proof">
+    <img src="assets/readme/lockup-light.png" width="410" alt="TScert: a sound core for TypeScript">
   </picture>
 </p>
 
