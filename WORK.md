@@ -868,6 +868,4 @@ not resolve.
 The top-level documents hold facts stated twice, detail below their level,
 and history. The cleanup applies AGENTS.md's writing rules to them:
 
-- DESIGN's trust surface is reviewed row by row against each row's owning
-  document, with the verdict assembly's row added.
 - DESIGN's "Lasting decisions" is reviewed the same way.
