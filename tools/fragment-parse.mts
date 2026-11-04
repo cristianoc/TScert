@@ -1420,7 +1420,10 @@ function lowerFile(file: string, carriesContext: boolean,
     for (const s of source.statements) scanOne(s, find);
   };
   // The members read through namespace imports, each a binding of its own.
-  const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
+  const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message), scan);
+  // The code no run reads: each omitted function's body and each statement left out.
+  const omittedSpans = (): Span[] => source.statements.flatMap((s): Span[] =>
+    isOmitted(s) ? (s.body ? [gate.span(s.body)] : []) : stepLeftOut(s) ? [gate.span(s)] : []);
   gate.namespaceUses = memberUses(members, source);
   const memberNodes = [...gate.namespaceUses.values()].map(({ use }) => use.node);
   // Each `undefined` the file reads, decided by what TypeScript binds it to.
@@ -2121,6 +2124,7 @@ function lowerFile(file: string, carriesContext: boolean,
         importMeta: importMetaNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
         unread: unread(),
+        omitted: omittedSpans(),
         reexports: reexportNodes.map(node => gate.span(node)),
         root: gate.span(first),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),

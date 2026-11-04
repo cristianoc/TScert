@@ -46,10 +46,12 @@ export type NamespaceMember = { local: string; imported: string; specifier: stri
 /** The binding a namespace member is: a name no identifier spells. */
 export const memberLocal = (namespace: string, member: string): string => `${namespace}.${member}`;
 
-/** The members `file` reads through its namespace imports, by binding name.
- * `fail` refuses a mention outside member reads and qualified names. */
+/** The members `file` reads through its namespace imports, by binding name,
+ * in the code `scan` walks (by default all of it). `fail` refuses a mention
+ * outside member reads and qualified names. */
 export function namespaceMembers(file: SourceFile, checker: Checker,
-    fail: (node: Node, message: string) => never): Map<string, NamespaceMember> {
+    fail: (node: Node, message: string) => never,
+    scan: (find: (node: Node) => void) => void = (find) => find(file)): Map<string, NamespaceMember> {
   const members = new Map<string, NamespaceMember>();
   const imports = file.statements.filter((s): s is ImportDeclaration =>
     isImport(s) && !!s.importClause?.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings));
@@ -73,7 +75,7 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     }
     node.forEachChild(collect);
   };
-  collect(file);
+  scan(collect);
   for (const declaration of functions) {
     const name = declaration.importClause?.name;
     if (!name || !ts.isStringLiteral(declaration.moduleSpecifier)) continue;

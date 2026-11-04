@@ -75,10 +75,11 @@ function identifiers(node: ts.Node, into: Set<string>): Set<string> {
 // A census file's model: its statements, recursive groups and imports
 
 /** A top-level statement of a census file, for locating a refusal: a
- * function by its name, a statement of the initialization, an import with
- * the names it binds, or another declaration. */
+ * function by its name, a statement of the initialization with the names its
+ * code mentions, an import with the names it binds, or another declaration. */
 type Statement = { start: number; end: number } &
-  ({ kind: "function"; name: string } | { kind: "init" } | { kind: "import"; names: string[] } | { kind: "other" });
+  ({ kind: "function"; name: string } | { kind: "init"; mentions: Set<string> } | { kind: "import"; names: string[] } |
+    { kind: "other" });
 /** What an import binding names in the census directory: a file and an
  * export, `*` for a namespace, or null where it binds outside the directory. */
 type ImportTarget = { file: string; imported: string } | null;
@@ -169,11 +170,12 @@ function sourceModel(root: string, file: string): SourceModel {
       statements.push({ ...span, kind: "other" });
     } else if (runsInInit(s)) {
       hasInit = true;
-      for (const m of identifiers(s, new Set())) initMentions.add(m);
+      const mentions = identifiers(s, new Set());
+      for (const m of mentions) initMentions.add(m);
       if (ts.isVariableStatement(s))
         for (const d of s.declarationList.declarations) for (const n of identifiers(d.name, new Set())) values.add(n);
       if ((ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)) && s.name) values.add(s.name.text);
-      statements.push({ ...span, kind: "init" });
+      statements.push({ ...span, kind: "init", mentions });
     } else statements.push({ ...span, kind: "other" });
   }
   // Recursive groups: functions that reach each other by the names their code mentions.
@@ -198,7 +200,8 @@ function sourceModel(root: string, file: string): SourceModel {
 
 /** The omissions a refusal located in a census file makes: the function
  * whose code holds it, with its recursive group; the statement of the
- * initialization holding it; for an import, every unit mentioning its
+ * initialization holding it; for an import, every function, with its
+ * recursive group, and every statement of the initialization mentioning its
  * bindings. Empty where the refusal names no place, or one no unit owns. */
 function omissionsFor(m: SourceModel, detail: string): string[] {
   const span = /at \[(\d+),(\d+)\)/.exec(detail);
@@ -210,7 +213,9 @@ function omissionsFor(m: SourceModel, detail: string): string[] {
   if (s.kind === "function") return m.functions.get(s.name)?.group ?? [];
   if (s.kind === "init") return [`${initOmission}@${s.start}`];
   if (s.kind === "import")
-    return [...new Set([...m.functions].flatMap(([, f]) => s.names.some((n) => f.mentions.has(n)) ? f.group : []))];
+    return [...new Set([...m.functions].flatMap(([, f]) => s.names.some((n) => f.mentions.has(n)) ? f.group : [])),
+      ...m.statements.flatMap((x) => x.kind === "init" && s.names.some((n) => x.mentions.has(n))
+        ? [`${initOmission}@${x.start}`] : [])];
   return [];
 }
 
