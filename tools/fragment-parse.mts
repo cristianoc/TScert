@@ -18,7 +18,7 @@ import { refusal } from "./diagnostic-gate.mts";
  */
 import { type API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
+import type { ArrowFunction, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 // files.mts makes every file-system failure a tool failure.
 import { noteInput, readText, writeText } from "./files.mts";
@@ -66,8 +66,8 @@ let compiler: API | null = null;
 // just wrote — needs the tree to be the tree of *that* text, not of whatever
 // the disk happens to hold. An entry here is what the compiler reads; a path
 // with no entry falls through to the real file.
-const contents = new Map<string, string>();
-const opened = new Set<string>();
+const contents: Map<string, string> = new Map();
+const opened: Set<string> = new Set();
 /** How many compilers the parser opened in this process, for the controls:
  * each parse opens its own. */
 let openings: number = 0;
@@ -1362,14 +1362,16 @@ function lowerFile(file: string, carriesContext: boolean,
   // An omitted function, one a census refused in an earlier round, is read
   // as an ambient declaration is, at its declared signature: its body is
   // neither lowered nor read by the scans that collect what the lowering
-  // needs. An omitted statement of the initialization is a step whose
-  // effects are unknown, after which nothing it could change is known: the
-  // statement is not lowered, and a module constant keeps the value its own
-  // initializer gives it only where no statement can change that value, a
-  // function or a primitive literal. Any other constant is read as a
-  // `declare const` at its annotation, and without one is no value. The
-  // scans over binding facts (`eval`, `arguments`, shadowing, the names
-  // bound) still read every omitted body.
+  // needs. An omitted constant whose every initializer is a function runs
+  // nothing: like an omitted function, each is read at the signature its
+  // function states. Any other omitted statement of the initialization is a
+  // step whose effects are unknown, after which nothing it could change is
+  // known: the statement is not lowered, and a module constant keeps the
+  // value its own initializer gives it only where no statement can change
+  // that value, a function or a primitive literal. Any other constant is
+  // read as a `declare const` at its annotation, and without one is no
+  // value. The scans over binding facts (`eval`, `arguments`, shadowing, the
+  // names bound) still read every omitted body.
   const isOmitted = (s: Node): s is FunctionDeclaration & { name: Identifier } =>
     ts.isFunctionDeclaration(s) && !!s.name && omitted.has(s.name.text);
   const omittedSteps = new Set([...omitted].flatMap(n => n.startsWith(`${initOmission}@`)
@@ -1385,9 +1387,28 @@ function lowerFile(file: string, carriesContext: boolean,
   // Whether a declaration is ambient, `declare …`.
   const ambient = (s: FunctionDeclaration | ClassDeclaration | VariableStatement): boolean =>
     !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
-  // A statement left out: an omitted step, or, once one is, a module constant whose value a step may change.
+  // A function expression, through parentheses: evaluating it runs nothing.
+  const functionValue = (e: Expression | undefined): e is ArrowFunction | FunctionExpression => {
+    let x = e;
+    while (x && ts.isParenthesizedExpression(x)) x = x.expression;
+    return !!x && (ts.isArrowFunction(x) || ts.isFunctionExpression(x));
+  };
+  // A constant whose every initializer is a function writing its parameters' and result's types: a statement that
+  // runs nothing, each of whose values has a written signature.
+  const written = (f: ArrowFunction | FunctionExpression): boolean => !!f.type && f.parameters.every(p => !!p.type);
+  const functionConstant = (s: Statement): s is VariableStatement => ts.isVariableStatement(s) &&
+    !!(s.declarationList.flags & ts.NodeFlags.Const) &&
+    s.declarationList.declarations.every(d => {
+      let x = d.initializer;
+      while (x && ts.isParenthesizedExpression(x)) x = x.expression;
+      return ts.isIdentifier(d.name) && functionValue(x) && written(x);
+    });
+  // Whether an omitted statement runs code: a step of unknown effect.
+  const running = source.statements.some(s => omittedSteps.has(s.getStart(source)) && !functionConstant(s));
+  // A statement left out: an omitted statement, or, once one runs code, a module constant whose value a step may
+  // change.
   const stepLeftOut = (s: Statement): boolean => omittedSteps.size > 0 && isInitStatement(s) &&
-    (omittedSteps.has(s.getStart(source)) || (ts.isVariableStatement(s) &&
+    (omittedSteps.has(s.getStart(source)) || (running && ts.isVariableStatement(s) &&
       !!(s.declarationList.flags & ts.NodeFlags.Const) &&
       !s.declarationList.declarations.every(d => unchangeable(d.initializer))));
   // The initialization's statements: every top-level statement but the
@@ -1484,8 +1505,11 @@ function lowerFile(file: string, carriesContext: boolean,
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
     if (stepLeftOut(s)) {
+      // A constant left out is read at its annotation; an omitted function, at its signature.
       if (ts.isVariableStatement(s) && !!(s.declarationList.flags & ts.NodeFlags.Const))
-        for (const d of s.declarationList.declarations) if (d.type && ts.isIdentifier(d.name)) ambientNames.push(d.name);
+        for (const d of s.declarationList.declarations)
+          if ((d.type || (omittedSteps.has(s.getStart(source)) && functionConstant(s))) && ts.isIdentifier(d.name))
+            ambientNames.push(d.name);
       continue;
     }
     if (isTypeAlias(s)) aliasNodes.push(s);

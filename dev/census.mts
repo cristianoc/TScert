@@ -76,10 +76,11 @@ function identifiers(node: ts.Node, into: Set<string>): Set<string> {
 
 /** A top-level statement of a census file, for locating a refusal: a
  * function by its name, a statement of the initialization with the names its
- * code mentions, an import with the names it binds, or another declaration. */
+ * code mentions and whether it is a constant bound to functions only, an
+ * import with the names it binds, or another declaration. */
 type Statement = { start: number; end: number } &
-  ({ kind: "function"; name: string } | { kind: "init"; mentions: Set<string> } | { kind: "import"; names: string[] } |
-    { kind: "other" });
+  ({ kind: "function"; name: string } | { kind: "init"; mentions: Set<string>; functions: boolean } |
+    { kind: "import"; names: string[] } | { kind: "other" });
 /** What an import binding names in the census directory: a file and an
  * export, `*` for a namespace, or null where it binds outside the directory. */
 type ImportTarget = { file: string; imported: string } | null;
@@ -175,7 +176,7 @@ function sourceModel(root: string, file: string): SourceModel {
       if (ts.isVariableStatement(s))
         for (const d of s.declarationList.declarations) for (const n of identifiers(d.name, new Set())) values.add(n);
       if ((ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)) && s.name) values.add(s.name.text);
-      statements.push({ ...span, kind: "init", mentions });
+      statements.push({ ...span, kind: "init", mentions, functions: functionConstant(s) });
     } else statements.push({ ...span, kind: "other" });
   }
   // Recursive groups: functions that reach each other by the names their code mentions.
@@ -196,6 +197,26 @@ function sourceModel(root: string, file: string): SourceModel {
   for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
   return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, types,
     values, defaultFunction, lineStarts };
+}
+
+/** Whether a statement is a constant whose every initializer is a function
+ * expression, through parentheses: it runs nothing, and the parser reads an
+ * omitted one at its functions' signatures. */
+function functionConstant(s: ts.Statement): boolean {
+  const functionValue = (e: ts.Expression | undefined): boolean =>
+    !!e && (ts.isParenthesizedExpression(e) ? functionValue(e.expression) : ts.isArrowFunction(e) || ts.isFunctionExpression(e));
+  return ts.isVariableStatement(s) && !!(s.declarationList.flags & ts.NodeFlags.Const) &&
+    s.declarationList.declarations.every((d) => ts.isIdentifier(d.name) && functionValue(d.initializer));
+}
+
+/** The omission a unit's refusal located in a constant of the initialization
+ * bound to functions makes: that statement, a function of its own. */
+function functionOmission(m: SourceModel, detail: string): string | null {
+  const span = /at \[(\d+),(\d+)\)/.exec(detail);
+  if (!span) return null;
+  const at = Number(span[1]);
+  const s = m.statements.find((x) => x.start <= at && at < x.end);
+  return s && s.kind === "init" && s.functions ? `${initOmission}@${s.start}` : null;
 }
 
 /** The omissions a refusal located in a census file makes: the function
@@ -511,7 +532,22 @@ async function runFile(root: string, project: string, models: (file: string) => 
       if (error instanceof RunFailure) invocations.push(...error.invocations.map(reference));
       outcome = { status: "error", phase: "-", detail: String(error).split("\n")[0] ?? "", units: null };
     }
-    if (outcome.units !== null) return done(null, outcome.units);
+    if (outcome.units !== null) {
+      // A unit refused inside a constant bound to functions: that constant is
+      // omitted as a function would be, and the file checked again.
+      const located = new Map<string, OwnResult>();
+      for (const u of outcome.units) {
+        const n = u.status === "verified" ? null : functionOmission(m, u.detail);
+        if (n !== null && !omitted.has(n) && !located.has(n))
+          located.set(n, { status: u.status, phase: u.phase, detail: u.detail.split("\n")[0] ?? "" });
+      }
+      if (located.size === 0) return done(null, outcome.units);
+      for (const [n, refusal] of located) {
+        omitted.set(n, refusal);
+        rounds.push({ omitted: [n], refusal });
+      }
+      continue;
+    }
     const refusal = { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
     // A file whose every unit is omitted has nothing left to check.
     if (outcome.detail.includes("no functions in file")) return done(null, []);
