@@ -507,7 +507,11 @@ increasing trust silently.
   prose sections, then trailers with `Outcome`, `Parts` and `Trust`. The
   `commit-msg` hook (`make setup-git-hooks`) refuses a message without them.
   A review of agent work is rendered from records
-  (`node dev/commit-records.mts`), never written by hand.
+  (`node dev/commit-records.mts`), never written by hand. On a pull request,
+  CI renders its records to a page under `semantic-diff/pr-<number>/` of the
+  repository's GitHub Pages, links it from one comment, and checks each
+  commit's record with the same hook
+  ([semantic-diff.yml](.github/workflows/semantic-diff.yml)).
 - Presentations: record pages and deep-dive decks share one style, and a
   deck is written for a reader with zero context and reaches the owner only
   after a review against the sources ([STYLE.md](docs/STYLE.md)).
