@@ -334,7 +334,7 @@ file `f` uses the retained session when all of these hold:
    not marked for retirement, and its base state is clean.
 
 Otherwise the retained session is released, and a new one opened at
-`dirname(f)`, with `p` opened by its first snapshot. Slices whose snapshot
+`dirname(f)`, with `p` opened by its first snapshot. Parses whose snapshot
 directories differ share a session where their resolution files lie in one
 directory; a collection of an import in another directory replaces it.
 Releasing the worker, retiring it, ending the command or turning retention
