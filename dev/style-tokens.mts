@@ -9,40 +9,53 @@
 export type ColourToken =
   | "bg" | "surface" | "ink" | "muted" | "rule" | "accent" | "code-bg" | "math-bg"
   | "ok" | "ok-bg" | "principled" | "principled-bg" | "gap" | "gap-bg" | "neutral" | "neutral-bg"
-  | "trust" | "trust-bg" | "neg" | "neg-bg";
+  | "trust" | "trust-bg" | "neg" | "neg-bg" | "run" | "run-bg" | "brand-ink" | "brand-gold";
 
 export const LIGHT: Readonly<Record<ColourToken, string>> = {
-  bg: "#f6f7f5", surface: "#fff", ink: "#1d2422", muted: "#5b6662", rule: "#d9dedb", accent: "#1f6f66",
-  "code-bg": "#eef1ef", "math-bg": "#f3f1ea",
-  ok: "#2e7d4f", "ok-bg": "#e3f2e8", principled: "#8a5a12", "principled-bg": "#f6ecd9",
-  gap: "#5e6870", "gap-bg": "#e8ebed", neutral: "#2b5b9c", "neutral-bg": "#e2eaf6",
-  trust: "#8b2f4b", "trust-bg": "#f6e3ea", neg: "#9a3a2a", "neg-bg": "#f7e4df",
+  bg: "#fbfcfd", surface: "#ffffff", ink: "#0b1a2e", muted: "#56627a", rule: "#d5dce6", accent: "#8a6410",
+  "code-bg": "#eef2f7", "math-bg": "#f2f4f8",
+  ok: "#2f6b47", "ok-bg": "#e2efe4", principled: "#a0521a", "principled-bg": "#f7e6d6",
+  gap: "#6b6f78", "gap-bg": "#ecebe6", neutral: "#2c4f7c", "neutral-bg": "#e6ebf2",
+  trust: "#7c2f4a", "trust-bg": "#f2e1e7", neg: "#9b3524", "neg-bg": "#f5e1da",
+  run: "#7a5414", "run-bg": "#f3e7cc", "brand-ink": "#0b1a2e", "brand-gold": "#b8840f",
 };
 
 export const DARK: Readonly<Record<ColourToken, string>> = {
-  bg: "#131816", surface: "#1b2220", ink: "#e3e9e6", muted: "#9aa6a1", rule: "#2f3936", accent: "#6cc3b6",
-  "code-bg": "#222b28", "math-bg": "#24231d",
-  ok: "#7fd3a0", "ok-bg": "#1f3428", principled: "#e3b46a", "principled-bg": "#382c17",
-  gap: "#aab4bb", "gap-bg": "#2a3135", neutral: "#8fb3e8", "neutral-bg": "#1e2a3d",
-  trust: "#ec97b1", "trust-bg": "#3a2029", neg: "#f0a493", "neg-bg": "#3a221d",
+  bg: "#0e1626", surface: "#16213a", ink: "#efe7d4", muted: "#9aa3b5", rule: "#2a3756", accent: "#e0ac4a",
+  "code-bg": "#131d33", "math-bg": "#1a2540",
+  ok: "#7fd0a2", "ok-bg": "#17322a", principled: "#f0a868", "principled-bg": "#3a2a1c",
+  gap: "#9aa3b5", "gap-bg": "#1c2639", neutral: "#8fb4e8", "neutral-bg": "#1b2b49",
+  trust: "#e79bb6", "trust-bg": "#3a2131", neg: "#f0907d", "neg-bg": "#3a1f22",
+  run: "#e0ac4a", "run-bg": "#2e2a24", "brand-ink": "#efe7d4", "brand-gold": "#e0ac4a",
+};
+
+/** The typefaces, each with the Google Fonts stylesheet that serves it. */
+export const FACES: Readonly<Record<"bricolage-grotesque" | "inter" | "source-code-pro" | "stix-two-text", { family: string; href: string }>> = {
+  "bricolage-grotesque": {
+    family: "Bricolage Grotesque",
+    href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap",
+  },
+  inter: { family: "Inter", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" },
+  "source-code-pro": { family: "Source Code Pro", href: "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap" },
+  "stix-two-text": { family: "STIX Two Text", href: "https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap" },
 };
 
 /** The typeface stacks: headings, text, code and formulas. */
 export const FONTS: Readonly<Record<"display" | "body" | "mono" | "math", string>> = {
-  display: `"IBM Plex Serif",Georgia,serif`,
-  body: `"IBM Plex Sans","Helvetica Neue",Arial,sans-serif`,
-  mono: `"IBM Plex Mono",Menlo,Consolas,monospace`,
+  display: `"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif`,
+  body: `"Inter","Helvetica Neue",Arial,sans-serif`,
+  mono: `"Source Code Pro",Menlo,Consolas,monospace`,
   math: `"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif`,
 };
 
 /** The colours of highlighted TypeScript (`k` keyword, `s` string, `n`
  * number, `t` type name) and of the roles of a formula's tokens. */
 export const SYNTAX: Readonly<Record<"k" | "s" | "n" | "t" | "op" | "con" | "kw" | "bind" | "intr" | "lit" | "unsound" | "mark", string>> = {
-  k: "#8e3fb5", s: "#2b7a3d", n: "#b0601a", t: "#2b5b9c",
-  op: "#2b5b9c", con: "#1f6f66", kw: "#8e3fb5", bind: "#8e3fb5", intr: "#2b5b9c", lit: "#8e3fb5",
+  k: "#7a3b8c", s: "#2f6b47", n: "#a35a12", t: "#2c4f7c",
+  op: "#2c4f7c", con: "#8f6416", kw: "#7a3b8c", bind: "#7a3b8c", intr: "#2c4f7c", lit: "#7a3b8c",
   unsound: "#b3261e", mark: "#ffe08a",
 };
 
-/** A scheme's colours as CSS variable declarations, `--bg:#f6f7f5; …`. */
+/** A scheme's colours as CSS variable declarations, `--bg:#fbfcfd; …`. */
 export const cssVariables = (scheme: Readonly<Record<ColourToken, string>>): string =>
   Object.entries(scheme).map(([name, value]) => `--${name}:${value}`).join("; ");

@@ -11,6 +11,7 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { parseRecord, pageBody, CSS, type CommitRecord, type Example, type Group } from "./record-render.mts";
+import { FACES } from "./style-tokens.mts";
 
 const git = (args: string[], input?: string): string =>
   execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["pipe", "pipe", "ignore"] });
@@ -76,7 +77,7 @@ const fragment = args.includes("--fragment");
 const targets = args.filter((a, i) => i !== outAt && i !== outAt + 1 && a !== "--fragment");
 const groups = targets.map(group);
 const head = `<title>Commit Records</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=STIX+Two+Text:ital,wght@0,400;0,500;1,400&display=swap">
+${Object.values(FACES).map((f) => `<link rel="stylesheet" href="${f.href}">`).join("")}
 <style>${CSS}</style>`;
 const body = pageBody(groups);
 writeFileSync(outFile, fragment ? `${head}\n${body}\n`

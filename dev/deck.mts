@@ -27,7 +27,7 @@ import {
   changeHead, codeTokens, dedent, mathRoles, mathTokens, parts, parseRecord, versions,
   CODE_KINDS, MATH_KINDS, PLAIN_KINDS, type CommitRecord, type MathRole, type Section,
 } from "./record-render.mts";
-import { FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
+import { FACES, FONTS, LIGHT, SYNTAX } from "./style-tokens.mts";
 
 /** One slide: its id, and its `<section>` in the slide format. */
 export type Slide = { id: string; html: string };
@@ -41,13 +41,8 @@ const SERIF = `font-family:${FONTS.display.replace(/"/g, "'")}`;
 const MONO = `font-family:${FONTS.mono.replace(/"/g, "'")}`;
 const MATH = `font-family:${FONTS.math.replace(/"/g, "'")}`;
 
-/** The typefaces a deck's index declares, as Google Fonts links. */
-export const FACES: Readonly<Record<string, { family: string; href: string }>> = {
-  "ibm-plex-sans": { family: "IBM Plex Sans", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap" },
-  "ibm-plex-serif": { family: "IBM Plex Serif", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500&display=swap" },
-  "ibm-plex-mono": { family: "IBM Plex Mono", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" },
-  "stix-two-text": { family: "STIX Two Text", href: "https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap" },
-};
+/** The typefaces a deck's index declares: the identity's (`style-tokens.mts`). */
+export { FACES };
 
 /** Text with HTML's special characters escaped. */
 export const esc = (s: string): string =>
