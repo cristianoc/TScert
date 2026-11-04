@@ -719,7 +719,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     (signature): GlobalEntry => ({ host: contract,
       origin: node, global: "structuredClone", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
-  // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
+  // `Math.abs(x)` and `Math.ceil(x)` of a number, a primitive: no conversion
+  // code runs.
+  { host: contract, global: "Math", member: "abs", signature: "abs(x: number): number;", effect: emptyEffect },
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
   // `Math.random()`: a number in [0, 1); it reads no argument and writes no
   // location a program can reach.

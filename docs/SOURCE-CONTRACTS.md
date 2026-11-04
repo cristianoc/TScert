@@ -3143,9 +3143,10 @@ keeps from running.
   a value too (`xs.map(String)`; `string-value`; `invalid-string-value-object`,
   run under Node). A global whose entries state no value, such as `BigInt`,
   is refused as one (`library-global-value-unreviewed`).
-- `parseInt(s, r)` and `Math.ceil(x)` convert a string and numbers, primitives
-  no conversion code runs on, and write nothing: as declared, within the empty
-  footprint (`library-parse-int`, `library-math-ceil`). No argument of their
+- `parseInt(s, r)`, `Math.abs(x)` and `Math.ceil(x)` convert a string and
+  numbers, primitives no conversion code runs on, and write nothing: as
+  declared, within the empty footprint (`library-parse-int`,
+  `library-math-abs`, `library-math-ceil`). No argument of their
   parameter types converts by code.
 - `Math.random()` reads no argument and writes no location a program
   reaches: as declared, within the empty footprint (`library-math-random`).
