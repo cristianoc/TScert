@@ -160,6 +160,17 @@ list` is true for a three-element list (a prototype getter) while `list[5]`
   or returns a value outside its declared type makes that request throw
   (`Error calling callback`, `EPIPE`, `Unexpected EOF`) and every later
   request of the instance throw; nodes already obtained stay readable.
+- **The empty-tuple panic.** The API panics writing the type of an empty
+  array literal TypeScript types as a tuple (`[] as const`, or `[]` where a
+  destructuring or a tuple type is its context) into a reply, observed of
+  `Checker.getTypeAtLocation` and `TypeObject.getTypes`. A query whose reply
+  holds that type is a [tool failure](OBLIGATION-DIAGNOSTICS.md#tool-failures),
+  and its report names the cause. A literal whose type no query asks is
+  unaffected (`constructor-tuple-spread`, `as-const`): the front end reads an
+  iteration's kind from a conditional's arms and from an array literal's
+  syntax, so `c ? xs : []` asks no type holding the literal's
+  (`conditional-empty-array-pattern`), and TScert's own source forms no
+  other ([the empty-tuple panic](SOURCE-REWRITES.md#the-compiler-apis-empty-tuple-panic)).
 - **Snapshots and lifetimes.** Objects are memoized per snapshot: two
   `getSymbolAtLocation` calls give the same `Symbol`, two `resolve()` calls
   the same node, in another file too. On a file whose two declarations are

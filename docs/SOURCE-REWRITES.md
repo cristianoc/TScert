@@ -4711,8 +4711,8 @@ the callback's body to meet its written result type.
 ### The compiler API's empty-tuple panic
 
 TypeScript 7.0.2's API panics writing a union that holds an empty array
-literal's tuple type, a tool failure
-([the pipeline entry point](DESIGN.md#the-pipeline-entry-point)).
+literal's tuple type, a [tool failure](OBLIGATION-DIAGNOSTICS.md#tool-failures)
+([the package at run time](COMPILER-API.md#the-package-at-run-time)).
 `forInEntryReads` destructured
 `ts.isVariableStatement(s) ? s.declarationList.declarations : []`, so every
 slice including it ended in that tool failure.

@@ -992,10 +992,6 @@ two parts.
 
 **Independent of per-unit verification:**
 
-- DESIGN's "The pipeline entry point" keeps the outcomes. The tool-failure
-  detail, down to the compiler API's empty-tuple panic, moves to
-  [OBLIGATION-DIAGNOSTICS](docs/OBLIGATION-DIAGNOSTICS.md) or
-  [COMPILER-API](docs/COMPILER-API.md).
 - WORK.md's status rows state each item's current state and its last
   measurement. Chains of earlier measurements are deleted, since the commit
   records keep them.
