@@ -501,9 +501,10 @@ units (`--produce-units`) and their check (`--check-units`), each over the
 file's one front. Where the search of the file does not finish within its
 limit, each unit is searched and checked on its own, so the limit is each
 unit's. A refusal naming a certified import asks for that import's
-withdrawal; a refused front refuses every unit. */
+withdrawal, every such import of the round at once, before the check; a
+refused front refuses every unit. */
 function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: string, snapshot: string,
-    budget: string[], select: string[] | null): { withdraw: string } | { front: string } | { results: UnitResult[] } {
+    budget: string[], select: string[] | null): { withdraw: string[] } | { front: string } | { results: UnitResult[] } {
   const named = select === null ? [] : [select.join(",")];
   const search = (evidence: string, names: string[]): { refused: Map<string, string>; front: string | null } => {
     const produced = runStep(verifierCall(verifier, [...budget, "--produce-units", ast, claims, snapshot, evidence,
@@ -548,26 +549,24 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
         detail, depends: [] };
     });
   };
-  const withdrawal = (results: UnitResult[]): { withdraw: string } | null => {
-    for (const r of results) {
-      const failed = r.status === "verified" ? null : failedImport(r.detail);
-      if (failed) return { withdraw: `${failed.module}#${failed.name ?? "*"}` };
+  // The certified imports refusals name, each once.
+  const withdrawal = (details: Iterable<string>): { withdraw: string[] } | null => {
+    const keys = new Set<string>();
+    for (const detail of details) {
+      const failed = failedImport(detail);
+      if (failed) keys.add(`${failed.module}#${failed.name ?? "*"}`);
     }
-    return null;
+    return keys.size ? { withdraw: [...keys] } : null;
   };
   const evidence = join(artifacts, "evidence.json");
   let results: UnitResult[];
   try {
     const searched = search(evidence, named);
-    if (searched.front !== null) {
-      const failed = failedImport(searched.front);
-      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front: searched.front };
-    }
+    if (searched.front !== null) return withdrawal([searched.front]) ?? { front: searched.front };
+    const withdrawn = withdrawal(searched.refused.values());
+    if (withdrawn) return withdrawn;
     const checked = check(evidence, named, searched.refused);
-    if (typeof checked === "string") {
-      const failed = failedImport(checked);
-      return failed ? { withdraw: `${failed.module}#${failed.name ?? "*"}` } : { front: checked };
-    }
+    if (typeof checked === "string") return withdrawal([checked]) ?? { front: checked };
     results = checked;
   } catch (error) {
     if (!messageOf(error).startsWith("timeout: ")) throw error;
@@ -596,7 +595,7 @@ function unitRound(recorder: Recorder, artifacts: string, ast: string, claims: s
       }
     }
   }
-  return withdrawal(results) ?? { results };
+  return withdrawal(results.filter((r) => r.status !== "verified").map((r) => r.detail)) ?? { results };
 }
 
 /** A completed run releases its artifacts. A file consumer requests retention
@@ -711,9 +710,10 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       phase = "search";
       const round = unitRound(recorder, artifacts, ast, claims, snapshot, budget, units.select);
       if ("withdraw" in round) {
-        if (withdrawn.has(round.withdraw)) return { status: "error", artifacts, phase,
-          detail: `a refusal names the certified import ${round.withdraw} again after its withdrawal`, units: null };
-        withdrawn.add(round.withdraw);
+        const again = round.withdraw.find((w) => withdrawn.has(w));
+        if (again !== undefined) return { status: "error", artifacts, phase,
+          detail: `a refusal names the certified import ${again} again after its withdrawal`, units: null };
+        for (const w of round.withdraw) withdrawn.add(w);
         continue;
       }
       if ("front" in round)
