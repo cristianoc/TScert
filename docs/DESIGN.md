@@ -359,9 +359,13 @@ the census omits the function with its recursive group (by the names the
 source's functions mention): the parser reads it as it reads an ambient
 declaration, at its declared signature, so its callers are checked against
 that signature, and the function's own result is the refusal. Where it lies
-in a top-level statement, the census omits that statement as a step whose
-effects are unknown: after it, nothing it could change is known, as after a
-write to a module cell the unit does not declare. A module constant keeps
+in a top-level statement, the census omits that statement. A constant
+bound to functions only runs nothing: omitted, it is read as an omitted
+function is, at its functions' signatures, and a unit's refusal located in
+it omits it too, since its functions are code of their own. Any other
+statement is omitted as a step whose effects are unknown: after it, nothing
+it could change is known, as after a write to a module cell the unit does
+not declare. A module constant keeps
 the value its own initializer gives it only where no statement can change
 that value, a function or a primitive literal; any other is read at its
 annotation, as a `declare const`, and without one is no value, never at the
