@@ -209,15 +209,25 @@ not known is a symbol:
 ```
 
 A function declared with overloads $`S_1,\ldots,S_n`$ ($`n>1`$) is callable at
-exactly those; an implementation's own signature is not callable from outside:
+exactly those; an implementation's own signature is not callable from outside.
+Generic overloads stating the same type parameters $`\vec p`$, each with the
+same bound, are one generic declaration ($`\vec p`$ empty where none is
+generic):
 
 ```math
-\frac{x\ \text{declared with overloads}\ S_1,\ldots,S_n\ (n>1),\ \text{none generic}}
-     {\Gamma(x)=\bigwedge_i⟦S_i⟧}\ \textsf{overloads}
+\frac{x\ \text{declared with overloads}\ \forall\vec p.\,S_1,\ldots,\forall\vec p.\,S_n\ (n>1)}
+     {\Gamma(x)=⟦\forall\vec p.\ S_1\wedge\cdots\wedge S_n⟧}\ \textsf{overloads}
+\qquad
+\textstyle\bigcap_i⟦\forall\vec p.\,S_i⟧=⟦\forall\vec p.\ \bigwedge_i S_i⟧ .
 ```
 
-Each call is checked against the conjunction, so it is typed by any overload
-whose parameters admit its actuals. A generic overload is refused.
+The equation holds because each $`S_i`$ names only the shared binders, so an
+instance of the conjunction is the conjunction of the instances. Each call
+is checked at the instance its claim names, against any overload whose
+parameters admit its actuals (`ambient-generic-overloads`; at a marker the
+second overload of `valFromOption`, whose instance the bound admits). Generic
+overloads stating different type parameters are refused
+(`ambient-generic-overloads-renamed`).
 
 An ambient declaration the module writes (`declare function`, `declare
 const`, `declare class`, `declare enum`) runs nothing and is in scope everywhere, read as an

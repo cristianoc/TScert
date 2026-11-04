@@ -26,7 +26,7 @@ import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
-import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
+import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormedText, wellFormedTextRefusal } from "./wire-strings.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
@@ -259,6 +259,9 @@ export class Gate {
   readonly methodTargets: Set<string> = new Set();
   /** The element reads `%ElementAt%` answers. */
   readonly hostElements: Set<string> = new Set();
+  /** The element reads `o[n.toString()]` of a number `n`, each the read
+   * `o[n]` (SOURCE-ELABORATION.md, "Keyed access at a number's string"). */
+  readonly numberKeys: Set<string> = new Set();
   /** The element reads at a number and the `length` reads of a view of
    * bytes, by span: the intrinsic reading each (`library-types.mts`). */
   readonly byteReads: Map<string, string> = new Map();
@@ -1120,6 +1123,7 @@ export class Gate {
   /* --------------------------------------------------------- functions -- */
 
   functionDecl: typeof statements.functionDecl = statements.functionDecl;
+  overloadedDecl: typeof statements.overloadedDecl = statements.overloadedDecl;
 
   guardOf: typeof guards.guardOf = guards.guardOf;
 }
@@ -2235,6 +2239,7 @@ function lowerFile(file: string, carriesContext: boolean,
         lengthReads: lengthReadNodes.map(node => gate.span(node)),
         byteRead: ([start, end], intrinsic) => gate.byteReads.set(`${start}:${end}`, intrinsic),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
+        numberKey: ([start, end]) => gate.numberKeys.add(`${start}:${end}`),
         openReads: openReadNodes.map(node => gate.span(node)),
         openRead: ([start, end], intrinsic) => gate.openReads.set(`${start}:${end}`, intrinsic),
         regexps: regexpNodes.map(node => gate.span(node)),
@@ -2355,10 +2360,35 @@ function lowerFile(file: string, carriesContext: boolean,
   const leftOut = (s: FunctionDeclaration, reason: string): void => {
     absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s), reason });
   };
-  const initial = location === null ? declared.map((s) => ({ s, fn: gate.functionDecl(s) }))
-    : declared.flatMap((s) => {
+  // A declaration's overloads, the declarations without a body TypeScript
+  // places right before its implementation, are units of it
+  // (`overloadedDecl`); any other declaration without a body is refused
+  // where it is lowered.
+  const overloadsOf = new Map<FunctionDeclaration, FunctionDeclaration[]>();
+  const grouped: FunctionDeclaration[] = [];
+  let pending: FunctionDeclaration[] = [];
+  for (const s of declared) {
+    const name = s.name?.text;
+    if (pending.length && (pending[0]?.name?.text !== name || !name)) {
+      grouped.push(...pending);
+      pending = [];
+    }
+    if (!s.body && name !== undefined) pending.push(s);
+    else {
+      if (pending.length) overloadsOf.set(s, pending);
+      pending = [];
+      grouped.push(s);
+    }
+  }
+  grouped.push(...pending);
+  const lowerDecl = (s: FunctionDeclaration): FunctionAst[] => {
+    const overloads = overloadsOf.get(s);
+    return overloads ? gate.overloadedDecl(s, overloads) : [gate.functionDecl(s)];
+  };
+  const initial = location === null ? grouped.map((s) => ({ s, fns: lowerDecl(s) }))
+    : grouped.flatMap((s) => {
       try {
-        return [{ s, fn: gate.functionDecl(s) }];
+        return [{ s, fns: lowerDecl(s) }];
       } catch (error) {
         passToolFailure(error);
         leftOut(s, messageOf(error));
@@ -2385,7 +2415,7 @@ function lowerFile(file: string, carriesContext: boolean,
     changed = kept.length < lowered.length;
     lowered = kept;
   }
-  const parsed = lowered.map(({ fn }) => fn);
+  const parsed = lowered.flatMap(({ fns }) => fns);
   // Every enum's members must have values, whether or not it runs.
   for (const e of enumNodes) gate.enumMembers(e.name.text);
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]

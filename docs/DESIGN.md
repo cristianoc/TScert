@@ -483,7 +483,10 @@ initialization order is the initialization unit's own obligation.
 
 A module function is available at its source signature and, without a rest
 parameter and without type parameters, also at that signature extended by a
-rest of `unknown`: its code discards further actuals. A module constant is
+rest of `unknown`: its code discards further actuals. A function declared
+with overloads is one unit per overload, its code checked at each, and is
+available at every overload ([module functions](SOURCE-ELABORATION.md#module-functions)).
+A module constant is
 available at its annotation or its checked initializer claim, and an
 unannotated one holding a closure without a rest, binders, defaults or a
 guard also at that closure's signature extended so. Initialization

@@ -1855,9 +1855,38 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
  * guard, its stated effect and its parameters' contracts. */
 type FunctionHeader = { retType: TypeTerm; guard: Guard | null; stated: StatedEffect | null; parameterTypes: TypeTerm[] };
 
-export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst {
+/** A declaration with overloads, its implementation `node`: one unit per
+ * overload, each the implementation's code at that overload's parameter and
+ * result types, its name the overload's (SOURCE-ELABORATION.md, "Module
+ * functions"). The implementation's own signature is no caller's. Every
+ * overload states the implementation's type parameters, as written, and as
+ * many parameters, none a rest or `this`. */
+export function overloadedDecl(this: Gate, node: FunctionDeclaration, overloads: readonly FunctionDeclaration[]): FunctionAst[] {
+  const gate: Gate = this;
+  const source = node.getSourceFile();
+  const parametersText = (o: FunctionDeclaration): string =>
+    (o.typeParameters ?? []).map(p => p.getText(source)).join(",");
+  if (node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword))
+    gate.fail(node, "an async declaration with overloads is outside the fragment");
+  for (const o of [...overloads, node]) {
+    if (parametersText(o) !== parametersText(node))
+      gate.fail(o, "an overload stating type parameters other than its implementation's is outside the fragment");
+    if (o.parameters.length !== node.parameters.length)
+      gate.fail(o, "an overload taking as many parameters as its implementation is in the fragment, no other");
+    if (o.parameters.some(p => p.dotDotDotToken || (ts.isIdentifier(p.name) && p.name.text === "this")))
+      gate.fail(o, "a rest or `this` parameter of an overloaded declaration is outside the fragment");
+    if (o.type && ts.isTypePredicateNode(o.type))
+      gate.fail(o.type, "a type predicate on an overloaded declaration is outside the fragment");
+    if (gate.statedResult(o.type, o).stated)
+      gate.fail(o.type ?? o, "a statement (`Within`) on an overloaded declaration is outside the fragment");
+  }
+  return overloads.map(o => gate.functionDecl(node, o));
+}
+
+export function functionDecl(this: Gate, node: FunctionDeclaration, signature: FunctionDeclaration = node): FunctionAst {
   const gate: Gate = this;
   if (!node.name) gate.fail(node, "anonymous function");
+  if (!signature.name) gate.fail(signature, "anonymous function");
   if (node.name.text === "undefined")
     gate.fail(node, "shadowing undefined is outside the fragment");
   // `export default function f` exports f's own binding as `default`, which
@@ -1904,11 +1933,13 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     gate.asyncBody = isAsync;
     if (typeParams.some(p => p.resolution) && gate.statedResult(node.type, node).stated)
       gate.fail(node.type ?? node, "`Within` on a resolution-qualified declaration is outside the fragment: such a unit claims no footprint");
+    // The header is the signature's: the declaration's own, or an
+    // overload's (`overloadedDecl`).
     const { retType, guard, stated, parameterTypes } = gate.headerTypes((): FunctionHeader => {
-      const guard = gate.guardOf(node);
-      const written = gate.statedResult(node.type, node);
-      const retType = guard ? guardResult(guard) : gate.typeOf(written.result, node);
-      const parameterTypes: TypeTerm[] = node.parameters.map((p): TypeTerm => p.dotDotDotToken ? gate.moduleRestType(p, node)
+      const guard = gate.guardOf(signature);
+      const written = gate.statedResult(signature.type, signature);
+      const retType = guard ? guardResult(guard) : gate.typeOf(written.result, signature);
+      const parameterTypes: TypeTerm[] = signature.parameters.map((p): TypeTerm => p.dotDotDotToken ? gate.moduleRestType(p, signature)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
         : gate.typeOf(p.type, p));
       return { retType, guard, stated: written.stated, parameterTypes };
@@ -1970,7 +2001,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
     return {
       name: node.name.text,
-      namePos: gate.span(node.name),
+      namePos: gate.span(signature.name),
       typeParams,
       params,
       retType,

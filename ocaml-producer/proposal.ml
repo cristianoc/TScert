@@ -175,10 +175,21 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
   rounds start (List.map fst start)
 
 and infer_assuming ?(thrown=[]) ~state flows program assumed =
-  let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (with_footprint
-      ~on_throw:(List.mem g.name thrown)
-      (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)))
-    program.Source.functions
+  (* A declaration with overloads is one unit per overload: its slot holds
+     every overload's signature. *)
+  let first_seen = List.fold_left (fun acc (g:Source.fn) -> if List.mem g.name acc then acc else acc @ [g.name]) []
+    program.Source.functions in
+  let module_functions = List.map (fun name -> name,lazy (
+      let units = List.filter (fun (g:Source.fn) -> g.name = name) program.Source.functions in
+      let typed = List.map (fun (g:Source.fn) -> with_footprint
+        ~on_throw:(List.mem g.name thrown)
+        (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)) units in
+      match typed with
+      | [t] -> t
+      | _ -> Atoms [Shape {fields=[];indexes=[];elements=None;calls=List.concat_map (function
+          | Atoms [Shape {calls;_}] -> calls
+          | _ -> Proposal_diagnostics.unsupported "an overload of a guard or a rest") typed}]))
+    first_seen
     (* A qualified import is read as its unit's module reads the unit: at its
        certified footprint, its code discarding further actuals. *)
     @ List.map (fun (name,t) -> name,lazy (match List.find_opt (fun (n,_,_,_) -> n = name) program.Source.qualified with

@@ -672,7 +672,10 @@ export interface OperationRequests {
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays, tuples and node lists only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
-   * `%ElementAt%`, which reads it, join the values. */
+   * `%ElementAt%`, which reads it, join the values. Each whose key is
+   * `n.toString()`, of no argument, TypeScript typing `n` as `number` and
+   * resolving the call to `Number.prototype.toString`, is reported to
+   * `numberKey`. */
   elementReads?: readonly Span[];
   /** The client's reads `e.length`. Each of these and of the element reads
    * whose object TypeScript types as views of bytes only
@@ -811,6 +814,7 @@ export interface OperationAnswers {
   libraryName?: (span: Span) => void;
   libraryValue?: (span: Span) => void;
   hostElement?: (span: Span) => void;
+  numberKey?: (span: Span) => void;
   byteRead?: (span: Span, intrinsic: string) => void;
   openRead?: (span: Span, intrinsic: string) => void;
   regexp?: (span: Span, intrinsic: string) => void;
@@ -1869,16 +1873,27 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         if (nodes.some(n => ts.isFunctionDeclaration(n) && statedResult(valueScope(reading, n, what), n.type, n).stated))
           throw Error(`a statement (\`Within\`) on an overloaded declaration is outside the fragment: ${what}`);
         if (overloads.length > 1) {
-          if (overloads.some(o => o.typeParameters?.length))
-            throw Error(`an overloaded generic function is outside the fragment: ${what}`);
+          // Generic overloads are read as one generic declaration when every
+          // overload states the same type parameters, each with the same
+          // bound: the value meets every overload at every instance, the
+          // intersection of the overloads under the one binder list
+          // (SOURCE-CONTRACTS.md, "Imported, ambient and global values").
+          const [first] = overloads;
+          const parametersText = (o: ts.FunctionDeclaration): string =>
+            (o.typeParameters ?? []).map(p => p.getText(source)).join(",");
+          if (first && overloads.some(o => parametersText(o) !== parametersText(first)))
+            throw Error(`an overloaded generic function whose overloads state different type parameters is outside the fragment: ${what}`);
+          if (first?.typeParameters?.length)
+            for (const part of first.typeParameters) clean(part, `${idOf(source)}#${first.name?.text ?? what}`);
+          const { names, typeParams } = bindersOf(reading, first?.typeParameters, first ?? node, what);
           const forms = overloads.flatMap(o => {
             const at: Span = [o.getStart(source), o.end];
             for (const part of [...o.parameters, ...(o.type ? [o.type] : [])])
               clean(part, `${idOf(source)}#${o.name?.text ?? what}`);
-            return signatures(valueScope(reading, o, what), o.parameters, o.type, o, at, true);
+            return signatures(valueScope(reading, o, what, names), o.parameters, o.type, o, at, true);
           });
           return { declaration: { module: idOf(source), name: overloads[0]?.name?.text ?? what, span },
-            construct: false, typeParams: [], type: oneTerm(forms, span) };
+            construct: false, typeParams, type: oneTerm(forms, span) };
         }
         return valueOf(reading, overloads, what);
       }
@@ -3032,6 +3047,23 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         !(read.flags & ts.NodeFlags.OptionalChain) || !(t.flags & (TypeFlags.Null | TypeFlags.Undefined));
       const objects = (object && isUnionType(object) ? object.getTypes() : object ? [object] : []).filter(present);
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
+      // `o[n.toString()]`: `Number.prototype.toString` of no argument spells
+      // `ToString(n)`, the key `o[n]` converts `n` to.
+      let argument: Node = read.argumentExpression;
+      while (ts.isParenthesizedExpression(argument)) argument = argument.expression;
+      if (ts.isCallExpression(argument) && !argument.arguments.length && !argument.typeArguments?.length &&
+          !argument.questionDotToken && ts.isPropertyAccessExpression(argument.expression) &&
+          !argument.expression.questionDotToken && ts.isIdentifier(argument.expression.name) &&
+          argument.expression.name.text === "toString") {
+        const declaration = checker.getResolvedSignature(argument)?.declaration?.resolve();
+        const owner = declaration?.parent;
+        const receiver = checker.getTypeAtLocation(argument.expression.expression);
+        const receivers = receiver && isUnionType(receiver) ? receiver.getTypes() : receiver ? [receiver] : [];
+        if (owner && ts.isInterfaceDeclaration(owner) && libraryFile(owner.getSourceFile()) &&
+            owner.name.text === "Number" && receivers.length &&
+            receivers.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral))))
+          operationAnswers.numberKey?.(span);
+      }
       // `b[k]` of a view of bytes at a number, a literal one included.
       if (bytesOnly(objects) && keys.length && keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral)))) {
         viewRead(span, byteAtName);

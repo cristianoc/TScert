@@ -225,6 +225,26 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
     let name ← str f "name"
     let pos ← (fromJson? (← field f "namePos") : Except String (Nat × Nat))
+    -- A declaration with overloads, one unit per overload: its value is
+    -- generic once, at every overload's signature under the binders they
+    -- share, as an imported declaration with overloads is.
+    let overloads := functionTrees.toList.filter fun g => g.getObjValD "name" == .str name
+    if overloads.length > 1 then
+      if functionTrees.toList.take i |>.any (·.getObjValD "name" == .str name) then continue
+      generics := generics ++ [← genericOf name pos path f tps fun scope => do
+        let ctx : Ctx := { binders := scope, site := path }
+        let parts ← overloads.mapM fun g => do
+          let params ← arr g "params"
+          if params.any (fun p => (p.getObjVal? "rest").isOk || p.getObjValD "type" == .null) ||
+              g.getObjValD "retType" == .null then
+            throw s!"{path}: an overload's type needs every parameter's annotation and its result's, and no rest"
+          return Json.mkObj [("k", .str "function"), ("receiver", .null),
+            ("params", .arr (params.map (·.getObjValD "type"))), ("rest", .null),
+            ("result", g.getObjValD "retType"), ("effect", toJson CallEffects.Effect.ordinary),
+            ("span", g.getObjValD "namePos")]
+        return .other (← lowerType ctx (Json.mkObj [("k", .str "intersection"), ("parts", .arr parts.toArray),
+          ("span", toJson pos)]))]
+      continue
     generics := generics ++ [← genericOf name pos path f tps fun scope => do
       -- Its signature by its parameters' annotations: a rest's element, the
       -- claim of a rest being its element's (`Fragment.callableType`).
