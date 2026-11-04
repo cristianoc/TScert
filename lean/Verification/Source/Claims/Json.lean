@@ -295,9 +295,10 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
         ("program", toJson r.toRequest.program),
         ("codes", toJson (r.toRequest.codes.map fun (c : CodeRequest _) => codeJson c.entry))])
 
-/-- What requests a bundle justifies give: the check accepts them, and each
-is safe, and within its footprint where it claims one, as
-`checkRequests_safe_at` and `checkRequests_footprint_at` state. -/
+/-- What requests a bundle justifies give: the check accepts them, each is
+safe, within its footprint where it claims one, and its stated assertions are
+entailed by its certificate, as `checkRequests_safe_at`,
+`checkRequests_footprint_at` and `checkRequests_assertions_at` state. -/
 def RequestsSafe (F : EquationStore.Frozen)
     (rs : List (SourceRequest (EquationStore.Checked F.equations F.primitive)
       (EquationStore.CheckedLabel F.equations F.primitive)))
@@ -319,7 +320,8 @@ def RequestsSafe (F : EquationStore.Frozen)
             (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
-              r.start L d))
+              r.start L d)) ∧
+      (∀ r c, (r,c) ∈ rs.zip b.functions → RequestAssertionsEntailed r c)
 
 theorem requestsSafe_of_check {F : EquationStore.Frozen}
     {rs : List (SourceRequest (EquationStore.Checked F.equations F.primitive)
@@ -327,7 +329,7 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     {b : Bundle (EquationStore.CheckedLabel F.equations F.primitive)}
     (hx : (checkRequestsResult rs b).accepted = true) : RequestsSafe F rs b := by
   have hc : checkRequests rs b = true := hx
-  refine ⟨hc, ?_, ?_⟩
+  refine ⟨hc, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
   · intro r c hm η admitted n W heap ρ he hw hh
     exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh
   · intro r c hm heffect η n W heap L d he hw hh hvalues hd
