@@ -590,6 +590,10 @@ export interface RootRequests {
    * initialization): no value of the client reads them, so they join no
    * graph. */
   unread?: readonly string[];
+  /** The client's code no run reads: each omitted function's body and each
+   * statement of the initialization left out. The walks over the client
+   * pass over them. */
+  omitted?: readonly Span[];
   /** The first construct of the client that reaches the graph, where a
    * declaration merging into `Object` or `Function` is refused. */
   root?: Span;
@@ -935,6 +939,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
   return withProject(clientFile, input.tsconfigPath, (checker, client, root, program, probeProgram, exactOptional) => {
     if (input.client && input.client.getFullText() !== client.getFullText())
       throw declarationError([0, 0], "TypeScript client source bytes differ");
+    // Whether a node of the client lies in code no run reads (`omitted`).
+    const omittedSpans = rootsRequested.omitted ?? [];
+    const left = (node: Node): boolean => omittedSpans.length > 0 &&
+      omittedSpans.some(([start, end]) => start <= node.getStart(client) && node.end <= end);
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // A module of the program: a source file outside the standard library,
     // the host packages and any installed package.
@@ -985,6 +993,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
     // refused where it is written, naming the view (COMPILER-API.md, reading
     // rule 4, L6).
     const outsideViews = (node: Node): void => {
+      if (left(node)) return;
       // A view lists no constructor: `new` of a compiler-API class is a
       // member outside it.
       if (ts.isNewExpression(node)) {
@@ -2269,6 +2278,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
       // of its own (`namespace-members.mts`), found through `members`.
       const calls: ts.CallExpression[] = [];
       const find = (n: Node): void => {
+        if (left(n)) return;
         if (ts.isIdentifier(n) && n !== binding.at && n.text === binding.name &&
             checker.getSymbolAtLocation(n)?.id === symbol.id && ts.isCallExpression(n.parent) && n.parent.expression === n)
           calls.push(n.parent);
@@ -2439,6 +2449,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           if (reviewed.some(e => e.serialized !== undefined)) {
             const symbol = checker.getSymbolAtLocation(binding.at);
             const find = (n: Node): void => {
+              if (left(n)) return;
               const call = n.parent;
               if (symbol && ts.isIdentifier(n) && n !== binding.at && checker.getSymbolAtLocation(n)?.id === symbol.id &&
                   call && ts.isCallExpression(call) && call.expression === n && !call.questionDotToken &&
