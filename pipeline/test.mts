@@ -5063,7 +5063,7 @@ control(async (): Promise<void> => {
   // The honest evidence states its typings at the qualified signatures, which
   // the importer's document no longer has.
   refuse(imported, "forged-certified-unqualified", unqualified, /reject: source expression obligation/,
-    join(imported, "fragment.json"), /reject: .*application of unknown head/);
+    join(imported, "fragment.json"), /"refusal":"[^"]*application of unknown head/);
   // A module's claims about other bytes.
   const stale = readClaims(imported);
   for (const m of stale.modules) m.sourceSha256 = "0".repeat(64);
@@ -7385,15 +7385,17 @@ control(async (): Promise<void> => {
   const reversed = (value: unknown): unknown => Array.isArray(value) ? value.map(reversed)
     : typeof value === "object" && value !== null
       ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reversed(v)])) : value;
-  const parsed: unknown = JSON.parse(text);
+  // Each line spelled again, one JSON value per line.
+  const respelled = (spell: (value: unknown) => string): string =>
+    text.split("\n").filter((l) => l !== "").map((l) => spell(JSON.parse(l))).join("\n") + "\n";
   const variants: [string, string, boolean][] = [
     ["exponent", replaced(at, slot, '"slot":0e0'), true],
     ["negative-zero", replaced(at, slot, '"slot":-0'), true],
     ["fraction", replaced(at, slot, '"slot":0.0'), false],
     ["repeated-honest-last", replaced(at, slot, '"slot":7,"slot":0'), true],
     ["repeated-honest-first", replaced(at, slot, '"slot":0,"slot":7'), false],
-    ["indented", must(JSON.stringify(parsed, null, 1), "the document's text"), true],
-    ["reordered", must(JSON.stringify(reversed(parsed)), "the document's text"), true],
+    ["spaced", respelled((v) => must(JSON.stringify(v, null, 1), "a line's text").replace(/\n */g, " ")), true],
+    ["reordered", respelled((v) => must(JSON.stringify(reversed(v)), "a line's text")), true],
     ["escaped-key", replaced(named, field, '"fi\\u0065ld":"value"'), true],
   ];
   for (const [name, variant, accepted] of variants) {
