@@ -71,5 +71,9 @@ jobs:
       - name: Fast checks and controls
         run: opam exec -- make test
 
+      # A runner has 4 CPUs: a stage's limit three times the 60 s a
+      # 12-core machine's cases are calibrated to.
       - name: Pipeline cases
+        env:
+          TSCERT_STEP_LIMIT: "180"
         run: opam exec -- make suite
