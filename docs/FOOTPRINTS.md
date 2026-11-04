@@ -508,7 +508,7 @@ its member's footprint, and an exhausted check reported as exhausted.
 
 ## The acceptance theorem
 
-`SourceClaimJson.checkJson_safe` keeps its premise (the CLI success
+`SourceClaimJson.checkUnitJson_safe` keeps its premise (the CLI success
 condition) and its conclusion (safety of every accepted function), and states
 that each unit whose declaration claims a footprint other than
 `{value: any, store: any}`, run as its graph, returns with a heap its

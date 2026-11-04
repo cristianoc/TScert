@@ -217,9 +217,12 @@ generation, Lean evidence search and Lean checking. Each subprocess has a log
 and a time limit. `--project` selects the strict TypeScript project configuration.
 The pipeline cases use this entry point.
 
+Each unit of the file ([modules and code units](#modules-and-code-units)) is
+searched and checked on its own over the file's one front; the file's outcome
+is its first unit's that is not accepted, each unit's own result beside it.
 The outcome is one of:
 
-- **verified**: certificate checking accepted the extracted request;
+- **verified**: certificate checking accepted every unit's extracted requests;
 - **unsupported**: source processing or proposal generation refused a construct;
 - **unverified**: search or checking did not establish the required derivation;
 - **exhausted**: a verification resource budget was reached before the
@@ -281,10 +284,12 @@ surface's rows state what each replay assumes.
 
 ### What "verified" means
 
-`SourceClaimJson.checkJson_safe` connects successful source-claim checking to
-safety of every certified calculus request. Each **code unit** is a function
-or module-initialization body. Its inputs include parameters and the module,
-imported and host values it uses.
+`SourceClaimJson.checkUnitJson_safe` connects a unit's accepted check to
+safety of its certified calculus requests. Each **code unit** is a function
+or module-initialization body, checked with the units that reach it and that
+it reaches as one unit ([modules and code units](#modules-and-code-units)).
+Its inputs include parameters and the module, imported and host values it
+uses.
 
 For inputs that satisfy their types and a heap that satisfies its storage
 contracts, the extracted program does not get stuck or return a value outside
@@ -305,27 +310,71 @@ and [trust-reduction options](TRUST-REDUCTION.md).
 
 ### Function coverage and release thresholds
 
-The headline benchmark and release metric is function coverage of `tools/`,
-the front end. Its denominator is every named top-level function declaration
-with a body in that directory; its numerator is those whose complete census
-slice verifies. Unsupported, unverified, timed-out and failed functions
-remain in the denominator. Each function counts once, including functions
-sharing a mutually recursive slice. Function size carries no weight. Module
-initialization, class members and functions held by module bindings are
-outside this census scope.
+The census checks each module of a directory whole, through the pipeline:
+one front per file, each unit searched and checked on its own
+([modules and code units](#modules-and-code-units)). A function is
 
-A release `v0.N` requires at least `N × 10%` of these functions to verify in
-the complete census of `tools/` on main. A selected-file or selected-function
-run is a targeted check, not the release benchmark. A report states the
-verified count, total count and percentage together. Comparing releases uses this same directory and unit
-of counting. This is a census of functions, not a claim that the same
-percentage of source statements or all project code is verified.
+- **shallow verified** when its unit is accepted: its own code checks
+  against the claimed signatures and effects of the module values it reads
+  and the declared or certified signatures of what it imports;
+- **deep verified** when it is shallow verified and so is every unit of its
+  dependency closure: the dependencies each accepted check prints, its
+  file's initialization, the unit of each census-directory declaration an
+  import its code mentions binds (a namespace import every unit of its
+  module, a type nothing), and the initialization of every census-directory
+  module a loaded module loads. A unit not accepted, not run or not resolved
+  blocks deep status; the first such unit, breadth-first, is the function's
+  deep blocker.
+
+Deep status is the certificates a [composed module execution](../WORK.md#module-composition)
+needs, not that composition: each accepted check gives its unit's safety
+under its inputs meeting their contracts.
+
+**The reported figure.** The headline benchmark and release metric is
+shallow function coverage of `tools/`, the front end. Its denominator is
+every named top-level function declaration with a body in that directory;
+its numerator is those shallow verified. Unsupported, unverified,
+timed-out and failed functions remain in the denominator. Each function
+counts once, including the members of one recursive group. Function size
+carries no weight. Deep status is defined and computed in every census
+record; its publication waits until it is informative, and it stays out of
+headline summaries.
+
+A release `v0.N` requires at least `N × 10%` of these functions to be
+shallow verified in the complete census of `tools/` on main. A
+selected-file or selected-function run is a targeted check, not the release
+benchmark. A report states the verified count, total count and percentage
+together. Comparing releases uses this same directory and unit of counting.
+This is a census of functions, not a claim that the same percentage of
+source statements or all project code is verified.
+
+**Refused units.** The parser, the control-flow lowering and the producer
+refuse a file at its first refusal. Where that refusal lies in a function,
+the census omits the function with its recursive group (by the names the
+source's functions mention): the parser reads it as it reads an ambient
+declaration, at its declared signature, so its callers are checked against
+that signature, and the function's own result is the refusal. Where it lies
+in a top-level statement, the census omits that statement as a step whose
+effects are unknown: after it, nothing it could change is known, as after a
+write to a module cell the unit does not declare. A module constant keeps
+the value its own initializer gives it only where no statement can change
+that value, a function or a primitive literal; any other is read at its
+annotation, as a `declare const`, and without one is no value, never at the
+type TypeScript infers. The initialization's own result is the refusal, so
+no function depending on it is deep verified. The file is then checked
+again; each round omits at least one unit. A refusal no unit owns refuses
+every unit of the file.
+
+**Selection.** `make census FILES=… FUNCTIONS=…` checks the selected units
+and their dependency closure (`SHALLOW=1` without it); a shard checks its
+files without it, and deep status is computed over the shards' records
+together.
 
 Censuses of `dev/`, `tests/` and `pipeline/` are reported under their own
 directory names; an aggregate of directories is labelled with its scope.
 [Statement coverage](#statement-coverage) is a separate measure, weighted
-by the statements inside the census functions. Neither replaces the
-front-end function percentage in a release or headline comparison.
+by statements. Neither replaces the front-end function percentage in a
+release or headline comparison.
 
 ### Statement coverage
 
@@ -348,30 +397,25 @@ field's initializer is a unit, and an arrow whose body is an expression has
 one unit for that expression, its implicit `return`. A parameter's default
 belongs to no unit.
 
-**Ownership.** Each unit belongs to the function whose body holds it, and a
-nested function's units belong also to the top-level function enclosing it.
-A top-level function declaration with a name and a body is a census
-function: the census slices exactly these. A unit outside every function
-belongs to `<module>`; a unit of any other function directly at module level
-(a class member, a function a module binding holds) belongs to that
-function, outside the census's scope.
+**Ownership.** Each statement belongs to the code unit whose code holds it:
+a top-level function declaration with a name and a body, a census function,
+owns its body's statements, its nested functions' included; the module's
+initialization owns every other statement, its top-level code, its classes'
+members and the functions its bindings hold.
 
-**Classes.** A unit of a census function is *verified* when the census
-slice of its top-level function verified: the slice's source acceptance,
-imports included, covers that function, and so every function nested in it.
-Every other unit of a census function is *not verified*, classified by its
-slice's outcome (`unsupported/source`, `unsupported/proposal`,
-`unverified/search`, `timeout`, `error/…` for a tool failure, and the other
-outcomes a slice can have). Units of `<module>` and of functions outside the
-census's scope are *out of scope*, and units of a census function no slice
-of the record covers are *not run*; both are reported and not counted.
+**Classes.** A statement is *verified* under shallow status when its owning
+unit is accepted, and under deep status when that unit is deep verified.
+Every other statement is *not verified*, classified by its owning unit's
+outcome (`unsupported/source`, `unsupported/proposal`, `unverified/search`,
+`timeout`, `error/…` for a tool failure, `blocked/deep` for a unit accepted
+and not deep verified). Statements of a unit no run of the record covers
+are *not run*: reported and not counted.
 
 **The measure.** With $`V`$ the verified units and $`N`$ the counted ones
 (verified and not verified), verified coverage is $`100\,V/N`$, `n/a` for
 $`N = 0`$, reported with verified functions over census functions. File and
 directory figures sum $`V`$ and $`N`$ first; percentages are never averaged.
-While `<module>` and functions outside the census's scope are not counted,
-the measure is *top-level-function-body coverage*. Equal weights measure
+Equal weights measure
 statement sites, not code size or difficulty, and no syntactic unit is
 invariant under every refactoring: splitting a function, adding trivial
 statements or dead code moves the denominator, which comparisons report
@@ -383,7 +427,7 @@ function's units of that kind. A unit matched on both sides counts in the
 transition between verified, not verified and not counted; a unit on one
 side only counts as deleted or added. The comparison reports additions
 and deletions separately for counted statements and for the complete
-inventory, which also contains out-of-scope and not-run units. Only
+inventory, which also contains not-run units. Only
 counted statements contribute to the coverage denominator; matched units
 that enter or leave the counted set also move that denominator.
 
@@ -392,15 +436,37 @@ inventory, every unit with its file, span, position, kind, owner and class
 ([`dev/statement-coverage.mts`](../dev/statement-coverage.mts)). The measure
 of an existing record is computed from the sources of the record's commit,
 or of the checkout for a census of a dirty tree, compared with the record's
-hashes per file, or per slice for a record without an inventory.
+hashes per file.
 
 ### Modules and code units
 
-The module is the unit of source verification. Its top-level functions and
-initialization body have separate obligations, so a failure can name the
-responsible code unit. Initialization evaluates constants, classes, enums and
-top-level statements in source order; class constructors and methods receive
-their own code checks.
+The module's code units are its top-level functions and its initialization
+body. Initialization evaluates constants, classes, enums and top-level
+statements in source order; class constructors and methods receive their
+own code checks within it, and a closure within the unit creating it.
+
+**Units of a check.** The verifier reads a file's Fragment and claims once
+(its **front**: the equations, the module environment with each module
+value's claimed signature and effect, the generic instances, the
+initialization's claims and order), and extracts each code unit's plan from
+it, one store grown through the units in turn; a unit whose extraction fails
+keeps its refusal and leaves the store as it was. Code units that reach each
+other through the names their code mentions form one **unit** of the check,
+certified together: a recursive group's members are discharged by one check,
+since recursion is justified only by a simultaneous argument. A unit's
+**dependencies** are the units its code names: a module function's unit for
+its name, the initialization for a binding it owns (a constant, a cell, a
+class, an enum, a class's self binding), and the module runs of the
+certified imports it reads. Mentions over-approximate reads, as the
+initialization order check relies on. Each module run of a certified import
+is a unit of its own, checked as its document. One search
+(`--produce-units`) writes each selected unit's evidence; one check
+(`--check-units`) gives each its verdict, accepted with its dependencies or
+refused ([the modes](REQUEST-PROTOCOL.md#run-the-verifier)). A
+`checkUnitJson_safe` conclusion is per unit: an accepted unit's certified
+requests are safe under `EnvOk` of their inputs, the module values among
+them at their claimed signatures, whatever the other units' verdicts. The
+initialization order is the initialization unit's own obligation.
 
 A module function is available at its source signature and, without a rest
 parameter and without type parameters, also at that signature extended by a
@@ -472,7 +538,7 @@ captures. [Graph code](SEMANTICS.md#graph-code) and
 
 Everything the safety theorem does not establish. Each assumption enters as
 a premise: an input slot of the unit at a declared type (`EnvOk` over the
-unit's inputs, in the premise of `checkJson_safe`), a property of the host
+unit's inputs, in the premise of `checkUnitJson_safe`), a property of the host
 the model's reading of an operation relies on, or the correctness of a
 trusted tool. Where an item is stated in code, that code is the reviewed
 text.
@@ -494,7 +560,8 @@ trusted obligation below.
 | The capture-shape reading of a regex literal is correct: for every literal it reads, the number of capture groups and whether a group is named are the pattern's, and a group it reports as taking part in every match holds a string in every successful match under ECMA-262's semantics. The count and the names are also checked against the host's compilation of each literal; which groups take part is the reading's alone. | [`tools/regexp-shape.mts`](../tools/regexp-shape.mts); `tests/regexp-shapes.mts` runs it against the host on known shapes, its counterexamples and a seeded fuzz |
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
-| A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the keyed direct-child `pipeline/*.mts` code captured at module load and the Node runtime ([keys](STAGE-STORE.md#keys): result-path completeness rests on the stated audits; the replay policy, the store and presentation decide no result and are outside the key, which assumes every version of them that published or reads an entry binds it to its exact manifest), and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](STAGE-STORE.md), [`pipeline/stage-execution.mts`](../pipeline/stage-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
+| The dependencies a unit's accepted check prints include every unit its code reaches by name: the mention scan over its lowered code, as the initialization order check's. The census adds each import's binding, resolved syntactically over the census directory, a namespace import standing for every unit of its module; a re-export it cannot follow blocks deep status. Both bear on deep status only, not on any unit's acceptance. | `Front.dependencies` (`Claims/Extraction.lean`); `censusEdges` (`dev/census.mts`) |
+| A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkUnitJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the keyed direct-child `pipeline/*.mts` code captured at module load and the Node runtime ([keys](STAGE-STORE.md#keys): result-path completeness rests on the stated audits; the replay policy, the store and presentation decide no result and are outside the key, which assumes every version of them that published or reads an entry binds it to its exact manifest), and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](STAGE-STORE.md), [`pipeline/stage-execution.mts`](../pipeline/stage-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
 | A control passing over replayed operations shows what it showed when they executed: each replayed operation is its executable's own result for exactly the inputs its key binds, under the same binding, validation and audit as a replayed check (the executable by content, its argument vector, its environment, its exit protocol and every input file's bytes). The mutation verifier's audit is the verifier's, beside the one variable `TSCERT_TEST_MUTATIONS` its invocation fixes. A control's own forgery and assertions run at every run. | [Controls](STAGE-STORE.md#controls), [`pipeline/stages.mts`](../pipeline/stages.mts) (`tested`), [`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) |
 | A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the keyed direct-child `.mts` files of `pipeline/` and `tools/` captured at module load, and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (the parser-based import guard over the keyed in-process universe and the result-path audits under [keys](STAGE-STORE.md#keys)); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree, and every string target in a package import's scope `imports` map starting with `./` (including targets within condition objects and arrays); each parse opens a fresh parser, a declaration compiler is fresh or a retained session, every compiler's ledger is noted in the records of every stage using it before each of its requests, and the process's caches record their observations, Node's checked for first-answer consistency; within an attempt the front end's own reads of a path answer their first answer ([shared work](STAGE-STORE.md#shared-work)), so a change of the file system during one attempt is seen only by the end-of-stage and replay validations. A stored module entry is the parser's own lowering of exactly the inputs its key binds, under the same binding: an imported module lowered in a parser compiler of its own is the module lowered in the importer's, byte for byte (module isolation, conjectured; every pipeline case's Fragment equal both ways), and its reads of the run's tag selection are complete, the selection being read by family at one site (`familySelection`) and each read an observation the replay evaluates against the invocation's own selection. An incomplete Node resolver or loader observation makes the current execution unpublishable and retires the worker; later observed executions require a fresh process, while validated replays remain available. Elsewhere, or where other observations are not accounted for, the stage executes without publication. | [Observed stages](STAGE-STORE.md#observed-stages), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/in-process-execution.mts`](../pipeline/in-process-execution.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
 | A parse or TypeScript diagnostics list executed in a retained declaration session, its work shared, is the one fresh compilers give for the same inputs and file-system answers with no work shared (conjectured, not proved): the compiler's caches are correct across snapshots whose answers hold; a query of the channel's audited list asked again of an unreleased snapshot answers the text it first answered, and omitting the repeated request changes no later answer of the compiler (query omission, [shared work](STAGE-STORE.md#shared-work)); each collection reacquires its named project from the base state (exactly that project open, no open document, an empty overlay), which the end of every collection, a refusal's included, restores and checks, a failed or uncertain restoration releasing the session and publishing nothing; the session's ledger holds every answer its compiler was given over its lifetime, with its Node-origin bit and incompleteness, is made again before each use and, for every session a stage used, before the stage's publication, and is noted in every record a use makes or begins, so a stored entry's observations include it; compatibility binds the named project, the resolution directory, the compiler's installation and the active families, and the process bounds the session's code and runtime. The controls compare reused parses, their work shared, with fresh ones with no work shared byte for byte in forward, reverse and A–B–A orders, refusals included, and show the invalidations, replacements and failed restorations [retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions) lists. | [Retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions), [Shared work](STAGE-STORE.md#shared-work), [`tools/declaration-session.mts`](../tools/declaration-session.mts), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), `tests/session-reuse.mts`, `tests/shared-work.mts` |
@@ -527,24 +594,24 @@ throw, which safety admits, but never return a wrong value.
 | `Function.prototype.toString` meets `FunctionProto`: on a receiver with call code it returns a string, runs no client code and writes nothing; on any other receiver it throws a `TypeError`. It is read from the slot `[[Function.prototype]]`. | `functionOverlay` in `tools/array-prototype.mts`; [`Function.prototype.toString`](SOURCE-CONTRACTS.md#functionprototypetostring) |
 | `Set.prototype`, `Map.prototype` and `Date.prototype` hold the listed natives, unmodified (`keys`, `values` and `entries` giving a host iterator of the collection); `has`, `get`, `keys`, `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`, `toString` and `toISOString` run no client code and write no location they did not allocate. | `interfaceOverlay` in `tools/array-prototype.mts` |
 | The intrinsics meet their signatures: `%Await%` yields what a native promise settles to, or a resolution-qualified input's observation, or throws its rejection; `%AsyncReturn%` resolves an async return to a resolution-qualified input's result and `%AsyncComplete%` fulfills completion with `undefined`; `%PromiseResolve%` preserves a native promise through its constructor identity path or yields a promise of a resolution-qualified input's observation; `%Stable%` is the stable non-thenable family those descriptors are relative to; `%PromiseAll%` (`Promise.all`), `%PromiseReject%` (`Promise.reject`), `%NewPromise%` (`new Promise`, calling its executor at once); `%Iterate%` returns a fresh object, an array's iterator, whose step, called with it as receiver, reads the current length and changes no old location but the iterator's own; `%Iterate:string%` a string's, by code point; `%Iterate:Set%` a `Set`'s, in insertion order; `%Iterate:Map%` a `Map`'s, a fresh `[key, value]` array per entry, each taking the collection at its reading view; `%Iterate:Iterator%` a `SetIterator` or `MapIterator`, which is its own iterator; `%Iterate:ForIn%` the keys a `for...in` over a dictionary visits, its own, a fresh `[key, value]` array per key with the value it holds under the key at the step; none of these iterators has a `return`; `%Spread:K%` is the fresh array of what `%Iterate:K%`'s step yields until it ends; `%RestFrom:k%` is the fresh array of an array's elements from `k` to its current length, as its iterator yields them after a pattern's `k` elements; `%ForIn%` gives the keys a `for...in` visits, strings; `%HasProperty%` answers `k in o` for a key TypeScript types as other than string literals, as the host's lookup does, and writes nothing; `%ElementAt%` reads `xs[k]` of an array at a `number` key as the host does: the element at an index below the length, an own property at another numeric key, else `undefined`, and writes nothing; `%Freeze:K%` returns its argument, an object literal of the named fields K, frozen, and writes nothing a program reads; `%ByteAt%` reads `b[k]` of a view of bytes at a number as the host does, the element at a valid index, else `undefined`, and `%ByteLength%` its `length`, and neither writes anything; `%Enum:E%` returns the fresh object of an enum's members with the reverse mapping TypeScript's emit adds, a member's name at its numeric value's key; `%AssertionFailure%` returns a fresh `AssertionError` of a string message, with no effect stated; `%InstanceOf:Error%` answers `e instanceof Error` by walking `e`'s prototype chain for `Error.prototype`, and writes nothing; `%InstanceOf:Map%` and `%InstanceOf:Set%` answer `e instanceof Map` and `e instanceof Set` alike, and write nothing; `%SymbolFor%` (`Symbol.for`) gives the registry's symbol for a string and `%SymbolKeyFor%` (`Symbol.keyFor`) the string the registry holds a symbol under, or `undefined`; `%RegExp:Σ%` allocates the native regex a literal of shape Σ evaluates to, meeting `N(Σ)`, and writes nothing else; `%Dispatch:m%` is `String.prototype`'s `m` given an object argument, which returns what that argument's well-known-symbol method returns called with the receiver string and the remaining arguments (for `matchAll` and `replaceAll`, after reading the native regex's standard `Symbol.match` and `flags`, or throwing a `TypeError`), and beside that method's call writes nothing; `%Iterate:RegExpString%` steps a native regex's match iterator, which steps a private clone of the regex with the standard `exec`. The job queue and a promise that never settles are not modelled. | [`tools/intrinsics.mts`](../tools/intrinsics.mts); [async](SOURCE-CONTRACTS.md#async-functions-and-await) |
-| A value a function the unit receives throws is a value of the built-ins' `unknown`: a JavaScript value meeting the array invariant. | `Thrown` in `Safe`, read with the graph's exception family `builtinExc` in the meaning of every function type, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#computations-and-recursive-types)) |
+| A value a function the unit receives throws is a value of the built-ins' `unknown`: a JavaScript value meeting the array invariant. | `Thrown` in `Safe`, read with the graph's exception family `builtinExc` in the meaning of every function type, so `EnvOk` in the premise of `checkUnitJson_safe` ([SEMANTICS](SEMANTICS.md#computations-and-recursive-types)) |
 
 **Assumed of the host.** Properties of every value a unit receives, on which
 the model's reading of an operation relies.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| The caller contract: a value conforming to a structural annotation (a parameter, an import, a library or host result, an argument external code passes to a callback) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies, an optional field `f?: T` is absent or holds a `T` (the exact reading, as `exactOptionalPropertyTypes` defines it; a present `undefined` is stated as `f?: T | undefined`), its own and inherited properties alike: where `f in v` holds, `v.f` reads a `T`, and where it fails, `v.f` reads `undefined`, so an error at `{ message?: number }`, which inherits `message` from `Error.prototype`, is outside the contract (`in-outside-caller-contract`); a key a key bound of its type excludes is neither owned nor inherited; and each other key `in` admits that it inherits meets its type as an own key would, so `in` answers as the model's own-key test does on the value with those keys counted as owned, and a class instance owns its private slots, keyed by their private names; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. A value at `Error`, or at an interface extending it, is the exception: it owns no enumerable `message` or `name`, and holds each as a data property holding a string, own and not enumerable or inherited, which the model states on a link it gives the value. | `SourceClaimJson.checkJson_safe` quantifies over environments meeting the input types (`EnvOk`) |
+| The caller contract: a value conforming to a structural annotation (a parameter, an import, a library or host result, an argument external code passes to a callback) is a plain data object, its stated string-keyed fields own enumerable data properties, not accessors or proxies, which a spread copies, an optional field `f?: T` is absent or holds a `T` (the exact reading, as `exactOptionalPropertyTypes` defines it; a present `undefined` is stated as `f?: T | undefined`), its own and inherited properties alike: where `f in v` holds, `v.f` reads a `T`, and where it fails, `v.f` reads `undefined`, so an error at `{ message?: number }`, which inherits `message` from `Error.prototype`, is outside the contract (`in-outside-caller-contract`); a key a key bound of its type excludes is neither owned nor inherited; and each other key `in` admits that it inherits meets its type as an own key would, so `in` answers as the model's own-key test does on the value with those keys counted as owned, and a class instance owns its private slots, keyed by their private names; a conforming function respects its contract across every future heap, callback effects included. Two such parameters may alias. A value at `Error`, or at an interface extending it, is the exception: it owns no enumerable `message` or `name`, and holds each as a data property holding a string, own and not enumerable or inherited, which the model states on a link it gives the value. | `SourceClaimJson.checkUnitJson_safe` quantifies over environments meeting the input types (`EnvOk`) |
 | An instance of the `Error` family a unit reaches keeps `Error.prototype`, the standard `Error` constructor and its class's prototype chain; its `message` is a string, the one the construction gave, or a string its declared type allows where a call may change it; external code creates no enumerable own `message`, `stack` or `cause` on it. `Error.prototype` holds `name` as a data property whose value is `"Error"` throughout execution: external code installs no accessor there and writes no other value; and an error the program gives external code at a type stating `stack` (returned, thrown, rejected, passed to external code or a callback, or written where such a type is stated) reads a string at `stack` wherever `in` finds it, whenever external code reads it: external code installs no `Error.prepareStackTrace` returning another value for it and writes no other value there, the model leaving `stack` unstated. The fragment's side: the parser refuses an instance member, a parameter property or a constructor's `this.k = e` named `message`, `stack`, `cause` or `name` in a class extending `Error`, and the source reaches no `Error.prototype`; Lean refuses a write that may set any of these keys onto a receiver whose checked claim does not exclude every object holding a prototype. | [a class extending `Error`](SOURCE-ELABORATION.md#a-class-extending-error); [`JSON` and `Error`](SOURCE-CONTRACTS.md#json-and-error); `reservedWriteCheck` in [`lean/Verification/Source/Lowering/Types.lean`](../lean/Verification/Source/Lowering/Types.lean); `ProtoFree.clause_sound` |
 | A value whose trusted declaration types it `Function` has call or construct code. | [`Function`](SOURCE-CONTRACTS.md#library-types) |
 | External code preserves every effect-bearing contract of the program's values it holds or returns: it writes no function field of a program value with a function outside the field's [statement](SOURCE-ELABORATION.md#stated-effects), creates no own member on a program class's instance shadowing a prototype member, deletes no such member, writes no member of a program class's prototype or static method binding, replaces no instance's prototype, and passes to verified code no instance of a subclass whose override exceeds its base's statement. Conforming to a program type means TScert's contract, statements included, not TypeScript's assignability, which erases `Within`. | `EnvOk` over the input types; the class lowering in `tools/fragment-classes.mts` |
 | Approved by the owner (2026-10-30): external code never changes a program class's `instanceof` behaviour, for a top-level class and a [class declared in a block](SOURCE-ELABORATION.md#a-class-declared-in-a-block) alike: the lookup of `Symbol.hasInstance` along the class value's prototype chain finds only data properties and yields the standard method of `Function.prototype`, and the class value's prototype chain is the one its statement creates, also where external code reaches the class value through an instance's `constructor`. It excludes, for a class `D` and `x` an instance external code receives, `Object.defineProperty(x.constructor, Symbol.hasInstance, { value: () => true })` and `Object.setPrototypeOf(x.constructor, { [Symbol.hasInstance]: () => true })`, after either of which `0 instanceof D` is `true` under Node and a read of an instance field of `0` gives `undefined`. The fragment's side: the program's own code reads a class declared in a block only as `new`'s callee, `instanceof`'s right operand or a base (`invalid-local-class-escape`), and an imported class by the uses [imported classes](SOURCE-CONTRACTS.md#imported-classes-and-instanceof) admits. | the key test of [`instanceof`](SOURCE-ELABORATION.md#instanceof); `%OrdinaryHasInstance%` in [`tools/intrinsics.mts`](../tools/intrinsics.mts) |
 | A value TypeScript types as `Set<T>` or `Map<K, V>`, and a native collection iterator (the marked type a `Set`'s or a `Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]` return), that a loop or spread iterates is the host's: its iterator is the built-ins', and the prototypes it inherits (`%IteratorPrototype%` included) hold no `return` and are unmodified. Assumed of every such value a program receives, an imported one included; a `SetIterator<T>` or `MapIterator<T>` of any other source, a `ReadonlySet`'s or a `ReadonlyMap`'s among them, is no native collection iterator and its loop is refused; the fragment builds none but through the host: a `Set`'s and a `Map`'s type state their `[Symbol.toStringTag]`, a well-known symbol key no literal or class of the fragment writes, and `%Iterate:Iterator%` steps only the native collection iterator a `Set`'s or a `Map`'s overlay members return, marked by a synthetic key no source states. A host iterator a program's protocol steps (an array's, as an `Iterable<T>` or the `ArrayIterator` its `values`, `keys` or `entries` returns) likewise has no `return` along its chain. | the iteration intrinsics' pick, `iterationKind` in `tools/declaration-graph.mts`; `writtenSymbol` in `tools/fragment-parse.mts` |
 | Every object owning the array store key is a JavaScript array: every object the model allocates, and assumed of every object a program receives. `Array.isArray` is the native test. For `instanceof Array`, every array a program receives is made by the program's built-ins and no object but an array inherits from `Array.prototype`. | `isArray` ([SEMANTICS](SEMANTICS.md#operational-language)); the `Array` entries of `library-globals.mts` |
-| The array invariant: every object a unit receives at a record, a dictionary or `unknown` that owns the array store key is a built-in array: its store may be sparse and holds values of `unknown`, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns neither `constructor`, `then`, `toJSON` nor any key declared by `ArrayProto`. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are, and of every value a function it receives throws. No class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `builtinInvariant` in the meaning of record, dictionary and `source` rows, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
+| The array invariant: every object a unit receives at a record, a dictionary or `unknown` that owns the array store key is a built-in array: its store may be sparse and holds values of `unknown`, it holds `Array.prototype` (meeting `ArrayProto`, which reads no parameter row), and it owns neither `constructor`, `then`, `toJSON` nor any key declared by `ArrayProto`. Proved of every object the unit allocates; assumed of every value it receives, as the arrays it receives at array types already are, and of every value a function it receives throws. No class invariant: an object whose prototype chain holds a class's prototype need not have the class's fields. | `builtinInvariant` in the meaning of record, dictionary and `source` rows, so `EnvOk` in the premise of `checkUnitJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)) |
 | An array a program receives owns neither `constructor`, `then`, `toJSON` nor any key declared by `ArrayProto`. The built-ins keeps standard `Array.prototype.constructor`, `Array[Symbol.species]` and their prototype links, and no object along an array's prototype chain (`Array.prototype`, `Object.prototype`) holds `toJSON`; external code supplies and preserves the same, in what it returns, stores, passes to callbacks or throws, across calls. | the own-key exclusion bound includes `constructor`, `then` and `toJSON` (`RequestJson.arrayExcludedKeys`); standard native construction and the absence of inherited `then` and `toJSON` are host assumptions |
 | Approved by the owner (2026-10-30): a function a program receives owns no `toString`, and no object along its prototype chain before `Function.prototype` holds one, so its lookup of `toString` finds `Function.prototype`'s; external code supplies and preserves the same, in what it returns, stores, passes to callbacks or throws, across calls. The program's own functions meet it by a restriction of the fragment. | [`Function.prototype.toString`](SOURCE-CONTRACTS.md#functionprototypetostring); a function's `toString` read through `[[Function.prototype]]` (`primitiveArms` in `Source/Lowering/Plans.lean`) |
-| An array a unit receives owns, at a canonical numeric key, only data properties holding values of its element type, as `Array<T>`'s declared `[n: number]: T` says; the built-in `Array.prototype` owns no numeric key. Stated in the meaning of every array type below the world's level (`numericOwn`, part of the array invariant), so assumed of every input through `EnvOk`, proved of every array the unit allocates; what `%ElementAt%` reads and what a copy of an array holds at those keys rest on it. In a graph stating no built-ins, an object a unit receives owning the store key holds a list under it (`storeListT`). | `numericOwn` in `builtinInvariant`, so `EnvOk` in the premise of `checkJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)); `%ElementAt%` in `tools/intrinsics.mts` |
+| An array a unit receives owns, at a canonical numeric key, only data properties holding values of its element type, as `Array<T>`'s declared `[n: number]: T` says; the built-in `Array.prototype` owns no numeric key. Stated in the meaning of every array type below the world's level (`numericOwn`, part of the array invariant), so assumed of every input through `EnvOk`, proved of every array the unit allocates; what `%ElementAt%` reads and what a copy of an array holds at those keys rest on it. In a graph stating no built-ins, an object a unit receives owning the store key holds a list under it (`storeListT`). | `numericOwn` in `builtinInvariant`, so `EnvOk` in the premise of `checkUnitJson_safe` ([SEMANTICS](SEMANTICS.md#the-array-invariant)); `%ElementAt%` in `tools/intrinsics.mts` |
 | An object a program receives is represented with each own string key $`s`$ under $`\mathsf{esc}(s)`$, as the model's own objects are, which spells none of the model's reserved keys (the store key `[]` and every name in double brackets; `reservedSpelling_escapeKey`); a source key is its own representation. | `escapeKey`; `Fragment.sourceKey`, `reservedSourceKey` |
 | `Object.prototype`, `Array.prototype` and `Function.prototype` own no string key but those `inKeyRefusal` and `functionKeys` list (node's `Object.getOwnPropertyNames`), and external code adds none to them (`Object.defineProperty(Object.prototype, "call", { value: 1 })` would make `"call" in {}` true where the model answers false); none is enumerable, so a `for...in` over a plain object visits its own keys only, and a read at a key none of `Object.prototype`'s names (`objectProtoKeys`; no rule reads such a key as possibly absent, `inheritedKey`) finds no inherited member; `String.prototype`, `Array.prototype` and `Object.prototype` own no numeric key; `String.prototype` owns no `[Symbol.split]` or `[Symbol.replace]`; `Object.prototype` has no `toJSON` or `then`, and its `__proto__` is the standard accessor, whose setter changes nothing with a value no object nor `null`, which a key-adding write at a string known only at run time relies on where the key is `__proto__`. | `inKeyRefusal` and `functionKeys` in `Source/Fragment.lean`; the overlay comments |
 | No object a program holds, nor any object on its prototype chain, is a proxy: looking up a key (an own key by [[GetOwnProperty]], a key along the chain by [[HasProperty]]) runs no code, which `in` (`%HasProperty%`) and `Object.getOwnPropertyDescriptor` rely on. External code, in what it returns, passes to callbacks, stores or throws, supplies no proxy. | [derived forms](SOURCE-ELABORATION.md#derived-source-forms); [library globals](SOURCE-CONTRACTS.md#library-globals) |

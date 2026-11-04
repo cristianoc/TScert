@@ -1011,7 +1011,7 @@ apply to, top aside, has no plain object among its members
 (`SourceValues.exc`), and a handler binding its exception at `unknown`
 binds a value of it (`admitsAll_sound`).
 
-**The premise.** The safety theorem (`checkJson_safe`) quantifies over
+**The premise.** The safety theorem (`checkUnitJson_safe`) quantifies over
 environments meeting the unit's inputs at their types (`EnvOk`), so a value
 the unit receives at a record, a dictionary or `unknown` meets the invariant:
 an object owning an array's store is a possibly sparse array of `unknown`

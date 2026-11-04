@@ -78,7 +78,7 @@ Acceptance proves, of the function's translation into the calculus, that for
 inputs and a heap meeting their declared types it does not get stuck and does
 not return a value outside its result type. It may throw or run forever. The
 theorem is
-[`checkJson_safe`](lean/Verification/Source/Claims/Json.lean). Some things are
+[`checkUnitJson_safe`](lean/Verification/Source/Claims/Json.lean). Some things are
 trusted rather than proved:
 
 - that the translation from TypeScript to the calculus is faithful (reviewed and

@@ -182,7 +182,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
   if (mutations === "stable") variants.push("handler");
   if (mutations === "handler") variants.push("stable");
   for (const [i, variant] of variants.entries()) {
-    const result = tested(verifierCall(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
+    const result = tested(verifierCall(mutationVerifier(), ["--check-units", join(artifacts, "fragment.json"),
       claims, sourceKey(artifacts), path], { TSCERT_TEST_MUTATIONS: variant }));
     assert.ifError(result.error);
     assert.equal(result.status, i === 0 ? 0 : 1,
@@ -194,7 +194,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
  * document under the intended mutation and its component-removal controls. */
 export function forgedEvidence(artifacts: string, claims: string, name: string, mutations: string): string {
   const path = join(artifacts, `${name}-generated.json`);
-  const result = tested(verifierCall(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
+  const result = tested(verifierCall(mutationVerifier(), ["--produce-units", join(artifacts, "fragment.json"),
     claims, sourceKey(artifacts), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${name}, ${mutations}: ${result.stdout}${result.stderr}`);

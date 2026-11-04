@@ -1,51 +1,52 @@
-// The census of the front end's own functions (WORK.md, "The front end's own
-// functions"): each top-level function of a directory's modules sliced into a
-// file of its own, with the same-file declarations it uses and the imports
-// they name, and each slice run through the pipeline, in the directory's
-// copy beside a copy of tools/. Each run writes a census record (DESIGN.md,
-// "The stage store"): per slice its source identity, outcome and the
-// ordered references to its stage invocations with their elapsed and CPU
-// times and peak memory. `report` and the end of a run print each stage's
-// cost, CPU time first, and the slices that cost the most CPU.
-// Processes split the slices with `--shard i/n` and share the stage store.
-//   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shard i/n]
+// The census of a directory's units (docs/DESIGN.md, "Function coverage and
+// release thresholds"): each module of the directory checked whole through
+// the pipeline, one front per file, each unit (a function, a group of
+// functions that reach each other, the initialization) searched and checked
+// on its own. A function the parser, the lowering or the producer refuses,
+// with its recursive group, and a refused statement of the initialization
+// are omitted and the file checked again (`omitted`). A function is shallow
+// verified when its unit is accepted, and deep verified when every unit of
+// its dependency closure is, computed from the record alone. Each run writes
+// a census record (DESIGN.md, "The stage store"): per file its rounds, its
+// units' results, its omitted units and the ordered references to its stage
+// invocations, the edges the census adds to the units' own dependencies, and
+// the directory's statement inventory. A selection of files or functions
+// checks their dependency closure too, unless `--shallow` or a shard.
+//   node dev/census.mts [--dir tools] [--files a.mts,…] [--functions f,…] [--shallow] [--shard i/n]
 //       [--out dir] [--record file]
-//   node dev/census.mts report <before.json[,shard.json…]> <after.json[,shard.json…]>
 //   node dev/census.mts report <record.json[,shard.json…]> [--per-function]
-//   node dev/census.mts coverage <record.json[,shard.json…]> [--per-function] [--sources checkout|commit]
-//   node dev/census.mts refusals <record.json[,shard.json…]>
-// A record also holds the directory's statement inventory, each statement
-// classified by its function's outcome (statement-coverage.mts); `report`
-// and the end of a run print verified statement coverage, and `coverage`
-// computes it for a record from the sources of the record's commit (of the
-// checkout for a census of a dirty tree, or by `--sources`), without
-// running a slice. `refusals` prints, as JSON, the refused slices grouped by
-// the blocker their first refusal names and the source text it refuses, each
-// group weighted by its functions' sizes, the heaviest first.
-// The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
+//   node dev/census.mts report <before.json[,…]> <after.json[,…]>
+//   node dev/census.mts coverage <record.json[,…]> [--per-function] [--sources checkout|commit]
+//   node dev/census.mts refusals <record.json[,…]>
+// `report` prints the shallow and deep counts, the initializations blocking
+// deep status with how many functions each blocks, statement coverage under
+// both, and each stage's cost, CPU time first; with two records, their
+// movement. `coverage` computes statement coverage for a record from the
+// sources of its commit (of the checkout for a census of a dirty tree, or by
+// `--sources`). `refusals` prints, as JSON, the units whose own result is a
+// refusal grouped by the blocker their first refusal names and the source
+// text it refuses, each group weighted by its functions' sizes, the heaviest
+// first, and each function blocked only through its closure with the unit
+// blocking it. The step limit is TSCERT_STEP_LIMIT's, the store
+// TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, initOmission, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts, childrenOf, isTypeAlias } from "../tools/syntax.mts";
-import { runRoot } from "../pipeline/run-directory.mts";
 import { checkApart, RunFailure, invocationLog, memberName, stepTimeoutMs, type UnitResult } from "../pipeline/verify-source.mts";
 import { readInvocationLog, startEviction, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
 import { stageNames, type StageName } from "../pipeline/stage-execution.mts";
-import { classify, coverageComparison, coverageReport, inventory, type Unit, type UnitRecord, type UnitScope }
-  from "./statement-coverage.mts";
+import { classify, coverageComparison, coverageReport, inventory, type Outcomes, type Unit, type UnitRecord,
+  type UnitScope } from "./statement-coverage.mts";
 
 const repository = resolve(import.meta.dirname, "..");
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 
-/** One slice: its file, the function it holds, and its text. */
-type Slice = { slice: string; file: string; fn: string; text: string;
-  segments: { start: number; end: number; original: number; originalEnd: number; exact: boolean }[] };
-
-/** A slice's stage invocation, as the census keeps it after its artifacts
- * and the store's entries are gone. */
+/** A stage invocation, as the census keeps it after its artifacts and the
+ * store's entries are gone. */
 type InvocationReference = {
   attempt: string;
   stage: StageName;
@@ -59,36 +60,6 @@ type InvocationReference = {
   replay: { storedAttempt: string; storedLimitMs: number | null; storedElapsedMs: number; lookupMs: number;
     validationMs: number; materializationMs: number } | null;
 };
-type SliceRecord = {
-  slice: string;
-  file: string;
-  fn: string;
-  lines: number;
-  sourceSha256: string;
-  status: string;
-  phase: string;
-  /** The outcome's first line. */
-  detail: string;
-  functions: number;
-  invocations: InvocationReference[];
-  /** The bytes of each JSON document the slice's run wrote (the Fragment,
-   * the claims, the evidence), by file name; null where the record predates
-   * them or the run wrote none. */
-  artifactBytes: { [name: string]: number } | null;
-};
-type CensusRecord = {
-  source: { commit: string; dirty: boolean; directory: string; files: string[] | null; functions: string[] | null };
-  policy: { store: string; stepLimitMs: number; shard: [number, number] | null };
-  started: string;
-  elapsedMs: number;
-  slices: SliceRecord[];
-  /** The statements of the census's files, each with its class by this
-   * record's slices, and each file's source hash. */
-  inventory: { files: { file: string; sourceSha256: string }[]; units: UnitRecord[] };
-};
-
-// ---------------------------------------------------------------------------
-// Slicing
 
 /** Every identifier a node's subtree spells. */
 function identifiers(node: ts.Node, into: Set<string>): Set<string> {
@@ -100,71 +71,293 @@ function identifiers(node: ts.Node, into: Set<string>): Set<string> {
   return into;
 }
 
-/** The slices of one module: each function declaration with a body and a
- * name, with the module's declarations it uses, transitively, in the
- * module's order, and the imports of the names they use. */
-export function slicesOf(file: string, tree: ts.SourceFile, text: string): Slice[] {
-  const declarations = new Map<string, ts.Statement>();
-  const imports: ts.ImportDeclaration[] = [];
+// ---------------------------------------------------------------------------
+// A census file's model: its statements, recursive groups and imports
+
+/** A top-level statement of a census file, for locating a refusal: a
+ * function by its name, a statement of the initialization, an import with
+ * the names it binds, or another declaration. */
+type Statement = { start: number; end: number } &
+  ({ kind: "function"; name: string } | { kind: "init" } | { kind: "import"; names: string[] } | { kind: "other" });
+/** What an import binding names in the census directory: a file and an
+ * export, `*` for a namespace, or null where it binds outside the directory. */
+type ImportTarget = { file: string; imported: string } | null;
+/** A census file read for its units: its statements, its functions' recursive
+ * groups by the names their code mentions, its imports, and the modules of
+ * the directory it loads. */
+type SourceModel = {
+  file: string;
+  text: string;
+  statements: Statement[];
+  functions: Map<string, { mentions: Set<string>; group: string[] }>;
+  initMentions: Set<string>;
+  hasInit: boolean;
+  imports: Map<string, ImportTarget>;
+  loads: string[];
+  reexports: { name: string; target: ImportTarget }[];
+  /** The names its declarations that run nothing bind: types, interfaces, `const` and ambient enums. */
+  types: Set<string>;
+  lineStarts: number[];
+};
+
+/** Whether a top-level statement runs in the module's initialization: a
+ * re-export links and loads its module as the initialization runs. */
+function runsInInit(s: ts.Statement): boolean {
+  const modifiers = childrenOf(s, "modifiers").map((m) => m.kind);
+  const declared = modifiers.includes(ts.SyntaxKind.DeclareKeyword);
+  return !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || ts.isImportDeclaration(s) ||
+    ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && declared) ||
+    (ts.isEnumDeclaration(s) && (declared || modifiers.includes(ts.SyntaxKind.ConstKeyword))));
+}
+
+function sourceModel(root: string, file: string): SourceModel {
+  const text = readFileSync(join(root, file), "utf8");
+  const tree = openText(join(root, file), text);
+  const target = (specifier: ts.Expression | undefined, imported: string): ImportTarget => {
+    if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith(".")) return null;
+    const path = resolve(root, specifier.text);
+    return dirname(path) === resolve(root) && existsSync(path) ? { file: basename(path), imported } : null;
+  };
+  const statements: Statement[] = [];
+  const imports = new Map<string, ImportTarget>();
+  const loads = new Set<string>();
+  const reexports: SourceModel["reexports"] = [];
+  const functions = new Map<string, { mentions: Set<string>; group: string[] }>();
+  const initMentions = new Set<string>();
+  const types = new Set<string>();
+  let hasInit = false;
   for (const s of tree.statements) {
-    if (ts.isImportDeclaration(s)) {
-      imports.push(s);
-      continue;
-    }
-    const names: string[] = [];
-    if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isInterfaceDeclaration(s) ||
-        isTypeAlias(s) || ts.isEnumDeclaration(s)) && s.name)
-      names.push(s.name.text);
-    if (ts.isVariableStatement(s))
-      for (const d of s.declarationList.declarations) if (ts.isIdentifier(d.name)) names.push(d.name.text);
-    for (const n of names) declarations.set(n, s);
+    const span = { start: s.getStart(tree), end: s.end };
+    if (ts.isFunctionDeclaration(s) && s.name) {
+      statements.push({ ...span, kind: "function", name: s.name.text });
+      if (s.body) functions.set(s.name.text, { mentions: identifiers(s, new Set()), group: [] });
+    } else if (ts.isImportDeclaration(s)) {
+      const clause = s.importClause;
+      const bindings = clause?.namedBindings;
+      const pair = (local: string, imported: string): [string, string] => [local, imported];
+      // A type-only import reads no value.
+      const typeOnly = clause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
+      const names: [string, string][] = typeOnly ? [] : [...(clause?.name ? [pair(clause.name.text, "default")] : []),
+        ...(!bindings ? [] : ts.isNamedImports(bindings)
+          ? bindings.elements.filter((e) => !e.isTypeOnly).map((e) => pair(e.name.text, (e.propertyName ?? e.name).text))
+          : [pair(bindings.name.text, "*")])];
+      for (const [local, imported] of names) imports.set(local, target(s.moduleSpecifier, imported));
+      const loaded = target(s.moduleSpecifier, "*");
+      if (loaded) loads.add(loaded.file);
+      statements.push({ ...span, kind: "import", names: names.map(([n]) => n) });
+    } else if (ts.isExportDeclaration(s) && s.moduleSpecifier) {
+      const loaded = target(s.moduleSpecifier, "*");
+      if (loaded) loads.add(loaded.file);
+      const clause = s.exportClause;
+      if (!clause) reexports.push({ name: "*", target: loaded });
+      else if (ts.isNamedExports(clause))
+        for (const e of clause.elements)
+          reexports.push({ name: e.name.text, target: target(s.moduleSpecifier, (e.propertyName ?? e.name).text) });
+      else reexports.push({ name: clause.name.text, target: loaded });
+      hasInit = true;
+      statements.push({ ...span, kind: "init" });
+    } else if ((isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isEnumDeclaration(s)) && !runsInInit(s)) {
+      types.add(s.name.text);
+      statements.push({ ...span, kind: "other" });
+    } else if (runsInInit(s)) {
+      hasInit = true;
+      for (const m of identifiers(s, new Set())) initMentions.add(m);
+      statements.push({ ...span, kind: "init" });
+    } else statements.push({ ...span, kind: "other" });
   }
-  const slices: Slice[] = [];
-  for (const s of tree.statements) {
-    if (!ts.isFunctionDeclaration(s) || !s.name || !s.body) continue;
-    const needed = new Set<ts.Node>([s]);
-    const used = new Set<string>();
-    for (let work: ts.Node[] = [s], next = work.pop(); next !== undefined; next = work.pop())
-      for (const id of identifiers(next, new Set())) {
-        used.add(id);
-        const d = declarations.get(id);
-        if (d && !needed.has(d)) {
-          needed.add(d);
-          work.push(d);
+  // Recursive groups: functions that reach each other by the names their code mentions.
+  const reach = new Map<string, Set<string>>();
+  for (const name of functions.keys()) {
+    const seen = new Set<string>();
+    for (let work = [name], next = work.pop(); next !== undefined; next = work.pop())
+      for (const m of functions.get(next)?.mentions ?? [])
+        if (functions.has(m) && !seen.has(m)) {
+          seen.add(m);
+          work.push(m);
         }
-      }
-    const parts: string[] = [];
-    const segments: Slice["segments"] = [];
-    const part = (source: string, node: ts.Node, exact: boolean, prefix: number = 0): void => {
-      const start = parts.reduce((n, p) => n + p.length + 2, 0);
-      parts.push(source);
-      segments.push({ start: start + prefix, end: start + source.length,
-        original: node.getStart(tree), originalEnd: node.end, exact });
-    };
-    for (const im of imports) {
-      const clause = im.importClause;
-      if (!clause) continue;
-      const specifier = text.slice(im.moduleSpecifier.pos, im.moduleSpecifier.end).trim();
-      if (clause.name && used.has(clause.name.text)) part(text.slice(im.pos, im.end).trim(), im, false);
-      const bindings = clause.namedBindings;
-      if (bindings && ts.isNamespaceImport(bindings) && used.has(bindings.name.text))
-        part(text.slice(im.pos, im.end).trim(), im, false);
-      if (bindings && ts.isNamedImports(bindings)) {
-        const elements = bindings.elements.filter((e) => used.has(e.name.text)).map((e) => text.slice(e.pos, e.end).trim());
-        const typeOnly = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
-        if (elements.length) part(`import ${typeOnly ? "type " : ""}{ ${elements.join(", ")} } from ${specifier};`, im, false);
-      }
-    }
-    for (const st of tree.statements)
-      if (needed.has(st)) {
-        let source = text.slice(st.getStart(tree), st.end).trim();
-        const prefix = st === s && !/^export\b/.test(source) ? "export " : "";
-        part(prefix + source, st, true, prefix.length);
-      }
-    slices.push({ slice: `slice-${file.replace(/\.mts$/, "")}-${s.name.text}.mts`, file, fn: s.name.text,
-      text: parts.join("\n\n") + "\n", segments });
+    reach.set(name, seen);
   }
-  return slices;
+  for (const [name, f] of functions)
+    f.group = [...functions.keys()].filter((g) => g === name || (reach.get(name)?.has(g) && reach.get(g)?.has(name)));
+  const lineStarts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
+  return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, types,
+    lineStarts };
+}
+
+/** The omissions a refusal located in a census file makes: the function
+ * whose code holds it, with its recursive group; the statement of the
+ * initialization holding it; for an import, every unit mentioning its
+ * bindings. Empty where the refusal names no place, or one no unit owns. */
+function omissionsFor(m: SourceModel, detail: string): string[] {
+  const span = /at \[(\d+),(\d+)\)/.exec(detail);
+  const line = /\(line (\d+), col (\d+)\)/.exec(detail);
+  const at = span ? Number(span[1]) : line ? (m.lineStarts[Number(line[1]) - 1] ?? 0) + Number(line[2]) - 1 : null;
+  if (at === null) return [];
+  const s = m.statements.find((x) => x.start <= at && at < x.end);
+  if (!s) return [];
+  if (s.kind === "function") return m.functions.get(s.name)?.group ?? [];
+  if (s.kind === "init") return [`${initOmission}@${s.start}`];
+  if (s.kind === "import")
+    return [...new Set([...m.functions].flatMap(([, f]) => s.names.some((n) => f.mentions.has(n)) ? f.group : []))];
+  return [];
+}
+
+/** A node of the census's dependency closure: a file and a function's name,
+ * `initOmission`, or a module run's identity. */
+type NodeKey = string;
+const nodeKey = (file: string, name: string): NodeKey => `${file}#${name}`;
+
+/** Where an import binding of a census file leads: a function of the
+ * directory, the initialization of the module that binds it, or nothing
+ * outside the directory or for a type; `unresolved` where a re-export cannot
+ * be followed. */
+function importNodes(models: (file: string) => SourceModel, t: ImportTarget, depth: number = 0): NodeKey[] | "unresolved" {
+  if (t === null) return [];
+  const m = models(t.file);
+  const init = [nodeKey(m.file, initOmission)];
+  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), ...init];
+  if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
+  if (m.types.has(t.imported)) return [];
+  const re = m.reexports.find((r) => r.name === t.imported) ?? null;
+  if (re) return depth > 8 ? "unresolved" : importNodes(models, re.target, depth + 1);
+  if (m.reexports.some((r) => r.name === "*")) return "unresolved";
+  return init;
+}
+
+/** The nodes the census adds to a unit's own dependencies: its file's
+ * initialization, the units its code reaches through imports, and, for the
+ * initialization, the initialization of every census module it loads. */
+function censusEdges(models: (file: string) => SourceModel, m: SourceModel, name: string): NodeKey[] | "unresolved" {
+  const out = new Set<NodeKey>();
+  if (name !== initOmission) out.add(nodeKey(m.file, initOmission));
+  const mentions = name === initOmission ? m.initMentions
+    : new Set((m.functions.get(name)?.group ?? []).flatMap((g) => [...(m.functions.get(g)?.mentions ?? [])]));
+  for (const [local, t] of m.imports)
+    if (mentions.has(local)) {
+      const nodes = importNodes(models, t);
+      if (nodes === "unresolved") return "unresolved";
+      for (const n of nodes) out.add(n);
+    }
+  if (name === initOmission) for (const l of m.loads) out.add(nodeKey(l, initOmission));
+  out.delete(nodeKey(m.file, name));
+  return [...out];
+}
+
+// ---------------------------------------------------------------------------
+// The census record
+
+/** A unit's own result, as a census record keeps it. */
+type OwnResult = { status: string; phase: string; detail: string };
+/** A census file as its checks give it: the rounds that omitted units, each
+ * with the refusal that did; every omission of its last check with its
+ * refusal; the front's refusal of every unit left, or the units' results;
+ * the stage invocations of every round; and, per function and for the
+ * initialization (`initOmission`), its recursive group and the nodes the
+ * census adds to its unit's own dependencies. */
+type FileRun = {
+  file: string;
+  sourceSha256: string;
+  rounds: { omitted: string[]; refusal: OwnResult }[];
+  omitted: { name: string; refusal: OwnResult }[];
+  front: OwnResult | null;
+  units: UnitResult[];
+  invocations: InvocationReference[];
+  /** Whether the module's initialization runs any statement: one that runs
+   * none is accepted with nothing to check. */
+  initCode: boolean;
+  model: { name: string; group: string[]; edges: NodeKey[] | "unresolved" }[];
+};
+type CensusRecord = {
+  source: { commit: string; dirty: boolean; directory: string; files: string[] | null; functions: string[] | null };
+  policy: { store: string; stepLimitMs: number; shard: [number, number] | null };
+  started: string;
+  elapsedMs: number;
+  files: FileRun[];
+  /** The statements of the census's files, and each file's source hash. */
+  inventory: { files: { file: string; sourceSha256: string }[]; units: Unit[] };
+};
+
+/** A unit's own result in a census: an omission's refusal, the front's, or
+ * its check's; null where no run of the record covers it. */
+function ownResult(runs: ReadonlyMap<string, FileRun>, file: string, name: string):
+    { unit: string; own: OwnResult; depends: NodeKey[] } | null {
+  const run = runs.get(file);
+  if (!run) return null;
+  const omitted = run.omitted.find((o) => o.name === name || (name === initOmission && o.name.startsWith(`${initOmission}@`)));
+  if (omitted) return { unit: name, own: omitted.refusal, depends: [] };
+  if (run.front) return { unit: name, own: run.front, depends: [] };
+  const u = run.units.find((x) => x.unit === name || x.members.some((mem) => memberName(mem) === name));
+  if (!u && name === initOmission && !run.initCode)
+    return { unit: name, own: { status: "verified", phase: "-", detail: "" }, depends: [] };
+  if (!u) return null;
+  const toNode = (d: string): NodeKey => nodeKey(file, d.startsWith("module:") ? d : memberName(d));
+  return { unit: u.unit, own: { status: u.status, phase: u.phase, detail: u.detail }, depends: u.depends.map(toNode) };
+}
+
+/** A node's dependencies: its unit's own, accepted, and the census's edges. */
+function nodeDepends(runs: ReadonlyMap<string, FileRun>, key: NodeKey): NodeKey[] | "unresolved" {
+  const at = key.indexOf("#");
+  const file = key.slice(0, at), name = key.slice(at + 1);
+  const own = ownResult(runs, file, name)?.depends ?? [];
+  if (name.startsWith("module:")) return own;
+  const edges = runs.get(file)?.model.find((x) => x.name === name)?.edges ?? [];
+  if (edges === "unresolved") return "unresolved";
+  return [...new Set([...own, ...edges])];
+}
+
+/** The first node of a node's closure, breadth-first, whose unit is not
+ * accepted, with its result: what blocks its deep status; null where every
+ * unit of the closure is accepted. */
+function deepBlocker(runs: ReadonlyMap<string, FileRun>, start: NodeKey): { node: NodeKey; reason: string } | null {
+  const seen = new Set<NodeKey>([start]);
+  for (let queue = [start], next = queue.shift(); next !== undefined; next = queue.shift()) {
+    const at = next.indexOf("#");
+    const own = ownResult(runs, next.slice(0, at), next.slice(at + 1));
+    if (!own) return { node: next, reason: "not run" };
+    if (own.own.status !== "verified") return { node: next, reason: `${own.own.status}/${own.own.phase}: ${own.own.detail}` };
+    const deps = nodeDepends(runs, next);
+    if (deps === "unresolved") return { node: next, reason: "an import the census cannot resolve" };
+    for (const d of deps) if (!seen.has(d)) {
+      seen.add(d);
+      queue.push(d);
+    }
+  }
+  return null;
+}
+
+/** Each census function of a census's files: its own result and its deep
+ * status, with what blocks it. */
+type FunctionRow = { file: string; fn: string; own: OwnResult | null; blocker: { node: NodeKey; reason: string } | null };
+function functionRows(census: Census): FunctionRow[] {
+  const rows: FunctionRow[] = [];
+  for (const run of census.runs.values())
+    for (const { name } of run.model) {
+      if (name === initOmission || (census.source.functions && !census.source.functions.includes(name))) continue;
+      const own = ownResult(census.runs, run.file, name);
+      rows.push({ file: run.file, fn: name, own: own?.own ?? null, blocker: deepBlocker(census.runs, nodeKey(run.file, name)) });
+    }
+  return rows.sort((a, b) => a.file.localeCompare(b.file) || a.fn.localeCompare(b.fn));
+}
+const shallow = (r: FunctionRow): boolean => r.own?.status === "verified";
+const deep = (r: FunctionRow): boolean => r.blocker === null;
+
+/** The outcome classifying a function's statements, or the initialization's,
+ * under shallow or deep status. */
+function outcomes(census: Census, rows: readonly FunctionRow[], mode: "shallow" | "deep"): Outcomes {
+  const byFunction = new Map(rows.map((r) => [`${r.file}#${r.fn}`, r]));
+  return (file, owner) => {
+    if (owner !== initOmission) {
+      const r = byFunction.get(`${file}#${owner}`);
+      if (!r || !r.own) return null;
+      if (mode === "shallow" || !shallow(r)) return r.own;
+      return r.blocker ? { status: "blocked", phase: "deep", detail: r.blocker.reason } : r.own;
+    }
+    const own = ownResult(census.runs, file, initOmission)?.own ?? null;
+    if (!own || mode === "shallow" || own.status !== "verified") return own;
+    const blocker = deepBlocker(census.runs, nodeKey(file, initOmission));
+    return blocker ? { status: "blocked", phase: "deep", detail: blocker.reason } : own;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -181,14 +374,14 @@ function writeStable(path: string, text: string): void {
 
 /** The census's copy of tools/, `directory` and their local import closure,
  * with tools/'s installation linked, at a path the same for every process and run of
- * this checkout, so slices' module paths, and the stage keys embedding them,
+ * this checkout, so module paths, and the stage keys embedding them,
  * repeat. */
 export function prepare(out: string, directory: string): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
     const names = new Set(readdirSync(from).filter(select).sort());
     for (const name of readdirSync(to).filter(select))
-      if (!names.has(name) && !name.startsWith("slice-")) rmSync(join(to, name), { force: true });
+      if (!names.has(name)) rmSync(join(to, name), { force: true });
     for (const name of names)
       writeStable(join(to, name), readFileSync(join(from, name), "utf8"));
   };
@@ -252,8 +445,42 @@ function reference(r: AttemptRecord): InvocationReference {
   };
 }
 
+/** A file checked by units, round by round: a refusal located in a unit
+ * omits it, and the file is checked again. */
+async function runFile(root: string, project: string, models: (file: string) => SourceModel, m: SourceModel,
+    select: string[], omitted: Map<string, OwnResult>): Promise<FileRun> {
+  const rounds: FileRun["rounds"] = [];
+  const invocations: InvocationReference[] = [];
+  const model = [...m.functions.keys(), initOmission].map((name) =>
+    ({ name, group: name === initOmission ? [name] : m.functions.get(name)?.group ?? [name],
+      edges: censusEdges(models, m, name) }));
+  const done = (front: OwnResult | null, units: UnitResult[]): FileRun =>
+    ({ file: m.file, sourceSha256: sha256(m.text), rounds, front, units, invocations, model, initCode: m.hasInit,
+      omitted: [...omitted].map(([name, refusal]) => ({ name, refusal })) });
+  for (;;) {
+    let outcome: OwnResult & { units: UnitResult[] | null };
+    try {
+      using o = await checkApart(join(root, m.file), project, false, undefined, true,
+        { omitted: [...omitted.keys()], select });
+      invocations.push(...readInvocationLog(join(o.artifacts, invocationLog)).map(reference));
+      outcome = { status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0] ?? "",
+        units: o.units ?? null };
+    } catch (error) {
+      if (error instanceof RunFailure) invocations.push(...error.invocations.map(reference));
+      outcome = { status: "error", phase: "-", detail: String(error).split("\n")[0] ?? "", units: null };
+    }
+    if (outcome.units !== null) return done(null, outcome.units);
+    const refusal = { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
+    // A file whose every unit is omitted has nothing left to check.
+    if (outcome.detail.includes("no functions in file")) return done(null, []);
+    const next = outcome.status === "error" ? [] : omissionsFor(m, outcome.detail).filter((n) => !omitted.has(n));
+    if (next.length === 0) return done(refusal, []);
+    for (const n of next) omitted.set(n, refusal);
+    rounds.push({ omitted: next, refusal });
+  }
+}
+
 async function census(args: string[]): Promise<void> {
-  if (args.includes("--units")) return unitCensus(args);
   startEviction();
   const directory = option(args, "--dir") ?? "tools";
   const files = option(args, "--files")?.split(",") ?? null;
@@ -262,404 +489,16 @@ async function census(args: string[]): Promise<void> {
   const shard = shardText === null ? null : /^(\d+)\/(\d+)$/.exec(shardText);
   if (shardText !== null && (!shard || Number(shard[1]) < 1 || Number(shard[1]) > Number(shard[2])))
     throw Error(`--shard takes i/n with 1 ≤ i ≤ n: ${shardText}`);
-  const out = resolve(option(args, "--out") ??
-    join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), directory));
   const shardPart: [number, number] | null = shard ? [Number(shard[1]), Number(shard[2])] : null;
+  const shallowOnly = args.includes("--shallow") || shardPart !== null;
+  const out = resolve(option(args, "--out") ?? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), directory));
   const commit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   const dirty = execFileSync("git", ["-C", repository, "status", "--porcelain", "--", "tools", directory, "pipeline"],
     { encoding: "utf8" }).trim() !== "";
   const recordPath = resolve(option(args, "--record") ??
     join(out, "..", `census-${directory}-${commit.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, "-")}${
       shardPart ? `-${shardPart[0]}-of-${shardPart[1]}` : ""}.json`));
-  if (args.length) throw Error(`unknown arguments: ${args.join(" ")}`);
-
-  const started = performance.now();
-  prepare(out, directory);
-  const root = join(out, directory);
-  const all: Slice[] = [];
-  const units: Unit[] = [];
-  const fileHashes: { file: string; sourceSha256: string }[] = [];
-  for (const file of readdirSync(join(repository, directory)).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort()) {
-    if (files && !files.includes(file)) continue;
-    const text = readFileSync(join(root, file), "utf8");
-    const tree = openText(join(root, file), text);
-    all.push(...slicesOf(file, tree, text));
-    units.push(...inventory(file, tree));
-    fileHashes.push({ file, sourceSha256: sha256(text) });
-  }
-  closeParser();
-  // Functions whose slices have one text (a mutually recursive group) share one slice file, the first's, and its
-  // one check (STAGE-STORE.md, "Shared work").
-  const named = new Map<string, string>();
-  for (const s of all) if (!named.has(s.text)) named.set(s.text, s.slice);
-  const shared = all.map((s): Slice => ({ ...s, slice: named.get(s.text) ?? s.slice }));
-  const chosen = functions ? shared.filter((s) => functions.includes(s.fn)) : shared;
-  // A slice file no function of the directory has any longer is removed; one a narrower census does not choose
-  // stays, so a census of some files or functions leaves a concurrent census's slices in place.
-  if (files === null) {
-    const sliceNames = new Set(shared.map((s) => s.slice));
-    for (const name of readdirSync(root))
-      if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
-        rmSync(join(root, name), { force: true });
-  }
-  for (const s of chosen) writeStable(join(root, s.slice), s.text);
-  // A shard takes every n-th slice file, with every function sharing it: one text is checked in one shard.
-  const sliceFiles = [...new Set(chosen.map((s) => s.slice))];
-  const selected = shardPart
-    ? chosen.filter((s) => sliceFiles.indexOf(s.slice) % shardPart[1] === shardPart[0] - 1) : chosen;
-  process.stderr.write(`${selected.length} of ${all.length} slices\n`);
-
-  const project = join(out, "tools");
-  // Progress: the slices' outcomes and their stages' executions so far.
-  let finished = 0;
-  const outcomes = new Map<string, number>();
-  const executions = new Map<string, number>();
-  const bump = (m: Map<string, number>, k: string): void => void m.set(k, (m.get(k) ?? 0) + 1);
-  const tally = (m: Map<string, number>): string => [...m].map(([k, n]) => `${k} ${n}`).join(", ");
-  const sliceRow = async (s: Slice): Promise<SliceRecord> => {
-    const path = join(root, s.slice);
-    const base = { slice: s.slice, file: s.file, fn: s.fn, lines: s.text.split("\n").length,
-      sourceSha256: createHash("sha256").update(s.text).digest("hex") };
-    try {
-      using o = await checkApart(path, project, false, undefined, true);
-      return { ...base, status: o.status, phase: o.phase, detail: o.status === "verified" ? "" : o.detail.split("\n")[0],
-        functions: o.status === "verified" ? o.functions.length : 0,
-        invocations: readInvocationLog(join(o.artifacts, invocationLog)).map(reference),
-        artifactBytes: documentBytes(o.artifacts) };
-    } catch (error) {
-      return { ...base, status: "error", phase: "-", detail: String(error).split("\n")[0], functions: 0,
-        invocations: error instanceof RunFailure ? error.invocations.map(reference) : [], artifactBytes: null };
-    }
-  };
-  const finish = async (s: Slice): Promise<SliceRecord> => {
-    const row = await sliceRow(s);
-    finished++;
-    bump(outcomes, row.detail.startsWith("timeout:") ? "timeout" : row.status);
-    for (const i of row.invocations) bump(executions, i.execution);
-    if (finished % 10 === 0 || finished === selected.length)
-      process.stderr.write(`${finished} of ${selected.length} slices, ${((performance.now() - started) / 1000).toFixed(0)} s` +
-        ` · ${tally(outcomes)} · stages ${tally(executions)}\n`);
-    return row;
-  };
-  // Slices of one text (the functions of one mutually recursive group) share one check, the first's: each other
-  // function's row holds its outcome and no invocation of its own; groups run in parallel.
-  const groups = new Map<string, Slice[]>();
-  for (const s of selected) {
-    const text = createHash("sha256").update(s.text).digest("hex");
-    const group = groups.get(text);
-    if (group) group.push(s);
-    else groups.set(text, [s]);
-  }
-  const done = new Map<Slice, SliceRecord>();
-  await Promise.all([...groups.values()].map(async ([first, ...rest]): Promise<void> => {
-    if (!first) return;
-    const row = await finish(first);
-    done.set(first, row);
-    for (const s of rest) {
-      done.set(s, { ...row, file: s.file, fn: s.fn, invocations: [] });
-      finished++;
-    }
-  }));
-  const rows = selected.map((s): SliceRecord => {
-    const row = done.get(s);
-    if (!row) throw Error(`no outcome for ${s.slice}`);
-    return row;
-  });
-  const setting = storeSetting();
-  const sliceOutcomes = bySlice(rows);
-  const record: CensusRecord = {
-    source: { commit, dirty, directory, files, functions },
-    policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
-    started: new Date(Date.now() - (performance.now() - started)).toISOString(),
-    elapsedMs: performance.now() - started,
-    slices: rows,
-    inventory: { files: fileHashes, units: units.map((u) => ({ ...u, class: classify(u, sliceOutcomes) })) },
-  };
-  writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
-  summarize(record.slices);
-  process.stdout.write(costReport(record.slices));
-  process.stdout.write(coverageReport(directory, record.inventory.units, sliceOutcomes, false));
-  process.stdout.write(`record: ${recordPath}\n`);
-}
-
-/** A detail without its line, column and span: the blocker it names. */
-const blocker = (detail: string): string =>
-  detail.replace(/\(line \d+, col \d+\)/, "").replace(/ at \[\d+,\d+\).*/, "").slice(0, 140);
-
-function summarize(slices: readonly SliceRecord[]): void {
-  const counts: Record<string, number> = {};
-  for (const s of slices) counts[`${s.status}/${s.phase}`] = (counts[`${s.status}/${s.phase}`] ?? 0) + 1;
-  process.stdout.write(`slices: ${slices.length} ${JSON.stringify(counts)}\n`);
-  const blockers = new Map<string, number>();
-  for (const s of slices.filter((s) => s.status !== "verified"))
-    blockers.set(blocker(s.detail), (blockers.get(blocker(s.detail)) ?? 0) + 1);
-  for (const [b, n] of [...blockers].sort((a, b) => b[1] - a[1])) process.stdout.write(`${String(n).padStart(4)} ${b}\n`);
-  process.stdout.write(`verified: ${slices.filter((s) => s.status === "verified").map((s) => `${s.file}#${s.fn}`).join(", ")}\n`);
-}
-
-// ---------------------------------------------------------------------------
-// The census of units: each file checked whole, each unit on its own
-
-/** A top-level statement of a census file, for locating a refusal: a
- * function by its name, the initialization's, an import with the names it
- * binds, or another declaration. */
-type Statement = { start: number; end: number } &
-  ({ kind: "function"; name: string } | { kind: "init" } | { kind: "import"; names: string[] } | { kind: "other" });
-/** What an import binding names in the census directory: a file and an
- * export, `*` for a namespace, or null where it binds outside the directory. */
-type ImportTarget = { file: string; imported: string } | null;
-/** A census file read for its units: its statements, its functions' recursive
- * groups by the names their code mentions, its imports, and the modules of
- * the directory it loads. */
-type SourceModel = {
-  file: string;
-  text: string;
-  statements: Statement[];
-  functions: Map<string, { mentions: Set<string>; group: string[] }>;
-  initMentions: Set<string>;
-  hasInit: boolean;
-  imports: Map<string, ImportTarget>;
-  loads: string[];
-  reexports: { name: string; target: ImportTarget }[];
-  /** The names its declarations that run nothing bind: types, interfaces, `const` and ambient enums. */
-  types: Set<string>;
-  lineStarts: number[];
-};
-
-/** Whether a top-level statement runs in the module's initialization. */
-function runsInInit(s: ts.Statement): boolean {
-  const modifiers = childrenOf(s, "modifiers").map((m) => m.kind);
-  const declared = modifiers.includes(ts.SyntaxKind.DeclareKeyword);
-  return !(isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isFunctionDeclaration(s) || ts.isImportDeclaration(s) ||
-    ts.isEmptyStatement(s) || ((ts.isClassDeclaration(s) || ts.isVariableStatement(s)) && declared) ||
-    (ts.isEnumDeclaration(s) && (declared || modifiers.includes(ts.SyntaxKind.ConstKeyword))) ||
-    (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined));
-}
-
-function sourceModel(root: string, directory: string, file: string): SourceModel {
-  const text = readFileSync(join(root, file), "utf8");
-  const tree = openText(join(root, file), text);
-  const target = (specifier: ts.Expression | undefined, imported: string): ImportTarget => {
-    if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith(".")) return null;
-    const path = resolve(root, specifier.text);
-    return dirname(path) === resolve(root) && existsSync(path) ? { file: basename(path), imported } : null;
-  };
-  const statements: Statement[] = [];
-  const imports = new Map<string, ImportTarget>();
-  const loads = new Set<string>();
-  const reexports: SourceModel["reexports"] = [];
-  const mentionsOf = (node: ts.Node): Set<string> => identifiers(node, new Set());
-  const functions = new Map<string, { mentions: Set<string>; group: string[] }>();
-  const initMentions = new Set<string>();
-  let hasInit = false;
-  const types = new Set<string>();
-  for (const s of tree.statements) {
-    const span = { start: s.getStart(tree), end: s.end };
-    if (ts.isFunctionDeclaration(s) && s.name) {
-      statements.push({ ...span, kind: "function", name: s.name.text });
-      if (s.body) functions.set(s.name.text, { mentions: mentionsOf(s), group: [] });
-    } else if (ts.isImportDeclaration(s)) {
-      const clause = s.importClause;
-      const bindings = clause?.namedBindings;
-      const pair = (local: string, imported: string): [string, string] => [local, imported];
-      // A type-only import reads no value.
-      const typeOnly = clause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
-      const names: [string, string][] = typeOnly ? [] : [...(clause?.name ? [pair(clause.name.text, "default")] : []),
-        ...(!bindings ? [] : ts.isNamedImports(bindings)
-          ? bindings.elements.filter((e) => !e.isTypeOnly).map((e) => pair(e.name.text, (e.propertyName ?? e.name).text))
-          : [pair(bindings.name.text, "*")])];
-      for (const [local, imported] of names) imports.set(local, target(s.moduleSpecifier, imported));
-      const loaded = target(s.moduleSpecifier, "*");
-      if (loaded) loads.add(loaded.file);
-      statements.push({ ...span, kind: "import", names: names.map(([n]) => n) });
-    } else if (ts.isExportDeclaration(s) && s.moduleSpecifier) {
-      const loaded = target(s.moduleSpecifier, "*");
-      if (loaded) loads.add(loaded.file);
-      const clause = s.exportClause;
-      if (!clause) reexports.push({ name: "*", target: loaded });
-      else if (ts.isNamedExports(clause))
-        for (const e of clause.elements)
-          reexports.push({ name: e.name.text, target: target(s.moduleSpecifier, (e.propertyName ?? e.name).text) });
-      // A re-export links and loads its module as the initialization runs.
-      hasInit = true;
-      statements.push({ ...span, kind: "init" });
-    } else if ((isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isEnumDeclaration(s)) && !runsInInit(s)) {
-      types.add(s.name.text);
-      statements.push({ ...span, kind: "other" });
-    } else if (runsInInit(s)) {
-      hasInit = true;
-      for (const m of mentionsOf(s)) initMentions.add(m);
-      statements.push({ ...span, kind: "init" });
-    } else statements.push({ ...span, kind: "other" });
-  }
-  // Recursive groups: functions that reach each other by the names their code mentions.
-  const reach = new Map<string, Set<string>>();
-  for (const name of functions.keys()) {
-    const seen = new Set<string>();
-    for (let work = [name], next = work.pop(); next !== undefined; next = work.pop())
-      for (const m of functions.get(next)?.mentions ?? [])
-        if (functions.has(m) && !seen.has(m)) {
-          seen.add(m);
-          work.push(m);
-        }
-    reach.set(name, seen);
-  }
-  for (const [name, f] of functions)
-    f.group = [...functions.keys()].filter((g) => g === name || (reach.get(name)?.has(g) && reach.get(g)?.has(name)));
-  const lineStarts = [0];
-  for (let i = 0; i < text.length; i++) if (text[i] === "\n") lineStarts.push(i + 1);
-  void directory;
-  return { file, text, statements, functions, initMentions, hasInit, imports, loads: [...loads], reexports, types,
-    lineStarts };
-}
-
-/** The units a refusal located in a census file makes absent: the function
- * whose code holds it, with its recursive group; the initialization for a
- * statement of it; for an import, every unit mentioning its bindings. Empty
- * where the refusal names no place, or one no unit owns. */
-function absentFor(m: SourceModel, detail: string): string[] {
-  const span = /at \[(\d+),(\d+)\)/.exec(detail);
-  const line = /\(line (\d+), col (\d+)\)/.exec(detail);
-  const at = span ? Number(span[1]) : line ? (m.lineStarts[Number(line[1]) - 1] ?? 0) + Number(line[2]) - 1 : null;
-  if (at === null) return [];
-  const s = m.statements.find((x) => x.start <= at && at < x.end);
-  if (!s) return [];
-  if (s.kind === "function") return m.functions.get(s.name)?.group ?? [];
-  if (s.kind === "init") return [initOmission];
-  if (s.kind === "import")
-    return [...new Set([...m.functions].flatMap(([, f]) => s.names.some((n) => f.mentions.has(n)) ? f.group : [])
-      .concat(s.names.some((n) => m.initMentions.has(n)) ? [initOmission] : []))];
-  return [];
-}
-
-/** A unit's own result, as a census record keeps it. */
-type OwnResult = { status: string; phase: string; detail: string };
-/** A census file's units as one check gives them: the rounds that made units
- * absent, each with the refusal that did; the front's refusal of every unit
- * left, or the units' results; and the stage invocations of every round. */
-type FileRun = {
-  file: string;
-  sourceSha256: string;
-  rounds: { absent: string[]; refusal: OwnResult }[];
-  /** Every unit absent from the file's last check, with its refusal. */
-  absent?: { name: string; refusal: OwnResult }[];
-  front: OwnResult | null;
-  units: UnitResult[];
-  invocations: InvocationReference[];
-};
-
-/** The node of a unit in the census's dependency closure: a file and a
- * function's name, `initOmission`, or a module run's identity. */
-type NodeKey = string;
-const nodeKey = (file: string, name: string): NodeKey => `${file}#${name}`;
-
-/** A file checked by units, absent units added round by round. */
-async function runFile(root: string, project: string, m: SourceModel, select: string[], absent: Map<string, OwnResult>):
-    Promise<FileRun> {
-  const rounds: FileRun["rounds"] = [];
-  const invocations: InvocationReference[] = [];
-  for (;;) {
-    let outcome: { status: string; phase: string; detail: string; units: UnitResult[] | null };
-    try {
-      using o = await checkApart(join(root, m.file), project, false, undefined, true,
-        { omitted: [...absent.keys()], select });
-      invocations.push(...readInvocationLog(join(o.artifacts, invocationLog)).map(reference));
-      outcome = o.status === "verified" ? { status: o.status, phase: o.phase, detail: "", units: o.units ?? null }
-        : { status: o.status, phase: o.phase, detail: o.detail.split("\n")[0] ?? "", units: o.units ?? null };
-    } catch (error) {
-      if (error instanceof RunFailure) invocations.push(...error.invocations.map(reference));
-      outcome = { status: "error", phase: "-", detail: String(error).split("\n")[0] ?? "", units: null };
-    }
-    if (outcome.units !== null)
-      return { file: m.file, sourceSha256: sha256(m.text), rounds, front: null, units: outcome.units, invocations };
-    const refusal = { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
-    const next = outcome.status === "error" ? [] : absentFor(m, outcome.detail).filter((n) => !absent.has(n));
-    if (next.length === 0)
-      return { file: m.file, sourceSha256: sha256(m.text), rounds, front: refusal, units: [], invocations };
-    for (const n of next) absent.set(n, refusal);
-    rounds.push({ absent: next, refusal });
-  }
-}
-
-/** The census record of units. */
-type UnitCensusRecord = {
-  source: CensusRecord["source"];
-  policy: CensusRecord["policy"];
-  started: string;
-  elapsedMs: number;
-  files: FileRun[];
-  /** Each census function: its own result and, from the record, its deep
-   * status and the first unit of its closure not accepted. */
-  functions: { file: string; fn: string; unit: string | null; own: OwnResult; deep: boolean; blocker: string | null }[];
-};
-
-/** A unit's own result, by its node, in the census's runs. */
-function ownResult(runs: Map<string, FileRun>, absent: Map<string, Map<string, OwnResult>>, file: string, name: string):
-    { unit: string | null; own: OwnResult; depends: NodeKey[] } | null {
-  const notRun = null;
-  const omitted = absent.get(file)?.get(name);
-  if (omitted) return { unit: null, own: omitted, depends: [] };
-  const run = runs.get(file);
-  if (!run) return notRun;
-  if (run.front) return { unit: null, own: run.front, depends: [] };
-  const u = run.units.find((x) => x.unit === name || x.members.some((mem) => memberName(mem) === name));
-  if (!u) return notRun;
-  const toNode = (d: string): NodeKey => nodeKey(file, d.startsWith("module:") ? d : memberName(d));
-  return { unit: u.unit, own: { status: u.status, phase: u.phase, detail: u.detail }, depends: u.depends.map(toNode) };
-}
-
-/** Where an import binding of a census file leads: a function of the
- * directory, the initialization of the module that binds it, or null
- * outside the directory; `unresolved` where a re-export cannot be followed. */
-function importNode(models: (file: string) => SourceModel, t: ImportTarget, depth: number = 0): NodeKey[] | "unresolved" {
-  if (t === null) return [];
-  const m = models(t.file);
-  const init = m.hasInit ? [nodeKey(m.file, initOmission)] : [];
-  if (t.imported === "*") return [...[...m.functions.keys()].map((f) => nodeKey(m.file, f)), ...init];
-  if (m.functions.has(t.imported)) return [nodeKey(m.file, t.imported)];
-  if (m.types.has(t.imported)) return [];
-  const re = m.reexports.find((r) => r.name === t.imported) ?? null;
-  if (re) return depth > 8 ? "unresolved" : importNode(models, re.target, depth + 1);
-  if (m.reexports.some((r) => r.name === "*")) return "unresolved";
-  return init;
-}
-
-/** The nodes a node depends on: its unit's dependencies, its file's
- * initialization, the units its code reaches through imports, and, for an
- * initialization, the initialization of every census module it loads. */
-function nodeDepends(models: (file: string) => SourceModel, runs: Map<string, FileRun>,
-    absent: Map<string, Map<string, OwnResult>>, key: NodeKey): NodeKey[] | "unresolved" {
-  const [file = "", name = ""] = key.split("#");
-  const m = models(file);
-  const own = ownResult(runs, absent, file, name);
-  const out = new Set<NodeKey>(own?.depends ?? []);
-  if (m.hasInit && name !== initOmission) out.add(nodeKey(file, initOmission));
-  const mentions = name === initOmission ? m.initMentions : name.startsWith("module:") ? new Set<string>()
-    : new Set((m.functions.get(name)?.group ?? []).flatMap((g) => [...(m.functions.get(g)?.mentions ?? [])]));
-  for (const [local, t] of m.imports)
-    if (mentions.has(local)) {
-      const nodes = importNode(models, t);
-      if (nodes === "unresolved") return "unresolved";
-      for (const n of nodes) out.add(n);
-    }
-  if (name === initOmission) for (const l of m.loads) if (models(l).hasInit) out.add(nodeKey(l, initOmission));
-  out.delete(key);
-  return [...out];
-}
-
-async function unitCensus(args: string[]): Promise<void> {
-  startEviction();
-  const directory = option(args, "--dir") ?? "tools";
-  const files = option(args, "--files")?.split(",") ?? null;
-  const functions = option(args, "--functions")?.split(",") ?? null;
-  const shallowOnly = args.includes("--shallow");
-  const out = resolve(option(args, "--out") ?? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), directory));
-  const commit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const dirty = execFileSync("git", ["-C", repository, "status", "--porcelain", "--", "tools", directory, "pipeline"],
-    { encoding: "utf8" }).trim() !== "";
-  const recordPath = resolve(option(args, "--record") ??
-    join(out, "..", `units-${directory}-${commit.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`));
-  const rest = args.filter((a) => a !== "--units" && a !== "--shallow");
+  const rest = args.filter((a) => a !== "--shallow");
   if (rest.length) throw Error(`unknown arguments: ${rest.join(" ")}`);
   const started = performance.now();
   prepare(out, directory);
@@ -669,11 +508,12 @@ async function unitCensus(args: string[]): Promise<void> {
   const models = (file: string): SourceModel => {
     const known = cache.get(file);
     if (known) return known;
-    const m = sourceModel(root, directory, file);
+    const m = sourceModel(root, file);
     cache.set(file, m);
     return m;
   };
-  const all = readdirSync(root).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort();
+  const all = readdirSync(root).filter((f) => f.endsWith(".mts")).sort();
+  const chosen = all.filter((f, i) => (!files || files.includes(f)) && (!shardPart || i % shardPart[1] === shardPart[0] - 1));
   const want = new Map<string, Set<string>>();
   const add = (file: string, name: string): boolean => {
     const set = want.get(file) ?? new Set<string>();
@@ -682,86 +522,70 @@ async function unitCensus(args: string[]): Promise<void> {
     set.add(name);
     return true;
   };
-  for (const file of all) {
-    if (files && !files.includes(file)) continue;
-    for (const fn of models(file).functions.keys()) if (!functions || functions.includes(fn)) add(file, fn);
+  for (const file of chosen) {
+    const m = models(file);
+    for (const fn of m.functions.keys()) if (!functions || functions.includes(fn)) add(file, fn);
+    if (!functions && m.hasInit) add(file, initOmission);
   }
   const runs = new Map<string, FileRun>();
-  const absent = new Map<string, Map<string, OwnResult>>();
+  const omissions = new Map<string, Map<string, OwnResult>>();
   const ran = new Map<string, string>();
   for (let round = 1; ; round++) {
-    const due = [...want].filter(([file, names]) => ran.get(file) !== [...names].sort().join(","));
+    // A file whose initialization runs nothing has nothing to check for it.
+    const checked = (file: string, names: Set<string>): string[] =>
+      [...names].filter((n) => n !== initOmission || models(file).hasInit).sort();
+    const due = [...want].filter(([file, names]) => checked(file, names).length > 0 &&
+      ran.get(file) !== checked(file, names).join(","));
+    // A module whose initialization runs nothing, wanted for its initialization alone, is recorded unchecked.
+    for (const [file, names] of want)
+      if (!runs.has(file) && checked(file, names).length === 0) {
+        const m = models(file);
+        runs.set(file, { file, sourceSha256: sha256(m.text), rounds: [], omitted: [], front: null, units: [], invocations: [],
+          initCode: false, model: [initOmission].map((name) => ({ name, group: [name], edges: censusEdges(models, m, name) })) });
+      }
     if (due.length === 0) break;
     process.stderr.write(`round ${round}: ${due.length} files, ${due.reduce((n, [, s]) => n + s.size, 0)} units wanted\n`);
     await Promise.all(due.map(async ([file, names]) => {
-      const select = [...names].sort();
+      const select = checked(file, names);
       ran.set(file, select.join(","));
-      const known = absent.get(file) ?? new Map<string, OwnResult>();
-      absent.set(file, known);
-      runs.set(file, await runFile(root, project, models(file), select, known));
-      const run = runs.get(file);
-      process.stderr.write(`  ${file}: ${run?.front ? `refused: ${run.front.detail.slice(0, 100)}`
-        : `${run?.units.filter((u) => u.status === "verified").length} of ${run?.units.length} units accepted`}` +
-        `${known.size ? `, ${known.size} absent` : ""}\n`);
+      const known = omissions.get(file) ?? new Map<string, OwnResult>();
+      omissions.set(file, known);
+      const run = await runFile(root, project, models, models(file), select, known);
+      runs.set(file, run);
+      process.stderr.write(`  ${file}: ${run.front ? `refused: ${run.front.detail.slice(0, 100)}`
+        : `${run.units.filter((u) => u.status === "verified").length} of ${run.units.length} units accepted`}` +
+        `${known.size ? `, ${known.size} omitted` : ""}\n`);
     }));
     if (shallowOnly) break;
     for (const [file, names] of [...want])
       for (const name of [...names]) {
-        const deps = nodeDepends(models, runs, absent, nodeKey(file, name));
+        const deps = nodeDepends(runs, nodeKey(file, name));
         if (deps === "unresolved") continue;
         for (const d of deps) {
-          const [f = "", n = ""] = d.split("#");
-          if (!n.startsWith("module:")) add(f, n);
+          const at = d.indexOf("#");
+          if (!d.slice(at + 1).startsWith("module:")) add(d.slice(0, at), d.slice(at + 1));
         }
       }
   }
-  // Deep status: every node of the closure accepted; the first one not, breadth-first, blocks it.
-  const deepOf = (start: NodeKey): string | null => {
-    const seen = new Set<NodeKey>([start]);
-    for (let queue = [start], next = queue.shift(); next !== undefined; next = queue.shift()) {
-      const [file = "", name = ""] = next.split("#");
-      const own = ownResult(runs, absent, file, name);
-      if (!own) return `${next} (not run)`;
-      if (own.own.status !== "verified") return `${next} (${own.own.status}/${own.own.phase}: ${own.own.detail.slice(0, 120)})`;
-      const deps = nodeDepends(models, runs, absent, next);
-      if (deps === "unresolved") return `${next} (an import the census cannot resolve)`;
-      for (const d of deps) if (!seen.has(d)) {
-        seen.add(d);
-        queue.push(d);
-      }
-    }
-    return null;
-  };
-  const rows: UnitCensusRecord["functions"] = [];
-  for (const [file, names] of want)
-    for (const fn of names) {
-      if (fn === initOmission || (files && !files.includes(file)) || (functions && !functions.includes(fn))) continue;
-      const own = ownResult(runs, absent, file, fn);
-      const blocker = shallowOnly ? "(not computed)" : deepOf(nodeKey(file, fn));
-      rows.push({ file, fn, unit: own?.unit ?? null, own: own?.own ?? { status: "not run", phase: "-", detail: "" },
-        deep: blocker === null, blocker });
-    }
-  rows.sort((a, b) => a.file.localeCompare(b.file) || a.fn.localeCompare(b.fn));
+  const units: Unit[] = [];
+  const fileHashes: { file: string; sourceSha256: string }[] = [];
+  for (const file of chosen) {
+    const text = readFileSync(join(root, file), "utf8");
+    units.push(...inventory(file, openText(join(root, file), text)));
+    fileHashes.push({ file, sourceSha256: sha256(text) });
+  }
+  closeParser();
   const setting = storeSetting();
-  const record: UnitCensusRecord = {
+  const record: CensusRecord = {
     source: { commit, dirty, directory, files, functions },
-    policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: null },
+    policy: { store: setting.off ? "off" : setting.directory, stepLimitMs: stepTimeoutMs, shard: shardPart },
     started: new Date(Date.now() - (performance.now() - started)).toISOString(),
     elapsedMs: performance.now() - started,
-    files: [...runs.values()].map((run) => ({ ...run,
-      absent: [...(absent.get(run.file) ?? [])].map(([name, refusal]) => ({ name, refusal })) })),
-    functions: rows,
+    files: [...runs.values()],
+    inventory: { files: fileHashes, units },
   };
   writeFileSync(recordPath, JSON.stringify(record, null, 1) + "\n");
-  const shallow = rows.filter((r) => r.own.status === "verified").length;
-  process.stdout.write(`functions: ${rows.length}; shallow verified ${shallow}; deep verified ${rows.filter((r) => r.deep).length}\n`);
-  for (const r of rows)
-    process.stdout.write(`  ${r.file}#${r.fn}: ${r.own.status}/${r.own.phase}${r.deep ? " deep" : ""}` +
-      `${r.own.status !== "verified" ? ` ${blocker(r.own.detail)}` : ""}${!r.deep && r.blocker ? ` · blocked by ${r.blocker}` : ""}\n`);
-  process.stdout.write(costReport([...runs.values()].map((run): SliceRecord => ({ slice: run.file, file: run.file, fn: "(file)",
-    lines: models(run.file).text.split("\n").length, sourceSha256: run.sourceSha256,
-    status: run.front ? run.front.status : "units", phase: run.front ? run.front.phase : "-",
-    detail: run.front?.detail ?? "", functions: run.units.length, invocations: run.invocations, artifactBytes: null }))));
+  process.stdout.write(summary(readCensus(recordPath), false));
   process.stdout.write(`record: ${recordPath}\n`);
 }
 
@@ -798,13 +622,22 @@ function seconds(s: Spread, field: "total" | "median" | "p90" | "max"): string {
 const megabytes = (s: Spread, field: "median" | "p90" | "max"): string =>
   s.n === 0 ? "n/a" : (s[field] / 1048576).toFixed(0);
 
-/** Each stage's cost over a census's invocations: CPU, then elapsed, then
- * peak memory; and the slices that cost the most CPU. */
-function costReport(slices: Iterable<SliceRecord>, top: number = 10): string {
-  const rows = [...slices];
+/** Each stage's cost over a census's invocations, each stage result counted
+ * once: CPU, then elapsed, then peak memory; and the files that cost the most
+ * CPU. */
+function costReport(runs: Iterable<FileRun>, top: number = 10): string {
+  const files = [...runs];
+  const seen = new Set<string>();
+  const distinct = (r: InvocationReference): boolean => {
+    const k = r.key === null ? r.attempt : `${r.stage}:${r.key}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  };
+  const byFile = files.map((f) => ({ f, invocations: f.invocations.filter(distinct) }));
   const byStage = new Map<StageName, InvocationReference[]>();
-  for (const s of rows) for (const r of s.invocations) byStage.set(r.stage, [...(byStage.get(r.stage) ?? []), r]);
-  const lines = ["stage cost (each result's producing execution; seconds, peak MB):",
+  for (const { invocations } of byFile) for (const r of invocations) byStage.set(r.stage, [...(byStage.get(r.stage) ?? []), r]);
+  const lines = ["stage cost (each result's producing execution, each result once; seconds, peak MB):",
     `  ${"stage".padEnd(12)} ${"ran".padStart(5)} ${"replay".padStart(6)} │ ${"CPU".padStart(10)} ${"med".padStart(6)} ` +
     `${"p90".padStart(6)} ${"max".padStart(7)} │ ${"elapsed".padStart(10)} ${"med".padStart(6)} ${"p90".padStart(6)} ` +
     `${"max".padStart(7)} │ ${"peak med".padStart(8)} ${"p90".padStart(5)} ${"max".padStart(5)}`];
@@ -820,50 +653,44 @@ function costReport(slices: Iterable<SliceRecord>, top: number = 10): string {
       `${seconds(e, "max").padStart(7)} │ ${megabytes(m, "median").padStart(8)} ${megabytes(m, "p90").padStart(5)} ` +
       `${megabytes(m, "max").padStart(5)}`);
   }
-  const perSlice = rows.map((s) => {
-    const costs = s.invocations.map(cost);
-    return { s, cpu: spread(costs.map((x) => x.cpuMs)), elapsed: spread(costs.map((x) => x.elapsedMs)),
-      peak: spread(costs.map((x) => x.peakBytes)),
-      bytes: s.artifactBytes ? Object.values(s.artifactBytes).reduce((a, b) => a + b, 0) : null };
+  const perFile = byFile.map(({ f, invocations }) => {
+    const costs = invocations.map(cost);
+    return { f, cpu: spread(costs.map((x) => x.cpuMs)), elapsed: spread(costs.map((x) => x.elapsedMs)),
+      peak: spread(costs.map((x) => x.peakBytes)) };
   });
-  lines.push(`slices by CPU (top ${Math.min(top, perSlice.length)}; seconds, peak MB, document bytes):`);
-  for (const { s, cpu, elapsed, peak, bytes } of perSlice.sort((a, b) => b.cpu.total - a.cpu.total).slice(0, top))
+  lines.push(`files by CPU (top ${Math.min(top, perFile.length)}; seconds, peak MB):`);
+  for (const { f, cpu, elapsed, peak } of perFile.sort((a, b) => b.cpu.total - a.cpu.total).slice(0, top))
     lines.push(`  ${seconds(cpu, "total").padStart(10)} CPU ${seconds(elapsed, "total").padStart(8)} elapsed ` +
-      `${megabytes(peak, "max").padStart(5)} MB ${String(bytes ?? "n/a").padStart(9)} B  ${s.file}#${s.fn} ` +
-      `${isTimeout(s) ? "timeout" : `${s.status}/${s.phase}`}`);
+      `${megabytes(peak, "max").padStart(5)} MB  ${f.file}: ${f.front ? `refused ${f.front.status}/${f.front.phase}`
+        : `${f.units.filter((u) => u.status === "verified").length} of ${f.units.length} units accepted`}`);
   return lines.join("\n") + "\n";
 }
 
 // ---------------------------------------------------------------------------
-// Records read back, and compared
+// Records read back
 
-/** The bytes of each JSON document in a run's directory, by file name. */
-function documentBytes(directory: string): { [name: string]: number } {
-  const bytes: { [name: string]: number } = {};
-  for (const name of readdirSync(directory).filter((n) => n.endsWith(".json")).sort())
-    bytes[name] = statSync(join(directory, name)).size;
-  return bytes;
+/** A JSON value's own field. */
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null && Object.hasOwn(value, key)
+    ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+const strings = (value: unknown, what: string): string[] => {
+  if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string")) throw Error(`${what} is no list of strings`);
+  return value;
+};
+function readOwn(value: unknown): OwnResult {
+  const status = field(value, "status"), phase = field(value, "phase"), detail = field(value, "detail");
+  if (typeof status !== "string" || typeof phase !== "string" || typeof detail !== "string")
+    throw Error(`not a unit's result: ${String(JSON.stringify(value)).slice(0, 200)}`);
+  return { status, phase, detail };
 }
-function readArtifactBytes(value: unknown): SliceRecord["artifactBytes"] {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "object") throw Error("artifactBytes is not a record");
-  const bytes: { [name: string]: number } = {};
-  for (const [name, n] of Object.entries(value)) {
-    if (typeof n !== "number") throw Error(`artifactBytes.${name} is not a number`);
-    bytes[name] = n;
-  }
-  return bytes;
-}
-function readSliceRecord(value: unknown): SliceRecord {
-  if (typeof value !== "object" || value === null) throw Error("not a slice record");
-  const v: { [key: string]: unknown } = { ...value };
-  const { slice, file, fn, lines, sourceSha256, status, phase, detail, functions, invocations, artifactBytes } = v;
-  if (typeof slice !== "string" || typeof file !== "string" || typeof fn !== "string" || typeof lines !== "number" ||
-      typeof sourceSha256 !== "string" || typeof status !== "string" || typeof phase !== "string" ||
-      typeof detail !== "string" || typeof functions !== "number" || !Array.isArray(invocations))
-    throw Error(`not a slice record: ${JSON.stringify(value).slice(0, 200)}`);
-  return { slice, file, fn, lines, sourceSha256, status, phase, detail, functions,
-    invocations: invocations.map(readReference), artifactBytes: readArtifactBytes(artifactBytes) };
+const unitStatuses: readonly UnitResult["status"][] = ["verified", "unverified", "exhausted", "error"];
+function readUnitResult(value: unknown): UnitResult {
+  const unit = field(value, "unit"), phase = field(value, "phase"), detail = field(value, "detail");
+  const status = unitStatuses.find((s) => s === field(value, "status"));
+  if (typeof unit !== "string" || !status || (phase !== "search" && phase !== "check") || typeof detail !== "string")
+    throw Error(`not a unit result: ${String(JSON.stringify(value)).slice(0, 200)}`);
+  return { unit, members: strings(field(value, "members"), "a unit's members"), status, phase, detail,
+    depends: strings(field(value, "depends"), "a unit's dependencies") };
 }
 function readReference(value: unknown): InvocationReference {
   if (typeof value !== "object" || value === null) throw Error("not an invocation reference");
@@ -874,15 +701,14 @@ function readReference(value: unknown): InvocationReference {
   const foundStage = stageNames.find((s) => s === stage);
   const foundExecution = executions.find((e) => e === execution);
   const c: { [key: string]: unknown } = typeof cpu === "object" && cpu !== null ? { ...cpu } : {};
-  // A record written before peak memory was measured has none.
   const peak = c["peakBytes"];
   const readCpu: Cpu | null = typeof c["unavailable"] === "string" ? { unavailable: c["unavailable"] }
     : typeof c["userMs"] === "number" && typeof c["systemMs"] === "number" && typeof c["covers"] === "string" &&
-        (peak === undefined || peak === null || typeof peak === "number")
-      ? { userMs: c["userMs"], systemMs: c["systemMs"], peakBytes: peak ?? null, covers: c["covers"] } : null;
+        (peak === null || typeof peak === "number")
+      ? { userMs: c["userMs"], systemMs: c["systemMs"], peakBytes: peak, covers: c["covers"] } : null;
   if (typeof attempt !== "string" || !foundStage || !(key === null || typeof key === "string") || !foundExecution ||
       !(limitMs === null || typeof limitMs === "number") || typeof elapsedMs !== "number" || !readCpu)
-    throw Error(`not an invocation reference: ${JSON.stringify(value).slice(0, 200)}`);
+    throw Error(`not an invocation reference: ${String(JSON.stringify(value)).slice(0, 200)}`);
   let readReplay: InvocationReference["replay"] = null;
   if (replay !== null) {
     const r: { [key: string]: unknown } = typeof replay === "object" && replay !== null ? { ...replay } : {};
@@ -896,224 +722,254 @@ function readReference(value: unknown): InvocationReference {
   return { attempt, stage: foundStage, key, execution: foundExecution, limitMs, elapsedMs, cpu: readCpu,
     replay: readReplay };
 }
+function readFileRun(value: unknown): FileRun {
+  const file = field(value, "file"), sourceSha256 = field(value, "sourceSha256"), front = field(value, "front");
+  const list = (key: string): unknown[] => {
+    const x = field(value, key);
+    if (!Array.isArray(x)) throw Error(`a file run's ${key} is no list`);
+    return x;
+  };
+  const initCode = field(value, "initCode");
+  if (typeof file !== "string" || typeof sourceSha256 !== "string" || typeof initCode !== "boolean")
+    throw Error(`not a file run: ${String(JSON.stringify(value)).slice(0, 200)}`);
+  return {
+    file, sourceSha256, initCode,
+    rounds: list("rounds").map((r) => ({ omitted: strings(field(r, "omitted"), "a round's omissions"),
+      refusal: readOwn(field(r, "refusal")) })),
+    omitted: list("omitted").map((o) => {
+      const name = field(o, "name");
+      if (typeof name !== "string") throw Error("an omission without its name");
+      return { name, refusal: readOwn(field(o, "refusal")) };
+    }),
+    front: front === null ? null : readOwn(front),
+    units: list("units").map(readUnitResult),
+    invocations: list("invocations").map(readReference),
+    model: list("model").map((x) => {
+      const name = field(x, "name"), edges = field(x, "edges");
+      if (typeof name !== "string") throw Error("a unit's model without its name");
+      return { name, group: strings(field(x, "group"), "a unit's group"),
+        edges: edges === "unresolved" ? "unresolved" : strings(edges, "a unit's edges") };
+    }),
+  };
+}
 const scopes: readonly UnitScope[] = ["census", "module", "outside"];
 function readUnit(value: unknown): Unit {
-  if (typeof value !== "object" || value === null) throw Error("not a statement unit");
-  const v: { [key: string]: unknown } = { ...value };
-  const { file, fn, inner, scope, kind, start, end, line, column } = v;
-  const foundScope = scopes.find((s) => s === scope);
-  if (typeof file !== "string" || typeof fn !== "string" || !(inner === null || typeof inner === "string") ||
-      !foundScope || typeof kind !== "string" || typeof start !== "number" || typeof end !== "number" ||
-      typeof line !== "number" || typeof column !== "number")
-    throw Error(`not a statement unit: ${JSON.stringify(value).slice(0, 200)}`);
-  return { file, fn, inner, scope: foundScope, kind, start, end, line, column };
-}
-function readFileHash(value: unknown): { file: string; sourceSha256: string } {
-  if (typeof value !== "object" || value === null) throw Error("not a file hash");
-  const v: { [key: string]: unknown } = { ...value };
-  const { file, sourceSha256 } = v;
-  if (typeof file !== "string" || typeof sourceSha256 !== "string")
-    throw Error(`not a file hash: ${JSON.stringify(value).slice(0, 200)}`);
-  return { file, sourceSha256 };
+  const file = field(value, "file"), fn = field(value, "fn"), inner = field(value, "inner"), kind = field(value, "kind");
+  const scope = scopes.find((s) => s === field(value, "scope"));
+  const [start, end, line, column] = ["start", "end", "line", "column"].map((k) => field(value, k));
+  if (typeof file !== "string" || typeof fn !== "string" || !(inner === null || typeof inner === "string") || !scope ||
+      typeof kind !== "string" || typeof start !== "number" || typeof end !== "number" || typeof line !== "number" ||
+      typeof column !== "number")
+    throw Error(`not a statement unit: ${String(JSON.stringify(value)).slice(0, 200)}`);
+  return { file, fn, inner, scope, kind, start, end, line, column };
 }
 
 /** One census as one or more records (the shards of one census) give it:
- * its source, its slices by `file#fn`, and its inventory where the records
- * hold one, each unit once. */
+ * its source, its files' runs, its statement inventory, and its elapsed time. */
 type Census = {
   source: CensusRecord["source"];
-  slices: Map<string, SliceRecord>;
-  inventory: { files: Map<string, string>; units: Unit[] } | null;
+  runs: Map<string, FileRun>;
+  inventory: { files: Map<string, string>; units: Unit[] };
+  elapsedMs: number;
 };
 function readCensus(paths: string): Census {
-  const slices = new Map<string, SliceRecord>();
   let source: Census["source"] | null = null;
-  let inventory: Census["inventory"] = null;
-  let withoutInventory = 0;
-  const names = (x: unknown): string[] | null =>
-    Array.isArray(x) && x.every((n) => typeof n === "string") ? x : null;
+  const runs = new Map<string, FileRun>();
+  const inventory: Census["inventory"] = { files: new Map(), units: [] };
+  let elapsedMs = 0;
   for (const path of paths.split(",")) {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof parsed !== "object" || parsed === null) throw Error(`${path} is no census record`);
-    const v: { [key: string]: unknown } = { ...parsed };
-    const list = v["slices"];
-    if (!Array.isArray(list)) throw Error(`${path} is no census record`);
-    for (const s of list.map(readSliceRecord)) slices.set(`${s.file}#${s.fn}`, s);
-    const recorded = v["source"];
-    const s: { [key: string]: unknown } = typeof recorded === "object" && recorded !== null ? { ...recorded } : {};
-    const { commit, dirty, directory, files, functions } = s;
-    if (typeof commit !== "string" || typeof dirty !== "boolean" || typeof directory !== "string")
-      throw Error(`${path}: no census source`);
+    const s = field(parsed, "source"), inv = field(parsed, "inventory"), elapsed = field(parsed, "elapsedMs");
+    const commit = field(s, "commit"), dirty = field(s, "dirty"), directory = field(s, "directory");
+    const files = field(s, "files"), functions = field(s, "functions");
+    const runList = field(parsed, "files"), fileList = field(inv, "files"), unitList = field(inv, "units");
+    if (typeof commit !== "string" || typeof dirty !== "boolean" || typeof directory !== "string" ||
+        typeof elapsed !== "number" || !Array.isArray(runList) || !Array.isArray(fileList) || !Array.isArray(unitList))
+      throw Error(`${path} is no census record`);
     if (source && (source.commit !== commit || source.directory !== directory))
       throw Error(`${path} is a census of ${directory} at ${commit}, the others of ${source.directory} at ${source.commit}`);
-    source = { commit, dirty, directory, files: names(files), functions: names(functions) };
-    const held = v["inventory"];
-    const inv: { [key: string]: unknown } = typeof held === "object" && held !== null ? { ...held } : {};
-    const [unitList, fileList] = [inv["units"], inv["files"]];
-    if (!Array.isArray(unitList) || !Array.isArray(fileList)) {
-      withoutInventory++;
-      continue;
+    source = { commit, dirty, directory, files: files === null ? null : strings(files, "the census's files"),
+      functions: functions === null ? null : strings(functions, "the census's functions") };
+    elapsedMs = Math.max(elapsedMs, elapsed);
+    for (const r of runList.map(readFileRun)) runs.set(r.file, r);
+    for (const f of fileList) {
+      const file = field(f, "file"), hash = field(f, "sourceSha256");
+      if (typeof file !== "string" || typeof hash !== "string") throw Error(`${path}: a file hash is malformed`);
+      inventory.files.set(file, hash);
     }
-    inventory ??= { files: new Map(), units: [] };
-    for (const f of fileList.map(readFileHash)) inventory.files.set(f.file, f.sourceSha256);
     const seen = new Set(inventory.units.map((u) => `${u.file}:${u.start}:${u.end}`));
     for (const u of unitList.map(readUnit))
       if (!seen.has(`${u.file}:${u.start}:${u.end}`)) inventory.units.push(u);
   }
   if (!source) throw Error("no census record");
-  if (inventory && withoutInventory) throw Error(`${withoutInventory} of the records hold no inventory`);
-  return { source, slices, inventory };
+  return { source, runs, inventory, elapsedMs };
 }
 
-/** Each slice's outcome by `file#fn`. */
-function bySlice(rows: Iterable<SliceRecord>): Map<string, SliceRecord> {
-  return new Map([...rows].map((s): [string, SliceRecord] => [`${s.file}#${s.fn}`, s]));
+// ---------------------------------------------------------------------------
+// Reports
+
+/** A detail without its line, column and span: the blocker it names. */
+const blocker = (detail: string): string =>
+  detail.replace(/\(line \d+, col \d+\)/, "").replace(/ at \[\d+,\d+\).*/, "").slice(0, 140);
+
+/** The initializations that block deep status, each with its own refusal
+ * and how many functions' deep status it blocks first. */
+function initializationBlockers(rows: readonly FunctionRow[], runs: ReadonlyMap<string, FileRun>):
+    { node: NodeKey; refusal: string; functions: number }[] {
+  const counts = new Map<NodeKey, number>();
+  for (const r of rows) if (shallow(r) && r.blocker && r.blocker.node.endsWith(`#${initOmission}`))
+    counts.set(r.blocker.node, (counts.get(r.blocker.node) ?? 0) + 1);
+  return [...counts].map(([node, functions]) => {
+    const at = node.indexOf("#");
+    const own = ownResult(runs, node.slice(0, at), initOmission)?.own;
+    return { node, functions, refusal: own ? `${own.status}/${own.phase}: ${blocker(own.detail)}` : "not run" };
+  }).sort((a, b) => b.functions - a.functions);
+}
+
+/** A census's shallow and deep counts, the initializations blocking deep
+ * status, statement coverage under both, and its cost. */
+function summary(c: Census, perFunction: boolean): string {
+  const rows = functionRows(c);
+  const out: string[] = [];
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    const k = r.own ? (r.own.detail.startsWith("timeout:") ? "timeout" : `${r.own.status}/${r.own.phase}`) : "not run";
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  out.push(`functions: ${rows.length}; shallow verified ${rows.filter(shallow).length}; own results ${JSON.stringify(counts)}`);
+  out.push(`deep status (computed, not a headline figure): ${rows.filter(deep).length} deep verified`);
+  const blockers = new Map<string, number>();
+  for (const r of rows.filter((x) => !shallow(x) && x.own)) {
+    const b = blocker(r.own?.detail ?? "");
+    blockers.set(b, (blockers.get(b) ?? 0) + 1);
+  }
+  for (const [b, n] of [...blockers].sort((a, b) => b[1] - a[1])) out.push(`${String(n).padStart(4)} ${b}`);
+  out.push("initializations blocking deep status (functions blocked first by each):");
+  for (const b of initializationBlockers(rows, c.runs)) out.push(`  ${String(b.functions).padStart(4)}  ${b.node}  ${b.refusal}`);
+  if (perFunction)
+    for (const r of rows)
+      out.push(`  ${r.file}#${r.fn}: ${r.own ? `${r.own.status}/${r.own.phase}` : "not run"}${deep(r) ? " deep" : ""}` +
+        `${r.own && !shallow(r) ? ` ${blocker(r.own.detail)}` : ""}` +
+        `${!deep(r) && shallow(r) && r.blocker ? ` · blocked by ${r.blocker.node} (${blocker(r.blocker.reason)})` : ""}`);
+  out.push(costReport(c.runs.values()).trimEnd());
+  for (const mode of ["shallow", "deep"] as const) {
+    const classified = c.inventory.units.map((u) => ({ ...u, class: classify(u, outcomes(c, rows, mode)) }));
+    out.push(`${mode}:`);
+    out.push(coverageReport(c.source.directory, classified, rows.map((r) => ({ file: r.file,
+      verified: mode === "shallow" ? shallow(r) : deep(r) })), perFunction).trimEnd());
+  }
+  out.push(`elapsed: ${(c.elapsedMs / 1000).toFixed(0)} s`);
+  return out.join("\n") + "\n";
+}
+
+/** Compare two censuses: shallow and deep gains and losses, outcome changes,
+ * statement coverage and each stage's cost. */
+function comparison(before: Census, after: Census): string {
+  const [a, b] = [functionRows(before), functionRows(after)];
+  const out: string[] = [];
+  for (const [name, test] of [["shallow", shallow], ["deep", deep]] as const) {
+    const [x, y] = [new Set(a.filter(test).map((r) => `${r.file}#${r.fn}`)), new Set(b.filter(test).map((r) => `${r.file}#${r.fn}`))];
+    out.push(`${name} verified: ${x.size} of ${a.length} → ${y.size} of ${b.length}`);
+    out.push(`  gained (${[...y].filter((k) => !x.has(k)).length}): ${[...y].filter((k) => !x.has(k)).join(", ")}`);
+    out.push(`  lost (${[...x].filter((k) => !y.has(k)).length}): ${[...x].filter((k) => !y.has(k)).join(", ")}`);
+  }
+  const old = new Map(a.map((r) => [`${r.file}#${r.fn}`, r]));
+  const changed = b.filter((r) => {
+    const o = old.get(`${r.file}#${r.fn}`);
+    return o && (o.own?.status !== r.own?.status || o.own?.phase !== r.own?.phase ||
+      blocker(o.own?.detail ?? "") !== blocker(r.own?.detail ?? ""));
+  });
+  out.push(`own results changed (${changed.length}):`);
+  for (const r of changed) {
+    const o = old.get(`${r.file}#${r.fn}`);
+    out.push(`  ${r.file}#${r.fn}: ${o?.own?.status}/${o?.own?.phase} ${blocker(o?.own?.detail ?? "")} → ` +
+      `${r.own?.status}/${r.own?.phase} ${blocker(r.own?.detail ?? "")}`);
+  }
+  for (const mode of ["shallow", "deep"] as const)
+    out.push(`${mode}: ` + coverageComparison(
+      before.inventory.units.map((u) => ({ ...u, class: classify(u, outcomes(before, a, mode)) })),
+      after.inventory.units.map((u) => ({ ...u, class: classify(u, outcomes(after, b, mode)) }))).trimEnd());
+  out.push("before:", costReport(before.runs.values()).trimEnd(), "after:", costReport(after.runs.values()).trimEnd());
+  return out.join("\n") + "\n";
 }
 
 /** The inventory of a census's files read from `sources` (the checkout or
  * the census's commit), and how those sources compare with the record's
- * hashes: per file where the record holds file hashes, else per slice. The
- * commit's files are parsed from a copy under the temporary directory: the
- * compiler reads a module another one imports from the disk, so a file is
- * parsed where the disk holds its text. */
-function inventoryFromSources(census: Census, sources: "checkout" | "commit"): { units: Unit[]; note: string } {
-  const { directory, commit } = census.source;
+ * hashes. The commit's files are parsed from a copy under the temporary
+ * directory: the compiler reads a module another one imports from the disk,
+ * so a file is parsed where the disk holds its text. */
+function inventoryFromSources(c: Census, sources: "checkout" | "commit"): { units: Unit[]; note: string } {
+  const { directory, commit } = c.source;
   const base = sources === "commit"
     ? join(tmpdir(), "tscert-census", sha256(repository).slice(0, 12), `sources-${commit.slice(0, 12)}`, directory)
     : join(repository, directory);
   const read = (file: string): string => sources === "commit"
     ? execFileSync("git", ["-C", repository, "show", `${commit}:${directory}/${file}`], { encoding: "utf8" })
     : readFileSync(join(base, file), "utf8");
-  const listed = sources === "commit"
-    ? execFileSync("git", ["-C", repository, "ls-tree", "--name-only", `${commit}:${directory}`], { encoding: "utf8" })
-      .split("\n")
-    : readdirSync(join(repository, directory));
-  const files = listed.filter((f) => f.endsWith(".mts") && !f.startsWith("slice-") &&
-    (!census.source.files || census.source.files.includes(f))).sort();
-  const units: Unit[] = [];
-  const differing: string[] = [];
-  let compared = 0;
+  const files = [...c.inventory.files.keys()].sort();
   const texts = files.map((file): [string, string] => [file, read(file)]);
   if (sources === "commit") {
     mkdirSync(base, { recursive: true });
     for (const [file, text] of texts) writeStable(join(base, file), text);
   }
+  const units: Unit[] = [];
+  const differing: string[] = [];
   for (const [file, text] of texts) {
-    const tree = openText(join(base, file), text);
-    units.push(...inventory(file, tree));
-    if (census.inventory) {
-      compared++;
-      if (census.inventory.files.get(file) !== sha256(text)) differing.push(file);
-      continue;
-    }
-    for (const s of slicesOf(file, tree, text)) {
-      const r = census.slices.get(`${s.file}#${s.fn}`);
-      if (!r) continue;
-      compared++;
-      if (r.sourceSha256 !== sha256(s.text)) differing.push(`${s.file}#${s.fn}`);
-    }
+    units.push(...inventory(file, openText(join(base, file), text)));
+    if (c.inventory.files.get(file) !== sha256(text)) differing.push(file);
   }
   closeParser();
   const from = sources === "commit" ? `the census's commit ${commit.slice(0, 12)}` : "the current checkout";
-  const what = census.inventory ? "files" : "slices";
-  const note = `inventory from ${from}${sources === "commit" && census.source.dirty ? " (the census ran on a dirty tree)" : ""}; ` +
-    (differing.length === 0 ? `all ${compared} ${what} match the record's source hashes`
-      : `${differing.length} of ${compared} ${what} differ from the record's: ${differing.slice(0, 12).join(", ")}` +
+  const note = `inventory from ${from}${sources === "commit" && c.source.dirty ? " (the census ran on a dirty tree)" : ""}; ` +
+    (differing.length === 0 ? `all ${files.length} files match the record's source hashes`
+      : `${differing.length} of ${files.length} files differ from the record's: ${differing.slice(0, 12).join(", ")}` +
         `${differing.length > 12 ? ", …" : ""}`);
   return { units, note };
 }
 
-/** Where an inventory is read for a census without one: its commit, or the
- * checkout for a census of a dirty tree. */
-const defaultSources = (census: Census): "checkout" | "commit" => (census.source.dirty ? "checkout" : "commit");
-
-/** The classified inventory of a census: its records', or else one read
- * from its sources. */
-function classifiedInventory(census: Census): { units: UnitRecord[]; note: string | null } {
-  const found = census.inventory ? { units: census.inventory.units, note: null }
-    : inventoryFromSources(census, defaultSources(census));
-  return { units: found.units.map((u) => ({ ...u, class: classify(u, census.slices) })), note: found.note };
-}
-
-const isTimeout = (s: SliceRecord): boolean => s.detail.startsWith("timeout:");
-
-/** Compare two censuses: gains and losses of verified slices, timeouts,
- * outcome changes, and each stage's cost: CPU time, elapsed time and peak memory. */
-function report(before: Map<string, SliceRecord>, after: Map<string, SliceRecord>): void {
-  const verified = (m: Map<string, SliceRecord>): Set<string> =>
-    new Set([...m].filter(([, s]) => s.status === "verified").map(([k]) => k));
-  const [a, b] = [verified(before), verified(after)];
-  process.stdout.write(`verified: ${a.size} of ${before.size} → ${b.size} of ${after.size}\n`);
-  process.stdout.write(`gained (${[...b].filter((k) => !a.has(k)).length}): ${[...b].filter((k) => !a.has(k)).join(", ")}\n`);
-  process.stdout.write(`lost (${[...a].filter((k) => !b.has(k)).length}): ${[...a].filter((k) => !b.has(k)).join(", ")}\n`);
-  const timeouts = (m: Map<string, SliceRecord>): string[] => [...m].filter(([, s]) => isTimeout(s)).map(([k]) => k);
-  const newTimeouts = timeouts(after).filter((k) => {
-    const old = before.get(k);
-    return !old || !isTimeout(old);
-  });
-  process.stdout.write(`timeouts: ${timeouts(before).length} → ${timeouts(after).length}; new: ${newTimeouts.join(", ")}\n`);
-  const changed = [...after].filter(([k, s]) => {
-    const old = before.get(k);
-    return old && (old.status !== s.status || old.phase !== s.phase || blocker(old.detail) !== blocker(s.detail));
-  });
-  process.stdout.write(`outcomes changed (${changed.length}):\n`);
-  for (const [k, s] of changed) {
-    const old = before.get(k);
-    if (old) process.stdout.write(`  ${k}: ${old.status}/${old.phase} ${blocker(old.detail)} → ${s.status}/${s.phase} ${blocker(s.detail)}\n`);
-  }
-  const stageCosts = (m: Map<string, SliceRecord>): Map<string, { n: number; cpu: Spread; elapsed: Spread; peak: Spread }> => {
-    const costs = new Map<string, Cost[]>();
-    for (const s of m.values()) for (const r of s.invocations) costs.set(r.stage, [...(costs.get(r.stage) ?? []), cost(r)]);
-    return new Map([...costs].map(([stage, list]) => [stage, { n: list.length, cpu: spread(list.map((c) => c.cpuMs)),
-      elapsed: spread(list.map((c) => c.elapsedMs)), peak: spread(list.map((c) => c.peakBytes)) }]));
-  };
-  const [ta, tb] = [stageCosts(before), stageCosts(after)];
-  process.stdout.write("stage cost (each result's producing execution; count, CPU s, elapsed s, peak max MB): " +
-    "before → after\n");
-  const row = (x: { n: number; cpu: Spread; elapsed: Spread; peak: Spread } | undefined): string => x
-    ? `${String(x.n).padStart(5)} ${seconds(x.cpu, "total").padStart(10)} ${seconds(x.elapsed, "total").padStart(8)} ` +
-      `${megabytes(x.peak, "max").padStart(5)}`
-    : `${"0".padStart(5)} ${"".padStart(10)} ${"".padStart(8)} ${"".padStart(5)}`;
-  for (const k of [...new Set([...ta.keys(), ...tb.keys()])].sort())
-    process.stdout.write(`  ${k.padEnd(12)} ${row(ta.get(k))} → ${row(tb.get(k))}\n`);
-}
-
-/** The source text a slice's first refusal names, its span read from the
- * slice file beside the record, when that file still holds the text the
- * census checked (its hash in the record); null otherwise. */
-function refusedText(record: string, directory: string, s: SliceRecord): string | null {
-  const span = /at \[(\d+),(\d+)\)/.exec(s.detail);
-  const path = join(dirname(record), directory, directory, s.slice);
+/** The source text a unit's first refusal names, its span read from the
+ * census's copy of the file, when that copy still holds the text the census
+ * checked (its hash in the record); null otherwise. */
+function refusedText(record: string, directory: string, run: FileRun, detail: string): string | null {
+  const span = /at \[(\d+),(\d+)\)/.exec(detail);
+  const path = join(dirname(record), directory, directory, run.file);
   if (!span || !existsSync(path)) return null;
   const text = readFileSync(path, "utf8");
-  if (sha256(text) !== s.sourceSha256) return null;
+  if (sha256(text) !== run.sourceSha256) return null;
   return text.slice(Number(span[1]), Number(span[2])).replace(/\s+/g, " ");
 }
 
-/** The refused slices grouped by the blocker their first refusal names and
- * the source text it refuses: each group's census statements, its function
- * count, its weight and each function's detail, the heaviest first. A
- * function of n statements weighs 10 / (10 + n): one whose first refusal is
- * cleared verifies sooner the fewer statements, and refusals, it holds. */
-function refusals(census: Census, record: string):
-  { reason: string; text: string | null; weight: number; statements: number; functions: number; sites: string[] }[] {
+/** The functions whose own result is a refusal, grouped by the blocker
+ * their first refusal names and the source text it refuses: each group's
+ * statements, its function count, its weight and each function's detail,
+ * the heaviest first; and each function verified shallow but not deep with
+ * the unit blocking it. A function of n statements weighs 10 / (10 + n): one
+ * whose first refusal is cleared verifies sooner the fewer statements, and
+ * refusals, it holds. */
+function refusals(c: Census, record: string): {
+  groups: { reason: string; text: string | null; weight: number; statements: number; functions: number; sites: string[] }[];
+  deep: { function: string; blocker: string; reason: string }[] } {
+  const rows = functionRows(c);
   const statements = new Map<string, number>();
-  for (const u of classifiedInventory(census).units)
+  for (const u of c.inventory.units)
     if (u.scope === "census") statements.set(`${u.file}#${u.fn}`, (statements.get(`${u.file}#${u.fn}`) ?? 0) + 1);
   const groups = new Map<string,
     { reason: string; text: string | null; weight: number; statements: number; functions: number; sites: string[] }>();
-  for (const [key, s] of census.slices) {
-    if (s.status === "verified") continue;
-    const reason = blocker(s.detail), text = refusedText(record, census.source.directory, s);
-    const n = statements.get(key) ?? 0;
+  for (const r of rows) {
+    if (!r.own || shallow(r)) continue;
+    const run = c.runs.get(r.file);
+    const reason = blocker(r.own.detail), text = run ? refusedText(record, c.source.directory, run, r.own.detail) : null;
+    const key = `${r.file}#${r.fn}`, n = statements.get(key) ?? 0;
     const group = groups.get(`${reason}\n${text}`) ?? { reason, text, weight: 0, statements: 0, functions: 0, sites: [] };
     group.weight += 10 / (10 + n);
     group.statements += n;
     group.functions++;
-    group.sites.push(`${key} (${n} statements): ${s.detail}`);
+    group.sites.push(`${key} (${n} statements): ${r.own.detail}`);
     groups.set(`${reason}\n${text}`, group);
   }
-  return [...groups.values()].sort((a, b) => b.weight - a.weight || b.functions - a.functions);
+  return { groups: [...groups.values()].sort((a, b) => b.weight - a.weight || b.functions - a.functions),
+    deep: rows.filter((r) => shallow(r) && r.blocker).map((r) => ({ function: `${r.file}#${r.fn}`,
+      blocker: r.blocker?.node ?? "", reason: blocker(r.blocker?.reason ?? "") })) };
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
@@ -1130,25 +986,14 @@ if (import.meta.filename === resolve(process.argv[1] ?? "")) {
       const [first, second] = rest;
       if (args[0] === "coverage" && first !== undefined && rest.length === 1) {
         const c = readCensus(first);
-        const found = inventoryFromSources(c, sources ?? defaultSources(c));
+        const found = inventoryFromSources(c, sources ?? (c.source.dirty ? "checkout" : "commit"));
         process.stdout.write(`${found.note}\n`);
-        process.stdout.write(coverageReport(c.source.directory,
-          found.units.map((u) => ({ ...u, class: classify(u, c.slices) })), c.slices, perFunction));
-      } else if (args[0] === "report" && sources === null && first !== undefined && rest.length === 1) {
-        const c = readCensus(first);
-        const found = classifiedInventory(c);
-        if (found.note) process.stdout.write(`${found.note}\n`);
-        process.stdout.write(costReport(c.slices.values()));
-        process.stdout.write(coverageReport(c.source.directory, found.units, c.slices, perFunction));
-      } else if (args[0] === "report" && sources === null && first !== undefined && second !== undefined &&
-          rest.length === 2) {
-        const [before, after] = [readCensus(first), readCensus(second)];
-        report(before.slices, after.slices);
-        const [a, b] = [classifiedInventory(before), classifiedInventory(after)];
-        if (a.note) process.stdout.write(`before: ${a.note}\n`);
-        if (b.note) process.stdout.write(`after: ${b.note}\n`);
-        process.stdout.write(coverageComparison(a.units, b.units));
-      } else
+        process.stdout.write(summary({ ...c, inventory: { ...c.inventory, units: found.units } }, perFunction));
+      } else if (args[0] === "report" && sources === null && first !== undefined && rest.length === 1)
+        process.stdout.write(summary(readCensus(first), perFunction));
+      else if (args[0] === "report" && sources === null && first !== undefined && second !== undefined && rest.length === 2)
+        process.stdout.write(comparison(readCensus(first), readCensus(second)));
+      else
         throw Error("usage: node dev/census.mts report <before.json[,…]> <after.json[,…]>\n" +
           "       node dev/census.mts report <record.json[,…]> [--per-function]\n" +
           "       node dev/census.mts coverage <record.json[,…]> [--per-function] [--sources checkout|commit]");

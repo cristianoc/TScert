@@ -20,51 +20,47 @@ Build from `lean` with `lake build`; the executable is
 `.lake/build/bin/verifier`. Its modes:
 
 ```sh
-verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>
-verifier --check-source-claims   <ast.json> <source-claims.json> <file-key> <evidence.json>
-verifier --plan-imports          <ast.json> <source-claims.json>
-verifier --produce-run           <run.json> <file-key> <evidence.json> <depth>
-verifier --units                 <ast.json> <source-claims.json> <file-key>
-verifier --produce-unit          <ast.json> <source-claims.json> <file-key> <evidence.json> <unit> <depth>
-verifier --check-unit            <ast.json> <source-claims.json> <file-key> <evidence.json> <unit>
-verifier --lower-program         <ast.json> <source-claims.json> <file-key>
-verifier --lower-control-flow    <ast.json>
+verifier --produce-units      <ast.json> <source-claims.json> <file-key> <evidence.json> <depth> [<names>]
+verifier --check-units        <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]
+verifier --units              <ast.json> <source-claims.json> <file-key> [<names>]
+verifier --plan-imports       <ast.json> <plan.json>
+verifier --lower-program      <ast.json> <source-claims.json> <file-key>
+verifier --lower-control-flow <ast.json>
 ```
 
 - `<file-key>` is the identity of the checked file: the key the claims and
   the requests are reconstructed under, the Fragment's `file`.
-- `--produce-source-claims` searches for evidence, checks it through the
-  same consumer as `--check-source-claims`, and writes it to
-  `<evidence.json>`, which must differ from both inputs. `<depth>` limits
-  expression proof-search depth; it is not an execution budget and is not
-  part of the request, evidence or safety theorem.
-- `--check-source-claims` never invokes the producer: success means the
-  submitted evidence passed for the requests reconstructed from the
-  submitted source and claims. It prints `accept: stateful source <file-key>`.
+- A file's **units** are the groups of its functions that reach each other
+  by name, its initialization among them where its mentions place it, and
+  each module run of its certified imports
+  ([units](DESIGN.md#function-coverage-and-release-thresholds)). A group is
+  named by its first member, `name@offset` for a function and `init` for the
+  initialization; a module run by `module:<location>`. `<names>` selects the
+  groups with a member of one of the comma-separated names (a function's
+  name, `:init` for the initialization); every unit without it. Module runs
+  are always selected.
+- `--produce-units` searches each selected unit's evidence over the file's
+  one front and writes the evidence document to `<evidence.json>`, which
+  must differ from both inputs, an empty entry for each unit not selected.
+  It prints each unit its search refuses on a line
+  `refused: {"refusal","unit"}`; with any, the first is the command's
+  refusal, the document written still. `<depth>` limits expression
+  proof-search depth; it is not an execution budget and is not part of the
+  request, evidence or safety theorem.
+- `--check-units` never invokes the producer: it checks each selected unit's
+  certified requests at its entries of the submitted evidence, printing a
+  verdict per unit, `{"accepted","depends","members","unit"}` or
+  `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
+  states. With every unit accepted it prints
+  `accept: stateful source <file-key>`; otherwise the first refusal is the
+  command's.
+- `--units` prints the selected units, one per line,
+  `{"depends","members","unit"}`, with the units each reaches
+  (`SourceClaimJson.unitsJson`).
 - `--plan-imports` plans the
-  [certified imports](SOURCE-CONTRACTS.md#certified-imports) of a source
-  and its claims (`SourceClaimJson.planJson`) and prints the runs
-  `--produce-source-claims` searches, in its order, one per line: the
-  importer's `{"ast","claims","qualified"}`, then each module run's with its
-  `location`, `qualified` listing each read's `local`, `footprint` and
-  `onThrow`. A plan it refuses is that mode's refusal.
-- `--produce-run` searches one such run under `<file-key>` (the importer's,
-  or a module run's location) as `--produce-source-claims` searches that
-  run, and writes its evidence: the importer's run's as that mode's `main`,
-  a module run's as an entry of its `modules`, `{"evidence","location"}`.
-  Neither mode accepts anything.
-- `--units` prints the file's units, one per line,
-  `{"unit","members","depends"}`: each group of its functions that reach
-  each other by name (its identity its first member's, `name@offset`, or
-  `init` for the module's initialization), with the units it reaches,
-  then each module run of its certified imports, `module:<location>`
-  (`SourceClaimJson.unitsJson`, the file front of
-  [the units draft](drafts/shallow-deep-census.md#2-the-file-front-and-per-unit-extraction)).
-- `--produce-unit` searches one unit's evidence and writes it;
-  `--check-unit` checks one unit at its evidence
-  (`SourceClaimJson.checkUnitJson`, whose success `checkUnitJson_safe`
-  states), printing `accept: unit <unit> of <file-key>` and, on a line
-  `depends: `, the unit's dependencies as a JSON list.
+  [certified imports](SOURCE-CONTRACTS.md#certified-imports) a plan document
+  names (`SourceClaimJson.planImports`) and prints nothing; a plan it
+  refuses is its refusal, each other read it refuses on a line of its own.
 - `--lower-program` prints the program graph each unit lowers to, with the
   graph code it creates (`SourceClaimJson.lowerJson`), for inspection;
   `make lowering` runs it.
@@ -705,7 +701,7 @@ A type can also be read from recursive equations
 labels are trees over the equations' heads. The source path checks every
 request over them.
 
-**Source path.** `--check-source-claims` and `--produce-source-claims` never
+**Source path.** `--check-units` and `--produce-units` never
 read equations from the wire. Lean lowers the declarations and the claims to
 heads, grows them while it extracts every unit of the file, and validates
 them with `Equations.ofRaw` once extraction is done
@@ -790,9 +786,10 @@ determine this evidence order.
 [SourceRequests.Bundle](../lean/Verification/Source/SourceRequests.lean)
 declares the bundle and checks its graph interfaces and expression
 obligations.
-[SourceClaimJson.checkJson](../lean/Verification/Source/Claims/Json.lean)
-reconstructs the plans from Fragment and SourceClaims, decodes the bundles
-(`EvidenceWire.decode`) and checks every certified request.
+[SourceClaimJson.checkUnitsJson](../lean/Verification/Source/Claims/Json.lean)
+reconstructs the plans from Fragment and SourceClaims over one front, decodes
+the bundles (`EvidenceWire.decode`) and checks each selected unit's certified
+requests at its entries of the bundle, one verdict per unit.
 
 ### Evidence document
 
@@ -857,7 +854,7 @@ choice.
 
 ## Proved boundary and validation
 
-`checkJson_safe` proves that acceptance yields the decoded bundle
+`checkUnitJson_safe` proves that acceptance yields the decoded bundle
 and a successful `checkRequests` over the requests reconstructed from the
 source and claims. Each request's check is `verify`, which binds the
 certificate to the requested point annotations (`verify_eq`, through

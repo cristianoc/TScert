@@ -489,8 +489,9 @@ from the parser's resolution and snapshot, never from a claim of the
 producer's. The claims document's required `modules` array holds one claims
 document per fragment module, over that module's own type table, and the
 importer's claims list the imports it reads qualified (`qualified`), each by
-its declaration identity. A census slice keeps its own identity: a slice verified
-is not a certification of the module it was cut from.
+its declaration identity. A module run certifies its module's units for
+the importer's check; the census certifies each module's units in that
+module's own check.
 
 **Failure boundary.** A module function the parser cannot lower is absent
 from its module, with the parser's reason, and its module's other functions
@@ -546,9 +547,10 @@ classification among them. Each of the following is refused, named by the
 unit's origin: a qualified read naming no unit, a unit of another origin, a
 unit not eligible, a structural mismatch, a module's claims about other bytes
 than its document's, and a module run whose check fails. The
-importer's evidence and the units' are checked by one `checkJson` call, so
-the evidence that certifies the effect is evidence about that declaration's
-code, not about a name.
+importer's evidence and the units' are checked by one `checkUnitsJson` call,
+whose module-run units are the module documents, so the evidence that
+certifies the effect is evidence about that declaration's code, not about a
+name.
 
 **The ordinary signature is kept.** The unit is checked at its annotation's
 signature with the effect added, its annotation obligations retained, as
@@ -568,9 +570,9 @@ qualified each eligible read whose unit has claims. Where the search over the
 whole document refuses a read or a module run, its footprint refuted or its
 initialisation unchecked, the pipeline withdraws the first read or module
 run it refuses, proposes the importer again, and the import is read at its
-ordinary signature. The search runs as the plan's runs one by one, the
-importer's first (`--plan-imports`, `--produce-run`), with the outcome of
-the search over the whole document. Before proposing the importer at its
+ordinary signature. The search of the importer's units and of every module
+run is one search (`--produce-units`), a refusal of each unit its own.
+Before proposing the importer at its
 reads, the pipeline plans them (`--plan-imports` over the reads and the
 modules' claims) and withdraws every read the plan refuses in one round:
 a refused plan states, after its first refusal, each other read of the
@@ -578,16 +580,16 @@ importer, and of each module an admitted read names, whose two readings it
 refuses (`planRefusals`), a line each. Each read is checked on its own, at
 that round's documents and claims, as `planImports` checks it. The plan reads of the importer's claims only the list of its
 qualified reads, so its answer is the search's at those reads. The final check is one
-`checkJson` call over the whole document. Dense `map` needs a callback
+`checkUnitsJson` call over the whole document, a verdict per unit. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 
-**What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
-the importer's document and for each module document's certified set, each
-over its own frozen store: safety and its
-footprint for every certified unit, and safety for the importer's
-functions, each under `EnvOk` of its own inputs, the qualified import among
-the importer's, and under `WorldAdm` and `HeapOk`.
+**What the theorem states.** `SourceClaimJson.checkUnitJson_safe` states, for
+each unit the check accepts, over its document's frozen store: for a module
+run, safety and its footprint for every certified unit of that document's
+certified set; for a unit of the importer, safety and its footprint for its
+certified requests; each under `EnvOk` of its own inputs, the qualified
+import among the importer's, and under `WorldAdm` and `HeapOk`.
 It does not construct a module's environment, prove that initialisation
 succeeds, or prove that the value an import binds at run time meets the
 qualified signature: those are the linking obligation's.
@@ -5035,7 +5037,7 @@ for every $`A`$. The argument:
 - a class's base is a class of the same file (`invalid-tag-ambient-base`
   refuses a declared one), so the chain holds only such prototypes.
 
-`checkJson_safe` does not depend on it: the theorem gives the modeled safety
+`checkUnitJson_safe` does not depend on it: the theorem gives the modeled safety
 of every accepted unit under its premises, and the exclusion is part of the
 correspondence between that model and JavaScript, beside the native-promise
 invariant on the [trust surface](DESIGN.md#trust-surface). Promises come from

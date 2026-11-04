@@ -369,10 +369,10 @@ function authorPrompt(r: Run, t: Task, m: Model): string {
       .replaceAll("<census record>", record).replaceAll("<scratch>", work(r)) + runNote(r, m);
   const given = join(work(r), "causes.json");
   if (t.kind === "repros" && existsSync(given))
-    return `You prepare one gap iteration of TScert on the census record ${record} (its slices beside it) and its
+    return `You prepare one gap iteration of TScert on the census record ${record} (the census's copy of the files beside it) and its
 refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority. The round's causes are given,
 in order, in ${given}; rank nothing. For each cause: find the census functions it blocks and their refusal sites in
-the refusals and the slices; use the pipeline case it names, or the one that shows it, or add the smallest source
+the refusals and the census's copy of the files; use the pipeline case it names, or the one that shows it, or add the smallest source
 that reproduces that census refusal, its header naming the census functions it stands for, with its
 pipeline/cases.mts entry as a gap, and check it reproduces the refusal (run-cases.mts <name>). A cause no census
 function meets any more is kept with its case and no sites ("sites": []), with the reason in
@@ -386,7 +386,7 @@ commit with a record in the format of .claude/skills/review/SKILL.md.
 ${runNote(r, m)}`;
   if (t.kind === "repros")
     return `You prepare one gap iteration of TScert: steps 2 and 3 of the gap-round skill below, on the census
-record ${record} (its slices beside it) and its refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority.
+record ${record} (the census's copy of the files beside it) and its refusals, ${join(work(r), "refusals.json")}. Read CLAUDE.md first; it is the authority.
 
 ${section(".claude/skills/gap-round/SKILL.md", "## 2.")}
 
@@ -493,7 +493,7 @@ soundness or gaining acceptance by trust added silently.`;
   if (t.kind === "deck")
     return [`${goal} Branch ${branchOf(t)} rebuilds the gap-priorities deep dive. Review it against the sources: run
 git diff main...${branchOf(t)} here; check every number and claim of docs/deep-dives/gap-priorities/deck.mts against
-the census record ${r.state.census}, its slices and the cases, and the deck against docs/STYLE.md. Blocking = a
+the census record ${r.state.census}, the census's copy of its files and the cases, and the deck against docs/STYLE.md. Blocking = a
 claim the sources do not support, or a STYLE.md rule broken. Do not edit files.`];
   if (t.kind === "row")
     return [`${goal} Branch ${branchOf(t)} records the census movement in WORK.md. Run git diff main...${branchOf(t)}

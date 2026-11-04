@@ -39,7 +39,7 @@ function file(name: string, text: string): string {
 const lower = (program: string, input: string): ProcessCall => verifierCall(program, ["--lower-control-flow", input]);
 /** A search by `program`, its evidence written to `out`. */
 const search = (program: string, out: string): ProcessCall =>
-  verifierCall(program, ["--produce-source-claims", file("f.json", "fragment"), file("c.json", "claims"), "key", out, "12"]);
+  verifierCall(program, ["--produce-units", file("f.json", "fragment"), file("c.json", "claims"), "key", out, "12"]);
 const invoke = (call: ProcessCall, limitMs: number = 10_000, force: boolean = false, recorder: Recorder | null = null): Invoked =>
   invokeProcess(call, { limitMs, force, recorder });
 /** A fresh store, the one the mechanism uses from now on. */
@@ -495,7 +495,7 @@ if (eligible) {
   // digest, including the refusal status and the stored measurement.
   const store = freshStore("manifest-integrity");
   const program = script("refusal.sh", 'echo "reject: control"; echo "end of refusal"; exit 1');
-  const call = verifierCall(program, ["--check-source-claims", file("integrity-fragment.json", "fragment"),
+  const call = verifierCall(program, ["--check-units", file("integrity-fragment.json", "fragment"),
     file("integrity-claims.json", "claims"), "key", file("integrity-evidence.json", "evidence")]);
   const first = invoke(call);
   assert.equal(first.status, 1);

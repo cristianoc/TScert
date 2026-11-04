@@ -657,8 +657,8 @@ shared among that user's cooperating processes. Digests detect accidental
 corruption; they do not authenticate results supplied by an untrusted
 writer.
 
-`SourceClaimJson.checkJson_safe` establishes safety from the corresponding
-successful `checkJson` evaluation. The memoizer must preserve that premise
+`SourceClaimJson.checkUnitJson_safe` establishes safety from the corresponding
+successful `checkUnitsJson` evaluation. The memoizer must preserve that premise
 when replaying a check. This is an additional implementation obligation,
 outside that theorem.
 
@@ -799,14 +799,10 @@ stages and withdrawals, after entry eviction. They describe observed
 execution cost. Elapsed time depends on the machine's load; CPU time does not
 count waiting.
 
-A census comparison's stage-cost table sums the producing measurements
-referenced by its slice records. Shared work can appear in several records,
-and a replay refers to a historical producing execution. Those sums describe
-recorded costs, rather than CPU consumed by the current census. Counting
-unique producing executions uses `replay.storedAttempt` for a replay and
-`attempt` otherwise. Function cohorts can share a producing execution, so
-costs deduplicated within separate cohorts need not add to the globally
-deduplicated cost. Peak memory is a maximum, not a sum. The census record's
+A census's stage-cost table sums the producing measurements its file
+records reference, each stage result once, by its stage and key. A replay
+refers to a historical producing execution, so those sums describe recorded
+costs, rather than CPU consumed by the current census. Peak memory is a maximum, not a sum. The census record's
 elapsed time measures that run's wall time, including replay and scheduling.
 
 A fixed-input performance comparison states the source or request, claims,
@@ -920,11 +916,11 @@ host's owners as stopped for the clean.
 
 ## Census records
 
-Each slice has a persistent record of its source
-identity, outcome, execution policy and ordered invocation references,
+Each census file has a persistent record of its source identity, its units'
+results, its omissions, execution policy and ordered invocation references,
 including module stages and withdrawal attempts. Each reference identifies
 its attempt and, where available, its complete stage key. These records survive artifact
-cleanup and store eviction. Processes may partition the slices and share
+cleanup and store eviction. Processes may partition the files and share
 stage entries. A later census runs the current orchestration and presentation, validating
 dependencies through the common stage mechanism. Census records retain
 historical outcomes and measurements; they do not independently authorize

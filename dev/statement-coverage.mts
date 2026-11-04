@@ -1,13 +1,15 @@
 // Statement coverage of a census (docs/DESIGN.md, "Statement coverage"): the
 // executable source statements of a directory's modules, each owned by the
-// function whose body holds it, and each classified by the census outcome of
-// its top-level function's slice. Verified coverage is 100·V/N over the units
-// of the census's functions, counts summed before any percentage.
+// unit whose code holds it (a top-level function's, or the module's
+// initialization's for its top-level code, its classes' members and the
+// functions its bindings hold), and each classified by that unit's outcome,
+// under shallow or deep status. Verified coverage is 100·V/N over every
+// statement, counts summed before any percentage.
 import { syntax as ts, childrenOf, nameOf, isTypeAlias } from "../tools/syntax.mts";
 
-/** Where a unit's owner lies relative to the census: a function the census
- * slices, module-level code, or a function the census does not slice (a
- * class member, a function a module binding holds). */
+/** Where a unit's owner lies: a census function, module-level code, or a
+ * function the initialization creates (a class member, a function a module
+ * binding holds). */
 export type UnitScope = "census" | "module" | "outside";
 
 /** One executable statement of a source file. */
@@ -30,17 +32,15 @@ export type Unit = {
   column: number;
 };
 
-/** A unit's class: verified, the census outcome of its function's slice
- * where that slice did not verify, `out of scope` for module code and
- * functions the census does not slice, and `not run` for a census function
- * no slice of the record covers. */
+/** A unit's class: verified, the outcome of its owning unit where that did
+ * not verify, and `not run` for a unit no run of the record covers. */
 export type UnitClass = string;
 export const verifiedClass = "verified";
-export const outOfScope = "out of scope";
 export const notRun = "not run";
 
-/** The census outcome a slice's record gives: what classifies its units. */
-export type SliceOutcome = { file: string; fn: string; status: string; phase: string; detail: string };
+/** The outcome classifying a file's statements owned by a function, or by
+ * the initialization (`:init`); null where the record covers no such unit. */
+export type Outcomes = (file: string, owner: string) => { status: string; phase: string; detail: string } | null;
 
 /** A classified unit, as the census record holds it. */
 export type UnitRecord = Unit & { class: UnitClass };
@@ -106,8 +106,8 @@ function functionName(node: ts.Node): string {
 }
 
 /** The units of one module, in source order. A top-level function
- * declaration with a name and a body is a census function, as the census
- * slices it; a nested function's units belong to its top-level function,
+ * declaration with a name and a body is a census function, a unit of its
+ * own; a nested function's units belong to its top-level function,
  * marked with the nested function; a class's members and its field
  * initializers belong to `Class.member` and `Class`. */
 export function inventory(file: string, tree: ts.SourceFile): Unit[] {
@@ -165,16 +165,12 @@ function classMember(node: ts.Node, name: string): string {
   return name === "" ? "<module>" : name;
 }
 
-const isTimeout = (s: SliceOutcome): boolean => s.detail.startsWith("timeout:");
-
-/** A unit's class, by its function's slice among `slices` (keyed
- * `file#fn`). */
-export function classify(unit: Unit, slices: ReadonlyMap<string, SliceOutcome>): UnitClass {
-  if (unit.scope !== "census") return outOfScope;
-  const s = slices.get(`${unit.file}#${unit.fn}`);
+/** A statement's class, by the outcome of the unit owning it. */
+export function classify(unit: Unit, outcomes: Outcomes): UnitClass {
+  const s = outcomes(unit.file, unit.scope === "census" ? unit.fn : ":init");
   if (!s) return notRun;
   if (s.status === "verified") return verifiedClass;
-  return isTimeout(s) ? "timeout" : `${s.status}/${s.phase}`;
+  return s.detail.startsWith("timeout:") ? "timeout" : `${s.status}/${s.phase}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +182,7 @@ const emptyCounts = (): Counts =>
 
 function count(into: Counts, u: UnitRecord): void {
   into.classes.set(u.class, (into.classes.get(u.class) ?? 0) + 1);
-  if (u.scope !== "census" || u.class === notRun) return;
+  if (u.class === notRun) return;
   into.n++;
   if (u.class === verifiedClass) into.v++;
 }
@@ -201,10 +197,10 @@ function line(c: Counts, functions: { verified: number; all: number }): string {
 }
 
 /** The verified coverage of `units` for the directory, per file and, with
- * `perFunction`, per function. `slices` gives the function counts, which
+ * `perFunction`, per function. `functions` gives the function counts, which
  * include functions whose body holds no unit. */
 export function coverageReport(directory: string, units: readonly UnitRecord[],
-    slices: ReadonlyMap<string, SliceOutcome>, perFunction: boolean): string {
+    functions: readonly { file: string; verified: boolean }[], perFunction: boolean): string {
   const out: string[] = [];
   const all = emptyCounts();
   const byFile = new Map<string, Counts>();
@@ -221,22 +217,18 @@ export function coverageReport(directory: string, units: readonly UnitRecord[],
     }
   }
   const functionsOf = (file: string | null): { verified: number; all: number } => {
-    const run = [...slices.values()].filter((s) => file === null || s.file === file);
-    return { verified: run.filter((s) => s.status === "verified").length, all: run.length };
+    const run = functions.filter((f) => file === null || f.file === file);
+    return { verified: run.filter((f) => f.verified).length, all: run.length };
   };
-  out.push(`top-level-function-body coverage of ${directory}/ (verified statements of the census's functions):`);
+  out.push(`statement coverage of ${directory}/ (verified statements of every unit):`);
   out.push(`  ${line(all, functionsOf(null))}`);
-  const notVerified = [...all.classes].filter(([k]) => k !== verifiedClass && k !== outOfScope && k !== notRun)
+  const notVerified = [...all.classes].filter(([k]) => k !== verifiedClass && k !== notRun)
     .sort((a, b) => b[1] - a[1]);
-  out.push(`  not verified, by the slice's outcome: ${notVerified.map(([k, n]) => `${k} ${n}`).join(", ") || "none"}`);
-  const outside = units.filter((u) => u.class === outOfScope);
-  out.push(`  outside the census's scope, not counted: ${outside.filter((u) => u.scope === "module").length} ` +
-    `module statements, ${outside.filter((u) => u.scope === "outside").length} statements of ` +
-    `${new Set(outside.filter((u) => u.scope === "outside").map((u) => `${u.file}#${u.fn}`)).size} other functions`);
+  out.push(`  not verified, by the owning unit's outcome: ${notVerified.map(([k, n]) => `${k} ${n}`).join(", ") || "none"}`);
   const unrun = units.filter((u) => u.class === notRun);
   if (unrun.length)
-    out.push(`  census functions no slice of the record covers, not counted: ${unrun.length} statements of ` +
-      `${new Set(unrun.map((u) => `${u.file}#${u.fn}`)).size} functions`);
+    out.push(`  units no run of the record covers, not counted: ${unrun.length} statements of ` +
+      `${new Set(unrun.map((u) => `${u.file}#${u.fn}`)).size} owners`);
   out.push("per file:");
   const width = Math.max(0, ...[...byFile.keys()].map((k) => k.length));
   for (const [file, c] of [...byFile].sort((a, b) => a[0].localeCompare(b[0])))
@@ -270,7 +262,7 @@ function matchKeys(units: readonly UnitRecord[]): Map<string, UnitRecord> {
 /** Three states of a unit for comparison: verified, counted and not
  * verified, or not counted. */
 const state = (u: UnitRecord): "V" | "not V" | "uncounted" =>
-  u.class === verifiedClass ? "V" : u.scope === "census" && u.class !== notRun ? "not V" : "uncounted";
+  u.class === verifiedClass ? "V" : u.class !== notRun ? "not V" : "uncounted";
 
 /** The movement of verified coverage between two classified inventories:
  * the headline before and after, transitions on matched units, and the
@@ -295,8 +287,8 @@ export function coverageComparison(before: readonly UnitRecord[], after: readonl
   }
   const deleted = [...ka].filter(([key]) => !kb.has(key));
   const added = [...kb].filter(([key]) => !ka.has(key));
-  const countedDeleted = deleted.filter(([, u]) => u.scope === "census" && u.class !== notRun).length;
-  const countedAdded = added.filter(([, u]) => u.scope === "census" && u.class !== notRun).length;
+  const countedDeleted = deleted.filter(([, u]) => u.class !== notRun).length;
+  const countedAdded = added.filter(([, u]) => u.class !== notRun).length;
   out.push("matched statements (file, function, kind, ordinal):");
   for (const [t, n] of [...transitions].sort()) out.push(`  ${t.padEnd(24)} ${n}`);
   out.push(`counted statements: deleted ${countedDeleted}; added ${countedAdded}`);

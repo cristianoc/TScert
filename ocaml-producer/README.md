@@ -313,7 +313,7 @@ one identity and missing required claims are validation failures.
 ## Reading and checking claims
 
 The producer is unproved. Successful certification uses Lean's certificate
-consumer and the theorem `SourceClaimJson.checkJson_safe` for every accepted
+consumer and the theorem `SourceClaimJson.checkUnitJson_safe` for every accepted
 function plan. That theorem concerns the modeled program. The parser,
 source-to-model correspondence, native specifications, executable toolchain
 and runner have separate trust obligations. The model's restrictions and

@@ -473,11 +473,10 @@ const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported:
 
 /** A verifier invocation, its command line read by its modes:
  * `[--subtype-rounds n] --lower-control-flow <fragment>`,
- * `… --produce-source-claims <fragment> <claims> <file-key> <evidence-out> <depth>`,
- * `… --check-source-claims <fragment> <claims> <file-key> <evidence>`,
- * `… --units <fragment> <claims> <file-key>`,
- * `… --produce-unit <fragment> <claims> <file-key> <evidence-out> <unit> <depth>`,
- * `… --check-unit <fragment> <claims> <file-key> <evidence> <unit>`. */
+ * `… --plan-imports <fragment> <plan>`,
+ * `… --units <fragment> <claims> <file-key> [<names>]`,
+ * `… --produce-units <fragment> <claims> <file-key> <evidence-out> <depth> [<names>]`,
+ * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
@@ -488,24 +487,15 @@ export function verifierCall(program: string, args: readonly string[],
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
   if (mode === "--plan-imports" && rest.length === 2)
     return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
-  if (mode === "--produce-run" && rest.length === 4)
-    return call("search", [{ input: "run.json", path: rest[0] }, { text: rest[1] }, { output: "evidence.json", path: rest[2] },
-      { text: rest[3] }]);
-  if (mode === "--produce-source-claims" && rest.length === 5)
-    return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, { text: rest[4] }]);
-  if (mode === "--check-source-claims" && rest.length === 4)
-    return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { input: "evidence.json", path: rest[3] }]);
-  if (mode === "--units" && rest.length === 3)
+  if (mode === "--units" && (rest.length === 3 || rest.length === 4))
     return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }]);
-  if (mode === "--produce-unit" && rest.length === 6)
+      ...rest.slice(2).map((text) => ({ text }))]);
+  if (mode === "--produce-units" && (rest.length === 5 || rest.length === 6))
     return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, { text: rest[4] }, { text: rest[5] }]);
-  if (mode === "--check-unit" && rest.length === 5)
+      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
+  if (mode === "--check-units" && (rest.length === 4 || rest.length === 5))
     return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { input: "evidence.json", path: rest[3] }, { text: rest[4] }]);
+      { text: rest[2] }, { input: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
   throw Error(`not a verifier stage: ${args.join(" ")}`);
 }
 

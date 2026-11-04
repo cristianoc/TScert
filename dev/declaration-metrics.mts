@@ -12,7 +12,7 @@ import { close, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts, nameOf, childOf } from "../tools/syntax.mts";
 import { parseSource } from "../pipeline/verify-source.mts";
 import { Recorder, storeSetting } from "../pipeline/stages.mts";
-import { prepare, slicesOf } from "./census.mts";
+import { prepare } from "./census.mts";
 
 type FunctionNode =
   | ts.FunctionDeclaration
@@ -319,25 +319,18 @@ function syntaxMetrics(path: string): object {
   };
 }
 
-/** The collector's census sources and its direct caller's slices. */
+/** The collector's census sources and its direct caller, each parsed whole
+ * as the census parses it. */
+const measuredFiles = ["declaration-graph.mts", "fragment-parse.mts"];
 function inputs(directory: string): void {
   mkdirSync(directory, { recursive: true });
   if (readdirSync(directory).length)
     throw Error("inputs requires an empty directory");
   prepare(directory, "tools");
-  const manifest: { file: string; function: string; sha256: string }[] = [];
-  for (const file of ["declaration-graph.mts", "fragment-parse.mts"]) {
-    const path = join(directory, "tools", file);
-    const text = readFileSync(path, "utf8");
-    for (const slice of slicesOf(file, openText(path, text), text)) {
-      writeFileSync(join(directory, "tools", slice.slice), slice.text);
-      manifest.push({
-        file: slice.slice,
-        function: slice.fn,
-        sha256: hash(slice.text),
-      });
-    }
-  }
+  const manifest = measuredFiles.map((file) => ({
+    file,
+    sha256: hash(readFileSync(join(directory, "tools", file))),
+  }));
   writeFileSync(
     join(directory, "inputs.json"),
     JSON.stringify(manifest, null, 2) + "\n",
@@ -385,9 +378,7 @@ function parse(directory: string, output: string): object {
     code: ReturnType<typeof parseSource>["parsed"]["code"];
     detail: string;
   }[] = [];
-  for (const file of readdirSync(join(directory, "tools"))
-    .filter((f) => f.startsWith("slice-"))
-    .sort()) {
+  for (const file of measuredFiles) {
     const source = join(directory, "tools", file);
     const artifacts = join(output, file);
     mkdirSync(artifacts, { recursive: true });
