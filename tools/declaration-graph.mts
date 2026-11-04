@@ -1880,8 +1880,10 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           // (SOURCE-CONTRACTS.md, "Imported, ambient and global values").
           const [first] = overloads;
           const parametersText = (o: ts.FunctionDeclaration): string =>
-            (o.typeParameters ?? []).map(p => p.getText(source)).join(",");
-          if (first && overloads.some(o => parametersText(o) !== parametersText(first)))
+            (o.typeParameters ?? []).map(p => p.getText(o.getSourceFile())).join(",");
+          // Binders spelled alike name the same types in one file only.
+          if (first && overloads.some(o => parametersText(o) !== parametersText(first) ||
+              (!!first.typeParameters?.length && o.getSourceFile() !== first.getSourceFile())))
             throw Error(`an overloaded generic function whose overloads state different type parameters is outside the fragment: ${what}`);
           if (first?.typeParameters?.length)
             for (const part of first.typeParameters) clean(part, `${idOf(source)}#${first.name?.text ?? what}`);
