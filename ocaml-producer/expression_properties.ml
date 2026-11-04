@@ -36,7 +36,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
     | Read ({node=Id name;_} as e,n) when List.mem name (observations ()).Analysis_capabilities.unknown_instance_tests ->
       (match expr env e with
        | Atoms xs as t when List.mem Top xs ->
-         (try S.field_type declarations [] t n with Json.Error _ -> Proposal_diagnostics.unsupported unknown_instance_reason)
+         (try S.field_type declarations [] t n with Json.Error _ ->
+           Proposal_diagnostics.unsupported (unknown_instance_reason ^ ", at " ^ Json.span_text site))
        | t -> S.field_type declarations [] t n)
     (* A `let` holding a union of objects is not narrowed by a test of its
        object: what a cell is known to hold is a union of primitives
