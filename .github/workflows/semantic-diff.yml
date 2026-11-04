@@ -1,0 +1,122 @@
+name: Semantic Diff
+
+# Renders the commit records of each pull request (dev/commit-records.mts) as
+# a review page, published on the gh-pages branch at
+# semantic-diff/pr-<number>/, and keeps one comment on the pull request that
+# links it and lists its commits; each push updates the page and the comment.
+# Then each commit's message is checked as a commit record
+# (bin/git_hooks/commit_record.sh --check), last, so the page and the comment
+# appear either way.
+#
+# A pull request from a branch of this repository runs on pull_request, with
+# the renderer of its merge into the base branch. A pull request from a fork
+# runs on pull_request_target, which GitHub takes from the default branch with
+# write permissions: it runs only the default branch's code, and reads the
+# fork's commits as git data, never checking them out.
+#
+# Pages are never deleted, so the links in the comments stay valid after a
+# pull request is merged or closed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: semantic-diff-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    if: >-
+      (github.event_name == 'pull_request') ==
+      (github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Checkout renderer
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Render the commit records
+        run: |
+          git fetch --no-tags --filter=blob:none origin "refs/pull/${PR_NUMBER}/head:refs/heads/pr-${PR_NUMBER}"
+          base=$(git merge-base "$BASE_SHA" "pr-${PR_NUMBER}")
+          head=$(git rev-parse --short=9 "pr-${PR_NUMBER}")
+          echo "RANGE=${base}..pr-${PR_NUMBER}" >> "$GITHUB_ENV"
+          echo "HEAD_SHORT=${head}" >> "$GITHUB_ENV"
+          mkdir -p semantic-diff
+          node dev/commit-records.mts --out semantic-diff/index.html "${base}..pr-${PR_NUMBER}"
+
+      - name: Publish the page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$remote" gh-pages >/dev/null; then
+            git clone --quiet --depth 1 --branch gh-pages "$remote" pages
+          else
+            git init --quiet -b gh-pages pages
+            git -C pages remote add origin "$remote"
+          fi
+          mkdir -p "pages/semantic-diff/pr-${PR_NUMBER}"
+          cp semantic-diff/index.html "pages/semantic-diff/pr-${PR_NUMBER}/index.html"
+          touch pages/.nojekyll
+          cd pages
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Semantic diff of pull request ${PR_NUMBER} at ${HEAD_SHORT}"
+          # Pull requests publish concurrently: rebase onto another's page and retry.
+          for attempt in 1 2 3 4 5; do
+            if git push --quiet origin gh-pages; then exit 0; fi
+            git pull --quiet --rebase origin gh-pages
+          done
+          exit 1
+
+      - name: Write the comment
+        run: |
+          owner=${GITHUB_REPOSITORY%%/*}
+          repo=${GITHUB_REPOSITORY#*/}
+          url="https://${owner}.github.io/${repo}/semantic-diff/pr-${PR_NUMBER}/?v=${HEAD_SHORT}"
+          {
+            echo "**Semantic diff** of this pull request at \`${HEAD_SHORT}\`: [the commit records, rendered](${url})"
+            echo
+            git log --reverse --no-merges --format='- `%h` %s' "$RANGE"
+          } > semantic-diff/comment.md
+
+      - name: Comment the semantic diff
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          # The pull request's one comment, edited in place on each push.
+          comment-tag: semantic-diff
+          mode: upsert
+          file-path: semantic-diff/comment.md
+
+      # Last, so that the page and the comment show the records either way.
+      - name: Check the commit records
+        run: |
+          failed=0
+          for commit in $(git rev-list --reverse --no-merges "$RANGE"); do
+            git log -1 --format=%B "$commit" > message.txt
+            if ! bin/git_hooks/commit_record.sh message.txt --check; then
+              echo "  in $(git log -1 --format='%h %s' "$commit")"
+              failed=1
+            fi
+          done
+          exit $failed
