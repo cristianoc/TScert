@@ -309,6 +309,22 @@ type OwnResult = { status: string; phase: string; detail: string };
  * the stage invocations of every round; and, per function and for the
  * initialization (`initOmission`), its recursive group and the nodes the
  * census adds to its unit's own dependencies. */
+/** A file's progress line: its functions, each verified, rejected (its unit
+ * checked and refused) or omitted (refused before its unit's check), and its
+ * initialization, accepted or rejected, with the statements left out of it. */
+function progress(run: FileRun, omitted: Map<string, OwnResult>): string {
+  if (run.front) return `refused: ${run.front.detail.slice(0, 100)}`;
+  const functions = (ok: boolean): number => run.units.filter((u) => (u.status === "verified") === ok)
+    .reduce((n, u) => n + u.members.filter((m) => m !== "init").length, 0);
+  const verified = functions(true), rejected = functions(false);
+  const statements = [...omitted.keys()].filter((k) => k.startsWith(`${initOmission}@`)).length;
+  const omittedFunctions = omitted.size - statements;
+  const init = run.units.find((u) => u.members.includes("init"));
+  return `${verified} of ${verified + rejected + omittedFunctions} functions verified` +
+    (rejected ? `, ${rejected} rejected` : "") + (omittedFunctions ? `, ${omittedFunctions} omitted` : "") +
+    (init ? `; initialization ${init.status === "verified" ? "accepted" : "rejected"}` : "") +
+    (statements ? `, ${statements} statement${statements === 1 ? "" : "s"} left out` : "");
+}
 type FileRun = {
   file: string;
   sourceSha256: string;
@@ -652,9 +668,7 @@ async function census(args: string[]): Promise<void> {
       omissions.set(file, known);
       const run = await runFile(root, project, models, models(file), select, known);
       runs.set(file, run);
-      process.stderr.write(`  [${++finished}/${due.length}] ${file}: ${run.front ? `refused: ${run.front.detail.slice(0, 100)}`
-        : `${run.units.filter((u) => u.status === "verified").length} of ${run.units.length} units accepted`}` +
-        `${known.size ? `, ${known.size} omitted` : ""}\n`);
+      process.stderr.write(`  [${++finished}/${due.length}] ${file}: ${progress(run, known)}\n`);
     }));
     writeRecord();
     if (shallowOnly) break;
