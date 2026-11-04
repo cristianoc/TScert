@@ -6200,6 +6200,26 @@ control(async (): Promise<void> => {
   process.stdout.write("forged enum claims: the tag enum read at a writable record, refused at the read\n");
 });
 control(async (): Promise<void> => {
+  // `Object.freeze` of a fresh literal (SOURCE-CONTRACTS.md, "Library
+  // globals"): its result is the only reference to the frozen object, at
+  // readonly views. Claims bypassing the producer that give the call the
+  // literal's own type, of writable fields, are refused by the search at the
+  // call: its value is at `%Freeze:K%`'s result, whatever is claimed.
+  const artifacts = run("object-freeze-literal");
+  const text = readFileSync(sourceKey(artifacts), "utf8");
+  const claims = readClaims(artifacts);
+  const expressions = must(claims.functions.find((f) => f.name === "depthOf"), "depthOf's claims").expressions;
+  const call = text.indexOf("Object.freeze({\n    BS_PRIVATE_NESTED_SOME_NONE: depth,");
+  const literal = text.indexOf("{", call);
+  const end = text.indexOf(")", literal) + 1;
+  const at = (start: number, stop: number) =>
+    must(expressions.find((e) => e.pos[0] === start && e.pos[1] === stop), `the claim at ${start}`);
+  at(call, end).type = at(literal, end - 1).type;
+  const forged = writeClaims(artifacts, "forged-freeze-writable", claims);
+  refusedAt(artifacts, forged, "forged-freeze-writable", `at [${call},${end})`);
+  process.stdout.write("forged freeze claims: a frozen literal's call at its writable fields, refused at the call\n");
+});
+control(async (): Promise<void> => {
   // An enum's reverse keys (SOURCE-CONTRACTS.md, "Enums"), by claims
   // bypassing the producer. The key of a read at the enum's values, claimed
   // at `number`, which it meets, leaves the read at an arbitrary number:
