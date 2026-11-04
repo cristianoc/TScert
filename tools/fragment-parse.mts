@@ -1382,6 +1382,9 @@ function lowerFile(file: string, carriesContext: boolean,
       x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword ||
       (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(x.operand)));
   };
+  // Whether a declaration is ambient, `declare …`.
+  const ambient = (s: FunctionDeclaration | ClassDeclaration | VariableStatement): boolean =>
+    !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
   // A statement left out: an omitted step, or, once one is, a module constant whose value a step may change.
   const stepLeftOut = (s: Statement): boolean => omittedSteps.size > 0 && isInitStatement(s) &&
     (omittedSteps.has(s.getStart(source)) || (ts.isVariableStatement(s) &&
@@ -1455,8 +1458,6 @@ function lowerFile(file: string, carriesContext: boolean,
   // The names ambient declarations bind, `declare function f`: values the
   // declaration graph reads at their declared types.
   const ambientNames: Identifier[] = [];
-  const ambient = (s: FunctionDeclaration | ClassDeclaration | VariableStatement): boolean =>
-    !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
   const topStatement = (n: Node): Node => n.parent && !ts.isSourceFile(n.parent) ? topStatement(n.parent) : n;
   // A "use strict" directive prologue makes the whole file strict.
   const prologue = gate.useStrict(source.statements);
