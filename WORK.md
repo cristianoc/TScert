@@ -571,7 +571,17 @@ merge result at the instance's row. A write to an array at a key typed
 `number` (`blocker-array-index-of-write`) needs the key related to the
 array's length: a write at a key that is no array index (`indexOf`'s -1)
 adds a property outside the array's store, and one past the length leaves
-holes below it.
+holes below it. Where the elements admit `undefined` (the ReScript
+runtime's marker cache, `markers[depth] = m`), the holes are admitted, but
+a write at a key that is no array index remains: the key it adds changes
+the object's keys, which the calculus fixes at allocation (a fresh array's
+own-key bound excludes it), and the property it overwrites may have a
+narrower contract than the elements', which `numericOwn` bounds from above
+only, so another reference may hold it at that contract
+(`{ "-1": number }` beside `(number | string | undefined)[]`). Admitting it
+needs the writable numeric index `Array<T>` declares, `[n: number]: T`,
+read as a writable index is: every numeric property at the element
+contract, and no own-key bound excluding numeric keys.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,
