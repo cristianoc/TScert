@@ -94,9 +94,9 @@ exactly.
 ## Status
 
 TScert is a research project, unfinished by design. Its benchmark is its own
-front end: at [v0.9](https://github.com/cristianoc/TScert/releases/tag/v0.9),
-628 of the 684 functions of `tools/` verify (census of `1589e590`,
-2026-11-03). The [coverage metrics](docs/DESIGN.md#function-coverage-and-release-thresholds)
+front end: 643 of the 685 functions of `tools/` verify, each checked in its
+own unit with what it calls read at its stated signature (census of
+`17db34ea`, 2026-11-04). The [coverage metrics](docs/DESIGN.md#function-coverage-and-release-thresholds)
 and the [status table](WORK.md#status) give the definitions and the dated
 measurements.
 
