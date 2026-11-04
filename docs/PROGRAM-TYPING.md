@@ -4110,7 +4110,8 @@ forgotten at an earlier statement boundary.
 
 At an expression checkpoint, required knowledge is checked by entailment,
 $`\mathrm{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}`$.
-`HeapKnowledge.check_sound` proves the implication. The independent source consumer
+`HeapKnowledge.check_sound` proves the implication, and acceptance states it
+for every assertion of a unit (`checkRequests_assertions_at`). The independent source consumer
 reconstructs both kinds of boundary and checks them alongside graph acceptance
 and supplemental expression proofs; these are not producer-selected policies.
 

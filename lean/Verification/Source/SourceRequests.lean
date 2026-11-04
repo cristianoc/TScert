@@ -138,6 +138,38 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   r.codeSources.length == c.codes.length &&
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
+/-- Each stated assertion is entailed by the knowledge its node carries: every
+environment and heap meeting the node's knowledge meet the assertion. -/
+def AssertionsEntailed (assertions : List (Nat × HeapKnowledge.Knowledge))
+    (C : ControlFlow.Certificate ι) : Prop :=
+  ∀ l k, (l, k) ∈ assertions → ∃ n, C[l]? = some n ∧
+    ∀ ρ h, HeapKnowledge.Holds n.knowledge ρ h → HeapKnowledge.Holds k ρ h
+
+omit [Labels ι] in
+theorem checkGraphAssertions_entailed {cuts : List Nat}
+    {assertions : List (Nat × HeapKnowledge.Knowledge)} {C : ControlFlow.Certificate ι}
+    (h : checkGraphAssertions cuts assertions C = true) : AssertionsEntailed assertions C := by
+  intro l k hlk
+  simp only [checkGraphAssertions, Bool.and_eq_true, List.all_eq_true] at h
+  have hk := h.2 (l, k) hlk
+  cases hn : C[l]? with
+  | none => simp [hn] at hk
+  | some n =>
+    simp only [hn] at hk
+    refine ⟨n, rfl, fun ρ heap hold => ?_⟩
+    have hx := KnowledgeExpand.expand_holds (ctx := fun _ => none) (fun _ _ hc => by cases hc) hold
+    exact HeapKnowledge.check_sound hk hx
+
+/-- The assertions of a unit's graph and of each of its codes are entailed. -/
+def RequestAssertionsEntailed (r : SourceRequest σ ι) (c : Response ι) : Prop :=
+  AssertionsEntailed r.assertions c.certificate ∧
+    ∀ q C, (q, C) ∈ r.codeSources.zip c.codes → AssertionsEntailed q.assertions C
+
+theorem checkAssertions_entailed {r : SourceRequest σ ι} {c : Response ι}
+    (h : checkAssertions r c = true) : RequestAssertionsEntailed r c := by
+  simp only [checkAssertions, Bool.and_eq_true, List.all_eq_true] at h
+  exact ⟨checkGraphAssertions_entailed h.1.1, fun q C hm => checkGraphAssertions_entailed (h.2 (q, C) hm)⟩
+
 /-- A unit's claimed footprint, established by its own graph and certificate.
 An async unit's is `top`, required before anything else. The footprint
 letting everything change holds of every run; any other bound
@@ -283,6 +315,13 @@ theorem checkRequests_async {rs : List (SourceRequest σ ι)} {b : Bundle ι}
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨-, -, heff, table, ht, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   exact ⟨effectResult_async heff, fun q hq ha => RequestJson.codeTable_async ht hq ha⟩
+
+/-- An accepted unit's stated assertions are entailed by its certificate. -/
+theorem checkRequests_assertions_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) :
+    RequestAssertionsEntailed r c := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  exact checkAssertions_entailed ((checkRequestResult_accepted_iff _ _ _).mp hunit).2.1
 
 /-- A generic body is safe at every assignment admitted by its source signature. -/
 theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)}
