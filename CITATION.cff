@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use TScert, please cite it as below."
+title: "TScert: TypeScript functions accepted only with a proof"
+abstract: >-
+  TScert is a research verifier for type claims about TypeScript programs. A
+  producer proposes the types of a function's expressions; an independent
+  checker, whose soundness is proved in Lean, accepts the function only when a
+  certificate checks against the function's translation into a formal model.
+type: software
+authors:
+  - family-names: Calcagno
+    given-names: Cristiano
+repository-code: "https://github.com/cristianoc/TScert"
+url: "https://github.com/cristianoc/TScert"
+version: "0.9"
+date-released: "2026-11-03"
+keywords:
+  - TypeScript
+  - type safety
+  - formal verification
+  - Lean 4
+  - proof-carrying code
