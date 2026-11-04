@@ -95,7 +95,8 @@ function tests(value: string): string {
  * operator; a capitalised name an upright constructor; binders and relations
  * coloured; `code` in backticks highlighted TypeScript; a run of two or more
  * words, `g read, not called`, a side condition in text. `_x`, `_{…}` and
- * `^{…}` are sub- and superscripts. The input is the record's; nothing is
+ * `^{…}` are sub- and superscripts. A name's letters are Latin, Greek and
+ * letterlike symbols (`ℓ`). The input is the record's; nothing is
  * added to it. */
 const KEYWORDS = new Set(["if", "then", "else", "let", "in", "tag"]);
 const CONNECTIVES = new Set(["or", "and", "not"]);
@@ -106,7 +107,7 @@ const RELATIONS = new Set("⊢⊨≤≥⊑⊒∈∉⊆⊂=≠≡:⇝↦≜≔");
 const TEXT_WORD = /^(?:a|an|A|An|[A-Za-z][A-Za-z'-]*[a-z][A-Za-z'-]*)$/;
 export type MathToken = { kind: "code" | "str" | "intr" | "script" | "word" | "num" | "space" | "sym"; text: string };
 export function mathTokens(text: string): MathToken[] {
-  const token = /(`[^`]+`)|("[^"\n]*"|%[A-Za-z][^%\s]*%)|(_\{[^{}]*\}|\^\{[^{}]*\}|_[A-Za-z0-9\u0370-\u03ff\u2200-\u22ff]+\u20d7?)|([A-Za-z\u0370-\u03ff][A-Za-z0-9\u0370-\u03ff'′-]*\u20d7?)|(\d+)|(\s+)|([\s\S])/g;
+  const token = /(`[^`]+`)|("[^"\n]*"|%[A-Za-z][^%\s]*%)|(_\{[^{}]*\}|\^\{[^{}]*\}|_[A-Za-z0-9\u0370-\u03ff\u2100-\u214f\u2200-\u22ff]+\u20d7?)|([A-Za-z\u0370-\u03ff\u2100-\u214f][A-Za-z0-9\u0370-\u03ff\u2100-\u214f'′-]*\u20d7?)|(\d+)|(\s+)|([\s\S])/g;
   return [...text.matchAll(token)].map(([t, code, str, script, word, num, space]) => ({
     kind: code ? "code" : str ? (str.startsWith("%") ? "intr" : "str") : script ? "script" : word ? "word" : num ? "num" : space ? "space" : "sym", text: t }));
 }
@@ -169,7 +170,7 @@ export function mathRoles(ts: MathToken[]): MathRole[] {
       if (CONNECTIVES.has(w)) return "text";
       if (/^[a-z]{3,}$/.test(w) && afterRelation(i)) return "con";
       if ((ts[i + 1]?.text === "(" || ts[i + 1]?.kind === "script") && w.length > 1) return "op";
-      if (/^[A-Za-zͰ-Ͽ][0-9'′]*⃗?$/.test(w)) return "var";
+      if (/^[A-Za-zͰ-Ͽℓ][0-9'′]*⃗?$/.test(w)) return "var";
       return /^[A-Z]/.test(w) ? "con" : "op";
     }
     if (t.kind === "sym") return BINDERS.has(t.text) ? "bind" : RELATIONS.has(t.text) ? "rel" : "plain";
@@ -279,7 +280,7 @@ const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string
 
 /** A change to a named object: `<Kind> <action> (<target>)`, the kind deciding
  * how its content is drawn (mathematics or code), Before/After shown side by side. */
-const MATH_KINDS: ReadonlySet<string> = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
+const MATH_KINDS: ReadonlySet<string> = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Theorem", "Notation"]);
 const CODE_KINDS: ReadonlySet<string> = new Set(["Example", "Counterexample", "Code"]);
 /** Kinds whose lines are drawn as written: commands, layouts, aligned columns. */
 const PLAIN_KINDS: ReadonlySet<string> = new Set(["Tooling"]);
