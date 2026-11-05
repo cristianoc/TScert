@@ -566,24 +566,42 @@ alone exclude nothing, and nor does a union with such an arm.
 Records are open: a record type constrains the fields it names, and a value
 of it may own others. So no operation traversing every own key is admitted,
 with one exception: `JSON.stringify` takes `JsonValue`
-(`library-globals.mts`), whose only object arm is a string-indexed
-dictionary of `JsonValue`. The lemma: in a world satisfied by the heap, the
-string-key traversal of a `JsonValue` within step index $`k`$ reaches no host
-object. It is proved for every family whose members are non-objects or
-dictionaries of string keys at the family itself
+(`library-globals.mts`), whose object arms are a string-indexed dictionary
+of `JsonValue` and a readonly array of `JsonValue | undefined`.
+Serialization enumerates the own keys of an object that is no array
+(SerializeJSONObject) and reads an array only at `length` and its indices
+(SerializeJSONArray). The claim: in a world satisfied by the heap, the
+traversal of a `JsonValue` within step index $`k`$ enumerates the keys of
+no host object.
+
+For the primitive and dictionary arms it is proved: for every family whose
+members are non-objects or dictionaries of string keys at the family itself,
+the string-key traversal reaches no host object
 (`JsonTraversal.reach_noHost`), and a type is such a family when each of its
 clauses is a primitive one or a dictionary indexed by every string key at the
-type (`shaped_of_clauses`); `JsonValue`'s declared arms are, by the reviewed
-declaration in `library-globals.mts`. The statement is safety within the
-index, not termination: a cyclic heap is traversed as deep as the index
-allows. Each object it reaches meets the dictionary arm, whose objects are
-ordinary and have no model prototype ($`\mathrm{dictViewT}`$); each value
-under a string key meets $`\mathrm{dictViewT}`$'s index contract, a
-`JsonValue` at every lower index, so the argument descends by induction on
-the index, the heap's satisfaction of the world giving each location's
-value its contract. `toJSON` is a string key, so it holds a `JsonValue`,
-never a callable. Symbol-keyed fields, which the dictionary does not
-constrain and which may hold a host object, are ignored by serialisation.
+type (`shaped_of_clauses`). The statement is safety within the index, not
+termination: a cyclic heap is traversed as deep as the index allows. Each
+object it reaches meets the dictionary arm, whose objects are ordinary and
+have no model prototype ($`\mathrm{dictViewT}`$); each value under a string
+key meets $`\mathrm{dictViewT}`$'s index contract, a `JsonValue` at every
+lower index, so the argument descends by induction on the index, the heap's
+satisfaction of the world giving each location's value its contract.
+`toJSON` is a string key, so it holds a `JsonValue`, never a callable.
+Symbol-keyed fields, which the dictionary does not constrain and which may
+hold a host object, are ignored by serialisation.
+
+For the array arm it is argued here; `reach_noHost` does not state it, since
+its premise admits no array. A member of the array arm owns the store key,
+so it is a JavaScript array (the trust surface, DESIGN.md), and
+serialization reads it by its indices only: it may be a host object
+(readonly arrays admit them), and its other own keys are not read. It owns
+no `toJSON` (the array clause's own-key exclusion) and inherits none (the
+trust surface). Each index read gives an element of its store, a
+`JsonValue | undefined` at a lower index by the store's element contract,
+or, at a hole, `undefined`, since neither `Array.prototype` nor
+`Object.prototype` owns a numeric key; SerializeJSONArray writes `null` for
+`undefined`. So the traversal continues at a `JsonValue`, and the descent
+proceeds by induction on the index as for the dictionary arm.
 
 #### Operations and their obligations
 
