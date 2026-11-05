@@ -106,8 +106,11 @@ lemma**: no sound table derives $`a\sqsubseteq b`$ when $`\mathsf{excl}(a,b)`$.
 A table is **sound** when each of its pairs is an inclusion,
 $`\Delta(A,B)\Rightarrow⟦A⟧_n(W)\subseteq⟦B⟧_n(W)`$ for every $`n,W`$. A table
 the checker accepts is sound under its entry's hypotheses: `family_sound`
-discharges the entry's variable, lookup and known-arrow obligations, and
-coverage reads its premises through the premise relation `Prem` (table rows,
+proves, of a family valid for the checker (`FamilyValid`), whose variables
+are well formed (`VariablesOk`), whose lookups give its own entries or sound
+entries, and whose known rows hold at every assignment, that each entry's
+pairs are inclusions at every level and assignment where the entry's
+hypotheses hold. Coverage reads its premises through the premise relation `Prem` (table rows,
 `Var`, `Inst`, `TabRen`), not through table membership alone. The selection
 lemmas below take a sound relation as a premise, so they apply to whatever
 relation coverage reads once that relation is shown sound.

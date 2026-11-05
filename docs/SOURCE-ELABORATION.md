@@ -4084,11 +4084,26 @@ type no value meets is never entered, so it is within any bound
 
 #### What `checkUnitJson_safe` states
 
-Its premise is the exact CLI success
-condition. Its first conclusion is plain safety; its second, for each
-accepted request with a footprint other than `top`, is a `SafePostExc`
-whose exceptional postcondition is the footprint from the run's entry heap
-where the request's effect states `onThrow`, and `True` elsewhere.
+Its premises are the CLI's success
+condition for a unit: the file's front computed (`filePlans … = .ok f`) and
+the unit's verdict at its evidence accepted (`unitVerdict … = .ok deps`). Its
+conclusion, `UnitSafe`, gives a module unit its document's check
+(`DocumentSafe`), and a unit of functions its certified requests with
+`RequestsSafe`:
+
+- `checkRequests` accepts them;
+- each request's run is safe (`SafeGraph`) at its goal, at every assignment
+  $`\eta`$ it admits (`r.Admits η`), from every environment meeting its
+  inputs (`EnvOk`), in an admissible world (`WorldAdm`) and a well-typed heap
+  (`HeapOk`);
+- the run of each request whose footprint is not `top` or whose effect
+  states `onThrow`, at every $`\eta`$, from argument values meeting its inputs
+  under the same premises, satisfies `SafePostExc` at its goal, whose normal
+  postcondition is the footprint from the run's entry heap and whose
+  exceptional postcondition is that footprint where the effect states
+  `onThrow`, and `True` elsewhere;
+- each request's stated heap assertions, and its codes', are entailed by its
+  certificate (`RequestAssertionsEntailed`).
 
 #### Natives
 
