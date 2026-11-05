@@ -20,7 +20,7 @@ import { check, FACES, index, markChanges, slidesForm, viewer, type Deck } from 
 const [name, ...flags] = process.argv.slice(2);
 const sinceAt = flags.indexOf("--since");
 const since = sinceAt < 0 ? undefined : flags[sinceAt + 1];
-if (!name || !/^[a-z0-9-]+$/.test(name)) throw Error("usage: deck-cli.mts <deck name> [--open]");
+if (!name || !/^[a-z0-9-]+$/.test(name)) throw Error("usage: deck-cli.mts <deck name> [--open] [--since REV]");
 const root = resolve(import.meta.dirname, "..", "docs", "deep-dives", name);
 const loaded: unknown = await import(pathToFileURL(join(root, "deck.mts")).href);
 const isDeck = (v: unknown): v is Deck => !!v && typeof v === "object" && "slides" in v && Array.isArray(v.slides) && "title" in v;
