@@ -4,11 +4,11 @@ import Verification.Programs.ProgramCertificates
 keep their de Bruijn positions: an edge can widen slots and forget a suffix,
 but cannot silently reorder values. No join or invariant inference is performed.
 Explicit mappings additionally support selection, reordering and alias retention.
-Every checker here takes a proved instance image checker (`InstanceImageCheck`);
-the finite one is the default. -/
+Every checker here takes a proved instance image checker (`InstanceImageCheck`)
+from its caller. -/
 namespace Verification.PointClaims
 open ProgramTyping PositiveGraphs PositiveRules ProgramCertificates
-open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
+open PositiveCertificates (InstanceImageCheck)
 
 abbrev EdgeEvidence (ι : Type) := List (PositiveCertificates.SubtypeChoices ι)
 

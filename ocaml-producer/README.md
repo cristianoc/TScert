@@ -22,7 +22,7 @@ runs a file through the whole pipeline, whose outcomes
 lists. A pipeline run gives proof search fuel 12 and each stage a 60 s
 limit (`TSCERT_STEP_LIMIT` sets another): operational limits, separate from
 the typing rules. `VERIFIER` names a verifier executable built from the same
-Lean sources.
+Lean sources, and `PRODUCER` a producer executable built from these.
 
 For direct use, with a run's artifacts:
 
@@ -252,7 +252,7 @@ to establish an array result's presence. Preservation concerns normal return;
 exceptional edges require their own state treatment. Composition has an
 explicit admitted scope in the
 [effect design](../docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
-and [effect typing rules](../docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
+and [effect typing rules](../docs/SOURCE-ELABORATION.md#definition-and-application-rules).
 
 ## Implementation map
 
@@ -333,8 +333,9 @@ ambiguous reused binding names in an input Fragment, and inference that does
 not converge. The source parser handles ordinary lexical shadowing by renaming
 bindings before proposal generation. Control-flow solving refuses
 a node after 64 visits and begins forgetting refinements at repeatedly visited
-joins after five visits. Evolving-contract inference permits four rounds of
-growth per pass. These limits can prevent a proposal for a safe program.
+joins after five visits. Evolving-contract inference runs up to four further
+inference passes of a function after its first; a contract still growing then
+is proposed from the binding's uses, and refused where no use fixes one. These limits can prevent a proposal for a safe program.
 The [case inventory](../pipeline/cases.mts) states executable expectations.
 
 ## Extending the producer

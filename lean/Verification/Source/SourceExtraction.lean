@@ -1,5 +1,3 @@
--- SourceFacts.lean supplies assignment and ownership analyses used by lowering.
--- SourceRequests.lean defines the requests and validates their evidence.
 -- Lowering/State.lean owns lexical slots and the mutable graph construction state.
 import Verification.Source.Lowering.State
 -- Lowering/Types.lean resolves source claims and type-directed expression operations.
@@ -28,7 +26,9 @@ import Verification.Source.Lowering.Execution
 import Verification.Source.Lowering.Bindings
 -- Lowering/Flow.lean lowers statement control-flow nodes.
 import Verification.Source.Lowering.Flow
+-- SourceFacts.lean supplies assignment and ownership analyses used by lowering.
 import Verification.Source.SourceFacts
+-- SourceRequests.lean defines the requests and validates their evidence.
 import Verification.Source.SourceRequests
 import Verification.Source.Fragment
 -- FlowGraph.lean owns the execution identities and control destinations that typed elaboration consumes.

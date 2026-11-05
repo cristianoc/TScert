@@ -4,7 +4,6 @@
 (* expression_objects.ml infers object and array construction and copying from contextual contracts. *)
 (* expression_closures.ml infers constructors and closures and checks their bodies under scoped bounds. *)
 (* expression_calls.ml infers calls and method invocations with overload and generic-instance proposals. *)
-(* analysis_context.ml assembles the per-pass operations used by expression inference and its operation families. *)
 open Source
 module type Inputs = sig
   include Expression_values.Inputs

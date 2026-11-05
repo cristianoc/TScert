@@ -1635,7 +1635,8 @@ description of its own (`pipeline/string-family.mts`, its guard table the
 generator's output), which names its package, its installation (the
 package Node finds from `pipeline/string-family-fixture-project/`, through
 the fixture link `node_modules/string-family-fixture`) and its digest, and
-nothing else; under a description of another digest, or of an installation
+states the fields of every family description: its marker, root, tag,
+table, guard table and the rest; under a description of another digest, or of an installation
 Node does not find, its programs are refused. Its units are tagged by
 `type`, a string, whose constants are the string enum `UnitType`; its guard table
 lists `isName`, an equality, and `isExpression`, through a helper of its
