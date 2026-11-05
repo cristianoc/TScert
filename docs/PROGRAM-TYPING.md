@@ -1626,8 +1626,9 @@ r\ \mathtt{\&\&=}\ e&\equiv\mathsf{let}\ v=\mathsf{read}(r)\ \mathsf{in}\ \maths
 \end{aligned}
 ```
 
-so $`e`$ is checked at $`C`$, as any write of $`r`$ is. `||=` and `&&=` are
-lowered on a Boolean target only ([model limits](SOURCE-FRAGMENT.md#model-limits)).
+so $`e`$ is checked at $`C`$, as any write of $`r`$ is. The test of `||=` and
+`&&=` is $`v`$'s truthiness, as an `if`'s is: the kept value is $`v`$'s truthy
+part for `||=` and its falsy part for `&&=` (`invalid-logical-assign-value`).
 The encoding is in [Fragment](FRAGMENT-FORMAT.md#receivers).
 
 A template literal is the concatenation of its parts, in order, starting from

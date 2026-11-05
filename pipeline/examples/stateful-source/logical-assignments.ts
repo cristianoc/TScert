@@ -2,7 +2,7 @@
  * Logical assignment to a field or an element: the target's parts are
  * evaluated once, its value read, and the right side written only when the
  * test on that value says so. `??=` tests for null or undefined; `||=` and
- * `&&=` need a Boolean target, since truthiness here is only that.
+ * `&&=` test the value's truthiness.
  */
 /** The receiver is chosen first, then its Boolean field decides the write. */
 function selectedReceiver(
