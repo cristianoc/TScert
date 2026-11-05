@@ -3626,9 +3626,9 @@ module function, directly or through a fresh literal's field, verifies at
 `T` (`find-index-module-function`).
 
 The first guarantee preserves existing heap contents on normal return and
-allows fresh allocation. A call that throws supplies no heap postcondition.
-Consequently, a body checker cannot carry this guarantee through a caught
-exception: it must check the handler with the possibly changed heap, or have
+allows fresh allocation, and states no heap postcondition for a call that
+throws. Consequently, a body checker cannot carry this guarantee through a
+caught exception: it must check the handler with the possibly changed heap, or have
 a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The pure-body
 checker does not admit such calls. Graph composition checks normal-return
 postconditions node by node, with [checked regions that cannot return
