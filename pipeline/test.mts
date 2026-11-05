@@ -8422,7 +8422,7 @@ mutationControl(async (): Promise<void> => {
     else {
       // The forged output keeps the read link at the call. The exact output
       // check is the boundary that drops it, before any later read is checked.
-      const callSpan = kind === "mixed" ? [491, 496] : kind === "record" ? [428, 433] : [495, 504];
+      const callSpan = kind === "mixed" ? [491, 496] : kind === "record" ? [428, 433] : [570, 579];
       assert.ok(checked.includes(`source evidence refusal at [${callSpan[0]},${callSpan[1]}): the evidence does not establish this node's typing`), checked);
     }
   }
