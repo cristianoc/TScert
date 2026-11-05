@@ -1344,7 +1344,7 @@ the model's type allows, and keys, copies and entries see the declared
 fields alone; `e.stack` is refused.
 
 The pipeline cases `error-subclass` and `error-subclass-methods` (run under
-Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
+Node) and the cases each row names hold it, and forged claims of a
 constructed instance owning `message` or holding `stack` are refused in
 search and check (`pipeline/test.mts`).
 

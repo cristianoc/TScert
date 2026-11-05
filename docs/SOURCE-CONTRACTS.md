@@ -3375,8 +3375,8 @@ symbols; no value of the object is read, and a primitive is a TypeError
 
 `Reflect.get(o, k)` runs [[Get]], which calls an accessor's getter, code no
 type of `o` states: it is refused (`invalid-reflect-get-array`, run under
-Node), as is every other function of `Reflect`
-(`invalid-node-dirent-test-replaced`).
+Node), as is every other function of `Reflect` (`invalid-reflect-unreviewed`,
+`invalid-reflect-method-replaced`, run under Node).
 
 #### `Array.from`, `RegExp` and `instanceof Error`
 
@@ -3699,10 +3699,11 @@ an element at `unknown` (`invalid-json-stringify-hidden-hook`) gives one.
 A declaration merging a `toJSON` into the global `Array`, `ReadonlyArray` or
 `Object` states a hook the host's prototypes do not hold: a merged member is
 admitted only where the overlay reviews it at the same contract ([source fragment](SOURCE-FRAGMENT.md)), so a unit an
-array reaches under such a merge is refused, whether the array is written or
-a callback's parameter by context (`invalid-merged-array-param`,
-`invalid-merged-array-callback`, `invalid-merged-readonly-array-param`,
-`invalid-merged-readonly-array-callback`).
+array reaches under such a merge is refused at the first array type the
+reader meets (`invalid-merged-array-param`,
+`invalid-merged-readonly-array-param`); in `invalid-merged-array-callback`
+and `invalid-merged-readonly-array-callback`, whose callbacks take an array
+by context, that is a written annotation.
 `JSON.stringify` is read with a replacer that
 is `null`, absent or a list of keys (primitive numbers and strings, read by
 length and index), and an indent that is a primitive number or string:
