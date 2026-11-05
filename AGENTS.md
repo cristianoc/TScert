@@ -420,11 +420,14 @@ increasing trust silently.
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
   included. A new file lands in that project by being
   where it belongs; nothing is exempt.
-- `tools/source-claims.mts` describes the claims document wire format. A tool
-  that writes or reads that document is typed against that description rather
-  than against its own idea of the shape, so producer and consumer cannot
-  drift apart silently. That typing is the whole consistency mechanism: adding
-  or removing a field is a compile error at every site that touches it.
+- `tools/source-claims.mts` describes the claims document wire format. Every
+  TypeScript tool that writes or reads that document is typed against that
+  description, so a field added or removed there is a compile error at every
+  TypeScript site that touches it. The OCaml producer and the Lean decoder are
+  held to it by three checks: `decodeSourceClaims` decodes every document the
+  producer writes, field by field, on every pipeline run; the field-name check
+  (`tests/json-field-names.mts`) compares the three languages' field names;
+  and Lean's decoder refuses any document of another shape.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API
