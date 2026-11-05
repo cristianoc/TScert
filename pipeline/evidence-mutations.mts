@@ -119,9 +119,8 @@ export function mutationVerifier(): string {
     if (module === "Programs/CertificateProducer")
       text = inject(text, "CertificateProducer_edgeUsing___redArg", a => `if (mutation("coverage")) {
         lean_object *cs = ${a[5]}; size_t n = lean_unbox(lean_ctor_get(${a[7]}, 0));
-        while (n-- && !lean_is_scalar(cs)) cs = lean_ctor_get(cs, 1);
-        if (lean_is_scalar(cs)) abort();
-        lean_object *context = lean_ctor_get(lean_ctor_get(cs, 0), 0), *proofs = lean_box(0);
+        if (n >= lean_array_size(cs)) abort();
+        lean_object *context = lean_ctor_get(lean_array_get_core(cs, n), 0), *proofs = lean_box(0);
         while (!lean_is_scalar(context)) {
           lean_object *cons = lean_alloc_ctor(1, 2, 0);
           lean_ctor_set(cons, 0, pair(lean_box(0), lean_box(0))); lean_ctor_set(cons, 1, proofs);

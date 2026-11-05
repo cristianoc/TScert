@@ -1272,7 +1272,7 @@ abbrev ProduceM {ι : Type} [BEq ι] [Hashable ι] (G : NormalGraph ι) := EStat
 /-- Ordinary and observed edges share slot selection and coverage search. The
 observation comes from graph dispatch, never from supplied point annotations. -/
 @[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
+    (claims : Array (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
     (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
     (cells : HeapFacts.Facts := []) :
@@ -1289,12 +1289,17 @@ observation comes from graph dispatch, never from supplied point annotations. -/
       return List.replicate c.context.length {}
   if let some slots := target.mapping then
     if slots.length != c.context.length then failure
-  (List.range c.context.length).mapM fun i => do
-    let A ← Γ[slot target.mapping i]?
-    let B ← c.context[i]?
+  -- Each target slot with the source slot its mapping reads (the lengths
+  -- agree, as just checked), the source context read by index.
+  let sources := match target.mapping with
+    | none => List.range c.context.length
+    | some slots => slots
+  let Γs := Γ.toArray
+  (c.context.zip sources).mapM fun (B, s) => do
+    let A ← Γs[s]?
     match observed with
     | some (tested, o) =>
-      if slot target.mapping i == tested then
+      if s == tested then
         match o with
         | .boolean q =>
           -- The answer is a member of the target's type, or the target's
@@ -1319,26 +1324,26 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => (fields ++ optionals).findSearch? fun (k, f) =>
-            if k == slot target.mapping i then subtypeUsing G images (BranchRefinement.fieldSlice G A f t q) B
+            if k == s then subtypeUsing G images (BranchRefinement.fieldSlice G A f t q) B
             else none
         | .boolean _ => none) |>.orElse fun _ =>
         -- One read through an optional key, where the observation rules out
         -- the `undefined` an absent key reads: the key is present.
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
-            k == slot target.mapping i && BranchRefinement.promotes G A B f)
+            k == s && BranchRefinement.promotes G A B f)
         then some {} else none) |>.orElse (fun _ => match o with
         -- Read through an optional key the observation shows present: the
         -- object keeps the labels of its present slice.
         | .tag t q =>
           if BranchRefinement.excludesUndef o then optionals.findSearch? fun (k, f) =>
-            if k == slot target.mapping i then subtypeUsing G images (BranchRefinement.presentSlice G A f t q) B
+            if k == s then subtypeUsing G images (BranchRefinement.presentSlice G A f t q) B
             else none
           else none
         | .boolean _ => none) |>.orElse fun _ =>
         -- An object a cell fact is about keeps the labels its field's
         -- observed contents admit.
         cells.findSearch? fun fct =>
-          if fct.slot == slot target.mapping i then
+          if fct.slot == s then
             subtypeUsing G images (BranchRefinement.factSlice G A fct.field fct.contents.atomsView) B
           else none
     | none => subtypeUsing G images A B
@@ -1637,9 +1642,12 @@ every pair of target slots the mapping reads it from. -/
     (m : PointClaims.Mapping) (width : Nat) : List (PromiseCalls.Implication ι) :=
   if xs.isEmpty then [] else
   let slots := (List.range width).map fun i => (i, PointClaims.slot m i)
-  slots.flatMap fun (t, sourceTest) => slots.filterMap fun (a, sourceTarget) =>
-    (xs.find? fun x => x.test == sourceTest && x.target == sourceTarget).map
-      fun x => ⟨t, a, x.type⟩
+  slots.flatMap fun (t, sourceTest) =>
+    -- The implications testing the slot, read for each target slot.
+    let tested := xs.filter fun x => x.test == sourceTest
+    if tested.isEmpty then [] else
+    slots.filterMap fun (a, sourceTarget) =>
+      (tested.find? fun x => x.target == sourceTarget).map fun x => ⟨t, a, x.type⟩
 
 /-- What every predecessor of a merge establishes, in the merge's slots: an
 implication one of them states, at the union of the types each states or
@@ -1679,7 +1687,7 @@ def meetImplications [DecidableEq ι] (G : NormalGraph ι)
 for it: its edges, its handler and, at a return under a promise goal, the
 promise's evidence. -/
 @[nospecialize] private def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : List (PointClaim ι))
+    (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : Array (PointClaim ι))
     (stored : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
     (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
     (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM G (NodeEvidence ι) := do
@@ -1767,7 +1775,7 @@ promise's evidence. -/
 
 
 @[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
+    (fuel l : Nat) (node : Node) (claims : Array (PointClaim ι))
     (stored : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : KnownIndex ι)
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
@@ -1906,6 +1914,11 @@ checker follows each edge again. -/
     if !changed then break
   return table.toList.map fun x => x.getD []
 
+/-- A table by label of the first entry `xs` gives each label below `n`, as
+`List.lookup` finds it. -/
+def byLabel {α : Type} (n : Nat) (xs : List (Nat × α)) : Array (Option α) :=
+  xs.reverse.foldl (fun acc (l, v) => if l < n then acc.set! l (some v) else acc) (Array.replicate n none)
+
 /-- Propagate established postconditions along single-predecessor paths. Entry
 starts empty; source cuts use exactly their supplied requirements, even when
 empty. Other merge points use supplied requirements. A node is checked once
@@ -1927,6 +1940,11 @@ Every edge is still checked by the independent consumer. -/
   let nodes := P.toArray
   let claimed := claims.toArray
   let handlerTargets := P.filterMap fun node => node.handler.map (·.label)
+  -- By label: whether a node is a cut, whether a handler targets it, and
+  -- its stated requirement, read by every pass at each node still waiting.
+  let isCut := byLabel P.length (cuts.map fun l => (l, ()))
+  let isHandler := byLabel P.length (handlerTargets.map fun l => (l, ()))
+  let stating := byLabel P.length requirements
   let incoming : Array (List (Nat × Nat × Target)) := P.zipIdx.foldl (fun acc (node,l) =>
       (successors node.continuation).zipIdx.foldl (fun acc (t,index) =>
         if t.label < acc.size then acc.modify t.label (· ++ [(l,index,t)]) else acc) acc)
@@ -1950,6 +1968,13 @@ Every edge is still checked by the independent consumer. -/
   let seededRounds := min (cuts.length + 1) 4
   let mut waiting := false
   let mut waitingRounds := 0
+  -- Each node's latest production, with the knowledge, implications and
+  -- argument slots it was produced from: a later round producing the node
+  -- from the same three takes its result. Every other argument of
+  -- `produceNode` is the same in every round, and the answers it threads
+  -- only grow. Search only: the checker checks the evidence either way.
+  let mut latest : Array (Option (HeapKnowledge.Knowledge × List (PromiseCalls.Implication ι) × List Nat ×
+    Except (Failure ι) (NodeEvidence ι))) := Array.replicate P.length none
   let mut implicated := false
   for round in List.range (seededRounds + 2) do
     let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
@@ -1962,16 +1987,36 @@ Every edge is still checked by the independent consumer. -/
     -- progress; once none does, the merges still waiting (a cycle through no
     -- cut) take their stated requirements alone, as every merge did before.
     let mut force := false
+    -- Per node, how many of its entering edges come from a node not produced
+    -- yet in this round.
+    let mut unproduced : Array Nat := incoming.map List.length
+    let seeded := byLabel P.length seeds
+    let elemSeeded := byLabel P.length elemSeeds
     for _ in List.range (2 * P.length + 2) do
       let mut progress := false
       for l in List.range P.length do
         if (table.getD l none).isSome || failedAt.getD l false then continue
         let some node := nodes[l]? | throw .claimCount
         let some c := claimed[l]? | throw .claimCount
-        let stated := (requirements.lookup l).getD {}
-        let required := { stated with elems := stated.elems ++ (elemSeeds.lookup l).getD [] }
+        let cut := (isCut.getD l none).isSome
+        let handled := (isHandler.getD l none).isSome
+        -- A node the cases below leave waiting for a predecessor is passed
+        -- over before anything is read for it: some edge entering it comes
+        -- from a node not produced yet (every predecessor is a node).
+        let blocked := unproduced.getD l 0 != 0
+        let waits : Bool :=
+          if waiting && l != start && cut && !handled then !force && blocked
+          else if l != start && !cut then
+            match incoming[l]? with
+            | some [_] => blocked
+            | some _ => !force && blocked
+            | none => false
+          else false
+        if waits then continue
+        let stated := (stating.getD l none).getD {}
+        let required := { stated with elems := stated.elems ++ (elemSeeded.getD l none).getD [] }
         let mut k := required
-        let mut implies : List (PromiseCalls.Implication ι) := (seeds.lookup l).getD []
+        let mut implies : List (PromiseCalls.Implication ι) := (seeded.getD l none).getD []
         -- At the entry and at cuts, the argument slots every edge carries.
         let mut held := arguments.getD l []
         -- In a waiting round, a cut waits for its entering edges and also
@@ -1982,7 +2027,7 @@ Every edge is still checked by the independent consumer. -/
         -- round's own edges into the cut confirm or refute; the second takes
         -- only the seeds the edges then meet. Other rounds produce each cut
         -- from its seeds alone.
-        if waiting && l != start && cuts.contains l && !handlerTargets.contains l then
+        if waiting && l != start && cut && !handled then
           let preds := incoming.getD l []
           let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome
           if !ready && !force then continue
@@ -1999,7 +2044,7 @@ Every edge is still checked by the independent consumer. -/
             else []
           if !ready && !entering.isEmpty then guessed := true
           implies := implies ++ entering.filter fun x => !implies.any fun y => y.test == x.test && y.target == x.target
-        if l != start && !cuts.contains l then
+        if l != start && !cut then
           match incoming[l]? with
           | some [(pred,index,target)] =>
             let some previous := table.getD pred none | continue
@@ -2045,18 +2090,25 @@ Every edge is still checked by the independent consumer. -/
           HeapSeparation.union k.separation required.separation, (k.elems ++ required.elems).eraseDups⟩
         -- A handler target is entered by throws too, which carry no
         -- implication, and the argument slots the throwing nodes carry.
-        if handlerTargets.contains l then
+        if handled then
           implies := []
           held := held.filter (arguments.getD l []).contains
         -- A point other than a cut stores its knowledge's normal form at the
         -- point's contexts; a cut stores exactly its requirement.
-        if l != start && !cuts.contains l then
+        if l != start && !cut then
           k := KnowledgeNormal.normFast (KnowledgeExpand.ctxOf G c.context) k
-        let produced ← tryCatch (Except.ok <$> produceNode G images pool fuel l node claims k suggestions index codes aliases checker
-            implies held goal) (fun e => pure (Except.error e))
+        let fresh := fun (_ : Unit) => tryCatch (Except.ok <$> produceNode G images pool fuel l node claimed k
+          suggestions index codes aliases checker implies held goal) (fun e => pure (Except.error e))
+        let produced ← match latest.getD l none with
+          | some (k', implies', held', earlier) =>
+            if k' == k && implies' == implies && held' == held then pure earlier else fresh ()
+          | none => fresh ()
+        latest := latest.set! l (some (k, implies, held, produced))
         match produced with
         | .ok evidence =>
           table := table.set! l (some evidence)
+          for t in successors node.continuation do
+            unproduced := unproduced.modify t.label (· - 1)
           progress := true
         | .error e =>
           -- The first round fails as before where no cut's implications
