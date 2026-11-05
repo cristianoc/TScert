@@ -1,7 +1,7 @@
 # Draft: canonical heap knowledge
 
-A design for review by the owner before any implementation. Base: TScert
-main at b59096f. It designs the representation of places V, K, L and S of
+A design written against TScert main at b59096f; its progress is
+[WORK.md's](../../WORK.md#status). It designs the representation of places V, K, L and S of
 [canonical representations](canonicity.md#31-lean-heap-knowledge), which
 states their requirements, the contract their normalizers prove
 ([§5.1](canonicity.md#51-proved-lean-v-k-l-s-t-e-b-o-i-x)) and the bounds

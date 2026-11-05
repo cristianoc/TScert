@@ -1,7 +1,7 @@
 # Draft: canonical representations
 
-A design for review by the owner before any implementation. Base: TScert
-main at d578dd8.
+A design written against TScert main at d578dd8; its progress is
+[WORK.md's](../../WORK.md#status).
 
 This draft defines the property, names the places where it must hold, states
 what each place requires, and how the property is enforced and kept under

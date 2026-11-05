@@ -20,7 +20,7 @@ its direction: `after` may only weaken toward an earlier source mark,
 
 The **classes** of contents follow from world contracts, at a positive step
 index, and an element location's class from its store's contract one level
-deeper. Nothing uses this module yet. -/
+deeper. -/
 namespace Verification.Footprints
 
 /-! ## Marks and stamps -/

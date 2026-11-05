@@ -2,7 +2,7 @@
 
 The stateful development in [lean/Verification](../lean/Verification)
 provides the semantic foundation for the positive-type rules specified in
-[POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md), and is the semantics the verifier's theorems are stated over. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
 [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary)
 distinguishes the supported source fragment from model-only features.
@@ -10,8 +10,8 @@ distinguishes the supported source fragment from model-only features.
 ## Operational language
 
 [Calculus.lean](../lean/Verification/Semantics/Calculus.lean) defines an untyped call-by-value language with a mutable heap.
-The following is the original one-field kernel notation, not an exhaustive
-constructor inventory (see `Tm` in `Calculus.lean` for the maintained syntax):
+The following is its one-field kernel, not an exhaustive constructor
+inventory (`Tm` in `Calculus.lean` is the whole syntax):
 
 ```math
 t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
@@ -52,7 +52,7 @@ of that cell, its identity, which no field names and no write reaches.
 Both use the same constructor and the same allocation step, `Step.makeV`.
 The code is not run during creation. There is no bare lambda value.
 
-Since that kernel, the values also include numbers (the bit pattern of the
+Beyond that kernel, the values also include numbers (the bit pattern of the
 double), strings, bigints $`\mathsf{bigint}(i)`$ with $`i\in\mathbb Z`$ (a bigint is
 its integer, as a number is its double) and symbols $`\mathsf{sym}(i)`$ (a symbol
 is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property

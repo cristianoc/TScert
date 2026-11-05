@@ -12,7 +12,7 @@ the class of a field's contents, provenance stamps, and distinct pairs. The
 entry either changes the support's regions within their tolerance or is
 apart from them; its soundness theorem gives the support's premise from the
 footprint's postcondition, and the **frame** keeps exactly the facts that
-pass it. Nothing uses this module yet. -/
+pass it. -/
 namespace Verification.Footprints
 
 /-! ## Fact kinds -/

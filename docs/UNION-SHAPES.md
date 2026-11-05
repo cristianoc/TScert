@@ -152,7 +152,8 @@ pairs:
   valid closed entry, so every covering a completed certificate chooses is
   by a candidate and the same table, read with candidates only, is a valid
   certificate (`SelectionPreservation.valid_selected`, from
-  `prem_sound_closed`). Closing the gap further needs:
+  `prem_sound_closed`). That the selected search discovers that table is
+  not proved; a proof would rest on:
   - preservation of the dependencies through `TabRen`, `Inst` and `Var`, the
     opaque-row conditions and the arrow evidence;
   - proofs of the locality and reachability closure the second conjecture
