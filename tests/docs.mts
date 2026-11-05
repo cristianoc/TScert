@@ -157,6 +157,30 @@ for (const file of files) {
     const count = words.match(pattern)?.length ?? 0;
     if (count) fail(file, `${count}× ${remedy}`);
   }
+  // Single-dollar math, which GitHub reads after Markdown has taken its
+  // escapes: a `$`-delimited span holding a TeX command, a sub- or superscript.
+  const dollars = words.match(/(?<![\\$\w])\$(?=\S)[^$\n]*?(?:\\[A-Za-z]+|[_^]\{)[^$\n]*?(?<=\S)\$(?![\w$])/g)?.length ?? 0;
+  if (dollars) fail(file, `${dollars}× \`$…$\` inline math: use $\`…\`$`);
+  // LaTeX in a plain code span, which renders as code.
+  const spans = [...text.replace(/```math\n[\s\S]*?```/g, "").replace(inlineMath, " ").matchAll(/`([^`\n]*)`/g)]
+    .filter((m) => /\\(?:math[a-z]+|text|frac|operatorname|forall|exists|vdash|models|sqsubseteq|subseteq|langle|rangle|mapsto|Gamma|Delta|lambda|sigma|tau|rho)(?![A-Za-z])/.test(m[1] ?? "")).length;
+  if (spans) fail(file, `${spans}× LaTeX in a code span: use $\`…\`$`);
+  // Inline math inside emphasis, which breaks the math.
+  const emphasized = text.replace(/```math\n[\s\S]*?```/g, "")
+    .match(/(?<![*\w])\*(?!\s)[^*\n]*\$`[^`\n]*`\$[^*\n]*?(?<!\s)\*(?![*\w])/g)?.length ?? 0;
+  if (emphasized) fail(file, `${emphasized}× inline math inside emphasis: put the math outside the emphasis`);
+  // A math fence inside a list item whose text holds inline math renders as
+  // code: the item's later indented lines are its own.
+  let item: { math: boolean } | undefined, fenced = 0;
+  for (const line of text.split("\n")) {
+    if (/^\s*(?:[-*+]|\d+\.)\s/.test(line) && !/^\s{2,}/.test(line)) item = { math: inlineMath.test(line) };
+    else if (item && /^\s+\S/.test(line)) {
+      if (/^\s+```math/.test(line) && item.math) fenced++;
+      else if (inlineMath.test(line)) item.math = true;
+    } else if (/\S/.test(line)) item = undefined;
+    inlineMath.lastIndex = 0;
+  }
+  if (fenced) fail(file, `${fenced}× a math fence in a list item after inline math: put the display outside the list`);
 }
 
 // Citations: an author of a paper in REFERENCES.md (an entry whose heading
