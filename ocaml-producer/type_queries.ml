@@ -148,7 +148,7 @@ let literal_type = function
    through reconstructed obligations, including readonly view conversion. *)
 let definition_of declarations id args =
   (* An interface and its base as one object: disjoint fields, and the one
-     index signature either states. A hint only: Lean's `inheritRows` gives
+     index signature either states. A hint only: Lean's `declarationRow` gives
      the declaration's meaning. *)
   let merge base own = match meet_objects base own with
     | Some t -> t

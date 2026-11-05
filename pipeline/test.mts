@@ -724,7 +724,7 @@ control(async (): Promise<void> => {
 
 // A mapped type the front end deferred at a named type (`deferredIdentity`)
 // names no declaration. The front end writes no document holding one
-// (`deferredIn`); a forged document holding one, at a parameter's type and at
+// (`deferredInDocument`); a forged document holding one, at a parameter's type and at
 // a definition's equation, is refused by the verifier as well, so no
 // acceptance rests on that check.
 control(async (): Promise<void> => {

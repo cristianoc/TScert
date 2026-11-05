@@ -733,7 +733,7 @@ bounds sweep) or refuses the application. The evaluation of a computed
 alias (`computed-types.mts`) completes its own arguments as written, each
 in its scope, which a conditional's distribution over a union member needs,
 and takes the captured ones through the same identity check at the use
-(`capturedAt`). A reference whose captured binder is hidden is refused
+(`capturedAt`, `tools/declaration-graph.mts`). A reference whose captured binder is hidden is refused
 before any evaluation, including a default naming a computed alias and a
 larger computed form naming a block type: each named block type is checked
 at the captured binder identities, transitively through the block types it
@@ -1526,7 +1526,7 @@ type the declaration graph reads before then is expanded when its
 collection ends, and a document holding one unexpanded is refused.
 
 An interface's `extends` clauses are the meet of
-its own clauses with each base's, its own members first (`inheritRows`,
+its own clauses with each base's, its own members first (`declarationRow`,
 [conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
 intersection has the same meaning (`meetRow`).
 

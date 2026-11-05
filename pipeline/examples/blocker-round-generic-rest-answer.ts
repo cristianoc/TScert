@@ -1,5 +1,5 @@
-// Census functions: declaration-graph.mts#declarationAnswer,
-// declaration-graph.mts#declarationServices, declaration-graph.mts#collectDeclarations.
+// Census functions: declaration-graph.mts#declarationServices,
+// declaration-graph.mts#collectDeclarations.
 interface Options {
   answer?: (value: string) => string;
 }

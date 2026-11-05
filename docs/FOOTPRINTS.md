@@ -224,7 +224,7 @@ The Fragment states every callable definition's completion kind, `sync` or
 [FRAGMENT-FORMAT](FRAGMENT-FORMAT.md)); Lean refuses an async declaration
 unit, async graph code and a qualified read of an async unit claiming any
 other footprint, before any certification is tried (`RequestJson.asyncEffects`;
-proved: `SourceRequests.checkRequests_async`):
+proved: `SourceExtraction.checkRequests_async`):
 
 ```math
 \frac{\mathrm{completion}(d)=\mathsf{async}\qquad \mathrm{claim}(d)=\Phi}

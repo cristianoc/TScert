@@ -102,8 +102,8 @@ The mechanism is explicit, and nothing activates it by spelling:
   each owning its marker and its installation; a declaration is read by the
   description whose installation holds its file, and a run's
   [selection](#the-runs-selection) is one per family.
-- **The installation:** Node's package resolution
-  (`module.findPackageJSON`) finds the description's package from the
+- **The installation:** Node's `node_modules` lookup
+  (`findPackage`, `tools/files.mts`) finds the description's package from the
   description's directory; its manifest states the description's name and
   version, and its declarations have the description's digest, checked once
   per process before any of its declarations is read. Its guard table is

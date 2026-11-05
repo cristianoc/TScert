@@ -799,7 +799,7 @@ claims and root judgments must agree exactly with those reconstructed
 requests. The order of functions in the producer's claims document does not
 determine this evidence order.
 
-[SourceRequests.Bundle](../lean/Verification/Source/SourceRequests.lean)
+[SourceExtraction.Bundle](../lean/Verification/Source/SourceRequests.lean)
 declares the bundle and checks its graph interfaces and expression
 obligations.
 [SourceClaimJson.filePlans](../lean/Verification/Source/Claims/Json.lean)

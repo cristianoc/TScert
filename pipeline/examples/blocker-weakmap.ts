@@ -1,6 +1,6 @@
 // Empty WeakMap construction through the audited native contract.
 // Census functions:
-// compiler-channel.mts#query, files.mts#answerOf,
+// client-prototype.mts#query, files.mts#answerOf,
 // files.mts#compilerFileSystem, files.mts#compilerText, files.mts#direntsOf,
 // files.mts#direntsRead, files.mts#entriesOf, files.mts#entriesRead,
 // files.mts#listDirectory, files.mts#nodeResolve, files.mts#observationsHold,

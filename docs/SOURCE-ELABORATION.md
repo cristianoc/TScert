@@ -3918,8 +3918,8 @@ domain:
      {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-declaration}
 ```
 
-(`RequestJson.statedWithin`; proved: `SourceRequests.effectResult_stated`,
-`SourceRequests.checkRequests_stated_at`, from `checkRequests_footprint_at`
+(`RequestJson.statedWithin`; proved: `SourceExtraction.effectResult_stated`,
+`SourceExtraction.checkRequests_stated_at`, from `checkRequests_footprint_at`
 by `Closed.Holds.mono`). A claim may offer a closure at signatures narrower
 than its annotation, so a closure's statement is proved as a written
 promise is, whatever the claim offers: some row $`\rho`$ its code is
@@ -4164,7 +4164,7 @@ independently certifies its region. Implementation:
 `HeapObservations.SafePostExc`,
 `CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
 `GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
-(its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose
+(its `exc` flag) and `SourceExtraction.checkRequests_footprint_at`, whose
 statement `checkUnitJson_safe`'s second conclusion is.
 
 ## Parameter initialization order

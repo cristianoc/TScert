@@ -255,8 +255,7 @@ flattened; a record row's field order.
 ### 3.4 Front end
 
 **F · Type terms.** `TypeTerm` (`tools/declaration-types.mts`), compared by
-`sameData` (`tools/type-term.mts`), `sameTerm` (`tools/named-record.mts`)
-and the deduplications of overloads and family members. Unions are in
+`sameTerm` (`tools/type-term.mts`) and the deduplications of overloads and family members. Unions are in
 source order with no flattening or deduplication, `optionalTerm` wraps
 `T | undefined` again as `(T | undefined) | undefined`, and fields follow
 the order of the key union a mapped type expands. An optional field and a
