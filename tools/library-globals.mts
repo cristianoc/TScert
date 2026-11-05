@@ -27,7 +27,7 @@ import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
-  symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName } from "./intrinsics.mts";
+  symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName, arrayLengthName, arrayFilledName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url } from "./library-types.mts";
@@ -100,6 +100,12 @@ export type GlobalEntry = {
    * the construct's arguments. No other code reaches the object the
    * construct makes before the read. */
   serialized?: string;
+  /** For a construct signature of a length: the construct is read only as
+   * the receiver of a call of the standard `fill` of one argument written
+   * directly on it, `new X<T>(n).fill(v)`, which is a call of `fill` at a
+   * call of `length` with `n`, and `v`. No other code reaches the object the
+   * construct makes before `fill` returns it. */
+  filled?: { length: string; fill: string };
   /** The member is read only in `X.m(e) === X.prototype` or `!==`, either
    * side, `X` the global at both references: the comparison is a call of
    * this intrinsic at `e` (negated for `!==`), and the member's result
@@ -752,6 +758,19 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
     (signature): GlobalEntry => ({ host: contract, global: "Array", signature,
       stated: { binders: ["T"], params: [], result: { k: "array", presence: "readable", readonly: false, element: binder("T"), span: at } } })),
+  // `new Array<T>(n)` makes `n` holes, which a readable `T[]` admits only
+  // where `undefined` meets `T`: read only where `fill(v)`, the standard
+  // library's, of one argument, is called directly on it. ArrayCreate checks
+  // the length (a RangeError where ToUint32(n) ≠ n), `fill` is
+  // `Array.prototype`'s, it reads the fresh array's own `length`, takes 0
+  // and the length for the omitted bounds without converting anything, and
+  // sets each index to `v`: neither prototype owns a numeric key, so each
+  // set defines a data property of the array, which no code holds until
+  // `fill` returns it. So the expression is `%ArrayFilled%(%ArrayLength%(n),
+  // v)`, in JavaScript's order: `n`, the check, `v`, then the array, whose
+  // allocation no code observes.
+  { host: contract, global: "Array", signature: "new <T>(arrayLength: number): T[];",
+    filled: { length: arrayLengthName, fill: arrayFilledName } },
   // `new Error(m)` with a string owns `message`, that string, as a property
   // that is not enumerable, and inherits `name` from `Error.prototype`: the
   // model holds both on a prototype it gives the object, so a read and `in`

@@ -26,7 +26,7 @@ import {
   newPromiseName, newSegmenterName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
-  urlHrefName, pathToFileHrefName, throwUninitializedName, byteAtName, byteLengthName, byteSetName,
+  urlHrefName, pathToFileHrefName, throwUninitializedName, arrayLengthName, arrayFilledName, byteAtName, byteLengthName, byteSetName,
 } from "./intrinsics.mts";
 
 /** The key capability for an open read, independent of the receiver's
@@ -154,6 +154,8 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [symbolForName]: value, [symbolKeyForName]: value,
   [importMetaUrlName]: value, [importMetaDirnameName]: value, [importMetaFilenameName]: value,
   [importMetaResolveName]: value, [urlHrefName]: value, [pathToFileHrefName]: value,
+  [arrayLengthName]: value,
+  [arrayFilledName]: transparent("stores the value in a fresh array without reading it"),
   [iterateName]: store,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,
   [iterateRegExpStringName]: value, [iterateSegmentsName]: value,

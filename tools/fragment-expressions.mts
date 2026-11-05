@@ -532,6 +532,15 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
       return { k: "applyWithReceiver", pos: gate.span(node), callee: gate.expr(target),
         receiver: gate.expr(receiver), list: gate.expr(list), requiredList: true };
     }
+    // `new Array<T>(n).fill(v)`, which the overlay reads as a call of the
+    // filling intrinsic, read at `fill`, with the construct, itself a call
+    // of the length check at `n`, and `v`: `n`, the check, `v`, in
+    // JavaScript's order (SOURCE-CONTRACTS.md, "`new Array` filled at once").
+    const filling = gate.globalIntrinsics.get(gate.span(node).join(":"));
+    if (filling && ts.isPropertyAccessExpression(node.expression) && ts.isNewExpression(node.expression.expression) &&
+        gate.globalIntrinsics.has(gate.span(node.expression.expression).join(":")))
+      return gate.intrinsic(filling, gate.span(node), gate.span(node.expression.name),
+        [gate.expr(node.expression.expression), ...node.arguments.map(a => gate.expr(a))]);
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));
