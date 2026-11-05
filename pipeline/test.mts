@@ -271,8 +271,9 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-visitor-offer", claims);
   const searched = produceWith(artifacts, forged, "forged-visitor-offer");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  assert.match(searched.stdout + searched.stderr, /source expression obligation/);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal/m);
+  assert.match(searched.stdout + searched.stderr, /closure signature claim is outside the source annotation/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+    /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation/m);
   process.stdout.write("a closure forged at a longer visitor signature its parameter does not take is refused\n");
 });
 
