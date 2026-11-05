@@ -1,5 +1,5 @@
-// A closure whose loop exits only by returning a tuple needs its inferred
-// result to exclude implicit undefined.
+// A closure whose loop exits only by returning a tuple has the tuple as its
+// inferred result, with no implicit undefined.
 // Census functions:
 // fragment-statements.mts#sites.
 export function use(): {

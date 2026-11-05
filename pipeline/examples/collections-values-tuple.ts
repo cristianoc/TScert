@@ -1,4 +1,5 @@
-// Minus reads Values<[number, number]>: `toArray()` and
+// Library tuple values sort through the recursive standard-conversion
+// contract. Minus reads Values<[number, number]>: `toArray()` and
 // `getUnique()` give `[number, number] & DepSafe`, the meet of the tuple with
 // DepSafe's alternatives, which is below each side: its elements are read as
 // the tuple's, the array is sorted and reduced, and the value is Managed.

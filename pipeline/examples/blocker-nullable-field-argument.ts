@@ -1,5 +1,5 @@
-// A recursive traversal needs the tested nullable field read to meet its
-// recursive value contract.
+// A recursive traversal's tested nullable field read meets its recursive
+// value contract.
 // Census functions:
 // declaration-graph.mts#externalStatements,
 // declaration-graph.mts#promisedBinders,

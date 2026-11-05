@@ -1,7 +1,7 @@
-// A class whose constructor takes fewer parameters than the construct
-// signature it meets: `new` discards the extra actuals, so the class value is
-// claimed at that signature beside its own, and its constructor's body is
-// checked there, at the parameters it binds.
+// A class offered a longer construct signature, read from a dictionary at a
+// string key: a read at a string key known only at run time may find a member every
+// object inherits from `Object.prototype`, and is refused (the offer itself is
+// `class-constructor-offer-uninherited-key`'s).
 interface Shape {
   area(): number;
 }

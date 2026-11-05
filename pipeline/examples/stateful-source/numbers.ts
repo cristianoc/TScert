@@ -1,7 +1,7 @@
 /**
- * Numbers in the source fragment. They are opaque: bound, passed, stored in a
- * union and shape-tested, never computed with. The fragment has no arithmetic
- * and no numeric comparison, so nothing here adds up two of them.
+ * Numbers in the source fragment, bound, passed, stored in a union and
+ * shape-tested; `arithmetic.ts` computes with them and
+ * `numeric-comparisons.ts` compares them.
  */
 function idNumber(x: number): number {
   return x;

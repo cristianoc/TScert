@@ -1,5 +1,4 @@
-// The every guard overload needs to carry its element promise to later
-// callbacks.
+// The every guard overload carries its element promise to later callbacks.
 // Census functions:
 // shadow-contracts.mts#prelude, shadow-contracts.mts#print,
 // shadow-contracts.mts#printSignature, shadow-contracts.mts#statedSignatures.

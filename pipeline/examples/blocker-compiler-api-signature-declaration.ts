@@ -1,5 +1,5 @@
-// The declaration of a resolved signature needs a reading in the
-// compiler-API contract's view of Signature.
+// The declaration of a resolved signature is read through the compiler-API
+// contract's view of Signature.
 // Census functions:
 // declaration-graph.mts#globalFunction, declaration-graph.mts#selectGlobal.
 import type { Checker } from "typescript/unstable/sync";

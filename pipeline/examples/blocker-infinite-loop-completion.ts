@@ -1,4 +1,4 @@
-// A loop with no exit needs no implicit return obligation.
+// A loop with no exit has no implicit return obligation after it.
 // Census functions:
 // namespace-members.mts#written.
 export function use(): boolean {

@@ -1,9 +1,6 @@
-// The iterator protocol over a union of iterables: GetIterator gives a union
-// of iterators, and `next` (and `return`) is bound to whichever the iterator
-// is, `%iterator.next.bind(%iterator)`, a member bound to a union of hosts.
-// The bound function takes what every host's member takes and returns the
-// union of their results: two `IteratorResult`s, each with its own
-// `TReturn`, of which the loop reads the not-done arms' values.
+// A nullable union of iterator hosts, narrowed to the hosts before the loop:
+// `next` is then bound to whichever host the iterator is, as over a union of
+// iterables (`bind-union-host`).
 class Countdown {
   left: number;
   constructor(left: number) {

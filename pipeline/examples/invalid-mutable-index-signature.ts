@@ -1,6 +1,5 @@
-// A mutable index signature is a writable index: every present value's
-// location holds exactly its contract. It reads as a readonly one does, and
-// it is a readonly one.
+// A mutable string dictionary read at a string key: a read at a string key known only at run time may find a member every
+// object inherits from `Object.prototype`, and is refused.
 function makeEmpty(): { [key: string]: boolean } {
   return {};
 }

@@ -1,6 +1,5 @@
-// A number index signature constrains the canonical numeric keys ("0",
-// "1.5", "-1", "NaN"), the keys `o[n]` reaches for a number `n`, apart from
-// the other string keys; a string index beside it constrains every string key.
+// A dictionary beside a number index read at a string key: a read at a string key known only at run time may find a member every
+// object inherits from `Object.prototype`, and is refused.
 interface Dual {
   readonly [k: string]: number | string;
   readonly [k: number]: number;

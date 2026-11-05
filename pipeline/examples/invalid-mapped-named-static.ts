@@ -1,4 +1,5 @@
-// A mapped record substitutes the parameter inside its constructor's static field.
+// A produced constructor whose static field is a string does not meet the
+// mapped record's numeric static field.
 interface Box<T> {
   readonly ctor: { new (): { x: number }; readonly value: T };
 }

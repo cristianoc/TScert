@@ -1,3 +1,5 @@
+// Any number of arguments collected into an array rest, arrays spread among
+// them, and a collector passed where a callback is expected.
 function returnsRest(seed: boolean, ...flags: boolean[]): boolean[] {
   return flags;
 }

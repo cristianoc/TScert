@@ -1,4 +1,4 @@
-// A property assignment needs to build its fresh array at the field storage
+// A property assignment builds its fresh array at the field's storage
 // contract.
 // Census functions:
 // fragment-statements.mts#abrupt, fragment-statements.mts#block,

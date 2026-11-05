@@ -1,4 +1,4 @@
-// An API instance at the type argument false needs its conditional member type
+// An API instance at the type argument false has its conditional member type
 // evaluated at that argument.
 // Census functions:
 // declaration-graph.mts#clientErrors, declaration-graph.mts#withOwnProject,
