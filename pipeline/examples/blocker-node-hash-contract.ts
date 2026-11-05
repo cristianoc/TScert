@@ -10,7 +10,7 @@
 // family-activation.mts#familyOfFile, family-activation.mts#installationPath,
 // family-activation.mts#isHostFile, files.mts#fileDigest,
 // files.mts#readAnswer, files.mts#readBytes, guard-closure.mts#guardClosure,
-// host-families.mts#familyTable, unchecked.mts#isResult.
+// host-families.mts#familyTable, unchecked.mts#decodeResult.
 import { createHash } from "node:crypto";
 export function use(s: string): string {
   return createHash("sha256").update(s).digest("hex");

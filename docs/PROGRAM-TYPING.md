@@ -1771,7 +1771,7 @@ tested immutable variable. Write $`\Gamma[x:=T]`$ for replacing $`x`$'s type:
 ```
 
 Here $`\mathsf{True}`$ and $`\mathsf{False}`$ must expand to the corresponding singleton
-clauses. `HasTyUsing.ifBoolVar` proves this rule sound: the selected branch's actual
+clauses. The `ifBoolVar` case of `HasTyUsing.sound` proves this rule sound: the selected branch's actual
 value justifies the changed binding, and all others retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
 Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
@@ -1819,7 +1819,7 @@ $`f`$ at one location under one contract, which agrees with both $`L_1`$
 and $`L_2`$ at level $`0`$, where a literal of $`L_1`$ is in one and not the
 other. At level $`0`$ every term is safe. So `unionVar` leaves the label out
 of $`\mathrm{members}(C)`$, and search splits a slot even where one member is
-left (`TypingBasics.conflicting_empty`, `members_sound`).
+left (`ProgramTyping.conflicting_empty`, `members_sound`).
 There is no runtime case split added by this rule and no join computation.
 
 Combined with `ifTag`, this checks a term such as

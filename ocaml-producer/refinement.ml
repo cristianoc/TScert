@@ -395,7 +395,7 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
 let condition_constants : (string * expr * (string * binding) list) list ref = ref []
 (* The conditions a constant's implications are found for: a call (a
    guard's), a test, and a conjunction of them. Lean finds the same
-   (`LoweringControl.implicationForm`). *)
+   (`SourceExtraction.implicationForm`, `Lowering/Control.lean`). *)
 let rec implication_form (e:expr) = match e.node with
   | Call _ | Invoke _ | TagMember _ | TypeofTest _ | Equality _ | HasKey _ | InstanceTest _
   | Arith ((Lt | Le | Gt | Ge),_,_) -> true

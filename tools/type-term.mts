@@ -769,7 +769,7 @@ export const DEFERRED_MODULE = "#deferred-mapped-identity";
  * term of the wire's type holds it so that substitution and every traversal
  * carry it; each is replaced by its expansion once the definitions are
  * complete (`settleTerm`, named-record.mts), and a document holding one is
- * refused (`deferredIn`). */
+ * refused (`deferredInDocument`, `deferredInAst`, `deferredInModule`). */
 export function deferredIdentity(id: Identity, key: TypeTerm, span: Span): Within<{ value: "any"; store: "grow" }, TypeTerm> {
   return { k: "reference", span, args: [id.object, key], reference: { name: "a mapped type over a named type", span,
     arguments: [], target: { module: DEFERRED_MODULE,

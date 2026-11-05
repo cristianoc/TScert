@@ -395,7 +395,7 @@ added, and four extend existing rows.
 | *(extended, the parser row)* The parser reads `Within` (§3) and refuses it where §3 does. | `tools/type-term.mts` (`signatures`), `tools/declaration-graph.mts`, `tools/fragment-expressions.mts` (`lambda`), `fragment-statements.mts` (`functionDecl`) |
 | *(extended, T3 of the compiler API, D4)* The callback-free node methods `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`, `getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile` and `SourceFile.getLineAndCharacterOfPosition` change no location of the model on normal return or throw (T3: no server request, no client code, no stable member changed; T4: their hidden effects are observed by no transparent operation). The family description states each, with its reviewed declaration text, at `{value: keep, store: keep}` with `onThrow`; `forEachChild` is the next row's. | the family description in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
 | *(extended, T3 of the compiler API, D7)* `forEachChild` runs no code of the program but its visitors, so a call of it whose visitors are within a closed footprint $`\varepsilon`$ is within $`\varepsilon`$; it is read with one signature per closed footprint (§12). | `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#node-methods-and-callbacks) |
-| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` and `serializingRequests` in `tools/compiler-api.mts`; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
+| *(extended, T6 of the compiler API, D8 (a))* A sync API request runs no code of the program but its instance's `fs` callbacks, the `toJSON` methods of what they return, and the `toJSON` methods and getters of the program's objects among its arguments. A request whose arguments are primitives and host objects is read at `{value: any, store: grow}`, and the six that may receive an object of the program at their declared signatures (§12). | `hostViews` in `tools/compiler-api.mts`, where those six carry no `request` mark; [COMPILER-API](../COMPILER-API.md#the-sync-api) |
 
 Inference gains no trust: a forged statement claim fails at the first
 node outside it.
@@ -591,7 +591,7 @@ bounds those:
   an object of the program (`API.updateSnapshot`,
   `Snapshot.getDefaultProjectForFile`, `Program.getSourceFile`,
   `Program.getSemanticDiagnostics`, `Program.getSyntacticDiagnostics` and
-  `Checker.resolveName`, `serializingRequests`) are read at their declared
+  `Checker.resolveName`, whose `hostViews` entries carry no `request` mark) are read at their declared
   signatures, since serializing their payload runs the object's `toJSON`
   and getters ([COMPILER-API](../COMPILER-API.md#the-sync-api)). The
   statement is read without `onThrow` (a caller catching a request's failure has no bound on

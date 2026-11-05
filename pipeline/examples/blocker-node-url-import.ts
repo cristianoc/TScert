@@ -8,7 +8,7 @@
 // family-activation.mts#selectionGuard and 9 others of family-activation.mts,
 // files.mts#nodeResolve, files.mts#loadModule, files.mts#observeResolution,
 // files.mts#resolveObserved, unchecked.mts#check, unchecked.mts#findIn,
-// unchecked.mts#isResult.
+// unchecked.mts#decodeResult.
 import { fileURLToPath } from "node:url";
 import { pathToFileHref, resolveHref } from "../../tools/url-strings.mts";
 

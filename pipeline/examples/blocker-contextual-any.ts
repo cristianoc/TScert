@@ -5,7 +5,7 @@
 // type-term.mts#expandMapped, type-term.mts#indexKinds,
 // type-term.mts#intersection, type-term.mts#mapped, type-term.mts#members,
 // type-term.mts#promiseOf, type-term.mts#quantified,
-// type-term.mts#readTypeTerm, type-term.mts#sameData, type-term.mts#sameIndex,
+// type-term.mts#readTypeTerm, type-term.mts#sameTerm, type-term.mts#sameIndex,
 // type-term.mts#signature, type-term.mts#signatures,
 // type-term.mts#statedResult, type-term.mts#statementOf,
 // type-term.mts#substitute, type-term.mts#tuple, type-term.mts#typeTerm,
