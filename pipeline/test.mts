@@ -767,7 +767,25 @@ control(async (): Promise<void> => {
   const extraField = join(good, "extra-ast-field.json");
   writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
   assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, extraField), /unexpected fields/);
-  process.stdout.write("a graph label, a claim-shaped annotation and an unexamined field in the parser's document: refused\n");
+  // An unexamined field on a node of a function's body, of an expression
+  // kind and of a statement kind, is refused as well.
+  for (const kind of ["id", "return"]) {
+    const nested = structuredClone(fragment);
+    const mark = (node: unknown): boolean => {
+      if (Array.isArray(node)) return node.some(mark);
+      if (node === null || typeof node !== "object") return false;
+      if ("k" in node && node.k === kind) {
+        Object.assign(node, { unexamined: true });
+        return true;
+      }
+      return Object.values(node).some(mark);
+    };
+    assert.ok(mark(nested), kind);
+    const nestedField = join(good, `extra-${kind}-field.json`);
+    writeFileSync(nestedField, JSON.stringify(nested));
+    assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, nestedField), /unexpected fields/);
+  }
+  process.stdout.write("a graph label, a claim-shaped annotation and an unexamined field in the parser's document, at its root or on a node: refused\n");
 });
 
 control(async (): Promise<void> => {
