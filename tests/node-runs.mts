@@ -1813,6 +1813,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   assert.equal(runExample("invalid-length-view-tuple", "tupleLength(0)"), 2,
     "invalid-length-view-tuple: the view reads 2 despite its 1 contract");
   // A literal inherits `Object.prototype`'s members.
+  assert.equal(runExample("invalid-dictionary-literal-union-key", `typeof remapOf("constructor")`), "function",
+    "invalid-dictionary-literal-union-key: the read at a key widened from a literal finds Object.prototype.constructor despite its array contract");
   assert.equal(runExample("invalid-dictionary-inherited-key", `typeof inherited("toString")`), "function",
     "invalid-dictionary-inherited-key: the read finds Object.prototype.toString despite its number contract");
   // A member access, an optional field and a pattern each find

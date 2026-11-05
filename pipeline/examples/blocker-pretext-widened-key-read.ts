@@ -1,5 +1,5 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
-// measurement.ts#getWebKitGenericFamilies.
+// measurement.ts#getWebKitGenericFamilies, line-breaks.ts#getWebKitLineRules.
 // Refusal: search: a read at a key that may name a member every object
 // inherits from `Object.prototype`.
 // A dictionary read at a `let` key a literal write widened, `string |

@@ -491,7 +491,10 @@ singleton; NaN, which no equality test finds, is not one. -/
       if string && decide (Answers G K .isNum true) then return .element
       let _ ← locatedIndex key.span K
       pure .element
-  | _ =>
+  -- Some string with string singletons is any string, read as `[.str]` is.
+  | cs =>
+    if cs.any (fun c => match c with | .str => true | _ => false) &&
+        cs.all (fun c => match c with | .str | .strLit _ => true | _ => false) then pure .dynamic else
     -- A string's index properties are its code units: any number names one
     -- or none (`elemStr`); an array's needs one proved index.
     if string && decide (Answers G K .isNum true) then return .element
