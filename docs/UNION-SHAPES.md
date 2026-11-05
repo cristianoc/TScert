@@ -13,12 +13,13 @@ structure it needs, its soundness lemma and its fallback. A new rule is
 chosen by the fallbacks that cost the most search time.
 
 R1–R5 are the structural engine's candidate selection
-([implementation](#7-the-implementation)); R6 and R7 are specified here
-([WORK](../WORK.md#status) tracks them). Each claim carries its label:
-**proved** (with the theorem; the lemmas of R1–R5 are in
-`lean/Verification/Types/ClauseSelection.lean`), **stated** (a lemma whose
-proof is not in the repository), **sketched** (an argument in this
-document), **cited** (with the source's scope), or **open**.
+([implementation](#7-the-implementation)); R6 and R7 are the
+[tag sets](HOST-FAMILIES.md#tag-sets), which HOST-FAMILIES owns. Each claim
+carries its label: **proved** (with the theorem; the lemmas of R1–R5 are in
+`lean/Verification/Types/ClauseSelection.lean`), **conjectured** (a lemma no
+Lean module states; [WORK](../WORK.md#union-shapes-lemmas) tracks them),
+**sketched** (an argument in this document), **cited** (with the source's
+scope), or **open**.
 
 The types, their meaning and the subtyping rules the framework restricts are
 those of [POSITIVE-TYPES](POSITIVE-TYPES.md): a type $`A`$ is a finite union
@@ -84,10 +85,8 @@ v\in⟦A⟧_n(W)\ \Longrightarrow\ v\in\gamma(C(A)),
 
 and on primitive shapes the converse holds for a plain type (every label a
 clause row) with no `top` or `source` clause: a literal clause holds its value at every level and world, a
-family every value of its shape. The string case of both directions is
-stated (`str_excluded`, `str_included`; proof not in the repository); the
-other primitive shapes follow by the same case analysis on the clause
-(sketched).
+family every value of its shape. Both directions are conjectured, by case
+analysis on the clause (sketched).
 
 A record clause **fixes** a key $`f`$ through an invariant field or a
 readonly view at $`f`$, `length` excepted (a `length` view is also met
@@ -135,19 +134,19 @@ pairs:
 ### 2.2 What every rule inherits
 
 - **Soundness: proved.** The rule's premises imply the general rule's, since
-  $`\mathsf{cand}_B(a)\subseteq\mathsf{cl}_G(B)`$
-  (`ClauseSelection.mem_candidates`). A wrong exclusion costs coverage, never
-  soundness.
-- **Completeness relative to the general rule: stated in an abstract model,
-  open for the checker.** In the model a table is a set of pairs, a pair is
-  covered when each source clause has a covering target clause whose
+  $`\mathsf{cand}_B(a)\subseteq\mathsf{cl}_G(B)`$: the checker's
+  candidates filter the target's clauses (`TargetClauses.candidates`, read
+  through `List.mem_filter`), as `ClauseSelection.mem_candidates` proves of
+  the selection itself. A wrong exclusion costs coverage, never soundness.
+- **Completeness relative to the general rule: conjectured in an abstract
+  model, open for the checker.** In the model a table is a set of pairs, a
+  pair is covered when each source clause has a covering target clause whose
   premises are read in the table, and a covering reads only its own demand
-  pairs. Under two hypotheses, that every table the full check accepts is
-  sound and that each rule has its selection lemma, the two checks accept
-  the same tables (`valid'_of_valid`); under two more, locality of a covering
-  in its demand pairs and closure of the reachable set, a valid table
-  restricted to the pairs reachable through candidates stays valid
-  (`valid'_within`). Both are stated, their proofs not in the repository.
+  pairs. The conjecture: under two hypotheses, that every table the full
+  check accepts is sound and that each rule has its selection lemma, the two
+  checks accept the same tables; under two more, locality of a covering in
+  its demand pairs and closure of the reachable set, a valid table
+  restricted to the pairs reachable through candidates stays valid.
   For the checker, the first obligation is proved:
   selection holds for the hypothesis-dependent premise relation `Prem` of a
   valid closed entry, so every covering a completed certificate chooses is
@@ -156,7 +155,8 @@ pairs:
   `prem_sound_closed`). Closing the gap further needs:
   - preservation of the dependencies through `TabRen`, `Inst` and `Var`, the
     opaque-row conditions and the arrow evidence;
-  - proofs of the locality and reachability closure `valid'_within` assumes;
+  - proofs of the locality and reachability closure the second conjecture
+    assumes;
   - for budgeted search, a simulation of growth detection, insertion order
     and fuel, or a narrower guarantee: the restricted search falls back to the
     general one wherever it refuses.
@@ -170,7 +170,7 @@ candidates it removes where the search spends its time.
 
 Two further kinds of structure-directed rule are not exclusions:
 
-- a **decomposition** splits a source clause spanning several cells into
+- a **decomposition** covers a source clause spanning several cells by
   parts covered separately ([R6](#r6-decomposition-of-a-source-spanning-cells));
 - a **representation** gives a set of cells one atom, so that inclusion,
   selection and tests cost one operation on the set
@@ -208,8 +208,7 @@ Each entry states its eligibility, its exclusion and its selection lemma.
 - **Excludes** $`b`$ when $`b`$ fixes $`f`$ at a plain $`B_f`$, the source has
   an entry at $`f`$, and every source entry $`(f{:}A)`$ has its own literal
   $`\ell_A\in L(A)`$ with $`\ell_A\notin\gamma(C(B_f))`$.
-- **Lemma 3 (stated, `refs_exclude`, `fields_exclude`, `views_exclude`;
-  proof not in the repository):** let
+- **Lemma 3 (conjectured):** let
   $`\Delta`$ be sound and the target fix $`f`$ at $`B`$ (in $`\varphi'`$, or
   in $`\psi'`$ with $`f\ne\mathtt{length}`$); if some $`n,W,v`$ has
   $`v\in⟦A⟧_n(W)`$ for every source entry $`(f{:}A)\in\Phi\,\psi`$ and
@@ -257,19 +256,20 @@ relation, every target clause covering a source clause is a candidate.
 
 ### R6. Decomposition of a source spanning cells
 
-A source clause spanning several cells of one shape is split along them before
-coverage. `split` replaces `bool` by `true` and `false`
-([splitting](POSITIVE-TYPES.md#covered-pairs)); with compact cell sets it also
-splits a set along the target's cells,
+A source clause spanning several cells of one shape is covered by parts.
+`split` replaces `bool` by `true` and `false`
+([splitting](POSITIVE-TYPES.md#covered-pairs)), and a tag set is covered by
+a target union whose clauses cover its elements between them, each element
+by one ([tag sets](HOST-FAMILIES.md#tag-sets)):
 
 ```math
-\mathsf{split}_B(\mathsf{numIn}(S))=\{\,\mathsf{numIn}(S\cap\gamma(C(b)))\mid b\in\mathsf{cl}_G(B)\,\}\cup\{\mathsf{numIn}(S\setminus\textstyle\bigcup_b\gamma(C(b)))\},
+\frac{\forall b\in S.\ \exists i.\ \mathsf{numLit}(b)\le d_i}
+     {\mathsf{numIn}(S)\le d_1\cup\cdots\cup d_m}
 ```
 
-empty parts dropped and a one-element part read as its literal.
-
-- **Soundness: sketched.** The parts' meanings union to the whole, exactly,
-  which is the argument that justifies splitting `bool`.
+- **Soundness: proved** (`ClauseCovered.sound`, through
+  `rowSem_elements`): a member of a tag set is a member of one of its
+  elements.
 - **Completeness:** the rule adds derivations; $`\mathsf{numIn}(\{1,2\})\le 1\lor 2`$
   has none without it.
 - **Scope.** The split acts on a clause's own cells, never through a record
@@ -278,33 +278,35 @@ empty parts dropped and a one-element part read as its literal.
 
 ### R7. Compact cell sets
 
-A [kind set](HOST-FAMILIES.md#tag-sets) $`\mathsf{numIn}(S)`$ is a
-cell set within the number shape as one atom, and serves three purposes:
+A [tag set](HOST-FAMILIES.md#tag-sets) $`\mathsf{numIn}(S)`$ is a
+cell set within the number shape as one atom (`PositiveNormalization.Clause.numIn`),
+and serves three purposes:
 
 - **types:** a union of number literals is one atom, and inclusion is set
   inclusion, $`S\subseteq T\Rightarrow\mathsf{numIn}(S)\le\mathsf{numIn}(T)`$;
-- **selection:** $`\gamma(C(\mathsf{numIn}(S)))=S`$, so an arm at a kind set is
-  a candidate for a source literal $`k`$ exactly when $`k\in S`$;
+- **selection:** $`\gamma(C(\mathsf{numIn}(S)))=S`$, so an arm at a tag set is
+  a candidate for a source literal $`k`$ exactly when $`k\in S`$
+  (`ClauseSelection.admitsVal`, `primExcl`; proved, `covers_prim`);
 - **tests:** a test slices the set element by element.
 
 The string analogue $`\mathsf{strIn}(S)`$, for a finite set $`S`$ of at least
 two strings, means $`v=\mathsf{str}(s)`$ with $`s\in S`$, with the same rules
-and slices by string equality, which is exact: $`T_{\mathsf{strEq}(t)}(S)=S\cap\{t\}`$,
+and slices by string equality: $`T_{\mathsf{strEq}(t)}(S)=S\cap\{t\}`$,
 $`T_{\mathsf{truthy}}(S)=S\setminus\{\texttt{""}\}`$.
 
 **Cells and tests use different equalities on numbers.** A number cell is a
 bit pattern, so $`\mathsf{numLit}(+0)`$ and $`\mathsf{numLit}(-0)`$ are two
 cells. A test is JavaScript's $`\mathrm{numberEqual}`$: a test against $`+0`$
 keeps both cells on its true edge, and a NaN cell is on every false edge. The
-slice is defined by the step's own test and is exact for it (stated,
-`numSlice_sound`, `numSlice_exact`; proof not in the repository):
+slice is defined by the step's own test:
 
 ```math
 x\in T_{\mathsf{numEq}(b),q}(S)\iff x\in S\land\mathrm{numberEqual}(x,b)=q .
 ```
 
-Selection uses membership, refinement the test; each is exact for its
-purpose.
+That the slice keeps every value the test answers with $`q`$ is proved
+(`BranchRefinement.setSplit_sound`, `tagSlice_sound`); that it keeps no
+other is conjectured. Selection uses membership, refinement the test.
 
 **The node invariant's residual arms.** A unit's residual $`R_u`$ holds
 `kind` at $`\mathsf{numIn}(\mathrm{members}(A)\setminus K_u)`$. Its inclusion
@@ -312,10 +314,6 @@ of a replaced shape $`S_k`$ needs $`k`$ in the set; two residuals compare by
 set inclusion; a test $`e.\mathtt{kind}\equiv k`$ slices the residual's set
 and drops the arm when the slice is empty. Each is one operation on one
 atom, where the literal union costs one per literal.
-
-The Lean library has a predicate named `numIn` (`PositiveRules.numIn`, "a
-type holding every number") unrelated to the kind-set atom; the atom needs
-another Lean name.
 
 ### Refinement
 
@@ -329,8 +327,7 @@ the heap premise of Lemma 7.
 
 ### 4.1 Discriminant separation
 
-**Lemma 7 (qualified separation; stated, `separation`, proof not in the
-repository).** Let $`a`$ and $`a'`$
+**Lemma 7 (qualified separation; conjectured).** Let $`a`$ and $`a'`$
 be record clauses with entries $`f{:}K`$ and $`f{:}K'`$, each an invariant
 field or a view other than `length`, such that every clause of $`K`$ answers a
 test $`t`$ with $`q`$ and every clause of $`K'`$ answers it with $`\lnot q`$
@@ -404,9 +401,9 @@ carries instance choices only, `SubtypeChoices`; the checker reruns table
 growth, the greatest fixed point and its validation, `checkUsing`), the
 candidates (a function of the compared types), and a test's slices. What the
 evidence **stores**: the instance choices, and the program-typing derivation
-node by node. The selection rules change only the first part; R7, making a
-test one node with two slices and a kind set one atom, would change the
-second.
+node by node. R1–R5 change only the first part; R7 makes a tag set one
+atom, one clause and one evidence node
+([tag sets](HOST-FAMILIES.md#tag-sets)).
 
 ## 6. Prior work
 
@@ -486,7 +483,7 @@ default:
   one search does not find.
 
 **Soundness (proved).** A candidate is a target clause
-(`ClauseSelection.mem_candidates`), so each covering found is one of the
+(`TargetClauses.candidates` filters the target's clauses), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
 `compareStepState_sound` hold with their statements unchanged, as does
 `checkUnitJson_safe`. Completeness of the restricted table search alone is the
@@ -523,7 +520,7 @@ their claims, the context's length and the claimed type (`KnownIndex`).
 samples were in the scope check of labels built from trees
 (`EquationGraphs.arityOk` under `Label.ofTree?`), and the structural
 engine's growth and validation took 1.2 s of a 17 s search. That time is
-outside union comparison, and R6 and R7 do not address it.
+outside union comparison, and no selection rule addresses it.
 
 ## Lean
 
@@ -535,18 +532,19 @@ In `Types/ClauseSelection.lean`: `excludes`, `candidates`, `mem_candidates`,
 In `Types/PositiveCertificates.lean`: `SearchBudget.select`,
 `InstanceImageCheck.general`, `demandPairsIn`, `coveredIn`, `checkEntries`,
 `compareStructural`, `compareStepState` and their soundness theorems,
-`checkStructural_sound`, `compareUsing_sound`. Elsewhere in the library:
-`semWithArgs_shape`, `meet_sound`, `sourceClause_sound`
-(`Types/PositiveNormalization.lean`); `field_value`, `fieldSlice_sound`,
+`checkStructural_sound`, `compareUsing_sound`, `TargetClauses.candidates`.
+Elsewhere in the library:
+`semWithArgs_shape`, `meet_sound`, `sourceClause_sound`, the clauses
+`numIn` and `strIn` (`Types/PositiveNormalization.lean`);
+`ClauseCovered.sound`, `rowSem_elements` (`Types/PositiveRules.lean`);
+`field_value`, `fieldSlice_sound`, `setSplit_sound`,
 `tagSlice_sound` (`Programs/BranchRefinement.lean`); `family_sound`
 (`Types/PairFamilies.lean`); `CertificateProducer.Answered`
 (`Programs/CertificateProducer.lean`); `Checked.graph_eq`,
 `Checked.images_eq` (`Source/Equations/Store.lean`).
 
-Stated, with proofs not in the repository: `str_excluded` and
-`str_included` (§1.3); `views_exclude`, `fields_exclude`, `refs_exclude`,
-`refs_exclude_lit`, `refs_exclude_lits` (Lemma 3, general form);
-`refs_exclude_absent` (Lemma 4, semantic form); `dict_needs_among` (Lemma 5,
-semantic form); `separation` (Lemma 7); `numSlice_sound` and
-`numSlice_exact` (R7); `valid_of_valid'`, `valid'_of_valid` and
-`valid'_within` (§2.2, about an abstract model).
+Conjectured, with no Lean module stating them
+([WORK](../WORK.md#union-shapes-lemmas)): cell-set membership and its
+converse on primitive shapes (§1.3); Lemma 3 in its general form; Lemma 7;
+exactness of the number slice (R7); and the completeness of selection in the
+abstract model of §2.2.
