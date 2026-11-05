@@ -1936,8 +1936,9 @@ Every edge is still checked by the independent consumer. -/
   -- entering edges all establish an implication it was not seeded with (a
   -- constant holding a guard's answer), another round with each such cut's
   -- (`meetImplications`), at most four rounds. Where these fail and some
-  -- node carried an implication, at most two waiting rounds follow, in
-  -- which each cut also meets its entering edges once they are produced. A
+  -- node carried an implication, at most two waiting rounds follow, the
+  -- first from no seed, in which each cut also meets its entering edges
+  -- once they are produced. A
   -- round that fails at a node goes on with the others, so the cuts after
   -- it are met; a successful round keeps its evidence, and a failure is the
   -- first round's.
@@ -2113,8 +2114,14 @@ Every edge is still checked by the independent consumer. -/
         | none => false
       if (grown.isEmpty && grownElems.isEmpty) || round + 1 == seededRounds then
         if implicated then waiting := true else break
-    seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
-    elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
+    -- The first waiting round starts from no seed: its cuts meet their
+    -- edges in the round itself.
+    if waiting && waitingRounds == 0 then
+      seeds := []
+      elemSeeds := []
+    else
+      seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
+      elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
   if let some e := failure then throw e
   let some table := result | throw .rejected
   table.toList.mapM fun c => match c with

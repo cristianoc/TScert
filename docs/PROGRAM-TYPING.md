@@ -3027,8 +3027,8 @@ the others' types of the target slot is narrower than the target's claim
 search, run where the first fails at some node: each seeds a cut with what
 its entering edges met in the round before, at most four rounds. Where these
 fail and some node carried an implication, at most two waiting rounds
-follow, in which a cut also waits for its entering edges and takes what they
-meet in the round itself. A loop's head, entered by a back edge it precedes,
+follow, the first from no seed, in which a cut also waits for its entering
+edges and takes what they meet in the round itself. A loop's head, entered by a back edge it precedes,
 goes ahead first and takes, in the first waiting round, what the edges
 produced establish, a guess the back edge confirms or refutes; the second
 runs without the guess. A round succeeding keeps its evidence; where none
