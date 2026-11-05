@@ -1,0 +1,20 @@
+{
+  // The compiler options of pretext's own tsconfig.json (chenglou/pretext at
+  // 0d102a5c), with `types` empty: the blocker-pretext cases importing a module.
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true
+  },
+  "include": ["./*.ts", "../examples/blocker-pretext-import-*.ts"]
+}
