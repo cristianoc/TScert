@@ -447,7 +447,7 @@ nothing itself.
 | Declaration | Determined by |
 | --- | --- |
 | Interface, type alias | Its whole syntax |
-| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a parameter without one, its [literal default](#literal-defaults); a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
 | Property declaration or signature | Its annotation |
 | Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
 | Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations; a function's or method's defaulted parameter is optional to its callers |
@@ -456,6 +456,39 @@ nothing itself.
 | Class | Its type parameters, its heritage, and every instance and static member symbol |
 | Namespace, module | Every exported symbol, `export =` and a default export included |
 | Enum, enum member | Its value |
+
+#### Literal defaults
+
+A parameter without an annotation whose default is a literal $`\ell`$ states
+the type TypeScript's `isolatedDeclarations` declares for it, $`\ell`$'s
+type widened to its kind, so the boundary stays written in the source:
+
+```math
+\frac{x\ \text{a parameter with no annotation and default}\ \ell\qquad \mathrm{widen}(\ell)=T}
+     {(x=\ell)\;\equiv\;(x{:}\,T=\ell)}\ \textsf{literal-default}
+```
+
+where $`\mathrm{widen}`$ is defined on these literals alone: `true` and
+`false` give `boolean`; a numeric literal, or one under a single `-`, gives
+`number`; a bigint literal, or one under a single `-`, gives `bigint`; a
+string literal or a template without substitutions gives `string`. Any other
+unannotated parameter states no type and is refused ("missing type
+annotation"), although TypeScript also reads `+1`, parentheses, `as const`,
+templates with substitutions, `null`, `undefined` and object literals
+(TypeScript 5.9, 6.0 and 7.0, measured 2026-11-05). The type is the widened
+one, so a caller may pass any value of the kind and the body may write any
+(`literal-default-parameters`). After the rewrite the parameter is an
+annotated one with a default: a caller sees $`T\cup\mathsf{Undef}`$ at an
+optional position, and the default runs at the call, in the body's
+parameter binding ([patterns](SOURCE-ELABORATION.md#patterns)), checked by
+the function's own unit. Every reader of a parameter's type applies the
+rule (`literalDefaultName`): a module function's, a method's and a
+constructor's parameters, parameter properties, an imported function's,
+constant arrow's or class's declared signature
+(`literal-default-value-import`), and a closure's parameter where no context
+types it. A closure parameter its context types keeps that type, and a
+written one stays refused
+([patterns](SOURCE-ELABORATION.md#patterns)).
 
 ## Certified imports
 

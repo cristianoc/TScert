@@ -10,6 +10,7 @@
     "noEmit": true,
     "paths": {
       "@fixture/lib": ["./lib.ts"],
+      "@fixture/literal-defaults": ["./literal-defaults.ts"],
       "@fixture/certified": ["./certified.ts"],
       "@fixture/early": ["./early.ts"],
       "@fixture/counter": ["./counter.ts"],
@@ -45,6 +46,7 @@
   "include": [
     "../examples/*value-import*.ts",
     "./lib.ts",
+    "./literal-defaults.ts",
     "./certified.ts",
     "./early.ts",
     "./counter.ts",

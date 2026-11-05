@@ -2534,7 +2534,8 @@ in parameter order:
 where $`h_i`$'s type admits $`\mathsf{Undef}`$ when there is a default, so a
 caller may omit it. A parameter is a mutable binding: where a write in the
 function (closures included) names $`x`$, a lone name with a default and an
-annotation $`T`$, the default binds a hidden name, then a `let` of contract
+annotation $`T`$ (or, without one, the type $`T`$ its
+[literal default](SOURCE-CONTRACTS.md#literal-defaults) states), the default binds a hidden name, then a `let` of contract
 $`T`$ binds $`x`$ at its value, as a written `let` pattern does:
 
 ```math
