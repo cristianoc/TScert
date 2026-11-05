@@ -231,11 +231,11 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  docs/STYLE.md          | 43 ++++++++++++++++++++++---------------------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-feaf67c70"><header><div><div class="sha">feaf67c70 · Cristiano Calcagno · Nov 05, 04:43</div><h3>State progress only in WORK.md: status and history prose removed from documents and modules</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-683031bf9"><header><div><div class="sha">683031bf9 · Cristiano Calcagno · Nov 05, 04:43</div><h3>State progress only in WORK.md: status and history prose removed from documents and modules</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>AGENTS.md writes progress once, in WORK.md's status table, while documents and modules stated progress or history (#59): &quot;Until module composition is proved&quot; (SOURCE-CONTRACTS.md); &quot;broader source extraction remains integration work&quot; and &quot;must still supply&quot; (PROGRAM-TYPING.md); &quot;the semantics used by the current verifier&quot;, &quot;the original one-field kernel notation&quot;, &quot;Since that kernel&quot; (SEMANTICS.md); &quot;Closing the gap further needs&quot; (UNION-SHAPES.md); &quot;Nothing uses this module yet&quot; in three Lean modules, which other modules import; and &quot;before any implementation&quot; in two drafts whose work WORK.md records as partial.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, PROGRAM-TYPING.md, SEMANTICS.md, UNION-SHAPES.md, drafts, Lean headers</span></h4><div class="prose"><p>Each sentence states the fact as it is: module composition is not proved; the semantic rules' graph-level use is source compilation's; the calculus's one-field kernel; what the selected search's discovery of the table is not proved to rest on. The drafts name their base commit and link to WORK.md for their progress; the Lean headers drop the sentence.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip strong">lean-semantics</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>8 files changed, 16 insertions(+), 17 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                               | 8 +++-----
+<details><summary>8 files changed, 15 insertions(+), 16 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                               | 6 ++----
  docs/SEMANTICS.md                                    | 8 ++++----
  docs/UNION-SHAPES.md                                 | 3 ++-
  docs/drafts/canonicity.md                            | 4 ++--
@@ -245,7 +245,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  lean/Verification/Semantics/Footprints.lean          | 2 +-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-126ef59ea"><header><div><div class="sha">126ef59ea · Cristiano Calcagno · Nov 05, 04:54</div><h3>Move the let-cell stable-link control's call span with its example's header</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-84fb4556d"><header><div><div class="sha">84fb4556d · Cristiano Calcagno · Nov 05, 04:54</div><h3>Move the let-cell stable-link control's call span with its example's header</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The stable-link control of invalid-compiler-api-stable-let-cell names the replacing call's span by its offsets in the example. The example's header, rewritten to state what its case shows, is 75 bytes longer, so the control's expected refusal named the old span [495,504) and failed.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">pipeline/test.mts, stable-link control</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">the let call's span [495, 504]</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">the let call's span [570, 579]</span></pre></figure></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
