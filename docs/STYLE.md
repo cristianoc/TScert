@@ -22,16 +22,16 @@ The tokens are stated once, in
 ([`dev/record-render.mts`](../dev/record-render.mts)) write them as CSS
 variables, and a deck writes them inline.
 
-| Token | Light | Dark | Role |
-| --- | --- | --- | --- |
-| `--bg` | `#fbfcfd` | `#0e1626` | page or slide background: cool white, or night navy |
-| `--surface` | `#ffffff` | `#16213a` | cards |
-| `--ink` | `#0b1a2e` | `#efe7d4` | text: navy ink, or cream |
-| `--muted` | `#56627a` | `#9aa3b5` | labels, captions, secondary text |
-| `--rule` | `#d5dce6` | `#2a3756` | borders and rules |
-| `--accent` | `#8a6410` | `#e0ac4a` | rule names, emphasis: the gold, dark enough for text |
-| `--code-bg` | `#eef2f7` | `#131d33` | code blocks |
-| `--math-bg` | `#f2f4f8` | `#1a2540` | typeset rules and lowerings |
+| Token | Role |
+| --- | --- |
+| `--bg` | page or slide background: cool white, or night navy |
+| `--surface` | cards |
+| `--ink` | text: navy ink, or cream |
+| `--muted` | labels, captions, secondary text |
+| `--rule` | borders and rules |
+| `--accent` | rule names, emphasis: the gold, dark enough for text |
+| `--code-bg` | code blocks |
+| `--math-bg` | typeset rules and lowerings |
 
 Typefaces, each served from Google Fonts as `FACES` states:
 - Bricolage Grotesque for headings and the wordmark (`--display`), the
@@ -47,17 +47,18 @@ talks and banners). Both share navy, gold and the turnstile.
 ## Status colours
 
 Each status colour is a pair, text on its tinted background, and always
-comes with a word: colour never carries a meaning alone.
+comes with a word: colour never carries a meaning alone. Its values, as
+every token's, are `dev/style-tokens.mts`'s.
 
-| Pair | Light text / background | Means |
-| --- | --- | --- |
-| `--ok` | `#2f6b47` / `#e2efe4` | added, verified, certified, a positive case |
-| `--neg` | `#9b3524` / `#f5e1da` | removed, refused, a negative case |
-| `--principled` | `#a0521a` / `#f7e6d6` | modified, a principled refusal, a forged control |
-| `--gap` | `#6b6f78` / `#ecebe6` | a gap, a known limitation, stated but not certified |
-| `--neutral` | `#2c4f7c` / `#e6ebf2` | no change in behaviour |
-| `--trust` | `#7c2f4a` / `#f2e1e7` | a change of what is trusted |
-| `--run` | `#7a5414` / `#f3e7cc` | code that runs: an operation, a call, a check |
+| Pair | Means |
+| --- | --- |
+| `--ok` | added, verified, certified, a positive case |
+| `--neg` | removed, refused, a negative case |
+| `--principled` | modified, a principled refusal, a forged control |
+| `--gap` | a gap, a known limitation, stated but not certified |
+| `--neutral` | no change in behaviour |
+| `--trust` | a change of what is trusted |
+| `--run` | code that runs: an operation, a call, a check |
 
 ## Identity
 

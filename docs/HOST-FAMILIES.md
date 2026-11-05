@@ -1353,18 +1353,12 @@ list. Spelling (`readonly`, a member name) makes nothing stable.
 
 #### Stable links
 
-A read link through a member every arm of its cell's claim states stable
-holds through every step, an optional link (a read of a member the object
+A read link $`x.f\mapsto y`$ through a member $`f`$ every arm of its
+cell's claim states stable holds through every step, an optional link (a read of a member the object
 may lack) among them, and so does a cell fact of such a read
-([linked reads](#linked-reads)):
-
-```math
-\frac{x.f\mapsto y\in\Sigma\quad \forall a\in\Gamma(x).\ f\in\sigma(a)\quad
-      \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
-     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
-```
-
-for every term $`t`$: a call, a write, a closure's run, on the term's normal
+([linked reads](#linked-reads)): the rule
+[stable-link](PROGRAM-TYPING.md#checked-expression-postconditions), for
+every term $`t`$, a call, a write or a closure's run, on the term's normal
 return. A claim with an arm that does not state $`f`$ stable keeps no link
 through $`f`$.
 
@@ -1393,8 +1387,7 @@ every step: each step's output keeps the input's read links and cell facts
 through a member every clause of the receiver's type states stable
 (`HeapExpressionRules.withStable`, `stableLinks` and `stableCells`, proved
 by `withStable_sound` from `ReadGave.stable_frame`), the one place every
-expression checker passes through (`Checker.keepingStable`). The rule is
-[stable-link](PROGRAM-TYPING.md#checked-expression-postconditions).
+expression checker passes through (`Checker.keepingStable`).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
 in every later heap; for an absent key, $`\rho(y)`$ is `undefined`, which
