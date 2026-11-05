@@ -3,7 +3,8 @@
 # commit-msg hook: every commit carries a commit
 # record (.claude/skills/review/SKILL.md): a Why: section, a change block when
 # behaviour changes, and trailers git can parse, with Outcome and Parts, and
-# Trust unless the outcome is no-behaviour-change.
+# Trust unless the outcome is no-behaviour-change. A merge commit is checked
+# as every other: its record states Why:, Outcome and Parts.
 #
 # commit_record.sh <message file> --check: the same rules on a message alone,
 # for CI to check a pull request's commits.
@@ -12,13 +13,6 @@ exec 1>&2
 
 message_file=$1
 if [[ "${2:-}" != "--check" ]]; then
-    git_dir=$(git rev-parse --git-dir)
-
-    # a merge commit has no record of its own
-    if [[ -f "$git_dir/MERGE_HEAD" ]]; then
-        exit 0
-    fi
-
     # a reword changes no files and keeps its record
     if git diff --cached --quiet; then
         exit 0
