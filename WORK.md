@@ -133,6 +133,12 @@ of the Fragment or the claims document exists, and the tests reach about 100
 fields deep in them. The two stay outside the goal by decision; what they
 read is decoded again by Lean before anything is checked.
 
+Gap cases standing for census refusals, each header naming its census
+functions, are worked in the gap round's order: `blocker-prep-api-constructor`,
+`blocker-node-create-require`, `blocker-contextual-default-argument`,
+`blocker-compiler-api-generic-meet-field`,
+`blocker-compiler-api-contextual-host-shape` and `blocker-in-unknown-walk`.
+
 <a id="decoders-dictionary-reads"></a>
 **Decoders' dictionary reads.** The decoders of `calculus.mts`,
 `control-flow.mts` and `diagnostic.mts` read the wire as `Json`, what
@@ -372,7 +378,10 @@ only closures state.
 **Exceptional footprints**: a call's promise that its footprint also holds
 when it throws (`onThrow`), carried through handlers and concluded by
 `checkUnitJson_safe` ([the design](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
-Left: handlers receive no current-content facts across a throw.
+Left: handlers receive no current-content facts across a throw, and a node
+with a handler is outside the node-by-node bound, so `map` over a callback
+popping a fresh array inside `try` takes its signature with holes
+(`map-fresh-handler-refused`).
 
 - a semantic extension: `SafePost` states no postcondition on a throw, so
   `checkUnitJson_safe` needs an exceptional conclusion tied to the exact CLI
@@ -417,7 +426,12 @@ $`\Pi`$ of `next`, `throw` and `return` with a **Generator-Code** rule
 $`[(R;\alpha)\xrightarrow{E_{\mathrm{entry}}}\mathsf{Generator}(\Pi)]`$
 whose transitions supply stateful contracts for those methods. Both
 premises need an async/coroutine logic of the execution semantics
-([CALLABLES](docs/CALLABLES.md)).
+([CALLABLES](docs/CALLABLES.md)). Four promise controls stop before their
+obligations: `invalid-native-promise-catch-record-explicit` at the
+recognition of `catch`'s method instance, `invalid-generic-promise-ambient-open-record`
+and `invalid-generic-promise-invariant-result` at `Awaited`'s
+resolution-qualified scope, and `invalid-generic-promise-unknown-output`
+at the modeled `await`'s input.
 
 
 ### Source forms and the model
@@ -428,7 +442,10 @@ non-array iterable needs the pattern's reads as steps of `%Iterate:K%`, or of
 the protocol. A spread of a program's iterable where the statement evaluates
 code before it, and a default or nested pattern in an array pattern over one,
 need the protocol's steps interleaved with that code, in the expression, not
-before the statement. One in a conditional's branch needs the steps after
+before the statement (`pattern-program-iterable-default-refused`). A spread
+of a `ReadonlyMap`'s `values()` needs the view's iteration, which a program's
+object meeting it need not give as the host's collection does
+(`spread-readonly-map-values-refused`). One in a conditional's branch needs the steps after
 the test, in that branch alone (`blocker-spread-in-conditional`): a
 declaration whose value is the conditional lowered into one branch per
 outcome of its test, each with the test's narrowing. A generator needs a state-machine lowering, as
@@ -444,7 +461,9 @@ where the key is `__proto__`, as the setter does; a key-adding write at a key
 that may be a string or a symbol, a dispatch on the key's kind. A write adding
 a key to an object a reference other than its holding locals may hold (a
 callee, a closure, a `let` bound to it) needs the heap to map an object's
-identity to its keys, which it does not. The design for it is a stable
+identity to its keys, which it does not (`invalid-object-growth-passed`; a
+local annotated by a record of optional fields alone may hold a host object,
+`growth-optional-accumulator-refused`). The design for it is a stable
 location per object holding its extensible shape: the fields fixed at
 allocation as a prefix, and a tail of added keys in the heap. Every
 reference shares one invariant on the keys the tail may gain and the values
@@ -471,7 +490,17 @@ contract, and no own-key bound excluding numeric keys.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,
-which needs one callee contract its receiver meets. A source binder used both
+which needs one callee contract its receiver meets. A plain write to a
+member of a value whose type admits `undefined`, which needs the guard
+reads, calls and updates have (`nullish-member-write-refused`). A contextual
+closure parameter at an object literal's type with a method, which needs an
+object contract stating the method (`closure-contextual-method-refused`). An
+indexed access at an optional method an interface inherits, which needs
+the method's receiver to be the type it is read from
+(`computed-index-inherited-method-refused`). An imported constant
+initialized by an array literal `as const`, which needs the declaration
+reader to read its readonly tuple
+(`literal-const-array-constant-value-import`). A source binder used both
 as a pack and as an array value (`...args: T`, `args: T`): a binder whose instances are
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
 entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
@@ -506,7 +535,14 @@ refused. The Error family's general mechanism is a store of non-enumerable own
 properties: reads and ownness tests see it, enumeration and copies exclude
 it, the instance's prototype stays `D.prototype`, and a write or redefinition
 and every subclass's construction act on it; it admits `TypeError` and the
-other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`. `keyof T` and `T[K]` over a function's own binder need a row whose
+other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`. `JSON.stringify` of such an instance with a replacer naming `message`
+needs it, since the parameter is a JSON value and an instance holding a
+prototype is none (`error-subclass-json-replacer`). A promise about objects
+decided by tests of an `unknown` needs the tests' object, which may be a
+class instance or a host object, related to `Record<string, unknown>`
+(`type-guard-object-refused`). A function type met with a record of
+readonly fields needs a clause stating a callable with readonly fields
+(`intersection-callable-readonly-refused`). `keyof T` and `T[K]` over a function's own binder need a row whose
 meaning fixes a key set, which a value set does not. `o.m?.()` needs the receiver saved
 across the test. `key in o` at a key the built-in prototypes hold needs those
 prototypes' keys in the model.
