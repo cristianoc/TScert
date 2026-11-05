@@ -324,9 +324,6 @@ def Effect.result (e : Effect) (R : Fam) (a : Tm) : Fam :=
 theorem Effect.result_none {e : Effect} (h : e.promise = none) (R : Fam) (a : Tm) : e.result R a = R := by
   simp [Effect.result, h]
 
-@[simp] theorem Effect.result_ofFootprint (c : Footprints.Closed) (R : Fam) (a : Tm) :
-    (Effect.ofFootprint c).result R a = R := rfl
-
 theorem Effect.result_plain {e : Effect} (h : e.plain = true) (R : Fam) (a : Tm) : e.result R a = R :=
   Effect.result_none (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1) R a
 
