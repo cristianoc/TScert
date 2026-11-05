@@ -1,0 +1,639 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">7 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-106"><code>1c8abcf21dbbc9cbb87d5a5f74820a08d2459899..pr-106</code></a><ul><li>7 commits, units 7 verified</li><li>parts: <span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">parser</span></li></ul></li></ul></section>
+<h2 id="g-pr-106"><code>1c8abcf21dbbc9cbb87d5a5f74820a08d2459899..pr-106</code></h2><article class="card" id="c-e7d039ffd"><header><div><div class="sha">e7d039ffd · Cristiano Calcagno · Nov 05, 16:42</div><h3>Offer a closure the visitor signature an optional callback parameter states</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>rich-inline.ts#findWholeLine</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>findWholeLine</code> passes <code>(width) =&gt; …</code> to an imported walker whose parameter is <code>onLine?: (width, start, end) =&gt; void</code>. The call was refused: &quot;no derivation of its node-typing claim&quot;, the closure claimed only at its own one-parameter signature, which no subtyping rule widens to three. Code of fewer parameters meets a longer signature where it is created (the call binds the first actuals and discards the rest), and the producer offers a closure literal the longer signature its context states, but only for a context of exactly one callable type: the optional parameter's <code>undefined | V</code> offered nothing.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: the signature a closure literal's context offers</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">context</span>(<var>T</var>) <span class="m-rel">=</span> <span class="m-text">the one signature of</span> <var>T</var>, <span class="m-text">where</span> <var>T</var> <span class="m-text">is one callable type</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">context</span>(<var>T</var>) <span class="m-rel">=</span> <span class="m-text">the one signature of</span> <var>V</var>, <span class="m-text">where</span> <var>T</var> <span class="m-op">is</span> <var>V</var>, <span class="m-text">or</span> <var>V</var> <span class="m-text">beside</span></span></div><div class="row"><span><code class="m-code"><span class="tk-k">undefined</span></code> <span class="m-text">or <code class="m-code"><span class="tk-k">null</span></code>, and</span> <var>V</var> <span class="m-text">(a named type resolved) is one callable</span></span></div><div class="row"><span><span class="m-text">type; the other arms take no closure</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, offers</span></h4><div class="prose"><p>a position expecting a signature beside <code>undefined</code> or <code>null</code> expects that signature of a closure</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-import-visitor-arity</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">offered the visitor's signature, body checked there</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#findWholeLine.</span>
+<span class="tk-c">// A closure taking fewer parameters than the visitor an imported function's</span>
+<span class="tk-c">// optional parameter states: it is offered the visitor's signature, whose</span>
+<span class="tk-c">// first position it binds, and its body is checked there.</span>
+<span class="tk-k">import</span> { walkLines, <span class="tk-k">type</span> <span class="tk-t">LineData</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/line-data.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> widest(data: <span class="tk-t">LineData</span>): number {
+  <span class="tk-k">let</span> max = <span class="tk-n">0</span>;
+  walkLines(data, <span class="tk-n">100</span>, (width) =&gt; {
+    <span class="tk-k">if</span> (width &gt; max) max = width;
+  });
+  <span class="tk-k">return</span> max;
+}</pre></details></li><li><details><summary><code>invalid-visitor-arity-bivariant</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a narrower parameter is offered nothing</span></summary><pre class="code"><span class="tk-c">// An optional visitor declared as a method is compared bivariantly, so</span>
+<span class="tk-c">// TypeScript accepts a closure whose one parameter is narrower than the</span>
+<span class="tk-c">// visitor's first. The walker passes `undefined` there, and the closure's</span>
+<span class="tk-c">// `toFixed` throws a TypeError: the closure is offered no signature its</span>
+<span class="tk-c">// parameter does not take, and the call meets no claim of it.</span>
+<span class="tk-k">interface</span> <span class="tk-t">Visitor</span> {
+  line?(width: number | <span class="tk-k">undefined</span>, start: number, end: number): <span class="tk-k">void</span>;
+}
+
+<span class="tk-k">function</span> walk(widths: number[], visitor: <span class="tk-t">Visitor</span>): number {
+  <span class="tk-k">let</span> lines = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) {
+    visitor.line?.(i === <span class="tk-n">0</span> ? <span class="tk-k">undefined</span> : widths[i], i, i + <span class="tk-n">1</span>);
+    lines++;
+  }
+  <span class="tk-k">return</span> lines;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> digits(widths: number[]): number {
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  walk(widths, {
+    line: (width: number) =&gt; {
+      total += width.toFixed().length;
+    },
+  });
+  <span class="tk-k">return</span> total;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The producer proposes; the verifier checks the closure's body at every signature its claim states, and the call against the original union parameter. The negative case runs under Node (TypeError) and a control forges the visitor's signature on its closure, bypassing the producer: refused in search and checking.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-import-visitor-arity</span> <span class="test pos">invalid-visitor-arity-bivariant</span> <span class="test forged">a longer visitor signature on a closure whose parameter does not take it</span></dd></dl>
+<details><summary>7 files changed, 83 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                         |  5 +++-
+ ocaml-producer/expression_closures.ml              | 18 +++++++++++--
+ pipeline/cases.mts                                 |  3 ++-
+ .../blocker-pretext-import-visitor-arity.ts        |  6 ++---
+ .../examples/invalid-visitor-arity-bivariant.ts    | 27 +++++++++++++++++++
+ pipeline/test.mts                                  | 30 ++++++++++++++++++++++
+ tests/node-runs.mts                                |  2 ++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-ff844fc19"><header><div><div class="sha">ff844fc19 · Cristiano Calcagno · Nov 05, 16:49</div><h3>Lower do...while to a loop whose body a continue leaves before the test</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>line-breaks.ts#unpackTable</span><span>gecko-line-breaks.ts#isEastAsianSegmentBreak</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>unpackTable</code> and <code>isEastAsianSegmentBreak</code> read varints and code points with <code>do { … } while (c)</code>; the gate refused both: &quot;statement outside the fragment (DoStatement)&quot;. The lowering had loops whose test comes first (<code>while</code>, <code>for</code>), and a device for a <code>continue</code> that must run statements after the body (a <code>for</code> with a binding per iteration runs its body in a labeled block the <code>continue</code> leaves).</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: <code>do...while</code></span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">do</span> <span class="tk-t">S</span> <span class="tk-k">while</span> (c)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">while</span> (<span class="m-lit">true</span>) { <var>ℓ</var><span class="m-rel">:</span> { <var>S</var> } <span class="m-kw">if</span> (<var>c</var>) {} <span class="m-kw">else</span> <span class="m-text">break</span>; }</span></div></div><div class="map"><code class="src"><span class="tk-k">continue</span> (<span class="tk-k">of</span> <span class="tk-k">this</span> loop)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">break</span> <var>ℓ</var></span></div></div><div class="cond"><span class="tgt">(<var>ℓ</var> <span class="m-text">a label no source spells; S's scope is the block, the test is outside it</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">do-while</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var> <span class="m-rel">≤</span> <var>Γ</var><sub><var>h</var></sub></span><span><var>Γ</var><sub><var>h</var></sub> <span class="m-rel">⊢</span><sub><var>R</var></sub> <var>S</var> <span class="m-text">with continue</span> <span class="m-rel">↦</span> <var>Γ</var><sub><var>c</var></sub></span><span><var>Γ</var><sub><var>c</var></sub> <span class="m-rel">⊢</span> <var>c</var> <span class="m-rel">:</span> <span class="m-con">boolean</span></span><span><var>Γ</var><sub><var>c</var></sub> ∧ <var>c</var> <span class="m-rel">≤</span> <var>Γ</var><sub><var>h</var></sub></span></div><div class="bar"></div><div class="conclusion"><div><var>Γ</var> <span class="m-rel">⊢</span><sub><var>R</var></sub> <span class="m-op">do</span> <var>S</var> <span class="m-text">while</span> (<var>c</var>)</div></div></div><span class="rule-name">(do-while)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, statement forms</span></h4><div class="prose"><p>the <code>do-while</code> rule and its lowering</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>do-while</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">body first, continue to the test, break past it, finally replacing a continue, scopes</span></summary><pre class="code"><span class="tk-c">// `do...while`: the body runs before the test, a `continue` goes to the</span>
+<span class="tk-c">// test, a `break` leaves the loop without it, and the body's bindings are</span>
+<span class="tk-c">// out of the test's scope.</span>
+
+<span class="tk-c">// A varint as pretext's `unpackTable` reads one: the binding the body</span>
+<span class="tk-c">// assigns is read by the test.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> varint(input: string, start: number): number {
+  <span class="tk-k">let</span> at = start;
+  <span class="tk-k">let</span> value = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> scale = <span class="tk-n">1</span>;
+  <span class="tk-k">let</span> byte: number;
+  <span class="tk-k">do</span> {
+    byte = input.charCodeAt(at++);
+    value += (byte &amp; 0x7f) * scale;
+    scale *= 0x80;
+  } <span class="tk-k">while</span> (byte &gt;= 0x80);
+  <span class="tk-k">return</span> value;
+}
+
+<span class="tk-c">// The body runs once under a false test.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> once(): number {
+  <span class="tk-k">let</span> runs = <span class="tk-n">0</span>;
+  <span class="tk-k">do</span> runs++;
+  <span class="tk-k">while</span> (<span class="tk-k">false</span>);
+  <span class="tk-k">return</span> runs;
+}
+
+<span class="tk-c">// A `continue` runs the test once; a `break` in a `switch` leaves the</span>
+<span class="tk-c">// `switch`, one after it the loop.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> tests(codes: number[]): number {
+  <span class="tk-k">let</span> i = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> tested = <span class="tk-n">0</span>;
+  <span class="tk-k">do</span> {
+    <span class="tk-k">switch</span> (codes[i]) {
+      <span class="tk-k">case</span> <span class="tk-n">32</span>:
+        i++;
+        <span class="tk-k">continue</span>;
+      <span class="tk-k">case</span> <span class="tk-n">9</span>:
+        i++;
+        <span class="tk-k">break</span>;
+      <span class="tk-k">default</span>:
+        <span class="tk-k">return</span> tested;
+    }
+    <span class="tk-k">if</span> (i &gt; <span class="tk-n">8</span>) <span class="tk-k">break</span>;
+  } <span class="tk-k">while</span> ((tested++, i &lt; codes.length));
+  <span class="tk-k">return</span> tested;
+}
+
+<span class="tk-c">// A `finally` replacing a `continue` with a `break`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> replaced(limit: number): number {
+  <span class="tk-k">let</span> k = <span class="tk-n">0</span>;
+  <span class="tk-k">do</span> {
+    <span class="tk-k">try</span> {
+      k++;
+      <span class="tk-k">continue</span>;
+    } <span class="tk-k">finally</span> {
+      <span class="tk-k">if</span> (k &gt;= limit) <span class="tk-k">break</span>;
+    }
+  } <span class="tk-k">while</span> (k &lt; <span class="tk-n">10</span>);
+  <span class="tk-k">return</span> k;
+}
+
+<span class="tk-c">// The body's `const` shadows the outer one; the test reads the outer.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shadowed(n: number): string {
+  <span class="tk-k">const</span> x = n;
+  <span class="tk-k">let</span> out = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">do</span> {
+    <span class="tk-k">const</span> x = <span class="tk-s">&quot;s&quot;</span>;
+    out += x;
+  } <span class="tk-k">while</span> (out.length &lt; x);
+  <span class="tk-k">return</span> out;
+}
+
+<span class="tk-c">// The first run of the body sees the entry's `x`, of either type: only</span>
+<span class="tk-c">// the runs after a test see it narrowed to a string.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lengthOf(x: string | number): number {
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  <span class="tk-k">do</span> {
+    total += <span class="tk-k">typeof</span> x === <span class="tk-s">&quot;string&quot;</span> ? x.length : <span class="tk-n">1</span>;
+  } <span class="tk-k">while</span> (<span class="tk-k">typeof</span> x === <span class="tk-s">&quot;string&quot;</span> &amp;&amp; total &lt; <span class="tk-n">10</span>);
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><details><summary><code>invalid-do-while-body-first</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">the body reads past the end before the test</span></summary><pre class="code"><span class="tk-c">// The body of a `do...while` runs before its test: on an empty array the</span>
+<span class="tk-c">// first `xs[i]` reads past the end, so `last([])` returns `undefined`</span>
+<span class="tk-c">// where its result is a string. As a `while` loop, the test first, the</span>
+<span class="tk-c">// read is within the array.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> last(xs: string[]): string {
+  <span class="tk-k">let</span> found = <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">let</span> i = <span class="tk-n">0</span>;
+  <span class="tk-k">do</span> {
+    found = xs[i];
+    i++;
+  } <span class="tk-k">while</span> (i &lt; xs.length);
+  <span class="tk-k">return</span> found;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The lowering uses statements Lean already certifies: a <code>while (true)</code>, a labeled block whose <code>break</code> runs every <code>finally</code> it leaves, an <code>if</code>. The added statements' entries are offsets of the <code>do</code> and <code>while</code> keywords, which no other site uses. The positive case runs under Node with the values JavaScript gives; a control forges the test's narrowing at the body's entry and read, as if the test ran first: refused in search and checking.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">do-while</span> <span class="test pos">invalid-do-while-body-first</span> <span class="test forged">the test's narrowing at the body's first run</span></dd></dl>
+<details><summary>9 files changed, 224 insertions(+), 14 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                       | 14 ++++
+ pipeline/cases.mts                               |  2 +
+ pipeline/examples/do-while.ts                    | 82 ++++++++++++++++++++++++
+ pipeline/examples/invalid-do-while-body-first.ts | 13 ++++
+ pipeline/test.mts                                | 26 ++++++++
+ tests/node-runs.mts                              |  5 ++
+ tools/fragment-parse.mts                         |  1 +
+ tools/fragment-statements.mts                    | 67 +++++++++++++++----
+ tools/fragment-support.mts                       | 28 +++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-189f8d130"><header><div><div class="sha">189f8d130 · Cristiano Calcagno · Nov 05, 16:52</div><h3>Lower labeled statements to labeled blocks, and continue of an outer loop</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>gecko-line-breaks.ts#markWordBreaks</span><span>line-break.ts#walkPreparedComplexLines</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's Gecko line iterator (<code>markWordBreaks</code>) leaves <code>outer: for (;;)</code> with <code>break outer</code> and <code>continue outer</code> from nested loops, and its line walker (<code>walkPreparedComplexLines</code>) leaves a labeled block with <code>break decided</code>. The gate refused both: &quot;statement outside the fragment (LabeledStatement)&quot;, and a labeled jump &quot;only unlabeled loop transfers are supported&quot;. The lowering already had labeled blocks, which a <code>switch</code> is made of, whose <code>break</code> runs every <code>finally</code> and iterator close it leaves; nothing produced them from a source label.</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: labeled statements</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-t">L</span>: <span class="tk-t">S</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><var>ℓ</var><sub><var>L</var></sub><span class="m-rel">:</span> { <var>S</var> }</span></div></div><div class="map"><code class="src"><span class="tk-k">break</span> <span class="tk-t">L</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">break</span> <var>ℓ</var><sub><var>L</var></sub></span></div></div><div class="map"><code class="src"><span class="tk-k">continue</span> <span class="tk-t">L</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">break</span> <var>κ</var><sub><var>S</var></sub>, <span class="m-text">with S's body run in the block</span> <var>κ</var><sub><var>S</var></sub><span class="m-rel">:</span> { <span class="m-text">body</span> }</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(from a loop nested</span> <span class="m-text">in</span> <var>S</var>; <var>κ</var><sub><var>S</var></sub> <span class="m-text">is the iteration block of a <code class="m-code"><span class="tk-k">for</span></code> with a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">binding per iteration; <code class="m-code">a: b: <span class="tk-t">S</span></code> labels</span> <var>S</var> <span class="m-text">by both</span>; <var>ℓ</var>, <var>κ</var> <span class="m-text">labels no source spells</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">labeled</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>Γ</var> <span class="m-rel">⊢</span><sub><var>R</var></sub> <var>S</var> <span class="m-text">with break</span> <var>L</var> <span class="m-rel">↦</span> <var>Γ</var><sub><span class="m-text">after</span></sub>, <span class="m-text">continue</span> <var>L</var> <span class="m-rel">↦</span> <span class="m-con">break</span> <var>κ</var><sub><var>S</var></sub></span><span><var>Γ</var><sub><span class="m-text">after</span></sub> <span class="m-rel">⊢</span><sub><var>R</var></sub> <var>S'</var></span></div><div class="bar"></div><div class="conclusion"><div><var>Γ</var> <span class="m-rel">⊢</span><sub><var>R</var></sub> <var>L</var><span class="m-rel">:</span> <var>S</var>; <var>S'</var></div></div></div><span class="rule-name">(labeled)</span></div></div>
+<h4 class="change"><span class="act removed">removed</span>Refusal <span class="target">SOURCE-FRAGMENT.md</span></h4><div class="prose"><p>a labelled <code>break</code> or <code>continue</code></p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, statement forms</span></h4><div class="prose"><p>the <code>labeled</code> rule and its lowering</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-labeled-loop</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">break outer from a nested loop</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// gecko-line-breaks.ts#markWordBreaks, line-break.ts#walkPreparedComplexLines.</span>
+<span class="tk-c">// A labeled loop left by `break outer` from a nested loop: the loop is the</span>
+<span class="tk-c">// block of its label, which the `break` leaves.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstPair(xs: number[]): number {
+  <span class="tk-k">let</span> found = -<span class="tk-n">1</span>;
+  outer: <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; xs.length; i++) {
+    <span class="tk-k">for</span> (<span class="tk-k">let</span> j = i + <span class="tk-n">1</span>; j &lt; xs.length; j++) {
+      <span class="tk-k">if</span> (xs[i] === xs[j]) {
+        found = i;
+        <span class="tk-k">break</span> outer;
+      }
+    }
+  }
+  <span class="tk-k">return</span> found;
+}</pre></details></li><li><details><summary><code>labeled-statements</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">labeled block, continue outer with update, binding per iteration, chained labels, switch, finally</span></summary><pre class="code"><span class="tk-c">// Labeled statements: a `break ℓ` leaves the statement labeled `ℓ`, through</span>
+<span class="tk-c">// nested loops, a `switch` and a `finally`; a `continue ℓ` goes on with the</span>
+<span class="tk-c">// loop labeled `ℓ` from a nested loop, running its update.</span>
+
+<span class="tk-c">// A labeled block left early, as pretext's line walker leaves `decided`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> decide(widths: number[], limit: number): number {
+  <span class="tk-k">let</span> end = -<span class="tk-n">1</span>;
+  decided: {
+    <span class="tk-k">let</span> i = <span class="tk-n">0</span>;
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> w <span class="tk-k">of</span> widths) {
+      <span class="tk-k">if</span> (w &gt; limit) {
+        end = i;
+        <span class="tk-k">break</span> decided;
+      }
+      i++;
+    }
+    end = widths.length;
+  }
+  <span class="tk-k">return</span> end;
+}
+
+<span class="tk-c">// A `continue` of the outer loop from the inner one runs the outer update.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> rowsWithout(row: number[], banned: number[]): number {
+  <span class="tk-k">let</span> kept = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> r = <span class="tk-n">0</span>;
+  outer: <span class="tk-k">for</span> (; r &lt; banned.length; r++) {
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> row) <span class="tk-k">if</span> (banned.includes(v)) <span class="tk-k">continue</span> outer;
+    kept++;
+  }
+  <span class="tk-k">return</span> kept * <span class="tk-n">100</span> + r;
+}
+
+<span class="tk-c">// The kind after the loop is the last row's: a string where a `continue`</span>
+<span class="tk-c">// of the outer loop skipped the assignment after the inner one.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastKind(rows: number[][]): string | number {
+  <span class="tk-k">let</span> kind: string | number = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> r = <span class="tk-n">0</span>;
+  outer: <span class="tk-k">for</span> (<span class="tk-k">const</span> row <span class="tk-k">of</span> rows) {
+    r++;
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> row) {
+      <span class="tk-k">if</span> (v &lt; <span class="tk-n">0</span>) {
+        kind = <span class="tk-s">&quot;skipped&quot;</span>;
+        <span class="tk-k">continue</span> outer;
+      }
+    }
+    kind = r;
+  }
+  <span class="tk-k">return</span> kind;
+}
+
+<span class="tk-c">// A loop with a binding per iteration, which a closure captures, continued</span>
+<span class="tk-c">// from a nested loop: each closure sees its own iteration's `i`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> captured(row: number[], n: number): number {
+  <span class="tk-k">const</span> reads: (() =&gt; number)[] = [];
+  outer: <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; n; i++) {
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> row) <span class="tk-k">if</span> (v === i) <span class="tk-k">continue</span> outer;
+    reads.push(() =&gt; i);
+  }
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> read <span class="tk-k">of</span> reads) sum += read();
+  <span class="tk-k">return</span> sum;
+}
+
+<span class="tk-c">// Two labels on one loop; a `break` of a `switch` inside it, and a `break`</span>
+<span class="tk-c">// of the outer label from the `switch`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> chained(codes: number[]): number {
+  <span class="tk-k">let</span> seen = <span class="tk-n">0</span>;
+  a: b: <span class="tk-k">for</span> (<span class="tk-k">const</span> c <span class="tk-k">of</span> codes) {
+    <span class="tk-k">switch</span> (c) {
+      <span class="tk-k">case</span> <span class="tk-n">0</span>:
+        <span class="tk-k">continue</span> a;
+      <span class="tk-k">case</span> <span class="tk-n">1</span>:
+        <span class="tk-k">break</span>;
+      <span class="tk-k">case</span> <span class="tk-n">2</span>:
+        <span class="tk-k">break</span> b;
+    }
+    seen++;
+  }
+  <span class="tk-k">return</span> seen;
+}
+
+<span class="tk-c">// A `finally` between the jump and its label runs on the way out, and one</span>
+<span class="tk-c">// replacing the jump replaces it.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> finals(rows: number[][]): string {
+  <span class="tk-k">let</span> log = <span class="tk-s">&quot;&quot;</span>;
+  outer: <span class="tk-k">for</span> (<span class="tk-k">const</span> row <span class="tk-k">of</span> rows) {
+    <span class="tk-k">try</span> {
+      <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> row) {
+        <span class="tk-k">if</span> (v === <span class="tk-n">1</span>) <span class="tk-k">continue</span> outer;
+        <span class="tk-k">if</span> (v === <span class="tk-n">2</span>) <span class="tk-k">break</span> outer;
+      }
+    } <span class="tk-k">finally</span> {
+      log += <span class="tk-s">&quot;f&quot;</span>;
+    }
+    log += <span class="tk-s">&quot;r&quot;</span>;
+  }
+  <span class="tk-k">return</span> log;
+}</pre></details></li><li><details><summary><code>labeled-program-iterable</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">continue outer closes the inner iterator, break outer both</span></summary><pre class="code"><span class="tk-c">// Labeled jumps out of loops over a program's iterable: `continue outer`</span>
+<span class="tk-c">// from the inner loop closes the inner iterator, whose `return` counts in</span>
+<span class="tk-c">// `log.closed`, and goes on with the outer one; `break outer` closes both.</span>
+<span class="tk-k">class</span> <span class="tk-t">Cell</span> {
+  <span class="tk-k">readonly</span> value: number;
+  <span class="tk-k">readonly</span> next: <span class="tk-t">Cell</span> | <span class="tk-k">null</span>;
+  <span class="tk-k">constructor</span>(value: number, next: <span class="tk-t">Cell</span> | <span class="tk-k">null</span>) {
+    <span class="tk-k">this</span>.value = value;
+    <span class="tk-k">this</span>.next = next;
+  }
+}
+
+<span class="tk-k">class</span> <span class="tk-t">LinkedList</span> {
+  <span class="tk-k">readonly</span> head: <span class="tk-t">Cell</span> | <span class="tk-k">null</span>;
+  <span class="tk-k">readonly</span> log: { closed: number };
+  <span class="tk-k">constructor</span>(head: <span class="tk-t">Cell</span> | <span class="tk-k">null</span>, log: { closed: number }) {
+    <span class="tk-k">this</span>.head = head;
+    <span class="tk-k">this</span>.log = log;
+  }
+  [<span class="tk-t">Symbol</span>.iterator](): <span class="tk-t">Iterator</span>&lt;number&gt; {
+    <span class="tk-k">let</span> node = <span class="tk-k">this</span>.head;
+    <span class="tk-k">const</span> log = <span class="tk-k">this</span>.log;
+    <span class="tk-k">return</span> {
+      next: (): <span class="tk-t">IteratorResult</span>&lt;number&gt; =&gt; {
+        <span class="tk-k">const</span> current = node;
+        <span class="tk-k">if</span> (current === <span class="tk-k">null</span>) <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+        node = current.next;
+        <span class="tk-k">return</span> { done: <span class="tk-k">false</span>, value: current.value };
+      },
+      <span class="tk-k">return</span>: (): <span class="tk-t">IteratorResult</span>&lt;number&gt; =&gt; {
+        log.closed = log.closed + <span class="tk-n">1</span>;
+        <span class="tk-k">return</span> { done: <span class="tk-k">true</span>, value: <span class="tk-k">undefined</span> };
+      },
+    };
+  }
+}
+
+
+<span class="tk-c">// A `continue outer` from the inner loop closes the inner iterator and</span>
+<span class="tk-c">// steps the outer one; a `break outer` closes both.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> nested(outerList: <span class="tk-t">LinkedList</span>, innerList: <span class="tk-t">LinkedList</span>): number {
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  outer: <span class="tk-k">for</span> (<span class="tk-k">const</span> a <span class="tk-k">of</span> outerList) {
+    <span class="tk-k">for</span> (<span class="tk-k">const</span> b <span class="tk-k">of</span> innerList) {
+      <span class="tk-k">if</span> (b === a) <span class="tk-k">continue</span> outer;
+      <span class="tk-k">if</span> (b &gt; <span class="tk-n">5</span>) <span class="tk-k">break</span> outer;
+      n++;
+    }
+  }
+  <span class="tk-k">return</span> n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lists(outerValues: number[], innerValues: number[], log: { closed: number }): [<span class="tk-t">LinkedList</span>, <span class="tk-t">LinkedList</span>] {
+  <span class="tk-k">let</span> outerHead: <span class="tk-t">Cell</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> outerValues) outerHead = <span class="tk-k">new</span> <span class="tk-t">Cell</span>(v, outerHead);
+  <span class="tk-k">let</span> innerHead: <span class="tk-t">Cell</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> v <span class="tk-k">of</span> innerValues) innerHead = <span class="tk-k">new</span> <span class="tk-t">Cell</span>(v, innerHead);
+  <span class="tk-k">return</span> [<span class="tk-k">new</span> <span class="tk-t">LinkedList</span>(outerHead, log), <span class="tk-k">new</span> <span class="tk-t">LinkedList</span>(innerHead, log)];
+}</pre></details></li><li><details><summary><code>invalid-labeled-break-stale-narrowing</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a field tested before a call that may write it</span></summary><pre class="code"><span class="tk-c">// The statement after the labeled loop is reached only by `break outer`,</span>
+<span class="tk-c">// where `box.v` was tested a string, but `reset()` ran after the test and</span>
+<span class="tk-c">// may write a number: TypeScript keeps the narrowing across the call, and</span>
+<span class="tk-c">// the function returns a number for its string result.</span>
+<span class="tk-k">type</span> <span class="tk-t">Box</span> = { v: string | number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> stale(box: <span class="tk-t">Box</span>, reset: () =&gt; <span class="tk-k">void</span>): string {
+  outer: <span class="tk-k">for</span> (;;) {
+    <span class="tk-k">if</span> (<span class="tk-k">typeof</span> box.v === <span class="tk-s">&quot;string&quot;</span>) {
+      <span class="tk-k">for</span> (;;) {
+        reset();
+        <span class="tk-k">break</span> outer;
+      }
+    }
+    <span class="tk-k">return</span> <span class="tk-s">&quot;none&quot;</span>;
+  }
+  <span class="tk-k">return</span> box.v;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The lowering uses labeled blocks Lean already certifies: a <code>break</code> of one runs each <code>finally</code> and iterator close between it and the block. The κ block sits inside a loop's iterator-closing region, so a <code>continue</code> keeps the loop's own iterator and closes nested ones. The positive cases run under Node with the values and close counts JavaScript gives; a control forges a claim holding only if <code>continue outer</code> stayed in the inner loop: refused in search and checking.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-labeled-loop</span> <span class="test pos">labeled-statements</span> <span class="test pos">labeled-program-iterable</span> <span class="test pos">invalid-labeled-break-stale-narrowing</span> <span class="test forged">a claim relying on continue outer staying in the inner loop</span></dd></dl>
+<details><summary>11 files changed, 292 insertions(+), 21 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                         | 17 ++++
+ docs/SOURCE-FRAGMENT.md                            |  1 -
+ pipeline/cases.mts                                 |  5 +-
+ pipeline/examples/blocker-pretext-labeled-loop.ts  |  7 +-
+ .../invalid-labeled-break-stale-narrowing.ts       | 18 ++++
+ pipeline/examples/labeled-program-iterable.ts      | 59 +++++++++++++
+ pipeline/examples/labeled-statements.ts            | 98 ++++++++++++++++++++++
+ pipeline/test.mts                                  | 19 +++++
+ tests/node-runs.mts                                |  9 ++
+ tools/fragment-statements.mts                      | 34 +++++---
+ tools/fragment-support.mts                         | 46 ++++++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-7c96363b7"><header><div><div class="sha">7c96363b7 · Cristiano Calcagno · Nov 05, 16:56</div><h3>Lower an object destructuring assignment statement property by property</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>rich-inline.ts#materializeRichInlineLineRange</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's <code>materializeRichInlineLineRange</code> reassigns two <code>let</code> bindings from another record, <code>if (starts === null) ({ starts, ends } = found);</code>. The gate refused it: &quot;only field and local assignments are supported&quot;. Array patterns had an assignment form (<code>arrayAssign</code>); object patterns had one only in declarations, where <code>let { a } = e</code> reads into hidden bindings and binds cells from them.</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: object destructuring assignment, a statement</span></h4><div class="lowering"><div class="map"><code class="src">({ k₁: t₁ = d₁, … } = e);</code><div class="result"><span class="to">⇝</span><span class="tgt">{ <span class="m-text">const</span> <var>r</var> <span class="m-rel">=</span> <var>e</var>; <span class="m-text">const</span> { <var>k</var>₁<span class="m-rel">:</span> <var>h</var>₁ <span class="m-rel">=</span> <var>d</var>₁ } <span class="m-rel">=</span> <var>r</var>; <var>t</var>₁ <span class="m-rel">=</span> <var>h</var>₁; … }</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(property by property in source order; an object-pattern target is</span></span></div><div class="cond"><span class="tgt"><span class="m-text">assigned from</span> <var>h</var>ᵢ <span class="m-text">the same way</span>; <var>r</var>, <var>h</var>ᵢ <span class="m-text">names no source spells</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">SOURCE-FRAGMENT.md</span></h4><div class="prose"><p>an object assignment whose value is used, with a field target, a computed or string key, a rest, an empty pattern, a target named twice, or an anonymous function or class default</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-ELABORATION.md, patterns</span></h4><div class="prose"><p>the object assignment's lowering, with JavaScript's order</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-destructuring-assignment</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">two let targets from a record</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#materializeRichInlineLineRange.</span>
+<span class="tk-c">// A destructuring assignment to existing `let` bindings, `({ starts, ends }</span>
+<span class="tk-c">// = found)`: the right side once, then each property read and written to</span>
+<span class="tk-c">// its target in turn.</span>
+<span class="tk-k">type</span> <span class="tk-t">Sources</span> = { starts: number[] | <span class="tk-k">null</span>; ends: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> sources(flow: <span class="tk-t">Sources</span>, found: <span class="tk-t">Sources</span>): number {
+  <span class="tk-k">let</span> { starts, ends } = flow;
+  <span class="tk-k">if</span> (starts === <span class="tk-k">null</span>) ({ starts, ends } = found);
+  <span class="tk-k">return</span> (starts?.length ?? <span class="tk-n">0</span>) + (ends?.length ?? <span class="tk-n">0</span>);
+}</pre></details></li><li><details><summary><code>destructuring-assignment</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">right side once, defaults in order, nested and renamed, captured, shadowed</span></summary><pre class="code"><span class="tk-c">// An object destructuring assignment to existing bindings, as a</span>
+<span class="tk-c">// statement: the right side once, then each property's read, its default</span>
+<span class="tk-c">// where the read is `undefined`, and its target's write, in source order.</span>
+
+<span class="tk-k">type</span> <span class="tk-t">Pair</span> = { a: number; b?: number };
+
+<span class="tk-c">// The right side runs once; a later default reads an earlier target.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> once(make: () =&gt; <span class="tk-t">Pair</span>): number {
+  <span class="tk-k">let</span> a = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> b = <span class="tk-n">0</span>;
+  ({ a, b = a } = make());
+  <span class="tk-k">return</span> a * <span class="tk-n">10</span> + b;
+}
+
+<span class="tk-c">// A default applies to `undefined` only, not to `null`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> nullKept(o: { v?: string | <span class="tk-k">null</span> }): string {
+  <span class="tk-k">let</span> v: string | <span class="tk-k">null</span> = <span class="tk-s">&quot;init&quot;</span>;
+  ({ v = <span class="tk-s">&quot;default&quot;</span> } = o);
+  <span class="tk-k">return</span> v === <span class="tk-k">null</span> ? <span class="tk-s">&quot;null&quot;</span> : v;
+}
+
+<span class="tk-c">// Renamed and nested targets.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> nested(o: { p: { x: number; y: number }; q: string }): string {
+  <span class="tk-k">let</span> x = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> y = <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> label = <span class="tk-s">&quot;&quot;</span>;
+  ({ p: { x, y }, q: label } = o);
+  <span class="tk-k">return</span> <span class="tk-s">`${label}${x + y}`</span>;
+}
+
+<span class="tk-c">// A target a closure captures: the closure reads the written value.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> captured(o: { n: number }): number {
+  <span class="tk-k">let</span> n = <span class="tk-n">1</span>;
+  <span class="tk-k">const</span> read = (): number =&gt; n;
+  ({ n } = o);
+  <span class="tk-k">return</span> read();
+}
+
+<span class="tk-c">// A block's binding of the same name is another binding.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shadowed(o: { s: string }): string {
+  <span class="tk-k">let</span> s = <span class="tk-s">&quot;outer&quot;</span>;
+  {
+    <span class="tk-k">let</span> s = <span class="tk-s">&quot;inner&quot;</span>;
+    ({ s } = o);
+    <span class="tk-k">if</span> (s.length &gt; <span class="tk-n">100</span>) <span class="tk-k">return</span> s;
+  }
+  <span class="tk-k">return</span> s;
+}</pre></details></li><li><details><summary><code>invalid-destructuring-assignment-dictionary</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a pattern read of a key a dictionary may lack</span></summary><pre class="code"><span class="tk-c">// A dictionary may lack the key a pattern reads: TypeScript types the</span>
+<span class="tk-c">// read at the dictionary's values, and `total({})` returns `undefined` for</span>
+<span class="tk-c">// its number result.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(counts: <span class="tk-t">Record</span>&lt;string, number&gt;): number {
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  ({ total: n } = counts);
+  <span class="tk-k">return</span> n;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The statements are ones Lean already certifies: a <code>const</code>, a one-property <code>const</code> pattern, an assignment checked at the local's storage contract. Each property is read, defaulted and written before the next is read, as JavaScript's KeyedDestructuringAssignmentEvaluation runs them; a local target's reference runs no code, so resolving it after the read changes nothing. The positive case runs under Node; a control forges a property's read at a type the target's storage does not take, and a later read of the target at its narrowing before the assignment: each refused in search and checking.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-destructuring-assignment</span> <span class="test pos">destructuring-assignment</span> <span class="test pos">invalid-destructuring-assignment-dictionary</span> <span class="test forged">a target's read at another storage; a stale narrowing after the assignment</span></dd></dl>
+<details><summary>10 files changed, 203 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/SOURCE-ELABORATION.md                         | 20 ++++-
+ docs/SOURCE-FRAGMENT.md                            |  1 +
+ pipeline/cases.mts                                 |  4 +-
+ .../blocker-pretext-destructuring-assignment.ts    |  4 +-
+ pipeline/examples/destructuring-assignment.ts      | 48 +++++++++++
+ .../invalid-destructuring-assignment-dictionary.ts |  8 ++
+ pipeline/test.mts                                  | 23 ++++++
+ tests/node-runs.mts                                |  5 ++
+ tools/fragment-parse.mts                           |  1 +
+ tools/fragment-statements.mts                      | 94 +++++++++++++++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8c25e57a1"><header><div><div class="sha">8c25e57a1 · Cristiano Calcagno · Nov 05, 16:57</div><h3>Keep a module cache's key-adding write refused, and verify its Map rewrite</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>graphemes.ts#findGraphemeEnds</span><span>line-breaks.ts#getBreakRules</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext fills two module-level caches, <code>graphemeRules</code> and <code>breakRules</code>, typed <code>Partial&lt;Record&lt;Table, Rules&gt;&gt;</code>, with <code>cache[t] ?? (cache[t] = parse(t))</code>: refused, &quot;a write at a key known only at run time may add the key to an object another reference holds&quot;. A key-adding write copies the object and rebinds every local holding it, sound only where those locals own it; a module constant is read by every function. Extending ownership to a module holder would need the holder re-read after every operand that may reenter (a key's evaluation, the right side, a read's receiver), and the write here is in value position, which the key-adding lowering discards: a design of its own, reviewed as no-go as stated.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, key-adding writes to shared objects</span></h4><div class="prose"><p>the row names <code>blocker-pretext-module-cache-write</code> and its rewrite, a <code>Map</code> (<code>get</code>, then on a miss <code>set</code> and the computed value)</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-module-cache-write</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a key-adding write to a module constant</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// graphemes.ts#findGraphemeEnds.</span>
+<span class="tk-c">// Refusal: reject: source refusal: a write at a key known only at run time</span>
+<span class="tk-c">// may add the key to an object another reference holds.</span>
+<span class="tk-c">// A module-level cache, a `Partial&lt;Record&lt;…&gt;&gt;`, filled at a key known only</span>
+<span class="tk-c">// at run time: a key-adding write is typed only on a local's own fresh</span>
+<span class="tk-c">// object that nothing else has reached, and the module's object is reached</span>
+<span class="tk-c">// by every call. The rewrite is a `Map`, `get` then `set` on a miss</span>
+<span class="tk-c">// (`module-cache-map`).</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">function</span> parse(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> table === <span class="tk-s">&quot;a&quot;</span> ? [<span class="tk-n">1</span>] : [<span class="tk-n">2</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = parse(table));
+}</pre></details></li><li><details><summary><code>module-cache-map</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the cache as a <code>Map</code></span></summary><pre class="code"><span class="tk-c">// A module-level cache filled at a key known only at run time, written as</span>
+<span class="tk-c">// a `Map`: `get`, then on a miss the computed value, `set` and returned. It</span>
+<span class="tk-c">// is the rewrite of the `Partial&lt;Record&lt;…&gt;&gt;` cache whose key-adding write</span>
+<span class="tk-c">// the module's other references refuse (`blocker-pretext-module-cache-write`),</span>
+<span class="tk-c">// as pretext's `graphemeRules` and `breakRules` hold their tables.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache = <span class="tk-k">new</span> <span class="tk-t">Map</span>&lt;<span class="tk-t">Table</span>, number[]&gt;();
+
+<span class="tk-k">function</span> parse(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> table === <span class="tk-s">&quot;a&quot;</span> ? [<span class="tk-n">1</span>] : [<span class="tk-n">2</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">const</span> known = cache.<span class="tk-k">get</span>(table);
+  <span class="tk-k">if</span> (known !== <span class="tk-k">undefined</span>) <span class="tk-k">return</span> known;
+  <span class="tk-k">const</span> made = parse(table);
+  cache.<span class="tk-k">set</span>(table, made);
+  <span class="tk-k">return</span> made;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>A <code>Record&lt;Table, X | undefined&gt;</code> holding every key from its allocation is refused too: a write at a run-time key whose claim is a union of string singletons is classified as key-adding even where every singleton is a required field of the object's type.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Tests</dt><dd><span class="test pos">module-cache-map</span></dd></dl>
+<details><summary>4 files changed, 24 insertions(+), 3 deletions(-)</summary><pre class="code"> docs/SOURCE-FRAGMENT.md                               |  2 +-
+ pipeline/cases.mts                                    |  3 ++-
+ .../examples/blocker-pretext-module-cache-write.ts    |  3 ++-
+ pipeline/examples/module-cache-map.ts                 | 19 +++++++++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-2d77af2d4"><header><div><div class="sha">2d77af2d4 · Cristiano Calcagno · Nov 05, 17:03</div><h3>Read a closure's contextual result from one callable type alone, not an optional one</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>rich-inline.ts#findWholeLine</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Reading <code>undefined | V</code> as <code>V</code> for a closure literal's contextual result too made <code>p.finally(() =&gt; ({ then(…) {…} }))</code> claim its object at <code>void</code>'s <code>unknown</code> result, which proposed the literal's <code>then</code> at primitive types and refused it there: <code>invalid-finally-thenable</code> failed at that allocation, before the thenable obligation it controls. The visitor case needs the optional context only for the signatures it offers.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">producer: a closure literal's contextual result</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the result of</span> <var>V</var>, <span class="m-text">where the context is</span> <var>V</var> <span class="m-text">or</span> <var>V</var> <span class="m-text">beside <code class="m-code"><span class="tk-k">undefined</span></code> or</span> <code class="m-code"><span class="tk-k">null</span></code></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the result of</span> <var>V</var>, <span class="m-text">where the context is one callable type</span> <var>V</var>; <span class="m-text">the</span></span></div><div class="row"><span><span class="m-text">optional context still offers V's signature</span></span></div></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-finally-thenable</code> <span class="kind negative">negative</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">at its thenable obligation again</span></summary><pre class="code"><span class="tk-c">// A `finally` callback returning an object whose `then` is callable: the</span>
+<span class="tk-c">// native `finally` resolves the cleanup result before forwarding, calling</span>
+<span class="tk-c">// that `then` (run under Node: `log` holds 1 once the result settles).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> cleanup(p: <span class="tk-t">Promise</span>&lt;number&gt;, log: number[]): <span class="tk-t">Promise</span>&lt;number&gt; {
+  <span class="tk-k">return</span> p.<span class="tk-k">finally</span>(() =&gt; ({
+    then(resolve: () =&gt; <span class="tk-k">void</span>): <span class="tk-k">void</span> {
+      log.push(<span class="tk-n">1</span>);
+      resolve();
+    },
+  }));
+}</pre></details></li><li><details><summary><code>blocker-pretext-import-visitor-arity</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#findWholeLine.</span>
+<span class="tk-c">// A closure taking fewer parameters than the visitor an imported function's</span>
+<span class="tk-c">// optional parameter states: it is offered the visitor's signature, whose</span>
+<span class="tk-c">// first position it binds, and its body is checked there.</span>
+<span class="tk-k">import</span> { walkLines, <span class="tk-k">type</span> <span class="tk-t">LineData</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/line-data.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> widest(data: <span class="tk-t">LineData</span>): number {
+  <span class="tk-k">let</span> max = <span class="tk-n">0</span>;
+  walkLines(data, <span class="tk-n">100</span>, (width) =&gt; {
+    <span class="tk-k">if</span> (width &gt; max) max = width;
+  });
+  <span class="tk-k">return</span> max;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 4 insertions(+), 3 deletions(-)</summary><pre class="code"> ocaml-producer/expression_closures.ml | 7 ++++---</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-5ded51ecf"><header><div><div class="sha">5ded51ecf · Cristiano Calcagno · Nov 05, 17:06</div><h3>Expect the visitor control's refusal where the verifier states it, at the annotation</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The control forging a longer visitor signature on a closure whose parameter does not take it expected a search failure (&quot;source expression obligation&quot;) and an evidence refusal. Both search and checking refuse it earlier, at request validation: &quot;closure signature claim is outside the source annotation&quot;, the closure's own <code>width: number</code> annotation not admitting the forged <code>undefined | number</code>.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">pipeline/test.mts, the forged visitor-offer control</span></h4><pre class="code"><span class="ln">the refusals it expects are that request-validation obligation, in</span><span class="ln">search and in checking</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Tests</dt><dd><span class="test forged">a longer visitor signature on a closure whose parameter does not take it</span></dd></dl>
+<details><summary>1 file changed, 3 insertions(+), 2 deletions(-)</summary><pre class="code"> pipeline/test.mts | 5 +++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
