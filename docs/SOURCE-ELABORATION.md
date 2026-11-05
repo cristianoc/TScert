@@ -1194,13 +1194,14 @@ Operations excluded, refused with a location:
 
 - ownness through the prototype's method and the prototype itself:
   `e.hasOwnProperty`, a member `Error.prototype` inherits and the model does
-  not state, and `Object.getPrototypeOf`, read only compared with `Object.prototype`;
+  not state (`invalid-error-subclass-own-method`), and `Object.getPrototypeOf`, read only compared with `Object.prototype`;
 - serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
   message through `[[Get]]`; the parameter is a JSON value, which an instance
-  holding a prototype is not;
+  holding a prototype is not (`invalid-error-json-stringify`);
 - members JavaScript's instance or `Error.prototype` holds and the model does
   not state: `e.stack`, `e.cause`, `e.toString()`, `D.captureStackTrace`,
-  `super.m(…)`;
+  `super.m(…)` (`invalid-error-subclass-stack`, `invalid-error-cause-read`,
+  `invalid-error-to-string`, `invalid-error-super-method`);
 - an instance member named `message`, `stack` or `cause` (a method, a field
   or an accessor), and a parameter property of any of these names, of a
   class extending `Error` at any depth, refused at the member: JavaScript's
