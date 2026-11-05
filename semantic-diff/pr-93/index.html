@@ -1,0 +1,370 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-93"><code>e482159ef2f497bcc25c3001d1a30cbb7f913e87..pr-93</code></a><ul><li>1 commit</li><li>parts: <span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></li><li>new trust: <span class="trust">Float64Array values are host-created views like the other typed arrays; the global NaN is a constant; Intl.Segmenter and Intl.Segments values are host-created, no subclass's instances, with their standard prototypes and no own properties; Intl.Segmenter.prototype.segment, Segments' Symbol.iterator and the segment iterator's next are the host's own, and no prototype on a segment iterator's chain holds return</span></li></ul></li></ul></section>
+<h2 id="g-pr-93"><code>e482159ef2f497bcc25c3001d1a30cbb7f913e87..pr-93</code></h2><article class="card" id="c-6e24bf79b"><header><div><div class="sha">6e24bf79b · Cristiano Calcagno · Nov 05, 10:11</div><h3>Admit Float64Array as a view and Intl.Segmenter with its segments, as pretext uses them</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext (chenglou/pretext at 0d102a5c) keeps a kerning table in a <code>Float64Array</code> and splits text into words with <code>Intl.Segmenter</code>. A file naming <code>Float64Array</code> was refused with &quot;type outside the fragment (ThisType) in lib.es5.d.ts#Float64Array&quot;, and <code>new Float64Array(n)</code> as a global no reviewed entry admits; <code>.fill(NaN)</code> then met the global <code>NaN</code>, also unreviewed. <code>Intl.Segmenter</code> in a signature was refused with &quot;a qualified type reference in getWordSegmenter&quot;: only a namespace import's member was read qualified. <code>new Intl.Segmenter(…)</code> was refused because the namespace <code>Intl</code> was read only by calling its functions. The census of pretext's src/ named these refusals for 64 of its 209 functions.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">overlay of library types: views of bytes</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p><code>Uint8Array</code>, <code>Uint16Array</code> and <code>Int32Array</code> are one type, the view of bytes, each a host-created view, no subclass's instance, with the standard prototype chain, constructor and Symbol.species</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>Uint8Array</code>, <code>Uint16Array</code>, <code>Int32Array</code> and <code>Float64Array</code> are one type, the view of bytes, under the same assumption; a <code>Float64Array</code>'s element read at a valid index is any double, <code>NaN</code> included, a number, and <code>undefined</code> at any other key, so <code>%ByteAt%</code>'s <code>number | undefined</code> holds of it, and <code>%ByteSet%</code>, <code>fill</code>, <code>copyWithin</code>, <code>set</code> and <code>subarray</code> run no code on it as on the others</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">library globals: typed array constructors</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>new Uint8Array / new Uint16Array / new Int32Array : (number | readonly number[]) ⇒∅ Uint8Array</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>new Uint8Array / new Uint16Array / new Int32Array / new Float64Array : (number | readonly number[]) ⇒∅ Uint8Array</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library globals: the constant NaN</span></h4><div class="prose"><p>NaN : number a non-writable, non-configurable data property of the global object, read as <code>Infinity</code> is</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">overlay of library types: Intl.Segmenter, Intl.Segments, Intl.SegmentData</span></h4><div class="prose"><p>Segmenter = host &quot;intl:segmenter&quot; { segment(input: string) ⇒∅ Segments } Segments = host &quot;intl:segments&quot; {} SegmentData = { segment: string; index: number; input: string; isWordLike?: boolean } every Intl.Segmenter and Intl.Segments, the program's or external code's, is host-created, no subclass's instance, keeps its standard prototype and owns no property; %IntlSegmenterPrototype%.segment, %IntlSegmentsPrototype%[Symbol.iterator] and %IntlSegmentIteratorPrototype%.next are the host's own, and no prototype on a segment iterator's chain holds <code>return</code></p></div>
+<h4 class="change"><span class="act added">added</span>Typing <span class="target">type reader: a qualified name of the namespace Intl</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Intl</span>.<var>N</var> <span class="m-text">reads as the overlay's entry for</span> <var>N</var> <span class="m-text">where every declaration</span></span></div><div class="row"><span><span class="m-text">TypeScript binds Intl</span>.<var>N</var> <span class="m-text">to is one the entry reviews; any other qualified</span></span></div><div class="row"><span><span class="m-text">name is </span><span class="refused">refused</span><span class="m-text">, as before</span></span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: constructing a segmenter</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(l, o)</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-intr">%NewSegmenter%</span>(<var>l</var>, <var>o</var>)</span></div></div><div class="cond"><span class="tgt"><span class="m-intr">%NewSegmenter%</span> <span class="m-rel">:</span> (<span class="m-lit">undefined</span> | <span class="m-text">string</span>, <var>O</var> | <span class="m-lit">undefined</span>) ⇒∅ <span class="m-con">Segmenter</span></span></div><div class="cond"><span class="tgt"><var>O</var> <span class="m-rel">=</span> { <span class="m-text">readonly localeMatcher</span>?<span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;best fit&quot;</span></code> | <code class="m-code"><span class="tk-s">&quot;lookup&quot;</span></code> | <span class="m-lit">undefined</span>;</span></div><div class="cond"><span class="tgt"><span class="m-text">readonly granularity</span>?<span class="m-rel">:</span> <code class="m-code"><span class="tk-s">&quot;grapheme&quot;</span></code> | <code class="m-code"><span class="tk-s">&quot;word&quot;</span></code> | <code class="m-code"><span class="tk-s">&quot;sentence&quot;</span></code> | <span class="m-lit">undefined</span> }</span></div><div class="cond"><span class="tgt"><span class="m-text">(the construct signature reviewed by its text</span>; <span class="m-con">ECMA-402's</span> <span class="m-text">constructor</span></span></div><div class="cond"><span class="tgt"><span class="m-text">reads the two options by</span> [[<span class="m-con">Get</span>]] <span class="m-text">of a field</span> <var>O</var> <span class="m-text">states, a data property or</span></span></div><div class="cond"><span class="tgt"><span class="m-text">none, and converts a string, running no code</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">parser: a loop over segments</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-k">for</span> (<span class="tk-k">const</span> x <span class="tk-k">of</span> e) <span class="tk-t">S</span></code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">the host iteration of</span> <span class="m-intr">%Iterate:Segments%</span></span></div></div><div class="cond"><span class="tgt"><span class="m-text">(TypeScript types</span> <var>e</var> <span class="m-text">as the library's Intl</span>.<span class="m-con">Segments</span>)</span></div><div class="cond"><span class="tgt"><span class="m-intr">%Iterate:Segments%</span> <span class="m-rel">:</span> (<span class="m-con">Segments</span>) ⇒ <span class="m-op">Step</span>(<span class="m-con">SegmentData</span>)</span></div><div class="cond"><span class="tgt"><span class="m-text">(the step finds the next boundary and allocates a fresh SegmentData; it</span></span></div><div class="cond"><span class="tgt"><span class="m-text">states</span> {<span class="m-text">value</span><span class="m-rel">:</span> <span class="m-text">any, store</span><span class="m-rel">:</span> <span class="m-con">keep</span>}, <span class="m-text">as every host iteration step does; no</span></span></div><div class="cond"><span class="tgt"><code class="m-code"><span class="tk-k">return</span></code>, <span class="m-text">so leaving early calls nothing</span>)</span></div></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">the namespace Intl</span></h4><div class="prose"><p>a <code>new Intl.C(…)</code> whose construct signature no entry reviews (<code>new Intl.DateTimeFormat()</code>) is refused at its own expression; <code>resolvedOptions</code> and <code>containing</code> find no member; a class extending Intl.Segmenter is refused as qualified heritage; no program object meets Segmenter or Segments</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-float64array-type</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a Float64Array record field</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// han-kerning.ts#getCharType, han-kerning.ts#getFontData,</span>
+<span class="tk-c">// han-kerning.ts#getHanKerningTrims, han-kerning.ts#getStaticCharType,</span>
+<span class="tk-c">// han-kerning.ts#getTrim, han-kerning.ts#getTypeFromBounds,</span>
+<span class="tk-c">// han-kerning.ts#haltedSide, han-kerning.ts#isCanvasCjkSymbol,</span>
+<span class="tk-c">// han-kerning.ts#maybeHanKerns, han-kerning.ts#textMayHanKern,</span>
+<span class="tk-c">// prepare.ts#addInternalLetterSpacing,</span>
+<span class="tk-c">// prepare.ts#countRenderedSpacingGraphemes,</span>
+<span class="tk-c">// prepare.ts#getFollowingSpaceTail, prepare.ts#getScriptFacts,</span>
+<span class="tk-c">// prepare.ts#getScriptFactsAt, prepare.ts#getUnspacedGraphemes,</span>
+<span class="tk-c">// prepare.ts#isSpaceKind, prepare.ts#mayHoldCursive,</span>
+<span class="tk-c">// prepare.ts#needsComplexTextPath, prepare.ts#readScriptRuns,</span>
+<span class="tk-c">// prepare.ts#spaceSharesScriptRun.</span>
+<span class="tk-c">// A record type with a `Float64Array` field, read through the overlay of</span>
+<span class="tk-c">// library types: a view whose elements are doubles, whose declarations are</span>
+<span class="tk-c">// not read. Pretext meets it in its measurement record and in the modules</span>
+<span class="tk-c">// importing it.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Measurement</span> = { kanaKerning: <span class="tk-t">Float64Array</span> | <span class="tk-k">null</span>; size: number };
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(m: <span class="tk-t">Measurement</span>): number {
+  <span class="tk-k">return</span> m.size;
+}</pre></details></li><li><details><summary><code>blocker-pretext-float64array-construct</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">new Float64Array(n)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getFontKanaKerning.</span>
+<span class="tk-c">// `new Float64Array(n)`, through the global's reviewed entry: only</span>
+<span class="tk-c">// constructed, at a length or an array of numbers.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> kerning(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Float64Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-import-qualified-type</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">an imported function's Intl.Segmenter result, looped over</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// gecko-line-breaks.ts#getGeckoLineBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getLineBreakClass,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isClusterExtender,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isClusterExtenderExcludingJoiners,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianPunctuation,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianSegmentBreak,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianWidthFHWExcludingEmoji,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isJapaneseOrChinese,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isSegmentBreakSkipChar,</span>
+<span class="tk-c">// gecko-line-breaks.ts#segmentComplex, line-breaks.ts#classify,</span>
+<span class="tk-c">// line-breaks.ts#clearWordSegmenter, line-breaks.ts#createFactory,</span>
+<span class="tk-c">// line-breaks.ts#following, line-breaks.ts#getBlinkDefaultLocale,</span>
+<span class="tk-c">// line-breaks.ts#getBlinkLineBreaks, line-breaks.ts#getBreakLanguage,</span>
+<span class="tk-c">// line-breaks.ts#getBreakRules, line-breaks.ts#getClass,</span>
+<span class="tk-c">// line-breaks.ts#getWebKitBreakBetweenItems,</span>
+<span class="tk-c">// line-breaks.ts#getWebKitLineBreaks, line-breaks.ts#getWebKitLineRules,</span>
+<span class="tk-c">// line-breaks.ts#hasProperty, line-breaks.ts#isASCIIAlpha,</span>
+<span class="tk-c">// line-breaks.ts#isASCIIDigit, line-breaks.ts#isBlinkBreakableSpace,</span>
+<span class="tk-c">// line-breaks.ts#isComplexContext, line-breaks.ts#isWebKitBreakableSpace,</span>
+<span class="tk-c">// line-breaks.ts#lazyRegExp, line-breaks.ts#markDictionaryWords,</span>
+<span class="tk-c">// line-breaks.ts#markRuleBoundaries, line-breaks.ts#nextBreakablePosition,</span>
+<span class="tk-c">// line-breaks.ts#nextBreakableSpace, line-breaks.ts#shouldBreakFast,</span>
+<span class="tk-c">// line-breaks.ts#shouldKeepAfterKeepAll, line-breaks.ts#unpackClassRuns,</span>
+<span class="tk-c">// line-breaks.ts#unpackClasses, line-breaks.ts#unpackStateRows,</span>
+<span class="tk-c">// line-breaks.ts#unpackTable, line-breaks.ts#unpackTableRows,</span>
+<span class="tk-c">// line-breaks.ts#unpackVarints.</span>
+<span class="tk-c">// An imported function whose result is `Intl.Segmenter`, read at its</span>
+<span class="tk-c">// declared signature through the overlay of library types, and a loop over</span>
+<span class="tk-c">// its `segment(text)`. Pretext's `getWordSegmenter` meets it in its own</span>
+<span class="tk-c">// module and in each module importing it.</span>
+<span class="tk-k">import</span> { getWordSegmenter } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/line-breaks.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wordStarts(text: string): number[] {
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> part <span class="tk-k">of</span> getWordSegmenter().segment(text)) starts.push(part.index);
+  <span class="tk-k">return</span> starts;
+}</pre></details></li><li><details><summary><code>blocker-pretext-intl-segmenter-construct</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">new Intl.Segmenter(undefined, { granularity: &quot;word&quot; })</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#getWordSegmenter.</span>
+<span class="tk-c">// `new Intl.Segmenter(…)`, through the namespace's reviewed construct</span>
+<span class="tk-c">// entry, and a loop over its `segment(text)`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> words(text: string): number {
+  <span class="tk-k">const</span> segmenter = <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, { granularity: <span class="tk-s">&quot;word&quot;</span> });
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> _ <span class="tk-k">of</span> segmenter.segment(text)) n++;
+  <span class="tk-k">return</span> n;
+}</pre></details></li><li><details><summary><code>typed-array-float64</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">fill(NaN), Number.isNaN of an element, writes, subarray</span></summary><pre class="code"><span class="tk-c">// The standard library's `Float64Array` as pretext uses it</span>
+<span class="tk-c">// (chenglou/pretext at 0d102a5c, src/measurement.ts): a record field that</span>
+<span class="tk-c">// is a table or `null` or not computed yet, `new Float64Array(n).fill(NaN)`,</span>
+<span class="tk-c">// an element read at a number, a table entry not asked yet being `NaN`, and</span>
+<span class="tk-c">// an element write. A view's elements are any doubles, `NaN` included.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Measurement</span> = {
+  kanaKerning: <span class="tk-t">Float64Array</span> | <span class="tk-k">null</span> | <span class="tk-k">undefined</span>;
+  size: number;
+};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> getKerning(
+  measurement: <span class="tk-t">Measurement</span>,
+  count: number,
+): <span class="tk-t">Float64Array</span> | <span class="tk-k">null</span> {
+  <span class="tk-k">if</span> (measurement.kanaKerning === <span class="tk-k">undefined</span>) {
+    measurement.kanaKerning = <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> (count &gt; <span class="tk-n">0</span>)
+      measurement.kanaKerning = <span class="tk-k">new</span> <span class="tk-t">Float64Array</span>(count * count).fill(<span class="tk-t">NaN</span>);
+  }
+  <span class="tk-k">return</span> measurement.kanaKerning;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> kerningAt(
+  kernings: <span class="tk-t">Float64Array</span>,
+  index: number,
+  measured: number,
+): number {
+  <span class="tk-k">const</span> kerning = kernings[index] ?? <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.isNaN(kerning) ? (kernings[index] = measured) : kerning;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> total(kernings: <span class="tk-t">Float64Array</span>): number {
+  <span class="tk-k">let</span> sum = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; kernings.length; i++) sum += kernings[i] ?? <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> sum + <span class="tk-k">new</span> <span class="tk-t">Float64Array</span>([<span class="tk-n">0.5</span>, <span class="tk-n">0.25</span>]).subarray(<span class="tk-n">1</span>).length;
+}</pre></details></li><li><details><summary><code>invalid-typed-array-float64-subclass</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">extending Float64Array, whose subarray runs the subclass</span></summary><pre class="code"><span class="tk-c">// A subclass of `Float64Array` is the constructor `subarray` constructs its</span>
+<span class="tk-c">// result with (TypedArraySpeciesCreate), running the subclass's code, which</span>
+<span class="tk-c">// replaces a string the caller narrowed (run under Node: a number): the</span>
+<span class="tk-c">// global `Float64Array` is only constructed, refused.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">class</span> <span class="tk-t">Counting</span> <span class="tk-k">extends</span> <span class="tk-t">Float64Array</span> {
+  <span class="tk-k">constructor</span>(length: number) {
+    <span class="tk-k">super</span>(length);
+    label = <span class="tk-n">1</span>;
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(): <span class="tk-t">Float64Array</span> {
+  <span class="tk-k">const</span> view = <span class="tk-k">new</span> <span class="tk-t">Counting</span>(<span class="tk-n">4</span>);
+  label = <span class="tk-s">&quot;text&quot;</span>;
+  <span class="tk-k">return</span> view;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> trimmed(view: <span class="tk-t">Float64Array</span>): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  view.subarray(<span class="tk-n">0</span>, <span class="tk-n">1</span>);
+  <span class="tk-k">return</span> label;
+}</pre></details></li><li><details><summary><code>intl-segmenter-words</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the ??= binding, word starts, isWordLike, an early exit</span></summary><pre class="code"><span class="tk-c">// The standard library's `Intl.Segmenter` as pretext uses it</span>
+<span class="tk-c">// (chenglou/pretext at 0d102a5c, src/line-breaks.ts and</span>
+<span class="tk-c">// src/gecko-line-breaks.ts): a module binding holding a segmenter or</span>
+<span class="tk-c">// `null`, made once by `??=` with `new Intl.Segmenter(undefined, {</span>
+<span class="tk-c">// granularity: &quot;word&quot; })`, and loops over `segment(text)` reading each</span>
+<span class="tk-c">// segment's `index`; besides, a segmenter of a named locale, a segment's</span>
+<span class="tk-c">// `segment` and `isWordLike`, and a loop left early.</span>
+<span class="tk-k">let</span> wordSegmenter: <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> getWordSegmenter(): <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> {
+  <span class="tk-k">return</span> (wordSegmenter ??= <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, {
+    granularity: <span class="tk-s">&quot;word&quot;</span>,
+  }));
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> clearWordSegmenter(): <span class="tk-k">void</span> {
+  wordSegmenter = <span class="tk-k">null</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wordStarts(text: string, offset: number): number[] {
+  <span class="tk-k">const</span> result: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> part <span class="tk-k">of</span> getWordSegmenter().segment(text))
+    <span class="tk-k">if</span> (part.index &gt; <span class="tk-n">0</span>) result.push(offset + part.index);
+  <span class="tk-k">return</span> result;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstWord(text: string): string {
+  <span class="tk-k">const</span> segmenter = <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-s">&quot;th&quot;</span>, {
+    localeMatcher: <span class="tk-s">&quot;lookup&quot;</span>,
+    granularity: <span class="tk-s">&quot;word&quot;</span>,
+  });
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> segment <span class="tk-k">of</span> segmenter.segment(text)) {
+    <span class="tk-k">if</span> (segment.isWordLike === <span class="tk-k">true</span>) <span class="tk-k">return</span> segment.segment;
+  }
+  <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> graphemes(text: string): number {
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> segment <span class="tk-k">of</span> <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, <span class="tk-k">undefined</span>).segment(text))
+    n += segment.input.length &gt; <span class="tk-n">0</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> n;
+}</pre></details></li><li><details><summary><code>invalid-intl-segmenter-options-getter</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an options getter runs at [[Get]]</span></summary><pre class="code"><span class="tk-c">// `new Intl.Segmenter` reads its options' `granularity` by [[Get]], which</span>
+<span class="tk-c">// runs a getter there, here replacing a string the caller narrowed (run</span>
+<span class="tk-c">// under Node: a number): an object literal's getter is refused.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> segmented(): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">const</span> options = {
+    <span class="tk-k">get</span> granularity(): <span class="tk-s">&quot;word&quot;</span> {
+      label = <span class="tk-n">1</span>;
+      <span class="tk-k">return</span> <span class="tk-s">&quot;word&quot;</span>;
+    },
+  };
+  <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, options);
+  <span class="tk-k">return</span> label;
+}</pre></details></li><li><details><summary><code>invalid-intl-segmenter-subclass</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a subclass's segment runs where segment is called</span></summary><pre class="code"><span class="tk-c">// A subclass of `Intl.Segmenter` may replace `segment`, whose code then</span>
+<span class="tk-c">// runs where a segmenter's `segment` is called, here replacing a string the</span>
+<span class="tk-c">// caller narrowed (run under Node: a number): extending `Intl.Segmenter` is</span>
+<span class="tk-c">// refused.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">class</span> <span class="tk-t">Counting</span> <span class="tk-k">extends</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> {
+  segment(input: string): <span class="tk-t">Intl</span>.<span class="tk-t">Segments</span> {
+    label = <span class="tk-n">1</span>;
+    <span class="tk-k">return</span> <span class="tk-k">super</span>.segment(input);
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> make(): <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Counting</span>(<span class="tk-k">undefined</span>, { granularity: <span class="tk-s">&quot;word&quot;</span> });
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(segmenter: <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>, text: string): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  segmenter.segment(text);
+  <span class="tk-k">return</span> label;
+}</pre></details></li><li><details><summary><code>invalid-intl-segmenter-structural</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a program object typed Intl.Segmenter</span></summary><pre class="code"><span class="tk-c">// A program's object TypeScript accepts as an `Intl.Segmenter`, whose</span>
+<span class="tk-c">// `segment` replaces a string the caller narrowed (run under Node: a</span>
+<span class="tk-c">// number): the overlay's `Intl.Segmenter` is a host object's type, which no</span>
+<span class="tk-c">// program object meets.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> fake(): <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> {
+  <span class="tk-k">return</span> {
+    segment(input) {
+      label = <span class="tk-n">1</span>;
+      <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, <span class="tk-k">undefined</span>).segment(input);
+    },
+    resolvedOptions() {
+      <span class="tk-k">return</span> { locale: <span class="tk-s">&quot;en&quot;</span>, granularity: <span class="tk-s">&quot;grapheme&quot;</span> };
+    },
+  };
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(segmenter: <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>, text: string): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  segmenter.segment(text);
+  <span class="tk-k">return</span> label;
+}</pre></details></li><li><details><summary><code>invalid-intl-segments-structural</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a program object typed Intl.Segments</span></summary><pre class="code"><span class="tk-c">// A program's object TypeScript accepts as an `Intl.Segments`, whose</span>
+<span class="tk-c">// iterator replaces a string the caller narrowed (run under Node: a</span>
+<span class="tk-c">// number): the overlay's `Intl.Segments` is a host object's type, which no</span>
+<span class="tk-c">// program object meets, and its loop steps the host's segment iterator.</span>
+<span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> fake(): <span class="tk-t">Intl</span>.<span class="tk-t">Segments</span> {
+  <span class="tk-k">const</span> data: <span class="tk-t">Intl</span>.<span class="tk-t">SegmentData</span>[] = [{ segment: <span class="tk-s">&quot;a&quot;</span>, index: <span class="tk-n">0</span>, input: <span class="tk-s">&quot;a&quot;</span> }];
+  <span class="tk-k">return</span> {
+    containing() {
+      <span class="tk-k">return</span> <span class="tk-k">undefined</span>;
+    },
+    [<span class="tk-t">Symbol</span>.iterator]() {
+      label = <span class="tk-n">1</span>;
+      <span class="tk-k">return</span> data.values();
+    },
+  };
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(segments: <span class="tk-t">Intl</span>.<span class="tk-t">Segments</span>): string {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> label !== <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> _ <span class="tk-k">of</span> segments) <span class="tk-k">break</span>;
+  <span class="tk-k">return</span> label;
+}</pre></details></li></ul>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-k">let</span> label: string | number = <span class="tk-s">&quot;text&quot;</span>;</span><span class="ln"><span class="tk-k">class</span> <span class="tk-t">Counting</span> <span class="tk-k">extends</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span> {</span><span class="ln">  segment(input: string): <span class="tk-t">Intl</span>.<span class="tk-t">Segments</span> { label = <span class="tk-n">1</span>; <span class="tk-k">return</span> <span class="tk-k">super</span>.segment(input); }</span><span class="ln">}</span><span class="ln"><span class="tk-c">// count(segmenter, text) narrows label to string, calls</span></span><span class="ln"><span class="tk-c">// segmenter.segment(text), and returns label</span></span><span class="ln"><span class="tk-k">typeof</span> count(<span class="tk-k">new</span> <span class="tk-t">Counting</span>(<span class="tk-k">undefined</span>, { granularity: <span class="tk-s">&quot;word&quot;</span> }), <span class="tk-s">&quot;a b&quot;</span>)   <span class="tk-c">// Node: &quot;number&quot;</span></span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>The model holds no element of a view and no slot of a segmenter, its segments or their iterator, so the stated members and the iteration step change no location the model holds. Each stated step was audited against ECMA-262's TypedArray objects and ECMA-402's Segmenter objects, and each negative case run under Node 26.13.0.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, SOURCE-ELABORATION.md, DESIGN.md, WORK.md</span></h4><div class="prose"><p>the view of bytes with Float64Array, the NaN constant, a new <code>Intl.Segmenter</code> section, %Iterate:Segments% among the host iterations, the trust row, and the pretext row</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></dd><dt>Lean</dt><dd>iterateNames</dd><dt>Trust</dt><dd><span class="trust">Float64Array values are host-created views like the other typed arrays; the global NaN is a constant; Intl.Segmenter and Intl.Segments values are host-created, no subclass's instances, with their standard prototypes and no own properties; Intl.Segmenter.prototype.segment, Segments' Symbol.iterator and the segment iterator's next are the host's own, and no prototype on a segment iterator's chain holds return</span></dd><dt>Measured</dt><dd>pretext src/ census (0d102a5c), shallow verified functions 34 -&gt; 58 of 209, deep 25 -&gt; 34, statements 206 -&gt; 395 of 3424</dd><dt>Tests</dt><dd><span class="test pos">typed-array-float64</span> <span class="test pos">invalid-typed-array-float64-subclass</span> <span class="test pos">intl-segmenter-words</span> <span class="test pos">invalid-intl-segmenter-options-getter</span> <span class="test pos">invalid-intl-segmenter-subclass</span> <span class="test pos">invalid-intl-segmenter-structural</span> <span class="test pos">invalid-intl-segments-structural</span></dd></dl>
+<details><summary>24 files changed, 563 insertions(+), 75 deletions(-)</summary><pre class="code"> WORK.md                                            |   2 +-
+ docs/DESIGN.md                                     |   2 +-
+ docs/SOURCE-CONTRACTS.md                           | 139 ++++++++++++++++++---
+ docs/SOURCE-ELABORATION.md                         |   7 +-
+ lean/Verification/Source/Fragment.lean             |   6 +-
+ pipeline/cases.mts                                 |  22 +++-
+ .../blocker-pretext-float64array-construct.ts      |   6 +-
+ .../examples/blocker-pretext-float64array-type.ts  |  11 +-
+ .../blocker-pretext-import-qualified-type.ts       |   8 +-
+ .../blocker-pretext-intl-segmenter-construct.ts    |   6 +-
+ pipeline/examples/intl-segmenter-words.ts          |  43 +++++++
+ .../invalid-intl-segmenter-options-getter.ts       |  15 +++
+ .../examples/invalid-intl-segmenter-structural.ts  |  21 ++++
+ .../examples/invalid-intl-segmenter-subclass.ts    |  19 +++
+ .../examples/invalid-intl-segments-structural.ts   |  22 ++++
+ .../invalid-typed-array-float64-subclass.ts        |  21 ++++
+ pipeline/examples/typed-array-float64.ts           |  36 ++++++
+ tests/node-runs.mts                                |  16 +++
+ tools/declaration-graph.mts                        |  61 +++++++--
+ tools/fragment-parse.mts                           |  24 +++-
+ tools/host-operations.mts                          |   7 +-
+ tools/intrinsics.mts                               |  35 +++++-
+ tools/library-globals.mts                          |  23 +++-
+ tools/library-types.mts                            |  86 +++++++++++--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
