@@ -1,0 +1,358 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-101"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-101</code></a><ul><li>3 commits, units 5 verified, 8 gap</li><li>parts: <span class="chip">producer</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></li></ul></li></ul></section>
+<h2 id="g-pr-101"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-101</code></h2><article class="card" id="c-5630b93e9"><header><div><div class="sha">5630b93e9 · Cristiano Calcagno · Nov 05, 14:07</div><h3>Propose what pretext's unary minus, untyped new Map and condition constants already establish</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>han-kerning.ts#getFontData</span><span>measurement.ts#getFontSpaceKerning</span><span>measurement.ts#measureFitAdvances</span><span>measurement.ts#getSegmentFit</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Four pretext functions (chenglou/pretext at 0d102a5c, with the rewrites of issue #94) were refused with &quot;no derivation&quot; claims whose judgments hold; the producer or the search failed to propose them. - getFontData: its callee getTypeFromBounds builds its result with <code>-x</code>; the producer stated no footprint for a unary operator, so the callee's signature wrote {any, any} and the <code>map</code> over it gave no dense array: the element read <code>glyphs[i]</code> had no derivation. - getFontSpaceKerning: <code>m.k = c ? new Map() : null</code>, with m.k at <code>Map&lt;number, number&gt; | null | undefined</code>: the construction's binders were inferred against the union as a whole, fixed nothing, and the claim was <code>Map&lt;void, void&gt;</code>. - measureFitAdvances, getSegmentFit: <code>const prefixes = from === &quot;a&quot;</code> tested statements later (or inside a loop): a cut's implications came only from seeds a failed round met, one cut further per round, at most four rounds, and a loop's head never, its back edge stating none. Reducing unpackClasses found a fifth: a construction at a signature keeping the heap (<code>new Uint8Array(n)</code>) forgot every cell, <code>keeps_heap</code> matching only calls.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, Source.footprint_expr and throws_expr</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">unary operator</span><span class="m-rel">:</span> <span class="m-text">no footprint stated</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">footprint</span>(<span class="m-op">op</span> <var>e</var>) <span class="m-rel">=</span> <span class="m-con">footprint</span>(<var>e</var>)</span><span>(<span class="m-op">op</span> <span class="m-rel">∈</span> -, +, ~, <span class="m-text">typeof</span><span class="m-rel">:</span> <span class="m-text">lowered to e's arithmetic or its typeof test</span>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, Inference.constrain, output direction only</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">result</span> <span class="m-op">Named</span>(<var>D</var>, ā) <span class="m-text">against an expected union</span><span class="m-rel">:</span> <span class="m-text">no constraint</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">result</span> <span class="m-op">Named</span>(<var>D</var>, ā) <span class="m-text">against an expected union with exactly one arm</span> <span class="m-op">Named</span>(<var>D</var>, <var>b</var>̄)<span class="m-rel">:</span> <span class="m-text">constrain against that arm</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">producer, execution analysis keeps_heap</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call whose every signature keeps the heap keeps cells, fields and paths</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a call or a construction (its construct signatures) whose every signature keeps the heap keeps them, as Lean's call-keep does</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Lean search, CertificateProducer, cut implications</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">rounds</span> 1–4<span class="m-rel">:</span> <span class="m-text">a cut's implications are the seeds the edges entering it met in the round before</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">rounds</span> 1–4 <span class="m-text">as before; where they fail and some node carried an implication, at most two waiting rounds</span><span class="m-rel">:</span></span></div><div class="row"><span><span class="m-text">a cut waits for its entering edges and takes their meetImplications, a loop's head goes ahead forced, alone</span>,</span></div><div class="row"><span><span class="m-text">and takes in the first waiting round what its produced edges state (a guess its back edge confirms or refutes)</span>;</span></div><div class="row"><span><span class="m-text">a failure is the first round's</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md</span></h4><div class="prose"><p>&quot;A constant holding a condition's value&quot; states the waiting rounds and that a refusal is the first round's.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-unary-footprint</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">getFontData's -x in a mapped callee</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): han-kerning.ts#getFontData.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim, at the read of an element of the mapped array.</span>
+<span class="tk-c">// A function whose result is built with a unary minus, `-m.left`, mapped</span>
+<span class="tk-c">// over an array and the result read in a closure: the unary operator lowers</span>
+<span class="tk-c">// to its operand's arithmetic, which changes no location, so the</span>
+<span class="tk-c">// function's footprint is within the empty one and `map` gives a dense</span>
+<span class="tk-c">// array of its results.</span>
+<span class="tk-k">type</span> <span class="tk-t">Glyph</span> = { advance: number; <span class="tk-k">type</span>: number };
+
+<span class="tk-k">function</span> bounds(c: number): <span class="tk-t">Glyph</span> {
+  <span class="tk-k">return</span> { advance: c, <span class="tk-k">type</span>: -c };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> fontData(): number {
+  <span class="tk-k">const</span> glyphs = [0x3001, 0x3002].map((c) =&gt; bounds(c));
+  <span class="tk-k">const</span> group = (i: number): number =&gt; glyphs[i]?.<span class="tk-k">type</span> ?? <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> group(<span class="tk-n">0</span>);
+}</pre></details></li><li><details><summary><code>blocker-pretext-construct-union-context</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">getFontSpaceKerning's new Map()</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#getFontSpaceKerning.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim, `new Map()` claimed at `Map&lt;void, void&gt;`.</span>
+<span class="tk-c">// A `new Map()` with no type arguments written where a field holding</span>
+<span class="tk-c">// `Map&lt;number, number&gt; | null | undefined` is expected: the construction's</span>
+<span class="tk-c">// type arguments are inferred from the arm of the expected union naming the</span>
+<span class="tk-c">// same declaration, as TypeScript infers to the union member of the same</span>
+<span class="tk-c">// reference; the map is fresh and empty, so any instance holds it.</span>
+<span class="tk-k">type</span> <span class="tk-t">Measurement</span> = { spaceKerning: <span class="tk-t">Map</span>&lt;number, number&gt; | <span class="tk-k">null</span> | <span class="tk-k">undefined</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> spaceKerning(
+  measurement: <span class="tk-t">Measurement</span>,
+  kerned: boolean,
+): <span class="tk-t">Map</span>&lt;number, number&gt; | <span class="tk-k">null</span> {
+  <span class="tk-k">if</span> (measurement.spaceKerning === <span class="tk-k">undefined</span>)
+    measurement.spaceKerning = kerned ? <span class="tk-k">new</span> <span class="tk-t">Map</span>() : <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> measurement.spaceKerning;
+}</pre></details></li><li><code>blocker-pretext-constant-implication-statements  positive</code> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">measureFitAdvances, getSegmentFit</span></li><li><details><summary><code>construction-keeps-cells</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a cell kept across new Uint8Array(n)</span></summary><pre class="code"><span class="tk-c">// A module cell tested against `null`, then a construction at a signature</span>
+<span class="tk-c">// keeping the heap, `new Uint8Array(n)`: Lean's `call-keep` keeps every</span>
+<span class="tk-c">// heap fact across it, a construction's as a call's, so the cell keeps its</span>
+<span class="tk-c">// narrowing. Census functions: none; found reducing pretext's</span>
+<span class="tk-c">// line-breaks.ts#unpackClasses.</span>
+<span class="tk-k">let</span> runs: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">function</span> first(a: number[], b: number): number {
+  <span class="tk-k">return</span> a.length + b;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> unpack(n: number): number {
+  <span class="tk-k">if</span> (runs === <span class="tk-k">null</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> bytes = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">return</span> first(runs, bytes.length);
+}</pre></details></li><li><code>every other case and control</code> <span class="why">unchanged</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Every change is a proposal: the producer's claims and the search's evidence are checked by the checker, unchanged. The search's failure report is the first round's, so a refused unit reports what it reported before.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">producer</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-unary-footprint</span> <span class="test pos">blocker-pretext-construct-union-context</span> <span class="test pos">blocker-pretext-constant-implication-statements</span> <span class="test pos">construction-keeps-cells</span></dd></dl>
+<details><summary>9 files changed, 186 insertions(+), 30 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             | 15 ++++--
+ .../Verification/Programs/CertificateProducer.lean | 58 +++++++++++++++++++---
+ ocaml-producer/execution_analysis.ml               | 40 +++++++++------
+ ocaml-producer/inference.ml                        | 16 ++++++
+ ocaml-producer/source.ml                           |  9 ++--
+ ...cker-pretext-constant-implication-statements.ts | 23 +++++++++
+ .../blocker-pretext-construct-union-context.ts     | 19 +++++++
+ .../examples/blocker-pretext-unary-footprint.ts    | 20 ++++++++
+ pipeline/examples/construction-keeps-cells.ts      | 16 ++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-6e984bfb8"><header><div><div class="sha">6e984bfb8 · Cristiano Calcagno · Nov 05, 14:07</div><h3>Give a case to each remaining cause of pretext's unexplained refusals</h3></div><span class="pill gap">gap</span></header>
+<div class="units"><span>line-breaks.ts#unpackClasses</span><span>measurement.ts#clearMeasurementCaches</span><span>measurement.ts#getWholeRunContext</span><span>measurement.ts#getFontKanaKerning</span><span>line-breaks.ts#getBlinkLineBreaks</span><span>measurement.ts#getExtraSpacings</span><span>measurement.ts#getSegmentFit</span><span>measurement.ts#getCanvasFont</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Eight pretext functions (chenglou/pretext at 0d102a5c, with the rewrites of issue #94) were refused with &quot;no derivation&quot; or an edge obligation and no case. Each cause not closed by the previous commit is reduced to its smallest source, its header naming the functions.</p></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">cases, no behaviour change</span></h4><div class="prose"><p>blocker-pretext-module-cells-apart: unpackClasses. Two module cells filled in turn by ??=: a module's cells are separated by no fact, so the second write may write the first. blocker-pretext-module-cell-after-call: clearMeasurementCaches. A module cell tested, then a method of the Map it holds called: the call's receiver store is not known apart from the cell. blocker-pretext-sibling-field-write: getWholeRunContext, getFontKanaKerning. A field narrowed, then another field of the same parameter's object written: no fact states two fields of an object the function did not allocate apart. blocker-pretext-template-literal-union: getBlinkLineBreaks. <code>x${t}</code> with t a union of literals is typed string, at a parameter of a union of literals. blocker-pretext-loop-cell-call-result: getExtraSpacings. A for loop whose update writes its bindings inside an expression holds them in cells; a binding given a call's result later holds an object no fact states apart from them. blocker-pretext-constant-implication-conjunction: getSegmentFit. A condition constant as the left operand of &amp;&amp; narrows nothing past it: the right operand's nodes are claimed at the statement's entry. invalid-pretext-replace-capture-types: getCanvasFont. A replacement callback types as string captures its regex hands as undefined.</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-module-cells-apart</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): line-breaks.ts#unpackClasses.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim, a cell read at its contract.</span>
+<span class="tk-c">// Two module cells filled in turn by `??=`, then both passed on: the write</span>
+<span class="tk-c">// of the second may, as far as the function can tell, be a write of the</span>
+<span class="tk-c">// first, since a module's cells are separated by no fact, so the first is</span>
+<span class="tk-c">// read at its contract, `number[] | null`.</span>
+<span class="tk-k">let</span> runs: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+<span class="tk-k">let</span> remaps: number[] | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">function</span> count(a: number[], b: number[]): number {
+  <span class="tk-k">return</span> a.length + b.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> unpack(n: number): number {
+  runs ??= [n];
+  remaps ??= [n + <span class="tk-n">1</span>];
+  <span class="tk-k">return</span> count(runs, remaps);
+}</pre></details></li><li><details><summary><code>blocker-pretext-module-cell-after-call</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#clearMeasurementCaches.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim, a write at a module cell's contract.</span>
+<span class="tk-c">// A module cell tested against `null`, then a method of a `Map` it holds</span>
+<span class="tk-c">// called, then a field of the cell written: the call may write any location</span>
+<span class="tk-c">// its receiver's store is not known apart from, and a module's cell is</span>
+<span class="tk-c">// separated from no location, so past the call the cell is read at its</span>
+<span class="tk-c">// contract, `State | null`.</span>
+<span class="tk-k">type</span> <span class="tk-t">State</span> = { fonts: <span class="tk-t">Map</span>&lt;string, number&gt;; segments: number };
+
+<span class="tk-k">let</span> state: <span class="tk-t">State</span> | <span class="tk-k">null</span> = <span class="tk-k">null</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> clear(): <span class="tk-k">void</span> {
+  <span class="tk-k">if</span> (state === <span class="tk-k">null</span>) <span class="tk-k">return</span>;
+  state.fonts.clear();
+  state.segments = <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-sibling-field-write</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#getWholeRunContext,</span>
+<span class="tk-c">// measurement.ts#getFontKanaKerning.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// return-contract claim.</span>
+<span class="tk-c">// A field of a parameter's object narrowed by a test and a write, then a</span>
+<span class="tk-c">// write of another field of the same object: a write keeps what is known of</span>
+<span class="tk-c">// a location only where a separation fact states it apart from the written</span>
+<span class="tk-c">// one, and none states two fields of an object the function did not</span>
+<span class="tk-c">// allocate apart, so the first field is read at its contract.</span>
+<span class="tk-k">type</span> <span class="tk-t">Context</span> = { font: string };
+<span class="tk-k">type</span> <span class="tk-t">State</span> = { context: <span class="tk-t">Context</span> | <span class="tk-k">null</span>; font: string };
+
+<span class="tk-k">function</span> create(): <span class="tk-t">Context</span> {
+  <span class="tk-k">return</span> { font: <span class="tk-s">&quot;&quot;</span> };
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wholeRunContext(state: <span class="tk-t">State</span>, font: string): <span class="tk-t">Context</span> {
+  <span class="tk-k">if</span> (state.context === <span class="tk-k">null</span>) state.context = create();
+  state.font = font;
+  <span class="tk-k">return</span> state.context;
+}</pre></details></li><li><details><summary><code>blocker-pretext-template-literal-union</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): line-breaks.ts#getBlinkLineBreaks.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim.</span>
+<span class="tk-c">// A template literal whose hole holds a union of string literals, passed</span>
+<span class="tk-c">// where a union of literals is expected: TypeScript types it as the union</span>
+<span class="tk-c">// of its instances, `&quot;chromium/line_normal&quot; | &quot;chromium/line_normal_cj&quot;`;</span>
+<span class="tk-c">// the model types a concatenation as `string`, as it does `'a' + b` of</span>
+<span class="tk-c">// literals.</span>
+<span class="tk-k">type</span> <span class="tk-t">RuleTable</span> =
+  | <span class="tk-s">&quot;apple/line&quot;</span>
+  | <span class="tk-s">&quot;chromium/line_normal&quot;</span>
+  | <span class="tk-s">&quot;chromium/line_normal_cj&quot;</span>;
+
+<span class="tk-k">function</span> rules(table: <span class="tk-t">RuleTable</span>): number {
+  <span class="tk-k">return</span> table.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> blinkRules(cj: boolean): number {
+  <span class="tk-k">const</span> table: <span class="tk-s">&quot;line_normal&quot;</span> | <span class="tk-s">&quot;line_normal_cj&quot;</span> = cj
+    ? <span class="tk-s">&quot;line_normal_cj&quot;</span>
+    : <span class="tk-s">&quot;line_normal&quot;</span>;
+  <span class="tk-k">return</span> rules(<span class="tk-s">`chromium/${table}`</span>);
+}</pre></details></li><li><details><summary><code>blocker-pretext-loop-cell-call-result</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#getExtraSpacings.</span>
+<span class="tk-c">// Refusal: reject: source incoming edge obligation: the edge does not</span>
+<span class="tk-c">// establish the claims at this point.</span>
+<span class="tk-c">// A `for` loop whose update writes its bindings inside an expression</span>
+<span class="tk-c">// (`start = ends[i++]`, here `start = i, i++`) holds them in cells the</span>
+<span class="tk-c">// function allocates, and each statement entry restates their separation</span>
+<span class="tk-c">// from the slots' locations. A binding given a call's result after the</span>
+<span class="tk-c">// cells were allocated, `extras = zeros(count)`, holds an object no fact</span>
+<span class="tk-c">// states apart from them: a callee cannot reach a cell the function never</span>
+<span class="tk-c">// passes it, but the model states no reachability, and a source function's</span>
+<span class="tk-c">// signature states no fresh result.</span>
+<span class="tk-k">function</span> zeros(count: number): number[] {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Array</span>&lt;number&gt;(count).fill(<span class="tk-n">0</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> extraSpacings(count: number): number[] {
+  <span class="tk-k">let</span> extras: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>, start = <span class="tk-n">0</span>; i &lt; count; start = i, i++) {
+    <span class="tk-k">if</span> (extras.length === <span class="tk-n">0</span>) extras = zeros(count);
+    extras.push(start);
+  }
+  <span class="tk-k">return</span> extras;
+}</pre></details></li><li><details><summary><code>blocker-pretext-constant-implication-conjunction</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#getSegmentFit.</span>
+<span class="tk-c">// Refusal: reject: source incoming edge obligation: the edge does not</span>
+<span class="tk-c">// establish the claims at this point (`from` is &quot;a&quot; | &quot;b&quot;, &quot;a&quot; required).</span>
+<span class="tk-c">// A constant holding a comparison, tested as the left operand of `&amp;&amp;`: the</span>
+<span class="tk-c">// branch on the constant narrows `from` on its edge, but the nodes of the</span>
+<span class="tk-c">// right operand are claimed at the statement's entry, where `from` is</span>
+<span class="tk-c">// &quot;a&quot; | &quot;b&quot;. The constant alone, or as the right operand, narrows.</span>
+<span class="tk-k">function</span> onlyA(<span class="tk-k">from</span>: <span class="tk-s">&quot;a&quot;</span>): number {
+  <span class="tk-k">return</span> <span class="tk-k">from</span>.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> fit(<span class="tk-k">from</span>: <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>, n: number): number {
+  <span class="tk-k">const</span> prefixes = <span class="tk-k">from</span> === <span class="tk-s">&quot;a&quot;</span>;
+  <span class="tk-k">if</span> (prefixes &amp;&amp; n &gt; <span class="tk-n">2</span>) <span class="tk-k">return</span> onlyA(<span class="tk-k">from</span>);
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>invalid-pretext-replace-capture-types</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#getCanvasFont.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its</span>
+<span class="tk-c">// node-typing claim.</span>
+<span class="tk-c">// A replacement callback typing as `string` the captures of the second</span>
+<span class="tk-c">// alternative of its pattern: where the first alternative matches, a quoted</span>
+<span class="tk-c">// family, the regex hands it `undefined` for each of them. Pretext reads</span>
+<span class="tk-c">// them only where `quoted` is `undefined`; this case reads `separator` on</span>
+<span class="tk-c">// the other arm too, which throws on `&quot;Foo&quot;, serif` (run under Node).</span>
+<span class="tk-k">const</span> keywords = [<span class="tk-s">&quot;serif&quot;</span>, <span class="tk-s">&quot;monospace&quot;</span>];
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> canvasFont(font: string, families: <span class="tk-k">readonly</span> string[]): string {
+  <span class="tk-k">return</span> font.replace(
+    /(<span class="tk-s">&quot;[^&quot;</span>]*&quot;)|(^|,)(\s*)(serif|monospace)(?=\s*(?:,|$))/gi,
+    (
+      item: string,
+      quoted: string | <span class="tk-k">undefined</span>,
+      separator: string,
+      space: string,
+      keyword: string,
+    ) =&gt; {
+      <span class="tk-k">if</span> (quoted !== <span class="tk-k">undefined</span>) <span class="tk-k">return</span> item.slice(separator.length);
+      <span class="tk-k">const</span> named = families[keywords.indexOf(keyword.toLowerCase())] ?? <span class="tk-s">&quot;&quot;</span>;
+      <span class="tk-k">return</span> named === <span class="tk-s">&quot;&quot;</span> ? item : separator + space + named;
+    },
+  );
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>Module cells apart from each other and from locations the function did not allocate; an object's own fields apart; a private cell apart from a call's result; concatenation of literal types; a condition constant's implication through the left operand of &amp;&amp;. Each extends separation facts (HeapSeparation), the concatenation typing, or the lowering of conditions; none is designed here.</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln">canvasFont(<span class="tk-s">'&quot;Foo&quot;, serif'</span>, [<span class="tk-s">&quot;Times&quot;</span>]) throws a <span class="tk-t">TypeError</span> under <span class="tk-t">Node</span>:</span><span class="ln">the quoted alternative hands the callback <span class="tk-k">undefined</span> <span class="tk-k">as</span> <span class="tk-s">`separator`</span></span><span class="ln">(tests/node-runs.mts).</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-module-cells-apart</span> <span class="test pos">blocker-pretext-module-cell-after-call</span> <span class="test pos">blocker-pretext-sibling-field-write</span> <span class="test pos">blocker-pretext-template-literal-union</span> <span class="test pos">blocker-pretext-loop-cell-call-result</span> <span class="test pos">blocker-pretext-constant-implication-conjunction</span> <span class="test neg">invalid-pretext-replace-capture-types</span></dd></dl>
+<details><summary>9 files changed, 166 insertions(+)</summary><pre class="code"> pipeline/cases.mts                                 | 11 +++++++++
+ ...ker-pretext-constant-implication-conjunction.ts | 17 ++++++++++++++
+ .../blocker-pretext-loop-cell-call-result.ts       | 24 +++++++++++++++++++
+ .../blocker-pretext-module-cell-after-call.ts      | 18 +++++++++++++++
+ .../examples/blocker-pretext-module-cells-apart.ts | 20 ++++++++++++++++
+ .../blocker-pretext-sibling-field-write.ts         | 22 ++++++++++++++++++
+ .../blocker-pretext-template-literal-union.ts      | 24 +++++++++++++++++++
+ .../invalid-pretext-replace-capture-types.ts       | 27 ++++++++++++++++++++++
+ tests/node-runs.mts                                |  3 +++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f9d3e7aae"><header><div><div class="sha">f9d3e7aae · Cristiano Calcagno · Nov 05, 14:17</div><h3>Start the search's waiting rounds from no seed</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>measurement.ts#measureFitAdvances</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>measureFitAdvances (pretext, chenglou/pretext at 0d102a5c, with the rewrites of issue #94) stayed refused after the waiting rounds landed: they ran after the seeded rounds, keeping their seeds, and a loop head's seed from a round whose back edge stated nothing left the guess unmade. A minimal loop, <code>const p = from === &quot;a&quot;</code> before a loop whose body pushes inside <code>if (p)</code>, was refused for the same reason.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">Lean search, CertificateProducer, waiting rounds</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the first waiting round keeps the seeds of the rounds before</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">the first waiting round starts from no seed; its cuts meet their edges in the round itself</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md</span></h4><div class="prose"><p>the waiting rounds' paragraph states that the first starts from no seed</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-constant-implication-statements</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// with the rewrites of issue #94): measurement.ts#measureFitAdvances,</span>
+<span class="tk-c">// measurement.ts#getSegmentFit.</span>
+<span class="tk-c">// Refusal: reject: source incoming edge obligation: the edge does not</span>
+<span class="tk-c">// establish the claims at this point (`prefixes` boolean, `true` required).</span>
+<span class="tk-c">// A constant holding a comparison of a literal union, `prefixes = from ===</span>
+<span class="tk-c">// &quot;a&quot;`, tested statements later and inside a loop: the constant's</span>
+<span class="tk-c">// implication reaches each statement's entry from the edges entering it,</span>
+<span class="tk-c">// and a loop's head from its entry edge, which the back edge then confirms.</span>
+<span class="tk-k">function</span> onlyA(<span class="tk-k">from</span>: <span class="tk-s">&quot;a&quot;</span>): number {
+  <span class="tk-k">return</span> <span class="tk-k">from</span>.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> advances(count: number, <span class="tk-k">from</span>: <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>): number {
+  <span class="tk-k">const</span> prefixes = <span class="tk-k">from</span> === <span class="tk-s">&quot;a&quot;</span>;
+  <span class="tk-k">let</span> total = <span class="tk-n">0</span>;
+  total = <span class="tk-n">1</span>;
+  total = <span class="tk-n">2</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; count; i++) {
+    <span class="tk-k">if</span> (prefixes) total = onlyA(<span class="tk-k">from</span>);
+  }
+  <span class="tk-k">return</span> total;
+}</pre></details></li><li><code>every other case and control</code> <span class="why">unchanged</span></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>A search proposal: the checker is unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>2 files changed, 13 insertions(+), 6 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                              |  4 ++--
+ lean/Verification/Programs/CertificateProducer.lean | 15 +++++++++++----</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
