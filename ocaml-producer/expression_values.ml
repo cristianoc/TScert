@@ -11,6 +11,7 @@ module type Inputs = sig
   include Analysis_capabilities.Evolution
   include Analysis_capabilities.Expression_publication
   include Analysis_capabilities.Instance_publication
+  val observe_method_call : Json.t -> unit
 end
 module Make (S : Inputs) = struct
 open S
@@ -68,7 +69,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          (match own_signature n with
           | Some own ->
             if longer own x
-            then Option.iter (S.explain site) (Module_contract.longer_refusal (arity n))
+            then Option.iter (S.explain site) (Module_contract.longer_refusal own (arity n))
             else if own.receiver <> top && List.exists (fun (c:Semantic.signature) -> c.receiver = top) (calls x)
             then S.explain site ("a function whose `this` is typed where a callback indifferent to its receiver is \
               expected: " ^ receiver_reason)
@@ -116,7 +117,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          if List.mem Undef atoms && List.exists (function
              | Shape _ | Exact _ | Named _ | Callable | Ctors _ -> true | _ -> false) atoms
             && plausible_subtype (Semantic.without_nullish contract) x
-         then S.explain site ("a `let` holding an object read where it must be assigned: " ^ object_cell_reason)
+         then S.explain site ("a `let` whose contract admits `undefined` read where an object is required: " ^ object_cell_reason)
          else S.explain site ("a cell read at its contract: " ^ forgotten_cell_reason)
        | _ -> ());
       (* An instance of a declaration with generic methods at an instance of
@@ -318,6 +319,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
           Atoms [Shape {b with calls=f.calls}]
         | _ -> Proposal_diagnostics.unsupported "function field construction requires a callable and a record contract")
     | Bind (callee_expr,receiver,args) ->
+      (* The bound member keeps its receiver, as a method call's does. *)
+      observe_method_call callee_expr.pos;
       let callee=declared_head declarations [] (expr env callee_expr) in ignore (expr env receiver);
       (* A target of several signatures, `next(...[value]: [] | [TNext])`, is
          bound at the first that takes the prefix: the bound function's claim

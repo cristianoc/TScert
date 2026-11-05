@@ -48,8 +48,8 @@ it, in this order:
   - an array used as a record naming `length`, and a mutable tuple's
     `length` at its arity;
   - where a signature binding more parameters is expected: a function value
-    known only by its type, a module function with a rest parameter, or a
-    generic one;
+    known only by its type, whose type states no rest, a module function
+    with a rest parameter, or a generic one;
   - a named function where a signature indifferent to the receiver it
     requires is expected: its type is its annotated signature;
   - an instance of a declaration with generic methods at an instance of

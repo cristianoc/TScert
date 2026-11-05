@@ -72,9 +72,10 @@ let family_test_reason =
   "the value is narrowed to that primitive family, and a tag test does not narrow a type parameter's \
    row to its meet with the family, the `T & number` of TypeScript, so it is no longer read as a `T`"
 let object_cell_reason =
-  "a `let` without an initializer holds `undefined` until it is assigned, and is known to hold another \
-   value only where every path into the read assigned one, with no step between that may write it (a \
-   call, whose callee may write any location its operands reach)"
+  "a `let` holds any value its contract admits, `undefined` included (and `undefined` before its first \
+   assignment where it has no initializer), and is known to hold an object only where every path into \
+   the read assigned one or tested it, with no step between that may write it (an assignment, or a call, \
+   whose callee may write any location its operands reach)"
 let forgotten_cell_reason =
   "a cell is known by its contract after a step that may write it (a call, whose callee may write any \
    location its operands reach, as the model states no reachability; a closure run later; a throw from \
