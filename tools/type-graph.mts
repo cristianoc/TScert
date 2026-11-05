@@ -279,7 +279,8 @@ type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   resolution?: { input: number; observation: number; result: number | null }[];
   /** A construct scheme: its signatures are construct signatures. */
   construct?: true } };
-type MeetRow = { meet: number; clauses: Row };
+/** `also`: the further value parameters the row meets beside `meet`. */
+type MeetRow = { meet: number; clauses: Row; also?: number[] };
 type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
 
@@ -591,7 +592,10 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
     },
     refs: (b) => {
       const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds", "stable"]);
-      const first = fields(r.first);
+      // A verifier graph's record is a meet of field constraints: the
+      // intersection of two records constraining one key states the key once
+      // per constraint, as the views below do.
+      const first = fields(r.first, true);
       const rest = fieldLists(r.rest);
       // Views are conjunctive capabilities, not an object literal: a meet
       // can constrain one key more than once, exactly as Lean viewT does.
@@ -747,9 +751,10 @@ export function decodeGraph(value: Json | undefined): TypeGraph {
   const graph: TypeGraph = [];
   rows.forEach((row, index) => {
     if (isRecord(row) && "meet" in row) {
-      const r = obj(row, ["clauses", "meet"]);
+      const r = objOptional(row, ["clauses", "meet"], ["also"]);
       const meet = label(r.meet);
-      graph.push({ meet, clauses: clauses(r.clauses) });
+      const also = "also" in r ? each(r.also, label) : undefined;
+      graph.push({ meet, clauses: clauses(r.clauses), ...(also === undefined ? {} : { also }) });
       return;
     }
     if (isRecord(row) && "param" in row) {

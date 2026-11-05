@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { checkApart, type Outcome } from "./verify-source.mts";
 import { linkFixtures } from "./fixture-links.mts";
 import { startEviction } from "./stages.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
 // cases.mts is the inventory this runner judges: each case's source, project and expected status, phase and diagnostic.
 import { cases, type Case } from "./cases.mts";
 
@@ -57,8 +58,18 @@ export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promi
 }
 
 /** Require a case's expected outcome. */
+/** Require every diagnostic record a run's words carry, each a line
+ * `obligation-diagnostic: …` the verifier writes, to decode: a record the
+ * reader refuses (a field renamed on one side) would otherwise only drop its
+ * presentation. */
+export function recordsDecode(detail: string, what: string): void {
+  for (const line of detail.split(/\r?\n/).filter((l) => l.startsWith("obligation-diagnostic: ")))
+    assert.ok(readDiagnostic(line), `${what}: a diagnostic record the reader refuses: ${line.slice(0, 300)}`);
+}
+
 export function expectOutcome(test: Case, result: Outcome): Outcome {
   assert.equal(result.status, test.status, `${test.file}: ${JSON.stringify(result)}`);
+  if (result.status !== "verified") recordsDecode(result.detail, test.file);
   assert.equal(result.phase, test.phase, `${test.file}: wrong boundary`);
   if (test.diagnostic) {
     assert.notEqual(result.status, "verified");

@@ -78,7 +78,7 @@ const bindingsOf = (map: SourceMapEntry | null, source: string): string[] =>
 
 /** Whether a node or edge end required any fact of the heap as it is. */
 const requiresKnowledge = (knowledge: HeapKnowledge | null): boolean =>
-  !!knowledge && knowledge.cells.length + knowledge.values.length + knowledge.links.length > 0;
+  !!knowledge && knowledge.cells.length + knowledge.values.length + knowledge.links.length + knowledge.elems.length > 0;
 
 const sameType = (a: JsonRead, b: JsonRead): boolean =>
   a === undefined || b === undefined ? a === b : JSON.stringify(a) === JSON.stringify(b);

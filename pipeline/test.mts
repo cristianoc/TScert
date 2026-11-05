@@ -28,7 +28,7 @@ import { useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { stringFamily } from "./string-family.mts";
 import { cases } from "./cases.mts";
-import { expectOutcome } from "./run-cases.mts";
+import { expectOutcome, recordsDecode } from "./run-cases.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { linkFixtures } from "./fixture-links.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -539,13 +539,17 @@ const invoke = (claims: string, evidence: string, artifacts: string, refusal: Re
   // The refusal first, then the units' verdicts.
   const words = p.stderr + p.stdout;
   assert.match(words, refusal);
+  recordsDecode(words, "a check's refusal");
   return words;
 };
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
-    fragmentPath: string = join(artifacts, "fragment.json")): Invoked =>
-  tested(verifierCall(verifier, ["--produce-units", fragmentPath, claims, sourceKey(artifacts),
+    fragmentPath: string = join(artifacts, "fragment.json")): Invoked => {
+  const searched = tested(verifierCall(verifier, ["--produce-units", fragmentPath, claims, sourceKey(artifacts),
     join(artifacts, `${name}-evidence.json`), "12"]));
+  recordsDecode(searched.stdout + searched.stderr, `search ${name}`);
+  return searched;
+};
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
   const searched = produceWith(artifacts, claims, name);

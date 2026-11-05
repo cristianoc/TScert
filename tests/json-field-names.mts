@@ -1,5 +1,6 @@
 // The parser, the OCaml producer and the Lean verifier exchange JSON documents:
-// the Fragment tree with its declaration document, and SourceClaims. Each
+// the Fragment tree with its declaration document, SourceClaims, the source
+// flow, and the producer's qualified reads and explanations. Each
 // document's fields are written three times: as TypeScript types, as Lean
 // decoders, and as the OCaml producer's reads and writes. Nothing compiles one against another, so
 // this compares, by text, the field names each one uses, and fails when a
@@ -98,6 +99,9 @@ const equationReaders = [
   const leanNames = lean(["lean/Verification/Source/Claims/Wire.lean",
     "lean/Verification/Source/ResolutionWire.lean", ...equationReaders], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
+  // The claims decoder's explicit reads: the other files' structures are
+  // the verifier's own state, which the set above also holds.
+  expectSubset("Lean reads of SourceClaims", lean(["lean/Verification/Source/Claims/Wire.lean"], true), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
     labels: "a tuple element's label, not a field",
   });
@@ -115,6 +119,24 @@ const equationReaders = [
   expectSubset("OCaml reads of source flow", new Set([...ocamlReads("ocaml-producer/flow.ml"),
     ...ocamlReads("ocaml-producer/execution.ml")]), ts, {});
   expectSubset("Source flow fields Lean omits", ts, writes, {});
+}
+
+// The producer's side documents: the qualified reads the pipeline writes for
+// it (`verify-source.mts`), and the explanations `producer --explain` prints.
+{
+  const source = read("pipeline/verify-source.mts");
+  const written = new Set((source.match(/JSON\.stringify\(reads\.map\(\(\{([^}]*)\}\)/)?.[1] ?? "")
+    .split(",").map((n) => n.trim()).filter((n) => n !== ""));
+  assert.ok(written.size > 0, "the qualified-reads document's writer is found");
+  const reads = ocamlReads("ocaml-producer/producer.ml");
+  expectSubset("OCaml reads of qualified reads", reads, written, {});
+  expectSubset("Qualified-read fields OCaml ignores", written, reads, {});
+  const explanation = declared([], undefined);
+  for (const n of (source.match(/interface Explanation \{([^}]*)\}/)?.[1] ?? "").matchAll(/(\w+)\s*:/g)) explanation.add(n[1] ?? "");
+  assert.ok(explanation.size > 0, "the explanation's declared type is found");
+  const explained = ocamlWrites("ocaml-producer/producer.ml");
+  expectSubset("OCaml writes of explanations", explained, explanation, {});
+  expectSubset("Explanation fields OCaml omits", explanation, explained, {});
 }
 
 process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
