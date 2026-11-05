@@ -1736,15 +1736,14 @@ identity tables. A catch binds `unknown`; `instanceof C` alone establishes
 no field initialized by `C`, since an object can share its prototype without
 having run its constructor (`instanceof-unknown-refused`).
 
-- **Rewrite:** `refusal`, `declarationError` and `ioFailure` register each
-  error in a module-private `WeakMap<object, Payload>`. `refusalOf`,
-  `declarationSpanOf` and `ioFailureOf` first test for a non-null object,
-  then return its registered payload or `undefined`. Lookup preserves the
-  entry, so the same error can be handled repeatedly. The tables do not
-  keep an otherwise unreachable error alive; collection timing is unspecified.
-- **Observable contract:** a gate refusal is an `Error` with the supplied
-  message; its registered payload holds the supplied span and message.
-  A declaration refusal is an `Error` with the supplied message and optional
+- **Rewrite:** `declarationError` and `ioFailure` register each error in a
+  module-private `WeakMap<object, Payload>`. `declarationSpanOf` and
+  `ioFailureOf` first test for a non-null object, then return its
+  registered payload or `undefined`. Lookup preserves the entry, so the
+  same error can be handled repeatedly. The tables do not keep an otherwise
+  unreachable error alive; collection timing is unspecified. A gate refusal
+  is a plain `Error` whose message carries its location, and has no payload.
+- **Observable contract:** a declaration refusal is an `Error` with the supplied message and optional
   cause, and its registered payload is the supplied span. These errors have
   no public `pos` or `at` field. Spans and causes retain their supplied
   identities; registration is not a deep snapshot. An I/O failure carries
@@ -1760,7 +1759,7 @@ having run its constructor (`instanceof-unknown-refused`).
   that standard objects and their methods are not tampered with.
 - **Functions:** `lowerFile`,
   `collectDeclarations`, `orAbsent` and `io` use these payloads.
-  `tests/caught-errors.mts` exercises the real gate and I/O helpers, repeated
+  `tests/caught-errors.mts` exercises the real I/O helpers, repeated
   handling and caller attribution; `tests/trusted-inputs.mts` checks repeated
   lookup of a declaration refusal from the actual declaration collector.
 - **Pattern:** what a thrown value carries is found by its identity in a
