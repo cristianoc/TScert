@@ -2552,7 +2552,25 @@ the elements before it, and before its fresh array is collected. The read
 $`a[i_1]`$ is the iterator's step as in a binding pattern: over an array
 another reference may hold, a target's reference evaluated after the first
 step, a default, and a write at a field target's index or `length` that run
-before a later step change no array. A parameter
+before a later step change no array.
+
+An object assignment `({ k_1: t_1 = d_1, … } = e);`, a statement, holds
+$`e`$ in a slot $`r`$; then, property by property in source order, it reads
+$`k_i`$ of $`r`$ into a hidden $`h_i`$ as a one-property `const` pattern does,
+defaulted where the read is `undefined`, and writes $`h_i`$ to $`t_i`$: a
+mutable local, at its storage contract, as an assignment to it writes, or an
+object pattern, assigned from $`h_i`$ the same way
+([ECMA-262](REFERENCES.md#ecma-262)'s `KeyedDestructuringAssignmentEvaluation`).
+The first read throws on `null` or `undefined` before any write, as
+`RequireObjectCoercible` does, and a local target's reference is its
+binding, which evaluating runs no code:
+
+```math
+⟦(\{k_1:t_1=d_1,\ldots\}=e);⟧\;=\;\{\ \mathsf{const}\ r=⟦e⟧;\ \mathsf{const}\ \{k_1:h_1=d_1\}=r;\ ⟦t_1=h_1⟧;\ \ldots\ \}
+```
+
+The value of the assignment is discarded: only a statement is lowered so.
+A parameter
 written as a pattern or with a default binds a hidden name $`h`$, which the
 caller's argument initializes, and the body starts with the pattern over it,
 in parameter order:

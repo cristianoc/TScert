@@ -1492,12 +1492,17 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
     return { k: "if", pos: gate.span(node), cond: { k: "not", pos: gate.span(call), e: gate.expr(value) },
       then: [{ k: "throw", pos: gate.span(callee), e: failure }], else_: null };
   }
-  if (ts.isExpressionStatement(node))
+  if (ts.isExpressionStatement(node)) {
+    const e = skipParentheses(node.expression);
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isObjectLiteralExpression(skipParentheses(e.left)))
+      return gate.objectAssignment(node, e);
     return {
       k: "effect",
       pos: gate.span(node),
       e: gate.expr(node.expression),
     };
+  }
 
   if (ts.isReturnStatement(node)) {
     const start = node.getStart(gate.file);
@@ -1565,6 +1570,93 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
     return { k: "continue", pos: gate.span(node) };
   }
   return gate.controlStmt(node);
+}
+
+/** The statement `({ k₁: t₁ = d₁, … } = e);`, `assignment` its expression:
+ *
+ *     { const %r = e;
+ *       const { k₁: %h₁ = d₁ } = %r;  t₁ = %h₁;
+ *       … }
+ *
+ * the right side once, then, property by property in source order, the
+ * property's read, its default where the read is `undefined`, and the
+ * write of its target, as JavaScript's destructuring assignment runs them;
+ * a target that is itself an object pattern is assigned from `%hᵢ` the same
+ * way. A target is a local the assignment writes (`assign`, which checks
+ * its slot or cell). The first read throws on `null` and `undefined`
+ * before any write, as RequireObjectCoercible does. The value of the
+ * assignment is discarded: only a statement is lowered so. The names `%r`
+ * and `%hᵢ` no source spells; the added statements' entries and claims are
+ * the statement's free offsets (`sites`), the read of each property claimed
+ * at its target's span. */
+export function objectAssignment(this: Gate, node: ts.ExpressionStatement, assignment: ts.BinaryExpression): Within<{ value: "any"; store: "grow" }, Stmt> {
+  const gate: Gate = this;
+  const site = gate.sites(node);
+  const entry = (): Span => {
+    const o = site.entry();
+    return [o, o + 1];
+  };
+  const tag = node.getStart(gate.file);
+  let fresh = 0;
+  const id = (name: string): Expr => ({ k: "id", pos: site.span(), name });
+  const body: Stmt[] = [];
+  const assigned = new Set<string>();
+  const assign = (pattern: ts.ObjectLiteralExpression, source: string): void => {
+    if (pattern.properties.length === 0)
+      gate.fail(pattern, "an empty object pattern in an assignment assigns nothing");
+    for (const p of pattern.properties) {
+      let key: ts.Identifier, target: Node, dflt: ts.Expression | undefined;
+      if (ts.isShorthandPropertyAssignment(p)) {
+        const name = p.name;
+        if (!ts.isIdentifier(name)) return gate.fail(name, "internal: a shorthand property without its name");
+        key = name;
+        target = name;
+        dflt = p.objectAssignmentInitializer;
+      } else if (ts.isPropertyAssignment(p)) {
+        const name = p.name;
+        if (!ts.isIdentifier(name))
+          return gate.fail(name, "a computed or string key in an assignment pattern is outside the fragment");
+        key = name;
+        const init = p.initializer;
+        if (ts.isBinaryExpression(init) && init.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+          target = init.left;
+          dflt = init.right;
+        } else target = init;
+      } else if (ts.isSpreadAssignment(p)) {
+        return gate.fail(p, "a rest in an object assignment pattern is outside the fragment");
+      } else return gate.fail(p, "an object assignment pattern holds properties");
+      target = skipParentheses(target);
+      // A default naming an anonymous function or class names it after the
+      // target (NamedEvaluation), which the hidden binding would not.
+      if (dflt && (ts.isFunctionExpression(skipParentheses(dflt)) || ts.isArrowFunction(skipParentheses(dflt)) ||
+          ts.isClassExpression(skipParentheses(dflt))))
+        gate.fail(dflt, "an anonymous function or class as a default of an assignment pattern is outside the fragment: it is named after its target");
+      const hidden = `%assigned@${tag}%${fresh++}`;
+      body.push({ k: "destructure", pos: entry(), default_: null, init: id(source), target: {
+        k: "object", pos: site.span(), rest: null,
+        props: [{ field: key.text, target: { k: "name", name: hidden, pos: gate.span(target) },
+          default_: dflt ? gate.expr(dflt) : null }],
+      } });
+      if (ts.isIdentifier(target)) {
+        if (target.text === "undefined")
+          gate.fail(target, "shadowing undefined is outside the fragment");
+        const name = gate.local(target);
+        if (assigned.has(name)) gate.fail(target, "duplicate pattern binding");
+        assigned.add(name);
+        body.push({ k: "effect", pos: entry(), e: { k: "assign", pos: site.span(), name,
+          namePos: gate.span(target), rhs: id(hidden) } });
+      } else if (ts.isObjectLiteralExpression(target)) assign(target, hidden);
+      else gate.fail(target, "an object assignment pattern writes a local or an object pattern: a field target is outside the fragment");
+    }
+  };
+  const value = `%assigned@${tag}%`;
+  const first = entry();
+  body.push({ k: "const", pos: first, bindings: [{ early: false, name: value, namePos: first, annot: null,
+    init: gate.expr(assignment.right) }] });
+  const pattern = skipParentheses(assignment.left);
+  if (!ts.isObjectLiteralExpression(pattern)) return gate.fail(pattern, "internal: an object assignment without its pattern");
+  assign(pattern, value);
+  return { k: "block", pos: gate.span(node), label: null, body };
 }
 
 /** A `let` or `const` declaration list, the statement `at` spans: a
