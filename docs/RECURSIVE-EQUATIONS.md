@@ -354,19 +354,30 @@ compares, once per definition:
    mutable elements and bounds. Under an application
    $`E\langle\ldots\rangle`$ it composes with $`V_E`$ at that argument.
 3. Check each member by $`\textsf{Valid}`$ against $`\mathcal A_V`$, which
-   includes the component's own candidates. The assumption is guarded,
-   because every reference sits under a constructor.
-4. Set a member that fails to $`\mathsf{inv}`$ at every parameter, and
-   repeat from 3.
+   includes the component's own candidates and the variances of the
+   components before it. The assumption is guarded, because every
+   reference sits under a constructor.
+4. Set a member that fails to $`\mathsf{inv}`$ at every parameter, drop one
+   that fails at $`\mathsf{inv}`$ at every parameter (it has no variance,
+   and $`\textsf{Var}`$ does not apply to it), and repeat from 3, for at most
+   $`2k+1`$ rounds over the component's $`k`$ generic members, keeping none
+   when they run out.
+5. Check the members left together, with the variable condition; a
+   component that fails this check keeps no variance.
 
-**Lemma 4.** For any definition, $`\mathsf{inv}`$ at every parameter is
-valid.
+Lean computes $`V`$ so (`Equations.settle`, `Equations.componentVariances`),
+and each variance it keeps is valid (proved: `CheckedVariances.sound`,
+`Variances.sound`).
+
+**Lemma 4 (conjectured).** For any definition, $`\mathsf{inv}`$ at every
+parameter is valid.
 
 *Proof sketch.* Each comparison in the body relates a variable to its
 counterpart, and both directions are hypotheses. $`\square`$
 
-So the loop ends, after at most one step per member, with a valid $`V`$. A
-definition on no cycle takes one traversal of its body.
+Where Lemma 4 holds of a component's members, step 4 drops none, and the
+loop ends after at most one step per member. A definition on no cycle takes
+one traversal of its body.
 
 **Other pairs.** A pair $`D\langle\vec\tau\rangle\le E\langle\vec\sigma\rangle`$
 that $`\textsf{Var}`$ does not derive is covered by unfolding, with the pair
