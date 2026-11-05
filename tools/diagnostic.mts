@@ -1,7 +1,7 @@
 import { decodeGraph, decodeLabels, type Labels } from "./type-graph.mts";
 // calculus.mts decodes the native terms a record's judgements and source map name.
 // control-flow.mts decodes the program-graph node a node or edge obligation names.
-import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculus.mts";
+import { decodeTag, decodeTerm, hasExactly, isParsedObject, nat, type Json, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 import { illFormedString } from "./wire-strings.mts";
@@ -46,11 +46,11 @@ interface ValueSet {
   obj: { tag: Tag; answer: boolean }[][] | null;
 }
 function litSet<T>(v: Json | undefined, item: (x: Json) => T): LitSet<T> {
-  const r = isRecord(v) && "these" in v ? record(v,["these"]).these : record(v,["allBut"]).allBut;
+  const r = isParsedObject(v) && "these" in v ? record(v,["these"]).these : record(v,["allBut"]).allBut;
   const xs = record(r,["xs"]).xs;
   if (!Array.isArray(xs)) throw Error("invalid literal set");
   const items = xs.map(item);
-  return isRecord(v) && "these" in v ? { these: items } : { allBut: items };
+  return isParsedObject(v) && "these" in v ? { these: items } : { allBut: items };
 }
 function valueSet(v: Json): ValueSet {
   const f = record(v,["nul","undef","tru","fls","sym","arr","num","str","big","obj"]);
@@ -140,7 +140,7 @@ export type DiagnosticOutcome =
     } };
 
 function diagnosticOutcome(value: Json | undefined): DiagnosticOutcome {
-  if (!isRecord(value)) throw Error("invalid diagnostic outcome");
+  if (!isParsedObject(value)) throw Error("invalid diagnostic outcome");
   switch (value.kind) {
     case "not-established": record(value, ["kind"]); return { kind: "not-established" };
     case "exhausted": {
@@ -265,27 +265,25 @@ const PHASES: readonly (Json | undefined)[] = [
   "certificate-check",
   "request-validation",
 ];
-const KINDS: readonly (Json | undefined)[] = [
-  "node-typing",
-  "edge-coverage",
-  "expression-claim",
-  "direct-obligation",
-  "source-refusal",
-  "production-failure",
+/** Each kind's own fields, keyed by `ObligationDiagnostic`'s kinds: a key
+ * outside the union fails to compile, and tests/diagnostic.mts decodes a
+ * record of every kind of the union. */
+const KIND_FIELDS: readonly (readonly [ObligationDiagnostic["kind"], readonly string[]])[] = [
+  ["node-typing", ["id", "source", "sequent"]],
+  ["edge-coverage", ["id", "edgeIndex", "source", "destination", "transfer"]],
+  ["expression-claim", ["id", "sourceMap", "sequent"]],
+  ["direct-obligation", ["id", "sourceMap", "judgment"]],
+  ["source-refusal", ["id", "sourceMap", "reason"]],
+  ["production-failure", ["failure"]],
 ];
 const PREFIX = "obligation-diagnostic: ";
 
 /** A parsed object: the record is read from `JSON.parse`'s data. */
 type Fields = { [key: string]: Json };
-function isRecord(v: Json | undefined): v is Fields {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
-  return true;
-}
 function record(v: Json | undefined, required: string[], optional: string[] = []): Fields {
-  if (!isRecord(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
+  if (!isParsedObject(v) || !hasExactly(v, required, optional)) throw Error("invalid diagnostic fields");
   return v;
 }
-function nat(v: Json | undefined): number { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); return v; }
 function span(v: Json | undefined): Span {
   if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span");
   const start = nat(v[0]), end = nat(v[1]);
@@ -407,19 +405,12 @@ export function readDiagnostic(
   if (lines.length !== 1) return undefined;
   try {
     const parsed: Json = JSON.parse(lines[0].slice(PREFIX.length));
-    if (!isRecord(parsed) || illFormedString(parsed)) return undefined;
+    if (!isParsedObject(parsed) || illFormedString(parsed)) return undefined;
     const d = parsed;
-    // A table looked up at the parsed kind: a Map, which holds no inherited
-    // member.
-    const variants = new Map<string, string[]>([
-      ["node-typing",["id","source","sequent"]], ["expression-claim",["id","sourceMap","sequent"]],
-      ["direct-obligation",["id","sourceMap","judgment"]],
-      ["source-refusal",["id","sourceMap","reason"]],
-      ["edge-coverage",["id","edgeIndex","source","destination","transfer"]], ["production-failure",["failure"]],
-    ]);
     const kind = d.kind;
     if (typeof kind !== "string") return undefined;
-    const fields = variants.get(kind);
+    // Looked up at the parsed kind in a Map, which holds no inherited member.
+    const fields = new Map<string, readonly string[]>(KIND_FIELDS).get(kind);
     if (!fields) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names"]);
     const outcome = diagnosticOutcome(d.outcome);
@@ -451,7 +442,7 @@ export function readDiagnostic(
       judgment = directJudgment(d.judgment,types.length);
       const at = judgment.subject;
       const map = d.sourceMap;
-      if (!isRecord(map)) return undefined;
+      if (!isParsedObject(map)) return undefined;
       const pos = map.pos, context = map.context;
       if (!Array.isArray(pos) || !Array.isArray(context) ||
           pos[0] !== at[0] || pos[1] !== at[1] || context.length !== 0)
@@ -464,7 +455,7 @@ export function readDiagnostic(
     let sequent: Sequent | undefined;
     if (kind === "node-typing" || kind === "expression-claim") {
       const q = d.sequent;
-      if (!isRecord(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
+      if (!isParsedObject(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
       const context: Labels[] = [];
       for (const t of q.context) context.push(labels(t));
       const type = q.type;
@@ -487,7 +478,7 @@ export function readDiagnostic(
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;
       const available = transfer.available;
-      if (!isRecord(claim)) return undefined;
+      if (!isParsedObject(claim)) return undefined;
       const context = claim.context;
       if (!Array.isArray(available) || !Array.isArray(context)) return undefined;
       const decodedAvailable: Labels[] = [];
@@ -520,7 +511,6 @@ export function readDiagnostic(
       fuel < 0
     )
       return undefined;
-    if (!KINDS.includes(kind)) return undefined;
     if (kind !== "production-failure" && typeof d.id !== "string")
       return undefined;
     if (kind === "edge-coverage" && (!d.source || !d.destination || !d.transfer))

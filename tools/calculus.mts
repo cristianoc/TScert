@@ -129,7 +129,29 @@ export type JsonObject = { readonly [key: string]: JsonValue };
  * object lacks the key. */
 export type JsonRead = JsonValue | undefined;
 /** A JSON value's array arm. */
-const isJsonList = (value: JsonValue): value is readonly JsonValue[] => Array.isArray(value);
+export function isJsonList(v: JsonRead): v is Within<{ value: "keep"; store: "keep" }, readonly JsonValue[]> {
+  return Array.isArray(v);
+}
+/** A JSON value's dictionary arm: an object that is not an array. */
+export function isJsonObject(v: JsonRead): v is Within<{ value: "keep"; store: "keep" }, JsonObject> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+/** `Json`'s dictionary arm, the same test at `JSON.parse`'s writable type. */
+export function isParsedObject(v: Json | undefined): v is Within<{ value: "keep"; store: "keep" }, { [key: string]: Json }> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+/** Whether an object holds every key of `required` as its own, and no own
+ * key outside `required` and `optional`. */
+export function hasExactly(
+  v: object,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): Within<{ value: "keep"; store: "keep" }, boolean> {
+  return (
+    required.every((k) => Object.hasOwn(v, k)) &&
+    Object.keys(v).every((k) => required.includes(k) || optional.includes(k))
+  );
+}
 /** `String` of a JSON value that holds no array: a primitive or `undefined`
  * as `String` converts it; an object through `Object.prototype.toString`,
  * `"[object Object]"`, unless it owns a `toString`, which, as JSON data, is
@@ -181,28 +203,19 @@ export function stringOfJson(value: JsonRead): Within<{ value: "any"; store: "gr
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
-function isRecord(v: Json | undefined): v is { [key: string]: Json } {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
-  return true;
-}
 export function fields(v: Json | undefined, keys: string[]): { [key: string]: Json } {
-  if (
-    !isRecord(v) ||
-    Object.keys(v).length !== keys.length ||
-    keys.some((k) => !(k in v))
-  )
-    throw Error("unexpected or missing field");
+  if (!isParsedObject(v) || !hasExactly(v, keys)) throw Error("unexpected or missing field");
   return v;
 }
 /** A non-negative integer. */
-export function nat(v: Json | undefined): number {
+export function nat(v: unknown): Within<{ value: "keep"; store: "keep" }, number> {
   if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0)
     throw Error("expected a non-negative integer");
   return v;
 }
 /** The one key of a constructor written as an object, and what it holds. */
 export function constructorOf(v: Json | undefined): { key: string; value: Json } {
-  if (!isRecord(v)) throw Error("invalid constructor");
+  if (!isParsedObject(v)) throw Error("invalid constructor");
   const entries = Object.entries(v);
   const entry = entries[0];
   if (entries.length !== 1 || entry === undefined) throw Error("unexpected or missing field");
@@ -247,7 +260,7 @@ export function decodeTag(v: Json | undefined): Tag {
   switch (key) {
     case "hasKey": {
       const k = fields(value, ["key"]).key;
-      if (typeof k !== "string" && !(isRecord(k) && Object.keys(k).length === 1 && typeof k.symbol === "number"))
+      if (typeof k !== "string" && !(isParsedObject(k) && Object.keys(k).length === 1 && typeof k.symbol === "number"))
         throw Error("unknown tag");
       return { kind: "hasKey", key: keyOf(k) };
     }
@@ -287,7 +300,7 @@ function decodeCode(v: Json | undefined): CallCode {
       return { kind: "bound", target, receiver, pre: c.pre.map(decodeTerm) };
     }
     case "graph": {
-      const optional = isRecord(value) ? ["kind", "rest"].filter((k) => k in value) : [];
+      const optional = isParsedObject(value) ? ["kind", "rest"].filter((k) => k in value) : [];
       const c = fields(value, ["arity", "exprs", "conts", "start", "caps", ...optional]);
       let mode: "construct" | "sloppy" | null = null;
       if ("kind" in c) {

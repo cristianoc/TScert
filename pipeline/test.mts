@@ -53,6 +53,8 @@ function check(source: string, project?: string, typescriptErrors: boolean = fal
 }
 
 const here = import.meta.dirname;
+/** A parsed object that is not an array. */
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The controls, each a block of this file, registered in order. The
  * suite's process gives them to a pool of control processes, one per core
@@ -6332,7 +6334,6 @@ control(async (): Promise<void> => {
   // (`member-yield`), and a guard value's promise stating that no argument
   // answers `true` (`promise-call`).
   type Certificate = { yields: { conditional: boolean; onFalse: boolean; target: number; type: unknown }[] }[];
-  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
   const forgeries: [string, string, string, string, (certificate: Certificate) => void][] = [
     ["forged-member-false-yield", "compiler-api-guard-false-branch", "count", "ts.isIdentifier(node)", (certificate) => {
       for (const node of certificate)
@@ -6380,7 +6381,6 @@ control(async (): Promise<void> => {
   // (`compiler-api-guards`; without the executable lowering's obligation,
   // only this call's forged domain is refused). One stating no domain is
   // refused by the decoder.
-  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
   const calls: [string, string][] = [
     ["compiler-api-guard-false-branch", "ts.isIdentifier(node)"],
     ["compiler-api-guard-values", "ts.isIdentifier(n)"],

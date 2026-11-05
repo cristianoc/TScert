@@ -6,7 +6,14 @@ import { isArrayPresence, type ArrayPresence } from "./type-graph.mts";
  * their raw JSON. Its surface text is in claim-text.mts.
  */
 import type { PropertyKey } from "./declaration-types.mts";
-import type { JsonObject, JsonRead, JsonValue } from "./calculus.mts";
+import {
+  hasExactly,
+  isJsonList,
+  isJsonObject,
+  type JsonObject,
+  type JsonRead,
+  type JsonValue,
+} from "./calculus.mts";
 type ClaimType = {
   top: boolean;
   atoms: Atom[];
@@ -70,10 +77,8 @@ export type Atom =
   | FunctionAtom
   | { a: "callable"; function: FunctionAtom; bag: RecordAtom };
 
-const isRecord = (v: JsonRead): v is JsonObject =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 function object(v: JsonRead): JsonObject {
-  if (!isRecord(v)) throw Error("expected an object");
+  if (!isJsonObject(v)) throw Error("expected an object");
   return v;
 }
 function keys(
@@ -81,15 +86,11 @@ function keys(
   required: string[],
   optional: string[] = [],
 ): void {
-  if (
-    required.some((k) => !(k in v)) ||
-    Object.keys(v).some((k) => ![...required, ...optional].includes(k))
-  )
+  if (!hasExactly(v, required, optional))
     throw Error("unexpected or missing claim field");
 }
-const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
 function list(v: JsonRead): readonly JsonValue[] {
-  if (!isList(v)) throw Error("expected a list");
+  if (!isJsonList(v)) throw Error("expected a list");
   return v;
 }
 /** Checks and narrows, so a caller that goes on to read the string needs no

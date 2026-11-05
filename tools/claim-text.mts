@@ -4,6 +4,8 @@
  * determines its type. */
 import { decodeClaimType, type Atom } from "./claim.mts";
 import {
+  isJsonList,
+  isJsonObject,
   stringOfJson,
   type JsonObject,
   type JsonRead,
@@ -24,15 +26,13 @@ import {
  * a claim that did not decode, and the lifter below names parts of a graph the
  * surface has no syntax for. Each is a value of `JsonValue`'s shape, so a read
  * here narrows what arrived rather than assuming a claim. */
-function isObject(v: JsonRead): v is JsonObject {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+
 /** What a value holds: an object's values, an array's elements, a string's
  * characters; a primitive holds nothing. */
 const members = (v: JsonValue): readonly JsonValue[] =>
-  isObject(v)
+  isJsonObject(v)
     ? Object.values(v)
-    : isList(v)
+    : isJsonList(v)
       ? v
       : typeof v === "string"
         ? [...v]
@@ -57,11 +57,6 @@ const isOrdinary = (effect: JsonRead): boolean => {
     d.elements === o.elements
   );
 };
-/** A list where the producer sends one of records: an array of any
- * values, each checked where it is read. */
-function isList(v: JsonRead): v is readonly JsonValue[] {
-  return Array.isArray(v);
-}
 /** The atoms whose kind is all there is to them, read off `Atom` rather than
  * restated: the members whose only field is `a`. */
 type BareKind<A> = A extends { a: infer K }
@@ -95,7 +90,7 @@ interface PrintState {
 type MetadataKey = "call" | "construct" | "array";
 function atomText(atom: JsonRead, state: PrintState): Within<{ value: "any"; store: "grow" }, string> {
   const text = bareAtomText(atom, state);
-  if (!isObject(atom)) return text;
+  if (!isJsonObject(atom)) return text;
   // The metadata's entries are collected, each key once, and the object is
   // built from them.
   const entries: [string, JsonValue][] = [];
@@ -121,11 +116,11 @@ function bareAtomText(
   state: PrintState,
 ): Within<{ value: "any"; store: "grow" }, string> {
   // An array where an atom belongs is no atom of any kind.
-  if (isList(atom)) {
+  if (isJsonList(atom)) {
     state.printable = false;
     return "«type»";
   }
-  if (!isObject(atom)) {
+  if (!isJsonObject(atom)) {
     state.printable = false;
     if (
       typeof atom === "string" ||
@@ -145,8 +140,8 @@ function bareAtomText(
     return primitive;
   if (
     (atom.a === "array" || atom.a === "store") &&
-    isList(atom.required) &&
-    isList(atom.optional)
+    isJsonList(atom.required) &&
+    isJsonList(atom.optional)
   ) {
     // Both lists are read before a callback runs: `typeText` writes `state`,
     // and a field read after it is read at its contract.
@@ -166,7 +161,7 @@ function bareAtomText(
     return atom.a === "store" ? `Store<${text}>` : text;
   }
   if (atom.a === "param" && typeof atom.name === "string") return atom.name;
-  if (atom.a === "alias" && typeof atom.name === "string" && isList(atom.args))
+  if (atom.a === "alias" && typeof atom.name === "string" && isJsonList(atom.args))
     return (
       atom.name +
       "<" +
@@ -188,19 +183,19 @@ function bareAtomText(
   )
     return atom.v;
   if (atom.a === "bigintlit" && typeof atom.v === "string") return atom.v + "n";
-  if (atom.a === "record" && isList(atom.fields)) {
+  if (atom.a === "record" && isJsonList(atom.fields)) {
     // An index signature that is no object is shown in the atom's encoding.
-    if (isList(atom.indexSignature)) return JSON.stringify(atom);
-    const index = isObject(atom.indexSignature) ? atom.indexSignature : null;
+    if (isJsonList(atom.indexSignature)) return JSON.stringify(atom);
+    const index = isJsonObject(atom.indexSignature) ? atom.indexSignature : null;
     const never = (t: JsonRead) =>
-      isObject(t) && t.top === false && isList(t.atoms) && t.atoms.length === 0;
+      isJsonObject(t) && t.top === false && isJsonList(t.atoms) && t.atoms.length === 0;
     if (index && !never(index.write)) return JSON.stringify(atom);
     return (
       "{ " +
       [
         ...atom.fields.map((field) => {
           // A field the producer sent malformed is shown as it is.
-          if (!isObject(field))
+          if (!isJsonObject(field))
             return "(invalid field " + JSON.stringify(field) + ")";
           // A name the surface can write is written, anything else quoted,
           // and a symbol key is shown by its index.
@@ -210,7 +205,7 @@ function bareAtomText(
               ? /^[A-Za-z_$][\w$]*$/.test(key)
                 ? key
                 : JSON.stringify(key)
-              : isObject(key) && typeof key.symbol === "number"
+              : isJsonObject(key) && typeof key.symbol === "number"
                 ? `[symbol ${key.symbol}]`
                 : key === undefined
                   ? "undefined"
@@ -236,7 +231,7 @@ function bareAtomText(
     return (
       "(" + atomText(atom.function, state) + ") & " + atomText(atom.bag, state)
     );
-  if (atom.a === "constructor" && isList(atom.params))
+  if (atom.a === "constructor" && isJsonList(atom.params))
     return (
       "new (" +
       atom.params
@@ -245,14 +240,14 @@ function bareAtomText(
       ") => " +
       typeText(atom.result, state)
     );
-  if (atom.a === "function" && isList(atom.params)) {
+  if (atom.a === "function" && isJsonList(atom.params)) {
     // The parameters are read before `typeText` writes `state`.
     const params = atom.params;
     return (
       "(" +
       [
         // A receiver-indifferent signature has no `this` to show.
-        ...(isObject(atom.this) && atom.this.top === true
+        ...(isJsonObject(atom.this) && atom.this.top === true
           ? []
           : ["this: " + typeText(atom.this, state)]),
         ...params.map((p) => typeText(p, state)),
@@ -275,13 +270,13 @@ function typeText(type: JsonRead, state: PrintState): Within<{ value: "any"; sto
   }
   if (typeof type === "string") return type; // already a display string
   // Anything else is read for its fields, which a nonobject simply has none of.
-  const shape: JsonObject = isObject(type) ? type : {};
+  const shape: JsonObject = isJsonObject(type) ? type : {};
   if (shape.unsupported === true) {
     state.printable = false;
     return "(unavailable)";
   }
   if (shape.top === true) return "unknown";
-  const atoms: readonly JsonValue[] | null = isList(shape.atoms)
+  const atoms: readonly JsonValue[] | null = isJsonList(shape.atoms)
     ? shape.atoms
     : null;
   if (!atoms) {
@@ -292,7 +287,7 @@ function typeText(type: JsonRead, state: PrintState): Within<{ value: "any"; sto
   return atoms
     .map((atom) => {
       const text = atomText(atom, state);
-      const kind = isObject(atom) ? atom.a : undefined;
+      const kind = isJsonObject(atom) ? atom.a : undefined;
       // Arrow results extend through a union, so an arrow that is itself a
       // union alternative needs grouping around the whole signature.
       return atoms.length > 1 && (kind === "function" || kind === "callable")
@@ -378,13 +373,13 @@ const cell = (
   depth: number,
   views: JsonRead = [],
 ): Within<{ value: "any"; store: "grow" }, ShownRecord> => {
-  const entries: readonly JsonValue[] = isList(contract) ? contract : [];
+  const entries: readonly JsonValue[] = isJsonList(contract) ? contract : [];
   // A view field reads at its bound and accepts no write.
-  const viewed: readonly JsonValue[] = isList(views) ? views : [];
+  const viewed: readonly JsonValue[] = isJsonList(views) ? views : [];
   const viewField = (
     entry: JsonValue,
   ): Within<{ value: "any"; store: "grow" }, ShownField> => {
-    const pair: readonly JsonValue[] = isList(entry) ? entry : [];
+    const pair: readonly JsonValue[] = isJsonList(entry) ? entry : [];
     const key = pair[0];
     return {
       name: typeof key === "string" ? key : "",
@@ -396,7 +391,7 @@ const cell = (
   const contractField = (
     entry: JsonValue,
   ): Within<{ value: "any"; store: "grow" }, ShownField> => {
-    const pair: readonly JsonValue[] = isList(entry) ? entry : [];
+    const pair: readonly JsonValue[] = isJsonList(entry) ? entry : [];
     const key = pair[0];
     const invariant = pair[1];
     const name = typeof key === "string" ? key : "";
@@ -481,7 +476,7 @@ const nestedArms = 8;
 const rowAt = (types: Table, label: JsonValue): JsonRead => {
   // The rows are read once, so that the list test holds at the index read.
   const rows = types.rows;
-  if (!isList(rows)) return undefined;
+  if (!isJsonList(rows)) return undefined;
   if (typeof label === "number") return rows[label];
   if (typeof label === "string" && /^(0|[1-9][0-9]*)$/.test(label))
     return rows[Number(label)];
@@ -490,9 +485,9 @@ const rowAt = (types: Table, label: JsonValue): JsonRead => {
 
 // A tag set's literal clauses; any other clause, itself.
 function setLiterals(clause: JsonValue): JsonValue[] {
-  if (isObject(clause) && isObject(clause.numIn) && isList(clause.numIn.bits))
+  if (isJsonObject(clause) && isJsonObject(clause.numIn) && isJsonList(clause.numIn.bits))
     return clause.numIn.bits.map((bits) => ({ numLit: { bits } }));
-  if (isObject(clause) && isObject(clause.strIn) && isList(clause.strIn.values))
+  if (isJsonObject(clause) && isJsonObject(clause.strIn) && isJsonList(clause.strIn.values))
     return clause.strIn.values.map((value) => ({ strLit: { value } }));
   return [clause];
 }
@@ -521,12 +516,12 @@ function liftClause(
   // literal keys of `ClauseKey`, so no read finds a member of
   // `Object.prototype`.
   const body = (key: ClauseKey): JsonRead =>
-    isObject(clause) ? clause[key] : undefined;
+    isJsonObject(clause) ? clause[key] : undefined;
   const boolLit = body("boolLit");
   if (boolLit)
     return {
       a: "booleanlit",
-      v: stringOfJson(isObject(boolLit) ? boolLit.value : undefined),
+      v: stringOfJson(isJsonObject(boolLit) ? boolLit.value : undefined),
     };
   // The surface names the number, not the bit pattern that identifies it.
   const numLit = body("numLit");
@@ -534,19 +529,19 @@ function liftClause(
     return {
       a: "numberlit",
       v: String(
-        numberOfBits(stringOfJson(isObject(numLit) ? numLit.bits : undefined)),
+        numberOfBits(stringOfJson(isJsonObject(numLit) ? numLit.bits : undefined)),
       ),
     };
   const bigintLit = body("bigintLit");
   if (bigintLit)
     return {
       a: "bigintlit",
-      v: stringOfJson(isObject(bigintLit) ? bigintLit.value : undefined),
+      v: stringOfJson(isJsonObject(bigintLit) ? bigintLit.value : undefined),
     };
   // A symbol singleton has no claim form; the reader names it.
   const symbolLit = body("symbolLit");
   if (symbolLit)
-    return `unique symbol ${stringOfJson(isObject(symbolLit) ? symbolLit.id : undefined)}`;
+    return `unique symbol ${stringOfJson(isJsonObject(symbolLit) ? symbolLit.id : undefined)}`;
   // A tag set is the union of its literals, which `liftType` lists as atoms;
   // met elsewhere, it is shown as that union's text.
   if (body("numIn") !== undefined || body("strIn") !== undefined)
@@ -557,17 +552,17 @@ function liftClause(
   if (strLit)
     return {
       a: "stringlit",
-      v: stringOfJson(isObject(strLit) ? strLit.value : undefined),
+      v: stringOfJson(isJsonObject(strLit) ? strLit.value : undefined),
     };
   // The graph is finite but may be cyclic, so lifting stops rather than recursing.
   if (depth <= 0) return "…";
   const list = body("list");
-  if (isObject(list) && isObject(list.first) && isList(list.rest)) {
+  if (isJsonObject(list) && isJsonObject(list.first) && isJsonList(list.rest)) {
     const t = list.first;
     // Read before `liftType`, which writes `types.lifted`, runs.
     const required = t.required;
     const optional = t.optional;
-    if (list.rest.length || !isList(required) || !isList(optional))
+    if (list.rest.length || !isJsonList(required) || !isJsonList(optional))
       return encoding(clause);
     return {
       a: "store",
@@ -581,10 +576,10 @@ function liftClause(
   }
   const refs = body("refs");
   if (refs) {
-    const first = isObject(refs) ? refs.first : undefined;
+    const first = isJsonObject(refs) ? refs.first : undefined;
     const rest: readonly JsonValue[] =
-      isObject(refs) && isList(refs.rest) ? refs.rest : [];
-    const views = isObject(refs) ? refs.views : undefined;
+      isJsonObject(refs) && isJsonList(refs.rest) ? refs.rest : [];
+    const views = isJsonObject(refs) ? refs.views : undefined;
     // The first cell, possibly absent, takes the views; the rest, JSON
     // values, are mapped.
     const later = (
@@ -599,7 +594,7 @@ function liftClause(
       const store = f.read.atoms[0];
       if (
         f.name === "[]" &&
-        isObject(store) &&
+        isJsonObject(store) &&
         store.a === "store" &&
         ((same(f.read, f.write) && store.readonly === false) ||
           (f.write.atoms.length === 0 && store.readonly === true))
@@ -609,17 +604,17 @@ function liftClause(
     return only;
   }
   const dict = body("dict");
-  if (isObject(dict)) {
-    const indexes: readonly JsonValue[] = isList(dict.indexes)
+  if (isJsonObject(dict)) {
+    const indexes: readonly JsonValue[] = isJsonList(dict.indexes)
       ? dict.indexes
       : [];
     const index: JsonRead = indexes[0];
     if (
-      !isList(dict.rest) ||
+      !isJsonList(dict.rest) ||
       dict.rest.length ||
-      !isList(dict.indexes) ||
+      !isJsonList(dict.indexes) ||
       indexes.length !== 1 ||
-      !isList(index) ||
+      !isJsonList(index) ||
       index.length !== 2
     )
       return encoding(clause);
@@ -641,12 +636,12 @@ function liftClause(
   }
   const callable = body("callable");
   if (callable) {
-    const c: JsonObject = isObject(callable) ? callable : {};
-    const rest: readonly JsonValue[] = isList(c.rest) ? c.rest : [];
-    const fixed: readonly JsonValue[] = isList(c.arrows) ? c.arrows : [];
-    const variadic: readonly JsonValue[] = isList(c.variadic) ? c.variadic : [];
+    const c: JsonObject = isJsonObject(callable) ? callable : {};
+    const rest: readonly JsonValue[] = isJsonList(c.rest) ? c.rest : [];
+    const fixed: readonly JsonValue[] = isJsonList(c.arrows) ? c.arrows : [];
+    const variadic: readonly JsonValue[] = isJsonList(c.variadic) ? c.variadic : [];
     if (
-      [...fixed, ...variadic].some((s) => !isObject(s) || !isOrdinary(s.effect))
+      [...fixed, ...variadic].some((s) => !isJsonObject(s) || !isOrdinary(s.effect))
     )
       return encoding(clause);
     const signatures = liftSignatures(types, c.arrows, c.variadic, depth);
@@ -660,13 +655,13 @@ function liftClause(
     };
   }
   const arrs = body("arrs");
-  if (isObject(arrs)) {
-    const fixed: readonly JsonValue[] = isList(arrs.arrows) ? arrs.arrows : [];
-    const variadic: readonly JsonValue[] = isList(arrs.variadic)
+  if (isJsonObject(arrs)) {
+    const fixed: readonly JsonValue[] = isJsonList(arrs.arrows) ? arrs.arrows : [];
+    const variadic: readonly JsonValue[] = isJsonList(arrs.variadic)
       ? arrs.variadic
       : [];
     if (
-      [...fixed, ...variadic].some((s) => !isObject(s) || !isOrdinary(s.effect))
+      [...fixed, ...variadic].some((s) => !isJsonObject(s) || !isOrdinary(s.effect))
     )
       return encoding(clause);
     const arrows = liftSignatures(types, arrs.arrows, arrs.variadic, depth);
@@ -692,7 +687,7 @@ function liftSignatures(
     result: JsonRead,
     element?: JsonRead,
   ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
-    const domains: readonly JsonValue[] = isList(domain) ? domain : [];
+    const domains: readonly JsonValue[] = isJsonList(domain) ? domain : [];
     return {
       a: "function",
       construct: "unknown",
@@ -705,21 +700,21 @@ function liftSignatures(
       result: liftType(types, result, depth - 1),
     };
   };
-  const arrows: readonly JsonValue[] = isList(fixed) ? fixed : [];
-  const sigs: readonly JsonValue[] = isList(variadic) ? variadic : [];
+  const arrows: readonly JsonValue[] = isJsonList(fixed) ? fixed : [];
+  const sigs: readonly JsonValue[] = isJsonList(variadic) ? variadic : [];
   const fixedAtom = (
     arrow: JsonValue,
   ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
-    if (!isObject(arrow) || !isOrdinary(arrow.effect))
+    if (!isJsonObject(arrow) || !isOrdinary(arrow.effect))
       throw new TypeSyntaxError("a qualified signature has no structural form");
     return atom(arrow.receiver, arrow.arguments, arrow.result);
   };
   const variadicAtom = (
     sig: JsonValue,
   ): Within<{ value: "any"; store: "grow" }, JsonObject> => {
-    if (!isObject(sig) || !isOrdinary(sig.effect))
+    if (!isJsonObject(sig) || !isOrdinary(sig.effect))
       throw new TypeSyntaxError("a qualified signature has no structural form");
-    const [domain, rest]: readonly JsonRead[] = isList(sig.arguments)
+    const [domain, rest]: readonly JsonRead[] = isJsonList(sig.arguments)
       ? sig.arguments
       : [];
     return atom(sig.receiver, domain, sig.result, restElement(types, rest));
@@ -730,18 +725,18 @@ function liftSignatures(
 /** The element of an element rest: a type whose one clause is the pack of
 any number of actuals at it. Any other rest type is shown as itself. */
 function restElement(types: Table, rest: JsonRead): JsonRead {
-  if (!isList(rest) || rest.length !== 1) return rest;
+  if (!isJsonList(rest) || rest.length !== 1) return rest;
   const [label] = rest;
   const row = label === undefined ? undefined : rowAt(types, label);
-  const clause: JsonRead = isList(row) && row.length === 1 ? row[0] : undefined;
-  const pack = isObject(clause) ? clause.pack : undefined;
-  if (!isObject(pack) || !isList(pack.rest) || pack.rest.length) return rest;
+  const clause: JsonRead = isJsonList(row) && row.length === 1 ? row[0] : undefined;
+  const pack = isJsonObject(clause) ? clause.pack : undefined;
+  if (!isJsonObject(pack) || !isJsonList(pack.rest) || pack.rest.length) return rest;
   const t = pack.first;
   if (
-    !isObject(t) ||
-    !isList(t.required) ||
+    !isJsonObject(t) ||
+    !isJsonList(t.required) ||
     t.required.length ||
-    !isList(t.optional) ||
+    !isJsonList(t.optional) ||
     t.optional.length ||
     t.readonly !== false ||
     t.rest === null
@@ -772,11 +767,11 @@ function liftLabels(
   labels: JsonRead,
   depth: number,
 ): Within<{ value: "any"; store: "grow" }, Shown> {
-  if (!isList(labels)) return { top: false, atoms: ["(no type recorded)"] };
+  if (!isJsonList(labels)) return { top: false, atoms: ["(no type recorded)"] };
   if (
     labels.some((label) => {
       const row = rowAt(types, label);
-      return isList(row) && row.includes("source");
+      return isJsonList(row) && row.includes("source");
     })
   )
     return { top: true, atoms: [] };
@@ -786,9 +781,9 @@ function liftLabels(
     labels.find((label) => {
       const row = rowAt(types, label);
       const clause: JsonRead =
-        isList(row) && row.length === 1 ? row[0] : undefined;
-      const boolLit = isObject(clause) ? clause.boolLit : undefined;
-      return isObject(boolLit) && boolLit.value === value;
+        isJsonList(row) && row.length === 1 ? row[0] : undefined;
+      const boolLit = isJsonObject(clause) ? clause.boolLit : undefined;
+      return isJsonObject(boolLit) && boolLit.value === value;
     });
   const trueLabel = literalLabel(true),
     falseLabel = literalLabel(false);
@@ -803,9 +798,9 @@ function liftLabels(
     if (label === pairFalse) return { count: 0, lift: () => [] };
     if (label === pairTrue)
       return { count: 1, lift: () => [{ a: "boolean" }] };
-    if (isObject(label))
+    if (isJsonObject(label))
       return { count: 1, lift: () => [treeAtom(types, label, depth)] };
-    if (isList(label))
+    if (isJsonList(label))
       return { count: 1, lift: () => ["type " + JSON.stringify(label)] };
     const name = typeof label === "number" ? types.names.get(label) : undefined;
     if (name !== undefined) {
@@ -814,7 +809,7 @@ function liftLabels(
       return { count: 1, lift: () => [named] };
     }
     const row = rowAt(types, label);
-    if (!isList(row))
+    if (!isJsonList(row))
       return { count: 1, lift: () => ["type " + stringOfJson(label)] };
     const clauses = row.flatMap(setLiterals);
     return {
@@ -848,18 +843,18 @@ function treeAtom(
     textOf(liftType(types, labels, depth - 1));
   if (typeof label.binder === "string")
     return { a: "param", name: label.binder };
-  if (isList(label.array)) {
+  if (isJsonList(label.array)) {
     const store = liftType(types, label.array, depth).atoms[0];
-    if (isObject(store) && store.a === "store") return { ...store, a: "array" };
+    if (isJsonObject(store) && store.a === "store") return { ...store, a: "array" };
   }
   if (typeof label.decl === "number")
     return (
       `declaration ${label.decl}` +
-      (isList(label.args)
+      (isJsonList(label.args)
         ? `<${label.args.map((arg) => text(arg)).join(", ")}>`
         : "")
     );
-  if (isList(label.meet))
+  if (isJsonList(label.meet))
     return label.meet.map((part) => `(${text(part)})`).join(" & ");
   return "type " + JSON.stringify(label);
 }

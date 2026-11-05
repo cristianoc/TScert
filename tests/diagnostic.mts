@@ -1,6 +1,6 @@
 // Diagnostic metadata has its own wire boundary, apart from proof acceptance.
 import assert from "node:assert/strict";
-import { readDiagnostic } from "../tools/diagnostic.mts";
+import { readDiagnostic, type ObligationDiagnostic } from "../tools/diagnostic.mts";
 import type { Json } from "../tools/calculus.mts";
 
 const common: { [key: string]: Json } = {
@@ -28,6 +28,14 @@ const cases: { [key: string]: Json }[] = [
   edge([0]),
   edge(null),
 ];
+// Every kind of the union, so that a kind the reader does not decode fails
+// below: a kind added to `ObligationDiagnostic` and not here fails to compile.
+const kinds: { [K in ObligationDiagnostic["kind"]]: true } = {
+  "node-typing": true, "edge-coverage": true, "expression-claim": true,
+  "direct-obligation": true, "source-refusal": true, "production-failure": true,
+};
+for (const kind of Object.keys(kinds))
+  assert.ok(cases.some((value) => value.kind === kind), `a case of kind ${kind}`);
 for (const value of cases) {
   const decoded = readDiagnostic(`obligation-diagnostic: ${JSON.stringify(value)}`);
   assert.ok(decoded, JSON.stringify(value));

@@ -6,7 +6,7 @@
  * See docs/OBLIGATION-DIAGNOSTICS.md.
  */
 
-import type { CallCode, JsonRead, JsonValue, Term } from "./calculus.mts";
+import { isJsonList, type CallCode, type JsonRead, type JsonValue, type Term } from "./calculus.mts";
 import surface from "./claim-text.mts";
 import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 
@@ -17,7 +17,6 @@ type Descriptor = SourceMapEntry["context"][number];
  * by field and refuses what does not fit, so the shapes below are the ones that
  * arrive. A label list read from it is a `JsonValue`, and reading one narrows
  * what arrived instead of assuming it. */
-const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
 
 /**
  * What the verifier had and what had to follow from it, in source names.
@@ -52,7 +51,7 @@ interface Table {
   readonly names?: readonly (readonly [number, string])[];
 }
 function recordType(table: Table, labels: JsonRead): string {
-  if (!isList(labels)) return "(no type recorded)";
+  if (!isJsonList(labels)) return "(no type recorded)";
   return surface.printType(surface.lift(table.types, labels, 3, table.names ?? [])).text;
 }
 
