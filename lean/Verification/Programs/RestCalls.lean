@@ -30,28 +30,6 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
   · exact ArgsT_values hAv ha a hm
   · exact hev a hm
 
-/-- Run a subterm in an evaluation context, then continue with its value. -/
-theorem ctx_bind {A B : Fam} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
-    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
-    (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
-    Safe Ξ B n W h (C t) := by
-  intro n
-  induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h t hw hh hs hk
-    rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
-    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
-    · exact Or.inl (Or.inr (hr.lift raise))
-    · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
-      intro j hj V hx' hv h'' v hh'' hval ha
-      apply hk j (by omega) V _ hv h'' v hh'' hval ha
-      apply WExt_trans _ hx'
-      simpa only [trunc_trunc] using WExt_trunc hj hx
-
 /-- **Allocating a rest store.** Actuals meeting a tuple contract at the
 current level, as a fresh store, meet it as a writable store. The allocation
 step, rather than tuple membership, consumes an approximation level. -/
@@ -243,7 +221,7 @@ theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → T
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh (by simp)
   | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    apply ctx_bind (A := E) (fun t => C (pre ++ t :: parts.map partTerm))
+    apply Safe_bind (A := E) (fun t => C (pre ++ t :: parts.map partTerm))
       (fun s => lift hp s) (fun s => raise hp s) n W heap a hw hh ha
     intro j hj U hx hu heap' v hh' hv hEv'
     have hrest := parts_safe hE hEv C lift raise spread parts j U heap' (pre ++ [v])
@@ -272,7 +250,7 @@ theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → T
     obtain ⟨hSa, hSs⟩ := hS (some S, s) (by simp) S rfl
     have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
     show Safe Ξ R n W heap (C (pre ++ .spread s :: parts.map partTerm))
-    apply ctx_bind (A := S) (fun t => C (pre ++ .spread t :: parts.map partTerm))
+    apply Safe_bind (A := S) (fun t => C (pre ++ .spread t :: parts.map partTerm))
       (fun s => lift hp (.spreadC s)) (fun s => raise hp (.spreadC s))
       n W heap s hw hh hs
     intro j hj U hx hu heap' v hh' _ hv

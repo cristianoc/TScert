@@ -753,10 +753,10 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
     (hr : FutureSafe Ξ Rc n W r)
     (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL Raises.callL
+  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL Raises.callL
     n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply bind (fun r => .invoke v r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
+  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
     (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
   intro j hj1 U hy1 hu' heap' rv hok hrv hrm
@@ -839,10 +839,10 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++
       [.spread (.readAt CallArguments.arrayStoreField a)])) := by
   let tail := fun (t : Tm) => [Tm.spread (.readAt CallArguments.arrayStoreField t)]
-  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ tail a)) Step.callL Raises.callL
+  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd ++ tail a)) Step.callL Raises.callL
     n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply bind (fun r => .invoke v r (xs.map Prod.snd ++ tail a))
+  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd ++ tail a))
     (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
   intro j hj1 U hy1 hu' heap' rv hok hrv hrm
@@ -863,7 +863,7 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
   have hkU : WExt (trunc k (Nat.le_trans hk hj) W) V' := by
     apply WExt_trans _ hy
     simpa only [trunc_trunc] using WExt_trunc hk hxU
-  apply RestCalls.ctx_bind (A := V) (fun t => .invoke v rv (args ++ tail t))
+  apply Safe_bind (A := V) (fun t => .invoke v rv (args ++ tail t))
     (fun s => RestCalls.call_lift hv hrv hvals (.spreadC (.readC s)))
     (fun s => RestCalls.call_raise hv hrv hvals (.spreadC (.readC s))) k V' heap'' a hv' hok'
     ((ha.transfer (Nat.le_trans hk hj) hkU) k (Nat.le_refl _) V'
@@ -920,9 +920,9 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
+  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
+  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
   intro j hj1 U hy1 hu' heap' rv hok hrv hrm
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
@@ -1012,7 +1012,7 @@ theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam} {e : Effect
     (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
     (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
-  apply bind (fun f => .construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
+  apply Safe_bind (fun f => .construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
     Step.constructL Raises.constructL n W heap f hw hh hf
   intro j hj U hxU hu heap' v hok hv hfun
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
@@ -1052,7 +1052,7 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effec
     (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
     (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd)) := by
-  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
+  apply Safe_bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
   intro j hj U hxU hu heap' v hok hv hfun
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) (fun hr => hr.construct hv) hu hok

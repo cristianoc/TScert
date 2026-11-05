@@ -1203,7 +1203,7 @@ structure TargetClauses (ι : Type) where
 /-- `ClauseSelection.candidates` of a source clause among a target's clauses. -/
 @[nospecialize] def TargetClauses.candidates [DecidableEq ι] (G : NormalGraph ι) (t : TargetClauses ι)
     (a : Clause (List ι)) : List (Clause (List ι)) :=
-  t.clauses.filter fun b => !ClauseSelection.excludes G a b
+  ClauseSelection.among G a t.clauses
 
 /-- The pairs coverage of `X` by `Y` demands, `Y`'s clauses `t` read once:
 for each clause of `X` that `t` does not hold itself, the pairs it demands of

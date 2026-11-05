@@ -648,29 +648,6 @@ theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
   · rw [List.getElem?_set_ne (Ne.symm hj)] at hc
     exact h.2 j C hc
 
-/-- General evaluation-context composition. Contexts are supplied with their
-ordinary small-step congruence rule. -/
-theorem bind {A B : Fam} (C : Tm → Tm)
-    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
-    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
-    (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
-    Safe Ξ B n W h (C t) := by
-  intro n
-  induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h t hw hh hs hk
-    rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
-    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
-    · exact Or.inl (Or.inr (hr.lift raise))
-    · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
-      intro j hj V hx' hv h'' v hh'' hval ha
-      apply hk j (by omega) V _ hv h'' v hh'' hval ha
-      apply WExt_trans _ hx'
-      simpa only [trunc_trunc] using WExt_trunc hj hx
-
 /-- An operand remains safe after earlier operands spend budget or change the heap. -/
 def FutureSafe (Ξ : Fam) (A : Fam) (n : Nat) (W : WorldT n) (t : Tm) : Prop :=
   ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
@@ -699,7 +676,7 @@ theorem bind_list {B : Fam} (xs : List (Fam × Tm))
   | nil =>
     exact hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh trivial
   | cons p xs ih =>
-    apply bind (fun a => C (a :: xs.map Prod.snd)) (fun hs => lift (.head hs)) (fun hr => raise (.head hr))
+    apply Safe_bind (fun a => C (a :: xs.map Prod.snd)) (fun hs => lift (.head hs)) (fun hr => raise (.head hr))
       n W heap p.2 hw hh
       (ht p (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh)
     intro j hj U hx hu heap' v hok hv ha
@@ -733,7 +710,7 @@ theorem construct_safe {B : Fam} {e : Effect} (he : e.plain = true) (xs : List (
     (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
     Safe Ξ B n W heap (.construct f (xs.map Prod.snd)) := by
-  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
+  apply Safe_bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hctor
   apply bind_list xs hA (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs)
     (fun hr => hr.construct hv) hw' hok
@@ -787,9 +764,9 @@ theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
     Safe Ξ B n W heap (.invoke f r (xs.map Prod.snd)) := by
-  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
+  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hfun
-  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j U heap' r hw' hok
+  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j U heap' r hw' hok
     ((hr.transfer hj hx) j (Nat.le_refl _) U (by rw [trunc_id]; exact WExt_refl _) hw' heap' hok)
   intro i hi X hy hX heap'' rv hok'' hrv hrm
   apply bind_list xs hA (Tm.invoke v rv)

@@ -195,9 +195,13 @@ def boundExcl : Clause α → Clause α → Bool
   (!isUniverse b && shape a != shape b) || primExcl a b || keyExcl a b || litExcl G a b ||
     boundExcl a b
 
+/-- The clauses of a list that a source clause's exclusions leave. -/
+@[nospecialize] def among (a : Clause (List ι)) (cs : List (Clause (List ι))) : List (Clause (List ι)) :=
+  cs.filter fun b => !excludes G a b
+
 /-- The candidates of a source clause in a target type. -/
 @[nospecialize] def candidates (a : Clause (List ι)) (B : List ι) : List (Clause (List ι)) :=
-  (clausesOf G B).filter fun b => !excludes G a b
+  among G a (clausesOf G B)
 
 omit [DecidableEq ι] in
 theorem mem_candidates {a b : Clause (List ι)} {B : List ι} (h : b ∈ candidates G a B) :

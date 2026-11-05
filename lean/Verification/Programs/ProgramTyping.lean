@@ -902,13 +902,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @readCallable Γ a Ref P Ps f A c ha hr hc hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
       (bag_sem hc ((represents_raw hr j U v) ha')).1 hu hok
   | @readBagView Γ a Ref f A c ha hr hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, code, oid, l, c', rfl, hf, hl, hag⟩ :=
       CallableConjunctions.views_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
@@ -916,10 +916,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @writeCallable Γ a Ref P Ps f A b N c ha hr hc hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
+    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
+    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
@@ -956,7 +956,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
+    apply Safe_bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     cases j with
@@ -1080,14 +1080,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readView Γ a Ref c fs vs f A ha hr hc hm hlen ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     have hviews := (namedMembers_sem hr hc ha').2
     have hmA : (f, meaning G A) ∈ ReferenceConjunctions.famsOf (meaning G) vs :=
@@ -1133,7 +1133,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have hinv' := hinv
           rw [hρ] at hinv'
           obtain ⟨l, c', hf, hl, hag⟩ := builtinInvariant_store (namedMembers_carriesInvariant hc) hinv' hst
-          apply bind Tm.lenOf Step.lenC Raises.lenC k _ h _ hw' hh'
+          apply Safe_bind Tm.lenOf Step.lenC Raises.lenC k _ h _ hw' hh'
             (read_view_rule (A := fun _ _ u => ∃ ls, u = .arr ls) (fun _ _ _ ⟨ls, he⟩ => by subst he; rfl)
               k _ h l hw' hh' hf hl hag)
           intro j _ U _ hu heap av hok _ ⟨ls, hav⟩
@@ -1154,7 +1154,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' st st' f A ha hr hK hf hpr hP hm ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     have hs := (represents_raw hr j U v) ha'
     have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j) (oid : Nat), v = .objAt flds .absent oid ∧
@@ -1180,7 +1180,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
   | @readOptional Γ a Ref fs vs os ms ks st f r A U ha hr hm hUnd _ ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hs := (represents_raw hr j V v) ha'
     obtain ⟨flds, oid, rfl, _⟩ := hs.1.1
@@ -1194,7 +1194,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
 
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f K st ha hr hm hsure hUnd _ ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hd := ((represents_raw hr j V v) ha').2.2.1.1 (K, A) hm
     obtain ⟨flds, oid, rfl, _⟩ := ((represents_raw hr j V v) ha').1.1
@@ -1203,10 +1203,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
   | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK st ha hr hk hStr hwithin hm hUnd _ iha ihk =>
     intro n W h ρ he hw hh
-    apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
+    apply Safe_bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj V hx hv heap av hok hav ha'
-    apply bind (Tm.indexAt av) (Step.indexC2 hav) (Raises.indexC2 hav) j V heap _ hv hok
+    apply Safe_bind (Tm.indexAt av) (Step.indexC2 hav) (Raises.indexC2 hav) j V heap _ hv hok
       (ihk j V heap ρ (he.transfer j hj V hx) hv hok)
     intro k hk X hy hX heap' kv hok' hkv hk'
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
@@ -1261,9 +1261,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · exact hl
   | @elem Γ a i L I A T b k ha hr hi hI hk hA iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U heap _ hu hok
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U heap _ hu hok
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
@@ -1276,9 +1276,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (fun j hj U u => (hag j hj U u).1)
   | @elemOpt Γ a i L I A U T b k ha hr hi hI hk hnone hA hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
@@ -1323,9 +1323,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
   | @elemAny Γ a i L I E U ro presence ha hr hi hq hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
@@ -1356,13 +1356,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact elem_read_rule (meaning_valOnly G E) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
   | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv iha ihi ihv =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 Raises.setC1 n W h _ hw hh
+    apply Safe_bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 Raises.setC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) (Raises.setC2 hav) j U heap _ hu hok
+    apply Safe_bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) (Raises.setC2 hav) j U heap _ hu hok
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hvw heap' iv hok' hival hi'
-    apply bind (.setElem av iv) (Step.setC3 hav hival) (Raises.setC3 hav hival) m V heap' _ hvw hok'
+    apply Safe_bind (.setElem av iv) (Step.setC3 hav hival) (Raises.setC3 hav hival) m V heap' _ hvw hok'
       (ihv m V heap' ρ ((he.transfer j hj U hx).transfer m hm V hy) hvw hok')
     intro p hp X hz hxw heap'' vv hok'' hvval hv'
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
@@ -1429,13 +1429,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       · exact hm'
   | @len Γ a L N T ha hr hn ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     obtain ⟨ls, rfl, -⟩ := ((represents_raw hr j U av) ha').1
     exact len_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @lenStr Γ a S N ha hs hn ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     have hstr := answers_sound hs ha'
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
@@ -1443,9 +1443,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     exact len_str_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U' hx hu heap av hok hav ha'
-    apply bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G S).mono m _ V hy av ((meaning_adm G S).down_le j m hm U' av ha')
@@ -1460,7 +1460,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl)))
   | @test Γ a A B k ha ht hf ih =>
     intro n W h ρ he hw hh
-    apply bind (.test k) Step.testC Raises.testC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply Safe_bind (.test k) Step.testC Raises.testC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     cases j with
     | zero => trivial
@@ -1471,30 +1471,30 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | @merge Γ d a b A B R ha hb hm iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
+    apply Safe_bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.merge d av) (Step.mergeC2 hav) (Raises.mergeC2 hav) j U heap _ hu hok
+    apply Safe_bind (.merge d av) (Step.mergeC2 hav) (Raises.mergeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
     exact ObjectMerge.merge_values_safe hm hv hok' ha'' hb'
   | @makeKey Γ k a K A R hk ha hm ihk iha =>
     intro n W h ρ he hw hh
-    apply bind (fun k => .makeKey k (instantiate 0 ρ a)) Step.makeKeyC1 Raises.makeKeyC1 n W h _ hw hh
+    apply Safe_bind (fun k => .makeKey k (instantiate 0 ρ a)) Step.makeKeyC1 Raises.makeKeyC1 n W h _ hw hh
       (ihk n W h ρ he hw hh)
     intro j hj U hx hu heap kv hok hkv hk'
-    apply bind (.makeKey kv) (Step.makeKeyC2 hkv) (Raises.makeKeyC2 hkv) j U heap _ hu hok
+    apply Safe_bind (.makeKey kv) (Step.makeKeyC2 hkv) (Raises.makeKeyC2 hkv) j U heap _ hu hok
       (iha j U heap ρ (he.transfer j hj U hx) hu hok)
     intro i hi V hy hv heap' av hok' haval ha'
     have hk'' := (meaning_adm G K).mono i _ V hy kv ((meaning_adm G K).down_le j i hi U kv hk')
     exact ComputedKey.keyed_values_safe hm hv hok' hk'' ha'
   | @arith Γ a A b B op N ha hb hopt iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh
+    apply Safe_bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) j U heap _ hu hok
+    apply Safe_bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
@@ -1531,10 +1531,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | @write Γ a Ref fs vs os ms ks f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
+    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
+    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
@@ -1544,7 +1544,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
     intro n W h ρ henv hw hh
-    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
+    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hb := answers_sound hbool ha
@@ -1566,7 +1566,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
   | @ifKnown Γ c C q t e A hc hq ht ihc iht =>
     intro n W h ρ henv hw hh
-    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
+    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hvalue := (represents_raw hq j U v) ha
@@ -1902,7 +1902,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         n W h (.readAt k (ρ i)) := by
       have := member_read_safe hw hh hmem
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
-    apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
+    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
       n W h _ hw hh hread
     intro j hj U hx hu h' u hok hval hon
     cases j with
@@ -1997,7 +1997,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         n W h (.readAt k (ρ i)) := by
       have := member_read_safe hw hh hmem
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
-    apply bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
+    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
       n W h _ hw hh hread
     intro j hj U hx hu h' u hok hval hon
     cases j with
@@ -2019,7 +2019,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (hon.2.2 oid _ (List.mem_map_of_mem hF))
   | throw hA ha iha =>
     intro n W h ρ he hw hh
-    apply bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
+    apply Safe_bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2, hA.exc ha'⟩
   | sub ht hc ih =>

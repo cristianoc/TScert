@@ -92,6 +92,29 @@ theorem Safe_mono' {Ξ Ξ' B C : Fam} : ∀ (j : Nat),
     · exact Or.inr ⟨W', h', t', hx, ha, hst, hok,
         ih (fun m hm => hΞ m (by omega)) (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
 
+/-- General evaluation-context composition. Contexts are supplied with their
+ordinary small-step congruence rule. -/
+theorem Safe_bind {Ξ A B : Fam} (C : Tm → Tm)
+    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
+    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
+    (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
+    Safe Ξ B n W h (C t) := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hw hh hs hk
+    rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
+    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
+    · exact Or.inl (Or.inr (hr.lift raise))
+    · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
+      intro j hj V hx' hv h'' v hh'' hval ha
+      apply hk j (by omega) V _ hv h'' v hh'' hval ha
+      apply WExt_trans _ hx'
+      simpa only [trunc_trunc] using WExt_trunc hj hx
+
 /-- Safety is monotone in the type, at every budget it can still reach. -/
 theorem Safe_mono {Ξ B C : Fam} (j : Nat)
     (hbc : ∀ m, m ≤ j → ∀ (W : WorldT m) (v : Val), B m W v → C m W v)

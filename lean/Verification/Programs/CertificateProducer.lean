@@ -1051,7 +1051,7 @@ came from a different context. No execution budget is inspected. -/
       let equality := op == .eq || op == .looseEq
       let operands := pool.filter fun R => equality || G.plainTy R && !(expand G R).isEmpty &&
         (expand G R).all fun c => numberClause c || bigintClause c
-          || (op.relational && (stringClause c || numericClause c))
+          || (op.relational && (ObjectMerge.stringClause c || numericClause c))
           || (op == .add && printableClause c)
       return operands.findSearch? fun R => do
         let ea ← recur Γ a R
@@ -1463,7 +1463,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       return (ordinary.value,effect,out)
   SearchM.lift ⟨none, incomplete⟩
 
-/-- All predecessor edges come from executable continuations. -/
+/-- A continuation's destinations, in the order the edges are numbered: the
+checker (`GraphCode`) and the diagnostics read them here. -/
 def successors : Continuation → List Target
   | .ret => []
   | .bind t | .effect t => [t]
