@@ -179,6 +179,33 @@ control(async (): Promise<void> => {
       /^reject: source evidence does not justify the extracted program and exact claims/m);
   }
   process.stdout.write("module cells apart: a cell read past a writing call claimed at its old contents, and an entry knowing more than the cells' separation, refused\n");
+  // A closure is offered a longer visitor signature only where its own
+  // parameters take that signature's (`from_context`). Forged at the
+  // visitor's signature, whose first position may be undefined, the
+  // closure's body reading `width.toFixed()` is checked there and refused.
+  const artifacts = run("invalid-visitor-arity-bivariant");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const at = source.indexOf("(width: number) =>");
+  const fn = must(claims.functions.find(f => f.name === "digits"), "digits's claims");
+  const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+  assert.ok(Array.isArray(closure.type));
+  const label = must(closure.type.find(t => typeof t === "number"), "the closure's row");
+  const row = clauseRow(claims, label, "the closure's row");
+  const callable = must(row.find(c => typeof c === "object" && "arrs" in c), "the closure's arrows");
+  assert.ok(typeof callable === "object" && "arrs" in callable);
+  const own = must(callable.arrs.arrows[0], "the closure's own signature");
+  const visitor = must(clauseRows(claims).flatMap(r => r.flatMap(c =>
+    typeof c === "object" && "arrs" in c ? c.arrs.arrows.filter(a => a.arguments.length === 3) : []))[0],
+    "the visitor's signature");
+  const offered = { ...own, arguments: visitor.arguments };
+  closure.type = [claims.types.push([{ arrs: { ...callable.arrs, arrows: [own, offered] } }]) - 1];
+  const forged = writeClaims(artifacts, "forged-visitor-offer", claims);
+  const searched = produceWith(artifacts, forged, "forged-visitor-offer");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /source expression obligation/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal/m);
+  process.stdout.write("a closure forged at a longer visitor signature its parameter does not take is refused\n");
 });
 
 control(async (): Promise<void> => {
