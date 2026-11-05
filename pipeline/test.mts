@@ -3606,7 +3606,7 @@ control(async (): Promise<void> => {
     ["nullish-field-write-throws", "(() => { const x = { child: { b: 1 } }; return invalid(x, x); })()"],
     ["nullish-field-call-throws", "(() => { const x = { child: { b: 1 } }; return invalid(x, () => { x.child = null; }); })()"],
     ["invalid-nullish-field-pattern", "invalid({ child: { b: 1 } })"],
-    ["nullish-field-undefined-refused", "invalid({})"],
+    ["nullish-field-undefined", "invalid({})"],
   ]) {
     assert.ok(file && witness);
     assert.throws(() => runExample(file, witness), /Cannot read properties/);
@@ -3745,7 +3745,7 @@ control(async (): Promise<void> => {
   checkDefaults(verifier, run("default-parameter-scope"));
   checkPatternDefaults(verifier, run("destructuring-known-default"));
   checkEarlyDefault(verifier, run("invalid-default-invocation"));
-  checkSchemeDefaults(verifier, run("generic-default"));
+  checkSchemeDefaults(verifier, run("invalid-generic-default-write"));
   process.stdout.write("forged claims at each kind of point: read and checked there\n");
 });
 

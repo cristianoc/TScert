@@ -255,7 +255,7 @@ The numeric branch requires `typeof atom.v === "string"` before testing
   admit the checked string. The runtime check adds no rule or external
   assumption. General JSON object coercion requires its conversion hooks
   and effects; this literal format requires text.
-- **Scope:** `invalid-string-object` exercises the numeric branch used by
+- **Scope:** `string-object` exercises the numeric branch used by
   `bareAtomText`, `atomText` and their callers. The malformed-output control
   in `tests/claim-text.mts` checks the diagnostic fallback for non-string
   fields and the spelling of valid numeric fields.
@@ -744,7 +744,7 @@ with only `files` and `found`; `runPart` returns the decoded record.
 - **Behaviour:** annotations are erased. Decoding reads the same members,
   allocates the same records and arrays, and returns the same object;
   the worker retains its exceptions, promise resolution and object identity.
-- **Scope:** `invalid-async-object` shows the typed decoder and async return.
+- **Scope:** `async-object` shows the typed decoder and async return.
   `invalid-async-open-record` retains the refusal for an unrestricted record.
   The standard prototype assumptions are those of async resolution.
 
@@ -3121,7 +3121,7 @@ non-stage, non-ledger recording as dependent on a named input. `Recording`
 requires `readsInput: boolean`; `observedNoting` and `newLedger` initialize
 it to `false`. The assignment `r.readsInput = true` uses the existing
 [write rule](PROGRAM-TYPING.md#key-adding-writes) for a field already
-present. `optional-write-refused` shows the required field and an alias
+present. `optional-write` shows the required field and an alias
 reading it after the write.
 
 - **Avoided form:** `readsInput?: true`, initially omitted, makes the write
@@ -3230,7 +3230,7 @@ or an empty list.
   original filter does. The kind reads are stable and run no client code.
   Returns, throws, mutations, receivers, element identities and list
   aliases therefore agree for admitted compiler nodes.
-- **Scope:** `invalid-reflect-get-getter` exercises representative single-child
+- **Scope:** `reflect-get-getter` exercises representative single-child
   and child-list reads in the rewritten form. `invalid-reflect-get-array`
   retains the general getter counterexample: under Node its getter removes
   the element the function promises to return as a number, so it returns
@@ -4247,7 +4247,7 @@ language reads them: a read through the client can run a getter.
 
 The census sites `clientHasMethod` and `guardClientRequests` are the
 boundary's implementation. Their direct prototype reads rely on this
-contract. Its caller `invalid-error-subclass-prototype` verifies the
+contract. Its caller `error-subclass-prototype` verifies the
 `clientHasMethod` signature, and `blocker-client-prototype` verifies the
 request wrapper's caller; `blocker-client-prototype-forged` refuses an
 ordinary object presented as an API.

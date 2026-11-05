@@ -61,7 +61,7 @@ function fixtureProject(files: Record<string, string>, lib?: string[]): { graphO
 }
 
 {
-  const jsonPath = resolve(pipelineDir, "examples/collections-json.ts");
+  const jsonPath = resolve(pipelineDir, "examples/invalid-collections-json.ts");
   const changedCopy = join(runDirectory("tscert-copy-"), "client.ts");
   writeFileSync(changedCopy, readFileSync(jsonPath, "utf8").replace("value, null", "null, value"));
   assert.throws(() => parseFile(changedCopy, false, libraryConfig, jsonPath),

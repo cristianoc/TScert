@@ -26,7 +26,7 @@ Boolean and numeric uses of one closure, a fixed prefix with empty rest and
 tuple spread, a universal default, a possibly sparse spread, and a variadic
 callback inside a generic body. Its negative controls reject a captured
 Boolean array as arbitrary `T[]` and a Boolean actual sent to a rest callback
-at arbitrary `T`. [`spread-holes.ts`](../spread-holes.ts) writes past the end
+at arbitrary `T`. [`invalid-spread-holes.ts`](../invalid-spread-holes.ts) writes past the end
 of a Boolean array, leaving a hole a spread would pass as `undefined` in a
 `boolean[]`; TypeScript accepts the write, and the pipeline refuses it.
 

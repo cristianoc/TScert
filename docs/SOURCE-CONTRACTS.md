@@ -3646,7 +3646,7 @@ the dictionary arm. The arms are writable, as the client may go on writing
 what is fresh. `JSON.parse` runs no code of the client's and writes only
 what it allocates, also before it throws a SyntaxError: the empty
 footprint, on a throw too. A reviver is client code: the call is read with
-the text only (`json-parse-reviver-refused`). A dictionary arm is no array
+the text only (`invalid-json-parse-reviver`). A dictionary arm is no array
 (its members own no prototype key), so `Array.isArray` of a `ParsedJson`
 leaves its array arm, whose `map` stays dense (`json-parse-data`).
 `ParsedJson` is a `JsonValue`: each of its arms is one read-only. A
@@ -5103,7 +5103,7 @@ there, the parser reads TypeScript's `PromiseLike<R>` as the native
 `Promise<R>`, by the declaration's identity, and Lean refuses a native
 `Promise` definition naming `PromiseLike` (`invalid-then-callback-thenable`,
 `invalid-catch-callback-thenable`). The native contract is then no
-`PromiseLike`: its `then` takes fewer callbacks (`promise-like`). `Awaited<T>`
+`PromiseLike`: its `then` takes fewer callbacks (`invalid-promise-like`). `Awaited<T>`
 qualifies its binder through an alias as written ([implied bounds](#implied-bounds);
 `awaited-alias`, `invalid-awaited-alias-thenable`). `for await` stays refused.
 This reading covers the native `Promise` declaration; it is no audit of the
