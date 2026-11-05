@@ -476,7 +476,8 @@ increasing trust silently.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms.
   [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
-  when `checkUnitJson_safe` depends on an axiom other than `propext`,
+  when `checkUnitJson_safe`, or a `@[csimp]` lemma whose right-hand side the
+  compiled verifier runs, depends on an axiom other than `propext`,
   `Classical.choice` and `Quot.sound`. No warnings: `lakefile.toml` sets
   `warningAsError`, so a warning fails the build; fix it (a deprecated name's
   replacement, an unused variable as `_`, an unused simp argument dropped)
