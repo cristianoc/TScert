@@ -491,6 +491,48 @@ pp. 87–100. [doi:10.1145/2535838.2535876](https://doi.org/10.1145/2535838.2535
 interpreter; an alternative, hand-written route to M, which predates promises.
 **Discussed in** [TRUST-REDUCTION: the host](TRUST-REDUCTION.md#the-host).
 
+## Web platform standards
+
+### HTML
+
+WHATWG. *HTML Living Standard*,
+[html.spec.whatwg.org](https://html.spec.whatwg.org/). Sections relied on:
+[the 2D rendering context](https://html.spec.whatwg.org/multipage/canvas.html#2dcontext)
+(`CanvasTextDrawingStyles`, `measureText`, `TextMetrics`),
+[the canvas element](https://html.spec.whatwg.org/multipage/canvas.html#the-canvas-element)
+and [`OffscreenCanvas`](https://html.spec.whatwg.org/multipage/canvas.html#the-offscreencanvas-interface)
+(`getContext`), `Window`'s
+[`document`](https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-document-2)
+and [`navigator`](https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator),
+[`NavigatorID`](https://html.spec.whatwg.org/multipage/system-state.html#navigatorid),
+`HTMLElement`'s [`lang`](https://html.spec.whatwg.org/multipage/dom.html#dom-lang)
+and [forgiving-base64 decode](https://infra.spec.whatwg.org/#forgiving-base64-decode)
+for `atob`.
+**Relied on in** [the DOM's canvas, document and navigator](SOURCE-CONTRACTS.md#the-doms-canvas-document-and-navigator).
+
+### DOM
+
+WHATWG. *DOM Living Standard*, [dom.spec.whatwg.org](https://dom.spec.whatwg.org/):
+[`createElement`](https://dom.spec.whatwg.org/#dom-document-createelement)
+and [`documentElement`](https://dom.spec.whatwg.org/#dom-document-documentelement).
+**Relied on in** [the DOM's canvas, document and navigator](SOURCE-CONTRACTS.md#the-doms-canvas-document-and-navigator).
+
+### CSSOM
+
+W3C. *CSS Object Model*, [drafts.csswg.org/cssom](https://drafts.csswg.org/cssom/):
+[`getComputedStyle`](https://drafts.csswg.org/cssom/#dom-window-getcomputedstyle)
+and resolved values.
+**Relied on in** [the DOM's canvas, document and navigator](SOURCE-CONTRACTS.md#the-doms-canvas-document-and-navigator).
+
+### Web IDL
+
+WHATWG. *Web IDL Standard*, [webidl.spec.whatwg.org](https://webidl.spec.whatwg.org/):
+[attributes](https://webidl.spec.whatwg.org/#es-attributes) as accessor
+properties of the interface prototype object, and the conversions to
+[DOMString](https://webidl.spec.whatwg.org/#es-DOMString) and
+[`[EnforceRange]` integers](https://webidl.spec.whatwg.org/#EnforceRange).
+**Relied on in** [the DOM's canvas, document and navigator](SOURCE-CONTRACTS.md#the-doms-canvas-document-and-navigator).
+
 ## Promises and flattened types
 
 The nested-promise case: resolution adopts a thenable, so no built-in promise is

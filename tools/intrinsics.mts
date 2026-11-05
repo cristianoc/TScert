@@ -53,6 +53,10 @@
  *   `%ByteAt%(b, k)`, `b[k] = v` is `%ByteSet%(b, k, v)`, and `b.length` is
  *   `%ByteLength%(b)` (`library-types.mts`): the host's element read,
  *   element write and `length` getter.
+ * - `o.k` and `o.k = v` of a 2D context at a key its host getter or setter
+ *   reads or writes are `%CanvasGet:k%(o)` and `%CanvasSet:k%(o, v)`
+ *   (`library-types.mts`), and `typeof X` of a DOM global some hosts do not
+ *   define is `%TypeOf:X%()` (`library-globals.mts`).
  * - `xs[k]` of an array or a tuple at a key TypeScript types as `number` (no
  *   literal) is `%ElementAt%(xs, k)`: the property the number names, an
  *   element where it is an index below the length, an own property of
@@ -92,7 +96,7 @@ import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots, resolvableSlots } from "./type-term.mts";
 import { emptyFootprint, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import { bytes, segmentData, segmenter, segments } from "./library-types.mts";
+import { bytes, canvasContext, canvasGetters, canvasSetters, segmentData, segmenter, segments } from "./library-types.mts";
 import { moduleLocation } from "./files.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
@@ -123,6 +127,9 @@ export const elementAtName = "%ElementAt%";
 export const byteAtName = "%ByteAt%";
 export const byteLengthName = "%ByteLength%";
 export const byteSetName = "%ByteSet%";
+export const typeOfDocumentName = "%TypeOf:document%";
+export const typeOfNavigatorName = "%TypeOf:navigator%";
+export const typeOfOffscreenCanvasName = "%TypeOf:OffscreenCanvas%";
 export const promiseAllName = "%PromiseAll%";
 export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
@@ -194,6 +201,7 @@ const span: [number, number] = [0, 0];
 const atom = (name: AtomName): Within<{ value: "any"; store: "grow" }, TypeTerm> => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
+const literalOf = (text: string): TypeTerm => ({ k: "literal", name: "string", text, span });
 const fn = (params: TypeTerm[], result: TypeTerm): Within<{ value: "any"; store: "grow" }, Signature> =>
   ({ k: "function", effect: ordinaryEffect, receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
@@ -641,6 +649,27 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // and answers a number, the value the assignment is.
     [byteSetName]: () => ({ typeParams: [],
       type: { ...fn([bytes, atom("number"), atom("number")], atom("number")), effect: emptyEffect } }),
+    // `typeof X` of a DOM global some hosts define (`GlobalEntry.typeOf`):
+    // the lookup of the binding runs no code, no global being a getter of
+    // the program's under the untampered-standard-objects policy, and
+    // answers `"undefined"` where the host defines none, else the value's
+    // `typeof`, an object's or a constructor's.
+    [typeOfDocumentName]: () => ({ typeParams: [],
+      type: { ...fn([], either(literalOf("undefined"), literalOf("object"))), effect: emptyEffect } }),
+    [typeOfNavigatorName]: () => ({ typeParams: [],
+      type: { ...fn([], either(literalOf("undefined"), literalOf("object"))), effect: emptyEffect } }),
+    [typeOfOffscreenCanvasName]: () => ({ typeParams: [],
+      type: { ...fn([], either(literalOf("undefined"), literalOf("function"))), effect: emptyEffect } }),
+    // A 2D context's getter (`canvasGetters`): it serializes the context's
+    // state, runs no code and writes nothing.
+    ...Object.fromEntries(canvasGetters.map(g => [g.intrinsic, () => ({ typeParams: [],
+      type: { ...fn([canvasContext], g.type), effect: emptyEffect } })])),
+    // A 2D context's setter (`canvasSetters`): Web IDL converts the value,
+    // a string, to a DOMString, which runs no code, and the setter changes
+    // the context's state alone, which the model holds no location of. It
+    // answers the value, the value the assignment is.
+    ...Object.fromEntries(canvasSetters.map(s => [s.intrinsic, () => ({ typeParams: [],
+      type: { ...fn([canvasContext, s.value], s.value), effect: emptyEffect } })])),
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
         either(binder, atom("undefined"))), effect: emptyEffect } }),

@@ -170,6 +170,9 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   "%RestFrom:": store,
   "%Freeze:": transparent("a fresh object literal, no host value"),
   "%Enum:": transparent("allocates the file's enum object from its members' values"),
+  "%TypeOf:": transparent("the type tag of a DOM global or of no binding; observes no member"),
+  "%CanvasGet:": transparent("a 2D context's host getter, a string or `undefined`; a node is no 2D context"),
+  "%CanvasSet:": transparent("a 2D context's host setter at a string; a node is no 2D context"),
   "%Read:": transparent("the value at a key in auditedOpenReadKeys, at unknown: absence, a data property or an audited transparent getter "
     + "for every admitted host family, including through erasure; external objects obey the open-read restriction"),
 };

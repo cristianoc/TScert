@@ -45,6 +45,7 @@ import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, ordinaryHasInstanceName, objectProtoKeys, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
+import { canvasGetters, canvasSetters } from "./library-types.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement, callTarget } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
@@ -274,6 +275,10 @@ export class Gate {
    * view of bytes, by span: the intrinsic reading or writing each
    * (`library-types.mts`). */
   readonly byteReads: Map<string, string> = new Map();
+  /** The member writes and reads of a 2D context at a key its host
+   * accessor sets or gets, by their spans: the accessor's intrinsic
+   * (`library-types.mts`, `canvasSetters` and `canvasGetters`). */
+  readonly hostMembers: Map<string, string> = new Map();
   /** The open reads `%Read:k%` answers, by span: each its intrinsic. */
   readonly openReads: Map<string, string> = new Map();
   /** Each regular expression literal's intrinsic, `%RegExp:Σ%`, by span. */
@@ -1903,6 +1908,26 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findElementWrites);
   };
   if (!carriesContext) scan(findElementWrites);
+  // Member writes `e.k = v` and reads `e.k` at a key a 2D context sets or
+  // gets through its host accessor (`canvasSetters`, `canvasGetters`): a
+  // plain assignment's target, or a read other than a write's target and a
+  // call's callee, outside an optional chain. TypeScript's type of the
+  // object decides whether the accessor's intrinsic writes or reads it.
+  const setterKeys = new Set(canvasSetters.map(s => s.member));
+  const getterKeys = new Set(canvasGetters.map(g => g.member));
+  const memberWriteNodes: Node[] = [];
+  const memberReadNodes: Node[] = [];
+  const findMemberAccesses = (node: Node): void => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isPropertyAccessExpression(node.left) && !node.left.questionDotToken && ts.isIdentifier(node.left.name) &&
+        setterKeys.has(node.left.name.text))
+      memberWriteNodes.push(node.left);
+    if (ts.isPropertyAccessExpression(node) && !node.questionDotToken && ts.isIdentifier(node.name) &&
+        getterKeys.has(node.name.text) && !writtenElement(node) && !callTarget(node))
+      memberReadNodes.push(node);
+    node.forEachChild(findMemberAccesses);
+  };
+  if (!carriesContext) scan(findMemberAccesses);
   // Reads `e.length` other than a write's target: TypeScript's type of the
   // object decides whether `%ByteLength%` reads it.
   const lengthReadNodes: Node[] = [];
@@ -2151,13 +2176,13 @@ function lowerFile(file: string, carriesContext: boolean,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || elementWriteNodes.length || lengthReadNodes.length || openReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || elementWriteNodes.length || memberWriteNodes.length || memberReadNodes.length || lengthReadNodes.length || openReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
     const first =importNodes[0] ?? reexportNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ?? elementWriteNodes[0] ?? lengthReadNodes[0] ?? openReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ?? elementWriteNodes[0] ?? memberWriteNodes[0] ?? memberReadNodes[0] ?? lengthReadNodes[0] ?? openReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0] ?? blockNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named, default and namespace imports. A type import joins the
@@ -2268,8 +2293,11 @@ function lowerFile(file: string, carriesContext: boolean,
         libraryValue: ([start, end]) => gate.libraryValues.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         elementWrites: elementWriteNodes.map(node => gate.span(node)),
+        memberWrites: memberWriteNodes.map(node => gate.span(node)),
+        memberReads: memberReadNodes.map(node => gate.span(node)),
         lengthReads: lengthReadNodes.map(node => gate.span(node)),
         byteRead: ([start, end], intrinsic) => gate.byteReads.set(`${start}:${end}`, intrinsic),
+        hostMember: ([start, end], intrinsic) => gate.hostMembers.set(`${start}:${end}`, intrinsic),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         numberKey: ([start, end]) => gate.numberKeys.add(`${start}:${end}`),
         openReads: openReadNodes.map(node => gate.span(node)),
