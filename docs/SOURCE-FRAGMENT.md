@@ -52,7 +52,7 @@ fragment.
 
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
-| `new Array(x)` with one argument | A numeric argument constructs holes, which a readable element contract excluding `undefined` cannot justify | [arrays](SOURCE-MODEL.md#arrays) | `invalid-array-length` |
+| `new Array(x)` with one argument, but `new Array<T>(n).fill(v)` with the construct written directly as the receiver of `fill` of one argument | A numeric argument constructs holes, which a readable element contract excluding `undefined` cannot justify; a fill of one argument, called on the construct before any other code holds it, leaves none | [`new Array` filled at once](SOURCE-CONTRACTS.md#new-array-filled-at-once) | `invalid-array-length`, `invalid-array-fill-read-before` (Node), `invalid-array-fill-partial` (Node), `invalid-array-fill-range` (Node), `array-fill-parenthesized`; `array-fill` |
 | An element write at an index not proven in bounds or appending | It could create a hole, which a later spread into a rest passes as `undefined` | [arrays](SOURCE-MODEL.md#arrays) | `invalid-spread-holes` |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract | [writable string index signatures](SOURCE-MODEL.md#writable-string-index-signatures) | — |
 | A position past a mutable tuple's arity; its `length` read at the arity | `push` may have extended it | [arrays](SOURCE-MODEL.md#arrays) | — |
