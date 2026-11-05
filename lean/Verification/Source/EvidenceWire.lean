@@ -243,7 +243,7 @@ reads. -/
 /-- **The evidence decoder.** The document's exact shape (`decodeStrict`),
 then its references resolved. -/
 @[nospecialize] def decode [ToJson ι] [FromJson ι] (j : Json) : Except String (Bundle ι) := do
-  let d : Document ι ← decodeStrict j
+  let d : Document ι ← decodeStrict "evidence" j
   d.resolve
 
 /-! ### Resolution is unfolding

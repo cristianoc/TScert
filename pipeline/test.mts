@@ -1527,7 +1527,7 @@ control(async (): Promise<void> => {
     const fragment = renamed("fragment.json");
     const claims = renamed("claims.json");
     const start = source.indexOf(write);
-    const at = `source refusal at [${start},${start + write.length}): a write at a key that may be \`message\` or \`stack\``;
+    const at = `source refusal at [${start},${start + write.length}): a write at a key that may be \`message\`, \`stack\` or \`cause\``;
     const searched = produceWith(twin, claims, `forged-${key}`, fragment);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
@@ -7377,9 +7377,9 @@ control(async (): Promise<void> => {
     ["code-past-the-table", (e) => { for (const u of uses(unit(e, "kindOfCell").codes)) u.index = 9; }, /does not justify|does not establish/],
     ["restricted-past-the-table", (e) => { for (const u of uses(unit(e, "entryKind"))) u.index = 9; }, typing],
     ["cached-contents", (e) => { Object.assign(must(table(e, "kindOf")[0], "S"), { contents: ["str"] }); },
-      /unknown fields or missing explicit fields/],
+      /`evidence\.[^`]*\.contents` is a field the calculus protocol does not take there/],
     ["heap-link", (e) => { Object.assign(must(table(e, "kindOf")[0], "S"), { links: [] }); },
-      /unknown fields or missing explicit fields/],
+      /`evidence\.[^`]*\.links` is a field the calculus protocol does not take there/],
   ];
   for (const [name, change, reason] of refused) {
     const outcome = check(forge(name, change));

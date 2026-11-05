@@ -498,7 +498,7 @@ deriving instance ToJson, FromJson for DirectProof.Plan
 /-- Translate labels through their JSON representation. Strict decoding
 refuses a label outside the frozen equations. -/
 private def relabel {α β : Type} [ToJson α] [FromJson β] [ToJson β] (a : α) : Except String β :=
-  decodeStrict (toJson a)
+  decodeStrict "request" (toJson a)
 
 /-- An extracted unit's request over the frozen equations. The program is
 the extracted one; every label is read as `F`'s. -/

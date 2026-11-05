@@ -398,10 +398,30 @@ partial def sameJson (a b : Json) : Bool :=
       match b.getObjVal? k with | .ok w => sameJson v w | .error _ => false)
   | _, _ => a == b
 
-def decodeStrict [FromJson α] [ToJson α] (j : Json) : Except String α := do
+/-- The first place, under the path `p`, where a document and its
+re-encoding differ: a field the re-encoding drops (unknown, or a default
+whose spelling is its omission), a field it adds (one the document left
+implicit), or a value it spells otherwise. -/
+partial def firstDifference (p : String) (a b : Json) : Option String :=
+  match a, b with
+  | .arr xs, .arr ys =>
+      if xs.size != ys.size then some s!"`{p}` does not re-encode to itself"
+      else (xs.toList.zip ys.toList).zipIdx.findSome? fun ((x, y), i) => firstDifference s!"{p}[{i}]" x y
+  | .obj xs, .obj ys =>
+      (xs.toList.findSome? fun (k, v) => match b.getObjVal? k with
+        | .ok w => firstDifference s!"{p}.{k}" v w
+        | .error _ => some s!"`{p}.{k}` is a field the calculus protocol does not take there (unknown, or a default spelled out)") <|>
+      (ys.toList.findSome? fun (k, _) => match a.getObjVal? k with
+        | .ok _ => none
+        | .error _ => some s!"`{p}.{k}` is missing: every field of the calculus protocol is explicit")
+  | _, _ => if a == b then none else some s!"`{p}` does not re-encode to itself"
+
+/-- Decode `j`, the value at path `p` of a document, refusing it unless it
+re-encodes to itself; the refusal names the first field that differs. -/
+def decodeStrict [FromJson α] [ToJson α] (p : String) (j : Json) : Except String α := do
   let a ← fromJson? j
   if sameJson j (toJson a) then return a
-  throw "unknown fields or missing explicit fields in the calculus protocol"
+  throw ((firstDifference p j (toJson a)).getD s!"`{p}` does not re-encode to itself")
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
