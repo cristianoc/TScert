@@ -3167,10 +3167,11 @@ keeps from running.
   run under Node). A global whose entries state no value, such as `BigInt`,
   is refused as one (`library-global-value-unreviewed`).
 - `parseInt(s, r)`, `parseFloat(s)`, `Math.abs(x)`, `Math.ceil(x)`,
-  `Math.round(x)` and `Math.fround(x)` convert a string and numbers,
-  primitives no conversion code runs on, and write nothing: as declared,
-  within the empty footprint (`library-parse-int`, `library-parse-float`,
-  `library-math-abs`, `library-math-ceil`, `library-math-round`,
+  `Math.floor(x)`, `Math.round(x)`, `Math.fround(x)` and `Math.sign(x)`
+  convert a string and numbers, primitives no conversion code runs on, and
+  write nothing: as declared, within the empty footprint
+  (`library-parse-int`, `library-parse-float`, `library-math-abs`,
+  `library-math-ceil`, `library-math-floor-sign`, `library-math-round`,
   `library-math-fround`). No argument of their parameter types converts by
   code.
 - The DOM's global `atob(data)` (the HTML standard's
