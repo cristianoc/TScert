@@ -103,7 +103,9 @@ const equationReaders = [
   // The claims decoder's explicit reads: the other files' structures are
   // the verifier's own state, which the set above also holds.
   expectSubset("Lean reads of SourceClaims", lean(["lean/Verification/Source/Claims/Wire.lean"], true), ts, {});
-  expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {
+  // The description's types, above its decoder.
+  expectSubset("SourceClaims fields Lean ignores",
+    declared(["tools/source-claims.mts"], "export function decodeSourceClaims"), leanNames, {
     labels: "a tuple element's label, not a field",
   });
 }
