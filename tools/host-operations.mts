@@ -2,8 +2,12 @@
  * (HOST-FAMILIES.md, "Operations and their obligations"): each source form
  * the parser admits, each intrinsic it writes and each table of the reviewed
  * library overlays, classified by what its model states of a host object or
- * a node list. The tables are keyed by the parser's own unions, so a form
- * added to the fragment is a type error here until it is classified.
+ * a node list. The tables of source forms are keyed by the parser's own
+ * unions, so a form added to the fragment is a type error here until it is
+ * classified; the table of intrinsics is keyed by name, and its completeness
+ * against `intrinsics.mts` is reviewed, not checked. Each overlay entry of
+ * `library-globals.mts` states its own classification in its required
+ * `host` field.
  *
  * - transparent: the model holds of a restricted value as of any value of
  *   the operand's type (a callback keeps its own callable contract);
@@ -12,8 +16,9 @@
  *   listed operands' claimed types;
  * - refused: the fragment does not admit the form.
  *
- * The classification is the reviewed record; Lean enforces the obligated
- * ones by their steps and rules, whatever the producer claims. */
+ * The classification is the reviewed record, read by no check; Lean
+ * enforces the obligated ones by their steps and rules, whatever the
+ * producer claims. */
 import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
@@ -21,7 +26,7 @@ import {
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
-  urlHrefName, pathToFileHrefName,
+  urlHrefName, pathToFileHrefName, throwUninitializedName, byteAtName, byteLengthName,
 } from "./intrinsics.mts";
 
 /** The key capability for an open read, independent of the receiver's
@@ -128,7 +133,7 @@ export const patternForms: { readonly [K in PatternAst["k"]]: HostClass } = {
 };
 
 /** The intrinsics the parser writes, by name; `%Spread:K%`,
- * `%RestFrom:k%`, `%Read:k%` and `%Freeze:K%` by their prefixes, a union's iteration by
+ * `%RestFrom:k%`, `%Read:k%`, `%Freeze:K%` and `%Enum:E%` by their prefixes, a union's iteration by
  * its `|`. */
 export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [awaitName]: transparent("a value at a Promise type: a realm promise by the await assumption"),
@@ -156,9 +161,13 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [iterateForInName]: transparent("over a dictionary, whose family admits no host object"),
   [hasPropertyName]: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),
   [elementAtName]: store,
+  [byteAtName]: transparent("a byte of a `Uint8Array` or `Buffer`, a number, as its stated library type gives it; a node is no byte view"),
+  [byteLengthName]: transparent("the length of a `Uint8Array` or `Buffer`, a number, as its stated library type gives it"),
+  [throwUninitializedName]: transparent("throws a `ReferenceError`; observes no value"),
   "%Spread:": transparent("a string, Set, Map or iterator: no host value"),
   "%RestFrom:": store,
   "%Freeze:": transparent("a fresh object literal, no host value"),
+  "%Enum:": transparent("allocates the file's enum object from its members' values"),
   "%Read:": transparent("the value at a key in auditedOpenReadKeys, at unknown: absence, a data property or an audited transparent getter "
     + "for every admitted host family, including through erasure; external objects obey the open-read restriction"),
 };
