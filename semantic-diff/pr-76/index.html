@@ -1,0 +1,277 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">5 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-76"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-76</code></a><ul><li>5 commits</li><li>parts: <span class="chip strong">wire</span> <span class="chip">tests</span> <span class="chip">docs</span> <span class="chip">tools</span></li></ul></li></ul></section>
+<h2 id="g-pr-76"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-76</code></h2><article class="card" id="c-1bb1c60f8"><header><div><div class="sha">1bb1c60f8 · Cristiano Calcagno · Nov 05, 02:12</div><h3>Require the exact fields of every Fragment node kind and of the graph's meet and parameter rows</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The repository's convention is that every decoder requires its shape field by field and rejects an unknown field. The verifier's decoder of the parser's document read several node kinds field by field without checking their field list: an identifier, a literal, a binary operator, <code>??</code>, <code>!</code>, an object literal (with and without spreads), a property read and write, a conditional expression, and the statements <code>return</code>, an expression statement, <code>continue</code> and <code>if</code>, as well as a function's parameters. An <code>{&quot;k&quot;:&quot;id&quot;}</code> node with an extra field was accepted. The graph rows of a request decoded a meet row and a parameter row the same way, while the scheme row was exact.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the parser's document, the verifier's decoder</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a node of the kinds above, or a function parameter, with a field its kind does not declare: decoded, the field ignored</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>refused with &quot;unexpected fields&quot;; each kind's field list is the one tools/fragment.mts declares, its optional fields (an allocation's proto and brand, an object literal's proto, a parameter's rest) allowed when present</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">a request's graph rows, the verifier's decoder</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a meet row or a parameter row with an extra field: decoded</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>refused: a meet row is exactly meet, clauses and an optional also; a parameter row exactly param, name and kind</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">pipeline/test.mts, the parser-document control</span></h4><pre class="code"><span class="ln">an unexamined field on an identifier node and on a return statement</span><span class="ln">of a function body is refused, beside the one at the document's root</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip strong">wire</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test forged">an-extra-field-on-an-id-node</span> <span class="test forged">an-extra-field-on-a-return-statement</span></dd></dl>
+<details><summary>3 files changed, 51 insertions(+), 9 deletions(-)</summary><pre class="code"> lean/Verification/Source/Fragment.lean    | 38 ++++++++++++++++++++++++-------
+ lean/Verification/Source/RequestJson.lean |  2 ++
+ pipeline/test.mts                         | 20 +++++++++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-32b80ea30"><header><div><div class="sha">32b80ea30 · Cristiano Calcagno · Nov 05, 02:16</div><h3>State JSON.stringify's array arm apart from the dictionary traversal lemma</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>JSON.stringify's two overlay entries are classified transparent, and HOST-FAMILIES.md rested that on the traversal lemma, saying JsonValue's only object arm is a string-indexed dictionary. JsonValue also has a readonly array arm, <code>readonly (JsonValue | undefined)[]</code>, which the lemma's premise admits no member of, so the classification of a JsonValue holding an array rested on no stated argument.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">HOST-FAMILIES.md, excluding host values</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>JsonValue's only object arm is a string-indexed dictionary, and its arms meet the lemma's premise</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the claim is that serialization enumerates the keys of no host object; the lemma proves it for the primitive and dictionary arms; the array arm is argued: a member owns the store key, so it is a JavaScript array (the trust surface), read by its indices only, owning and inheriting no toJSON, each index giving a store element meeting <code>JsonValue | undefined</code> at a lower index or, at a hole, <code>undefined</code></p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">JsonTraversal.lean header; JSON.stringify's classification in library-globals.mts</span></h4><div class="prose"><p>the header names the array arm and says the module does not state it; the classification's reason names the enumerated keys and the section</p></div>
+<h4 class="change">Soundness</h4><div class="prose"><p>no acceptance changes. The array arm's argument rests on the existing trust row that every object owning the array store key is a JavaScript array, and on the array clause's own-key exclusion of toJSON; it is argued in prose, not proved in Lean</p></div>
+<h4 class="change">Gap</h4><div class="prose"><p>a Lean statement for the array arm: a Reach step through a store's elements, and a conclusion about the objects whose keys are enumerated rather than every object reached, since a readonly array may be a host object</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 45 insertions(+), 23 deletions(-)</summary><pre class="code"> docs/HOST-FAMILIES.md                         | 50 ++++++++++++++++++---------
+ lean/Verification/Programs/JsonTraversal.lean | 14 +++++---
+ tools/library-globals.mts                     |  4 +--</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-23af8c3a8"><header><div><div class="sha">23af8c3a8 · Cristiano Calcagno · Nov 05, 02:18</div><h3>Describe the host-operation record as a reviewed record, and classify its missing intrinsics</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>tools/host-operations.mts presented itself as the reviewed record of host operations in which a form added to the fragment is a type error, and HOST-FAMILIES.md said an unclassified form or entry is refused. No module reads the tables or an overlay entry's <code>host</code> field; the intrinsic table is keyed by strings and omitted <code>%ThrowUninitialized%</code>, <code>%Enum:E%</code>, <code>%ByteAt%</code> and <code>%ByteLength%</code>. HOST-FAMILIES.md also listed <code>Object.hasOwn</code>, <code>Array.from</code>, <code>structuredClone</code>, freezing and prototype reflection as refused, all of which the overlay admits, and said that <code>Boolean</code> alone is admitted as a value, while <code>String</code> and <code>Number</code> are too.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">HOST-FAMILIES.md, operations and their obligations</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>an unclassified form or entry is refused; <code>structuredClone</code>, <code>Array.from</code>, <code>concat</code>, <code>Object.hasOwn</code>, <code>hasOwnProperty</code>, <code>delete</code>, freezing, prototype reflection: refused; <code>Boolean</code> alone a value</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the source-form tables are exhaustive by their key types, overlay entries by their required field, the intrinsic table reviewed by name; no check reads the record, and Lean enforces each obligated step. Rows for <code>Object.hasOwn</code> (transparent), <code>Object.freeze</code> of a written object literal (transparent), <code>Array.from</code> and <code>structuredClone</code> (transparent), <code>%PrototypeIs:Object%</code> and <code>%OwnKeys%</code> (obligated, as their entries state); refused: array <code>concat</code>, <code>hasOwnProperty</code>, <code>delete</code>, any other freezing or prototype reflection; <code>Boolean</code>, <code>String</code> and <code>Number</code> admitted as values</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">host-operations.mts, library-globals.mts</span></h4><pre class="code"><span class="ln">the header states what the type of each table checks and that no</span><span class="ln">check reads the record; the intrinsic table classifies `%ByteAt%` and</span><span class="ln">`%ByteLength%` (a byte view's number, as its stated library type</span><span class="ln">gives it), `%ThrowUninitialized%` (throws a ReferenceError) and the</span><span class="ln">`%Enum:E%` prefix (allocates the enum object), all transparent; the</span><span class="ln">`host` field's comment states it is a required reviewed record</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tools</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 33 insertions(+), 10 deletions(-)</summary><pre class="code"> docs/HOST-FAMILIES.md     | 19 ++++++++++++++++---
+ tools/host-operations.mts | 21 +++++++++++++++------
+ tools/library-globals.mts |  3 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-405d246df"><header><div><div class="sha">405d246df · Cristiano Calcagno · Nov 05, 02:25</div><h3>Pin the refusal of a written mapped type with an <code>as</code> clause, and state the route through <code>typeof</code></h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>SOURCE-FRAGMENT.md's model-limit row said a mapped type with an <code>as</code> clause is outside the fragment and cited invalid-written-remapped-member-value-import. That case is refused at a written application's bound inside the member, not at the <code>as</code> clause: with the bound removed (<code>B&lt;any&gt;</code> replaced by <code>number</code> in the fixture), its source verified. The case reads the member through <code>typeof import(…).remapped.xy</code>, at a primitive type, which the computed-types rule reads as the type TypeScript computes; the mapped type is never read. The gate's refusal applies where the reader reads a mapped type as written, and no case reached it.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, model limits</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a mapped type with an <code>as</code> clause or with members …; cited: invalid-written-remapped-member-value-import</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a mapped type the reader reads as written (an annotation of the file, or a declaration it imports) with an <code>as</code> clause or with members …; a member of such a type reached through <code>typeof</code> at a union of literals and primitive families is the type TypeScript computes, under the trust surface's computed-types row; cited: invalid-mapped-type-as-clause, and for the <code>typeof</code> route the old case</p></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-mapped-type-as-clause</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a mapped type with an 'as' clause is outside the fragment</span></summary><pre class="code"><span class="tk-c">// A mapped type with an `as` clause: no term states the remapped result.</span>
+<span class="tk-k">type</span> <span class="tk-t">Renamed</span> = { [<span class="tk-t">K</span> <span class="tk-k">in</span> <span class="tk-s">&quot;x&quot;</span> <span class="tk-k">as</span> <span class="tk-s">`${K}y`</span>]: number };
+<span class="tk-k">export</span> <span class="tk-k">function</span> read(r: <span class="tk-t">Renamed</span>): number {
+  <span class="tk-k">return</span> r.xy;
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-mapped-type-as-clause</span></dd></dl>
+<details><summary>3 files changed, 8 insertions(+), 1 deletion(-)</summary><pre class="code"> docs/SOURCE-FRAGMENT.md                            | 2 +-
+ pipeline/cases.mts                                 | 2 ++
+ pipeline/examples/invalid-mapped-type-as-clause.ts | 5 +++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-4a0e710fd"><header><div><div class="sha">4a0e710fd · Cristiano Calcagno · Nov 05, 02:26</div><h3>Pin the refused routes no case reached: own apply and bind, rest patterns, Error members, host arms</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Restrictions stated in the documents or enforced in the code had no pipeline case or control reaching them, so a change admitting one would leave every suite passing: <code>.apply</code> and <code>.bind</code> of a received function (the row cited only the <code>.call</code> case), a statement on a construct signature, a rest parameter written as a pattern, the excluded Error members and serialization, spreads of operands typed <code>{}</code> or a readonly array, <code>Object.assign</code> from <code>unknown</code> and onto an array, string conversions of a URL and a Buffer, and <code>&amp;&amp;=</code> on a number and <code>||=</code> on a field.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, SOURCE-ELABORATION.md, HOST-FAMILIES.md</span></h4><div class="prose"><p>the rows and lists of these restrictions cite their cases</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>invalid-apply-own-override</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">.apply requires a known local function</span></summary><pre class="code"><span class="tk-c">// A received function's `.apply` is its own property where it owns one: the</span>
+<span class="tk-c">// callable annotation constrains the function's invocation, not its</span>
+<span class="tk-c">// properties. A `read` whose ordinary call returns a number may own an</span>
+<span class="tk-c">// `apply` returning a string, which this function then returns as a number.</span>
+<span class="tk-k">class</span> <span class="tk-t">PrototypeReader</span> {
+  value: number = <span class="tk-n">1</span>;
+  read(): number {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>.value;
+  }
+}
+
+<span class="tk-k">type</span> <span class="tk-t">ReaderProperty</span> = { <span class="tk-k">readonly</span> read: (<span class="tk-k">this</span>: <span class="tk-t">PrototypeReader</span>) =&gt; number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> applyReaderArgument(
+  source: <span class="tk-t">ReaderProperty</span>,
+  receiver: <span class="tk-t">PrototypeReader</span>,
+): number {
+  <span class="tk-k">const</span> copy = { ...source };
+  <span class="tk-k">return</span> copy.read.apply(receiver, []);
+}</pre></details></li><li><details><summary><code>invalid-bind-own-override</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">.bind requires a known local function</span></summary><pre class="code"><span class="tk-c">// A received function's `.bind` is its own property where it owns one: the</span>
+<span class="tk-c">// callable annotation constrains the function's invocation, not its</span>
+<span class="tk-c">// properties. A `read` whose ordinary call returns a number may own a `bind`</span>
+<span class="tk-c">// returning a function that returns a string, which this function then</span>
+<span class="tk-c">// returns as a number.</span>
+<span class="tk-k">class</span> <span class="tk-t">PrototypeReader</span> {
+  value: number = <span class="tk-n">1</span>;
+  read(): number {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>.value;
+  }
+}
+
+<span class="tk-k">type</span> <span class="tk-t">ReaderProperty</span> = { <span class="tk-k">readonly</span> read: (<span class="tk-k">this</span>: <span class="tk-t">PrototypeReader</span>) =&gt; number };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> bindReaderArgument(
+  source: <span class="tk-t">ReaderProperty</span>,
+  receiver: <span class="tk-t">PrototypeReader</span>,
+): number {
+  <span class="tk-k">const</span> copy = { ...source };
+  <span class="tk-k">return</span> copy.read.bind(receiver)();
+}</pre></details></li><li><details><summary><code>invalid-rest-parameter-pattern</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a rest parameter pattern is outside the fragment</span></summary><pre class="code"><span class="tk-c">// A rest parameter's pattern: the rest binds one name.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(...[a]: number[]): number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> a;
+}</pre></details></li><li><details><summary><code>invalid-closure-rest-parameter-pattern</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a rest parameter pattern is outside the fragment</span></summary><pre class="code"><span class="tk-c">// A closure's rest parameter pattern: the rest binds one name.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstOf(): (...xs: number[]) =&gt; number | <span class="tk-k">undefined</span> {
+  <span class="tk-k">return</span> (...[a]: number[]): number | <span class="tk-k">undefined</span> =&gt; a;
+}</pre></details></li><li><details><summary><code>invalid-construct-signature-effect</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why"><code>Within</code> on a constructor is outside the fragment</span></summary><pre class="code"><span class="tk-c">// A statement on a construct signature: a construction's effect is its</span>
+<span class="tk-c">// class's, which the signature does not state.</span>
+<span class="tk-k">export</span> <span class="tk-k">class</span> <span class="tk-t">Box</span> {
+  v: number = <span class="tk-n">0</span>;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> make(
+  ctor: <span class="tk-k">new</span> () =&gt; <span class="tk-t">Within</span>&lt;{ value: <span class="tk-s">&quot;keep&quot;</span>; store: <span class="tk-s">&quot;keep&quot;</span> }, <span class="tk-t">Box</span>&gt;,
+): <span class="tk-t">Box</span> {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> ctor();
+}</pre></details></li><li><details><summary><code>invalid-error-to-string</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">missing field toString</span></summary><pre class="code"><span class="tk-c">// `Error.prototype.toString`, which reads the instance's `name` and</span>
+<span class="tk-c">// `message`, is a member the model does not state: refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(): string {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;x&quot;</span>).toString();
+}</pre></details></li><li><details><summary><code>invalid-error-super-method</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">super.m(...) calls a method of the base class's prototype</span></summary><pre class="code"><span class="tk-c">// `super.m(…)` in a class extending `Error` calls a member of</span>
+<span class="tk-c">// `Error.prototype` the model does not state: refused.</span>
+<span class="tk-k">class</span> <span class="tk-t">Described</span> <span class="tk-k">extends</span> <span class="tk-t">Error</span> {
+  describe(): string {
+    <span class="tk-k">return</span> <span class="tk-k">super</span>.toString();
+  }
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(): string {
+  <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Described</span>(<span class="tk-s">&quot;x&quot;</span>).describe();
+}</pre></details></li><li><details><summary><code>invalid-error-json-stringify</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an error is no JsonValue</span></summary><pre class="code"><span class="tk-c">// `JSON.stringify` of an error with the replacer `[&quot;message&quot;]` reads the</span>
+<span class="tk-c">// message through [[Get]]; an error holding a prototype is no JSON value:</span>
+<span class="tk-c">// refused at the argument.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(): string {
+  <span class="tk-k">return</span> <span class="tk-t">JSON</span>.stringify(<span class="tk-k">new</span> <span class="tk-t">Error</span>(<span class="tk-s">&quot;x&quot;</span>), [<span class="tk-s">&quot;message&quot;</span>]);
+}</pre></details></li><li><details><summary><code>invalid-node-bytes-template</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a Buffer meets no conversion contract</span></summary><pre class="code"><span class="tk-c">// A template of a `Buffer` converts it by its `toString`, a member of the</span>
+<span class="tk-c">// host's prototype the conversion contract does not cover: refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(b: <span class="tk-t">Buffer</span>): string {
+  <span class="tk-k">return</span> <span class="tk-s">`${b}`</span>;
+}</pre></details></li><li><details><summary><code>invalid-node-url-template</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a URL meets no conversion contract</span></summary><pre class="code"><span class="tk-c">// A template of a URL converts it by its `toString`, a member of the host's</span>
+<span class="tk-c">// prototype the conversion contract does not cover: refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(url: <span class="tk-t">URL</span>): string {
+  <span class="tk-k">return</span> <span class="tk-s">`${url}`</span>;
+}</pre></details></li><li><details><summary><code>invalid-node-url-string</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">String is stated at the primitives</span></summary><pre class="code"><span class="tk-c">// `String` of a URL converts it by its `toString`: `String` is stated at</span>
+<span class="tk-c">// the primitives, refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> text(url: <span class="tk-t">URL</span>): string {
+  <span class="tk-k">return</span> <span class="tk-t">String</span>(url);
+}</pre></details></li><li><details><summary><code>invalid-spread-readonly-array</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a readonly array admits a host object</span></summary><pre class="code"><span class="tk-c">// A spread of a readonly array into an object literal copies its own keys; a</span>
+<span class="tk-c">// readonly array admits a host object, whose own keys are the host's</span>
+<span class="tk-c">// internal fields: refused at the spread.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(xs: <span class="tk-k">readonly</span> number[]): object {
+  <span class="tk-k">return</span> { ...xs };
+}</pre></details></li><li><details><summary><code>invalid-spread-empty-record</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">{} admits a host object</span></summary><pre class="code"><span class="tk-c">// A spread of a value typed `{}`, which admits a host object: refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(o: {}): object {
+  <span class="tk-k">return</span> { ...o };
+}</pre></details></li><li><details><summary><code>invalid-assign-unknown-source</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a copy from unknown</span></summary><pre class="code"><span class="tk-c">// `Object.assign` of a source typed `unknown`, which admits a host object:</span>
+<span class="tk-c">// refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> copy(o: unknown): object {
+  <span class="tk-k">return</span> <span class="tk-t">Object</span>.assign({}, o);
+}</pre></details></li><li><details><summary><code>invalid-array-assign-tojson</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a copy onto an array</span></summary><pre class="code"><span class="tk-c">// `Object.assign` of a source owning `toJSON` onto an array would give the</span>
+<span class="tk-c">// array an own `toJSON`, which arrays own none of: refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> hook(xs: number[]): string {
+  <span class="tk-t">Object</span>.assign(xs, { toJSON: (): <span class="tk-k">undefined</span> =&gt; <span class="tk-k">undefined</span> });
+  <span class="tk-k">return</span> <span class="tk-t">JSON</span>.stringify(xs);
+}</pre></details></li><li><details><summary><code>invalid-and-assign-value</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">&amp;&amp;= keeps a falsy target</span></summary><pre class="code"><span class="tk-c">// `&amp;&amp;=` of a number keeps a falsy target: its value is `0` or the right</span>
+<span class="tk-c">// side's (run under Node: `pick()` gives 0).</span>
+<span class="tk-k">let</span> count: number = <span class="tk-n">0</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> <span class="tk-k">set</span>(n: number): <span class="tk-k">void</span> {
+  count = n;
+}
+<span class="tk-k">export</span> <span class="tk-k">function</span> pick(): <span class="tk-n">1</span> {
+  <span class="tk-c">// @ts-expect-error a number is not 1</span>
+  <span class="tk-k">return</span> (count &amp;&amp;= <span class="tk-n">1</span>);
+}</pre></details></li><li><details><summary><code>invalid-or-assign-field</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">||= keeps a truthy field</span></summary><pre class="code"><span class="tk-c">// `||=` on a field keeps a truthy value: its value is the field's truthy</span>
+<span class="tk-c">// part or the right side's (run under Node: a field holding 2 gives 2).</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> pick(o: { n: number }): <span class="tk-n">1</span> {
+  <span class="tk-c">// @ts-expect-error a number is not 1</span>
+  <span class="tk-k">return</span> (o.n ||= <span class="tk-n">1</span>);
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p><code>Error.captureStackTrace</code> is refused earlier, at the reading of its declaration, so no case reaches its exclusion; <code>Object.assign</code> of an own <code>toString</code> onto a function is refused by the reserved-key write policy before its <code>.toString()</code>; neither is pinned at its own restriction</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test neg">invalid-apply-own-override</span> <span class="test neg">invalid-bind-own-override</span> <span class="test neg">invalid-rest-parameter-pattern</span> <span class="test neg">invalid-closure-rest-parameter-pattern</span> <span class="test neg">invalid-construct-signature-effect</span> <span class="test neg">invalid-error-to-string</span> <span class="test neg">invalid-error-super-method</span> <span class="test neg">invalid-error-json-stringify</span> <span class="test neg">invalid-node-bytes-template</span> <span class="test neg">invalid-node-url-template</span> <span class="test neg">invalid-node-url-string</span> <span class="test neg">invalid-spread-readonly-array</span> <span class="test neg">invalid-spread-empty-record</span> <span class="test neg">invalid-assign-unknown-source</span> <span class="test neg">invalid-array-assign-tojson</span> <span class="test neg">invalid-and-assign-value</span> <span class="test neg">invalid-or-assign-field</span></dd></dl>
+<details><summary>21 files changed, 174 insertions(+), 7 deletions(-)</summary><pre class="code"> docs/HOST-FAMILIES.md                              |  4 ++-
+ docs/SOURCE-ELABORATION.md                         |  7 +++--
+ docs/SOURCE-FRAGMENT.md                            |  6 ++--
+ pipeline/cases.mts                                 | 32 ++++++++++++++++++++++
+ pipeline/examples/invalid-and-assign-value.ts      | 10 +++++++
+ pipeline/examples/invalid-apply-own-override.ts    | 20 ++++++++++++++
+ pipeline/examples/invalid-array-assign-tojson.ts   |  6 ++++
+ pipeline/examples/invalid-assign-unknown-source.ts |  5 ++++
+ pipeline/examples/invalid-bind-own-override.ts     | 21 ++++++++++++++
+ .../invalid-closure-rest-parameter-pattern.ts      |  4 +++
+ .../examples/invalid-construct-signature-effect.ts | 10 +++++++
+ pipeline/examples/invalid-error-json-stringify.ts  |  6 ++++
+ pipeline/examples/invalid-error-super-method.ts    | 10 +++++++
+ pipeline/examples/invalid-error-to-string.ts       |  5 ++++
+ pipeline/examples/invalid-node-bytes-template.ts   |  5 ++++
+ pipeline/examples/invalid-node-url-string.ts       |  5 ++++
+ pipeline/examples/invalid-node-url-template.ts     |  5 ++++
+ pipeline/examples/invalid-or-assign-field.ts       |  6 ++++
+ .../examples/invalid-rest-parameter-pattern.ts     |  4 +++
+ pipeline/examples/invalid-spread-empty-record.ts   |  4 +++
+ pipeline/examples/invalid-spread-readonly-array.ts |  6 ++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
