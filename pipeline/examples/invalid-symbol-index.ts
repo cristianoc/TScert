@@ -1,5 +1,5 @@
-// A symbol index signature constrains every symbol key, and no string key:
-// the two key spaces are disjoint.
+// A dictionary beside a symbol index read at a string key: a read at a string key known only at run time may find a member every
+// object inherits from `Object.prototype`, and is refused.
 const tag: unique symbol = Symbol("tag");
 type Tags = { readonly [k: symbol]: boolean };
 type Both = { readonly [k: string]: number; readonly [k: symbol]: boolean };

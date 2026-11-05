@@ -1,3 +1,4 @@
+// An optional trailing parameter omitted, written, or passed `undefined`.
 function omittedArgument(seed: boolean): boolean {
   const pick = (first: boolean, second?: boolean): boolean => {
     if (second === undefined) {

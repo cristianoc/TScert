@@ -1,3 +1,5 @@
+// A function at `T extends Json`, Json imported, called with primitive,
+// array and object values.
 import type { Json } from "@fixture/collections";
 
 export function variants(): Json {

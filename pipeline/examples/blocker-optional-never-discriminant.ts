@@ -1,5 +1,5 @@
-// A test that an optional `never` field is undefined needs to narrow the
-// union to the arm declaring it.
+// A test that an optional `never` field is defined drops the arm declaring
+// it: the read found the key present, at a type no value has.
 // Census functions:
 // written-applications.mts#writtenApplications.
 type Determined =

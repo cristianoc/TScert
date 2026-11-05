@@ -1,5 +1,5 @@
-// A map callback returning a record needs the expected discriminated result
-// type on its literal.
+// A map callback returning a record types its literal at the expected
+// discriminated result type.
 // Census functions:
 // type-term.mts#emptyObject.
 import type { TypeTerm } from "../../tools/declaration-types.mts";

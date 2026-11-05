@@ -1,4 +1,5 @@
-// A readonly index view promises values only for keys that are present.
+// A readonly string dictionary read at a string key: a read at a string key known only at run time may find a member every
+// object inherits from `Object.prototype`, and is refused.
 function retainDictionary(x: { readonly [key: string]: boolean }): {
   readonly [key: string]: boolean;
 } {

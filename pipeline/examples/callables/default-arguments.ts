@@ -1,3 +1,5 @@
+// An omitted argument replaced by its parameter's default, including a
+// default reading an earlier parameter.
 function omittedDefault(seed: boolean): boolean {
   const pick = (first: boolean, second: boolean = true): boolean => {
     if (second) {

@@ -1,3 +1,4 @@
+// A function is no imported Json: it does not instantiate `T extends Json`.
 import type { Json } from "@fixture/collections";
 
 export function invalidBound(): Json {

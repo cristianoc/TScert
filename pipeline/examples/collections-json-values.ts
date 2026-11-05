@@ -1,3 +1,5 @@
+// Boolean, number, string, array and object values passed to a consumer of
+// the imported Json.
 import type { Json } from "@fixture/collections";
 
 export function values(): Json {

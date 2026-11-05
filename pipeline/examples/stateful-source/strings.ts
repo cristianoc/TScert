@@ -1,7 +1,7 @@
 /**
- * Strings in the source fragment. Like numbers they are opaque: bound, passed,
- * stored in a union, shape-tested and compared with a literal, never computed
- * with. A literal is its own singleton, below the family.
+ * Strings in the source fragment, bound, passed, stored in a union,
+ * shape-tested and compared with a literal. A literal is its own singleton,
+ * below the family.
  */
 function idString(x: string): string {
   return x;

@@ -1,4 +1,4 @@
-// The find guard overload needs to expose the promised host node type.
+// The find guard overload gives the promised host node type, or `undefined`.
 // Census functions:
 // computed-types.mts#unionMembers, fragment-classes.mts#selfConstruction,
 // fragment-classes.mts#staticPrivate,

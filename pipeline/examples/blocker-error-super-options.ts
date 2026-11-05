@@ -1,5 +1,5 @@
-// Error subclass construction needs the cause options contract on its super
-// call.
+// An Error subclass's `super(message, {})`: the options are bound at the
+// stated options type after the message.
 // Census functions:
 // declaration-graph.mts#importBindings, declaration-graph.mts#useProject,
 // written-applications.mts#writtenApplications.

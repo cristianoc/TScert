@@ -1,3 +1,5 @@
+// A contextual intersection keeps both field contracts: the closure returning
+// the string field where a number is expected is refused.
 interface Left {
   left: number;
 }

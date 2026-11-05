@@ -1,4 +1,4 @@
-/** The original repair regression: only a nullish parameter is overwritten. */
+/** Only a nullish parameter is overwritten. */
 function localFallback(value: number | null): number {
   value ??= 1;
   return value;

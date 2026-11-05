@@ -1,6 +1,8 @@
 /// <reference path="../../tools/resolvable.d.ts" />
-// Census: syntax.mts#childOf and #childrenOf.
-// Representative single-child and child-list reads through declared kinds.
+// Compiler children read through their declared kinds, retaining the host
+// field contracts and copying child lists.
+// Census functions:
+// syntax.mts#childOf, syntax.mts#childrenOf.
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 

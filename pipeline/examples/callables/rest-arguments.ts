@@ -1,3 +1,5 @@
+// A tuple rest collected, a tuple spread in place of arguments, and a rest
+// element read.
 function collectsRest(first: boolean, ...rest: [boolean, boolean]): boolean {
   return rest[0];
 }
