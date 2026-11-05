@@ -685,8 +685,16 @@ negation. -/
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs
     -- A key-adding write at a key known only at run time on a local's own
-    -- object, which the statement's lowering copies (`computedGrowth`).
-    if (← ownedWrite) == some p then
+    -- object, which the statement's lowering copies (`computedGrowth`), or
+    -- on a module cell's own object, wherever it is.
+    let origins ← executionOrigins
+    let source := match r with
+      | .var _ n => (origins.lookup n).getD r
+      | _ => r
+    let moduleOwned ← match source with
+      | .var _ n => moduleOwnedName n
+      | _ => pure false
+    if moduleOwned || (← ownedWrite) == some p then
       if computedKeyClaim (SourceTypes.graph (← table)) (← exprType fc key) then
         return .indexWrite p none r key rhs
     match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r) with
@@ -705,7 +713,7 @@ negation. -/
           throw (locatedRefusal (← table) p .expressionClaim
             (parameterGrowth "a write at a key known only at run time" n))
       throw (locatedRefusal (← table) p .expressionClaim
-        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
+        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached, or on a module's own object, which no code but its accesses reaches")
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .objectAssign p t ss => return .objectAssign p (← comparisonsExpr fc t) (← ss.mapM (comparisonsExpr fc))

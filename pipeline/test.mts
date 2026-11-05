@@ -202,6 +202,52 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A module's own cache (`module-cache-reentrant`): another function's read
+  // of it claimed without `undefined`, the value of a key-adding write in
+  // value position claimed at `undefined` alone, or the cache's contract
+  // dropped from the initialization's claims, is refused where evidence is
+  // searched and where it is checked.
+  const artifacts = run("module-cache-reentrant");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const forge = (name: string, fn: string, text: string, from: number,
+      edit: (claims: SourceClaims, claim: { type: unknown }) => void): { path: string; at: number } => {
+    const claims = readClaims(artifacts);
+    const f = must(claims.functions.find(g => g.name === fn), fn);
+    const at = source.indexOf(text, source.indexOf(`function ${fn}`) + from);
+    const claim = must(f.expressions.find(x => x.pos[0] === at && x.pos[1] === at + text.length), `${fn}: ${text}`);
+    edit(claims, claim);
+    return { path: writeClaims(artifacts, name, claims), at };
+  };
+  {
+    const read = "cache[table]";
+    const { path, at } = forge("module-cache-read-defined", "known", read, 0, (claims, claim) => {
+      assert.ok(Array.isArray(claim.type));
+      claim.type = claim.type.filter(label => label !== rowOf(claims, "undef"));
+    });
+    refusedAt(artifacts, path, "module-cache-read-defined", `at [${at},${at + read.length})`);
+    invoke(path, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+  }
+  {
+    const write = "(cache[table] = parse(table))";
+    const { path, at } = forge("module-cache-write-value", "rules", write, 0, (claims, claim) => {
+      claim.type = [rowOf(claims, "undef")];
+    });
+    refusedAt(artifacts, path, "module-cache-write-value", `at [${at},${at + write.length})`);
+    invoke(path, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+  }
+  {
+    const claims = readClaims(artifacts);
+    const init = must(claims.init, "module-cache-reentrant's initialization claims");
+    init.contracts = init.contracts.filter(c => c.name !== "cache");
+    const path = writeClaims(artifacts, "module-cache-no-contract", claims);
+    refusedAt(artifacts, path, "module-cache-no-contract", "cache");
+    invoke(path, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source refusal at \[\d+,\d+\): module cell 'cache' has no claimed storage contract/m);
+  }
+  process.stdout.write("module cache: a read claimed defined, a write's value claimed undefined, and a dropped contract, refused\n");
+});
+
+control(async (): Promise<void> => {
   // A `continue outer` from an inner loop skips the rest of the outer body,
   // the assignment of a number to `kind` after the inner loop: a claim that
   // `kind` is a number at the return, which holds only if the `continue`

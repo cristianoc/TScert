@@ -458,4 +458,87 @@ def growSites (classes : List String) (ss : List Fragment.Stmt) (module : Bool :
       | _ => s) {}).sites
   else (ownedStmts classes true 0 ss {}).sites
 
+/-! ### Module-owned objects
+
+A module cell whose fresh object no reference but the cell reaches: every
+mention of it, in the module's initialization, in every module function and in
+every closure, is the receiver of a member read, an index read, a write or a
+key test, at a key that runs no code. A closure holds the cell, never the
+object, so its mentions are traversed like the others. A key-adding write on
+such a cell is the copy of its object written to the cell, the cell read again
+after the write's operands (PROGRAM-TYPING.md, "Key-adding writes"). -/
+
+/-- A key that runs no code when evaluated: a variable or a literal. -/
+def quietKey : Fragment.Expr → Bool
+  | .var .. | .lit .. => true
+  | _ => false
+
+mutual
+/-- Whether the module cell `n` may reach a place other than the receiver of
+an access of its object, or an access of it has a key that runs code. -/
+partial def moduleEscapes (n : String) : Fragment.Expr → Bool
+  | .var _ m => m == n
+  | .lit .. => false
+  | .read _ _ (.var ..) => false
+  | .index _ _ (.var _ m) key => (m == n && !quietKey key) || moduleEscapes n key
+  | .write _ _ (.var ..) rhs => moduleEscapes n rhs
+  | .indexWrite _ _ (.var _ m) key rhs =>
+    (m == n && !quietKey key) || moduleEscapes n key || moduleEscapes n rhs
+  | .inKeys _ key (.var ..) => moduleEscapes n key
+  | .shapeTest _ (.hasKey _) _ (.var ..) => false
+  | .tagMember _ _ _ _ _ (.var ..) => false
+  | .lambda _ _ _ _ ds _ _ _ _ _ b => ds.any (fun d => moduleEscapes n d.2) || moduleEscapes n b
+  | .ctor _ lam statics => moduleEscapes n lam || statics.any (fun s => moduleEscapes n s.2)
+  | .block _ ss => ss.any (moduleStmtEscapes n)
+  -- An update, a logical assignment or a destructuring of a member, and the
+  -- forms holding a value for a later part, count wherever they mention it.
+  | e@(.optional ..) | e@(.withObject ..) | e@(.withValue ..) | e@(.arrayAssign ..)
+  | e@(.assign ..) | e@(.nullishAssign ..) | e@(.update ..) | e@(.logicalAssign ..)
+  | e@(.objectAssign ..) => e.freeNames.contains n
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ _ e =>
+    moduleEscapes n e
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .singletonTest _ _ _ _ a b
+  | .write _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b | .comma _ a b
+  | .inKeys _ a b => moduleEscapes n a || moduleEscapes n b
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ a b c =>
+    moduleEscapes n a || moduleEscapes n b || moduleEscapes n c
+  | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.any (moduleEscapes n)
+  | .call _ f args _ _ | .invoke _ f args _ _ | .construct _ f args _ _ =>
+    moduleEscapes n f || args.any (moduleEscapes n)
+  | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
+    moduleEscapes n f || moduleEscapes n r || args.any (moduleEscapes n)
+  | .applyWithReceiver _ f r list _ =>
+    moduleEscapes n f || moduleEscapes n r || (list.map (moduleEscapes n)).getD false
+
+/-- Whether a statement lets the module cell `n` escape (`moduleEscapes`). -/
+partial def moduleStmtEscapes (n : String) : Fragment.Stmt → Bool
+  | .ret _ e | .effect _ e | .throw _ e => moduleEscapes n e
+  | .constants _ bs | .mutables _ bs => bs.any fun b => moduleEscapes n b.init
+  | .destructure _ t d init => (init :: d.toList ++ t.defaults).any (moduleEscapes n)
+  | .ite _ c t e => moduleEscapes n c || (t ++ e.getD []).any (moduleStmtEscapes n)
+  | .loop _ c b u => moduleEscapes n c || (b ++ u).any (moduleStmtEscapes n)
+  | .block _ _ b => b.any (moduleStmtEscapes n)
+  | .forOf _ _ _ _ i b => moduleEscapes n i || b.any (moduleStmtEscapes n)
+  | .tryStmt _ b h f => (b ++ ((h.map (·.2)).getD []) ++ f.getD []).any (moduleStmtEscapes n)
+  | .closing _ c b => (b ++ c).any (moduleStmtEscapes n)
+  | .brk .. | .cont .. => false
+end
+
+/-- An object literal of data properties at string keys, none `__proto__`
+and no spread: an ordinary object whose own properties a copy at string keys
+holds all of. -/
+def stringKeyedLiteral : Fragment.Expr → Bool
+  | .alloc _ names _ => names.all fun | .str k => k != "__proto__" | .sym _ => false
+  | _ => false
+
+/-- The module cells whose objects the module owns: each a module cell of the
+initialization `init` holding a literal of string-keyed data properties
+(`stringKeyedLiteral`), no mention of which, in `init` or a module function's
+body (`bodies`), lets it escape (`moduleEscapes`). -/
+def ownedModuleCells (init : List Fragment.Stmt) (bodies : List (List Fragment.Stmt)) : List String :=
+  let cells := init.flatMap fun
+    | .mutables _ bs => (bs.filter fun b => b.early && stringKeyedLiteral b.init).map (·.name)
+    | _ => []
+  cells.filter fun n => !(init ++ bodies.flatten).any (moduleStmtEscapes n)
+
 end Verification.SourceExtraction

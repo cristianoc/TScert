@@ -304,7 +304,9 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       let A ← SourceClaims.resolve (← table) candidate
       let G := SourceTypes.graph (← table)
       let early := match b.storage with | .early .. => true | _ => false
-      if contract.all A.contains then
+      -- A claim the contract is within states nothing of the contents.
+      let (T, gen) ← tableAt
+      if contract.all A.contains || (← withinAt T gen contract A) then
         -- An early cell's contents may still be the marker: no observation.
         if !early then persistentObservation b.source (pos,pos+1) reference valueField A
       else

@@ -810,7 +810,8 @@ its keys change. -/
   reservedWriteCheck e.span (← exprType fc receiver) (errorOwnedKey fld)
   if !mayLack G (← exprType fc receiver) fld then return none
   let owned ← match receiver with
-    | .var _ n => ownedSlots scope e.span n
+    | .var _ n => do
+      if let some cell ← moduleOwnedCell scope n then pure (some [cell]) else ownedSlots scope e.span n
     | _ => pure none
   let some slots := owned
     | if let .var _ n := receiver then
@@ -823,7 +824,7 @@ its keys change. -/
           another reference holds, which would see the object's keys change: a key-adding write \
           is typed only on a local's own fresh object that nothing else has reached (not passed, \
           stored, captured, returned or bound to a binding other than a constant), outside any \
-          loop its allocation does not enclose")
+          loop its allocation does not enclose, or on a module's own object, which no code but its accesses reaches")
   if fld == .str "__proto__" then
     throw (locatedRefusal (← table) e.span .expressionClaim
       "a write of `__proto__` runs the prototype's setter: it replaces the prototype, and adds no key")
@@ -858,7 +859,8 @@ reference may hold the object and see its keys change. -/
   if !(← recordReceiver fc receiver) then return none
   if !computedKeyClaim G (← exprType fc (← comparisonsExpr fc key)) then return none
   let owned ← match receiver with
-    | .var _ n => ownedSlots scope p n
+    | .var _ n => do
+      if let some cell ← moduleOwnedCell scope n then pure (some [cell]) else ownedSlots scope p n
     | _ => pure none
   let some slots := owned
     | if let .var _ n := receiver then
@@ -867,7 +869,7 @@ reference may hold the object and see its keys change. -/
             throw (locatedRefusal (← table) p .expressionClaim
               (parameterGrowth "a write at a key known only at run time" n))
       throw (locatedRefusal (← table) p .expressionClaim
-        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached")
+        "a write at a key known only at run time may add the key to an object another reference holds, which would see the object's keys change: a key-adding write is typed only on a local's own fresh object that nothing else has reached, or on a module's own object, which no code but its accesses reaches")
   return some (slots, receiver, key, rhs)
 
 /-- The element at literal index `b` of the array `r` reads under `H`, from

@@ -3116,7 +3116,13 @@ dropped, or claimed at a string).
 A module-level `let x` that the module does not export,
 in no form (no `export let`, no `export { x }` or alias of it), is an
 [early binding](#lexical-bindings-before-initialization) of the module's
-scope, whatever its mentions: a **module cell**. The initialization unit
+scope, whatever its mentions: a **module cell**. So is a module `const x: C`
+of one name, annotated, initialized by an object literal and not exported,
+that a write `x[k] = e` at a key no literal spells may add a key to
+(`keyAddedConstant`): a `const` differs from a `let` only in assignment,
+which TypeScript refuses for it, and both have the same dead zone. Where the
+module owns its object, its key-adding writes are copies written to the cell
+([a module's own object](PROGRAM-TYPING.md#key-adding-writes)). The initialization unit
 allocates it at its entry, before any statement and before the module's
 functions and classes exist, holding the module's uninitialized marker,
 and binds a module constant to it, so a closure or function created before
@@ -3140,7 +3146,8 @@ binding, so it is a unit boundary, whose type is written, as a module
 function's signature is; an unannotated module `let` is refused at the
 gate (`invalid-unannotated-module-let`). The initialization unit checks
 the initializer against $`C_x`$, and every unit each of its writes,
-`undefined` included for `let x: T;`; no unit narrows it. A unit's theorem assumes $`x`$ at
+`undefined` included for `let x: T;`; no unit narrows it; a claim of its contents that the contract is within
+states nothing of them. A unit's theorem assumes $`x`$ at
 $`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
 entry and after each call; the facts a unit establishes of the contents
 follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):

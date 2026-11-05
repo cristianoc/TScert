@@ -1,8 +1,6 @@
 // A module-level cache filled at a key known only at run time, written as
-// a `Map`: `get`, then on a miss the computed value, `set` and returned. It
-// is the rewrite of the `Partial<Record<…>>` cache whose key-adding write
-// the module's other references refuse (`blocker-pretext-module-cache-write`),
-// as pretext's `graphemeRules` and `breakRules` hold their tables.
+// a `Map`: `get`, then on a miss the computed value, `set` and returned, as
+// pretext's `breakRules` holds its tables.
 type Table = "a" | "b";
 const cache = new Map<Table, number[]>();
 

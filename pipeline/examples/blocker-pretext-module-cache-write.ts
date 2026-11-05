@@ -1,12 +1,10 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
 // graphemes.ts#findGraphemeEnds.
-// Refusal: reject: source refusal: a write at a key known only at run time
-// may add the key to an object another reference holds.
 // A module-level cache, a `Partial<Record<…>>`, filled at a key known only
-// at run time: a key-adding write is typed only on a local's own fresh
-// object that nothing else has reached, and the module's object is reached
-// by every call. The rewrite is a `Map`, `get` then `set` on a miss
-// (`module-cache-map`).
+// at run time, the write's value returned: every mention of the cache is an
+// access, so the module owns its object, and the key-adding write is the copy
+// written to the cache's cell after the right side (PROGRAM-TYPING.md,
+// "Key-adding writes").
 type Table = "a" | "b";
 const cache: Partial<Record<Table, number[]>> = {};
 

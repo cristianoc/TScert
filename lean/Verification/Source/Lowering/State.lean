@@ -222,6 +222,9 @@ private structure Built extends GraphFrame where
   /-- Native constructor bindings whose audited contract allocates an
   unpublished object identity, beyond own-location freshness. -/
   freshConstructors : List (String × Span) := []
+  /-- The module cells whose objects the module owns (`ownedModuleCells`):
+  a key-adding write on one is the copy of its object written to the cell. -/
+  moduleOwned : List String := []
 
 /-- Source-validation failures that already know their source site use the same
 structured channel as proof obligations. Keeping the diagnostic construction
@@ -313,6 +316,23 @@ yields and what a write is checked at. -/
 @[nospecialize] def initializedContract (stored : Ty Tree) : Compiler (Ty Tree) := do
   let U ← uninitializedTy
   return stored.filter (!U.contains ·)
+
+/-- The contract of a module cell whose object the module owns
+(`ownedModuleCells`): its annotation `C`, each object clause stating that the
+object's own keys exclude the prototype field and the host key, as an object
+literal's do: an ordinary object of the default prototype. Every value the cell
+holds is the literal or a copy of it at string keys, and the cell's every
+write is checked at this contract. -/
+@[nospecialize] def plainContract (C : Ty Tree) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  let plain : KeyBound := ⟨false, [SourceTypes.protoField, hostKey]⟩
+  let mut labels : List Tree := []
+  for c in PositiveRules.expand G C do
+    let c := match c with
+      | .refs fs rs vs os ms ks st => .refs fs rs vs os ms (ks ++ [plain]) st
+      | c => c
+    labels := labels ++ [← lower (SourceTypes.use c)]
+  return labels.eraseDups
 
 /-- Saved values and their predicate aliases at one execution-plan continuation. -/
 structure ExecutionBindings where
@@ -442,6 +462,20 @@ def parameterGrowth (write n : String) : String :=
   s!"{write} through the parameter '{n}' may add the key: the caller may hold the object at a \
     type that leaves the key absent, or optional at another type, and see it added at this one"
 
+/-- Whether `n` names a module cell whose object the module owns
+(`ownedModuleCells`). -/
+def moduleOwnedName (n : String) : Compiler Bool := readBuilt fun s => s.moduleOwned.contains n
+
+/-- The slot and storage of the module cell `n` holds, where the module owns
+its object (`ownedModuleCells`) and `n` names that cell here, an early
+binding's. -/
+def moduleOwnedCell (scope : List (ScopeBinding Tree)) (n : String) :
+    Compiler (Option (Nat × Storage Tree)) := do
+  if !(← moduleOwnedName n) then return none
+  match resolve scope n with
+  | some (i, storage@(.early _ _ true)) => return some (i, storage)
+  | _ => return none
+
 /-- The bindings holding the object a key-adding write at `span` copies, where
 it is a site (`growSites`). -/
 def growthHolders (span : Span) : Compiler (Option (List Holder)) :=
@@ -510,9 +544,10 @@ def freshNativeConstructor (scope : List (ScopeBinding Tree)) (callee : Fragment
 
 /-- Run one source unit with its equation table and admitted ownership sites. -/
 def runCompiler (types : EquationStore.State) (grows : List GrowSite) (action : Compiler α)
-    (freshConstructors : List (String × Span) := []) :
+    (freshConstructors : List (String × Span) := []) (moduleOwned : List String := []) :
     Except String (α × LoweringResult) := do
-  let (value,s) ← action.run { types := types, grows := grows, freshConstructors := freshConstructors }
+  let (value,s) ← action.run
+    { types := types, grows := grows, freshConstructors := freshConstructors, moduleOwned := moduleOwned }
   return (value,{
     toLoweredGraph := graphOutput s
     types := s.types

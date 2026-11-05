@@ -82,6 +82,9 @@ structure Front where
   qualifiedNames : List String
   /-- The initialization order's refusal, the initialization unit's own. -/
   initOrder : Option String
+  /-- The module cells whose objects the module owns
+  (`SourceExtraction.ownedModuleCells`), over every unit's code. -/
+  moduleOwned : List String
 
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
@@ -205,14 +208,15 @@ def fileFront (ast claims : Json) (fileKey : String)
   let units := all.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
   return ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder⟩
+    moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
+    SourceExtraction.ownedModuleCells init (all.map (·.1.body))⟩
 
 /-- One unit's plan, extracted from the front over the store `T`. -/
 def extractMember (fr : Front) (T : EquationStore.State)
     (u : Fragment.Fn × List Fragment.TypeParam × Option (Function Tree)) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }
@@ -373,6 +377,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
         c := claims
       | .error reason => throw reason
     let request ← extractNormalizedFn d.types f c.normalized module (SourceExtraction.sourceClasses init) freshConstructors
+      moduleOwned
     return .graph f.name f.namePos { request with sourceScheme }
   -- A generic unit's graph extraction reports where it stops as a
   -- located refusal at the function, as the direct checker's do.

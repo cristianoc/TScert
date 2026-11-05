@@ -346,6 +346,8 @@ export class Gate {
   readonly classRecords: Map<string, ClassRecord> = new Map();
   /** The declarators of early bindings (`markEarly`). */
   readonly earlyDecls: Set<Node> = new Set();
+  /** The module constants lowered as module cells (`keyAddedConstant`). */
+  readonly moduleCellConstants: Set<ts.VariableDeclarationList> = new Set();
   /** The class a method being lowered inherits from: what `super.m(...)`
    * calls. */
   superClass: ClassRecord | null = null;
@@ -1341,6 +1343,44 @@ function renamedModule(module: ModuleAst, from: string, to: string): ModuleAst {
     init: module.init.map(parts.stmt), functions: module.functions.map(f => mapFunctionParts(f, parts)) };
 }
 
+/** Whether the top-level `const` statement `s` declares one name, written
+ * with an annotation and an object literal, that the module does not export,
+ * and that some write at a key known only at run time, `c[k] = e` with a key
+ * no literal spells, may add a key to: a module cell (`keyAddedConstant`'s
+ * caller). Mentions are found by spelling: a shadowing local of the same
+ * spelling only makes the constant a cell, which is faithful for any
+ * constant. A constant code left out of the lowering mentions (`omitted`, an
+ * omitted body or step) stays a constant: the module's ownership of the
+ * cell's object is decided over the code lowered. */
+function keyAddedConstant(source: SourceFile, s: ts.VariableStatement, exported: Set<string>,
+  omitted: Span[]): boolean {
+  const [d, ...others] = s.declarationList.declarations;
+  if (!d || others.length || !ts.isIdentifier(d.name) || !d.type || !d.initializer ||
+      !ts.isObjectLiteralExpression(d.initializer) ||
+      s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) || exported.has(d.name.text) ||
+      source.statements.some(st => ts.isExportAssignment(st)))
+    return false;
+  const name = d.name.text;
+  const leftOut = (n: Node): boolean => {
+    if (ts.isIdentifier(n) && n.text === name) {
+      const at = n.getStart(source);
+      if (omitted.some(([start, end]) => start <= at && at < end)) return true;
+    }
+    return n.forEachChild(c => leftOut(c) || undefined) ?? false;
+  };
+  if (leftOut(source)) return false;
+  const literal = (k: ts.Expression): boolean => ts.isStringLiteral(k) || ts.isNoSubstitutionTemplateLiteral(k) ||
+    ts.isNumericLiteral(k);
+  const writes = (n: Node): boolean => {
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isElementAccessExpression(n.left) && ts.isIdentifier(n.left.expression) &&
+        n.left.expression.text === name && !literal(n.left.argumentExpression))
+      return true;
+    return n.forEachChild(c => writes(c) || undefined) ?? false;
+  };
+  return writes(source);
+}
+
 /** Whether a block can read a lexical binding before its initialization. */
 function hasEarlyBindingReference(source: SourceFile, block: ts.Block): boolean {
   const declared = new Map<string, ts.VariableDeclaration>();
@@ -1616,6 +1656,16 @@ function lowerFile(file: string, carriesContext: boolean,
       const list = s.declarationList;
       if (!(list.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)))
         gate.fail(s, "a module-level `var` is outside the fragment");
+      // A module constant holding an object literal that a write at a key
+      // known only at run time may add the key to is a module cell, as the
+      // `let` of the same declaration: a `const` differs from it only in
+      // assignment, which TypeScript refuses. The key-adding write is then
+      // the copy written to the cell, where the module owns the object
+      // (PROGRAM-TYPING.md, "Key-adding writes").
+      if (list.flags & ts.NodeFlags.Const && keyAddedConstant(source, s, exportedNames, omittedSpans())) {
+        gate.moduleCellConstants.add(list);
+        for (const d of list.declarations) gate.earlyDecls.add(d);
+      }
       if (list.flags & ts.NodeFlags.Let) {
         if (s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
           gate.fail(s, "an exported `let` is a live binding importers read, outside the fragment");
@@ -1827,7 +1877,8 @@ function lowerFile(file: string, carriesContext: boolean,
     if (ts.isBlock(node) && hasEarlyBindingReference(source, node)) add(throwUninitializedName);
     // A module `let` is a module cell, every mention a checked access.
     if (ts.isVariableStatement(node) && node.parent && ts.isSourceFile(node.parent) &&
-        node.declarationList.flags & ts.NodeFlags.Let) add(throwUninitializedName);
+        (node.declarationList.flags & ts.NodeFlags.Let || gate.moduleCellConstants.has(node.declarationList)))
+      add(throwUninitializedName);
     if (ts.isForOfStatement(node)) add(iterateName);
     // `instanceof` of a class a block declares, by spelling here.
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&

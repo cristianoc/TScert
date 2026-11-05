@@ -150,6 +150,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
             requireSameMeaning (← table) b.init.span .bindingAnnotation sig.receiver
               (← lower (Fragment.translate this)) differs
         | none, _ => throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+        let C ← if ← moduleOwnedName b.name then plainContract C else pure C
         let stored := (C ++ U).eraseDups
         let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
         pure (stored, reference)

@@ -286,7 +286,12 @@ copy takes: the copy of such an object holds all of it. -/
 @[nospecialize] private partial def executionGrowth (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) : Compiler (Option Growth) := do
-  if (← ownedWrite) != some original.span then return none
+  -- A write on a module cell the module owns is a site wherever it is, its
+  -- value the right side's; any other only as its own statement.
+  let module ← match original with
+    | .write _ _ (.var _ n) _ | .indexWrite _ _ (.var _ n) _ _ => moduleOwnedCell scope n
+    | _ => pure none
+  if module.isNone && (← ownedWrite) != some original.span then return none
   let (holders, static) ← match ← computedGrowth fc scope original with
     | some (holders, _, _, _) => pure (holders, none)
     | none => match ← growingWrite fc scope original with
@@ -306,7 +311,11 @@ copy takes: the copy of such an object holds all of it. -/
   let refuse := fun {α : Type} (reason : String) =>
     (throw (locatedRefusal T original.span .expressionClaim reason) : Compiler α)
   let W ← exprType fc original
-  let X := Γ[r]?.getD []
+  -- The object of a module cell is read again after the operands, at the
+  -- cell's contract: the right side may have replaced it.
+  let X ← match module with
+    | some (_, .early stored _ _) => initializedContract stored
+    | _ => pure (Γ[r]?.getD [])
   -- A key-adding write is a write: at a reserved key, onto a proto-free
   -- object only (`reservedWriteCheck`).
   reservedWriteCheck original.span X (match static with
@@ -326,9 +335,34 @@ copy takes: the copy of such an object holds all of it. -/
   match static with
   | some (.sym i) => if tagged i then refuse tagRefusal
   | _ => pure ()
+  -- A module cell's object is copied at string keys alone, onto which no
+  -- symbol key and no `__proto__` is ever written: the copy then holds all
+  -- of it.
+  if module.isSome then
+    let symbolKey := match static, key with
+      | some (.sym _), _ => true
+      | none, some (.var _ keyName) => (valueSlot scope keyName).any fun k =>
+        (PositiveRules.expand G (Γ[k]?.getD [])).any fun c => match c with
+          | .str | .symbol | .symbolLit _ => true
+          | .strLit s => s == "__proto__"
+          | .strIn ss => ss.contains "__proto__"
+          | _ => false
+      | _, _ => false
+    if symbolKey || static == some (.str "__proto__") then
+      refuse "a key-adding write on a module's own object at a key that may be a symbol or `__proto__`: the object is copied at its string keys, which a symbol key or the prototype's setter would not be"
+  -- A key every clause of the object's type states as one writable optional
+  -- field, of one type: the allocation is at that type, the location the
+  -- copy then holds, as the field's.
+  let optionalType := fun (keys : List PropKey) =>
+    let types := (PositiveRules.expand G X).flatMap fun c => match c with
+      | .refs _ _ _ os _ _ _ => keys.map fun k => (os.find? fun q => q.key == k && !q.readonly).map (·.type)
+      | _ => [none]
+    match (types.filterMap id).eraseDups with
+    | [V] => if !types.isEmpty && types.all Option.isSome then some V else none
+    | _ => none
   match static with
   | some (.str name) =>
-    let F ← groupType [name] [W]
+    let F ← groupType [name] [(optionalType [.str name]).getD W]
     let M ← mergeType X F
     pure (some ⟨holders, r, v, .makeAt .absent [.str name] [.var v], false, none, W, F, M⟩)
   | some (.sym i) =>
@@ -365,7 +399,11 @@ copy takes: the copy of such an object holds all of it. -/
         | [V] => if ts.all Option.isSome then some V else none
         | _ => none
       | _ => none
-    let F ← keyedType K (cellType.getD W)
+    let named := (PositiveNormalization.splitSets cs).map fun c => match ComputedKey.keyedClause c W with
+      | some (.refs [(f, _)] _ _ _ _ _ _) => some f
+      | _ => none
+    let fieldType := if named.all Option.isSome then optionalType (named.filterMap id) else none
+    let F ← keyedType K ((cellType <|> fieldType).getD W)
     let proto := cs.any fun c => match c with | .str => true | .strLit s => s == "__proto__" | .strIn ss => ss.contains "__proto__" | _ => false
     if proto && !noPrototypeValue G (Γ[v]?.getD []) then
       refuse "a write at a string key known only at run time may name `__proto__`, whose setter, where the object does not own the key, makes an object or `null` value the object's prototype rather than a property"
@@ -422,12 +460,49 @@ one for an increment), and the slot of the old value. -/
     return LoweringAtoms.narrowed Γ (← LoweringAtoms.readNarrowing scope Γ prepared)
   | _ => pure Γ
 
+/-- A key-adding write on a module cell `i` the module owns, its operands
+saved: the allocation at the key, then the checked access of the cell again
+(the right side may have replaced its object, and in JavaScript the binding
+still names the one object), the copy of what it holds with the allocation,
+written to the cell at its contract, and the right side's value. -/
+@[nospecialize] private partial def moduleGrowth (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (original : Fragment.Expr) (g : Growth) (i : Nat) (stored : Ty Tree) (next : Target) : Compiler Target := do
+  let G := SourceTypes.graph (← table)
+  let some (t, _) := resolve scope throwUninitializedName
+    | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+  let X ← initializedContract stored
+  let S := (X ++ (← uninitializedTy)).eraseDups
+  let found := BranchRefinement.tagSlice G S (.hasKey uninitializedKey) true
+  let tested := held ⟨"",some original.span⟩
+  -- Environments, innermost first: Γ; F::Γ the allocation; S::F::Γ the
+  -- cell's contents; X::F::Γ past the marker's test; M::X::F::Γ the copy.
+  let copyScope := tested :: tested :: tested :: scope
+  let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
+    (fun j => if j == 0 then 0 else j+3)
+  let result ← emitAt original.span (.var (g.value+3)) (.bind ⟨next.label,some mapping⟩)
+    (g.M::X::g.F::Γ) g.W "expression-claim" (scope := copyScope)
+  let write ← emitAt original.span (.writeAt valueField (.var (i+3)) (.var 0)) (.effect result)
+    (g.M::X::g.F::Γ) [Labels.nul] "storage-contract" (scope := copyScope)
+  let merge ← emitAt original.span (.merge [] (.var 0) (.var 1)) (.bind write)
+    (X::g.F::Γ) g.M "owned-copy" (scope := copyScope.tail)
+  let raise ← emitAt original.span (Tm.call (.var (t+3)) []) .ret (found :: S :: g.F :: Γ) []
+    "uninitialized-binding" (scope := copyScope)
+  let toMerge : Target := ⟨merge.label, some ((List.range (Γ.length+2)).map
+    (fun j => if j == 0 then 0 else j+1))⟩
+  let dispatch ← emitAt original.span (.var 0) (.tagBind (.hasKey uninitializedKey) raise toMerge)
+    (S::g.F::Γ) S "tag-dispatch" (scope := copyScope.tail)
+  let read ← emitAt original.span (.readAt valueField (.var (i+1))) (.bind dispatch)
+    (g.F::Γ) S (scope := tested :: scope)
+  emitAt original.span g.alloc (.bind read) Γ g.F "owned-field" (scope := scope)
+
 /-- Every prepared primitive is checked at the original expression's claim,
     including a result represented internally by a saved-value read. -/
 @[nospecialize] private partial def executionEvaluate (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
     (original prepared : Fragment.Expr) (next : Target) : Compiler Target := do
   if let some g ← executionGrowth fc scope Γ original prepared then
+    if let [(i, .early stored _ true)] := g.holders then
+      return ← moduleGrowth scope Γ original g i stored next
     let values := g.holders.filterMap fun (i, storage) => match storage with
       | .value | .slot _ => some i
       | .cell .. | .early .. => none
@@ -464,6 +539,14 @@ one for an increment), and the slot of the old value. -/
     return ← emitAt original.span (.var k)
       (.tagBind (.strEq "__proto__") (branchMapping width none owns) (branchMapping width none copied))
       Γ (Γ[k]?.getD []) "tag-dispatch" (scope := scope)
+  -- A write in place on a module cell's own object writes the object its
+  -- receiver read, which a right side running code may have replaced.
+  match original with
+  | .write _ _ (.var _ n) rhs | .indexWrite _ _ (.var _ n) _ rhs =>
+    if (← moduleOwnedCell scope n).isSome && !quietKey rhs then
+      throw (locatedRefusal (← table) original.span .expressionClaim
+        "a write of a key a module's own object states, whose right side may run code: the code may replace the object the receiver read")
+  | _ => pure ()
   if let .objectAssign _ target _ := original then
     match target with
     | .alloc .. | .build .. => pure ()
