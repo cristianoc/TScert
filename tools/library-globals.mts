@@ -726,6 +726,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // It writes nothing: the empty footprint.
   { host: contract, global: "parseInt", signature: "declare function parseInt(string: string, radix?: number): number;",
     effect: emptyEffect },
+  // The DOM's global `atob(data)`, of the HTML standard's
+  // WindowOrWorkerGlobalScope (Node's global `atob` follows the same
+  // algorithm): Web IDL converts `data` to a DOMString, which runs no code
+  // on a string, then the forgiving-base64 decode makes a fresh string of
+  // the decoded bytes, one code unit each, or throws an
+  // `InvalidCharacterError` DOMException, an outcome. It writes nothing:
+  // the empty footprint, on a throw too.
+  { host: contract, global: "atob", signature: "declare function atob(data: string): string;",
+    effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // `parseFloat(s)` converts `s` by ToString, which runs no code on a string,
   // the primitive its declaration states: a number, `NaN` where no prefix of
   // `s` spells one. It writes nothing: the empty footprint.

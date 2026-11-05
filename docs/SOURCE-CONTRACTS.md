@@ -3173,6 +3173,13 @@ keeps from running.
   `library-math-abs`, `library-math-ceil`, `library-math-round`,
   `library-math-fround`). No argument of their parameter types converts by
   code.
+- The DOM's global `atob(data)` (the HTML standard's
+  WindowOrWorkerGlobalScope; Node's global follows the same algorithm)
+  converts `data` to a DOMString, which runs no code on a string, then
+  decodes it by the forgiving-base64 decode: a fresh string of the decoded
+  bytes, one code unit each, or a thrown `InvalidCharacterError`
+  DOMException, an outcome. As declared, within the empty footprint, on a
+  throw too (`library-atob`). The host is trusted to follow that algorithm.
 - `Number.POSITIVE_INFINITY` is a non-writable, non-configurable data
   property of `Number` holding +∞, read as declared, `number`
   (`library-number-positive-infinity`).
