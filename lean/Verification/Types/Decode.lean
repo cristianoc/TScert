@@ -27,6 +27,10 @@ def jField (j : Json) (k : String) : Except String Json :=
   | .error e => .error s!"missing field '{k}': {e}"
 
 def jStr (j : Json) : Except String String := j.getStr?
+def jNat (j : Json) (k : String) : Except String Nat := do
+  match (← jField j k).getNat? with
+  | .ok n => .ok n
+  | .error _ => .error s!"field '{k}' is not a natural number"
 def jArr (j : Json) (k : String) : Except String (List Json) := do
   let a ← (← jField j k).getArr?
   return a.toList

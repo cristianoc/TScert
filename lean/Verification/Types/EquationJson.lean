@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Verification.Types.EquationGraphs
+import Verification.Types.Decode
 
 /-! The tree spelling of RECURSIVE-EQUATIONS §8: a nullary application is
 its head's number; every other tree is an object with exactly its own fields,
@@ -42,17 +43,6 @@ def Args.toJsons : Args → List Json
   | .cons ts args => Json.arr ts.toJsons.toArray :: args.toJsons
 end
 
-private def exactly (fields : List (String × Json)) (keys : List String) : Except String Unit :=
-  if fields.length == keys.length && fields.all (keys.contains ·.1) then .ok ()
-  else .error s!"a tree with fields {fields.map (·.1)}: expected exactly {keys}"
-
-private def natField (j : Json) (key : String) : Except String Nat := do
-  match j.getObjVal? key with
-  | .ok v => match v.getNat? with
-    | .ok n => .ok n
-    | .error _ => .error s!"field '{key}' is not a natural number"
-  | .error _ => .error s!"missing field '{key}'"
-
 mutual
 partial def Tree.fromJson (j : Json) : Except String Tree :=
   match j with
@@ -63,31 +53,31 @@ partial def Tree.fromJson (j : Json) : Except String Tree :=
     let fields := kvs.toList
     let has (k : String) := fields.any (·.1 == k)
     if has "app" then
-      exactly fields ["app", "args"]
+      fieldsExactly j ["app", "args"]
       let args ← argsFromJson (← j.getObjVal? "args")
       if args matches .nil then throw "a nullary application is spelled as its head's number"
-      return .app (← natField j "app") args
+      return .app (← jNat j "app") args
     else if has "bound" then
       if has "args" then
-        exactly fields ["bound", "args", "slot"]
+        fieldsExactly j ["bound", "args", "slot"]
         let args ← argsFromJson (← j.getObjVal? "args")
         if args matches .nil then throw "an owned parameter with no arguments leaves out 'args'"
-        return .bound (← natField j "bound") args (← natField j "slot")
+        return .bound (← jNat j "bound") args (← jNat j "slot")
       else
-        exactly fields ["bound", "slot"]
-        return .bound (← natField j "bound") .nil (← natField j "slot")
+        fieldsExactly j ["bound", "slot"]
+        return .bound (← jNat j "bound") .nil (← jNat j "slot")
     else if has "meet" then
-      exactly fields ["meet"]
+      fieldsExactly j ["meet"]
       return .meet (← typesFromJson (← j.getObjVal? "meet"))
     else if has "arg" then
-      exactly fields ["arg"]
-      return .argument (← natField j "arg")
+      fieldsExactly j ["arg"]
+      return .argument (← jNat j "arg")
     else if has "local" then
-      exactly fields ["local"]
-      return .local (← natField j "local")
+      fieldsExactly j ["local"]
+      return .local (← jNat j "local")
     else if has "var" then
-      exactly fields ["var", "owner", "kind"]
-      return .var (← natField j "owner") (← natField j "var") (← kindOf (← (← j.getObjVal? "kind").getStr?))
+      fieldsExactly j ["var", "owner", "kind"]
+      return .var (← jNat j "owner") (← jNat j "var") (← kindOf (← (← j.getObjVal? "kind").getStr?))
     else throw s!"unknown tree with fields {fields.map (·.1)}"
   | _ => .error "a tree is a head number or an object"
 /-- A union: an array of trees. -/
