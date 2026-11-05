@@ -219,7 +219,7 @@ $`c_j\equiv T_j`$ when $`r=\mathsf{w}`$ and $`c_j\subseteq T_j`$ when $`r=\maths
   $`\beta`$ **excludes** $`\kappa`$, $`\beta\nvDash\kappa`$, when some $`b\in\beta`$
   does not admit it (`Excludes`). A fresh literal's own keys are among its
   fields'. An array owns no key its prototype provides,
-  $`\mathsf{outside}\,N`$ with $`N`$ `ArrayProto`'s keys plus `constructor`: whatever else it owns,
+  $`\mathsf{outside}\,N`$ with $`N`$ `ArrayProto`'s keys plus `constructor`, `then` and `toJSON`: whatever else it owns,
   a read of one of those continues at the prototype, which it holds as a
   readonly view under the reserved key. An array may own further keys, as
   a library may mark the arrays it manages with a hidden symbol key

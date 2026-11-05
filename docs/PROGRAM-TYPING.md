@@ -454,6 +454,11 @@ function type and a declared function alike, as TypeScript reads it:
      {\ldots x : \mathit{Alias}\langle\vec A\rangle\ \text{collects into}\ E[\vec A/\vec X]}
 ```
 
+A generic module function's scheme states its rest as a mutable array's
+element, so there the rest is a mutable array or the function's own type
+parameter ([model limits](SOURCE-FRAGMENT.md#model-limits),
+`generic-readonly-rest-refused`).
+
 A module function's rest typed by one of its own type parameters,
 `function f<P extends B>(…, ...x: P): R`, makes $`P`$ an
 [argument pack](POSITIVE-TYPES.md#argument-packs) bounded by the pack of its
