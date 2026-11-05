@@ -56,7 +56,7 @@ export const cases: Case[] = [
   positive("pretext-checked-schedules", "Pretext spacing loops retain continue behavior with checked preceding endpoints; line geometry selects one nullable extra array."),
   positive("pretext-locale-map", "Pretext locale fallback reads own Map entries, including an own toString entry."),
   negative("invalid-pretext-computed-style-write", "Computed style has no inline-style setter capability."),
-  negative("invalid-pretext-span-name", "The document creation contract admits only reviewed literal names."),
+  gap("invalid-pretext-span-name", "The document creation contract admits only reviewed canvas and span names.", "unsupported", "proposal", /overloaded call needs a signature its arguments match/),
   positive("dense-spread-before-effect", "Unbounded readable spreads are copied before a later callback in method and ordinary calls."),
   negative("invalid-dense-spread-element", "An undefined source element cannot meet the numeric spread-copy contract.", /source expression obligation.*spread-copy claim/s),
   negative("invalid-round-promised-readonly-set", "A structural set membership callback can leave a hole in the mapped definition array.", /source expression obligation.*return-contract claim/s),
