@@ -1,0 +1,170 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-99"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-99</code></a><ul><li>6 commits</li><li>parts: <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">producer</span> <span class="chip">lean</span> <span class="chip">tooling</span></li><li>new trust: <span class="trust">the listed `fs` functions run no client code only for Node run without `--experimental-vfs`</span></li></ul></li></ul></section>
+<h2 id="g-pr-99"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-99</code></h2><article class="card" id="c-1a74024f6"><header><div><div class="sha">1a74024f6 · Cristiano Calcagno · Nov 05, 13:11</div><h3>Name in the refusal index every existing case that reaches a row's refusal</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>SOURCE-FRAGMENT.md is the index of the pipeline's refusals, each row naming the cases that exercise it where one does, and 83 rows named no case (issue #45). A rescan of each row against pipeline/cases.mts found existing cases for 39 of them: each named case's source holds the row's construct and its expected diagnostic, or its area text, names that refusal. The other 44 rows have no case, which the principle of keeping a control for each enforced restriction calls for.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, fragment boundary</span></h4><div class="prose"><p>39 rows name their cases, among them the empty-type row (<code>invalid-array-shadow</code>, <code>invalid-array-own-constructor</code>, …), the call-provenance row (the eight <code>invalid-call-provenance-*</code> cases), the promise rows, the class rows and the spread-before-effect row; a case run under Node is marked &quot;(Node)&quot; as elsewhere</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, status</span></h4><div class="prose"><p>a row, &quot;Regression coverage for refusal-index rows&quot;, for the 44 index rows with no case, closed when each distinct enforced boundary of the index has a case reaching its refusal</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>2 files changed, 40 insertions(+), 39 deletions(-)</summary><pre class="code"> WORK.md                 |  1 +
+ docs/SOURCE-FRAGMENT.md | 78 ++++++++++++++++++++++++-------------------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-f2b303b7b"><header><div><div class="sha">f2b303b7b · Cristiano Calcagno · Nov 05, 13:14</div><h3>Name each gap case in the document that owns it: its restriction's row or its open item</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A blocked ordinary program is open work in WORK.md, and an enforced restriction is a row of the refusal index with its controls (issue #32). Commit 68188223 named 22 gap cases in WORK.md; 36 further gap cases, and two restrictions they control, were named in neither document.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-FRAGMENT.md, fragment boundary</span></h4><div class="prose"><p>30 gap cases named in the rows whose refusal they reach: the host exclusion row (R8), which lists <code>Object.values</code>, <code>Object.entries</code> and <code>Object.getOwnPropertyDescriptor</code> as COMPILER-API.md's R8 does; method extraction; the temporal dead zone; key-adding writes; <code>Object.assign</code> onto an array; accessors; <code>Symbol.toStringTag</code>; symbol-keyed spreads; spreads of a program's iterable; spreads into fixed parameters; mutable storage; hidden binders of block types; callables met with records; the compiler API's L6; unlisted library signatures</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">SOURCE-FRAGMENT.md, model limits</span></h4><div class="prose"><p>a row for a conditional type inferring from a function or constructor type outside the <code>ReturnType</code>, <code>Parameters</code> and <code>ConstructorParameters</code> forms (tools/computed-types.mts), case <code>inferred-concrete-constructor-refused</code>; a row for an object argument of <code>console.log</code> or <code>console.error</code>, case <code>console-log-object-refused</code></p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, coverage of the front end</span></h4><div class="prose"><p>the census refusal examples name <code>blocker-next-compiler-api-ancestor-cell</code>, <code>blocker-last-guard-param-inferred</code>, <code>blocker-api-indexed-method</code> and <code>blocker-optional-method-bind</code>; the row for index rows with no case counts 42</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>2 files changed, 22 insertions(+), 18 deletions(-)</summary><pre class="code"> WORK.md                 |  6 ++++--
+ docs/SOURCE-FRAGMENT.md | 34 ++++++++++++++++++----------------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-3dd46ecaf"><header><div><div class="sha">3dd46ecaf · Cristiano Calcagno · Nov 05, 13:18</div><h3>Open each design draft with the existing mechanism it extends; name the acceptance theorem</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>AGENTS.md requires every draft of docs/drafts/ to open with &quot;The existing mechanism this extends&quot;, with no exemption by age, and seven drafts had no such section (issue #53). Four drafts named the acceptance theorem <code>checkJson_safe</code>, a name no Lean declaration has; the theorem is <code>SourceClaimJson.checkUnitJson_safe</code>.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">seven drafts, the existing mechanism this extends</span></h4><div class="prose"><p>canonicity: the places' representations as their owners state them, heap state assertions, positive types and structure-directed comparison, stage keys by content; the draft adds one property they meet. certificate-sharing: the evidence document and its strict decoders, with the heap facts it carries. correctness-specs: effect-qualified call contracts, stated effects, checked control-flow graphs and stored knowledge, with what the draft adds (the knowledge contract, the atoms, the proof routes). heap-freshness and heap-knowledge-canonical: heap state assertions and their stored knowledge. method-effects: effect-qualified signatures, footprints and stated effects. subtype-decision: covered pairs, the catalogue of selection rules and the instantiation of equations</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">four drafts, the acceptance theorem</span></h4><div class="prose"><p>correctness-specs, heap-freshness, method-effects and subtype-decision: <code>checkJson_safe</code> → <code>checkUnitJson_safe</code></p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>7 files changed, 94 insertions(+), 5 deletions(-)</summary><pre class="code"> docs/drafts/canonicity.md               | 16 ++++++++++++++++
+ docs/drafts/certificate-sharing.md      | 12 ++++++++++++
+ docs/drafts/correctness-specs.md        | 19 ++++++++++++++++++-
+ docs/drafts/heap-freshness.md           | 13 ++++++++++++-
+ docs/drafts/heap-knowledge-canonical.md | 11 +++++++++++
+ docs/drafts/method-effects.md           | 15 +++++++++++++--
+ docs/drafts/subtype-decision.md         | 13 ++++++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-00890c187"><header><div><div class="sha">00890c187 · Cristiano Calcagno · Nov 05, 13:20</div><h3>Check every quoted title and every numbered section a code citation names</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>tests/docs.mts checked a code citation's first quoted title alone, read no title quoted inside a string literal (<code>\&quot;Title\&quot;</code>), and checked no <code>§n</code> cited in a code comment (issue #27; commit 78674118 added the four math forms the issue names). The wider check found two citations that name no section: Store.lean's <code>RECURSIVE-EQUATIONS §9.2</code>, a section the document does not have, for the equations' wire spelling REQUEST-PROTOCOL.md holds; and the producer's refusal citing DESIGN.md, &quot;Current-content assertions&quot;, a section SOURCE-MODEL.md holds.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tests/docs.mts, citations in code</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">`(&lt;document&gt;.md, &quot;Title&quot;)`: the first title, unescaped quotes only</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">every title of `(&lt;document&gt;.md, &quot;A&quot;, &quot;B&quot;; …)`, escaped quotes</span><span class="ln">included; each `§n` of `&lt;DOCUMENT&gt;[.md] §n, §m–k` names a numbered</span><span class="ln">heading of that document, both ends of a range; the header states</span><span class="ln">what stays unchecked: titles without quotes, a bare `§n`, whether an</span><span class="ln">existing anchor or section is the one meant, and the Lean and code</span><span class="ln">names in a document's code spans</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md, conventions</span></h4><div class="prose"><p>the docs check's scope names the code citations, linking its header for what it leaves unchecked</p></div>
+<h4 class="change"><span class="act modified">modified</span>Comments <span class="target">Store.lean; expression_properties.ml refusal text</span></h4><div class="prose"><p><code>RECURSIVE-EQUATIONS §9.2</code> → REQUEST-PROTOCOL.md, &quot;Equations and tree labels&quot;; DESIGN.md → SOURCE-MODEL.md, &quot;Current-content assertions&quot;</p></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-t">Lines</span> appended to tools/files.mts citing `<span class="tk-t">RECURSIVE</span>-<span class="tk-t">EQUATIONS</span> §<span class="tk-n">4.2</span>,</span><span class="ln">§<span class="tk-n">9.9</span><span class="tk-s">`, `</span>§<span class="tk-n">4.2</span>–<span class="tk-n">4.9</span>`, a second missing quoted title and an escaped missing</span><span class="ln">title: each reported, one problem per citation that names nothing.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span> <span class="chip">producer</span> <span class="chip">lean</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>4 files changed, 49 insertions(+), 22 deletions(-)</summary><pre class="code"> AGENTS.md                                     |  5 ++-
+ lean/Verification/Source/Equations/Store.lean |  6 ++-
+ ocaml-producer/expression_properties.ml       |  2 +-
+ tests/docs.mts                                | 58 +++++++++++++++++++--------</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-c31d0013d"><header><div><div class="sha">c31d0013d · Cristiano Calcagno · Nov 05, 13:20</div><h3>Make AGENTS.md and the skills state one procedure: formatting, the stage store and merging</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Three process statements disagreed with the tooling or with AGENTS.md (issue #51; commit a52a6cf6 settled the hook, its install target, the renderer's kinds and &quot;the original 499&quot;). AGENTS.md said everything is prettier-formatted, while <code>.prettierignore</code> admits <code>.json</code> and <code>.ts</code> files alone. The gap-round brief measured with a fresh stage store, while AGENTS.md has a branch use the default store and only a test of the store name another. The review skill had the user choose every merge, while AGENTS.md has the trusted model merge when confident and ask for a review only when not.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md, conventions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>everything is prettier-formatted (<code>make fmt</code>)</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p><code>make fmt</code> formats the <code>.json</code> and <code>.ts</code> files <code>.prettierignore</code> admits; <code>make check-fmt</code> checks them</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">gap-round brief, measuring</span></h4><div class="prose"><p>the targeted census runs with the default stage store, linking AGENTS.md</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">review skill, when to produce a review</span></h4><div class="prose"><p>who merges and when a review is asked for is AGENTS.md's; a review is given as the rendered pages</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>3 files changed, 9 insertions(+), 5 deletions(-)</summary><pre class="code"> .claude/skills/gap-round/brief.md | 5 +++--
+ .claude/skills/review/SKILL.md    | 6 ++++--
+ AGENTS.md                         | 3 ++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-89d16450c"><header><div><div class="sha">89d16450c · Cristiano Calcagno · Nov 05, 13:30</div><h3>Audit the host contracts against one Node, 26.13.0, and pin it for every run</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The host contracts and their code comments were audited against Node 25.2.1 at some sites and 26.13.0 at others, and nothing named the Node the suites run under: no <code>.nvmrc</code>, no <code>engines</code>, CI at the major 26 alone, no check of the running version (issue #60). A contract audited against one version and exercised under another rests on an audit that does not transfer by itself. The baseline is 26.13.0, the Node CI's major and the local runs use.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">host audits in docs and tools/ comments</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>44 sites citing Node 25.2.1: 33 audits of Node's sources, 11 probes</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>each audit re-read in 26.13.0's sources (lib/fs.js, os.js, path.js, buffer.js, child_process.js, internal/url.js, internal/encoding.js, internal/crypto/hash.js, internal/bootstrap/realm.js, internal/modules/*, src/module_wrap.cc, src/node_os.cc) and cited at 26.13.0; each probe run again under 26.13.0 (2026-11-05), its result beside the 25.2.1 one. No stated signature, effect or result type differs. The descriptions 26.13.0 changes: <code>readdirSync</code>'s recursive walk is native; a <code>Stats</code> owns four symbol-keyed numbers beside its fields; <code>Buffer</code>'s <code>toString</code>, <code>subarray</code> and <code>from</code> read the internal length and write through the binding; <code>TextDecoder.decode</code> reads no <code>encoding</code> getter; <code>child_process.spawn</code> publishes its options on a tracing channel before it spawns, and the child's environment without <code>env</code> comes from a native pass</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Trust <span class="target">DESIGN.md, trust surface, Node module functions</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the listed <code>fs</code> functions run no code of the client's</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the same, for Node 26.13.0 run without <code>--experimental-vfs</code>, under which a mounted file system's provider answers the <code>fs</code> functions; the Library modules audit header states it</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">.nvmrc, package.json engines, CI, tests/trusted-inputs.mts</span></h4><pre class="code"><span class="ln">`.nvmrc` and `engines` name 26.13.0; the three workflows install the</span><span class="ln">version `.nvmrc` names; the Trusted inputs suite fails under any other</span><span class="ln">Node; README's prerequisites name the pin</span></pre>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-s">`.nvmrc`</span> <span class="tk-k">set</span> to <span class="tk-n">26.12.0</span>: the <span class="tk-t">Trusted</span> inputs suite fails with &quot;run <span class="tk-t">Node</span></span><span class="ln"><span class="tk-n">26.12.0</span>, the version .nvmrc names&quot;.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">tooling</span></dd><dt>Trust</dt><dd><span class="trust">the listed `fs` functions run no client code only for Node run without `--experimental-vfs`</span></dd></dl>
+<details><summary>18 files changed, 115 insertions(+), 96 deletions(-)</summary><pre class="code"> .github/workflows/census.yml        |  2 +-
+ .github/workflows/ci.yml            |  2 +-
+ .github/workflows/semantic-diff.yml |  2 +-
+ .nvmrc                              |  1 +
+ README.md                           |  2 +-
+ docs/DESIGN.md                      |  2 +-
+ docs/SOURCE-CONTRACTS.md            | 48 ++++++++++++++--------------
+ docs/SOURCE-REWRITES.md             | 20 +++++++-----
+ docs/drafts/correctness-specs.md    |  5 +--
+ package.json                        |  3 ++
+ test-all.sh                         |  2 +-
+ tests/README.md                     |  2 +-
+ tests/trusted-inputs.mts            | 15 +++++++--
+ tools/library-globals.mts           | 21 ++++++-------
+ tools/library-modules.mts           | 63 +++++++++++++++++++------------------
+ tools/library-types.mts             | 17 +++++-----
+ tools/module-hooks.mts              |  2 +-
+ tools/url-strings.mts               |  2 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
