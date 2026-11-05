@@ -2969,6 +2969,18 @@ for (const [file, call] of [
   assert.equal(runExample(ofKind("typed-array-views", "positive"),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");
+  // The DOM's contracts, which Node has no implementation of: each run uses
+  // a stand-in of the host object, a platform object's attribute an
+  // accessor on its class's prototype as Web IDL defines it, or no binding
+  // where Node defines none.
+  assert.equal(runExample(negative("invalid-dom-canvas-spread"),
+    'typeof copied(new (class { get font() { return "10px serif"; } })()).font'), "undefined",
+    "a spread copies no attribute of a platform object, an accessor of its prototype");
+  assert.equal(runExample(negative("invalid-dom-typeof-absent"), "typeof absent([])"), "undefined",
+    "where the host defines no document the branch runs and reads past the array's end");
+  assert.equal(runExample(negative("invalid-dom-document-element-lang"),
+    "globalThis.document = { documentElement: {} }; typeof language()"), "undefined",
+    "a root element of another namespace has no lang");
   assert.equal(runExample(negative("invalid-round-compiler-identity-overlap"), "typeof wrong().unobserved"), "string",
     "the overlapping field holds a string where the intersection also requires a Boolean");
   assert.equal(runExample(negative("invalid-round-compiler-identity-indexes"), "typeof wrong().unobserved"), "string",

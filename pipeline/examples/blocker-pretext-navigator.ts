@@ -1,9 +1,13 @@
 // Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):
 // measurement.ts#buildEngineProfile.
-// Refusal: gate: the global navigator is declared in
-// typescript/lib/lib.dom.d.ts (library), an origin no reviewed entry
-// admits.
-// The DOM global `navigator`, which has no reviewed entry.
+// Refusal: search: closure expression claim: the available claim for
+// navigator is the host's Navigator, and the assertion requires a record
+// whose `userAgent` is writable.
+// The DOM global `navigator`, asserted to a record of an optional writable
+// `userAgent` before the read: the assertion would grant a write of a
+// member the host defines only a getter for.
 export function agent(): string {
-  return typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return typeof navigator === "undefined"
+    ? ""
+    : ((navigator as { userAgent?: string }).userAgent ?? "");
 }

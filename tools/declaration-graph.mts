@@ -30,7 +30,7 @@ import { type BrandPredicate, compilerApiFamily, statedGuards, brandedTypes, hos
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, reviewedErrorMembers, globalEntry, globalOrigins, globalsOverlay, importMetaName, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, moduleObjectDefault, reviewedText, reviewedTexts, type ModuleEntry } from "./library-modules.mts";
-import { definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
+import { canvasGetters, canvasSetters, definitions as typeDefinitions, namedDefinitions, typeEntry, type TypeEntry } from "./library-types.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpNames, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -688,6 +688,14 @@ export interface OperationRequests {
    * is reported to `byteRead` with `%ByteSet%`, which writes it and joins
    * the values. */
   elementWrites?: readonly Span[];
+  /** The client's member writes `e.k = v` and reads `e.k` at a key a 2D
+   * context sets or gets through its host accessor, by their targets: each
+   * whose object TypeScript types as 2D contexts only, each part one or an
+   * intersection with one, is reported to `hostMember` with the accessor's
+   * intrinsic (`library-types.mts`, `canvasSetters` and `canvasGetters`),
+   * which joins the values. */
+  memberWrites?: readonly Span[];
+  memberReads?: readonly Span[];
   /** The client's reads `e.k` at a key some `"k" in o` test writes: each
    * whose object TypeScript types as `object` narrowed by such tests alone
    * (every part of an intersection `object` or the standard library's
@@ -821,6 +829,7 @@ export interface OperationAnswers {
   hostElement?: (span: Span) => void;
   numberKey?: (span: Span) => void;
   byteRead?: (span: Span, intrinsic: string) => void;
+  hostMember?: (span: Span, intrinsic: string) => void;
   openRead?: (span: Span, intrinsic: string) => void;
   regexp?: (span: Span, intrinsic: string) => void;
   dispatch?: (span: Span, intrinsic: string) => void;
@@ -3118,6 +3127,34 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           keys.every(t => !!(t.flags & (TypeFlags.Number | TypeFlags.NumberLiteral))))
         viewRead(span, byteSetName);
     }
+    // `o.k = v` and `o.k` of a 2D context at a key its host accessor sets or
+    // gets: each part of the object's type a name the overlay of library
+    // types states as a 2D context, or an intersection with one, as
+    // `"lang" in o` narrows it.
+    const contextOnly = (access: ts.PropertyAccessExpression): boolean => {
+      const object = checker.getTypeAtLocation(access.expression);
+      const parts = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
+      const context = (t: Type): boolean =>
+        statedType((t.getSymbol()?.declarations ?? []).map(d => d.resolve()))?.definition === typeDefinitions.canvasContext;
+      return parts.length > 0 && parts.every(t => context(t) || (isIntersectionType(t) && t.getTypes().some(context)));
+    };
+    const hostMember = (span: Span, intrinsic: string): void => {
+      listIntrinsics(span, [intrinsic]);
+      defineOverlay(typeDefinitions.canvasContext);
+      operationAnswers.hostMember?.(span, intrinsic);
+    };
+    for (const span of operationsRequested.memberWrites ?? []) {
+      const write = expressionAt(client, span);
+      if (!write || !ts.isPropertyAccessExpression(write)) throw declarationError(span, "TypeScript member write missing");
+      const setter = canvasSetters.find(s => s.member === write.name.text);
+      if (setter && contextOnly(write)) hostMember(span, setter.intrinsic);
+    }
+    for (const span of operationsRequested.memberReads ?? []) {
+      const read = expressionAt(client, span);
+      if (!read || !ts.isPropertyAccessExpression(read)) throw declarationError(span, "TypeScript member read missing");
+      const getter = canvasGetters.find(g => g.member === read.name.text);
+      if (getter && contextOnly(read)) hostMember(span, getter.intrinsic);
+    }
     // `b.length` of a view of bytes.
     for (const span of operationsRequested.lengthReads ?? []) {
       const read = expressionAt(client, span);
@@ -5140,6 +5177,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     for (const definition of constructed.definitions ?? []) context.define(definition);
     for (const use of uses) {
       const parent = use.parent;
+      if (ts.isTypeOfExpression(parent) && constructed.typeOf !== undefined) {
+        context.intrinsic(spanOf(parent), constructed.typeOf);
+        continue;
+      }
       if (!ts.isNewExpression(parent) || parent.expression !== use)
         throw Error(`the global ${name} is only constructed`);
       if ((parent.arguments?.length ?? 0) > form.params.length || parent.arguments?.some(ts.isSpreadElement))
@@ -5159,7 +5200,14 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     const written = typeof constructed.stated === "function" ? constructed.stated(context.library, context.view) : constructed.stated;
     if (!written || written.binders.length || written.params.length || written.rest || constructed.forms)
       throw Error(`the constant ${name} is reviewed with no one stated type`);
-    for (const use of uses) if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
+    for (const definition of constructed.definitions ?? []) context.define(definition);
+    for (const use of uses) {
+      if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
+      // `typeof X` of a global some hosts do not define
+      // (`GlobalEntry.typeOf`): a call of its intrinsic.
+      if (ts.isTypeOfExpression(use.parent) && constructed.typeOf !== undefined)
+        context.intrinsic(spanOf(use.parent), constructed.typeOf);
+    }
     const source = declaration.getSourceFile();
     return { constant: { declaration: { module: context.identityOf(source), name,
       span: [declaration.getStart(source), declaration.end] }, type: written.result } };
