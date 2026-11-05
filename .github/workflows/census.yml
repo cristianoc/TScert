@@ -192,14 +192,25 @@ jobs:
       - name: Comment on the pull request
         if: github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Posted as the repository's machine user where its token is set:
+          # GitHub emails the owner a mention by a user, not by the workflow's
+          # own bot (AGENTS.md, presentations).
+          GH_TOKEN: ${{ secrets.TSCERT_BOT_TOKEN || github.token }}
         run: |
           number=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" -q '.[0].number // empty')
           if [ -z "$number" ]; then echo "no pull request holds ${GITHUB_SHA}"; exit 0; fi
           owner=${GITHUB_REPOSITORY%%/*}
           repo=${GITHUB_REPOSITORY#*/}
+          # A census that loses a function, shallow or deep, or whose
+          # statement coverage falls, mentions the owner.
+          mention=""
+          if grep -qE '^  lost \([1-9]' "$CENSUS/movement.txt" ||
+            grep -m1 '^shallow: verified statement coverage:' "$CENSUS/movement.txt" |
+              awk '{ n = 0; for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%$/) v[++n] = $i + 0 } END { exit !(n >= 2 && v[2] < v[1]) }'; then
+            mention="@${GITHUB_REPOSITORY_OWNER} coverage lost. "
+          fi
           {
-            echo "**Census** of \`main\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: [the report](https://${owner}.github.io/${repo}/census/${GITHUB_SHA:0:9}/)"
+            echo "${mention}**Census** of \`main\` at \`${GITHUB_SHA:0:9}\`${BASE:+, since \`$BASE\`}: [the report](https://${owner}.github.io/${repo}/census/${GITHUB_SHA:0:9}/)"
             echo
             echo '```'
             cat "$CENSUS/headline.txt"
