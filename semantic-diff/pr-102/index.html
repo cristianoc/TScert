@@ -1,0 +1,187 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-102"><code>64eb9fbf7cee245003fecb8a07fdec8736908084..pr-102</code></a><ul><li>1 commit</li><li>parts: <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-102"><code>64eb9fbf7cee245003fecb8a07fdec8736908084..pr-102</code></h2><article class="card" id="c-6028cde32"><header><div><div class="sha">6028cde32 · Cristiano Calcagno · Nov 05, 16:38</div><h3>Add cases for the assertions that refuse ten line walkers of pretext's line-break.ts</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Past the literal defaults (#98), the census of pretext's src/ refuses 10 of the 16 functions of line-break.ts at a cast claim: a non-null assertion or an <code>as</code> of an element read, and one non-null assertion of a nullable local. Each claim was read against what holds at the function's boundary: 8 functions read an element at an index bounded by another array's length (<code>segmentFlags[i]!</code> inside <code>widths.length</code>), by a count parameter, or by no test; one asserts such a read with <code>as</code>; one asserts present a value another argument is taken to imply (<code>startAdvances!</code> where the cursor is inside a segment). None of these claims holds for every argument the signature admits, so each refusal is right and the census had no case for it.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">three negative cases, one per unsafe assertion: the element read</span><span class="ln">bounded by another array's length, the same read asserted with <span class="tk-s">`as`</span>,</span><span class="ln">and the value implied present by another argument, each run under</span><span class="ln"><span class="tk-t">Node</span>. <span class="tk-t">A</span> gap <span class="tk-k">case</span> <span class="tk-k">for</span> the one safe claim found past them: a field's</span><span class="ln">test repeated <span class="tk-k">from</span> the <span class="tk-s">`if`</span> before it, <span class="tk-k">in</span> stepPreparedSimpleLineGeometry.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">tests/node-runs.mts</span></h4><pre class="code"><span class="ln">the three negatives run: the flag read past its end is `undefined`,</span><span class="ln">returned as a number; the other two throw a TypeError at `length`</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">WORK.md, the pretext census row</span></h4><div class="prose"><p>the line walkers' reasons, with the measurement on a copy of pretext whose asserted reads go through its own <code>defined</code> and <code>present</code></p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-parallel-element-assertion</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">flags[i]! inside widths.length (8 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// after its rewrites of element reads elsewhere): line-break.ts#isDiscretionaryLineEnd,</span>
+<span class="tk-c">// line-break.ts#getItemTabAdvance, line-break.ts#getTerminalLetterSpacing,</span>
+<span class="tk-c">// line-break.ts#normalizePreparedLineStart, line-break.ts#walkPreparedLinesRaw,</span>
+<span class="tk-c">// line-break.ts#countSteppedLines, line-break.ts#staysAfterObject,</span>
+<span class="tk-c">// line-break.ts#returnsFromUnfitHyphen; with countPreparedLines and</span>
+<span class="tk-c">// stepPreparedSimpleLineGeometry, whose first refusals are</span>
+<span class="tk-c">// blocker-pretext-parallel-element-cast and</span>
+<span class="tk-c">// blocker-pretext-argument-implied-assertion.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its cast</span>
+<span class="tk-c">// claim.</span>
+<span class="tk-c">// A non-null assertion of an element read at an index bounded by another</span>
+<span class="tk-c">// array's length, `flags[i]!` with `i &lt; widths.length`: nothing relates the</span>
+<span class="tk-c">// two lengths, so the read past `flags`' end is `undefined`, returned as a</span>
+<span class="tk-c">// number (run under Node). Pretext's walkers read `segmentFlags` and the</span>
+<span class="tk-c">// other per-segment arrays inside `widths.length`, a count parameter, or an</span>
+<span class="tk-c">// index no test bounds; the read that verifies checks the element,</span>
+<span class="tk-c">// `defined(flags[i])`.</span>
+<span class="tk-k">type</span> <span class="tk-t">Prepared</span> = { widths: number[]; flags: <span class="tk-t">Uint8Array</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> lastFlag(prepared: <span class="tk-t">Prepared</span>): number {
+  <span class="tk-k">const</span> { widths, flags } = prepared;
+  <span class="tk-k">let</span> last = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) last = flags[i]!;
+  <span class="tk-k">return</span> last;
+}</pre></details></li><li><details><summary><code>blocker-pretext-parallel-element-cast</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">advances[i] as number[] | null (1 function)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// after its rewrites of element reads elsewhere): line-break.ts#countPreparedLines.</span>
+<span class="tk-c">// Refusal: reject: closure expression claim: evidence search failed.</span>
+<span class="tk-c">// An element read asserted with `as` to the element type without</span>
+<span class="tk-c">// `undefined`, `advances[i] as number[] | null` with `i &lt; widths.length`:</span>
+<span class="tk-c">// nothing relates the two lengths, so the read past `advances`' end is</span>
+<span class="tk-c">// `undefined`, which passes the test against `null` and throws at its</span>
+<span class="tk-c">// `length` (run under Node). The read that verifies checks the element,</span>
+<span class="tk-c">// `defined(advances[i])`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> advanceCount(
+  widths: number[],
+  advances: (number[] | <span class="tk-k">null</span>)[],
+): number {
+  <span class="tk-k">let</span> count = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++) {
+    <span class="tk-k">const</span> fit = advances[i] <span class="tk-k">as</span> number[] | <span class="tk-k">null</span>;
+    <span class="tk-k">if</span> (fit !== <span class="tk-k">null</span>) count += fit.length;
+  }
+  <span class="tk-k">return</span> count;
+}</pre></details></li><li><details><summary><code>blocker-pretext-argument-implied-assertion</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">startAdvances! implied by graphemeIndex (1 function)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// after its rewrites of element reads elsewhere):</span>
+<span class="tk-c">// line-break.ts#stepPreparedSimpleLineGeometry.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its cast</span>
+<span class="tk-c">// claim.</span>
+<span class="tk-c">// A non-null assertion of an element whose presence another argument is</span>
+<span class="tk-c">// taken to imply, `startAdvances!` where `graphemeIndex &gt; 0` (a cursor inside</span>
+<span class="tk-c">// a segment has its grapheme advances): nothing relates the two arguments,</span>
+<span class="tk-c">// so a `null` element reaches the assertion and its `length` throws (run</span>
+<span class="tk-c">// under Node). The read that verifies checks the value,</span>
+<span class="tk-c">// `present(startAdvances)`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> firstAdvanceCount(
+  advances: (number[] | <span class="tk-k">null</span>)[],
+  start: number,
+  graphemeIndex: number,
+): number {
+  <span class="tk-k">const</span> startAdvances = advances[start];
+  <span class="tk-k">if</span> (graphemeIndex &gt; <span class="tk-n">0</span> || startAdvances !== <span class="tk-k">null</span>) {
+    <span class="tk-k">const</span> fit = startAdvances!;
+    <span class="tk-k">return</span> fit.length;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-conditional-test-correlated</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">extras.inside! under a repeated test (1 function)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit,</span>
+<span class="tk-c">// after its rewrites of element reads elsewhere):</span>
+<span class="tk-c">// line-break.ts#stepPreparedSimpleLineGeometry, past its first refusal</span>
+<span class="tk-c">// (blocker-pretext-argument-implied-assertion).</span>
+<span class="tk-c">// Refusal: reject: source expression obligation: no derivation of its cast</span>
+<span class="tk-c">// claim.</span>
+<span class="tk-c">// A non-null assertion of a field under a conditional whose test repeats</span>
+<span class="tk-c">// that of the `if` before it: `g &gt; 1 ? extras.inside !== null : extras.fill</span>
+<span class="tk-c">// !== null` holds, and nothing is written in between, so where `g &gt; 1` holds</span>
+<span class="tk-c">// again `extras.inside` is not `null`. The join after the condition keeps</span>
+<span class="tk-c">// only what both of its arms state, so the correlation of `g &gt; 1` with each</span>
+<span class="tk-c">// field's test is not known.</span>
+<span class="tk-k">type</span> <span class="tk-t">Extras</span> = { inside: number[] | <span class="tk-k">null</span>; fill: number[] | <span class="tk-k">null</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> extraCount(extras: <span class="tk-t">Extras</span>, g: number): number {
+  <span class="tk-k">if</span> (g &gt; <span class="tk-n">1</span> ? extras.inside !== <span class="tk-k">null</span> : extras.fill !== <span class="tk-k">null</span>)
+    <span class="tk-k">return</span> g &gt; <span class="tk-n">1</span> ? extras.inside!.length : extras.fill!.length;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>The conditional test's correlation is a fact of what holds at a program point: the join after the <code>if</code>'s condition keeps only what both arms state (heap state and assertions, PROGRAM-TYPING.md).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>line-break.ts 5 -&gt; 15 of 16 functions shallow on a copy of pretext (tscert-rewrites b2ba0fe5) whose asserted reads call its defined and present (TScert 64eb9fbf, 2026-11-05)</dd></dl>
+<details><summary>7 files changed, 102 insertions(+), 1 deletion(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ pipeline/cases.mts                                 |  4 ++++
+ .../blocker-pretext-argument-implied-assertion.ts  | 23 +++++++++++++++++++
+ .../blocker-pretext-conditional-test-correlated.ts | 19 ++++++++++++++++
+ .../blocker-pretext-parallel-element-assertion.ts  | 26 ++++++++++++++++++++++
+ .../blocker-pretext-parallel-element-cast.ts       | 20 +++++++++++++++++
+ tests/node-runs.mts                                |  9 ++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
