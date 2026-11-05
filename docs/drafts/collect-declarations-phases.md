@@ -1,3 +1,5 @@
+# Draft: the phases of the declaration reader
+
 ## The existing mechanism this extends
 
 This design restructures the declaration reader around its existing
@@ -431,9 +433,8 @@ Measured on 2026-11-01 at commit
 `62ce88743b5b3e604054843f56d45d7dcdfbde8e`, branch
 `refactor/collect-declarations`, with clean tools and pipeline sources.
 The command is `make census FILES=declaration-graph.mts`, run once under
-`/var/folders/gx/wxqwh_fx6zl3y19s4gvwccjw0000gn/T/tscert-gap/2026-10-31T21-48-18-002Z/work/heavy.lock`
-using `until mkdir ... 2>/dev/null; do sleep 20; done`, with an exit trap
-to release the lock. It uses the default stage store and the census's 300 s
+the agents' shared heavy-run lock (`until mkdir … 2>/dev/null; do sleep 20;
+done`), with an exit trap to release the lock. It uses the default stage store and the census's 300 s
 step limit.
 
 | Measure | Baseline |
@@ -448,22 +449,17 @@ step limit.
 
 The inventory excludes 11 module statements and 8 statements in 4 other
 functions from the counted total. Across all stages there are 494 executed
-and 215 replayed invocations. The census record retains the outcomes and
-producing executions' measurements at:
-
-```text
-/private/tmp/claude-501/-Users-cristianocalcagno-GitHub-TScert/75ad4d56-5055-4c0a-99ba-5190005ab04d/scratchpad/refactor/tmp/tscert-census/8f4c28523e7f/census-tools-62ce88743b5b-2026-11-01T01-54-48-788Z.json
-```
-
-`node dev/census.mts refusals <record>` supplies the sites in the table below.
+and 215 replayed invocations. The census record, which that command writes
+and whose path it prints, retains the outcomes and producing executions'
+measurements; it is not kept in the repository, and the command at that
+commit makes it again. `node dev/census.mts refusals <record>` supplies
+the sites in the table below.
 The baseline is an observation of these sources, installation and stage
 policy; it predicts neither additional refusals behind the first one nor a
 speedup from extraction.
 
-The suite baseline is also measured on 2026-11-01 under the same lock.
-Its full per-case output is `/tmp/collect-declarations-suite-baseline.log`;
-the census output is `/tmp/collect-declarations-baseline.log`. These are
-session artifacts. The suite reports 3,455 functions verified, 1,458 negative
+The suite baseline is also measured on 2026-11-01 under the same lock, by
+`make suite` at the same commit. The suite reports 3,455 functions verified, 1,458 negative
 controls and 210 named gaps. Its case outcomes include those gaps; the
 2,752 figure counts agreement with expectations, rather than acceptance of
 every source.
@@ -585,22 +581,11 @@ as well as success. The censuses use the default store and 300 s stage limit.
 Every sample has identical input hashes and parse outcomes (all successful).
 `summary` computes each median from the five retained `report.json` files.
 
-The detailed syntax reports, fixed sources, input manifests, census logs,
-per-sample reports and invocation logs are session artifacts under:
-
-```text
-/private/tmp/claude-501/-Users-cristianocalcagno-GitHub-TScert/75ad4d56-5055-4c0a-99ba-5190005ab04d/scratchpad/refactor/tmp2/
-  before-syntax.json
-  current-syntax.json
-  {before,current}-summary.json
-  fixed-sources/{inputs,sources}.json
-  before-census.log
-  current-census.log
-  tscert-census/8b2bc1fdc21a/census-tools-6e2aa4969397-2026-11-01T10-54-59-674Z.json
-  tscert-census/8f4c28523e7f/census-tools-0e853a49dada-2026-11-01T10-52-27-022Z.json
-  timed-parse-{before,current}-{1,2,3,4,5}/{report.json,invocations.jsonl}
-  timed-store-{before,current}-{1,2,3,4,5}/
-```
+The syntax reports, fixed sources, input manifests, census records and
+logs, per-sample reports and invocation logs are not kept in the
+repository: the manifests' hashes above identify the fixed inputs, and
+`make census` at `6e2aa4969397` and `0e853a49dada` makes the two census
+records again.
 
 This fixed-source comparison measures these census slices with an explicit
 project. The workloads and automatic project discovery described above
