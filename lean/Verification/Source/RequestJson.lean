@@ -26,14 +26,13 @@ deriving instance ToJson, FromJson for Tm, CallCode
 /-- A code's kind is left out of its JSON when it is `call`, the kind of every
 arrow and method, and graph code's rest when it collects none: that is the one
 spelling of each, so strict decoding, which re-encodes and compares, refuses an
-explicit `"call"` or `false`, and a code without them reads as it always has.
+explicit `"call"` or `false`, and a code without them reads with these defaults.
 Code nests anywhere in a term, so the spelling applies at every depth. -/
-private partial def closureKinds (restore : Bool) : Json → Json
-  | .arr xs => .arr (xs.map (closureKinds restore))
+private partial def codeDefaults (restore : Bool) : Json → Json
+  | .arr xs => .arr (xs.map (codeDefaults restore))
   | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
-      let v := closureKinds restore v
+      let v := codeDefaults restore v
       let defaults : List (String × Json) := match k with
-        | "closure" => [("kind", toJson Invoke.call)]
         | "graph" => [("kind", toJson Invoke.call), ("rest", toJson false)]
         | _ => []
       match v with
@@ -52,8 +51,8 @@ private partial def closureKinds (restore : Bool) : Json → Json
 private def derivedTmToJson : Tm → Json := toJson
 private def derivedTmFromJson : Json → Except String Tm := fromJson?
 
-instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (derivedTmToJson t)⟩
-instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
+instance (priority := high) : ToJson Tm := ⟨fun t => codeDefaults false (derivedTmToJson t)⟩
+instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (codeDefaults true j)⟩
 deriving instance ToJson, FromJson for ArrayPresence
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Contract

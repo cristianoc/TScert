@@ -35,15 +35,12 @@ export type Tag =
   | { kind: "boolEq"; value: boolean }
   /** A bigint singleton, as its integer: a JSON number of any length. */
   | { kind: "bigintEq"; value: number };
-/** An object's invocation code: none, a closure, variadic code collecting
- * further actuals, `.bind`'s forwarding descriptor, which keeps the target,
+/** An object's invocation code: none, `.bind`'s forwarding descriptor, which keeps the target,
  * the receiver and the argument prefix it was given, or graph code: a
  * control-flow graph's node expressions, each node's continuation and
  * handler (as `control-flow.mts` reads them), its entry and its captures. */
 export type CallCode =
   | { kind: "absent" }
-  | { kind: "closure"; arity: number; body: Term }
-  | { kind: "variadic"; fixed: number; body: Term }
   | { kind: "bound"; target: Term; receiver: Term; pre: Term[] }
   /** Graph code; `mode` is the wire's `kind`, left out for `[[Call]]` code,
    * and `rest` is left out when the code collects none, the one spelling of
@@ -65,17 +62,19 @@ export type Term =
   | { kind: "str"; value: string }
   /** A bigint, as its integer: a JSON number of any length. */
   | { kind: "bigint"; value: number }
+  /** A symbol, as its identity. */
+  | { kind: "sym"; id: number }
   | { kind: "var"; i: number }
   /** Invoke `f` with the receiver `r` and the actuals `args`. */
   | { kind: "invoke"; f: Term; r: Term; args: Term[] }
   /** `new f(args)`: run `f`'s construct code with the actuals `args`. */
   | { kind: "construct"; f: Term; args: Term[] }
   | { kind: "letE"; a: Term; b: Term }
-  | { kind: "objAt"; fields: [string, number][]; call: CallCode; identity: number }
-  | { kind: "makeAt"; call: CallCode; names: string[]; inits: Term[] }
-  | { kind: "readAt"; field: string; a: Term }
+  | { kind: "objAt"; fields: [Key, number][]; call: CallCode; identity: number }
+  | { kind: "makeAt"; call: CallCode; names: Key[]; inits: Term[] }
+  | { kind: "readAt"; field: Key; a: Term }
   | { kind: "indexAt"; a: Term; key: Term }
-  | { kind: "writeAt"; field: string; a: Term; b: Term }
+  | { kind: "writeAt"; field: Key; a: Term; b: Term }
   | { kind: "test"; k: Tag; a: Term }
   | { kind: "ite"; c: Term; t: Term; e: Term }
   /** A binary operator on primitive operands: arithmetic on two numbers or
@@ -103,7 +102,16 @@ export type Term =
   | { kind: "merge"; drop: Key[]; a: Term; b: Term }
   /** Evaluate `key`, then `init`, then allocate one object owning one
    * property at the key `key`'s value converts to, holding `init`'s value. */
-  | { kind: "makeKey"; key: Term; init: Term };
+  | { kind: "makeKey"; key: Term; init: Term }
+  /** A run of graph code at the node `label`, before it is entered: the
+   * code's node expressions and continuations (as in graph code), the
+   * environment's slots and the value every slot past them holds. A runtime
+   * form only. */
+  | { kind: "goto"; exprs: Term[]; conts: [Json, Json][]; label: number; env: Term[]; dflt: Term }
+  /** A run of graph code evaluating a node's instantiated expression `t`,
+   * then continuing by `k`, a throw out of `t` going to `handler`. A runtime
+   * form only. */
+  | { kind: "frame"; exprs: Term[]; conts: [Json, Json][]; t: Term; env: Term[]; dflt: Term; k: Json; handler: Json };
 
 /** What `JSON.parse` returns without a reviver (`ParsedJson` in
  * library-globals.mts): the decoders read the wire from it. A read of a key
@@ -215,11 +223,21 @@ function termsOf(v: Json | undefined): Term[] {
   if (!Array.isArray(v)) throw Error("invalid arguments");
   return v.map(decodeTerm);
 }
+/** A property key: a string as itself, a symbol as `{"symbol": id}`. */
 function keyOf(v: Json | undefined): Key {
   if (typeof v === "string") return v;
-  const s = fields(v, ["symbol"]).symbol;
-  if (typeof s !== "number") throw Error("invalid symbol key");
-  return { symbol: s };
+  return { symbol: nat(fields(v, ["symbol"]).symbol) };
+}
+/** Graph code's continuations: one pair of a continuation and a handler per
+ * node expression. */
+function continuationsOf(v: Json | undefined, nodes: number): [Json, Json][] {
+  if (!Array.isArray(v) || v.length !== nodes) throw Error("invalid graph code");
+  return v.map((k: Json): [Json, Json] => {
+    if (!Array.isArray(k) || k.length !== 2) throw Error("invalid graph code");
+    const [continuation, handler] = k;
+    if (continuation === undefined || handler === undefined) throw Error("invalid graph code");
+    return [continuation, handler];
+  });
 }
 
 export function decodeTag(v: Json | undefined): Tag {
@@ -262,14 +280,6 @@ function decodeCode(v: Json | undefined): CallCode {
   if (v === "absent") return { kind: "absent" };
   const { key, value } = constructorOf(v);
   switch (key) {
-    case "closure": {
-      const c = fields(value, ["arity", "body"]);
-      return { kind: "closure", arity: nat(c.arity), body: decodeTerm(c.body) };
-    }
-    case "variadic": {
-      const c = fields(value, ["fixed", "body"]);
-      return { kind: "variadic", fixed: nat(c.fixed), body: decodeTerm(c.body) };
-    }
     case "bound": {
       const c = fields(value, ["target", "receiver", "pre"]);
       const target = decodeTerm(c.target), receiver = decodeTerm(c.receiver);
@@ -287,14 +297,8 @@ function decodeCode(v: Json | undefined): CallCode {
       if ("rest" in c && c.rest !== true) throw Error("invalid code rest flag");
       const arity = nat(c.arity), start = nat(c.start);
       const { exprs, conts, caps } = c;
-      if (!Array.isArray(exprs) || !Array.isArray(conts) || !Array.isArray(caps) || exprs.length !== conts.length)
-        throw Error("invalid graph code");
-      const pairs: [Json, Json][] = conts.map((k: Json): [Json, Json] => {
-        if (!Array.isArray(k) || k.length !== 2) throw Error("invalid graph code");
-        const [continuation, handler] = k;
-        if (continuation === undefined || handler === undefined) throw Error("invalid graph code");
-        return [continuation, handler];
-      });
+      if (!Array.isArray(exprs) || !Array.isArray(caps)) throw Error("invalid graph code");
+      const pairs = continuationsOf(conts, exprs.length);
       return { kind: "graph", arity, exprs: exprs.map(decodeTerm), conts: pairs, start, caps: caps.map(decodeTerm),
         mode, rest: "rest" in c };
     }
@@ -320,6 +324,7 @@ export function decodeTerm(v: Json | undefined): Term {
       if (typeof n !== "number" || !Number.isInteger(n)) throw Error("invalid bigint");
       return { kind: "bigint", value: n };
     }
+    case "sym": return { kind: "sym", id: nat(fields(value, ["id"]).id) };
     case "var": return { kind: "var", i: nat(fields(value, ["i"]).i) };
     case "invoke": {
       const o = fields(value, ["f", "r", "args"]);
@@ -336,11 +341,10 @@ export function decodeTerm(v: Json | undefined): Term {
     case "objAt": {
       const o = fields(value, ["fields", "call", "identity"]);
       if (!Array.isArray(o.fields)) throw Error("invalid object fields");
-      const pairs: [string, number][] = o.fields.map((pair: Json): [string, number] => {
+      const pairs: [Key, number][] = o.fields.map((pair: Json): [Key, number] => {
         if (!Array.isArray(pair) || pair.length !== 2) throw Error("invalid object field");
         const [name, location] = pair;
-        if (typeof name !== "string") throw Error("invalid object field");
-        return [name, nat(location)];
+        return [keyOf(name), nat(location)];
       });
       return { kind: "objAt", fields: pairs, call: decodeCode(o.call), identity: nat(o.identity) };
     }
@@ -349,12 +353,11 @@ export function decodeTerm(v: Json | undefined): Term {
       const call = decodeCode(o.call);
       const names = o.names;
       if (!Array.isArray(names)) throw Error("invalid field names");
-      const strings = names.map((n: Json) => stringOf(n, "invalid field names"));
-      return { kind: "makeAt", call, names: strings, inits: termsOf(o.inits) };
+      return { kind: "makeAt", call, names: names.map(keyOf), inits: termsOf(o.inits) };
     }
     case "readAt": {
       const o = fields(value, ["field", "a"]);
-      return { kind: "readAt", field: stringOf(o.field, "invalid field name"), a: decodeTerm(o.a) };
+      return { kind: "readAt", field: keyOf(o.field), a: decodeTerm(o.a) };
     }
     case "indexAt": {
       const o = fields(value, ["a", "key"]);
@@ -362,7 +365,7 @@ export function decodeTerm(v: Json | undefined): Term {
     }
     case "writeAt": {
       const o = fields(value, ["field", "a", "b"]);
-      return { kind: "writeAt", field: stringOf(o.field, "invalid field name"), a: decodeTerm(o.a), b: decodeTerm(o.b) };
+      return { kind: "writeAt", field: keyOf(o.field), a: decodeTerm(o.a), b: decodeTerm(o.b) };
     }
     case "test": {
       const o = fields(value, ["k", "a"]);
@@ -398,14 +401,26 @@ export function decodeTerm(v: Json | undefined): Term {
     case "merge": {
       const o = fields(value, ["drop", "a", "b"]);
       const drop = o.drop;
-      if (!Array.isArray(drop) || drop.some((key: Json) => typeof key !== "string" &&
-          !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
-        throw Error("invalid dropped keys");
+      if (!Array.isArray(drop)) throw Error("invalid dropped keys");
       return { kind: "merge", drop: drop.map(keyOf), a: decodeTerm(o.a), b: decodeTerm(o.b) };
     }
     case "makeKey": {
       const o = fields(value, ["key", "init"]);
       return { kind: "makeKey", key: decodeTerm(o.key), init: decodeTerm(o.init) };
+    }
+    case "goto": {
+      const o = fields(value, ["exprs", "conts", "label", "env", "dflt"]);
+      const exprs = termsOf(o.exprs);
+      return { kind: "goto", exprs, conts: continuationsOf(o.conts, exprs.length), label: nat(o.label),
+        env: termsOf(o.env), dflt: decodeTerm(o.dflt) };
+    }
+    case "frame": {
+      const o = fields(value, ["exprs", "conts", "t", "env", "dflt", "k", "handler"]);
+      const exprs = termsOf(o.exprs);
+      const { k, handler } = o;
+      if (k === undefined || handler === undefined) throw Error("invalid frame");
+      return { kind: "frame", exprs, conts: continuationsOf(o.conts, exprs.length), t: decodeTerm(o.t),
+        env: termsOf(o.env), dflt: decodeTerm(o.dflt), k, handler };
     }
     default:
       throw Error("unknown term constructor");
@@ -430,21 +445,22 @@ export function showTerm(t: Term): string {
     case "num": return `num#${t.bits}`;
     case "str": return JSON.stringify(t.value);
     case "bigint": return `${t.value}n`;
+    case "sym": return `sym#${t.id}`;
     case "var": return `x${t.i}`;
     case "invoke": return `${showTerm(t.f)}.call(${[t.r, ...t.args].map(showTerm).join(", ")})`;
     case "construct": return `new ${showTerm(t.f)}(${showTerms(t.args)})`;
     case "letE": return `let ${showTerm(t.a)} in ${showTerm(t.b)}`;
-    case "objAt": return `obj#${t.identity}{${t.fields.map(([k, l]) => `${k}: ℓ${l}`).join(", ")}}${showCode(t.call)}`;
+    case "objAt": return `obj#${t.identity}{${t.fields.map(([k, l]) => `${showKey(k)}: ℓ${l}`).join(", ")}}${showCode(t.call)}`;
     case "makeAt": {
       const inits = t.inits;
       return `new{${t.names.map((n, i) => {
         const init = inits[i];
-        return `${n}: ${init === undefined ? "?" : showTerm(init)}`;
+        return `${showKey(n)}: ${init === undefined ? "?" : showTerm(init)}`;
       }).join(", ")}}${showCode(t.call)}`;
     }
-    case "readAt": return `${showTerm(t.a)}.${t.field}`;
+    case "readAt": return `${showTerm(t.a)}.${showKey(t.field)}`;
     case "indexAt": return `${showTerm(t.a)}[${showTerm(t.key)}]`;
-    case "writeAt": return `${showTerm(t.a)}.${t.field} := ${showTerm(t.b)}`;
+    case "writeAt": return `${showTerm(t.a)}.${showKey(t.field)} := ${showTerm(t.b)}`;
     case "test": return `${showTag(t.k)}(${showTerm(t.a)})`;
     case "ite": return `if ${showTerm(t.c)} then ${showTerm(t.t)} else ${showTerm(t.e)}`;
     case "arith": return `${showTerm(t.a)} ${t.op} ${showTerm(t.b)}`;
@@ -460,6 +476,8 @@ export function showTerm(t: Term): string {
       const drop = t.drop.length ? ` drop ${t.drop.map(showKey).join(", ")}` : "";
       return `merge(${showTerm(t.a)}, ${showTerm(t.b)}${drop})`;
     }
+    case "goto": return `goto ℓ${t.label} in graph of ${t.exprs.length} nodes`;
+    case "frame": return `frame(${showTerm(t.t)}) in graph of ${t.exprs.length} nodes`;
     default: return unmatched(t);
   }
 }
@@ -490,8 +508,6 @@ export function showTag(k: Tag): string {
 function showCode(c: CallCode): string {
   switch (c.kind) {
     case "absent": return "";
-    case "closure": return ` code(λ${c.arity}. ${showTerm(c.body)})`;
-    case "variadic": return ` code(λ${c.fixed}+. ${showTerm(c.body)})`;
     case "bound": return ` code(bind ${showTerm(c.target)})`;
     case "graph": return ` code(graph of ${c.exprs.length} nodes)`;
     default: return unmatched(c);

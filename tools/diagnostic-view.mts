@@ -94,7 +94,7 @@ function termParts(t: Term): TermPart[] {
   const list = (xs: Term[]): TermPart => ({ k: "terms", ts: xs });
   const code = (c: CallCode): TermPart => ({ k: "code", c });
   switch (t.kind) {
-    case "nul": case "undef": case "tru": case "fls": case "num": case "str": case "bigint": case "var": case "arr": return [];
+    case "nul": case "undef": case "tru": case "fls": case "num": case "str": case "bigint": case "sym": case "var": case "arr": return [];
     case "invoke": return [list(t.args), one(t.f), one(t.r)];
     case "construct": return [list(t.args), one(t.f)];
     case "letE": case "writeAt": case "arith": case "merge": return [one(t.a), one(t.b)];
@@ -107,6 +107,8 @@ function termParts(t: Term): TermPart[] {
     case "elemAt": return [one(t.a), one(t.i)];
     case "setElem": return [one(t.a), one(t.i), one(t.v)];
     case "makeKey": return [one(t.init), one(t.key)];
+    case "goto": return [one(t.dflt), list(t.env), list(t.exprs)];
+    case "frame": return [one(t.dflt), list(t.env), list(t.exprs), one(t.t)];
     default: { const exhaustive: never = t; return exhaustive; }
   }
 }
@@ -116,7 +118,6 @@ function termParts(t: Term): TermPart[] {
 function codeTerms(c: CallCode): Term[] {
   switch (c.kind) {
     case "absent": case "graph": return [];
-    case "closure": case "variadic": return [c.body];
     case "bound": return [c.receiver, c.target];
     default: { const exhaustive: never = c; return exhaustive; }
   }
