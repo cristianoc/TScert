@@ -568,8 +568,8 @@ export function readOrAbsent(path: string): Buffer | null {
 }
 
 /** The verifier's refusal and the producer's. */
-const verifierProtocol: Protocol = { refusal: { status: 1, prefix: "reject: " } };
-const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported: " } };
+export const verifierProtocol: Protocol = { refusal: { status: 1, prefix: "reject: " } };
+export const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported: " } };
 
 /** A verifier invocation, its command line read by its modes:
  * `[--subtype-rounds n] --lower-control-flow <fragment>`,

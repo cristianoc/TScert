@@ -3,7 +3,7 @@
 open Semantic
 open Source
 
-let unsupported s = Json.fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 (* A conservative proposal-side test. In particular a rigid parameter is
    not known to exclude undefined. Lean's CoversPresence proves the conversion. *)
 let rec excludes_undefined = function

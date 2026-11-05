@@ -121,7 +121,7 @@ let solve ~join ~transfer ~widen graph initial =
     | Some state ->
       visits.(id) <- visits.(id) + 1;
       if visits.(id) > 64 then
-        Json.fail ("unsupported: control-flow inference does not settle at " ^ graph.nodes.(id).point);
+        Json.unsupported ("control-flow inference does not settle at " ^ graph.nodes.(id).point);
       let edges=transfer graph.nodes.(id) state in
       List.iter (fun (target,incoming) ->
         if not (List.mem target (successors graph.nodes.(id))) then

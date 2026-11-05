@@ -1,6 +1,6 @@
 open Json
 open Semantic
-let unsupported s = fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 let text k j = str (field k j)
 let items k j = list (field k j)
 let natural j = match j with

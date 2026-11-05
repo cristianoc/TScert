@@ -4,7 +4,7 @@ open Type_queries
 (* Explanation observations belong to one producer run. Its function analyses,
    retries and closure bodies share this state; separate runs receive fresh
    state. These observations explain proposals without changing acceptance. *)
-let unsupported s = Json.fail ("unsupported: " ^ s)
+let unsupported = Json.unsupported
 
 type state = {
   explaining : bool ref;
