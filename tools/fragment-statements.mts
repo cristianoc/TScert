@@ -11,7 +11,7 @@ import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, PatternAst
 import type { Span } from "./span.mts";
 import type { StatedEffect, TypeTerm } from "./declaration-types.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
-import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
+import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, labeledTarget, statementLabel, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
@@ -1531,8 +1531,14 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
   if (ts.isVariableStatement(node)) return gate.declarations(node.declarationList, node);
 
   if (ts.isBreakStatement(node)) {
-    if (node.label)
-      gate.fail(node, "only unlabeled loop transfers are supported");
+    // A labeled `break` goes to the end of the block its labeled statement
+    // is lowered to (`controlStmt`), through any loop, `switch` or `finally`
+    // between.
+    if (node.label) {
+      const named = labeledTarget(node);
+      if (!named) return gate.fail(node, "a break to a label no enclosing statement of the function has");
+      return { k: "break", pos: gate.span(node), label: statementLabel(named, gate.file) };
+    }
     const target = jumpTarget(node);
     if (!target)
       gate.fail(node, "break or continue outside a supported loop");
@@ -1542,19 +1548,20 @@ export function stmt(this: Gate, node: Statement): Within<{ value: "any"; store:
       label: ts.isSwitchStatement(target) ? switchLabel(target, gate.file) : null };
   }
   if (ts.isContinueStatement(node)) {
-    if (node.label)
-      gate.fail(node, "only unlabeled loop transfers are supported");
     const target = continueTarget(node);
     if (!target)
-      return gate.fail(node, "break or continue outside a supported loop");
+      return gate.fail(node, node.label ? "a continue to a label no enclosing loop of the function has"
+        : "break or continue outside a supported loop");
     // A `continue` of a loop with a binding per iteration leaves the block
     // its body runs in (`forStmt`); one of a loop whose body runs in a block
-    // a `continue` leaves (`continueBlock`: a `do...while`) leaves that
-    // block.
+    // a `continue` leaves (`continueBlock`: a `do...while`, or a loop a
+    // labeled `continue` repeats from a nested loop) leaves that block.
     if (ts.isForStatement(target) && capturesLoopLet(target))
       return { k: "break", pos: gate.span(node), label: iterationLabel(target, gate.file) };
     if (continueBlock(target))
       return { k: "break", pos: gate.span(node), label: continueLabel(target, gate.file) };
+    if (jumpTarget(node) !== target)
+      return gate.fail(node, "internal: a continue of an outer loop without the block it leaves");
     return { k: "continue", pos: gate.span(node) };
   }
   return gate.controlStmt(node);
@@ -1751,7 +1758,8 @@ function writesName(gate: Gate, scope: Node, names: Set<string>): Within<{ value
 
 /** A loop's body: its statement, in the block a `continue` of the loop
  * leaves where the loop has one (`continueBlock`), so that the `continue`
- * goes to what follows the body: the test of a `do...while`. */
+ * goes to what follows the body: the test of a `do...while`, the update of a
+ * `for`, the next step of a `for...of`. */
 export function loopBody(this: Gate, loop: Loop): Within<{ value: "any"; store: "grow" }, Stmt[]> {
   const gate: Gate = this;
   const body = gate.block(loop.statement);
@@ -1760,7 +1768,8 @@ export function loopBody(this: Gate, loop: Loop): Within<{ value: "any"; store: 
     : body;
 }
 
-/** Loops, branches, blocks, `switch`, `try` and `throw`. */
+/** Loops, branches, blocks, labeled statements, `switch`, `try` and
+ * `throw`. */
 export function controlStmt(this: Gate, node: Statement): Within<{ value: "any"; store: "grow" }, Stmt> {
   const gate: Gate = this;
   if (ts.isWhileStatement(node))
@@ -1793,6 +1802,11 @@ export function controlStmt(this: Gate, node: Statement): Within<{ value: "any";
       update: [],
     };
   }
+
+  // `ℓ: s` is the block `ℓ: { s }`, which a `break ℓ` leaves; a
+  // `continue ℓ` of a loop `s` leaves the loop's body (`loopBody`).
+  if (ts.isLabeledStatement(node))
+    return { k: "block", pos: gate.span(node), label: statementLabel(node, gate.file), body: gate.block(node.statement) };
 
   if (ts.isForStatement(node)) return gate.forStmt(node);
   if (ts.isForInStatement(node)) return gate.forInStmt(node);
