@@ -336,11 +336,38 @@ export const isLoop = (node: Node): node is Loop =>
   ts.isWhileStatement(node) || ts.isDoStatement(node) || ts.isForStatement(node) ||
   ts.isForOfStatement(node) || ts.isForInStatement(node);
 
-/** The loop a `continue` repeats: the nearest. */
-export function continueTarget(node: ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Loop | undefined> {
-  const target = jumpTarget(node);
-  return target && isLoop(target) ? target : undefined;
+/** The labeled statement a labeled `break` or `continue` names: the
+ * nearest enclosing one of that label, not crossing into another function. */
+export function labeledTarget(node: ts.BreakStatement | ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, ts.LabeledStatement | undefined> {
+  const label = node.label?.text;
+  for (let parent: Node | undefined = node.parent; parent && !ts.isFunctionLikeDeclaration(parent); parent = parent.parent)
+    if (ts.isLabeledStatement(parent) && parent.label.text === label) return parent;
+  return undefined;
 }
+
+/** The statement a label names, past the further labels on it (`a: b: s`
+ * labels `s` by both). */
+export function labeled(node: ts.LabeledStatement): Within<{ value: "keep"; store: "keep" }, ts.Statement> {
+  let s: ts.Statement = node.statement;
+  while (ts.isLabeledStatement(s)) s = s.statement;
+  return s;
+}
+
+/** The loop a `continue` repeats: the one its label names, or the nearest. */
+export function continueTarget(node: ts.ContinueStatement): Within<{ value: "any"; store: "grow" }, Loop | undefined> {
+  if (!node.label) {
+    const target = jumpTarget(node);
+    return target && isLoop(target) ? target : undefined;
+  }
+  const named = labeledTarget(node);
+  const loop = named ? labeled(named) : undefined;
+  return loop && isLoop(loop) ? loop : undefined;
+}
+
+/** The label of the block a labeled statement is lowered to, which a
+ * `break` of its label leaves: a name no source can spell. */
+export const statementLabel = (node: ts.LabeledStatement, file: SourceFile): Within<{ value: "any"; store: "grow" }, string> =>
+  `%label@${node.getStart(file)}%`;
 
 /** The label of the block a loop runs its body in where a `continue` of
  * the loop is a `break` of that block (`continueBlock`): a name no source
@@ -349,9 +376,18 @@ export const continueLabel = (node: Loop, file: SourceFile): Within<{ value: "an
   `%continue@${node.getStart(file)}%`;
 
 /** Whether a loop runs its body in a block a `continue` of it leaves: a
- * `do...while`, whose test follows its body. */
+ * `do...while`, whose test follows its body, and a loop a labeled `continue`
+ * from within a nested loop repeats. A `for` with a binding per iteration has
+ * its own such block (`iterationLabel`). */
 export function continueBlock(loop: Loop): Within<{ value: "any"; store: "grow" }, boolean> {
-  return ts.isDoStatement(loop);
+  if (ts.isForStatement(loop) && capturesLoopLet(loop)) return false;
+  if (ts.isDoStatement(loop)) return true;
+  const crosses = (n: Node): boolean => {
+    if (ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n)) return false;
+    if (ts.isContinueStatement(n) && n.label && continueTarget(n) === loop && jumpTarget(n) !== loop) return true;
+    return !!n.forEachChild((c) => crosses(c) || undefined);
+  };
+  return crosses(loop.statement);
 }
 
 /** Whether a statement list's `break` leaves the loop whose body it is: an

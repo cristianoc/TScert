@@ -3155,6 +3155,15 @@ for (const [file, call] of [
     '[129,1,3,2,"sss",1,12]', "do-while: the body before the test, a continue to the test, a finally replacing it");
   assert.equal(runExample(negative("invalid-do-while-body-first"), "typeof last([])"), "undefined",
     "invalid-do-while-body-first: the body reads past the end of an empty array before the test");
+  assert.equal(runExample(ofKind("labeled-statements", "positive"),
+    "JSON.stringify([decide([1, 5, 2], 3), decide([1], 3), rowsWithout([1, 2], [0, 2, 3]), lastKind([[1], [-1]]), lastKind([[-1], [1]]), captured([0, 2], 4), chained([0, 1, 1, 2, 1]), finals([[0, 1], [0], [2], [0]])])"),
+    '[1,1,3,"skipped",2,4,2,"ffrf"]', "labeled-statements: each jump reaches its label, through the updates and finalizers between");
+  assert.equal(runExample(ofKind("labeled-program-iterable", "positive"),
+    "(() => { const a = { closed: 0 }, b = { closed: 0 }; const [o, i] = lists([2, 1], [9, 3, 2, 1], a); const n = nested(o, i); const [p, q] = lists([5], [9, 3, 2, 1], b); const m = nested(p, q); return JSON.stringify([n, a.closed, m, b.closed]); })()"),
+    "[1,2,3,2]", "labeled-program-iterable: continue outer closes the inner iterator, break outer both");
+  assert.equal(runExample(negative("invalid-labeled-break-stale-narrowing"),
+    '(() => { const box = { v: "a" }; return typeof stale(box, () => { box.v = 1; }); })()'), "number",
+    "invalid-labeled-break-stale-narrowing: the call after the test writes a number");
   assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
     "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
 }

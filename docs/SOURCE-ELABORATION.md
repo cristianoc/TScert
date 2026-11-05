@@ -1691,6 +1691,23 @@ in one clause and read in another is refused.
      {\Gamma\vdash_R\ \ell:\{S\};S'}\ \textsf{labeled-block}
 ```
 
+A labeled statement `L: S` is the block $`\ell_L: \{ S \}`$, $`\ell_L`$ a
+label no source spells, and `break L` is a `break` of it, through every loop,
+`switch` and `finally` between, each `finally` it leaves run on the way, and
+an iterator's close for each loop over a program's iterable it leaves
+([loops over a program's iterable](#loops-and-spreads-over-iterables)). A
+`continue L` from a loop nested in the loop `S` is a `break` of a block
+$`\kappa_S`$ holding `S`'s body, so it goes to what follows the body: the
+update of a `for`, the next step of a `for...of`, the test of a `do`. A
+`for` with [a binding per iteration](#a-binding-per-iteration) has that
+block already; a label on a label (`a: b: S`) labels `S` by both:
+
+```math
+\frac{\Gamma\vdash_R S\ \text{with}\ \mathsf{break}\ L\mapsto\Gamma_{\mathit{after}},\ \mathsf{continue}\ L\mapsto\mathsf{break}\ \kappa_S\quad
+      \Gamma_{\mathit{after}}\vdash_R S'}
+     {\Gamma\vdash_R\ L:S;\ S'}\ \textsf{labeled}
+```
+
 `for (const k in o) S` is `for (const k of %ForIn%(o)) S` with the trusted
 
 ```math

@@ -179,6 +179,25 @@ control(async (): Promise<void> => {
       /^reject: source evidence does not justify the extracted program and exact claims/m);
   }
   process.stdout.write("module cells apart: a cell read past a writing call claimed at its old contents, and an entry knowing more than the cells' separation, refused\n");
+  // A `continue outer` from an inner loop skips the rest of the outer body,
+  // the assignment of a number to `kind` after the inner loop: a claim that
+  // `kind` is a number at the return, which holds only if the `continue`
+  // went on with the inner loop, is refused in search and checking.
+  const artifacts = run("labeled-statements");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "lastKind"), "lastKind's claims");
+  const at = source.indexOf("return kind;", source.indexOf("function lastKind")) + "return ".length;
+  const read = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + "kind".length), "the returned read of kind");
+  read.type = [rowOf(claims, "num")];
+  const forged = writeClaims(artifacts, "forged-continue-outer", claims);
+  const searched = produceWith(artifacts, forged, "forged-continue-outer");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal/m);
+  process.stdout.write("labels: a claim holding only if `continue outer` stayed in the inner loop is refused\n");
+});
+
+control(async (): Promise<void> => {
   // A `do...while` runs its body before its test: claims stating the test's
   // narrowing (`x` a string) at the body's entry and at its read of `x`, as
   // if the test ran first, are refused in search and checking.
