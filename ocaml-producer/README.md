@@ -36,8 +36,15 @@ ocaml-producer/_build/default/producer.exe --explain fragment.json flow.json
 effects, each by its local name, its declaration identity, its unit's
 footprint and on-throw flag. `--explain` prints the known causes of
 proposal failure with source spans: an aid to diagnosis, not a verification
-result. A refusal exits 2 with its reason and a last line `end of refusal`;
-an operational failure exits 3 with a first line `error: `.
+result. A refusal exits 2 with a first line `unsupported: …` and a last line
+`end of refusal`. Malformed input and a usage error exit 2 with the same last
+line and a first line naming the fault (`JSON byte n: unexpected end`,
+`missing field: declarations`, `usage: …`); the pipeline reads a record as
+the producer's refusal only when its first line starts `unsupported: `, and
+reports any other as a tool failure (`refusalOf` in
+[verify-source.mts](../pipeline/verify-source.mts), `producerProtocol` in
+[stage-execution.mts](../pipeline/stage-execution.mts)). Any other exception
+exits 3 with a first line `error: `.
 
 [dune](dune) declares the library and executable;
 [dune-project](dune-project) makes this directory a Dune root.

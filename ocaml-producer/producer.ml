@@ -24,9 +24,9 @@ let main () =
     let result = program |> Proposal.infer (List.map Flow.decode (Json.list (Json.read flow_file))) |> Claims.encode in
     print_endline (Json.encode result)
 
-(* A refusal exits 2 with its record: the reason, then the line that ends it,
-   so a reader can tell a complete record from one cut short. Any other
-   exception is an operational failure: exit 3, a first line `error: `. *)
+(* Every `Json.Error` exits 2 with its message, then `end of refusal`: a refusal
+   (`unsupported: …`), malformed input or a usage error, told apart by the
+   prefix. Any other exception exits 3, with a first line `error: `. *)
 let () =
   try main () with
   | Json.Error e -> prerr_endline (Json.message e); prerr_endline "end of refusal"; exit 2
