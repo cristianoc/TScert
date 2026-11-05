@@ -53,7 +53,7 @@ census: ## the census of a directory's units: DIR=tools, FILES=a.mts,…, FUNCTI
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)
 
-compiler-api-shapes: ## C3: every node of the corpus holds the members its shape states required, or a correction covers them
+compiler-api-shapes: ## C3 and C4: every node of the corpus holds the members its shape states required, or a correction covers them, each read stable
 	node tests/compiler-api-shapes.mts
 
 deck: ## build the deep-dive deck NAME (docs/deep-dives/NAME/deck.mts): its project/ files, the format and layout checks, and a page to view it; OPEN=1 opens the page; SINCE=rev marks on the page what changed since rev
