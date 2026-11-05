@@ -27,7 +27,7 @@ import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
-  symbolKeyForName, urlHrefName } from "./intrinsics.mts";
+  symbolKeyForName, urlHrefName, newSegmenterName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 import { buffer, bytes, definitions as stated, textDecoder, url } from "./library-types.mts";
@@ -362,7 +362,8 @@ const bytesEntries: GlobalEntry[] = [
         result: textDecoder }, definitions: [stated.textDecoder, stated.bytes] })),
 ];
 
-/** The standard library's `Uint8Array`, `Uint16Array` and `Int32Array`
+/** The standard library's `Uint8Array`, `Uint16Array`, `Int32Array` and
+ * `Float64Array`
  * (SOURCE-CONTRACTS.md, "The standard library's typed arrays"), only
  * constructed, at a
  * length or an array of numbers: `new Uint8Array(n)` converts `n` by
@@ -376,11 +377,22 @@ const bytesEntries: GlobalEntry[] = [
  * reads its prototype from the untampered constructor's `prototype` and
  * allocates: it runs no code of the client's and writes no location it did
  * not allocate. */
-const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Array"].map((name): GlobalEntry => (
+const typedArrayEntries: GlobalEntry[] = ["Uint8Array", "Uint16Array", "Int32Array", "Float64Array"].map((name): GlobalEntry => (
   { host: transparent("a length or an array of numbers, which no node list is"), global: name,
     signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,
     stated: { binders: [], params: [{ k: "union", span: at, parts: [atom("number"), readonlyArray(atom("number"))] }],
       result: bytes }, definitions: [stated.bytes] }));
+
+/** The standard library's `Intl.Segmenter` (SOURCE-CONTRACTS.md,
+ * "`Intl.Segmenter`"), only constructed, at its one construct signature: a
+ * call of `%NewSegmenter%`, which states the constructor's steps at a locale
+ * that is `undefined` or a string and options that are `undefined` or a
+ * record of the two options it reads. */
+const intlEntries: GlobalEntry[] = [
+  { host: transparent("a locale and a record of string options, which no node list is"), global: "Intl",
+    member: "Segmenter", signature: "new (locales?: LocalesArgument, options?: SegmenterOptions): Segmenter;",
+    intrinsic: newSegmenterName, definitions: [stated.segmenter] },
+];
 
 /** Node's global `URL` (SOURCE-CONTRACTS.md, "Node's `URL`"), at the
  * declaration both pinned installations give it. */
@@ -441,6 +453,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...processEntries,
   ...bytesEntries,
   ...typedArrayEntries,
+  ...intlEntries,
   ...urlEntries,
   ...importMetaEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,
@@ -550,6 +563,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // the global object holding the number +∞: its read runs no code, and no
   // code reassigns it. Read only as a value of its stated type.
   { host: contract, global: "Infinity", signature: "Infinity: number", constant: true,
+    stated: { binders: [], params: [], result: atom("number") } },
+  // The global `NaN`, a non-writable, non-configurable data property of the
+  // global object holding the number NaN: read as `Infinity` is.
+  { host: contract, global: "NaN", signature: "NaN: number", constant: true,
     stated: { binders: [], params: [], result: atom("number") } },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is

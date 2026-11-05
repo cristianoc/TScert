@@ -22,8 +22,8 @@
 import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
-  iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSetName, iterateStringName,
-  newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
+  iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSegmentsName, iterateSetName, iterateStringName,
+  newPromiseName, newSegmenterName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
   urlHrefName, pathToFileHrefName, throwUninitializedName, byteAtName, byteLengthName, byteSetName,
@@ -141,6 +141,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [promiseResolveName]: transparent("a stably non-thenable value or a realm promise"),
   [promiseAllName]: transparent("elements at Promise types: realm promises by the await assumption"),
   [promiseRejectName]: value, [newPromiseName]: calls,
+  [newSegmenterName]: transparent("a locale string and a record of string options, which no node list is"),
   [assertionFailureName]: transparent("allocates an AssertionError from a string message"),
   [instanceOfErrorName]: transparent("a prototype chain walk for Error.prototype, which no host prototype is"),
   [instanceOfMapName]: transparent("a prototype chain walk for Map.prototype, which no host prototype is"),
@@ -155,7 +156,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [importMetaResolveName]: value, [urlHrefName]: value, [pathToFileHrefName]: value,
   [iterateName]: store,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,
-  [iterateRegExpStringName]: value,
+  [iterateRegExpStringName]: value, [iterateSegmentsName]: value,
   "|": transparent("a union's iteration, `%Iterate:K%|…`: the step of the iterable's kind, each classified above"),
   [forInName]: transparent("strings, which is all its contract states"),
   [iterateForInName]: transparent("over a dictionary, whose family admits no host object"),

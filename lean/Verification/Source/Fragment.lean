@@ -447,14 +447,14 @@ def iterateName : String := "%Iterate%"
 
 /-- The iteration intrinsics, one per kind of host iterable (`intrinsics.mts`):
 an array's, a string's (by code point), a `Set`'s, a `Map`'s, a host
-collection iterator's, a native regex's match iterator, and the entries a
-`for...in` over a dictionary visits.
+collection iterator's, a native regex's match iterator, an `Intl.Segments`'
+segment iterator, and the entries a `for...in` over a dictionary visits.
 Each is `() => { readonly value: E } | null` of the iterable at its
 signature; none has a `return`, so an early exit calls nothing. A loop names
 one of them and no other value. -/
 def iterateNames : List String :=
   [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%",
-    "%Iterate:RegExpString%", "%Iterate:ForIn%"]
+    "%Iterate:RegExpString%", "%Iterate:Segments%", "%Iterate:ForIn%"]
 
 /-- The iteration of a union of host kinds (`unionIterationName` in
 `intrinsics.mts`): two or more of the host kinds' intrinsics, `%Iterate:ForIn%`
