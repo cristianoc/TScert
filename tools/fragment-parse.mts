@@ -45,7 +45,7 @@ import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, ordinaryHasInstanceName, objectProtoKeys, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
-import { canvasGetters, canvasSetters } from "./library-types.mts";
+import { canvasGetters, canvasSetters, domSetters } from "./library-types.mts";
 import type { GuardUndefined, TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, readOf, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement, callTarget } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
@@ -1972,7 +1972,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // plain assignment's target, or a read other than a write's target and a
   // call's callee, outside an optional chain. TypeScript's type of the
   // object decides whether the accessor's intrinsic writes or reads it.
-  const setterKeys = new Set(canvasSetters.map(s => s.member));
+  const setterKeys = new Set([...canvasSetters, ...domSetters].map(s => s.member));
   const getterKeys = new Set(canvasGetters.map(g => g.member));
   const memberWriteNodes: Node[] = [];
   const memberReadNodes: Node[] = [];

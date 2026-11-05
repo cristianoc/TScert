@@ -23,7 +23,7 @@ import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
   iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSegmentsName, iterateSetName, iterateStringName,
-  newPromiseName, newSegmenterName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
+  newPromiseName, newSegmenterName, newDateTimeFormatName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
   instanceOfErrorName, instanceOfMapName, instanceOfSetName, assertionFailureName, ownKeysName, prototypeIsObjectName, ownStringName,
   ordinaryHasInstanceName, importMetaDirnameName, importMetaFilenameName, importMetaResolveName, importMetaUrlName,
   urlHrefName, pathToFileHrefName, throwUninitializedName, arrayLengthName, arrayFilledName, byteAtName, byteLengthName, byteSetName,
@@ -141,6 +141,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [promiseResolveName]: transparent("a stably non-thenable value or a realm promise"),
   [promiseAllName]: transparent("elements at Promise types: realm promises by the await assumption"),
   [promiseRejectName]: value, [newPromiseName]: calls,
+  [newDateTimeFormatName]: transparent("no arguments; constructs a host formatter"),
   [newSegmenterName]: transparent("a locale string and a record of string options, which no node list is"),
   [assertionFailureName]: transparent("allocates an AssertionError from a string message"),
   [instanceOfErrorName]: transparent("a prototype chain walk for Error.prototype, which no host prototype is"),
@@ -174,6 +175,7 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   "%Enum:": transparent("allocates the file's enum object from its members' values"),
   "%TypeOf:": transparent("the type tag of a DOM global or of no binding; observes no member"),
   "%CanvasGet:": transparent("a 2D context's host getter, a string or `undefined`; a node is no 2D context"),
+  "%DOMSet:": transparent("host element or inline style assignment, with unrestricted effects"),
   "%CanvasSet:": transparent("a 2D context's host setter at a string; a node is no 2D context"),
   "%Read:": transparent("the value at a key in auditedOpenReadKeys, at unknown: absence, a data property or an audited transparent getter "
     + "for every admitted host family, including through erasure; external objects obey the open-read restriction"),

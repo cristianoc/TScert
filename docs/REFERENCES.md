@@ -338,6 +338,12 @@ tag a record field; its lemma proves a coverage exclusion, not disjointness.
 
 ## JavaScript and ECMAScript
 
+### ECMA-402
+
+Ecma International, TC39. *ECMAScript Internationalization API Specification*.
+[DateTimeFormat constructor and resolved options](https://tc39.es/ecma402/#sec-intl-datetimeformat-constructor).
+Scope: formatter construction and the ordinary record returned by `resolvedOptions`.
+
 ### ECMA-262
 
 Ecma International, TC39. *ECMAScript Language Specification* (ECMA-262).

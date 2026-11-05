@@ -354,14 +354,54 @@ const canvasDefinition = definitionOf(canvasIdentity, { k: "object", stringIndex
  *
  * `lang` is `HTMLElement`'s attribute, the getter reflecting the content
  * attribute, a string; an element of another namespace (an SVG document's
- * root) has none on its chain and reads `undefined`. `HTMLElement` names
- * this type, and so does `Element`: every member stated holds of every
- * element. */
+ * root) has none on its chain and reads `undefined`. Tree mutation and
+ * rectangle measurement retain unrestricted effects. HTML elements
+ * additionally expose their inline style. */
 export const elementMarker = "dom:element";
 const elementIdentity = domIdentity("Element");
 export const element: TypeTerm = named(elementIdentity);
+const rectangleIdentity = domIdentity("DOMRect");
+const rectangle: TypeTerm = named(rectangleIdentity);
+const rectangleDefinition = definitionOf(rectangleIdentity, { k: "object", stringIndex: null, calls: [],
+  host: "dom:rectangle", span: at, fields: [field("width", atom("number"))] });
 const elementDefinition = definitionOf(elementIdentity, { k: "object", stringIndex: null, calls: [],
-  host: elementMarker, span: at, fields: [field("lang", union(atom("string"), atom("undefined")))] });
+  host: elementMarker, span: at, fields: [field("lang", union(atom("string"), atom("undefined"))),
+    field("appendChild", method([element], element)), field("removeChild", method([element], element)),
+    field("getBoundingClientRect", method([], rectangle))] });
+
+/** Browser inline declarations and rectangles. Mutating calls retain unrestricted
+ * effects, including custom-element reactions and exceptional exits. */
+const inlineStyleIdentity = domIdentity("InlineStyle");
+export const inlineStyle: TypeTerm = named(inlineStyleIdentity);
+const inlineStyleDefinition = definitionOf(inlineStyleIdentity, { k: "object", stringIndex: null, calls: [],
+  host: "dom:inline-style", span: at, fields: [
+    field("setProperty", method([atom("string"), atom("string"), union(atom("string"), atom("undefined"))], atom("undefined")))] });
+const htmlElementIdentity = domIdentity("HTMLElement");
+export const htmlElement: TypeTerm = named(htmlElementIdentity);
+const htmlElementDefinition = definitionOf(htmlElementIdentity, { k: "intersection", span: at, parts: [element,
+  { k: "object", stringIndex: null, calls: [], span: at, fields: [field("style", inlineStyle)] }] });
+
+// createElement has no HTML namespace in a non-HTML document. Such an element
+// has no inline style; the client checks this optional member before writing it.
+const spanElementIdentity = domIdentity("CreatedSpan");
+const spanElement: TypeTerm = named(spanElementIdentity);
+const spanElementDefinition = definitionOf(spanElementIdentity, { k: "intersection", span: at, parts: [element,
+  { k: "object", stringIndex: null, calls: [], span: at,
+    fields: [field("style", union(inlineStyle, atom("undefined")))] }] });
+
+/** Accessor assignments execute a host operation and return the assigned value.
+ * CSSStyleDeclaration annotations remain the readonly computed-style view;
+ * the cssText operation additionally requires the inline-style host marker. */
+export const domSetters: readonly { member: string; value: TypeTerm; receiver: TypeTerm; intrinsic: string }[] = [
+  { member: "cssText", value: atom("string"), receiver: inlineStyle, intrinsic: "%DOMSet:cssText%" },
+  { member: "textContent", value: union(atom("string"), atom("null")), receiver: element, intrinsic: "%DOMSet:textContent%" },
+];
+
+const dateTimeFormatIdentity = { module: "tscert/intl", name: "DateTimeFormat", span: at };
+export const dateTimeFormat: TypeTerm = named(dateTimeFormatIdentity);
+const dateTimeFormatDefinition = definitionOf(dateTimeFormatIdentity, { k: "object", stringIndex: null, calls: [],
+  host: "intl:date-time-format", span: at, fields: [field("resolvedOptions", method([], {
+    k: "object", stringIndex: null, calls: [], span: at, fields: [field("locale", atom("string"))] }))] });
 
 /** What `getComputedStyle(element)` returns (CSSOM, "Extensions to the
  * Window interface"): the element's resolved style, a `CSSStyleDeclaration`
@@ -383,7 +423,9 @@ const computedStyleDefinition = definitionOf(computedStyleIdentity, { k: "object
  *
  *     type Document = host "dom:document" {
  *       readonly documentElement: Element | null;
- *       createElement(localName: "canvas"): Canvas };
+ *       readonly body: HTMLElement | null; readonly head: HTMLElement | null;
+ *       createElement(localName: "canvas"): Canvas;
+ *       createElement(localName: "span"): CreatedSpan };
  *
  * `documentElement` is the getter answering the document's root element,
  * `null` in a document with none. `createElement("canvas")` makes a fresh
@@ -395,7 +437,9 @@ const documentIdentity = domIdentity("Document");
 export const documentType: TypeTerm = named(documentIdentity);
 const documentDefinition = definitionOf(documentIdentity, { k: "object", stringIndex: null, calls: [],
   host: documentMarker, span: at, fields: [field("documentElement", union(element, atom("null"))),
-    field("createElement", method([text("canvas")], canvas, emptyEffect))] });
+    field("body", union(htmlElement, atom("null"))), field("head", union(htmlElement, atom("null"))),
+    field("createElement", { k: "intersection", span: at, parts: [method([text("canvas")], canvas, emptyEffect),
+      method([text("span")], spanElement)] })] });
 
 /** The global `navigator` (HTML, `Window`'s `readonly attribute Navigator
  * navigator`, and `WorkerGlobalScope`'s), at the members a client reads,
@@ -413,12 +457,13 @@ const navigatorDefinition = definitionOf(navigatorIdentity, { k: "object", strin
 export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIntStats: TypeDefinition;
   dirent: TypeDefinition; textDecoder: TypeDefinition; url: TypeDefinition; segmenter: TypeDefinition;
   segments: TypeDefinition; textMetrics: TypeDefinition; canvasContext: TypeDefinition; canvas: TypeDefinition;
-  element: TypeDefinition; document: TypeDefinition; navigator: TypeDefinition; computedStyle: TypeDefinition } = {
+  element: TypeDefinition; document: TypeDefinition; navigator: TypeDefinition; computedStyle: TypeDefinition; inlineStyle: TypeDefinition; htmlElement: TypeDefinition; dateTimeFormat: TypeDefinition } = {
   bytes: bytesDefinition, buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition, dirent: direntDefinition,
   textDecoder: textDecoderDefinition, url: urlDefinition, segmenter: segmenterDefinition, segments: segmentsDefinition,
   textMetrics: textMetricsDefinition, canvasContext: canvasContextDefinition, canvas: canvasDefinition,
   element: elementDefinition, document: documentDefinition, navigator: navigatorDefinition,
-  computedStyle: computedStyleDefinition };
+  computedStyle: computedStyleDefinition, inlineStyle: inlineStyleDefinition, htmlElement: htmlElementDefinition,
+  dateTimeFormat: dateTimeFormatDefinition };
 
 /** The overlay's definitions a definition names, which join the document
  * with it: a `Buffer`'s `set` takes any view, a segmenter's `segment`
@@ -431,12 +476,18 @@ export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
     : definition === segmentsDefinition ? [segmentDataDefinition]
     : definition === canvasContextDefinition ? [textMetricsDefinition]
     : definition === canvasDefinition ? [canvasContextDefinition]
-    : definition === documentDefinition ? [elementDefinition, canvasDefinition] : [];
+    : definition === documentDefinition ? [elementDefinition, canvasDefinition, htmlElementDefinition, spanElementDefinition]
+    : definition === spanElementDefinition ? [elementDefinition, inlineStyleDefinition]
+    : definition === htmlElementDefinition ? [elementDefinition, inlineStyleDefinition]
+    : definition === elementDefinition ? [rectangleDefinition] : [];
 }
 
 const node = "@types/node";
 const library = "library";
 export const typesOverlay: readonly TypeEntry[] = [
+  { name: "HTMLSpanElement", definition: htmlElementDefinition, parts: [{ origin: library, heading: "interface HTMLSpanElement extends HTMLElement {" }] },
+  { name: "CSSStyleDeclaration", definition: computedStyleDefinition, parts: [{ origin: library, heading: "interface CSSStyleDeclaration extends CSSStyleProperties {" }] },
+  { name: "DateTimeFormat", definition: dateTimeFormatDefinition, parts: [{ origin: library, heading: "interface DateTimeFormat {" }] },
   // The standard library's `Uint8Array`, as the configured standard library
   // declares it in parts, and Node's part adding `at`.
   { name: "Uint8Array", definition: bytesDefinition, view: "bytes", parts: [
@@ -483,7 +534,7 @@ export const typesOverlay: readonly TypeEntry[] = [
     { origin: library, heading: "interface HTMLCanvasElement extends HTMLElement {" }] },
   { name: "Element", definition: elementDefinition, parts: [{ origin: library, heading:
     "interface Element extends Node, ARIAMixin, Animatable, ChildNode, NonDocumentTypeChildNode, ParentNode, Slottable {" }] },
-  { name: "HTMLElement", definition: elementDefinition, parts: [{ origin: library, heading:
+  { name: "HTMLElement", definition: htmlElementDefinition, parts: [{ origin: library, heading:
     "interface HTMLElement extends Element, ElementCSSInlineStyle, ElementContentEditable, GlobalEventHandlers, HTMLOrSVGElement {" }] },
 ];
 
