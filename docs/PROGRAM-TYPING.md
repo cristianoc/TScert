@@ -2440,13 +2440,71 @@ enclosing $`s`$ and not the allocation, which an earlier iteration runs before
 $`s`$ runs again; a module constant is read by the module's functions.
 With $`\mathrm{Own}(H,s)`$ no reference but the holders' slots and cells
 holds the object, so JavaScript's write in place, which every reference sees,
-and the copy, which every holder holds from then on, agree. Any other write
+and the copy, which every holder holds from then on, agree. A module's own
+object, below, is the other holder. Any other write
 adding a key is refused, located at the write, as is a named write of
 `__proto__` (a setter); one through a parameter, at a key the source names or
 one known only at run time, is
 [refused on principle](SOURCE-FRAGMENT.md#refused-on-principle), since the
 caller may hold the object at a type leaving the key absent, or optional at
 another type.
+
+A key the object's type states, in every clause, as one writable optional
+field of one type is allocated at that type rather than at $`W`$: the copy then
+holds the field's own location, as the type states it.
+
+**A module's own object.** A [module cell](SOURCE-ELABORATION.md#module-cells)
+$`c`$ (a module `let`, or the `const` a write at a run-time key makes one)
+holds an object the module **owns** when its initializer is an object literal
+of data properties at string keys, none `__proto__` and no spread, and every
+mention of $`c`$, in the initialization, in every module function and in every
+closure, is the receiver of a member read, an index read, a write or a key
+test, each key a variable or a literal (`ownedModuleCells`, `moduleEscapes`):
+
+```math
+\mathrm{OwnMod}(c)\iff
+  \begin{cases}
+  c\ \text{is a module cell initialized by a literal of string-keyed data properties;}\\
+  \text{every mention of}\ c\ \text{is}\ c.f,\ c[k],\ c.f = e,\ c[k] = e,\ k\ \mathtt{in}\ c\ \text{or a key test of}\ c\text{, with}\ k\ \text{a variable or a literal.}
+  \end{cases}
+```
+
+A closure holds the cell, never the object, so its mentions count as the
+others do; an update, a logical or compound assignment, a call's receiver
+or argument, a binding, a comparison or a return of $`c`$ is none of these.
+Under $`\mathrm{OwnMod}(c)`$ the cell is the one reference to the object
+wherever code runs: an access reads the cell, then its keys, which run no
+code, then accesses, and only a write's right side runs between its
+receiver's read and the write. A key-adding write $`c[k] = e`$ or $`c.k = e`$,
+as a statement or as a value, is then
+
+```math
+c;\ k;\ v\leftarrow e;\ o\leftarrow\mathsf{makeKey}(k,v);\ x\leftarrow c;\ m\leftarrow\mathsf{merge}_{[]}(x,o);\ c:=m;\ v
+```
+
+each read of $`c`$ the cell's checked access. The first is where JavaScript
+evaluates the binding, so the dead zone throws before the right side runs;
+the second, after the right side, finds what the right side, or a reentrant
+call of the same function, added, and in JavaScript names the same object.
+The merge is at the cell's contract and written to the cell, checked there;
+the value is the right side's. A key whose claim may be a symbol or
+`__proto__` is refused on such an object: the copy takes string keys. A
+write in place, at a key the object's type states, whose right side is not a
+variable or a literal is refused (`module-cache-in-place-call-refused`): the
+right side may replace the object the receiver read. The cell's contract is
+its annotation with each object clause's own keys excluding the prototype
+field and the host key (`plainContract`), as a literal's do: an ordinary
+object of the default prototype, which every value the cell holds is.
+JavaScript's write and the copy agree as for a local's own object: the
+object's own properties are the copy's, and no admitted mention observes its
+identity, its keys' order or its attributes. The module's ownership is
+decided over the code the lowering reads; a constant mentioned by code a
+census leaves out stays a module constant (`keyAddedConstant`). Cases:
+`blocker-pretext-module-cache-write`, `module-cache-reentrant`,
+`module-cache-before-initialization` (run under Node),
+`invalid-module-cache-alias` (Node), `module-cache-key-call-refused`,
+`module-cache-update-refused`, `module-cache-string-key-refused`, and the
+forged claims of `pipeline/test.mts`.
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
 spread copies, one $`\mathsf{merge}_{[]}`$ per source as soon as it is

@@ -1696,7 +1696,10 @@ export function mutableList(this: Gate, list: ts.VariableDeclarationList, at: No
   // assigns is a `const`: each binding holds its initial value throughout,
   // so reading it reads that value, as a `const`'s read does.
   // A module `let` stays one, a module cell, whatever writes it.
-  const moduleLet = !(list.flags & ts.NodeFlags.Const) && ts.isVariableStatement(at) && !!at.parent && ts.isSourceFile(at.parent);
+  // A module constant some write may add a key to is one too
+  // (`keyAddedConstant`).
+  const moduleLet = (!(list.flags & ts.NodeFlags.Const) || gate.moduleCellConstants.has(list)) &&
+    ts.isVariableStatement(at) && !!at.parent && ts.isSourceFile(at.parent);
   return moduleLet || (!(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && gate.neverAssigned(list)));
 }
 
