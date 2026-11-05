@@ -55,14 +55,19 @@ export const runNode = (file: string, statements: string, imports: Readonly<Reco
   assert.ifError(run.error);
   return { stdout: run.stdout.trim(), status: run.status, signal: run.signal };
 };
-/** Run an example as TypeScript's own emit compiles it, then `expression`:
- * an enum, which type stripping does not erase, and whose member reads a
+/** Run an example as TypeScript's own emit compiles it, a module's exports
+ * as CommonJS ones beside its declarations, then `expression`: an enum or a
+ * parameter property, which type stripping does not erase, and whose member reads a
  * transforming stripper may replace by their values. TypeScript emits the
  * file whatever errors it reports. */
 export const runEmitted = (file: string, expression: string): unknown => {
   const out = runDirectory("emitted-");
   const tsc = spawnSync(join(here, "..", "tools", "node_modules", ".bin", "tsc"),
-    ["--target", "es2022", "--strict", "--outDir", out, join(here, "examples", `${file}.ts`)], { encoding: "utf8", timeout: 60_000 });
+    ["--target", "es2022", "--module", "commonjs", "--strict", "--outDir", out, join(here, "examples", `${file}.ts`)],
+    { encoding: "utf8", timeout: 60_000 });
   assert.ifError(tsc.error);
-  return runInNewContext(`${readFileSync(join(out, `${file}.js`), "utf8")}\n${expression}`, {}, { timeout: 1000 });
+  // The CommonJS emit assigns each export to `exports`, declared after the
+  // directive prologue so that a strict emit stays strict.
+  const emitted = readFileSync(join(out, `${file}.js`), "utf8").replace(/^("use strict";\n)?/, "$1var exports = {};\n");
+  return runInNewContext(`${emitted}\n${expression}`, {}, { timeout: 1000 });
 };
