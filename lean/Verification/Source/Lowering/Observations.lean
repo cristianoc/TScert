@@ -71,6 +71,21 @@ claim, joins the search's known evidence, so the node is not searched. -/
   recordNodePlan (DirectProof.cast Γ A plan)
   emitAt pos plan.term k Γ A role (scope := scope)
 
+/-- The separation of a unit's module cells, the slots `cells` at depth `d`
+each with its binding's name: the field `value` of each apart from the field
+`value` of every cell of another binding. The initialization unit allocates
+each module cell fresh, so two are two locations; a unit assumes it of its
+entry (`Request.entrySeparation`), and every statement entry restates it. -/
+@[nospecialize] def moduleCellFacts (d : Nat) (cells : List (Nat × String)) : List HeapSeparation.Fact :=
+  cells.filterMap fun (i, name) =>
+    if d ≤ i then none else
+    let partners := cells.filterMap fun (j, other) =>
+      if other == name || d ≤ j then none else some (d - 1 - j, [valueField])
+    if partners.isEmpty then none else some ⟨d - 1 - i, some [valueField], partners⟩
+
+@[nospecialize] def moduleCellSeparation (d : Nat) (cells : List (Nat × String)) : HeapSeparation.Separation :=
+  HeapSeparation.norm d (moduleCellFacts d cells)
+
 /-- The cells this lowering allocated sit at locations no other object in
 scope has: a private cell's identity never becomes a source value, and every
 record-typed slot holds something else. Stated at each cut so the allocation's
@@ -83,7 +98,8 @@ object. One separation fact per cell, its field `value` apart from each
 listed slot's fields, addressed by level at the context's depth. -/
 @[nospecialize] def separationFacts (G : Verification.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
     (Γ : List (Ty ι)) : HeapSeparation.Separation :=
-  HeapSeparation.norm Γ.length <| scope.zipIdx.flatMap fun (b,i) =>
+  HeapSeparation.norm Γ.length <| moduleCellFacts Γ.length (scope.zipIdx.filterMap fun (b,i) =>
+    b.moduleCell.map (i, ·)) ++ scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
     | .cell .. | .early .. =>
       -- A captured cell was allocated before the closure's entry, which

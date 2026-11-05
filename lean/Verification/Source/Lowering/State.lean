@@ -67,6 +67,11 @@ structure ScopeBinding (ι : Type) where
   created the closure, so no fact of that allocation holds at the closure's
   entry. -/
   captured : Bool := false
+  /-- A module cell of the unit's module (SOURCE-ELABORATION.md, "Module
+  cells"), by its binding's name: two module cells are two locations, which
+  the unit's entry assumes (`moduleCellSeparation`). A closure's capture of
+  it states no such fact. -/
+  moduleCell : Option String := none
   /-- An administrative value saved from a named member path. -/
   witness : Option (String × List PropKey) := none
   /-- A `for...of` loop's iterator: a fresh object, every own location of

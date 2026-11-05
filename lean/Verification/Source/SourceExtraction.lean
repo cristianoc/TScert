@@ -123,7 +123,7 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors) do
+  let ((inputs, R, entry, promise, entrySeparation), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) (freshConstructors := freshConstructors) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
@@ -167,7 +167,9 @@ did not mention grow it, and the request carries the result. -/
     let siblingScope : List (ScopeBinding Tree) :=
       ((siblings.zip siblingTypes).zip siblingStorage).map fun ((value, A), storage) =>
         match storage with
-        | some (s, _) => { source := ⟨value.1, some value.2.1⟩, fixed := some A, storage := s, captured := true }
+        | some (s, _) =>
+          { source := ⟨value.1, some value.2.1⟩, fixed := some A, storage := s, captured := true,
+            moduleCell := some value.1 }
         | none => { source := ⟨value.1, some value.2.1⟩, fixed := some A }
     if f.params.dropLast.any (fun (p : Fragment.Param) => p.rest) then
       throw "a rest parameter must be the last one"
@@ -272,10 +274,17 @@ did not mention grow it, and the request carries the result. -/
           fun j => if j == 0 then 0 else j)⟩)
         inputs S "rest-allocation" (scope := restScope)
       first := store
+    -- The module cells' separation, which the unit assumes of its entry.
+    let base := inputs.length - siblingScope.length
+    let entrySeparation := moduleCellSeparation inputs.length
+      (siblingScope.zipIdx.filterMap fun (b, j) => b.moduleCell.map (base + j, ·))
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
-    return (inputs, R, entry, promise)
+    if !entrySeparation.facts.isEmpty then
+      recordAssertion entry ⟨[], [], [], entrySeparation, []⟩
+    return (inputs, R, entry, promise, entrySeparation)
   return {
-    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise⟩
+    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise,
+      entrySeparation⟩
     obligations := built.obligations
     sourceMap := built.source.sourceMap
     assertions := built.source.assertions

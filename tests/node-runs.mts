@@ -1649,6 +1649,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "module-cells: the functions read and write the module's cells");
   assert.throws(() => runExample("module-cell-before-initialization", "sum()"), /ReferenceError|before initialization/,
     "module-cell-before-initialization: the initialization's call reads the cell before its declaration");
+  assert.equal(runExample("invalid-module-cells-apart-call", "unpack(1, reset)"), null,
+    "invalid-module-cells-apart-call: the call writes the first cell, read past it at number[]");
   assert.equal(runExample("invalid-module-cell-stale", "stale()"), "s",
     "invalid-module-cell-stale: the call's write reaches the read TypeScript narrowed to number");
   assert.equal(runExample("module-cell-saved-value", "saved()"), 0,

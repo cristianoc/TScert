@@ -204,6 +204,13 @@ open S
      write cells. *)
   and cell_written env name =
     if List.mem name !unit_cells then env
+    else if List.mem_assoc name !module_cells then
+      (* Two module cells are two locations (Lean's entry separation of a
+         unit's module cells), so another module cell keeps its contents. *)
+      List.filter_map (fun (n,b) -> match b with
+        | _ when is_field n -> if Refinement.stable_path declarations env n then Some (n,b) else None
+        | Storage (contract,_) when n = name || not (List.mem_assoc n !module_cells) -> Some (n,cell contract)
+        | _ -> Some (n,b)) env
     else forget ~keep:(Refinement.stable_path declarations env) env
   (* A write of field [f] of an immutable binding's object keeps what is
      known of the object's other fields where every arm states [f] an

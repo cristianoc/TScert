@@ -682,6 +682,9 @@ signature. `checkUnitJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
 unit's closure ([the linking obligation](docs/SOURCE-CONTRACTS.md#certified-imports)).
+It also discharges each unit's entry separation, its module cells two apart
+([module cells](docs/SOURCE-ELABORATION.md#module-cells)), from the
+initialization's allocation of each cell.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest

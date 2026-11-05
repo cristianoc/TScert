@@ -135,6 +135,53 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // Two module cells are two locations, which a unit's entry assumes
+  // (`module-cells-apart`): past a call that may write either, the first
+  // cell's read claimed at the contents written before the call is refused
+  // where evidence is searched and where it is checked; and an entry
+  // knowing more than that separation, every own location of one cell
+  // apart from the other's contents, is refused at the entry.
+  {
+    const artifacts = run("invalid-module-cells-apart-call");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const read = source.indexOf("runs;", source.indexOf("f();"));
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "unpack"), "unpack's claims");
+    const claim = must(fn.expressions.find(e => e.pos[0] === read && e.pos[1] === read + "runs".length),
+      "the cell's read past the call");
+    assert.ok(Array.isArray(claim.type) && claim.type.length === 2, "the read at the cell's contract, two arms");
+    claim.type = claim.type.filter(label => label !== rowOf(claims, "nul"));
+    const forged = writeClaims(artifacts, "module-cells-apart-call", claims);
+    refusedAt(artifacts, forged, "module-cells-apart-call", `at [${read},${read + "runs".length})`);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+  }
+  {
+    const artifacts = run("blocker-pretext-module-cells-apart");
+    const claims = readClaims(artifacts);
+    type Fact = { slot: number; fields: string[] | null; partners: [number, string[]][] };
+    type EntryNode = WireNode & { knowledge: { separation: { depth: number; facts: Fact[] } } };
+    const evidence: unknown = unfoldedEvidence(join(artifacts, "evidence.json"));
+    const object = (value: unknown): value is Record<string, unknown> =>
+      typeof value === "object" && value !== null && !Array.isArray(value);
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const unit: unknown = evidence.main.functions[claims.functions.findIndex(f => f.name === "unpack")];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    const nodes = unit.certificate as EntryNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    // The entry, emitted last, knows the cells' separation alone.
+    const entry = must(nodes.at(-1), "the entry node");
+    const facts = entry.knowledge.separation.facts;
+    assert.equal(facts.length, 2, "each cell's contents apart from the other's");
+    const first = must(facts[0], "a cell's fact");
+    facts.push({ slot: first.slot, fields: null, partners: first.partners });
+    const path = join(artifacts, "forged-module-cells-entry-evidence.json");
+    writeFileSync(path, tabledEvidence(evidence));
+    invoke(join(artifacts, "claims.json"), path, artifacts,
+      /^reject: source evidence does not justify the extracted program and exact claims/m);
+  }
+  process.stdout.write("module cells apart: a cell read past a writing call claimed at its old contents, and an entry knowing more than the cells' separation, refused\n");
+});
+
+control(async (): Promise<void> => {
   // An arm's read claim may refine a callable only where the incoming
   // edge establishes it. The known identity closure has its checked
   // numeric signatures; an additional string-result signature is false.

@@ -306,7 +306,7 @@ def RequestsSafe (F : EquationStore.Frozen)
       checkRequests rs b = true ∧
       (∀ r c, (r,c) ∈ rs.zip b.functions →
         ∀ η, r.Admits η → ∀ n W heap ρ, EnvOk (reassign F.equations.graph η) r.inputs ρ n W →
-          WorldAdm W → HeapOk n W heap →
+          HeapSeparation.Holds r.entrySeparation ρ → WorldAdm W → HeapOk n W heap →
           SafeGraph (excOf (reassign F.equations.graph η)) r.program
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
@@ -314,6 +314,7 @@ def RequestsSafe (F : EquationStore.Frozen)
         r.footprint ≠ .top ∨ r.onThrow = true →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
+          HeapSeparation.Holds r.entrySeparation (envOf L d) →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
@@ -330,10 +331,10 @@ theorem requestsSafe_of_check {F : EquationStore.Frozen}
     (hx : (checkRequestsResult rs b).accepted = true) : RequestsSafe F rs b := by
   have hc : checkRequests rs b = true := hx
   refine ⟨hc, ?_, ?_, fun r c hm => checkRequests_assertions_at hc hm⟩
-  · intro r c hm η admitted n W heap ρ he hw hh
-    exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh
-  · intro r c hm heffect η n W heap L d he hw hh hvalues hd
-    exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd
+  · intro r c hm η admitted n W heap ρ he hsep hw hh
+    exact checkRequests_safe_at hc hm η admitted n W heap ρ he hw hh hsep
+  · intro r c hm heffect η n W heap L d he hsep hw hh hvalues hd
+    exact checkRequests_footprint_at hc hm heffect η n W heap L d he hw hh hvalues hd hsep
 
 /-- What a successful check of extracted plans gives: they cross the
 exhaustive certification boundary, and their requests are safe at the
