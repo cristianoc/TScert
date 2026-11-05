@@ -204,9 +204,23 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
+      (* A context that is one callable type, or one beside `undefined` or
+         `null` (an optional callback's parameter), states the signature a
+         closure literal is expected at: the absent arms take no closure. *)
+      let head t = try declared_head declarations [] t with Json.Error _ -> t in
+      let context_head t =
+        match head t with
+        | Atoms atoms when List.length atoms > 1 ->
+          (match List.partition (function Undef | Nul -> true | _ -> false) atoms with
+           | _ :: _,[other] ->
+             (match head (Atoms [other]) with
+              | Atoms [Shape _] as callable -> callable
+              | _ -> Atoms atoms)
+           | _ -> Atoms atoms)
+        | t -> t in
       let contextual = match written,expected with
         | None,Some t when quantified = [] ->
-          (match (try declared_head declarations [] t with Json.Error _ -> t) with
+          (match context_head t with
            | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}]
              when s.quantified=[] && s.rest_pack=None && s.variadic=None
                   && List.length s.params >= List.length ps -> Some s.result
@@ -342,7 +356,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         && List.for_all2 (plausible_subtype_declared declarations)
              (List.filteri (fun i _ -> i < List.length ps) s.params) (List.map snd ps) in
       let from_context = match expected with
-        | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
+        | Some t -> (match context_head t with
           | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}] when longer s -> [s]
           | Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}]
             when not (List.for_all implements_arity calls) -> List.filter longer calls

@@ -3150,4 +3150,6 @@ for (const [file, call] of [
     /TypeError/, "a grapheme index inside the segment does not make its advances present");
   assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
     '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
+  assert.equal(runExample(negative("invalid-visitor-arity-bivariant"), thrown("digits([1, 2])")), "TypeError",
+    "invalid-visitor-arity-bivariant: the walker passes undefined to the narrower closure");
 }

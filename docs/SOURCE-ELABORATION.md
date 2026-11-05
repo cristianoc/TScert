@@ -3323,7 +3323,10 @@ call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where
 a callback is offered more parameters (`xs.reduce(acc, null)`), bound under
 such an annotation directly, through an alias or through another binding,
-returned at such a result. It is claimed where it is created at that
+returned at such a result. A position expecting such a signature beside
+`undefined` or `null`, an optional callback's (`onLine?: (w, s, e) => void`
+given `(w) => …`), expects that signature of a closure, which the other arms
+do not admit. It is claimed where it is created at that
 signature beside its own, and its code is checked at each (`CodeOffers`),
 the premise over $`L`$ above keeping each claimed parameter within its
 annotation:
