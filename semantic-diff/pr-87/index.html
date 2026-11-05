@@ -1,0 +1,463 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-87"><code>786741184a6790354c2bf8ccfdb6721834f71849..pr-87</code></a><ul><li>1 commit</li><li>parts: <span class="chip">tests</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-87"><code>786741184a6790354c2bf8ccfdb6721834f71849..pr-87</code></h2><article class="card" id="c-59c2725a4"><header><div><div class="sha">59c2725a4 · Cristiano Calcagno · Nov 05, 07:49</div><h3>Add gap cases for the reasons the census of pretext's src/ refuses</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>A census of pretext's library (chenglou/pretext at 0d102a5c, the 11 modules of src/ but layout.test.ts and test-data.ts, under its own tsconfig.json with <code>types: []</code>, since bun-types' Uint8Array augmentation refuses every file) verifies 6 of its 209 functions shallow, 12 of 3424 statements, on TScert 50be2ce8. No pipeline case showed most of the reasons that block the other 203, so none could be worked or ranked by the gap process.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">one self-contained source per reason, the smallest that the pipeline</span><span class="ln">refuses with the census's refusal; its header names the pretext</span><span class="ln">functions (file#<span class="tk-k">function</span>) the reason blocks and the refusal. <span class="tk-t">The</span> two</span><span class="ln">imported forms read a module <span class="tk-k">of</span> pipeline/pretext-project, whose</span><span class="ln">tsconfig.json is pretext's compiler options with <span class="tk-s">`types: []`</span>; the</span><span class="ln">blocker project no longer claims these sources, whose <span class="tk-t">DOM</span> globals its</span><span class="ln">es2022 library lacks.</span></pre>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">WORK.md, a row for the pretext census refusal examples</span></h4><div class="prose"><p>the census's scope and count, and the largest reasons with their cases</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-uint16array-type</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">ThisType in lib.es5 Uint16Array (46 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#classifySegmentBreakCode, analysis.ts#classifySegmentUnit,</span>
+<span class="tk-c">// analysis.ts#collapseWhitespaceNormal, analysis.ts#followsChunkContent,</span>
+<span class="tk-c">// analysis.ts#gathersKind, analysis.ts#getTrailingCollapsibleStart,</span>
+<span class="tk-c">// analysis.ts#isCollapsibleSpaceCode, analysis.ts#isControlSegmentCode,</span>
+<span class="tk-c">// analysis.ts#isSegmentBreakRunSpace, analysis.ts#markItemStarts,</span>
+<span class="tk-c">// analysis.ts#normalizeWhitespacePreWrap,</span>
+<span class="tk-c">// analysis.ts#removeItemsSkippableSegmentBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#extendCluster,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getComplexLanguage,</span>
+<span class="tk-c">// gecko-line-breaks.ts#hasCompressedLeadingWhitespace,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isDiscardable, gecko-line-breaks.ts#isInvalidChar,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isKeepAllLetter,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isSpaceCombiningSequenceTail,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isTrimmableSpace,</span>
+<span class="tk-c">// gecko-line-breaks.ts#markWordBreaks, gecko-line-breaks.ts#readCodePoint,</span>
+<span class="tk-c">// gecko-line-breaks.ts#setupClusterBoundaries,</span>
+<span class="tk-c">// gecko-line-breaks.ts#splitAndInitTextRun, graphemes.ts#findGraphemeEnds,</span>
+<span class="tk-c">// graphemes.ts#isBidiControl, han-kerning.ts#getCharType,</span>
+<span class="tk-c">// han-kerning.ts#getFontData, han-kerning.ts#getHanKerningTrims,</span>
+<span class="tk-c">// han-kerning.ts#getStaticCharType, han-kerning.ts#getTrim,</span>
+<span class="tk-c">// han-kerning.ts#getTypeFromBounds, han-kerning.ts#haltedSide,</span>
+<span class="tk-c">// han-kerning.ts#isCanvasCjkSymbol, han-kerning.ts#maybeHanKerns,</span>
+<span class="tk-c">// han-kerning.ts#textMayHanKern, prepare.ts#addInternalLetterSpacing,</span>
+<span class="tk-c">// prepare.ts#countRenderedSpacingGraphemes,</span>
+<span class="tk-c">// prepare.ts#getFollowingSpaceTail, prepare.ts#getScriptFacts,</span>
+<span class="tk-c">// prepare.ts#getScriptFactsAt, prepare.ts#isSpaceKind,</span>
+<span class="tk-c">// prepare.ts#mayHoldCursive, prepare.ts#needsComplexTextPath,</span>
+<span class="tk-c">// prepare.ts#readScriptRuns, prepare.ts#spaceSharesScriptRun.</span>
+<span class="tk-c">// Refusal: gate: type outside the fragment (ThisType) in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts#Uint16Array.</span>
+<span class="tk-c">// A record type with a `Uint16Array` field: the library's declaration of</span>
+<span class="tk-c">// `Uint16Array` uses `ThisType`, a type outside the fragment. Pretext meets</span>
+<span class="tk-c">// it in its own type `TextAnalysis` and in the modules importing it.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Analysis</span> = { sources: <span class="tk-t">Uint16Array</span> | <span class="tk-k">null</span>; texts: string[] };
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(a: <span class="tk-t">Analysis</span>): number {
+  <span class="tk-k">return</span> a.texts.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-import-qualified-type</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">qualified type Intl.Segmenter in a signature (37 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// gecko-line-breaks.ts#getGeckoLineBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getLineBreakClass,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isClusterExtender,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isClusterExtenderExcludingJoiners,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianPunctuation,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianSegmentBreak,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isEastAsianWidthFHWExcludingEmoji,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isJapaneseOrChinese,</span>
+<span class="tk-c">// gecko-line-breaks.ts#isSegmentBreakSkipChar,</span>
+<span class="tk-c">// gecko-line-breaks.ts#segmentComplex, line-breaks.ts#classify,</span>
+<span class="tk-c">// line-breaks.ts#clearWordSegmenter, line-breaks.ts#createFactory,</span>
+<span class="tk-c">// line-breaks.ts#following, line-breaks.ts#getBlinkDefaultLocale,</span>
+<span class="tk-c">// line-breaks.ts#getBlinkLineBreaks, line-breaks.ts#getBreakLanguage,</span>
+<span class="tk-c">// line-breaks.ts#getBreakRules, line-breaks.ts#getClass,</span>
+<span class="tk-c">// line-breaks.ts#getWebKitBreakBetweenItems,</span>
+<span class="tk-c">// line-breaks.ts#getWebKitLineBreaks, line-breaks.ts#getWebKitLineRules,</span>
+<span class="tk-c">// line-breaks.ts#isASCIIAlpha, line-breaks.ts#isASCIIDigit,</span>
+<span class="tk-c">// line-breaks.ts#isBlinkBreakableSpace, line-breaks.ts#isComplexContext,</span>
+<span class="tk-c">// line-breaks.ts#isWebKitBreakableSpace, line-breaks.ts#lazyRegExp,</span>
+<span class="tk-c">// line-breaks.ts#markDictionaryWords, line-breaks.ts#markRuleBoundaries,</span>
+<span class="tk-c">// line-breaks.ts#nextBreakablePosition, line-breaks.ts#nextBreakableSpace,</span>
+<span class="tk-c">// line-breaks.ts#shouldBreakFast, line-breaks.ts#shouldKeepAfterKeepAll,</span>
+<span class="tk-c">// line-breaks.ts#unpackClasses, line-breaks.ts#unpackStateRows,</span>
+<span class="tk-c">// line-breaks.ts#unpackTableRows.</span>
+<span class="tk-c">// Refusal: gate: a qualified type reference in getWordSegmenter.</span>
+<span class="tk-c">// An imported function whose result is `Intl.Segmenter`, a qualified type</span>
+<span class="tk-c">// reference, read at its declared signature. Pretext's `getWordSegmenter`</span>
+<span class="tk-c">// meets it in its own module and in each module importing it.</span>
+<span class="tk-k">import</span> { getWordSegmenter } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/line-breaks.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> wordStarts(text: string): number[] {
+  <span class="tk-k">const</span> starts: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> part <span class="tk-k">of</span> getWordSegmenter().segment(text)) starts.push(part.index);
+  <span class="tk-k">return</span> starts;
+}</pre></details></li><li><details><summary><code>blocker-pretext-canvas-context-type</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">HTMLCanvasElement declares a field twice (27 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#addMetrics, measurement.ts#addUpTo,</span>
+<span class="tk-c">// measurement.ts#clearMeasurementCaches, measurement.ts#contextTakesFont,</span>
+<span class="tk-c">// measurement.ts#createMeasureState, measurement.ts#getCanvasFont,</span>
+<span class="tk-c">// measurement.ts#getContext, measurement.ts#getCorrectedSegmentWidth,</span>
+<span class="tk-c">// measurement.ts#getEngineProfile, measurement.ts#getFollowingSpaceMetrics,</span>
+<span class="tk-c">// measurement.ts#getFontSpaceKerning, measurement.ts#getHyphenText,</span>
+<span class="tk-c">// measurement.ts#getLayoutEngine, measurement.ts#getSegmentMetrics,</span>
+<span class="tk-c">// measurement.ts#getSpaceKerning, measurement.ts#getSpaceWidth,</span>
+<span class="tk-c">// measurement.ts#getTextWidth, measurement.ts#getWholeRunContext,</span>
+<span class="tk-c">// measurement.ts#hasFamily, measurement.ts#isCanvasWordLetter,</span>
+<span class="tk-c">// measurement.ts#isLigature, measurement.ts#measureFitAdvances,</span>
+<span class="tk-c">// measurement.ts#measureIn, measurement.ts#setLocaleLanguage,</span>
+<span class="tk-c">// measurement.ts#takesNoSpaceKerning, measurement.ts#textMayContainEmoji,</span>
+<span class="tk-c">// measurement.ts#zeros.</span>
+<span class="tk-c">// Refusal: gate: duplicate field name in a record in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts#HTMLCanvasElement.</span>
+<span class="tk-c">// A record type with a `CanvasRenderingContext2D |</span>
+<span class="tk-c">// OffscreenCanvasRenderingContext2D` field: the DOM library's</span>
+<span class="tk-c">// `HTMLCanvasElement`, reached from it, declares a field twice. Pretext</span>
+<span class="tk-c">// meets it in its own type `MeasureState`.</span>
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">State</span> = {
+  context: <span class="tk-t">CanvasRenderingContext2D</span> | <span class="tk-t">OffscreenCanvasRenderingContext2D</span>;
+  font: string;
+};
+<span class="tk-k">export</span> <span class="tk-k">function</span> font(s: <span class="tk-t">State</span>): string {
+  <span class="tk-k">return</span> s.font;
+}</pre></details></li><li><details><summary><code>blocker-pretext-int32array-type</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">ThisType in lib.es5 Int32Array (22 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#prepareInternal, layout.ts#prepareWithSegments,</span>
+<span class="tk-c">// line-text.ts#buildLineTextFromRange, line-text.ts#buildRangeText,</span>
+<span class="tk-c">// line-text.ts#getGraphemeStart, rich-inline.ts#createLine,</span>
+<span class="tk-c">// rich-inline.ts#createOnlyItemLine, rich-inline.ts#fitsWhole,</span>
+<span class="tk-c">// rich-inline.ts#getHyphenRooms,</span>
+<span class="tk-c">// rich-inline.ts#getInternalPreparedRichInline,</span>
+<span class="tk-c">// rich-inline.ts#getOpeningFit, rich-inline.ts#getPartWidth,</span>
+<span class="tk-c">// rich-inline.ts#getSegmentIndex, rich-inline.ts#getSourceOffset,</span>
+<span class="tk-c">// rich-inline.ts#getSourceUnits, rich-inline.ts#isSoftHyphenSegment,</span>
+<span class="tk-c">// rich-inline.ts#layoutNextRichInlineLineRange,</span>
+<span class="tk-c">// rich-inline.ts#materializeRichInlineLineRange,</span>
+<span class="tk-c">// rich-inline.ts#measureRichInlineStats, rich-inline.ts#narrowsLine,</span>
+<span class="tk-c">// rich-inline.ts#walkRichInlineLineRanges, rich-inline.ts#zeroList.</span>
+<span class="tk-c">// Refusal: gate: type outside the fragment (ThisType) in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts#Int32Array.</span>
+<span class="tk-c">// An `Int32Array` in a signature: the library's declaration of `Int32Array`</span>
+<span class="tk-c">// uses `ThisType`, a type outside the fragment. Pretext meets it in</span>
+<span class="tk-c">// signatures and record types holding grapheme ends.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> first(ends: <span class="tk-t">Int32Array</span>): number {
+  <span class="tk-k">return</span> ends.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-defaulted-parameter</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">defaulted parameter without annotation (14 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#breaksAfterKind, line-break.ts#consumesAtLineStart,</span>
+<span class="tk-c">// line-break.ts#countPreparedLines, line-break.ts#countSteppedLines,</span>
+<span class="tk-c">// line-break.ts#getItemTabAdvance, line-break.ts#getTerminalLetterSpacing,</span>
+<span class="tk-c">// line-break.ts#isDiscretionaryLineEnd,</span>
+<span class="tk-c">// line-break.ts#normalizePreparedLineStart,</span>
+<span class="tk-c">// line-break.ts#returnsFromUnfitHyphen, line-break.ts#staysAfterObject,</span>
+<span class="tk-c">// line-break.ts#stepPreparedLineGeometryFromStart,</span>
+<span class="tk-c">// line-break.ts#stepPreparedSimpleLineGeometry,</span>
+<span class="tk-c">// line-break.ts#walkPreparedComplexLines,</span>
+<span class="tk-c">// line-break.ts#walkPreparedLinesRaw.</span>
+<span class="tk-c">// Refusal: gate: missing type annotation in walkPreparedComplexLines.</span>
+<span class="tk-c">// A parameter with a default and no annotation (`singleLine = false`): a</span>
+<span class="tk-c">// unit's boundary is written, so the parameter needs its type. Pretext's</span>
+<span class="tk-c">// `walkPreparedComplexLines` is refused, and read at its declared signature</span>
+<span class="tk-c">// it refuses its module.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lines(width: number, singleLine = <span class="tk-k">false</span>): number {
+  <span class="tk-k">return</span> singleLine ? <span class="tk-n">1</span> : width;
+}</pre></details></li><li><details><summary><code>blocker-pretext-int32array-construct</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global Int32Array, no reviewed entry (7 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#alignToSource, gecko-line-breaks.ts#transformText,</span>
+<span class="tk-c">// line-text.ts#getGraphemeEnds, measurement.ts#countEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getExtraSpacings, measurement.ts#getSegmentFit,</span>
+<span class="tk-c">// prepare.ts#getUnspacedGraphemes.</span>
+<span class="tk-c">// Refusal: gate: the global Int32Array is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// `new Int32Array(n)`: the global `Int32Array` has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> ends(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Int32Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-math-round</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Math.round not in the overlay (7 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#getTabAdvance, measurement.ts#countLigaturesOnFirstLetter,</span>
+<span class="tk-c">// measurement.ts#getCharacterSpaceKerning, measurement.ts#getEmojiGlyphs,</span>
+<span class="tk-c">// measurement.ts#getFontKanaKerning, measurement.ts#measureKanaKerning,</span>
+<span class="tk-c">// measurement.ts#sameInk.</span>
+<span class="tk-c">// Refusal: gate: Math.round is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: round(x: number): number;.</span>
+<span class="tk-c">// `Math.round`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> stop(advance: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.round(advance * <span class="tk-n">60</span>);
+}</pre></details></li><li><details><summary><code>blocker-pretext-import-regex-constant</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">imported unannotated regex constant (6 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// prepare.ts#addIdeographicSpaceHangs, prepare.ts#addKanaKerning,</span>
+<span class="tk-c">// prepare.ts#getJoinedNarrowing, prepare.ts#getTailKerning,</span>
+<span class="tk-c">// prepare.ts#getTextSegmentWidth, prepare.ts#measureAnalysis.</span>
+<span class="tk-c">// Refusal: gate: a declared value must be an annotated constant, function</span>
+<span class="tk-c">// or class: kanaPairRe.</span>
+<span class="tk-c">// An imported constant holding a regular expression literal, with no</span>
+<span class="tk-c">// annotation: it states no type, so its use is refused.</span>
+<span class="tk-k">import</span> { kanaPairRe } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/measurement.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasKanaPair(segment: string): boolean {
+  <span class="tk-k">return</span> kanaPairRe.test(segment);
+}</pre></details></li><li><details><summary><code>blocker-pretext-uint8array-construct</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global Uint8Array, no reviewed entry (5 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// analysis.ts#getWebKitParagraphBreaks, analysis.ts#mapSourceLineBreaks,</span>
+<span class="tk-c">// gecko-line-breaks.ts#getBreakStates, graphemes.ts#parseGraphemeRules,</span>
+<span class="tk-c">// rich-inline.ts#setEmptyObjectFacts.</span>
+<span class="tk-c">// Refusal: gate: the global Uint8Array is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// `new Uint8Array(n)`: the global `Uint8Array` has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> flags(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-optional-field-widening</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">record passed where an optional field is added (5 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#layout, layout.ts#layoutWithLines, layout.ts#measureLineStats,</span>
+<span class="tk-c">// layout.ts#stepNextLine, layout.ts#walkLineRanges.</span>
+<span class="tk-c">// Refusal: reject: source expression obligation.</span>
+<span class="tk-c">// A record passed where its type plus an optional field is expected:</span>
+<span class="tk-c">// TypeScript admits it, but a value of the narrower type may hold that</span>
+<span class="tk-c">// field at another type (`{ widths: [], items: 5 }`), so no claim meets the</span>
+<span class="tk-c">// parameter.</span>
+<span class="tk-k">type</span> <span class="tk-t">Data</span> = { widths: number[] };
+<span class="tk-k">type</span> <span class="tk-t">LineData</span> = <span class="tk-t">Data</span> &amp; { items?: { count: number } };
+
+<span class="tk-k">function</span> countLines(prepared: <span class="tk-t">LineData</span>): number {
+  <span class="tk-k">return</span> prepared.items === <span class="tk-k">undefined</span>
+    ? prepared.widths.length
+    : prepared.items.count;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> layout(prepared: <span class="tk-t">Data</span>): number {
+  <span class="tk-k">return</span> countLines(prepared);
+}</pre></details></li><li><details><summary><code>blocker-pretext-number-positive-infinity</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Number.POSITIVE_INFINITY not in the overlay (3 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#measureNaturalWidth, rich-inline.ts#findWholeLine,</span>
+<span class="tk-c">// rich-inline.ts#prepareRichInline.</span>
+<span class="tk-c">// Refusal: gate: Number.POSITIVE_INFINITY is not in the reviewed overlay of</span>
+<span class="tk-c">// library globals: readonly POSITIVE_INFINITY: number;.</span>
+<span class="tk-c">// `Number.POSITIVE_INFINITY`, not in the reviewed overlay of library</span>
+<span class="tk-c">// globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> widest(): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.<span class="tk-t">POSITIVE_INFINITY</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-document</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global document, no reviewed entry (3 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getEmojiCorrection, measurement.ts#getPreparationLanguage,</span>
+<span class="tk-c">// measurement.ts#readEmojiWidth.</span>
+<span class="tk-c">// Refusal: gate: the global document is declared in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The DOM global `document`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> language(): string {
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> document === <span class="tk-s">&quot;undefined&quot;</span> ? <span class="tk-s">&quot;&quot;</span> : document.documentElement.lang;
+}</pre></details></li><li><details><summary><code>blocker-pretext-opaque-handle-cast</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">opaque handle asserted to its internal record (3 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// layout.ts#createLayoutLine, layout.ts#getInternalPrepared,</span>
+<span class="tk-c">// layout.ts#layoutNextLine.</span>
+<span class="tk-c">// Refusal: reject: closure expression claim.</span>
+<span class="tk-c">// A branded opaque handle asserted with `as` to its internal record: no</span>
+<span class="tk-c">// claim of the handle meets the internal type's fields.</span>
+<span class="tk-k">declare</span> <span class="tk-k">const</span> handleBrand: <span class="tk-k">unique</span> symbol;
+<span class="tk-k">export</span> <span class="tk-k">type</span> <span class="tk-t">Handle</span> = { <span class="tk-k">readonly</span> [handleBrand]: <span class="tk-k">true</span> };
+<span class="tk-k">type</span> <span class="tk-t">Internal</span> = <span class="tk-t">Handle</span> &amp; { widths: number[] };
+
+<span class="tk-k">function</span> internal(handle: <span class="tk-t">Handle</span>): <span class="tk-t">Internal</span> {
+  <span class="tk-k">return</span> handle <span class="tk-k">as</span> <span class="tk-t">Internal</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(handle: <span class="tk-t">Handle</span>): number {
+  <span class="tk-k">return</span> internal(handle).widths.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-uint16array-construct</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global Uint16Array, no reviewed entry (2 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#hasProperty, line-breaks.ts#unpackClassRuns.</span>
+<span class="tk-c">// Refusal: gate: the global Uint16Array is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// `new Uint16Array(n)`: the global `Uint16Array` has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> runs(n: number): number {
+  <span class="tk-k">const</span> out = <span class="tk-k">new</span> <span class="tk-t">Uint16Array</span>(n);
+  <span class="tk-k">return</span> out.length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-number-isnan</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Number.isNaN not in the overlay (2 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getKanaKerning, measurement.ts#readLetterSpacing.</span>
+<span class="tk-c">// Refusal: gate: Number.isNaN is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: isNaN(number: unknown): boolean;.</span>
+<span class="tk-c">// `Number.isNaN`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> spacing(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Number</span>.isNaN(x) ? <span class="tk-n">0</span> : x;
+}</pre></details></li><li><details><summary><code>blocker-pretext-parse-float</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">parseFloat not in the overlay (2 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#parseFontSize, measurement.ts#readWidthIn.</span>
+<span class="tk-c">// Refusal: gate: parseFloat(…) is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: declare function parseFloat(string: string): number;.</span>
+<span class="tk-c">// `parseFloat`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> size(text: string): number {
+  <span class="tk-k">return</span> parseFloat(text);
+}</pre></details></li><li><details><summary><code>blocker-pretext-atob</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">atob not in the overlay (2 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#unpackTable, line-breaks.ts#unpackVarints.</span>
+<span class="tk-c">// Refusal: gate: atob(…) is not in the reviewed overlay of library globals:</span>
+<span class="tk-c">// declare function atob(data: string): string;.</span>
+<span class="tk-c">// `atob`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> bytes(data: string): number {
+  <span class="tk-k">return</span> atob(data).length;
+}</pre></details></li><li><details><summary><code>blocker-pretext-intl-segmenter-construct</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Intl read other than by a call (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-breaks.ts#getWordSegmenter.</span>
+<span class="tk-c">// Refusal: gate: the global namespace Intl is read only by calling its</span>
+<span class="tk-c">// functions, without spreads.</span>
+<span class="tk-c">// `new Intl.Segmenter(…)`: the namespace `Intl` is admitted only for calls</span>
+<span class="tk-c">// to its functions.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> words(text: string): number {
+  <span class="tk-k">const</span> segmenter = <span class="tk-k">new</span> <span class="tk-t">Intl</span>.<span class="tk-t">Segmenter</span>(<span class="tk-k">undefined</span>, { granularity: <span class="tk-s">&quot;word&quot;</span> });
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> _ <span class="tk-k">of</span> segmenter.segment(text)) n++;
+  <span class="tk-k">return</span> n;
+}</pre></details></li><li><details><summary><code>blocker-pretext-math-fround</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Math.fround not in the overlay (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getWebKitGenericFamilies.</span>
+<span class="tk-c">// Refusal: gate: Math.fround is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: fround(x: number): number;.</span>
+<span class="tk-c">// `Math.fround`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> single(x: number): number {
+  <span class="tk-k">return</span> <span class="tk-t">Math</span>.fround(x);
+}</pre></details></li><li><details><summary><code>blocker-pretext-object-isfrozen</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">Object.isFrozen not in the overlay (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// rich-inline.ts#findSegmentSources.</span>
+<span class="tk-c">// Refusal: gate: Object.isFrozen is not in the reviewed overlay of library</span>
+<span class="tk-c">// globals: isFrozen(o: any): boolean;.</span>
+<span class="tk-c">// `Object.isFrozen`, not in the reviewed overlay of library globals.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> frozen(o: { items: string[] }): boolean {
+  <span class="tk-k">return</span> <span class="tk-t">Object</span>.isFrozen(o);
+}</pre></details></li><li><details><summary><code>blocker-pretext-infinity</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global Infinity, no reviewed entry (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#normalizeMaxWidth.</span>
+<span class="tk-c">// Refusal: gate: the global Infinity is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The global `Infinity`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> normalize(maxWidth: number): number {
+  <span class="tk-k">return</span> maxWidth &lt;= <span class="tk-t">Infinity</span> ? maxWidth : <span class="tk-t">Infinity</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-range-error</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global RangeError, no reviewed entry (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#getFontMeasurement.</span>
+<span class="tk-c">// Refusal: gate: the global RangeError is declared in</span>
+<span class="tk-c">// typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// `new RangeError(…)`: the global `RangeError` has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> check(font: string): string {
+  <span class="tk-k">if</span> (font === <span class="tk-s">&quot;&quot;</span>) <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">RangeError</span>(<span class="tk-s">&quot;font must be a font string&quot;</span>);
+  <span class="tk-k">return</span> font;
+}</pre></details></li><li><details><summary><code>blocker-pretext-navigator</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global navigator, no reviewed entry (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#buildEngineProfile.</span>
+<span class="tk-c">// Refusal: gate: the global navigator is declared in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The DOM global `navigator`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> agent(): string {
+  <span class="tk-k">return</span> <span class="tk-k">typeof</span> navigator === <span class="tk-s">&quot;undefined&quot;</span> ? <span class="tk-s">&quot;&quot;</span> : navigator.userAgent;
+}</pre></details></li><li><details><summary><code>blocker-pretext-offscreen-canvas</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">global OffscreenCanvas, no reviewed entry (1 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// measurement.ts#createContext.</span>
+<span class="tk-c">// Refusal: gate: the global OffscreenCanvas is declared in</span>
+<span class="tk-c">// typescript/lib/lib.dom.d.ts (library), an origin no reviewed entry</span>
+<span class="tk-c">// admits.</span>
+<span class="tk-c">// The DOM global `OffscreenCanvas`, which has no reviewed entry.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasCanvas(): boolean {
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> <span class="tk-t">OffscreenCanvas</span> !== <span class="tk-s">&quot;undefined&quot;</span>)
+    <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">OffscreenCanvas</span>(<span class="tk-n">1</span>, <span class="tk-n">1</span>).getContext(<span class="tk-s">&quot;2d&quot;</span>) !== <span class="tk-k">null</span>;
+  <span class="tk-k">return</span> <span class="tk-k">false</span>;
+}</pre></details></li><li><details><summary><code>blocker-pretext-string-raw</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">String.raw as a tag (initialization) (0 functions)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// the initialization of prepare.ts and line-breaks.ts (no function refused</span>
+<span class="tk-c">// on its own).</span>
+<span class="tk-c">// Refusal: gate: the method String.raw is only called, on its host.</span>
+<span class="tk-c">// `String.raw` as a template tag in the initialization: the method is</span>
+<span class="tk-c">// admitted only when called on its host. In pretext it refuses the</span>
+<span class="tk-c">// initialization of `prepare.ts` and `line-breaks.ts`, which blocks their</span>
+<span class="tk-c">// functions' deep status.</span>
+<span class="tk-k">const</span> pattern: string = <span class="tk-t">String</span>.raw<span class="tk-s">`[ぁ-ヿ]`</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> source(): string {
+  <span class="tk-k">return</span> pattern;
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>An imported arrow constant without a result annotation blocks 3 functions (analysis.ts#analyzeText, #removeSkippableSegmentBreaks, #segmentAtLineBreaks); invalid-function-constant-value-import shows it already. The record passed where an optional field is added is unsafe for a caller passing a wider value: layout of { widths: [1, 2], items: 5 } returns undefined under Node.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>pretext src/ census 6 of 209 functions shallow, 12 of 3424 statements (TScert 50be2ce8, 2026-11-05)</dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-* (25 gaps)</span></dd></dl>
+<details><summary>31 files changed, 418 insertions(+)</summary><pre class="code"> WORK.md                                            |  1 +
+ pipeline/blocker-project/tsconfig.json             |  1 +
+ pipeline/cases.mts                                 | 26 +++++++++++++++
+ pipeline/examples/blocker-pretext-atob.ts          |  8 +++++
+ .../blocker-pretext-canvas-context-type.ts         | 28 ++++++++++++++++
+ .../blocker-pretext-defaulted-parameter.ts         | 19 +++++++++++
+ pipeline/examples/blocker-pretext-document.ts      | 10 ++++++
+ .../blocker-pretext-import-qualified-type.ts       | 36 ++++++++++++++++++++
+ .../blocker-pretext-import-regex-constant.ts       | 13 ++++++++
+ pipeline/examples/blocker-pretext-infinity.ts      |  9 +++++
+ .../blocker-pretext-int32array-construct.ts        | 13 ++++++++
+ .../examples/blocker-pretext-int32array-type.ts    | 22 +++++++++++++
+ .../blocker-pretext-intl-segmenter-construct.ts    | 12 +++++++
+ pipeline/examples/blocker-pretext-math-fround.ts   |  8 +++++
+ pipeline/examples/blocker-pretext-math-round.ts    | 11 +++++++
+ pipeline/examples/blocker-pretext-navigator.ts     |  9 +++++
+ pipeline/examples/blocker-pretext-number-isnan.ts  |  8 +++++
+ .../blocker-pretext-number-positive-infinity.ts    | 10 ++++++
+ .../examples/blocker-pretext-object-isfrozen.ts    |  8 +++++
+ .../examples/blocker-pretext-offscreen-canvas.ts   | 11 +++++++
+ .../examples/blocker-pretext-opaque-handle-cast.ts | 17 ++++++++++
+ .../blocker-pretext-optional-field-widening.ts     | 20 ++++++++++++
+ pipeline/examples/blocker-pretext-parse-float.ts   |  8 +++++
+ pipeline/examples/blocker-pretext-range-error.ts   | 10 ++++++
+ pipeline/examples/blocker-pretext-string-raw.ts    | 12 +++++++
+ .../blocker-pretext-uint16array-construct.ts       | 10 ++++++
+ .../examples/blocker-pretext-uint16array-type.ts   | 38 ++++++++++++++++++++++
+ .../blocker-pretext-uint8array-construct.ts        | 12 +++++++
+ pipeline/pretext-project/line-breaks.ts            |  5 +++
+ pipeline/pretext-project/measurement.ts            |  3 ++
+ pipeline/pretext-project/tsconfig.json             | 20 ++++++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
