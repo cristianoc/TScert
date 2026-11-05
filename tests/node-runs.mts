@@ -11,7 +11,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
 
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.
-assert.equal(runExample("let-object-narrowing-refused",
+assert.equal(runExample("invalid-let-object-narrowing",
   'typeof reassigned({ kind: "a", name: "text" }, { kind: "b", n: 1 })'), "undefined",
   "a closure replaces the narrowed cell before its string member is read");
 assert.equal(runExample("invalid-object-growth-constructed", `(() => {
@@ -24,14 +24,14 @@ assert.equal(runExample("invalid-object-assign-source", `(() => {
   const proto = { get b() { return 5; }, set b(value) {} };
   return typeof copy({ ["__proto__"]: proto, b: "text" }).b;
 })()`), "number", "assigning an open record's own __proto__ key installs the setter before copying its string member");
-assert.equal(runExample("reserved-key-refused", 'typeof h(true)'), "object",
+assert.equal(runExample("invalid-reserved-key", 'typeof h(true)'), "object",
   "the reserved-key literal remains an ordinary object and is returned at number");
-assert.equal(runExample("spread-symbol-key-refused", `const tag = Symbol("field");
+assert.equal(runExample("invalid-spread-symbol-key", `const tag = Symbol("field");
   const input = {};
   Object.defineProperty(input, tag, { value: 1, writable: true, enumerable: false });
   typeof copy(input)[tag]`), "undefined",
   "a nonenumerable symbol field meets the input view and is absent from the spread result");
-assert.equal(await runExample("promise-like", `(async () => {
+assert.equal(await runExample("invalid-promise-like", `(async () => {
   const value = { then: callback => callback(5), tag: "text" };
   return like(Promise.resolve(1)).then(() => value).then(result => JSON.stringify([typeof result, typeof result.tag]));
 })()`), '["number","undefined"]', "native then adopts the callback's object instead of passing that object to the next PromiseLike callback");
@@ -1785,8 +1785,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     copied(JSON.parse('{"__proto__": 1}'), "__proto__")["__proto__"],
     Object.keys(multiLiteral("b")), Object.keys(numberKey(1.5))])`), '[0,true,5,["b"],["1.5"]]',
     "computed-key-write: JavaScript's write, which the lowering's dispatch and copies follow");
-  assert.equal(runExample("computed-key-proto-refused", `typeof setProto("__proto__").a`), "string",
-    "computed-key-proto-refused: the setter makes the object value the prototype, whose string the dictionary reads");
+  assert.equal(runExample("invalid-computed-key-proto", `typeof setProto("__proto__").a`), "string",
+    "invalid-computed-key-proto: the setter makes the object value the prototype, whose string the dictionary reads");
   // Object.assign writes a function's `name`, which is not writable: it throws.
   assert.throws(() => runExample("invalid-function-fields-inferred", "named()"), /read only property 'name'/);
   // A dictionary beside an array: TypeScript types its `length` `number`, and
@@ -1893,8 +1893,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // Sloppy code converts a receiver that is not an object: a primitive to a
   // wrapper object, `undefined` to the global object. The pipeline refuses
   // sloppy code reading `this` at such a receiver type.
-  assert.equal(runExample("sloppy-this-primitive-refused", "typeof caller()"), "object",
-    "sloppy-this-primitive-refused: the actual source returns a String object despite its string contract");
+  assert.equal(runExample("invalid-sloppy-this-primitive", "typeof caller()"), "object",
+    "invalid-sloppy-this-primitive: the actual source returns a String object despite its string contract");
   assert.equal(runExample("sloppy-this-closure-refused", "typeof count()"), "undefined",
     "sloppy-this-closure-refused: the actual source reads the global object despite its number contract");
   // A subclass of Array is its instances' `constructor`, so `map` constructs
@@ -2173,7 +2173,7 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     ["loose-equality", "const box = {value: 0}; const result = evaluatedOperands(box, '1'); JSON.stringify([result, box.value])", "[true,1]"],
     ["loose-equality", "const xs = []; [differentArrays(xs, xs), readonlyIdentity(xs, []), namedNullish({valueOf(){throw Error('called')}}, null)].join()", "false,false,false"],
     ["invalid-loose-equality-narrowing", "typeof wrongNumber('1', 1)", "string"],
-    ["loose-equality-array-conversion-refused", "const xs = [1]; let calls = 0; xs.valueOf = () => { calls++; return 2; }; JSON.stringify([arrayConversion(xs, 2), calls])", "[true,1]"],
+    ["invalid-loose-equality-array-conversion", "const xs = [1]; let calls = 0; xs.valueOf = () => { calls++; return 2; }; JSON.stringify([arrayConversion(xs, 2), calls])", "[true,1]"],
     ["callable-bag-union", "[readWrite(true, true), readWrite(false, true)].join()", "false,false"],
     ["invalid-callable-bag-union", "wrong(false, true)", false],
     ["recursive-callable", "selfLoop()", false],
@@ -2677,10 +2677,10 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   "[11,1]", "wrapped-member-call: once evaluates the object once and binds it");
   assert.equal(runExample("invalid-wrapped-member-call-receiver", "wrong({ read() { return this.k; } })"), undefined,
     "invalid-wrapped-member-call-receiver: the function reads a `k` its receiver lacks");
-  assert.equal(runExample("wrapped-member-call-refused", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
-    "TypeError", "wrapped-member-call-refused: an index past the end gives undefined, whose call throws");
-  assert.equal(runExample("wrapped-member-chain-call-refused", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
-    "TypeError", "wrapped-member-chain-call-refused: an index past the end gives undefined, whose call throws");
+  assert.equal(runExample("invalid-wrapped-member-call", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
+    "TypeError", "invalid-wrapped-member-call: an index past the end gives undefined, whose call throws");
+  assert.equal(runExample("invalid-wrapped-member-chain-call", "(() => { try { wrapped([], 0); return 'returned'; } catch (e) { return e.constructor.name; } })()"),
+    "TypeError", "invalid-wrapped-member-chain-call: an index past the end gives undefined, whose call throws");
 }
 
 // Each invalidation changes the value observed by the second member read.

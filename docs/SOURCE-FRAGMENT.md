@@ -53,7 +53,7 @@ fragment.
 | Construct | Reason | Owner | Cases |
 | --- | --- | --- | --- |
 | `new Array(x)` with one argument | A numeric argument constructs holes, which a readable element contract excluding `undefined` cannot justify | [arrays](SOURCE-MODEL.md#arrays) | — |
-| An element write at an index not proven in bounds or appending | It could create a hole, which a later spread into a rest passes as `undefined` | [arrays](SOURCE-MODEL.md#arrays) | `spread-holes` |
+| An element write at an index not proven in bounds or appending | It could create a hole, which a later spread into a rest passes as `undefined` | [arrays](SOURCE-MODEL.md#arrays) | `invalid-spread-holes` |
 | A mutable `Dog[]` as an `Animal[]`, a mutable dictionary of `true` as one of `boolean`, a readonly view as a writable one | Mutable storage is invariant: a write through the wider alias breaks the narrower one's contract | [writable string index signatures](SOURCE-MODEL.md#writable-string-index-signatures) | — |
 | A position past a mutable tuple's arity; its `length` read at the arity | `push` may have extended it | [arrays](SOURCE-MODEL.md#arrays) | — |
 | An array `Array.isArray` or `instanceof Array` finds in `unknown` or a record, passed at a generic call's mutable `Array<A>` | It may be a tuple, which a callee rearranging its `Array<A>` breaks | [arrays](SOURCE-MODEL.md#arrays) | `invalid-open-array-generic-call` (Node) |

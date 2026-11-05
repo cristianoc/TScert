@@ -102,7 +102,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
     () => execute("invalid-default-invocation", "defaultInvokedTooEarly()"),
     /Cannot access 'later' before initialization/,
   );
-  assert.equal(execute("generic-default", "genericDefault(true)"), null);
+  assert.equal(execute("invalid-generic-default-write", "genericDefault(true)"), null);
   assert.equal(
     execute("generic-rigid-default", "undefinedRigidDefault(undefined)"),
     undefined,

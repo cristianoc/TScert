@@ -553,8 +553,8 @@ object, its call run once; `invalid-wrapped-member-call-receiver`). The
 member is read as a value, so a method of its object's contract, which is
 relative to that object, is refused at the read
 ([method members](DESIGN.md#lasting-decisions)), and `!` rules out no
-`undefined` the read may give (`wrapped-member-call-refused`,
-`wrapped-member-chain-call-refused`: an index past the end).
+`undefined` the read may give (`invalid-wrapped-member-call`,
+`invalid-wrapped-member-chain-call`: an index past the end).
 
 A chain compared with a literal, `x?.p ⊙ c` or `c ⊙ x?.p`, with $`\odot`$
 one of `===`, `!==`, `==`, `!=`, $`c`$ a literal, $`x`$ `this` or a name
