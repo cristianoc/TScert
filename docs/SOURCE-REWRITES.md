@@ -1856,8 +1856,8 @@ again. The callers hold `TypeTerm`s, whose grammar the parameter type
   and its parameter, the text `JSON.stringify` gives such an object, and
   `sameEffect` (`tools/type-term.mts`) compares two promises by their key
   and parameter (`samePromise`): a promise type is a record type no
-  `JsonValue` admits, so `JSON.stringify` of one is refused
-  (`invalid-stated-effect-stringify`). Every promise is built fresh with
+  `JsonValue` admits, so `JSON.stringify` of one is refused, as of any
+  record (`invalid-json-stringify-record`). Every promise is built fresh with
   that one key, each an object literal of it (`promiseEffect`,
   `decodeCallEffect`, the reviewed contracts), so the texts and the
   answers are the same.

@@ -2063,7 +2063,7 @@ export const cases: Case[] = [
     kind: "negative", status: "unsupported", phase: "source",
     diagnostic: /ReadonlyArray is not the standard library's alone: a declaration merges 'toJSON' into it.*\(line 3, col 35\)/,
     project: "pipeline/merged-readonly-array-project" },
-  { file: "invalid-merged-readonly-array-callback", area: "the same merge into `ReadonlyArray`, a read-only array taken by a callback's parameter by context: refused",
+  { file: "invalid-merged-readonly-array-callback", area: "the same merge into `ReadonlyArray`, a read-only array taken by a callback's parameter by context: refused at the unit's first array, the written parameter",
     kind: "negative", status: "unsupported", phase: "source",
     diagnostic: /ReadonlyArray is not the standard library's alone: a declaration merges 'toJSON' into it.*\(line 4, col 38\)/,
     project: "pipeline/merged-readonly-array-project" },
