@@ -65,3 +65,4 @@ export function local(xs: number[]): number[] {
   return xs.map((x) => twice(x));
 }
 export const asserted = 1 as number; // expected: as
+export const present = [1].find((x) => x > 0)!; // expected: !
