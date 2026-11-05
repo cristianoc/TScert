@@ -1344,31 +1344,23 @@ function renamedModule(module: ModuleAst, from: string, to: string): ModuleAst {
 }
 
 /** Whether the top-level `const` statement `s` declares one name, written
- * with an annotation and an object literal, that the module does not export,
+ * with an annotation and the empty object literal, that the module does not export,
  * and that some write at a key known only at run time, `c[k] = e` with a key
  * no literal spells, may add a key to: a module cell (`keyAddedConstant`'s
  * caller). Mentions are found by spelling: a shadowing local of the same
  * spelling only makes the constant a cell, which is faithful for any
  * constant. A constant code left out of the lowering mentions (`omitted`, an
- * omitted body or step) stays a constant: the module's ownership of the
- * cell's object is decided over the code lowered. */
+ * omitted function or step) stays a constant. */
 function keyAddedConstant(source: SourceFile, s: ts.VariableStatement, exported: Set<string>,
-  omitted: Span[]): boolean {
+  omitted: Set<string>): boolean {
   const [d, ...others] = s.declarationList.declarations;
   if (!d || others.length || !ts.isIdentifier(d.name) || !d.type || !d.initializer ||
-      !ts.isObjectLiteralExpression(d.initializer) ||
+      !ts.isObjectLiteralExpression(d.initializer) || d.initializer.properties.length > 0 ||
       s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) || exported.has(d.name.text) ||
       source.statements.some(st => ts.isExportAssignment(st)))
     return false;
   const name = d.name.text;
-  const leftOut = (n: Node): boolean => {
-    if (ts.isIdentifier(n) && n.text === name) {
-      const at = n.getStart(source);
-      if (omitted.some(([start, end]) => start <= at && at < end)) return true;
-    }
-    return n.forEachChild(c => leftOut(c) || undefined) ?? false;
-  };
-  if (leftOut(source)) return false;
+  if (omitted.has(name)) return false;
   const literal = (k: ts.Expression): boolean => ts.isStringLiteral(k) || ts.isNoSubstitutionTemplateLiteral(k) ||
     ts.isNumericLiteral(k);
   const writes = (n: Node): boolean => {
@@ -1518,6 +1510,16 @@ function lowerFile(file: string, carriesContext: boolean,
   // The code no run reads: each omitted function's body and each statement left out.
   const omittedSpans = (): Span[] => source.statements.flatMap((s): Span[] =>
     isOmitted(s) ? (s.body ? [gate.span(s.body)] : []) : stepLeftOut(s) ? [gate.span(s)] : []);
+  // The names code the lowering leaves out mentions, each omitted function
+  // whole, its parameters and defaults included, and each statement left
+  // out: a module binding among them is not known by every mention
+  // (`Ast.omittedMentions`).
+  const omittedMentions = new Set<string>();
+  const mentionedIn = (n: Node): void => {
+    if (ts.isIdentifier(n)) omittedMentions.add(n.text);
+    n.forEachChild(mentionedIn);
+  };
+  for (const s of source.statements) if (isOmitted(s) || stepLeftOut(s)) mentionedIn(s);
   gate.namespaceUses = memberUses(members, source);
   const memberNodes = [...gate.namespaceUses.values()].map(({ use }) => use.node);
   // Each `undefined` the file reads, decided by what TypeScript binds it to.
@@ -1662,7 +1664,7 @@ function lowerFile(file: string, carriesContext: boolean,
       // assignment, which TypeScript refuses. The key-adding write is then
       // the copy written to the cell, where the module owns the object
       // (PROGRAM-TYPING.md, "Key-adding writes").
-      if (list.flags & ts.NodeFlags.Const && keyAddedConstant(source, s, exportedNames, omittedSpans())) {
+      if (list.flags & ts.NodeFlags.Const && keyAddedConstant(source, s, exportedNames, omittedMentions)) {
         gate.moduleCellConstants.add(list);
         for (const d of list.declarations) gate.earlyDecls.add(d);
       }
@@ -2559,7 +2561,8 @@ function lowerFile(file: string, carriesContext: boolean,
   const root = tsconfigPath ? (tsconfigPath.endsWith(".json") ? dirname(resolve(tsconfigPath)) : resolve(tsconfigPath))
     : null;
   const importedFrom = importedModules(importNodes, checker, declarations.values, root);
-  const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init, modules: [] };
+  const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init,
+    omittedMentions: [...omittedMentions].sort(), modules: [] };
   const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
     declarations, init, functions: parsed, absent }, absolute, location);
   // A mapped type over a named type read before the document was complete,

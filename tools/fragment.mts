@@ -428,4 +428,8 @@ export interface Ast {
   functions: FunctionAst[];
   /** The program modules certified imports may read, each once. */
   modules: ModuleAst[];
+  /** The names that code the lowering leaves out (a census's omitted
+   * functions and statements) mentions: the module's own objects are decided
+   * over every mention, so a module binding named here is none. */
+  omittedMentions: string[];
 }

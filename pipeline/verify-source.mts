@@ -358,7 +358,7 @@ class ModuleRuns {
       const location = field(m, "location");
       if (typeof location !== "string") continue;
       const doc = { file: location, sourceSha256: field(m, "sourceSha256"), declarations: field(m, "declarations"),
-        init: field(m, "init"), functions: field(m, "functions"), modules: [] };
+        init: field(m, "init"), functions: field(m, "functions"), modules: [], omittedMentions: [] };
       const ast = join(artifacts, `module-${index}.fragment.json`);
       writeFileSync(ast, JSON.stringify(doc));
       const lowered = runStep(verifierCall(verifier, ["--lower-control-flow", ast]), recorder);

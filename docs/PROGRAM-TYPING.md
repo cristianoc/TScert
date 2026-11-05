@@ -2455,23 +2455,24 @@ holds the field's own location, as the type states it.
 
 **A module's own object.** A [module cell](SOURCE-ELABORATION.md#module-cells)
 $`c`$ (a module `let`, or the `const` a write at a run-time key makes one)
-holds an object the module **owns** when its initializer is an object literal
-of data properties at string keys, none `__proto__` and no spread, and every
+holds an object the module **owns** when its initializer is `{}` and every
 mention of $`c`$, in the initialization, in every module function and in every
-closure, is the receiver of a member read, an index read, a write or a key
-test, each key a variable or a literal (`ownedModuleCells`, `moduleEscapes`):
+closure, is the receiver of a member read, an index read or a write, each key
+a variable or a literal (`ownedModuleCells`, `moduleEscapes`):
 
 ```math
 \mathrm{OwnMod}(c)\iff
   \begin{cases}
-  c\ \text{is a module cell initialized by a literal of string-keyed data properties;}\\
-  \text{every mention of}\ c\ \text{is}\ c.f,\ c[k],\ c.f = e,\ c[k] = e,\ k\ \mathtt{in}\ c\ \text{or a key test of}\ c\text{, with}\ k\ \text{a variable or a literal.}
+  c\ \text{is a module cell initialized by}\ \{\};\\
+  \text{every mention of}\ c\ \text{is}\ c.f,\ c[k],\ c.f = e\ \text{or}\ c[k] = e\text{, with}\ k\ \text{a variable or a literal.}
   \end{cases}
 ```
 
 A closure holds the cell, never the object, so its mentions count as the
-others do; an update, a logical or compound assignment, a call's receiver
-or argument, a binding, a comparison or a return of $`c`$ is none of these.
+others do, and an assignment of another binding holds the right side's
+value; a key test, an update, a logical or compound assignment, a deletion,
+an enumeration, a call's receiver or argument, a binding, a comparison or a
+return of $`c`$ is none of these.
 Under $`\mathrm{OwnMod}(c)`$ the cell is the one reference to the object
 wherever code runs: an access reads the cell, then its keys, which run no
 code, then accesses, and only a write's right side runs between its
@@ -2487,23 +2488,26 @@ evaluates the binding, so the dead zone throws before the right side runs;
 the second, after the right side, finds what the right side, or a reentrant
 call of the same function, added, and in JavaScript names the same object.
 The merge is at the cell's contract and written to the cell, checked there;
-the value is the right side's. A key whose claim may be a symbol or
-`__proto__` is refused on such an object: the copy takes string keys. A
-write in place, at a key the object's type states, whose right side is not a
-variable or a literal is refused (`module-cache-in-place-call-refused`): the
-right side may replace the object the receiver read. The cell's contract is
+the value is the right side's. The object's type states a finite key set,
+object clauses of named fields and no index, else the write is refused
+(`module-cache-dictionary-refused`); a key whose claim may be a symbol or
+`__proto__` is refused too, since the copy takes string keys. Every key the
+type states is optional, as the empty object meets it, so every write adds
+its key or replaces it by a copy. The cell's contract is
 its annotation with each object clause's own keys excluding the prototype
 field and the host key (`plainContract`), as a literal's do: an ordinary
 object of the default prototype, which every value the cell holds is.
 JavaScript's write and the copy agree as for a local's own object: the
 object's own properties are the copy's, and no admitted mention observes its
 identity, its keys' order or its attributes. The module's ownership is
-decided over the code the lowering reads; a constant mentioned by code a
-census leaves out stays a module constant (`keyAddedConstant`). Cases:
+decided over every mention: the parser lists the names that code a census
+leaves out mentions, an omitted function whole and a statement left out
+(`omittedMentions`), and a cell named there is not the module's own. Cases:
 `blocker-pretext-module-cache-write`, `module-cache-reentrant`,
 `module-cache-before-initialization` (run under Node),
-`invalid-module-cache-alias` (Node), `module-cache-key-call-refused`,
-`module-cache-update-refused`, `module-cache-string-key-refused`, and the
+`invalid-module-cache-alias`, `invalid-module-cache-omitted-default` and
+`invalid-module-cache-omitted-let` (Node), `module-cache-key-call-refused`,
+`module-cache-update-refused`, `module-cache-dictionary-refused`, and the
 forged claims of `pipeline/test.mts`.
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
