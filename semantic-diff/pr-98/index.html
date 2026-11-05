@@ -1,0 +1,345 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-98"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-98</code></a><ul><li>3 commits</li><li>parts: <span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip strong">trust</span></li><li>new trust: <span class="trust">String.raw read as a template tag is the standard function, under the approved policy that standard objects are not tampered with</span></li></ul></li></ul></section>
+<h2 id="g-pr-98"><code>fb760edbd57949d012bb178c82148343ad134d92..pr-98</code></h2><article class="card" id="c-be227f0c4"><header><div><div class="sha">be227f0c4 · Cristiano Calcagno · Nov 05, 13:07</div><h3>Read a parameter's type from its literal default, as isolatedDeclarations declares it</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>pretext's walkPreparedComplexLines (src/line-break.ts, chenglou/pretext at 0d102a5c) declares <code>singleLine = false</code> with no annotation. The gate refused it, &quot;missing type annotation&quot;, and an importing module reading it at its declared signature was refused with it: 16 pretext functions. A unit's boundary is written in the source, and TypeScript's own <code>isolatedDeclarations</code> (5.9, 6.0 and 7.0) writes this one: it declares <code>singleLine?: boolean</code> from the literal alone.</p></div>
+<h4 class="change"><span class="act added">added</span>Rule <span class="target">the type reader: a parameter's literal default</span></h4><div class="rules"><div class="infer"><div class="frac"><div class="premises"><span><var>x</var> <span class="m-text">a parameter with no annotation, default</span> <var>ℓ</var></span><span><span class="m-op">widen</span>(<var>ℓ</var>) <span class="m-rel">=</span> <var>T</var></span></div><div class="bar"></div><div class="conclusion"><div>(<var>x</var> <span class="m-rel">=</span> <var>ℓ</var>) <span class="m-rel">≡</span> (<var>x</var><span class="m-rel">:</span> <var>T</var> <span class="m-rel">=</span> <var>ℓ</var>)</div></div></div><span class="rule-name">(literal-default)</span></div><div class="formulas"><div class="row"><span><span class="m-text">widen</span><span class="m-rel">:</span> <span class="m-lit">true</span>, <span class="m-lit">false</span> <span class="m-rel">↦</span> <span class="m-text">boolean; a numeric literal, or one under one</span> <code class="m-code">-</code>,</span></div><div class="row"><span><span class="m-rel">↦</span> <span class="m-text">number; a bigint literal, or one under one</span> <code class="m-code">-</code>, <span class="m-rel">↦</span> <span class="m-text">bigint; a string</span></span></div><div class="row"><span><span class="m-text">literal or a template without substitutions</span> <span class="m-rel">↦</span> <span class="m-con">string</span>. <span class="m-text">The literal's own</span></span></div><div class="row"><span><span class="m-text">type is widened, as TypeScript widens it, so a caller may pass any</span></span></div><div class="row"><span><span class="m-text">value of the kind and the body may write any</span>. <span class="m-text">Every other unannotated</span></span></div><div class="row"><span><span class="m-text">parameter stays </span><span class="refused">refused</span><span class="m-text">, a subset of what TypeScript reads (it also</span></span></div><div class="row"><span><span class="m-text">reads <code class="m-code">+<span class="tk-n">1</span></code>, parentheses, <code class="m-code"><span class="tk-k">as</span> <span class="tk-k">const</span></code>, templates with substitutions</span>,</span></div><div class="row"><span><code class="m-code"><span class="tk-k">null</span></code>, <code class="m-code"><span class="tk-k">undefined</span></code> <span class="m-text">and object literals</span>).</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the parser: a written parameter with a literal default</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="map"><code class="src"><span class="tk-k">function</span> f(x = ℓ) { …x = e… }</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="refused">refused</span></span><span class="note">(missing type annotation)</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="map"><code class="src"><span class="tk-k">function</span> f(x = ℓ) { …x = e… }</code><div class="result"><span class="to">⇝</span><span class="tgt"><span class="m-text">function</span> <var>f</var>(<var>h</var><span class="m-rel">:</span> <var>T</var> | <span class="m-lit">undefined</span>) { <span class="m-text">const</span> <var>x</var>° <span class="m-rel">=</span> <var>h</var> <span class="m-text">(default</span> <var>ℓ</var>); <span class="m-kw">let</span> <var>x</var><span class="m-rel">:</span> <var>T</var> <span class="m-rel">=</span> <var>x</var>°; … }</span></div></div><div class="cond"><span class="tgt"><span class="m-text">(the same lowering an annotated <code class="m-code">x: <span class="tk-t">T</span> = ℓ</code> has; a closure parameter its</span></span></div><div class="cond"><span class="tgt"><span class="m-text">context types keeps that type, and a written one stays </span><span class="refused">refused</span>)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, SOURCE-ELABORATION.md, SOURCE-FRAGMENT.md, WORK.md</span></h4><div class="prose"><p>&quot;Literal defaults&quot; under the types stated by annotations states the rule and its readers; the table row for a parameter links it; the parameter binding names the type a literal default states; the fragment row for a module function without annotations excepts it; pretext's census row</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-defaulted-parameter</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the pretext form</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// line-break.ts#breaksAfterKind, line-break.ts#consumesAtLineStart,</span>
+<span class="tk-c">// line-break.ts#countPreparedLines, line-break.ts#countSteppedLines,</span>
+<span class="tk-c">// line-break.ts#getItemTabAdvance, line-break.ts#getTabAdvance,</span>
+<span class="tk-c">// line-break.ts#getTerminalLetterSpacing,</span>
+<span class="tk-c">// line-break.ts#isDiscretionaryLineEnd, line-break.ts#normalizeMaxWidth,</span>
+<span class="tk-c">// line-break.ts#normalizePreparedLineStart,</span>
+<span class="tk-c">// line-break.ts#returnsFromUnfitHyphen, line-break.ts#staysAfterObject,</span>
+<span class="tk-c">// line-break.ts#stepPreparedLineGeometryFromStart,</span>
+<span class="tk-c">// line-break.ts#stepPreparedSimpleLineGeometry,</span>
+<span class="tk-c">// line-break.ts#walkPreparedComplexLines,</span>
+<span class="tk-c">// line-break.ts#walkPreparedLinesRaw.</span>
+<span class="tk-c">// Refusal: gate: missing type annotation in walkPreparedComplexLines.</span>
+<span class="tk-c">// A parameter with a default and no annotation (`singleLine = false`): a</span>
+<span class="tk-c">// unit's boundary is written, so the parameter needs its type. Pretext's</span>
+<span class="tk-c">// `walkPreparedComplexLines` is refused, and read at its declared signature</span>
+<span class="tk-c">// it refuses its module.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> lines(width: number, singleLine = <span class="tk-k">false</span>): number {
+  <span class="tk-k">return</span> singleLine ? <span class="tk-n">1</span> : width;
+}</pre></details></li><li><details><summary><code>literal-default-parameters</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">each literal kind, omitted, undefined and explicit arguments, a written parameter, parameter properties, arrows (run under Node)</span></summary><pre class="code"><span class="tk-c">// Parameters with no annotation whose defaults are literals: each states</span>
+<span class="tk-c">// the literal's type widened, as TypeScript's `isolatedDeclarations` declares</span>
+<span class="tk-c">// it, and the default runs at the call where the argument is `undefined`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> flags(singleLine = <span class="tk-k">false</span>, strict = <span class="tk-k">true</span>): boolean {
+  <span class="tk-k">return</span> singleLine &amp;&amp; strict;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> numbers(
+  n = <span class="tk-n">3</span>,
+  negative = -<span class="tk-n">1</span>,
+  hex = 0x10,
+  big = <span class="tk-n">10n</span>,
+  negativeBig = -<span class="tk-n">1n</span>,
+): number {
+  <span class="tk-k">return</span> big &gt; negativeBig ? n + negative + hex : <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> strings(s = <span class="tk-s">&quot;a&quot;</span>, t = <span class="tk-s">`b`</span>): string {
+  <span class="tk-k">return</span> s + t;
+}
+
+<span class="tk-c">// A written parameter is a cell at the widened type: `true` may replace</span>
+<span class="tk-c">// the default `false`.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> written(singleLine = <span class="tk-k">false</span>, count = <span class="tk-n">0</span>): number {
+  <span class="tk-k">if</span> (!singleLine) singleLine = <span class="tk-k">true</span>;
+  count = count + <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> singleLine ? count : <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> calls(): number {
+  <span class="tk-k">const</span> omitted = flags() ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> undefinedArgument = flags(<span class="tk-k">undefined</span>, <span class="tk-k">false</span>) ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">const</span> explicit = flags(<span class="tk-k">true</span>, <span class="tk-k">true</span>) ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> (
+    omitted +
+    undefinedArgument +
+    explicit +
+    numbers() +
+    numbers(<span class="tk-n">1</span>, <span class="tk-n">2</span>, <span class="tk-n">3</span>, <span class="tk-n">4n</span>, <span class="tk-n">5n</span>) +
+    strings().length +
+    written(<span class="tk-k">true</span>)
+  );
+}
+
+<span class="tk-k">export</span> <span class="tk-k">class</span> <span class="tk-t">Box</span> {
+  <span class="tk-k">constructor</span>(
+    <span class="tk-k">public</span> width = <span class="tk-n">1</span>,
+    <span class="tk-k">public</span> label = <span class="tk-s">&quot;box&quot;</span>,
+  ) {}
+  grow(by = <span class="tk-n">2</span>): number {
+    <span class="tk-k">return</span> <span class="tk-k">this</span>.width + by;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> boxes(): string {
+  <span class="tk-k">const</span> box = <span class="tk-k">new</span> <span class="tk-t">Box</span>();
+  <span class="tk-k">const</span> wide = <span class="tk-k">new</span> <span class="tk-t">Box</span>(<span class="tk-n">5</span>, <span class="tk-s">&quot;wide&quot;</span>);
+  <span class="tk-k">return</span> box.label + wide.label + box.grow() + wide.grow(<span class="tk-n">1</span>);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> arrow = (x: number, factor = <span class="tk-n">2</span>): number =&gt; x * factor;
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> block = (x: number, offset = <span class="tk-n">1</span>): number =&gt; {
+  <span class="tk-k">const</span> y = x + offset;
+  <span class="tk-k">return</span> y;
+};</pre></details></li><li><details><summary><code>literal-default-value-import</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">a function, constant arrow and class read at declared signatures</span></summary><pre class="code"><span class="tk-c">// Imported declarations whose parameters state their types by literal</span>
+<span class="tk-c">// defaults (`imports-project/literal-defaults.ts`), read at their declared</span>
+<span class="tk-c">// signatures: each such parameter optional, at the literal's widened type.</span>
+<span class="tk-k">import</span> { <span class="tk-t">Box</span>, lineCount, scaled } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/literal-defaults&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> measure(width: number): number {
+  <span class="tk-k">const</span> box = <span class="tk-k">new</span> <span class="tk-t">Box</span>();
+  <span class="tk-k">const</span> named = <span class="tk-k">new</span> <span class="tk-t">Box</span>(<span class="tk-n">2</span>, <span class="tk-s">&quot;named&quot;</span>);
+  <span class="tk-k">return</span> (
+    lineCount(width) +
+    lineCount(width, <span class="tk-k">true</span>) +
+    scaled(width) +
+    scaled(width, <span class="tk-n">3</span>) +
+    box.width +
+    named.label.length
+  );
+}</pre></details></li><li><details><summary><code>literal-default-call-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a call as default states no type (TS9011)</span></summary><pre class="code"><span class="tk-c">// A parameter with no annotation whose default is not a literal: it states</span>
+<span class="tk-c">// no type (TypeScript's `isolatedDeclarations` refuses it too, TS9011), so</span>
+<span class="tk-c">// the unit's boundary is not written.</span>
+<span class="tk-k">function</span> zero(): number {
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> start(offset = zero()): number {
+  <span class="tk-k">return</span> offset;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>After the rewrite the parameter is annotated with the type TypeScript itself declares, and everything is the existing annotated-default path: callers see T ∪ undefined at an optional position, and the default runs at the call in the body's parameter binding, checked by the function's own unit. No new trust. The default's value under Node is checked in tests/node-runs.mts.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-defaulted-parameter</span> <span class="test pos">literal-default-parameters</span> <span class="test pos">literal-default-value-import</span> <span class="test pos">literal-default-call-refused</span></dd></dl>
+<details><summary>14 files changed, 183 insertions(+), 10 deletions(-)</summary><pre class="code"> WORK.md                                           |  2 +-
+ docs/SOURCE-CONTRACTS.md                          | 35 +++++++++++-
+ docs/SOURCE-ELABORATION.md                        |  3 +-
+ docs/SOURCE-FRAGMENT.md                           |  2 +-
+ pipeline/cases.mts                                |  5 +-
+ pipeline/examples/literal-default-call-refused.ts | 10 ++++
+ pipeline/examples/literal-default-parameters.ts   | 66 +++++++++++++++++++++++
+ pipeline/examples/literal-default-value-import.ts | 17 ++++++
+ pipeline/imports-project/literal-defaults.ts      | 12 +++++
+ pipeline/imports-project/tsconfig.json            |  2 +
+ tests/node-runs.mts                               |  2 +
+ tools/declaration-graph.mts                       |  7 +--
+ tools/fragment-statements.mts                     |  5 +-
+ tools/type-term.mts                               | 25 ++++++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-aadf3cccd"><header><div><div class="sha">aadf3cccd · Cristiano Calcagno · Nov 05, 13:07</div><h3>State why an imported regular expression constant stays refused: TypeScript refuses it too</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>pretext's src/measurement.ts exports <code>const kanaPairRe = /[ぁ-ヿ]{2}/</code> with no annotation, refused at its import (&quot;a declared value must be an annotated constant, function or class&quot;), 6 pretext functions. A unit's boundary is written, and the measure of written is what TypeScript's <code>isolatedDeclarations</code> declares from the source alone. TypeScript 5.9, 6.0 and 7.0 refuse this declaration (TS9010, &quot;Variable must have an explicit type annotation with --isolatedDeclarations&quot;), as they refuse <code>const k = String.raw\</code>…\``; they accept a constant initialized by a string, number, bigint or Boolean literal, which the type reader already reads.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">the gap case blocker-pretext-import-regex-constant</span></h4><div class="prose"><p>its description and header state that TypeScript refuses the same declaration, and that the source states <code>: RegExp</code></p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-import-regex-constant</code> <span class="kind gap">gap</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the boundary is not written; TypeScript refuses it too (TS9010)</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// prepare.ts#addIdeographicSpaceHangs, prepare.ts#addKanaKerning,</span>
+<span class="tk-c">// prepare.ts#getJoinedNarrowing, prepare.ts#getTailKerning,</span>
+<span class="tk-c">// prepare.ts#getTextSegmentWidth, prepare.ts#measureAnalysis.</span>
+<span class="tk-c">// Refusal: gate: a declared value must be an annotated constant, function</span>
+<span class="tk-c">// or class: kanaPairRe.</span>
+<span class="tk-c">// An imported constant holding a regular expression literal, with no</span>
+<span class="tk-c">// annotation: it states no type, so its use is refused. TypeScript's</span>
+<span class="tk-c">// `isolatedDeclarations` refuses the declaration too (TS9010, TypeScript</span>
+<span class="tk-c">// 5.9, 6.0 and 7.0): a regular expression literal is not one it declares a</span>
+<span class="tk-c">// type from. The source states `: RegExp`.</span>
+<span class="tk-k">import</span> { kanaPairRe } <span class="tk-k">from</span> <span class="tk-s">&quot;../pretext-project/measurement.ts&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> hasKanaPair(segment: string): boolean {
+  <span class="tk-k">return</span> kanaPairRe.test(segment);
+}</pre></details></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>The remedy is in pretext's source, <code>export const kanaPairRe: RegExp = …</code>.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>2 files changed, 5 insertions(+), 2 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                         | 2 +-
+ pipeline/examples/blocker-pretext-import-regex-constant.ts | 5 ++++-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-ab83b4a00"><header><div><div class="sha">ab83b4a00 · Cristiano Calcagno · Nov 05, 13:08</div><h3>Read String.raw as a template tag: the template of its raw strings, through the overlay</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>pretext (chenglou/pretext at 0d102a5c) builds its regular expressions in the initializations of src/prepare.ts and src/line-breaks.ts as <code>lazyRegExp(String.raw\</code>^\p{M}\<code>, 'u')</code>. The global reader refused it, &quot;the method String.raw is only called, on its host&quot;: no overlay entry read a member as a tag. The initialization statements were left out, so CLOSING_BRACKET, CURSIVE_LETTER, TAKES_MARK_SCRIPTS, extendedPictographicRe, astralProperties and webkitLineRules were unbound in the functions reading them, 7 pretext functions.</p></div>
+<h4 class="change"><span class="act added">added</span>Trust <span class="target">library globals: String.raw as a template tag</span></h4><div class="prose"><p>raw(template: { raw: readonly string[] | ArrayLike&lt;string&gt;; }, ...substitutions: any[]): string; read only as a tag, String.raw<code>…</code>, never called or read otherwise; it joins no value. The host's steps (ECMA-262, tagged templates and String.raw): Get(String, &quot;raw&quot;) finds the standard function under the approved policy that standard objects are not tampered with; the engine makes the frozen template object, its <code>raw</code> the frozen array of the raw strings, cached per site and held by no other code; the substitutions run in order; then String.raw reads raw's length and each element, strings, and appends between two of them the ToString of a substitution's value.</p></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">the parser: String.raw as a tag</span></h4><div class="lowering"><div class="map"><code class="src"><span class="tk-t">String</span>.raw<span class="tk-s">`h₀${e₁}h₁…${eₙ}hₙ`</span></code><div class="result"><span class="to">⇝</span><span class="tgt">(…((<var>h</var>₀' + <var>e</var>₁) + <var>h</var>₁') … + <var>e</var>ₙ) + <var>h</var>ₙ'</span></div></div><div class="cond"><span class="tgt"><var>h</var>ᵢ' <span class="m-text">the raw string</span><span class="m-rel">:</span> <span class="m-text">the source text between the delimiters, each</span> <span class="m-con">CR</span> <span class="m-con">LF</span> <span class="m-text">and</span> <span class="m-con">CR</span> <var>a</var> <span class="m-con">LF</span></span><span class="note">(ECMA-262's TRV)</span></div><div class="cond"><span class="label">side condition</span><span class="tgt"><span class="m-text">the reviewed declaration is the member's only one; no type argument, no optional chain</span></span></div><div class="cond"><span class="tgt"><span class="m-text">(a template without substitutions is the string</span> <var>h</var>₀'; <span class="m-text">any other use of String</span>.<span class="m-text">raw is </span><span class="refused">refused</span>)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, SOURCE-FRAGMENT.md, PROGRAM-TYPING.md, DESIGN.md, WORK.md</span></h4><div class="prose"><p>&quot;String.raw as a tag&quot; states the rule raw-template, the host's steps and why the orders agree; a fragment row for the other uses and for object and symbol substitutions; the template paragraph links it; the trust row of library globals; pretext's census row</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-string-raw</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the pretext form</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// the initialization of prepare.ts and line-breaks.ts (no function refused</span>
+<span class="tk-c">// on its own).</span>
+<span class="tk-c">// Refusal: gate: the method String.raw is only called, on its host.</span>
+<span class="tk-c">// `String.raw` as a template tag in the initialization: the method is</span>
+<span class="tk-c">// admitted only when called on its host. In pretext it refuses the</span>
+<span class="tk-c">// initialization of `prepare.ts` and `line-breaks.ts`, which blocks their</span>
+<span class="tk-c">// functions' deep status.</span>
+<span class="tk-k">const</span> pattern: string = <span class="tk-t">String</span>.raw<span class="tk-s">`[ぁ-ヿ]`</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> source(): string {
+  <span class="tk-k">return</span> pattern;
+}</pre></details></li><li><details><summary><code>string-raw-tag</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">escapes a cooked template reads otherwise or refuses, each primitive substitution, order (run under Node)</span></summary><pre class="code"><span class="tk-c">// `String.raw` as a template tag, through the reviewed overlay: the</span>
+<span class="tk-c">// template of the source's raw strings, each substitution a primitive</span>
+<span class="tk-c">// converted by ToString between them (run under Node).</span>
+<span class="tk-k">export</span> <span class="tk-k">const</span> mark: string = <span class="tk-t">String</span>.raw<span class="tk-s">`^\p{M}$`</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> joined(
+  n: number,
+  s: string,
+  u: string | <span class="tk-k">undefined</span>,
+  b: boolean,
+  big: bigint,
+): string {
+  <span class="tk-k">return</span> <span class="tk-t">String</span>.raw<span class="tk-s">`n=${n}\t${s}\n${u}|${b}|${big}`</span>;
+}
+
+<span class="tk-c">// Escapes a cooked template refuses or reads otherwise: an invalid Unicode</span>
+<span class="tk-c">// escape, an escaped backtick and `${`, a line continuation, the empty one.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> escapes(): string[] {
+  <span class="tk-k">return</span> [
+    <span class="tk-t">String</span>.raw<span class="tk-s">`\u{`</span>,
+    <span class="tk-t">String</span>.raw<span class="tk-s">`\``</span>,
+    <span class="tk-t">String</span>.raw<span class="tk-s">`\${x}`</span>,
+    <span class="tk-t">String</span>.raw`a\
+b<span class="tk-s">`,
+    String.raw`</span><span class="tk-s">`,
+  ];
+}
+
+function push(log: string[], value: string): string {
+  log.push(value);
+  return value;
+}
+
+// Substitutions run in order, each value taken where it runs.
+export function ordered(log: string[]): string {
+  let n = 1;
+  return String.raw`</span>${push(log, <span class="tk-s">&quot;a&quot;</span>)}${n}-${push(log, <span class="tk-s">&quot;b&quot;</span>)}${(n = <span class="tk-n">2</span>)}${n}`;
+}</pre></details></li><li><details><summary><code>invalid-string-raw-object-substitution</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an object's toString writes a narrowed let (Node: a number result that is a string)</span></summary><pre class="code"><span class="tk-c">// An object substitution of `String.raw`, whose ToString runs its</span>
+<span class="tk-c">// `toString`: TypeScript admits any substitution, and this one writes the</span>
+<span class="tk-c">// narrowed `x` before the function returns it as a number. Under Node,</span>
+<span class="tk-c">// `shown()` is the string &quot;b&quot;. Refused: a string concatenates only with a</span>
+<span class="tk-c">// primitive.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> shown(): number {
+  <span class="tk-k">let</span> x: number | string = <span class="tk-n">1</span>;
+  <span class="tk-k">const</span> text: string = <span class="tk-t">String</span>.raw<span class="tk-s">`a${{
+    toString(): string {
+      x = &quot;b&quot;;
+      return &quot;&quot;;
+    },
+  }}`</span>;
+  <span class="tk-k">return</span> text.length &gt; <span class="tk-n">0</span> ? x : <span class="tk-n">0</span>;
+}</pre></details></li><li><details><summary><code>string-raw-symbol-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a symbol substitution, whose conversion throws</span></summary><pre class="code"><span class="tk-c">// A symbol substitution of `String.raw`: its ToString throws a TypeError,</span>
+<span class="tk-c">// which a string's concatenation has no rule for, so it is refused, as in a</span>
+<span class="tk-c">// template literal.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> described(s: symbol): string {
+  <span class="tk-k">return</span> <span class="tk-t">String</span>.raw<span class="tk-s">`${s}`</span>;
+}</pre></details></li><li><details><summary><code>string-raw-call-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">String.raw called, not a tag</span></summary><pre class="code"><span class="tk-c">// `String.raw` called rather than used as a tag: the overlay reads it only</span>
+<span class="tk-c">// as a tag, so the call is refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> joined(): string {
+  <span class="tk-k">return</span> <span class="tk-t">String</span>.raw({ raw: [<span class="tk-s">&quot;a&quot;</span>, <span class="tk-s">&quot;b&quot;</span>] }, <span class="tk-n">1</span>);
+}</pre></details></li><li><details><summary><code>string-raw-shadowed-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">a parameter named String as the tag</span></summary><pre class="code"><span class="tk-c">// A tag named `String` that is a parameter, not the global: no overlay</span>
+<span class="tk-c">// entry reads it, and a tagged template of another tag is refused.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> tagged(<span class="tk-t">String</span>: { raw(template: unknown): string }): string {
+  <span class="tk-k">return</span> <span class="tk-t">String</span>.raw<span class="tk-s">`a`</span>;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>The tagged template evaluates every substitution before String.raw converts any; the lowering converts each right after evaluating it. The concatenation rule admits a string concatenated only with a primitive other than a symbol, whose ToString runs no code and does not throw, so moving the conversion earlier changes no observation, a later substitution's throw included. An object or symbol substitution has no rule (the negative case, run under Node).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">String.raw read as a template tag is the standard function, under the approved policy that standard objects are not tampered with</span></dd><dt>Tests</dt><dd><span class="test pos">blocker-pretext-string-raw</span> <span class="test pos">string-raw-tag</span> <span class="test neg">invalid-string-raw-object-substitution</span> <span class="test pos">string-raw-symbol-refused</span> <span class="test pos">string-raw-call-refused</span> <span class="test pos">string-raw-shadowed-refused</span></dd></dl>
+<details><summary>16 files changed, 208 insertions(+), 6 deletions(-)</summary><pre class="code"> WORK.md                                            |  2 +-
+ docs/DESIGN.md                                     |  2 +-
+ docs/PROGRAM-TYPING.md                             |  2 ++
+ docs/SOURCE-CONTRACTS.md                           | 42 ++++++++++++++++++++++
+ docs/SOURCE-FRAGMENT.md                            |  1 +
+ pipeline/cases.mts                                 |  7 +++-
+ .../invalid-string-raw-object-substitution.ts      | 15 ++++++++
+ pipeline/examples/string-raw-call-refused.ts       |  5 +++
+ pipeline/examples/string-raw-shadowed-refused.ts   |  5 +++
+ pipeline/examples/string-raw-symbol-refused.ts     |  6 ++++
+ pipeline/examples/string-raw-tag.ts                | 38 ++++++++++++++++++++
+ tests/node-runs.mts                                | 12 +++++++
+ tools/declaration-graph.mts                        | 20 +++++++++++
+ tools/fragment-expressions.mts                     | 37 +++++++++++++++++--
+ tools/fragment-parse.mts                           |  5 +++
+ tools/library-globals.mts                          | 15 ++++++++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
