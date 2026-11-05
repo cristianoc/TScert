@@ -5,8 +5,14 @@ import Verification.Programs.VariadicTyping
 
 Types are finite unions of graph labels. Constructor rules inspect a singleton
 expanded clause; subsumption is justified by the existing checked certificates.
-The typing judgement is syntactic. Semantic environments enter only its soundness
-proof, not its rules.
+The premises of the typing judgement are syntactic, except in the rules creating
+graph code (`funGraph`, `funGraphSelf`, `funScheme`, `ctorGraph`,
+`callableGraph`): each takes that the code meets the signatures it offers
+(`GraphCodeSpec`, through `CodeOffers` except in `ctorGraph`, which takes it
+directly), a semantic safety
+statement the evidence layer discharges for a checked code table
+(`ProgramCertificates.CodesSound`, `GraphCode.checkCodes_sound`). Semantic
+environments otherwise enter only its soundness proof.
 -/
 namespace Verification.ProgramTyping
 open PositiveNormalization PositiveGraphs PositiveRules Tower

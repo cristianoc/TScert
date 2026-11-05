@@ -1933,8 +1933,14 @@ Safety is partial
 correctness and absence of stuck execution, not termination.
 
 The general evaluation-context lemma `bind` composes computations across heap
-changes and future worlds. The typing theorem is an induction on derivations;
-none of its constructor rules has a semantic safety premise.
+changes and future worlds. The typing theorem is an induction on derivations.
+The rules creating graph code (`funGraph`, `funGraphSelf`, `funScheme`,
+`ctorGraph`, `callableGraph`) take as a premise that the code meets each
+signature it offers (`GraphCodeSpec`, through `CodeOffers` except in
+`ctorGraph`, which takes it directly), a semantic safety statement; the evidence layer discharges it
+for the entries of a checked code table (`CodesSound`,
+`GraphCode.checkCodes_sound`). Every other premise of a constructor rule is
+syntactic.
 
 ### Integration example
 
@@ -2013,8 +2019,10 @@ A new expression rule touches each layer once:
    section's notation, with its side conditions.
 2. **The judgment.** A `HasTyWith` constructor whose premises are exactly the
    rule's, its name added to the `export HasTyWith` list, and its case in
-   `HasTyUsing.sound`. A semantic safety premise in a constructor is not
-   admitted: each case is proved from the model's lemmas.
+   `HasTyUsing.sound`. Its premises are syntactic, except a code
+   specification (`GraphCodeSpec`) of code it creates, which a checked code
+   table discharges (`CodesSound`); each case is proved from the model's
+   lemmas.
 3. **The evidence.** A `Rule` constructor carrying whatever the checker needs
    that the sequent does not state (certificates, code-table entries, label
    choices), its premises in `LocalUsing` and `localCheckUsing`, and its case
