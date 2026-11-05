@@ -2400,6 +2400,8 @@ export const cases: Case[] = [
   { ...negative("invalid-written-remapped-member-value-import", "row a key-remapped member the checker synthesises: its origin is swept",
     /#remapped: a written application: the type argument for B's "T" .*does not establish its declared bound: unknown ≤ string/),
     project: "pipeline/imports-project" },
+  { ...negative("invalid-mapped-type-as-clause", "a written mapped type with an `as` clause: no term states the remapped result",
+    /^gate: a mapped type with an 'as' clause is outside the fragment/), status: "unsupported", phase: "source" },
   { ...negative("invalid-written-default-key-value-import", "row a default export object's computed key: its constant's annotation is swept",
     /defaulted-key.ts#key: a written application: the type argument for B's "T" .*does not establish its declared bound: unknown ≤ string/),
     project: "pipeline/imports-project" },
