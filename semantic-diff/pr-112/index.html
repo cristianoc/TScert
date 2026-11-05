@@ -1,0 +1,441 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-112"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-112</code></a><ul><li>2 commits, units 3 verified</li><li>parts: <span class="chip">parser</span> <span class="chip">lean-lowering</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip strong">wire</span></li><li>new trust: <span class="trust">the lowering states that a module cell whose object the module owns (OwnMod) is the one reference to that object, so a key-adding write's copy written to the cell after the right side is JavaScript's write in place</span></li><li>new trust: <span class="trust">none beyond the previous commit's; its ownership premise is narrowed</span></li><li>wire: fragment document gains <code>omittedMentions</code></li></ul></li></ul></section>
+<h2 id="g-pr-112"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-112</code></h2><article class="card" id="c-558d5c7b6"><header><div><div class="sha">558d5c7b6 · Cristiano Calcagno · Nov 05, 20:52</div><h3>Verify a key-adding write on a module's own object, the cell read again after the right side</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>graphemes.ts#getGraphemeRules</span><span>graphemes.ts#findGraphemeEnds</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Pretext's grapheme rules are a module-level cache in the form JavaScriptCore runs fast, a record whose keys are added once:</p><p>const graphemeRules: Partial&lt;Record&lt;GraphemeTable, GraphemeRules&gt;&gt; = {} return graphemeRules[table] ?? (graphemeRules[table] = parseGraphemeRules(table))</p><p>It was refused: &quot;a write at a key known only at run time may add the key to an object another reference holds&quot;. A key-adding write is the copy of the object with the key, rebound to every local holding it, which is JavaScript's in-place write only where those locals own the object; a module constant is read by every function. A <code>Map</code> (verified) makes <code>findGraphemeEnds</code> 74 ms against 50 ms. Extending ownership to the module needs the holder read again after every operand that may run code, and the write's value, which the key-adding lowering discarded.</p></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">lowering: a module's own object</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">OwnMod</span>(<var>c</var>) ⟺ <var>c</var> <span class="m-text">is a module cell initialized by an object literal of</span></span></div><div class="row cont"><span><span class="m-text">data properties at string keys (no spread, no <code class="m-code">__proto__</code>), and every</span></span></div><div class="row cont"><span><span class="m-text">mention of</span> <var>c</var>, <span class="m-kw">in</span> <span class="m-text">the initialization, every module function and every</span></span></div><div class="row cont"><span><span class="m-text">closure, is</span> <var>c</var>.<var>f</var>, <var>c</var>[<var>k</var>], <var>c</var>.<var>f</var> <span class="m-rel">=</span> <var>e</var>, <var>c</var>[<var>k</var>] <span class="m-rel">=</span> <var>e</var>, <var>k</var> <span class="m-kw">in</span> <var>c</var> <span class="m-text">or a key test of</span> <var>c</var>,</span></div><div class="row cont"><span><span class="m-text">each key</span> <var>k</var> <span class="m-text">a variable or a literal</span></span></div><div class="row"><span><span class="m-text">(an update, a logical or compound assignment, a call's receiver or</span></span></div><div class="row"><span><span class="m-text">argument, a binding, a comparison or a return of</span> <var>c</var> <span class="m-text">is none of these</span>)</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Lowering <span class="target">key-adding write on c with OwnMod(c), statement or value</span></h4><div class="lowering"><div class="map"><code class="src">c[k] = e</code><div class="result"><span class="to">⇝</span><span class="tgt"><var>c</var>; <var>k</var>; <var>v</var> ← <var>e</var>; <var>o</var> ← <span class="m-op">makeKey</span>(<var>k</var>, <var>v</var>); <var>x</var> ← <var>c</var>; <var>m</var> ← <span class="m-op">merge</span>(<var>x</var>, <var>o</var>); <var>c</var> <span class="m-rel">:</span><span class="m-rel">=</span> <var>m</var>; <var>v</var></span></div></div><div class="cond"><span class="tgt"><span class="m-text">(each read of</span> <var>c</var> <span class="m-text">the cell's checked access</span><span class="m-rel">:</span> <span class="m-text">the first where JavaScript</span></span></div><div class="cond"><span class="tgt"><span class="m-text">reads the binding, so the dead zone throws before</span> <var>e</var> <span class="m-text">runs; the second</span></span></div><div class="cond"><span class="tgt"><span class="m-text">after</span> <var>e</var>, <span class="m-text">which in JavaScript names the same object and here finds what</span></span></div><div class="cond"><span class="tgt"><var>e</var>, <span class="m-text">or a reentrant call, added</span>)</span></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">parser: module cells</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a module <code class="m-code"><span class="tk-k">let</span></code> the module does not export</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">a module <code class="m-code"><span class="tk-k">let</span></code> the module does not export, and a module</span> `<span class="m-text">const</span> <var>c</var><span class="m-rel">:</span> <var>C</var> <span class="m-rel">=</span></span></div><div class="row"><span>{ … }<code class="m-code"> <span class="tk-k">of</span> one name, not exported, that a write </code><var>c</var>[<var>k</var>] <span class="m-rel">=</span> <var>e</var>` <span class="m-text">at a key no</span></span></div><div class="row"><span><span class="m-text">literal spells may add a key to, and that no code the census leaves out</span></span></div><div class="row"><span><span class="m-text">mentions</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">lowering: the contract of a module's own object</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">plainContract</span>(<var>C</var>) <span class="m-rel">=</span> <var>C</var> <span class="m-text">with each object clause's own keys excluding the</span></span></div><div class="row"><span><span class="m-text">prototype field and the host key</span><span class="m-rel">:</span> <span class="m-text">an ordinary object of the default</span></span></div><div class="row"><span><span class="m-text">prototype, as the literal and each of its copies is; every write of the</span></span></div><div class="row"><span><span class="m-text">cell is checked at it</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">key-adding write: the allocation's type</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">the one-key allocation at the write's value type</span> <var>W</var>, <span class="m-text">unless a writable</span></span></div><div class="cond"><span class="tgt"><span class="m-text">index states the key's class</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">also at the type of the writable optional field every clause of the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">object's type states for the key, where it is one type</span></span></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">lowering: a module's own object</span></h4><div class="prose"><p>a key-adding write at a key that may be a symbol or <code>__proto__</code>; a write in place at a key the object's type states whose right side is not a variable or a literal</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">entry claims of an early binding</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a claim of a cell's contents not containing the contract's labels is a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">fact every incoming edge proves</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a claim the contract is within states nothing of the contents (an</span></span></div><div class="cond"><span class="tgt"><span class="m-text">object-typed module cell's claim at its contract no longer asks for a</span></span></div><div class="cond"><span class="tgt"><span class="m-text">nullish exclusion the entry cannot prove</span>)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md key-adding writes, SOURCE-ELABORATION.md module cells, SOURCE-FRAGMENT.md</span></h4><div class="prose"><p>a module's own object, its lowering and its refusals; the <code>const</code> made a module cell; the refused rows</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>blocker-pretext-module-cache-write</code> <span class="kind positive">positive</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the cache's write, its value returned</span></summary><pre class="code"><span class="tk-c">// Pretext (github.com/chenglou/pretext at 0d102a5c, src/, census by unit):</span>
+<span class="tk-c">// graphemes.ts#findGraphemeEnds.</span>
+<span class="tk-c">// A module-level cache, a `Partial&lt;Record&lt;…&gt;&gt;`, filled at a key known only</span>
+<span class="tk-c">// at run time, the write's value returned: every mention of the cache is an</span>
+<span class="tk-c">// access, so the module owns its object, and the key-adding write is the copy</span>
+<span class="tk-c">// written to the cache's cell after the right side (PROGRAM-TYPING.md,</span>
+<span class="tk-c">// &quot;Key-adding writes&quot;).</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">function</span> parse(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> table === <span class="tk-s">&quot;a&quot;</span> ? [<span class="tk-n">1</span>] : [<span class="tk-n">2</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = parse(table));
+}</pre></details></li><li><details><summary><code>module-cache-reentrant</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">right side re-entering at another key and at its own</span></summary><pre class="code"><span class="tk-c">// A module's own cache, a `Partial&lt;Record&lt;…&gt;&gt;` whose keys writes add</span>
+<span class="tk-c">// (PROGRAM-TYPING.md, &quot;Key-adding writes&quot;): the right side of a write runs</span>
+<span class="tk-c">// the cache's function again, at another key and then at its own key, before</span>
+<span class="tk-c">// the outer write adds the key; the write's value is returned; another</span>
+<span class="tk-c">// function reads the cache at `number[] | undefined`; a write as a statement</span>
+<span class="tk-c">// (run under Node).</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">function</span> parse(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">if</span> (table === <span class="tk-s">&quot;b&quot;</span>) {
+    <span class="tk-k">const</span> first = rules(<span class="tk-s">&quot;a&quot;</span>);
+    cache[<span class="tk-s">&quot;b&quot;</span>] = [first.length];
+    <span class="tk-k">return</span> [first.length + <span class="tk-n">1</span>, <span class="tk-n">0</span>];
+  }
+  <span class="tk-k">return</span> [<span class="tk-n">1</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = parse(table));
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> known(table: <span class="tk-t">Table</span>): number {
+  <span class="tk-k">const</span> got = cache[table];
+  <span class="tk-k">return</span> got === <span class="tk-k">undefined</span> ? -<span class="tk-n">1</span> : got.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> store(table: <span class="tk-t">Table</span>, rows: number[]): number {
+  cache[table] = rows;
+  <span class="tk-k">return</span> known(table);
+}</pre></details></li><li><details><summary><code>module-cache-before-initialization</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the dead zone's throw before the right side</span></summary><pre class="code"><span class="tk-c">// A module's own cache written before its declaration runs: the write reads</span>
+<span class="tk-c">// the cache's binding first, as JavaScript does, so the ReferenceError comes</span>
+<span class="tk-c">// before the right side runs (`before` is 0); after the declaration the</span>
+<span class="tk-c">// write adds the key (`after` is 1). Run under Node.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">let</span> effects: number = <span class="tk-n">0</span>;
+
+<span class="tk-k">function</span> rhs(): number[] {
+  effects = effects + <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> [effects];
+}
+
+<span class="tk-k">function</span> fill(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> (cache[table] = rhs());
+}
+
+<span class="tk-k">function</span> attempt(): number {
+  <span class="tk-k">try</span> {
+    fill(<span class="tk-s">&quot;a&quot;</span>);
+  } <span class="tk-k">catch</span> {
+    <span class="tk-k">return</span> effects;
+  }
+  <span class="tk-k">return</span> -<span class="tk-n">1</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> before: number = attempt();
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+<span class="tk-k">export</span> <span class="tk-k">const</span> after: number = fill(<span class="tk-s">&quot;b&quot;</span>).length;</pre></details></li><li><details><summary><code>invalid-module-cache-alias</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a module constant aliasing the cache</span></summary><pre class="code"><span class="tk-c">// A module constant bound to the cache holds its object too, at `{}`, which</span>
+<span class="tk-c">// a parameter reads at `{ x?: string }`: the write adds `x` to the object</span>
+<span class="tk-c">// both hold, and the reader calls a string method of a number (run under</span>
+<span class="tk-c">// Node: a TypeError). The cache is no module's own object: its write is</span>
+<span class="tk-c">// refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Key</span> = <span class="tk-s">&quot;x&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Key</span>, number&gt;&gt; = {};
+<span class="tk-k">const</span> view: {} = cache;
+
+<span class="tk-k">function</span> upper(o: { x?: string }): string {
+  <span class="tk-k">return</span> o.x === <span class="tk-k">undefined</span> ? <span class="tk-s">&quot;&quot;</span> : o.x.toUpperCase();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> run(key: <span class="tk-t">Key</span>): string {
+  cache[key] = <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> upper(view);
+}
+
+run(<span class="tk-s">&quot;x&quot;</span>);</pre></details></li><li><details><summary><code>module-cache-key-call-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a key a call computes</span></summary><pre class="code"><span class="tk-c">// A module's cache read at a key a call computes: the call may write the</span>
+<span class="tk-c">// cache between the receiver's read and the read of the key, so the cache is</span>
+<span class="tk-c">// not the module's own object, and its key-adding write is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">function</span> pick(table: <span class="tk-t">Table</span>): <span class="tk-t">Table</span> {
+  <span class="tk-k">return</span> table;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[pick(table)] ?? (cache[table] = [<span class="tk-n">1</span>]);
+}</pre></details></li><li><details><summary><code>module-cache-update-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an update of a member</span></summary><pre class="code"><span class="tk-c">// A module's cache whose member an update writes: an update reads its</span>
+<span class="tk-c">// receiver once, before its right side, which may replace the cache's</span>
+<span class="tk-c">// object, so the cache is not the module's own object, and its key-adding</span>
+<span class="tk-c">// write is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: { hits: number; a?: number[]; b?: number[] } = { hits: <span class="tk-n">0</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  cache.hits += <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = [<span class="tk-n">1</span>]);
+}</pre></details></li><li><details><summary><code>module-cache-in-place-call-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a write in place whose right side calls</span></summary><pre class="code"><span class="tk-c">// A write of a key a module's own object states, whose right side calls: the</span>
+<span class="tk-c">// call may add a key, replacing the object the write's receiver read, so the</span>
+<span class="tk-c">// write is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: { hits: number; a?: number[]; b?: number[] } = { hits: <span class="tk-n">0</span> };
+
+<span class="tk-k">function</span> fill(table: <span class="tk-t">Table</span>): number {
+  cache[table] = [<span class="tk-n">1</span>];
+  <span class="tk-k">return</span> <span class="tk-n">1</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(table: <span class="tk-t">Table</span>): number {
+  cache.hits = fill(table);
+  <span class="tk-k">return</span> cache.hits;
+}</pre></details></li><li><details><summary><code>module-cache-string-key-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a <code>string</code> key, which may be <code>__proto__</code></span></summary><pre class="code"><span class="tk-c">// A module's own dictionary written at a `string` key: the key may be</span>
+<span class="tk-c">// `__proto__`, whose setter the copy at string keys does not run, so the</span>
+<span class="tk-c">// write is refused.</span>
+<span class="tk-k">const</span> cache: <span class="tk-t">Record</span>&lt;string, number[]&gt; = {};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(name: string): number[] {
+  <span class="tk-k">const</span> known = cache[name];
+  <span class="tk-k">if</span> (known !== <span class="tk-k">undefined</span>) <span class="tk-k">return</span> known;
+  <span class="tk-k">const</span> made = [name.length];
+  cache[name] = made;
+  <span class="tk-k">return</span> made;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Simulation, reviewed and unproved like every lowering: JavaScript's object bound to c and the object the cell holds have the same own properties and the default prototype, and nothing but the cell reaches either, except an access's receiver for that access. A read, a key test and a write in place run no code between the receiver's read and the access. A key-adding write reads the cell again after its right side, then stores the copy of the current object with the key, which has the own properties JavaScript's [[Set]] leaves on an ordinary object at a string key other than <code>__proto__</code>. No admitted mention observes the copy's identity, key order or attributes. The safety of each unit is <code>checkUnitJson_safe</code>'s, unchanged; module composition stays open.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">lean-lowering</span> <span class="chip strong">trust</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExtraction.ownedModuleCells · SourceExtraction.moduleEscapes · SourceExtraction.stringKeyedLiteral · SourceExtraction.plainContract · SourceExtraction.moduleOwnedCell · SourceExtraction.LoweringExecution.moduleGrowth · SourceExtraction.entryFacts</dd><dt>Trust</dt><dd><span class="trust">the lowering states that a module cell whose object the module owns (OwnMod) is the one reference to that object, so a key-adding write's copy written to the cell after the right side is JavaScript's write in place</span></dd><dt>Measured</dt><dd>pretext census, 300 s step limit: 169 -&gt; 170 of 212 functions shallow verified (getGraphemeRules) · findGraphemeEnds stays refused at an unrelated cast claim</dd><dt>Tests</dt><dd><span class="test pos">module-cache-reentrant</span> <span class="test pos">module-cache-before-initialization</span> <span class="test pos">invalid-module-cache-alias</span> <span class="test pos">module-cache-key-call-refused</span> <span class="test pos">module-cache-update-refused</span> <span class="test pos">module-cache-in-place-call-refused</span> <span class="test pos">module-cache-string-key-refused</span> <span class="test forged">a read claimed defined,</span> <span class="test forged">a write's value claimed undefined,</span> <span class="test forged">the cache's contract dropped</span></dd></dl>
+<details><summary>25 files changed, 555 insertions(+), 36 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                             | 60 +++++++++++++-
+ docs/SOURCE-ELABORATION.md                         | 11 ++-
+ docs/SOURCE-FRAGMENT.md                            |  3 +-
+ lean/Verification/Source/Claims/Extraction.lean    |  9 ++-
+ lean/Verification/Source/Lowering/Execution.lean   | 91 +++++++++++++++++++++-
+ lean/Verification/Source/Lowering/Flow.lean        |  1 +
+ .../Verification/Source/Lowering/Observations.lean |  4 +-
+ lean/Verification/Source/Lowering/Plans.lean       | 10 ++-
+ lean/Verification/Source/Lowering/State.lean       | 39 +++++++++-
+ lean/Verification/Source/Lowering/Types.lean       | 14 +++-
+ lean/Verification/Source/SourceExtraction.lean     |  6 +-
+ lean/Verification/Source/SourceFacts.lean          | 83 ++++++++++++++++++++
+ pipeline/cases.mts                                 | 11 ++-
+ .../examples/blocker-pretext-module-cache-write.ts | 10 +--
+ pipeline/examples/invalid-module-cache-alias.ts    | 19 +++++
+ .../examples/module-cache-before-initialization.ts | 28 +++++++
+ .../examples/module-cache-in-place-call-refused.ts | 15 ++++
+ pipeline/examples/module-cache-key-call-refused.ts | 13 ++++
+ pipeline/examples/module-cache-map.ts              |  6 +-
+ pipeline/examples/module-cache-reentrant.ts        | 31 ++++++++
+ .../examples/module-cache-string-key-refused.ts    | 12 +++
+ pipeline/examples/module-cache-update-refused.ts   | 11 +++
+ pipeline/test.mts                                  | 46 +++++++++++
+ tools/fragment-parse.mts                           | 53 ++++++++++++-
+ tools/fragment-statements.mts                      |  5 +-</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+<article class="card" id="c-8074e8cd9"><header><div><div class="sha">8074e8cd9 · Cristiano Calcagno · Nov 05, 21:22</div><h3>Restrict a module's own object to the approved add-once cache, decided over omitted code too</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>graphemes.ts#getGraphemeRules</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>Astra's review of the module's own object found two holes and the owner approved a narrower rule: a module-private record with a fixed finite key set, created empty, never escaping, never enumerated, deleted or tested for a key. A census omits a refused function and reads it at its signature, so its body and its parameter defaults were not among the mentions the ownership analysis read:</p><p>function leak(value: {} = cache): {} { return value; }</p><p>with <code>leak</code> omitted, <code>cache</code> looked owned, and its key-adding write would leave <code>alias = leak()</code> at the empty object, where Node throws a TypeError reading it at <code>{ x?: string }</code>. A module <code>let</code> mentioned only in an omitted body had the same hole. Pretext's <code>getBreakRules</code>, which assigns the write's value to a local, was not owned.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">lowering: a module's own object</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">OwnMod</span>(<var>c</var>) ⟺ <var>c</var> <span class="m-text">is a module cell initialized by a literal of string-keyed</span></span></div><div class="row cont"><span><span class="m-text">data properties, every mention</span> <var>c</var>.<var>f</var>, <var>c</var>[<var>k</var>], <var>c</var>.<var>f</var> <span class="m-rel">=</span> <var>e</var>, <var>c</var>[<var>k</var>] <span class="m-rel">=</span> <var>e</var>, <var>k</var> <span class="m-kw">in</span> <var>c</var> <span class="m-text">or</span></span></div><div class="row cont"><span><span class="m-text">a key test</span>, <var>k</var> <span class="m-text">a variable or a literal; an assignment of any binding</span></span></div><div class="row cont"><span><span class="m-text">mentioning</span> <var>c</var> <span class="m-text">counts as an escape</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">OwnMod</span>(<var>c</var>) ⟺ <var>c</var> <span class="m-text">is a module cell initialized by</span> {}, <span class="m-text">no code the lowering</span></span></div><div class="row cont"><span><span class="m-text">leaves out mentions it, and every mention is</span> <var>c</var>.<var>f</var>, <var>c</var>[<var>k</var>], <var>c</var>.<var>f</var> <span class="m-rel">=</span> <var>e</var> <span class="m-text">or</span></span></div><div class="row cont"><span><var>c</var>[<var>k</var>] <span class="m-rel">=</span> <var>e</var>, <var>k</var> <span class="m-text">a variable or a literal; <code class="m-code">x = c[k] = e</code> of another binding</span></span></div><div class="row cont"><span><var>x</var> <span class="m-text">holds the right side's value</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Refusal <span class="target">lowering: a module's own object</span></h4><div class="prose"><p>a key-adding write on a module's own object whose type states an index: the object's type states a finite key set</p></div>
+<h4 class="change"><span class="act removed">removed</span>Refusal <span class="target">lowering: a write in place on a module's own object</span></h4><div class="prose"><p>every key of a type the empty object meets is optional, so every write on a module's own object adds or replaces its key by a copy</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">fragment document</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>{ file, sourceSha256, declarations, init, functions, modules }</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>{ file, sourceSha256, declarations, init, functions, omittedMentions, modules } (<code>omittedMentions</code>: the names an omitted function, whole, or a statement left out mentions, sorted; empty without omissions)</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">PROGRAM-TYPING.md, FRAGMENT-FORMAT.md, SOURCE-ELABORATION.md, SOURCE-FRAGMENT.md</span></h4><div class="prose"><p>the restricted rule, the new field, the refused rows</p></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>module-cache-reentrant</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">also a value held by a local, a throwing right side, a closure</span></summary><pre class="code"><span class="tk-c">// A module's own cache, a `Partial&lt;Record&lt;…&gt;&gt;` whose keys writes add</span>
+<span class="tk-c">// (PROGRAM-TYPING.md, &quot;Key-adding writes&quot;): the right side of a write runs</span>
+<span class="tk-c">// the cache's function again, at another key and then at its own key, before</span>
+<span class="tk-c">// the outer write adds the key; the write's value is returned; another</span>
+<span class="tk-c">// function reads the cache at `number[] | undefined`; a write as a statement,</span>
+<span class="tk-c">// and one whose value a local holds; a right side that adds a key and then</span>
+<span class="tk-c">// throws, the key kept; a closure reading and writing the cache (run under</span>
+<span class="tk-c">// Node).</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">function</span> parse(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">if</span> (table === <span class="tk-s">&quot;b&quot;</span>) {
+    <span class="tk-k">const</span> first = rules(<span class="tk-s">&quot;a&quot;</span>);
+    cache[<span class="tk-s">&quot;b&quot;</span>] = [first.length];
+    <span class="tk-k">return</span> [first.length + <span class="tk-n">1</span>, <span class="tk-n">0</span>];
+  }
+  <span class="tk-k">return</span> [<span class="tk-n">1</span>];
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = parse(table));
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> known(table: <span class="tk-t">Table</span>): number {
+  <span class="tk-k">const</span> got = cache[table];
+  <span class="tk-k">return</span> got === <span class="tk-k">undefined</span> ? -<span class="tk-n">1</span> : got.length;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> store(table: <span class="tk-t">Table</span>, rows: number[]): number {
+  cache[table] = rows;
+  <span class="tk-k">return</span> known(table);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rulesHeld(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">let</span> rows = cache[table];
+  <span class="tk-k">if</span> (rows === <span class="tk-k">undefined</span>) {
+    rows = cache[table] = parse(table);
+  }
+  <span class="tk-k">return</span> rows;
+}
+
+<span class="tk-k">function</span> failing(table: <span class="tk-t">Table</span>): number[] {
+  cache[<span class="tk-s">&quot;a&quot;</span>] = [<span class="tk-n">3</span>, <span class="tk-n">3</span>, <span class="tk-n">3</span>];
+  <span class="tk-k">throw</span> <span class="tk-k">new</span> <span class="tk-t">Error</span>(table);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> attempt(table: <span class="tk-t">Table</span>): number {
+  <span class="tk-k">try</span> {
+    <span class="tk-k">return</span> (cache[table] = failing(table)).length;
+  } <span class="tk-k">catch</span> {
+    <span class="tk-k">return</span> known(<span class="tk-s">&quot;a&quot;</span>);
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">const</span> lazy = (table: <span class="tk-t">Table</span>): number[] =&gt; cache[table] ?? (cache[table] = parse(table));</pre></details></li><li><details><summary><code>invalid-module-cache-omitted-default</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a parameter default passing the cache on</span></summary><pre class="code"><span class="tk-c">// A module cache whose object a function's parameter default passes on: read</span>
+<span class="tk-c">// with that function omitted (`--omit leak`, a census's omission), the</span>
+<span class="tk-c">// cache is still no module's own object, and its key-adding write is</span>
+<span class="tk-c">// refused (run under Node: a TypeError).</span>
+<span class="tk-k">type</span> <span class="tk-t">K</span> = <span class="tk-s">&quot;x&quot;</span> | <span class="tk-s">&quot;y&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">K</span>, number&gt;&gt; = {};
+
+<span class="tk-k">function</span> leak(value: {} = cache): {} {
+  <span class="tk-k">return</span> value;
+}
+<span class="tk-k">const</span> alias: {} = leak();
+
+<span class="tk-k">function</span> upper(o: { x?: string }): string {
+  <span class="tk-k">return</span> o.x === <span class="tk-k">undefined</span> ? <span class="tk-s">&quot;&quot;</span> : o.x.toUpperCase();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> run(key: <span class="tk-t">K</span>): string {
+  cache[key] = <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> upper(alias);
+}
+
+run(<span class="tk-s">&quot;x&quot;</span>);</pre></details></li><li><details><summary><code>invalid-module-cache-omitted-let</code> <span class="kind negative">negative</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">a module <code>let</code> cache a function returns</span></summary><pre class="code"><span class="tk-c">// A module `let` cache an omitted function returns (`--omit leak`, a</span>
+<span class="tk-c">// census's omission): the cache is still no module's own object, and its</span>
+<span class="tk-c">// key-adding write is refused (run under Node: a TypeError).</span>
+<span class="tk-k">type</span> <span class="tk-t">K</span> = <span class="tk-s">&quot;x&quot;</span> | <span class="tk-s">&quot;y&quot;</span>;
+<span class="tk-k">let</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">K</span>, number&gt;&gt; = {};
+
+<span class="tk-k">function</span> leak(): {} {
+  <span class="tk-k">return</span> cache;
+}
+<span class="tk-k">const</span> alias: {} = leak();
+
+<span class="tk-k">function</span> upper(o: { x?: string }): string {
+  <span class="tk-k">return</span> o.x === <span class="tk-k">undefined</span> ? <span class="tk-s">&quot;&quot;</span> : o.x.toUpperCase();
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> run(key: <span class="tk-t">K</span>): string {
+  cache[key] = <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> upper(alias);
+}
+
+run(<span class="tk-s">&quot;x&quot;</span>);</pre></details></li><li><details><summary><code>module-cache-update-refused</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">created empty, a <code>??=</code> of a key</span></summary><pre class="code"><span class="tk-c">// A module's cache, created empty, whose key a logical assignment writes: it</span>
+<span class="tk-c">// reads its receiver once, before its right side, which may replace the</span>
+<span class="tk-c">// cache's object, so the cache is not the module's own object, and its</span>
+<span class="tk-c">// key-adding write is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: <span class="tk-t">Partial</span>&lt;<span class="tk-t">Record</span>&lt;<span class="tk-t">Table</span>, number[]&gt;&gt; = {};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(table: <span class="tk-t">Table</span>): number[] {
+  <span class="tk-k">return</span> cache[table] ?? (cache[table] = [<span class="tk-n">1</span>]);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> reset(table: <span class="tk-t">Table</span>): <span class="tk-k">void</span> {
+  cache[table] ??= [<span class="tk-n">2</span>];
+}</pre></details></li><li><details><summary><code>module-cache-dictionary-refused</code> <span class="kind gap">gap</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">refused</span> <span class="why">an index type, no finite key set</span></summary><pre class="code"><span class="tk-c">// A module's own dictionary written at a `string` key: its type states no</span>
+<span class="tk-c">// finite key set, so its key-adding write is refused.</span>
+<span class="tk-k">const</span> cache: <span class="tk-t">Record</span>&lt;string, number[]&gt; = {};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(name: string): number[] {
+  <span class="tk-k">const</span> known = cache[name];
+  <span class="tk-k">if</span> (known !== <span class="tk-k">undefined</span>) <span class="tk-k">return</span> known;
+  <span class="tk-k">const</span> made = [name.length];
+  cache[name] = made;
+  <span class="tk-k">return</span> made;
+}</pre></details></li><li><details><summary><code>module-cache-string-key-refused</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">the dictionary case replaces it</span></summary><pre class="code"><span class="tk-c">// A module's own dictionary written at a `string` key: the key may be</span>
+<span class="tk-c">// `__proto__`, whose setter the copy at string keys does not run, so the</span>
+<span class="tk-c">// write is refused.</span>
+<span class="tk-k">const</span> cache: <span class="tk-t">Record</span>&lt;string, number[]&gt; = {};
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> rules(name: string): number[] {
+  <span class="tk-k">const</span> known = cache[name];
+  <span class="tk-k">if</span> (known !== <span class="tk-k">undefined</span>) <span class="tk-k">return</span> known;
+  <span class="tk-k">const</span> made = [name.length];
+  cache[name] = made;
+  <span class="tk-k">return</span> made;
+}</pre></details></li><li><details><summary><code>module-cache-in-place-call-refused</code> <span class="kind gap">gap</span> <span class="was">refused</span> <span class="arrow">→</span> <span class="now">removed</span> <span class="why">no write in place on an object created empty</span></summary><pre class="code"><span class="tk-c">// A write of a key a module's own object states, whose right side calls: the</span>
+<span class="tk-c">// call may add a key, replacing the object the write's receiver read, so the</span>
+<span class="tk-c">// write is refused.</span>
+<span class="tk-k">type</span> <span class="tk-t">Table</span> = <span class="tk-s">&quot;a&quot;</span> | <span class="tk-s">&quot;b&quot;</span>;
+<span class="tk-k">const</span> cache: { hits: number; a?: number[]; b?: number[] } = { hits: <span class="tk-n">0</span> };
+
+<span class="tk-k">function</span> fill(table: <span class="tk-t">Table</span>): number {
+  cache[table] = [<span class="tk-n">1</span>];
+  <span class="tk-k">return</span> <span class="tk-n">1</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> count(table: <span class="tk-t">Table</span>): number {
+  cache.hits = fill(table);
+  <span class="tk-k">return</span> cache.hits;
+}</pre></details></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>Ownership is decided over every mention of the cell: the fragment's code and, by name, the code it leaves out. The representation, one cell holding the partial record written by a copy, relates each key of the finite set to the current record's lookup, absence to <code>undefined</code>, as the approved set of per-key cells would: reads read one key, insertion updates one key after the right side (Astra, reviewed; no Lean theorem and no add-once guarantee).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip strong">wire</span> <span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Lean</dt><dd>SourceExtraction.ownedModuleCells · SourceExtraction.moduleEscapes · SourceExtraction.emptyLiteral · Fragment.decodeOmittedMentions</dd><dt>Wire</dt><dd>fragment document gains <code>omittedMentions</code></dd><dt>Trust</dt><dd><span class="trust">none beyond the previous commit's; its ownership premise is narrowed</span></dd><dt>Tests</dt><dd><span class="test pos">invalid-module-cache-omitted-default</span> <span class="test pos">invalid-module-cache-omitted-let</span> <span class="test pos">module-cache-dictionary-refused</span> <span class="test neg">module-cache-string-key-refused</span> <span class="test neg">module-cache-in-place-call-refused</span> <span class="test forged">the omitted function leak, by the census's omission</span></dd></dl>
+<details><summary>19 files changed, 178 insertions(+), 96 deletions(-)</summary><pre class="code"> docs/FRAGMENT-FORMAT.md                            |  1 +
+ docs/PROGRAM-TYPING.md                             | 38 ++++++++++++----------
+ docs/SOURCE-ELABORATION.md                         |  2 +-
+ docs/SOURCE-FRAGMENT.md                            |  4 +--
+ lean/Verification/Source/Claims/Extraction.lean    |  2 +-
+ lean/Verification/Source/Fragment.lean             |  9 +++--
+ lean/Verification/Source/Lowering/Execution.lean   | 12 +++----
+ lean/Verification/Source/SourceFacts.lean          | 37 ++++++++++-----------
+ pipeline/cases.mts                                 |  9 ++---
+ .../invalid-module-cache-omitted-default.ts        | 22 +++++++++++++
+ .../examples/invalid-module-cache-omitted-let.ts   | 21 ++++++++++++
+ ...fused.ts =&gt; module-cache-dictionary-refused.ts} |  5 ++-
+ .../examples/module-cache-in-place-call-refused.ts | 15 ---------
+ pipeline/examples/module-cache-reentrant.ts        | 29 +++++++++++++++--
+ pipeline/examples/module-cache-update-refused.ts   | 15 +++++----
+ pipeline/test.mts                                  | 14 ++++++++
+ pipeline/verify-source.mts                         |  2 +-
+ tools/fragment-parse.mts                           | 33 ++++++++++---------
+ tools/fragment.mts                                 |  4 +++</pre></details>
+<div class="sha">with Claude Opus 5.5</div>
+</article>
+</main></body></html>
