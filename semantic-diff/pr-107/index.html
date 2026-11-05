@@ -81,8 +81,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-107"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-107</code></a><ul><li>2 commits</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">parser</span> <span class="chip">tests</span></li><li>new trust: <span class="trust">a Python unit's verdict trusts the demo's Python-to-Fragment mapping, stated in demo/python/README.md; none for TypeScript sources</span></li><li>new trust: <span class="trust">Python aliasing examples assume ordinary built-in dictionaries, exact primitive values satisfying required fields, standard isinstance and str, sequential execution, and the reviewed Python-to-Fragment mapping; none added for TypeScript</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-107"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-107</code></a><ul><li>3 commits, units 1 verified</li><li>parts: <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip">parser</span> <span class="chip">tests</span> <span class="chip">lean-lowering</span></li><li>new trust: <span class="trust">a Python unit's verdict trusts the demo's Python-to-Fragment mapping, stated in demo/python/README.md; none for TypeScript sources</span></li><li>new trust: <span class="trust">Python aliasing examples assume ordinary built-in dictionaries, exact primitive values satisfying required fields, standard isinstance and str, sequential execution, and the reviewed Python-to-Fragment mapping; none added for TypeScript</span></li></ul></li></ul></section>
 <h2 id="g-pr-107"><code>4ffa514efc06d6904fec1be8085a0504f4c0a1ad..pr-107</code></h2><article class="card" id="c-fa7441758"><header><div><div class="sha">fa7441758 · Cristiano Calcagno · Nov 05, 18:10</div><h3>Add a demo Python front end that hands a small subset of Python to the producer and the verifier</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>TScert's back end reads a Fragment document, not TypeScript itself, and nothing showed that another source language can reach it. A Python file such as <code>def inc(x: int) -&gt; int: return x + 1</code> had no way into the pipeline.</p></div>
 <h4 class="change"><span class="act added">added</span>Tooling <span class="target">demo/python: py_ast.py, lower.mts, verify.mts, examples</span></h4><pre class="code"><span class="ln">py_ast.py        Python's own ast module, the tree printed as JSON, spans in UTF-16 offsets</span><span class="ln">lower.mts        the tree onto the Fragment, typed against tools/fragment.mts; any other construct refused with its line</span><span class="ln">verify.mts       node demo/python/verify.mts &lt;file.py&gt;: the verifier's control-flow lowering, the producer,</span><span class="ln">                 --produce-units and --check-units, called directly, without the stage store</span><span class="ln">examples         hello.py (five functions, verified), refused.py (x + &quot;a&quot; under -&gt; int, refused)</span></pre>
@@ -123,5 +123,138 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  demo/python/runtime.py                    |  43 +++++++++
  demo/python/test.mts                      |  65 +++++++++++++
  demo/python/verify.mts                    |  20 ++--</pre></details>
+</article>
+<article class="card" id="c-16d8a2819"><header><div><div class="sha">16d8a2819 · Cristiano Calcagno · Nov 05, 20:47</div><h3>Carry a fresh field test's saved value to both branch outcomes</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>pipeline/examples/path-witness-controls.ts#recheckedPrimitive</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The Python demo's safe recheck writes a str-or-int replacement through an alias, tests the current title and returns either the checked string or a fallback. It was refused on the failed-test edge: the next entry required a bigint witness, but that edge carried the old unknown slot. The equivalent TypeScript function failed at the same obligation.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">shared source lowering: guarded field reads</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">The guarded-return path saved the tested read for its successful</span></span></div><div class="cond"><span class="tgt"><span class="m-text">return, but mapped every original slot unchanged to the failed-test</span></span></div><div class="cond"><span class="tgt"><span class="m-text">successor</span>. <span class="m-text">A witness required there could still hold an older value</span>.</span></div><div class="cond"><span class="tgt"><span class="m-text">General predicate lowering recognized the witness of a nested path</span></span></div><div class="cond"><span class="tgt"><span class="m-text">through its prefix, but not the direct source path in the same place</span>.</span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">The saved read is the path witness on the failed-test edge too</span>. <span class="m-con">The</span></span></div><div class="cond"><span class="tgt"><span class="m-text">ordinary predicate and guarded-return paths identify the same direct</span></span></div><div class="cond"><span class="tgt"><span class="m-text">source path or field of a saved prefix through one shared operation</span>.</span></div><div class="cond"><span class="tgt"><span class="m-text">The existing tag dispatch refines that saved value, and every edge</span></span></div><div class="cond"><span class="tgt"><span class="m-text">checks its mapped type and read link under the existing rules</span>.</span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>path-witness-controls</code> <span class="kind positive">positive</span> <span class="was">verified</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">includes the fresh str-or-bigint check's failed edge</span></summary><pre class="code"><span class="tk-k">type</span> <span class="tk-t">Value</span> =
+  | { <span class="tk-k">readonly</span> kind: <span class="tk-s">&quot;text&quot;</span>; <span class="tk-k">readonly</span> text: string }
+  | { <span class="tk-k">readonly</span> kind: <span class="tk-s">&quot;empty&quot;</span> };
+<span class="tk-k">type</span> <span class="tk-t">Holder</span> = { value: <span class="tk-t">Value</span>; other: <span class="tk-t">Value</span> };
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> primitiveBefore(holder: { value: { flag?: boolean } }): number {
+  <span class="tk-k">if</span> (holder.value.flag) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> primitiveAfterCall(
+  holder: { value: { flag?: boolean } },
+  replace: () =&gt; <span class="tk-k">void</span>,
+): number {
+  <span class="tk-k">if</span> (holder.value.flag) {
+    replace();
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> before(holder: <span class="tk-t">Holder</span>): number {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> receiver(holder: <span class="tk-t">Holder</span>, other: <span class="tk-t">Holder</span>): number {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    <span class="tk-k">if</span> (other.value.kind === <span class="tk-s">&quot;text&quot;</span>) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> field(holder: <span class="tk-t">Holder</span>): number {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    <span class="tk-k">if</span> (holder.other.kind === <span class="tk-s">&quot;text&quot;</span>) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> afterCall(holder: <span class="tk-t">Holder</span>, replace: () =&gt; <span class="tk-k">void</span>): number {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    replace();
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> afterRoot(first: <span class="tk-t">Holder</span>, second: <span class="tk-t">Holder</span>): number {
+  <span class="tk-k">let</span> holder = first;
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    holder = second;
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> backEdge(first: <span class="tk-t">Holder</span>, second: <span class="tk-t">Holder</span>, limit: number): number {
+  <span class="tk-k">let</span> holder = first;
+  <span class="tk-k">if</span> (holder.value.kind !== <span class="tk-s">&quot;text&quot;</span>) <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">while</span> (n &lt; limit) {
+    n = n + <span class="tk-n">1</span>;
+    holder = second;
+  }
+  <span class="tk-k">return</span> n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> loop(holder: <span class="tk-t">Holder</span>, limit: number): number {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+    <span class="tk-k">while</span> (n &lt; limit) n++;
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  }
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> caught(holder: <span class="tk-t">Holder</span>): number {
+  <span class="tk-k">try</span> {
+    <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) <span class="tk-k">throw</span> <span class="tk-n">1</span>;
+    <span class="tk-k">return</span> <span class="tk-n">0</span>;
+  } <span class="tk-k">catch</span> {
+    <span class="tk-k">return</span> <span class="tk-c">/* caught */</span> <span class="tk-n">0</span>;
+  }
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> afterCallRead(holder: <span class="tk-t">Holder</span>, replace: () =&gt; <span class="tk-k">void</span>): <span class="tk-t">Value</span> {
+  <span class="tk-k">if</span> (holder.value.kind === <span class="tk-s">&quot;text&quot;</span>) {
+    replace();
+    <span class="tk-k">return</span> holder.value;
+  }
+  <span class="tk-k">return</span> holder.value;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> numericChain(holder: {
+  value: { size: number; flag?: boolean };
+}): number {
+  <span class="tk-k">if</span> (holder.value.size &amp;&amp; holder.value.flag &amp;&amp; holder.value.flag) <span class="tk-k">return</span> <span class="tk-n">1</span>;
+  <span class="tk-k">return</span> <span class="tk-n">0</span>;
+}
+
+<span class="tk-c">// The Python demo's fresh field test uses this same source lowering. Both</span>
+<span class="tk-c">// outcomes carry the value the test reads, including the bigint outcome.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> recheckedPrimitive(
+  holder: { value: string | bigint },
+  replacement: string | bigint,
+): string {
+  <span class="tk-k">const</span> alias = holder;
+  alias.value = replacement;
+  <span class="tk-k">if</span> (<span class="tk-k">typeof</span> holder.value === <span class="tk-s">&quot;string&quot;</span>) <span class="tk-k">return</span> holder.value;
+  <span class="tk-k">return</span> <span class="tk-s">&quot;&quot;</span>;
+}</pre></details></li></ul>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln">rechecked_title.py tests the current field after a str-or-int write,</span><span class="ln">with a direct <span class="tk-k">return</span> and a <span class="tk-k">return</span> expression. rechecked_arguments.py</span><span class="ln">repeats the test after a write through a potentially aliased parameter.</span><span class="ln"><span class="tk-t">Both</span> files change <span class="tk-k">from</span> unverified <span class="tk-k">in</span> the investigation to verified.</span><span class="ln"><span class="tk-t">The</span> stale local and parameter-alias examples remain unverified at their</span><span class="ln">returns; the saved-string snapshot remains verified.</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">Python demo and host-family linked reads</span></h4><div class="prose"><p>The caller-alias example leads the demo. The result table places stale reads, saved strings and fresh checks together. The linked-read account describes both outcomes' saved path value, including a guarded return's failed edge.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">Python demo: runtime and checker comparison</span></h4><pre class="code"><span class="ln">The runtime exercises string and integer replacements, a return</span><span class="ln">expression, and same and distinct parameter objects. The five pinned</span><span class="ln">Python checkers accept the fresh-check repair alongside the snapshot</span><span class="ln">and both stale-read bugs, and reject the ordinary type-error control.</span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>A tag dispatch's pushed value is the saved read it tests. Mapping the path witness to that value exposes its checked slice on the edge. The operation runs no source code between the read and the dispatch; the existing graph checker validates all types and links. The typing rules, safety theorem and source assumptions are unchanged.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-lowering</span> <span class="chip">docs</span> <span class="chip">tests</span> <span class="chip">tools</span></dd><dt>Lean</dt><dd>LoweringPlans.readPathWitness · LoweringAtoms.compileConditionAtom · LoweringFlow.flowNode</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test pos">path-witness-controls</span> <span class="test pos">rechecked_title</span> <span class="test pos">rechecked_arguments</span> <span class="test neg">stale_title</span> <span class="test neg">aliased_arguments 23 fast suites and 228 controls pass; 2957 of 2958 pipeline cases match on the full run, the binder timeout passes in isolation; seven Python source verdicts and the five-checker comparison pass</span></dd></dl>
+<details><summary>11 files changed, 126 insertions(+), 41 deletions(-)</summary><pre class="code"> demo/python/README.md                        | 57 +++++++++++++++++-----------
+ demo/python/compare.mts                      |  4 +-
+ demo/python/examples/rechecked_arguments.py  | 13 +++++++
+ demo/python/examples/rechecked_title.py      | 21 ++++++++++
+ demo/python/runtime.py                       | 17 ++++++++-
+ demo/python/test.mts                         |  5 ++-
+ docs/HOST-FAMILIES.md                        | 13 ++++---
+ lean/Verification/Source/Lowering/Atoms.lean | 12 +++---
+ lean/Verification/Source/Lowering/Flow.lean  |  6 ++-
+ lean/Verification/Source/Lowering/Plans.lean |  7 ++++
+ pipeline/examples/path-witness-controls.ts   | 12 ++++++</pre></details>
 </article>
 </main></body></html>
