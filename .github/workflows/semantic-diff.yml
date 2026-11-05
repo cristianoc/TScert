@@ -167,6 +167,10 @@ jobs:
           comment-tag: deck-changes
           mode: upsert
           file-path: semantic-diff/decks-comment.md
+          # Posted as the repository's machine user where its token is set,
+          # since GitHub emails the owner a mention by a user, not by the
+          # workflow's own bot; without the secret, as the workflow's bot.
+          github-token: ${{ secrets.TSCERT_BOT_TOKEN || github.token }}
 
       # Last, so that the page and the comment show the records either way.
       - name: Check the commit records
