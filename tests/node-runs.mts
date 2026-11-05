@@ -3117,4 +3117,6 @@ for (const [file, call] of [
     "fill from index 1 leaves index 0 a hole, read as undefined");
   assert.throws(() => runExample(negative("invalid-array-fill-range"), "digits(2)"), /TypeError/,
     "fill below index 1 leaves index 1 a hole, read as undefined");
+  assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
+    '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
 }

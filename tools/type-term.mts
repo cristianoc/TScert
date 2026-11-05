@@ -415,8 +415,31 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
   return term;
 }
 
+/** The type a parameter without an annotation states by its literal
+ * default, as TypeScript's `isolatedDeclarations` declares it
+ * (SOURCE-CONTRACTS.md, "Types stated by annotations"): `true` or `false` a
+ * `boolean`, a numeric literal a `number` and a bigint literal a `bigint`,
+ * each also under one `-`, a string literal or a template without
+ * substitutions a `string`: the literal's type widened, so a caller may pass
+ * any value of its kind. `null` for any other node. */
+export function literalDefaultName(p: Node): Within<{ value: "any"; store: "grow" }, "boolean" | "number" | "bigint" | "string" | null> {
+  if (!ts.isParameterDeclaration(p) || p.type || !p.initializer) return null;
+  const written = p.initializer;
+  const value = ts.isPrefixUnaryExpression(written) && written.operator === ts.SyntaxKind.MinusToken ? written.operand : written;
+  if (ts.isNumericLiteral(value)) return "number";
+  if (ts.isBigIntLiteral(value)) return "bigint";
+  if (value !== written) return null;
+  if (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword) return "boolean";
+  if (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value)) return "string";
+  return null;
+}
+
 function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | null): Within<{ value: "any"; store: "grow" }, TypeTerm> {
-  if (!node) return scope.fail(at, "missing type annotation");
+  if (!node) {
+    const stated = at ? literalDefaultName(at) : null;
+    if (at && stated) return { k: "atom", name: stated, span: spanOf(scope, at) };
+    return scope.fail(at, "missing type annotation");
+  }
   const span = spanOf(scope, node);
   const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm => ({ k: "atom", name, span });
   switch (node.kind) {

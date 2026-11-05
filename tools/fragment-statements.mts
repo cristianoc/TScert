@@ -14,6 +14,7 @@ import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, it
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, forInEntryReads, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
+import { literalDefaultName } from "./type-term.mts";
 import { isImport, isTypeAlias } from "./syntax.mts";
 
 /** The declarator `d` of a pattern, the statement `node` holds it, lowered
@@ -1981,8 +1982,10 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       const target = gate.pattern(p.name, names);
       const default_ = p.initializer ? gate.expr(p.initializer) : null;
       bound.set(hidden, [target, default_]);
+      // A written parameter is a cell at its annotation, or at the type its
+      // literal default states (`literalDefaultName`).
       bindings.push(...gate.parameterBinding(p, node, gate.span(p), target, default_, hidden,
-        ts.isIdentifier(p.name) && p.type ? gate.typeOf(p.type, p) : null));
+        ts.isIdentifier(p.name) && (p.type || literalDefaultName(p)) ? gate.typeOf(p.type, p) : null));
       return {
         name: hidden,
         pos: at,

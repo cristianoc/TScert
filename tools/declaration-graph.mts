@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 import { auditedOpenReadKeys, receiverOpenReadKeys } from "./host-operations.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf, isImport, isTypeAlias } from "./syntax.mts";
-import { wildcardReadings, classInstance, computedAlias, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
+import { wildcardReadings, classInstance, computedAlias, literalDefaultName, computedForm, expandMapped, mapped, mapTypeParts, typeParts, members, numericKey, oneTerm, overloadTerm, optionalTerm, restPositions, restTerm, signature, signatures, statedResult, substitute,
   typeTerm, validateAnnotation, visitType, WITHIN_PLACE, type AwaitedHook, type ComputedHook, type EnumeratedHook, type KeysHook, type Mapped, type MappedMember,
   type AliasHook, type ModifiersHook, type RecordHook, type TermScope } from "./type-term.mts";
 import { arrayPrototype, functionPrototype, functionPrototypeName, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
@@ -1950,10 +1950,11 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
         }
         // A constant initialized by a function literal states its type by
         // the literal's parameter and result annotations, as a function
-        // declaration does; the body is what is assumed.
+        // declaration does, a parameter's also by its literal default
+        // (`literalDefaultName`); the body is what is assumed.
         const fn = node.initializer && skipParenthesized(node.initializer);
         if (constant && !node.type && fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && fn.type &&
-            fn.parameters.every(p => !!p.type)) {
+            fn.parameters.every(p => !!p.type || literalDefaultName(p) !== null)) {
           for (const part of [...(fn.typeParameters ?? []), ...fn.parameters, fn.type])
             clean(part, `${idOf(source)}#${node.name.text}`);
           const { names, typeParams } = bindersOf(reading, fn.typeParameters, fn, what);
