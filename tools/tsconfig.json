@@ -24,6 +24,7 @@
     "../tests/*.mts",
     "../pipeline/*.mts",
     "../dev/*.mts",
-    "../docs/deep-dives/*/deck.mts"
+    "../docs/deep-dives/*/deck.mts",
+    "../demo/*/*.mts"
   ]
 }
