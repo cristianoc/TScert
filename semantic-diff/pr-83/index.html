@@ -82,8 +82,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">10 commits, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-83"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-83</code></a><ul><li>10 commits</li><li>parts: <span class="chip">docs</span> <span class="chip">tools</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">tests</span> <span class="chip strong">lean-semantics</span></li></ul></li></ul></section>
-<h2 id="g-pr-83"><code>50be2ce88b9c4091f3498642d955144e433bda1d..pr-83</code></h2><article class="card" id="c-6ac13940b"><header><div><div class="sha">6ac13940b · Cristiano Calcagno · Nov 05, 03:15</div><h3>Make module headers and comments describe the code they head</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-83"><code>9b5e7f14bc0ed05eb6cc20b2baa1ac3ba5e2bee4..pr-83</code></a><ul><li>10 commits</li><li>parts: <span class="chip">docs</span> <span class="chip">tools</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">tests</span> <span class="chip strong">lean-semantics</span></li></ul></li></ul></section>
+<h2 id="g-pr-83"><code>9b5e7f14bc0ed05eb6cc20b2baa1ac3ba5e2bee4..pr-83</code></h2><article class="card" id="c-7d370d82c"><header><div><div class="sha">7d370d82c · Cristiano Calcagno · Nov 05, 03:15</div><h3>Make module headers and comments describe the code they head</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Several headers and comments described other code (#49): compiler-channel.mts called itself the one reader of the compiler package's private shape, which client-prototype.mts reads, and that module's error named compiler-channel.mts; the Makefile said the stage runner reports CPU time only; two test-all.sh comments sat above another suite's run_test line, and its header named five kinds of checks; HOST-FAMILIES.md said the stand-in's description names package, installation and digest and nothing else; EffectJson.lean's header listed five of an effect's nine fields; ClosureSetup.lean's header omitted guardedReturn; two import comments of SourceExtraction.lean sat above another import; CellClaims.lean claimed a refusal that FragmentTypes.lean makes; PointClaims.lean named a default checker it does not have; two producer modules named a module they do not use; the producer README linked two phrases to one anchor, described the evolving-contract passes as &quot;four rounds of growth per pass&quot; and named only VERIFIER of the two executables verify-source.mts reads.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">module headers and comments</span></h4><div class="prose"><p>Each header and comment above states the code it heads; the private-shape error names client-prototype.mts, where the check is. Evolving-contract inference: up to four further passes of a function after its first; a contract still growing is then proposed from the binding's uses, refused where no use fixes one.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tools</span> <span class="chip">lean-lowering</span> <span class="chip">producer</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
@@ -102,7 +102,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tools/compiler-channel.mts                          | 13 +++++++------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-4430242c4"><header><div><div class="sha">4430242c4 · Cristiano Calcagno · Nov 05, 03:16</div><h3>Describe the suites and number the compiler-API checks as the suites run them</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-60527c628"><header><div><div class="sha">60527c628 · Cristiano Calcagno · Nov 05, 03:16</div><h3>Describe the suites and number the compiler-API checks as the suites run them</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>tests/README.md said test-all.sh runs every suite but compiler-api-shapes.mts, while session-reuse.mts and the full observed-stages.mts run from pipeline/test.mts; it had no row for session-reuse.mts, shared-work.mts, caught-errors.mts or diagnostic.mts, showed force-tool-failure.mts as a suite though tool-failures.mts imports it, and its project table left out three projects cases name (#50). The compiler-API checks were numbered differently in each place: COMPILER-API.md had no C5, which tests/compiler-api.mts runs (open reads) and SOURCE-CONTRACTS.md and host-operations.mts cite; the test's header listed C4 twice and no C6 or C7; GLOSSARY.md gave C0–C6 with C5 the sync API; test-all.sh and tests/README.md listed subsets.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">COMPILER-API.md, GLOSSARY.md, tests/README.md</span></h4><div class="prose"><p>COMPILER-API.md's binding section, the owner, states C5, open reads, as the test runs it. C0–C7 are numbered the same in the glossary, the test's header, test-all.sh and tests/README.md. tests/README.md says which runner runs each suite, lists the four missing suites and the three missing projects, and shows force-tool-failure.mts as tool-failures.mts's helper.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
@@ -113,7 +113,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  tests/compiler-api.mts | 20 ++++++++++++--------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-3c3ee71d4"><header><div><div class="sha">3c3ee71d4 · Cristiano Calcagno · Nov 05, 03:18</div><h3>Make the commit-record hook, its install target and the record renderer agree with the review skill</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-0e0f60422"><header><div><div class="sha">0e0f60422 · Cristiano Calcagno · Nov 05, 03:18</div><h3>Make the commit-record hook, its install target and the record renderer agree with the review skill</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The tooling disagreed with the process documents (#51). The review skill requires a merge commit to carry Why:, Outcome and Parts, but the commit-msg hook accepted every merge unchecked. <code>make setup-git-hooks</code> linked into .git/hooks, a path under a regular file in a worktree, so it failed there, although AGENTS.md requires the hook and describes worktrees; a worktree's commits run the shared hooks directory's hook. The record renderer accepted change kinds the skill does not define and no record uses (Rules, Definitions, Type, Notation). The gap-round skill reported functions &quot;of the original 499&quot;, defined nowhere.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">commit-msg hook</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">a merge commit: accepted without a check</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">a merge commit: checked as every other commit</span></pre></figure></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">make setup-git-hooks</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">ln -s $(PWD)/bin/git_hooks/commit_record.sh .git/hooks/commit-msg</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">the hook in the repository's hooks directory (git rev-parse --git-path</span><span class="ln">hooks), linked to the main checkout's script, from a worktree as well</span></pre></figure></div>
@@ -126,7 +126,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  dev/record-render.mts             |  5 ++++-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-49011ce00"><header><div><div class="sha">49011ce00 · Cristiano Calcagno · Nov 05, 03:21</div><h3>File SOURCE-REWRITES.md's records under their routes, with their commits' subjects and a case</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-bb170d2bd"><header><div><div class="sha">bb170d2bd · Cristiano Calcagno · Nov 05, 03:21</div><h3>File SOURCE-REWRITES.md's records under their routes, with their commits' subjects and a case</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>SOURCE-REWRITES.md's records disagreed with the commits and with its own routes (#52). Three records cited a subject no commit has, &quot;State the contracts used by the front end's negative patterns&quot;: the records were added, and the effect types made readonly, by c6d1b65d, &quot;The front end states the contracts its tests establish&quot;. Three quoted subjects differ from their commits'. Two records of support (an accepted receiver, no source change) sat under Rewrites; a one-line section repeated the avoidance it linked; the avoidance &quot;An array pattern over a Set&quot; named no case, while route 4 writes the avoided form's case in the equivalent form; and &quot;Changes for a tool's defect&quot; held nine records of source repairs and one avoidance.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-REWRITES.md</span></h4><div class="prose"><p>A section Support holds the two support records. The source repairs are under Rewrites and the avoidance under Constructs avoided; &quot;Changes for a tool's defect&quot; states that it holds the changes of the producer and the lowering, the source unchanged, and the change around the compiler API's panic. The pointer section is gone. Each commit is cited by its own subject.</p></div>
 <h4 class="change">Effect</h4><ul class="effect"><li><details><summary><code>set-first-position</code> <span class="kind positive">positive</span> <span class="was">new</span> <span class="arrow">→</span> <span class="now">verified</span> <span class="why">the equivalent form of an array pattern over a Set</span></summary><pre class="code"><span class="tk-c">// The first of a list of positions, where every later one equals it and it</span>
@@ -149,7 +149,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  pipeline/examples/set-first-position.ts |  14 +</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-75f60d163"><header><div><div class="sha">75f60d163 · Cristiano Calcagno · Nov 05, 03:22</div><h3>Cite a draft's and the gap-priorities deck's evidence by the commands that make it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-591a020aa"><header><div><div class="sha">591a020aa · Cristiano Calcagno · Nov 05, 03:22</div><h3>Cite a draft's and the gap-priorities deck's evidence by the commands that make it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>collect-declarations-phases.md cited its census records, logs and per-sample reports at the absolute paths of a past session's temporary directory, and the gap-priorities deck's header and a slide label cited &quot;session scratch&quot; files; none is in the repository, so the evidence could not be found from it (#53). The draft also had no document title.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">collect-declarations-phases.md, gap-priorities deck</span></h4><div class="prose"><p>Each measurement names the command and commit that make its record again; the fixed inputs keep their manifests' hashes. The deck cites <code>census.mts refusals</code> of its census. The draft opens with its title.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
@@ -157,7 +157,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  docs/drafts/collect-declarations-phases.md | 47 ++++++++++--------------------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-a52b4c59c"><header><div><div class="sha">a52b4c59c · Cristiano Calcagno · Nov 05, 03:23</div><h3>Fix small documentation errors: an uncited reference, evidence serialization, Lean file lists</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-8ac222940"><header><div><div class="sha">8ac222940 · Cristiano Calcagno · Nov 05, 03:23</div><h3>Fix small documentation errors: an uncited reference, evidence serialization, Lean file lists</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Four small errors (#54): REFERENCES.md's SKStore entry said it is discussed in STAGE-STORE.md's shared work, which neither named nor linked it; PROGRAM-TYPING.md said evidence trees are never serialized, while the evidence document writes derivation nodes as a table, each naming its premises among the nodes before it; SEMANTICS.md's list of the Semantics modules &quot;not introduced above&quot; left out nine modules of heap knowledge, and POSITIVE-TYPES.md's list of the Types modules seven named nowhere in it; and a sentence of SOURCE-CONTRACTS.md began &quot;A a function of Node's modules&quot; and had no verb.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">STAGE-STORE.md, PROGRAM-TYPING.md, SEMANTICS.md, POSITIVE-TYPES.md, SOURCE-CONTRACTS.md</span></h4><div class="prose"><p>Shared work cites SKStore for a computation's dependencies being what it read. Evidence trees: in memory each node repeats its sequent; the evidence document writes the nodes as one of its tables. The two lists name every module, the heap-knowledge ones linking to their specification. The sentence: a function of Node's modules is read through the overlay of library modules, at the entry that lists it, or refused.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
@@ -168,12 +168,11 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  docs/STAGE-STORE.md      |  3 ++-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-5b3ca4727"><header><div><div class="sha">5b3ca4727 · Cristiano Calcagno · Nov 05, 04:34</div><h3>State in each example's header what its case shows</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-0aa078b37"><header><div><div class="sha">0aa078b37 · Cristiano Calcagno · Nov 05, 04:34</div><h3>State in each example's header what its case shows</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Example headers stated another claim than their cases (#55): fourteen blocker-* examples and closure-rest-pack-refused stated a need although their cases verify; negatives carried their positive twin's or another case's header; some gave a reason the refusal does not reach, named the wrong reading rule or the wrong mechanism, stated that the fragment has no arithmetic (stateful-source/numbers.ts, while arithmetic.ts and numeric-comparisons.ts verify), or told history or status. Ten examples had no comment, while tests/README.md states that each example explains what it illustrates.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">example headers</span></h4><div class="prose"><p>Each header states what its case shows: what verifies, or what is refused and where. The ten examples open with a comment taken from their cases' areas. Two diagnostics expected by cases.mts move with the shortened headers (a span, a line).</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>47 files changed, 103 insertions(+), 79 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                              | 4 ++--
- pipeline/examples/array-length-refused.ts                       | 4 ++--
+<details><summary>44 files changed, 95 insertions(+), 72 deletions(-)</summary><pre class="code"> pipeline/cases.mts                                              | 4 ++--
  pipeline/examples/bind-union-host-nullable.ts                   | 9 +++------
  pipeline/examples/blocker-aliased-guard.ts                      | 4 ++--
  pipeline/examples/blocker-callback-literal-context.ts           | 4 ++--
@@ -194,34 +193,32 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  pipeline/examples/callables/optional-arguments.ts               | 1 +
  pipeline/examples/callables/rest-arguments.ts                   | 2 ++
  pipeline/examples/callables/variadic-arguments.ts               | 2 ++
- pipeline/examples/class-constructor-offer.ts                    | 8 ++++----
- pipeline/examples/closure-rest-pack-refused.ts                  | 4 ++--
  pipeline/examples/collections-json-uninherited-key.ts           | 2 ++
  pipeline/examples/collections-json-values.ts                    | 2 ++
  pipeline/examples/collections-json-variants.ts                  | 2 ++
- pipeline/examples/collections-json.ts                           | 3 +++
  pipeline/examples/collections-values-tuple.ts                   | 3 ++-
- pipeline/examples/forged-promise-refused.ts                     | 5 +++--
- pipeline/examples/index-signature.ts                            | 3 ++-
+ pipeline/examples/invalid-array-length.ts                       | 4 ++--
+ pipeline/examples/invalid-class-constructor-offer.ts            | 8 ++++----
  pipeline/examples/invalid-closure-type-parity.ts                | 2 ++
  pipeline/examples/invalid-collections-json-bound.ts             | 1 +
+ pipeline/examples/invalid-collections-json.ts                   | 3 +++
  pipeline/examples/invalid-compiler-api-guard-reassign.ts        | 6 ++++--
  pipeline/examples/invalid-compiler-api-stable-let-cell.ts       | 7 ++++---
  pipeline/examples/invalid-compiler-api-type-node.ts             | 6 ++----
  pipeline/examples/invalid-host-augmentation-node.ts             | 2 +-
+ pipeline/examples/invalid-index-signature.ts                    | 3 ++-
  pipeline/examples/invalid-mapped-named-static.ts                | 3 ++-
- pipeline/examples/invalid-reflect-get-getter.ts                 | 6 ++++--
- pipeline/examples/invalid-tag-ambient-base.ts                   | 6 +++---
+ pipeline/examples/invalid-mutable-index-signature.ts            | 5 ++---
+ pipeline/examples/invalid-number-index.ts                       | 5 ++---
+ pipeline/examples/invalid-symbol-index.ts                       | 4 ++--
  pipeline/examples/invalid-tag-inherited-declaration.ts          | 8 +++++---
- pipeline/examples/mutable-index-signature.ts                    | 5 ++---
- pipeline/examples/number-index.ts                               | 5 ++---
+ pipeline/examples/reflect-get-getter.ts                         | 6 ++++--
  pipeline/examples/stateful-source/nullish-assignment.ts         | 2 +-
  pipeline/examples/stateful-source/numbers.ts                    | 6 +++---
- pipeline/examples/stateful-source/strings.ts                    | 6 +++---
- pipeline/examples/symbol-index.ts                               | 4 ++--</pre></details>
+ pipeline/examples/stateful-source/strings.ts                    | 6 +++---</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-f6d0cf368"><header><div><div class="sha">f6d0cf368 · Cristiano Calcagno · Nov 05, 04:39</div><h3>State each process rule and fact once, in its owner, the others linking to it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-8756f5a62"><header><div><div class="sha">8756f5a62 · Cristiano Calcagno · Nov 05, 04:39</div><h3>State each process rule and fact once, in its owner, the others linking to it</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>Rules and facts were stated in several places, differently (#64): DESIGN.md listed eight routes ending in &quot;refusal&quot;, while AGENTS.md and SOURCE-REWRITES.md state seven; dev/gap-iteration.mts ranked 5 cases by default against the gap-round skill's next 10; STYLE.md said the style tokens are stated once, in dev/style-tokens.mts, then gave their values in its tables; SOURCE-CLAIMS.md restated four of REQUEST-PROTOCOL.md's verifier modes; and the stable-link rule was displayed in both HOST-FAMILIES.md and PROGRAM-TYPING.md, with different premises.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">DESIGN.md, STYLE.md, SOURCE-CLAIMS.md, HOST-FAMILIES.md, PROGRAM-TYPING.md</span></h4><div class="prose"><p>DESIGN.md names the seven routes and the refusal of an unsafe program. STYLE.md gives each token's role, its values dev/style-tokens.mts's. SOURCE-CLAIMS.md links to the verifier's modes. HOST-FAMILIES.md keeps stable-link's soundness and links to the rule in PROGRAM-TYPING.md; PROGRAM-TYPING.md links read-linked to its statement in HOST-FAMILIES.md.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">dev/gap-iteration.mts</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">--cases defaults to 5</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">--cases defaults to 10, the skill's next 10 cases</span></pre></figure></div>
@@ -234,13 +231,12 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  docs/STYLE.md          | 43 ++++++++++++++++++++++---------------------</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-30ca44fa1"><header><div><div class="sha">30ca44fa1 · Cristiano Calcagno · Nov 05, 04:43</div><h3>State progress only in WORK.md: status and history prose removed from documents and modules</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-c45978638"><header><div><div class="sha">c45978638 · Cristiano Calcagno · Nov 05, 04:43</div><h3>State progress only in WORK.md: status and history prose removed from documents and modules</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>AGENTS.md writes progress once, in WORK.md's status table, while documents and modules stated progress or history (#59): &quot;Until module composition is proved&quot; (SOURCE-CONTRACTS.md); &quot;broader source extraction remains integration work&quot; and &quot;must still supply&quot; (PROGRAM-TYPING.md); &quot;the semantics used by the current verifier&quot;, &quot;the original one-field kernel notation&quot;, &quot;Since that kernel&quot; (SEMANTICS.md); &quot;Closing the gap further needs&quot; (UNION-SHAPES.md); &quot;Nothing uses this module yet&quot; in three Lean modules, which other modules import; and &quot;before any implementation&quot; in two drafts whose work WORK.md records as partial.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Docs <span class="target">SOURCE-CONTRACTS.md, PROGRAM-TYPING.md, SEMANTICS.md, UNION-SHAPES.md, drafts, Lean headers</span></h4><div class="prose"><p>Each sentence states the fact as it is: module composition is not proved; the semantic rules' graph-level use is source compilation's; the calculus's one-field kernel; what the selected search's discovery of the table is not proved to rest on. The drafts name their base commit and link to WORK.md for their progress; the Lean headers drop the sentence.</p></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span> <span class="chip strong">lean-semantics</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
-<details><summary>9 files changed, 16 insertions(+), 16 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                               | 5 ++---
+<details><summary>8 files changed, 18 insertions(+), 13 deletions(-)</summary><pre class="code"> docs/PROGRAM-TYPING.md                               | 6 +++++-
  docs/SEMANTICS.md                                    | 8 ++++----
- docs/SOURCE-CONTRACTS.md                             | 2 +-
  docs/UNION-SHAPES.md                                 | 3 ++-
  docs/drafts/canonicity.md                            | 4 ++--
  docs/drafts/heap-knowledge-canonical.md              | 4 ++--
@@ -249,7 +245,7 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
  lean/Verification/Semantics/Footprints.lean          | 2 +-</pre></details>
 <div class="sha">with Claude Opus 5.5</div>
 </article>
-<article class="card" id="c-c94891406"><header><div><div class="sha">c94891406 · Cristiano Calcagno · Nov 05, 04:54</div><h3>Move the let-cell stable-link control's call span with its example's header</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<article class="card" id="c-83e66019b"><header><div><div class="sha">83e66019b · Cristiano Calcagno · Nov 05, 04:54</div><h3>Move the let-cell stable-link control's call span with its example's header</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change">Why</h4><div class="prose"><p>The stable-link control of invalid-compiler-api-stable-let-cell names the replacing call's span by its offsets in the example. The example's header, rewritten to state what its case shows, is 75 bytes longer, so the control's expected refusal named the old span [495,504) and failed.</p></div>
 <h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">pipeline/test.mts, stable-link control</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">the let call's span [495, 504]</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">the let call's span [570, 579]</span></pre></figure></div>
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
