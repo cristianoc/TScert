@@ -834,13 +834,18 @@ mutual
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
-  | "id" => return .var p (← jStr (← jField j "name"))
+  | "id" => do
+    fieldsExactly j ["k","pos","name"]
+    return .var p (← jStr (← jField j "name"))
   -- No declaration can bind the name `this`, so it names the receiver slot.
   | "this" =>
     fieldsExactly j ["k","pos"]
     return .var p "this"
-  | "lit" => return .lit p (← decodeVal (← jField j "lit"))
+  | "lit" => do
+    fieldsExactly j ["k","pos","lit"]
+    return .lit p (← decodeVal (← jField j "lit"))
   | "bin" =>
+    fieldsExactly j ["k","pos","op","l","r"]
     let op ← jStr (← jField j "op")
     if op == "&&" || op == "||" then
       return .logical p (op == "&&") (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
@@ -928,7 +933,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- library's `Array` through its reviewed overlay entry.
     fieldsExactly j ["k","pos","e"]
     return .shapeTest p .isArray true (← decodeExpr (← jField j "e"))
-  | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
+  | "coalesce" => do
+    fieldsExactly j ["k","pos","left","right"]
+    return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "optional" => do
     fieldsExactly j ["k","pos","at","receiver","body"]
     return .optional p (← jSpan j "at") (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "body"))
@@ -938,7 +945,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "comma" => do
     fieldsExactly j ["k","pos","left","right"]
     return .comma p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
-  | "not" => return .not p (← decodeExpr (← jField j "e"))
+  | "not" => do
+    fieldsExactly j ["k","pos","e"]
+    return .not p (← decodeExpr (← jField j "e"))
   | "unary" => do
     fieldsExactly j ["k","pos","op","e"]
     let op ← match ← jStr (← jField j "op") with
@@ -957,6 +966,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       throw "a cast's annotation does not match its kind"
     return .cast p (if a == .null then none else some a) (← decodeExpr (← jField j "e"))
   | "alloc" =>
+    fieldsExactly j (["k","pos","fields"] ++ ["proto","brand"].filter (fun k => (j.getObjVal? k).isOk))
     let fields ← jArr j "fields"
     -- A name the source spells, or a class's private name, which the
     -- declaration document lists as a symbol of its own.
@@ -997,6 +1007,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       return .alloc p (.str protoKeyName :: parts.map Prod.fst) ((← decodeExpr e) :: parts.map Prod.snd)
     | none => return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
   | "build" =>
+    fieldsExactly j (["k","pos","parts"] ++ ["proto"].filter (fun k => (j.getObjVal? k).isOk))
     let fields ← jArr j "parts"
     let parts ← fields.mapM fun f => do
       match (f.getObjVal? "spread").toOption with
@@ -1014,6 +1025,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | none => pure parts
     return .build p (parts.map Prod.fst) (parts.map Prod.snd)
   | "read" => do
+    fieldsExactly j ["k","pos","field","e"]
     let field ← PropKey.decode (← jField j "field")
     if let .str s := field then discard <| sourceKey s
     return .read p field (← decodeExpr (← jField j "e"))
@@ -1160,7 +1172,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let stated ← decodeStated (← jField j "stated")
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
       (if result == .null then none else some result) guard stated async body
-  | "conditional" =>
+  | "conditional" => do
+    fieldsExactly j ["k","pos","cond","then","else_"]
     return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "blockBody" => do
@@ -1181,6 +1194,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | _ => throw "a method call's target is a property reference"
     return .invoke p callee args spreads typeArgs
   | "write" => do
+    fieldsExactly j ["k","pos","field","receiver","rhs"]
     let field ← PropKey.decode (← jField j "field")
     if let .str s := field then discard <| sourceKey s
     return .write p field (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
@@ -1228,8 +1242,12 @@ partial def decodeBindings (j : Json) : Except String (List Binding) := do
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
-  | "return" => return .ret p (← decodeExpr (← jField j "e"))
-  | "effect" => return .effect p (← decodeExpr (← jField j "e"))
+  | "return" => do
+    fieldsExactly j ["k","pos","e"]
+    return .ret p (← decodeExpr (← jField j "e"))
+  | "effect" => do
+    fieldsExactly j ["k","pos","e"]
+    return .effect p (← decodeExpr (← jField j "e"))
   | "const" => return .constants p (← decodeBindings j)
   | "let" => return .mutables p (← decodeBindings j)
   | "destructure" =>
@@ -1241,7 +1259,9 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "break" =>
     fieldsExactly j ["k","pos","label"]
     return .brk p (← decodeLabel j)
-  | "continue" => return .cont p
+  | "continue" => do
+    fieldsExactly j ["k","pos"]
+    return .cont p
   | "throw" =>
     fieldsExactly j ["k","pos","e"]
     return .throw p (← decodeExpr (← jField j "e"))
@@ -1281,6 +1301,7 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos") iterate
       (← decodeExpr (← jField j "iterable")) (← (← jArr j "body").mapM decodeStmt)
   | "if" =>
+    fieldsExactly j ["k","pos","cond","then","else_"]
     let thn ← (← jArr j "then").mapM decodeStmt
     let els ← match ← jField j "else_" with
       | .null => pure none
@@ -1296,6 +1317,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
   let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
+      fieldsExactly p (["name", "pos", "type"] ++ ["rest"].filter (fun k => (p.getObjVal? k).isOk))
       let rest ← match (p.getObjVal? "rest").toOption with
         | none => pure false
         | some b => do

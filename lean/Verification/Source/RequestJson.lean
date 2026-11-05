@@ -163,6 +163,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
   | .arr _ => GraphRow.clauses <$> fromJson? j
   | _ => match j.getObjVal? "scheme", j.getObjVal? "param", j.getObjVal? "meet" with
     | .error _, .error _, .ok p => do
+      fieldsExactly j (["meet", "clauses"] ++ ["also"].filter (fun k => (j.getObjVal? k).isOk))
       return .meet (← fromJson? p) (← fromJson? (← j.getObjVal? "clauses"))
         (← match j.getObjVal? "also" with
           | .ok v => fromJson? v
@@ -187,6 +188,7 @@ instance [FromJson ι] [FromJson α] : FromJson (GraphRow ι α) := ⟨fun j =>
           | .ok _ => throw "a scheme's construct field, when present, is true"
           | .error _ => pure false)
     | .error _, .ok l, .error _ => do
+      fieldsExactly j ["param", "name", "kind"]
       return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
         (← fromJson? (← j.getObjVal? "kind"))
     | _, _, _ => .error "expected a clause array, a scheme row, a parameter row or a meet row"⟩
