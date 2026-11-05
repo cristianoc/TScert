@@ -3125,7 +3125,7 @@ client code and writes no location it did not allocate:
 ```
 
 `String`, `Number` and `BigInt` of a primitive, `Number.isFinite`, `Number.isInteger`,
-`Number.isSafeInteger`, `Object.is` and `Boolean` state it: each converts
+`Number.isSafeInteger`, `Number.isNaN`, `Object.is` and `Boolean` state it: each converts
 only a primitive, or nothing, and reads and writes no location
 (`library-preserving-callback`, `library-preserving-tests`). An object
 argument, whose conversion runs its methods, is outside the stated
@@ -3166,11 +3166,27 @@ keeps from running.
   a value too (`xs.map(String)`; `string-value`; `invalid-string-value-object`,
   run under Node). A global whose entries state no value, such as `BigInt`,
   is refused as one (`library-global-value-unreviewed`).
-- `parseInt(s, r)`, `Math.abs(x)` and `Math.ceil(x)` convert a string and
-  numbers, primitives no conversion code runs on, and write nothing: as
-  declared, within the empty footprint (`library-parse-int`,
-  `library-math-abs`, `library-math-ceil`). No argument of their
-  parameter types converts by code.
+- `parseInt(s, r)`, `parseFloat(s)`, `Math.abs(x)`, `Math.ceil(x)`,
+  `Math.round(x)` and `Math.fround(x)` convert a string and numbers,
+  primitives no conversion code runs on, and write nothing: as declared,
+  within the empty footprint (`library-parse-int`, `library-parse-float`,
+  `library-math-abs`, `library-math-ceil`, `library-math-round`,
+  `library-math-fround`). No argument of their parameter types converts by
+  code.
+- `Number.POSITIVE_INFINITY` is a non-writable, non-configurable data
+  property of `Number` holding +∞, read as declared, `number`
+  (`library-number-positive-infinity`).
+- The global `Infinity` is a non-writable, non-configurable data property
+  of the global object holding +∞, so reading it runs no code and no code
+  reassigns it. Its entry marks it a constant (`constant`): its
+  declaration, `Infinity: number`, is read as a value of the stated type,
+  every reference a read, and a write is refused (`library-infinity`).
+
+```math
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ \cdot,\ \mathsf{text}(d),\ \mathsf{constant},\ \mathsf{stated}\ T)\quad x\ \text{never written}}
+     {\Gamma(x)=T}\ \textsf{library-constant}
+```
+
 - `Math.random()` reads no argument and writes no location a program
   reaches: as declared, within the empty footprint (`library-math-random`).
 - `Object.freeze(o)` of an ordinary object makes every own property
@@ -3274,6 +3290,15 @@ keeps from running.
 ```math
 \mathtt{getOwnPropertyDescriptors}:(\mathsf{NonHost})\Rightarrow\{[k:\mathtt{string}]:\mathsf{Desc}^{w}\}
 ```
+- `Object.isFrozen(o)` is `true` of a primitive; of an object it runs
+  TestIntegrityLevel: [[IsExtensible]] and, where the object is not
+  extensible, [[OwnPropertyKeys]] and each key's [[GetOwnProperty]], none
+  of which calls a getter or runs code on an ordinary or ECMAScript exotic
+  object (no object is a proxy). A host exotic object's internal methods
+  are the host's code, so its object is a $`\mathsf{NonHost}`$ value, as
+  `Reflect.ownKeys`'s is: $`(\mathsf{NonHost})\Rightarrow\mathtt{boolean}`$,
+  within the empty footprint (`library-object-isfrozen`;
+  `invalid-object-isfrozen-object`). The Boolean narrows nothing.
 - `Object.hasOwn(o, k)` converts `o` by ToObject, an object here, and `k` by
   ToPropertyKey, which runs no code of a string, number or symbol, then looks
   the key up by [[GetOwnProperty]], which runs no code (no object is a
@@ -3796,8 +3821,10 @@ and at the message alone, $`(\mathsf{string})\Rightarrow\mathsf{Err}`$
 refused as `Error`'s are (`invalid-type-error-options`, run under Node).
 The host is trusted to follow ECMA-262's description of the `TypeError`
 constructor, as of `Error`'s;
-`TypeError` called without `new`, `instanceof TypeError` and
-`AggregateError` have no entry.
+`RangeError` is read alike, with `RangeError.prototype`, whose `name` is
+`"RangeError"`, as the error's prototype (`range-error-construct`, run
+under Node). `TypeError` and `RangeError` called without `new`, `instanceof`
+of either and `AggregateError` have no entry.
 
 The library's `Error` interface, its members declared as reviewed, is read as
 what `Error` constructs:
