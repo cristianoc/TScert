@@ -1,4 +1,4 @@
-import { decodeGraph, decodeLabels, type Labels, type Clause } from "./type-graph.mts";
+import { decodeGraph, decodeLabels, type Labels } from "./type-graph.mts";
 // calculus.mts decodes the native terms a record's judgements and source map name.
 // control-flow.mts decodes the program-graph node a node or edge obligation names.
 import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculus.mts";
@@ -32,37 +32,62 @@ interface Sequent {
   type: Labels;
 }
 
-/** An assertion about a runtime slot: for a cell, about the named field of the
- * object it holds; for a value, about the slot itself, where the field is not
- * consulted. */
-type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" | "nonNull" | "nonNullish" |
-  Extract<Clause, {numLit: unknown} | {strLit: unknown}> |
-  /** A test's observed answer. */
-  {tag: {test: Tag; answer: boolean}};
-function heapAtom(v: Json): HeapAtom {
-  if (v === "nul" || v === "undef" || v === "tru" || v === "fls" || v === "num" || v === "str" || v === "defined" || v === "nonNull" || v === "nonNullish") return v;
-  // Singleton payloads use the graph language's existing decoder.
-  if (isRecord(v) && "strLit" in v) {
-    decodeGraph([[record(v,["strLit"])]]);
-    const value = record(v.strLit,["value"]).value;
-    if (typeof value !== "string") throw Error("invalid string atom");
-    return { strLit: { value } };
+/** A set of literals: these, or every literal but these. */
+type LitSet<T> = { these: T[] } | { allBut: T[] };
+/** What a fact states of a runtime slot (for a cell, of the named field of
+ * the object it holds; for a value, of the slot itself): a set of values, one
+ * component per kind of value; an object is in it when it meets one of the
+ * `obj` clauses, each a list of tag answers, or any object where `obj` is
+ * null and none where it is empty. */
+interface ValueSet {
+  nul: boolean; undef: boolean; tru: boolean; fls: boolean; sym: boolean; arr: boolean;
+  /** Numbers by their IEEE-754 bit patterns, as decimal digits. */
+  num: LitSet<string>; str: LitSet<string>; big: LitSet<number>;
+  obj: { tag: Tag; answer: boolean }[][] | null;
+}
+function litSet<T>(v: Json | undefined, item: (x: Json) => T): LitSet<T> {
+  const r = isRecord(v) && "these" in v ? record(v,["these"]).these : record(v,["allBut"]).allBut;
+  const xs = record(r,["xs"]).xs;
+  if (!Array.isArray(xs)) throw Error("invalid literal set");
+  const items = xs.map(item);
+  return isRecord(v) && "these" in v ? { these: items } : { allBut: items };
+}
+function valueSet(v: Json): ValueSet {
+  const f = record(v,["nul","undef","tru","fls","sym","arr","num","str","big","obj"]);
+  const flag = (x: Json | undefined): boolean => {
+    if (typeof x !== "boolean") throw Error("invalid value set flag");
+    return x;
+  };
+  const number = (x: Json): number => {
+    if (typeof x !== "number") throw Error("invalid value set number");
+    return x;
+  };
+  const bits = (x: Json): string => {
+    if (typeof x !== "string" || !/^(0|[1-9][0-9]*)$/.test(x)) throw Error("invalid value set number");
+    return x;
+  };
+  const text = (x: Json): string => {
+    if (typeof x !== "string") throw Error("invalid value set string");
+    return x;
+  };
+  let obj: ValueSet["obj"] = null;
+  if (f.obj !== null) {
+    if (!Array.isArray(f.obj)) throw Error("invalid value set objects");
+    obj = f.obj.map((clause) => {
+      if (!Array.isArray(clause)) throw Error("invalid value set clause");
+      return clause.map((literal) => {
+        const l = record(literal,["tag","answer"]);
+        if (typeof l.answer !== "boolean") throw Error("invalid tag answer");
+        return { tag: decodeTag(l.tag), answer: l.answer };
+      });
+    });
   }
-  if (isRecord(v) && "tag" in v) {
-    const t = record(record(v,["tag"]).tag,["test","answer"]);
-    const test = decodeTag(t.test);
-    if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
-    return { tag: { test, answer: t.answer } };
-  }
-  const n = record(v,["numLit"]);
-  decodeGraph([[n]]);
-  const bits = record(n.numLit,["bits"]).bits;
-  if (typeof bits !== "string") throw Error("invalid number atom");
-  return { numLit: { bits } };
+  return { nul: flag(f.nul), undef: flag(f.undef), tru: flag(f.tru), fls: flag(f.fls), sym: flag(f.sym), arr: flag(f.arr),
+    num: litSet(f.num, bits), str: litSet(f.str, text), big: litSet(f.big, number), obj };
 }
 interface HeapFact {
   slot: number;
-  contents: HeapAtom[];
+  contents: ValueSet;
   field: string;
 }
 export interface HeapKnowledge {
@@ -73,9 +98,18 @@ export interface HeapKnowledge {
   links: {cell: number; value: number; alias: boolean; field: string; optional: boolean}[];
   /** Which locations differ: facts addressed by level, level `l` naming slot
    * `depth - 1 - l`; a fact's subject `fields` (null: every own location)
-   * differ from each partner's listed fields. */
-  separation: {depth: number; facts: {slot: number; fields: string[] | null; partners: [number, string[]][]}[]};
+   * differ from each partner's listed fields, each a property key: a
+   * string, or a well-known symbol by its number. */
+  separation: {depth: number; facts: {slot: number; fields: SeparationKey[] | null; partners: [number, SeparationKey[]][]}[]};
+  /** Elements facts: every present element of the array slot `slot` holds is
+   * of a kind `pred` lists, where the slot `cond`, if stated, holds a truthy
+   * value, or a falsy one where `negated`. */
+  elems: {slot: number; pred: ElemKind[]; cond?: number; negated: boolean}[];
 }
+type SeparationKey = string | { symbol: number };
+/** The value kinds an elements fact's predicate names. */
+const ELEM_KINDS = ["nul", "undef", "bool", "num", "str", "big", "sym", "obj"] as const;
+type ElemKind = (typeof ELEM_KINDS)[number];
 
 /** A node of the certificate graph, as the failure reports it. */
 interface DiagnosticNode {
@@ -287,7 +321,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
 }
 function knowledge(v: Json | undefined): HeapKnowledge | null {
   if (v === null) return null;
-  const k = record(v,["cells","values","links","separation"]);
+  const k = record(v,["cells","values","links","separation","elems"]);
   const factsOf = (facts: Json | undefined): HeapFact[] => {
     if (!Array.isArray(facts)) throw Error("invalid heap facts");
     const result: HeapFact[] = [];
@@ -295,10 +329,7 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
       const f = record(fact,["slot","contents","field"]); const slot = nat(f.slot);
       const field = f.field;
       if (typeof field !== "string") throw Error("invalid heap fact field");
-      if (!Array.isArray(f.contents)) throw Error("invalid heap contents");
-      const contents: HeapAtom[] = [];
-      for (const atom of f.contents) contents.push(heapAtom(atom));
-      result.push({ slot, field, contents });
+      result.push({ slot, field, contents: valueSet(f.contents) });
     }
     return result;
   };
@@ -313,12 +344,12 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
     links.push({ cell, value, optional: l.optional, field: l.field, alias: l.alias });
   }
-  const keys = (v: Json | undefined): string[] => {
+  const keys = (v: Json | undefined): SeparationKey[] => {
     if (!Array.isArray(v)) throw Error("invalid separation fields");
-    const result: string[] = [];
+    const result: SeparationKey[] = [];
     for (const f of v) {
-      if (typeof f !== "string") throw Error("invalid separation fields");
-      result.push(f);
+      if (typeof f === "string") result.push(f);
+      else result.push({ symbol: nat(record(f,["symbol"]).symbol) });
     }
     return result;
   };
@@ -329,14 +360,28 @@ function knowledge(v: Json | undefined): HeapKnowledge | null {
     const f = record(fact,["slot","fields","partners"]); const slot = nat(f.slot);
     const fields = f.fields === null ? null : keys(f.fields);
     if (!Array.isArray(f.partners)) throw Error("invalid separation partners");
-    const partners: [number, string[]][] = [];
+    const partners: [number, SeparationKey[]][] = [];
     for (const p of f.partners) {
       if (!Array.isArray(p) || p.length !== 2) throw Error("invalid separation partner");
       partners.push([nat(p[0]), keys(p[1])]);
     }
     facts.push({ slot, fields, partners });
   }
-  return { cells, values, links, separation: { depth, facts } };
+  if (!Array.isArray(k.elems)) throw Error("invalid elements facts");
+  const elems: HeapKnowledge["elems"] = [];
+  for (const atom of k.elems) {
+    const a = record(atom,["slot","pred","negated"],["cond"]);
+    const p = record(a.pred,[...ELEM_KINDS]);
+    if (typeof a.negated !== "boolean") throw Error("invalid elements fact");
+    const pred: ElemKind[] = [];
+    for (const kind of ELEM_KINDS) {
+      const holds = p[kind];
+      if (typeof holds !== "boolean") throw Error("invalid elements predicate");
+      if (holds) pred.push(kind);
+    }
+    elems.push({ slot: nat(a.slot), pred, negated: a.negated, ...(a.cond === undefined ? {} : { cond: nat(a.cond) }) });
+  }
+  return { cells, values, links, separation: { depth, facts }, elems };
 }
 
 /** A node record with its node decoded in place of its wire form, as the

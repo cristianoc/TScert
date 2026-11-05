@@ -59,18 +59,28 @@ for (const phase of ["proof-search", "certificate-check", "request-validation"])
 assert.equal(readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
   phase: "invalid", kind: "production-failure", failure: "failed" })}`), undefined);
 
+// The heap data as the verifier writes it: a fact's contents a set of values
+// by kind, an elements fact's predicate the kinds it admits.
+const contents = { nul: false, undef: false, tru: true, fls: false, sym: false, arr: false,
+  num: { allBut: { xs: ["0"] } }, str: { these: { xs: ["checked"] } }, big: { these: { xs: [] } },
+  obj: [[{ tag: "isStr", answer: true }]] };
+const pred = { nul: false, undef: false, bool: false, num: true, str: true, big: false, sym: false, obj: false };
 const heap = readDiagnostic(`obligation-diagnostic: ${JSON.stringify({ ...common,
   kind: "node-typing", id: "heap", sequent,
   source: { label: 0, sourceMap, node: null, claim: null,
     requiredKnowledge: {
-      cells: [{ slot: 0, field: "id", contents: ["str", { strLit: { value: "checked" } },
-        { numLit: { bits: "0" } }, { tag: { test: "isStr", answer: true } }] }],
+      cells: [{ slot: 0, field: "id", contents }],
       values: [], links: [{ cell: 0, value: 1, alias: false, field: "id", optional: false }],
-      separation: { depth: 2, facts: [{ slot: 0, fields: ["id"], partners: [[1, ["id"]]] }] },
+      separation: { depth: 2, facts: [{ slot: 0, fields: ["id"], partners: [[1, ["id", { symbol: 0 }]]] }] },
+      elems: [{ slot: 1, pred, negated: false }, { slot: 1, pred, cond: 0, negated: true }],
     } },
 })}`);
 assert.ok(heap?.kind === "node-typing");
-assert.deepEqual(heap.source.requiredKnowledge?.cells[0].contents, ["str", { strLit: { value: "checked" } },
-  { numLit: { bits: "0" } }, { tag: { test: { kind: "isStr" }, answer: true } }]);
+const knowledge = heap.source.requiredKnowledge;
+assert.deepEqual(knowledge?.cells[0].contents, { ...contents, num: { allBut: ["0"] }, str: { these: ["checked"] }, big: { these: [] },
+  obj: [[{ tag: { kind: "isStr" }, answer: true }]] });
+assert.deepEqual(knowledge?.separation.facts[0].partners, [[1, ["id", { symbol: 0 }]]]);
+assert.deepEqual(knowledge?.elems, [{ slot: 1, pred: ["num", "str"], negated: false },
+  { slot: 1, pred: ["num", "str"], cond: 0, negated: true }]);
 
 console.log("Diagnostic decoder: all variants, heap data and malformed required fields");
