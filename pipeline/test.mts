@@ -102,7 +102,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, `splice-insert-${variant}`, claims);
     refusedAt(artifacts, forged, `splice-insert-${variant}`,
       `source expression obligation at [${start},${start + "a.splice".length})`);
-    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
   }
   process.stdout.write("splice insertion: widened rest and erased receiver-store exception refused in search and checking\n");
 });
@@ -129,7 +130,8 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, forged, "forged-arm-callable-result");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /source incoming edge obligation/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("an arm's invented callable signature is refused at its incoming edge; the original evidence is refused\n");
 });
 
@@ -149,7 +151,8 @@ control(async (): Promise<void> => {
   assert.match(searched.stdout + searched.stderr, /source effect refusal.*footprint claimed for 'rest'/s);
   // Evidence carries this declaration's translated table. The original
   // evidence is incompatible with the weakened declaration's table.
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, weakened), /reject:/);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+      /^reject: Verification\.EvidenceWire\.Document\.types: head 38 argument 0 part 0: head 113 takes 0 arguments, given 1/m, weakened);
 
   // An admitted undefined first element requires its default. Withholding
   // that expression claim cannot remove the default from either extraction.
@@ -164,7 +167,8 @@ control(async (): Promise<void> => {
   const defaultSearch = produceWith(defaults, missing, "array-rest-missing-default");
   assert.equal(defaultSearch.status, 1, defaultSearch.stdout + defaultSearch.stderr);
   for (const detail of [defaultSearch.stdout + defaultSearch.stderr,
-    invoke(missing, join(defaults, "evidence.json"), defaults)])
+    invoke(missing, join(defaults, "evidence.json"), defaults,
+        /^reject: no claimed type for the expression at \[\d+,\d+\)/m)])
     assert.match(detail, /no claim|missing claim|no claimed/i);
 
   // A producer cannot publish an array as a record owning the iterator key:
@@ -236,7 +240,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-intersection-binder-bound", claims);
   refusedAt(artifacts, forged, "forged-intersection-binder-bound",
     `source expression obligation at [${start},${start + 4})`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("forged intersection binder: null claimed as string at a field initializer, refused in search and checking\n");
 });
 for (const reexport of [false, true]) for (const mismatched of [false, true]) control(async (): Promise<void> => {
@@ -278,22 +283,29 @@ for (const reexport of [false, true]) for (const mismatched of [false, true]) co
 });
 
 
-// Ordinary planning rejects malformed expressions and a break without a target.
+// Ordinary planning rejects malformed expressions and a break without a target,
+// each on its own and by its own refusal.
 control(async (): Promise<void> => {
   const good = await run("stateful-source/arithmetic");
   const source = readFragmentFile(join(good, "fragment.json"));
   const fn = source.functions[0];
   assert.ok(fn);
-  const expression = (k: string, pos: [number, number]): object =>
-    ({ k: "effect", pos, e: { k, pos, op: "invalid", e: { k: "lit", pos, lit: { a: "undefined" } } } });
-  for (const body of [
-    [expression("unary", [1, 3]), expression("typeofTest", [4, 6]), expression("futureExpression", [7, 9]), ...fn.body],
-    [{ k: "break", pos: [1, 3], label: null }],
-  ]) {
+  const undef = { k: "lit", pos: [1, 3], lit: { a: "undefined" } };
+  const effect = (e: object): object => ({ k: "effect", pos: [1, 3], e });
+  const malformed: [unknown[], RegExp][] = [
+    [[effect({ k: "unary", pos: [1, 3], op: "invalid", e: undef }), ...fn.body], /unknown unary operator 'invalid'/],
+    [[effect({ k: "typeofTest", pos: [1, 3], shape: "invalid", equal: true, e: undef }), ...fn.body],
+      /unsupported typeof test 'invalid'/],
+    [[effect({ k: "futureExpression", pos: [1, 3], e: undef }), ...fn.body],
+      /unsupported source expression at \[1,3\): expression outside the stateful fragment/],
+    [[{ k: "break", pos: [1, 3], label: null }], /break or continue outside a source loop/],
+  ];
+  for (const [body, refusal] of malformed) {
     const ast = join(good, "planning-boundaries.json");
     writeFileSync(ast, JSON.stringify({ ...source, functions: [{ ...fn, body }] }));
     const ordinary = tested(verifierCall(verifier, ["--lower-control-flow", ast]));
-    assert.notEqual(ordinary.status, 0);
+    assert.equal(ordinary.status, 1);
+    assert.match(ordinary.stdout + ordinary.stderr, refusal);
   }
 });
 
@@ -516,15 +528,18 @@ function tableBundle(b: JsonObject): void {
   }
 }
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
- * require a refusal; its words, for the caller to match. */
-const invoke = (claims: string, evidence: string, artifacts: string,
+ * require the refusal `refusal` matches; its words, for the caller to inspect
+ * further. */
+const invoke = (claims: string, evidence: string, artifacts: string, refusal: RegExp,
   ast: string = join(artifacts, "fragment.json")): string => {
   const p = tested(verifierCall(verifier, ["--check-units", ast, claims, sourceKey(artifacts), evidence]));
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
   // The refusal first, then the units' verdicts.
-  return p.stderr + p.stdout;
+  const words = p.stderr + p.stdout;
+  assert.match(words, refusal);
+  return words;
 };
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
@@ -644,7 +659,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-grouped-array-length", claims);
   const at = `source refusal at [${start},${start + "x.length".length}): a read of \`length\` of a union some member of which is not one array contract`;
   refusedAt(artifacts, forged, "forged-grouped-array-length", at);
-  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts).includes(at));
+  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source refusal at \[\d+,\d+\): a read of `length` of a union some member of which is not one array contract/m).includes(at));
   process.stdout.write("grouped array length claim: refused at the member access in search and check\n");
 });
 
@@ -722,7 +738,8 @@ control(async (): Promise<void> => {
   for (const [name, forged] of [["parameter", atParameter], ["definition", atDefinition]] as const) {
     const ast = join(good, `deferred-identity-${name}.json`);
     writeFileSync(ast, JSON.stringify(forged));
-    const refused = invoke(join(good, "claims.json"), join(good, "evidence.json"), good, ast);
+    const refused = invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
+        /^reject: source refusal at \[\d+,\d+\): the declarations required by this unit cannot be interpreted: reference has no declaration equation/m, ast);
     assert.doesNotMatch(refused, /accept:/);
     assert.match(refused, /reference has no declaration equation/);
   }
@@ -766,7 +783,7 @@ control(async (): Promise<void> => {
   }
   const extraField = join(good, "extra-ast-field.json");
   writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
-  assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, extraField), /unexpected fields/);
+  invoke(join(good, "claims.json"), join(good, "evidence.json"), good, /unexpected fields/, extraField);
   // An unexamined field on a node of a function's body, of an expression
   // kind and of a statement kind, is refused as well.
   for (const kind of ["id", "return"]) {
@@ -783,7 +800,7 @@ control(async (): Promise<void> => {
     assert.ok(mark(nested), kind);
     const nestedField = join(good, `extra-${kind}-field.json`);
     writeFileSync(nestedField, JSON.stringify(nested));
-    assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, nestedField), /unexpected fields/);
+    invoke(join(good, "claims.json"), join(good, "evidence.json"), good, /unexpected fields/, nestedField);
   }
   process.stdout.write("a graph label, a claim-shaped annotation and an unexamined field in the parser's document, at its root or on a node: refused\n");
 });
@@ -815,7 +832,7 @@ control(async (): Promise<void> => {
     join(erased, "fragment.json"), claims, sourceKey(erased), evidence, "12"]));
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
-  assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
+  invoke(claims, evidence, erased, /generic contract.*cannot be erased/);
 });
 control(async (): Promise<void> => {
   // Bypass the producer's refusal of a call (a construction) through a value
@@ -848,7 +865,8 @@ control(async (): Promise<void> => {
       join(artifacts, "fragment.json"), claims, sourceKey(artifacts), evidence, "12"]));
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     if (!present(evidence)) writeFileSync(evidence, "{}");
-    invoke(claims, evidence, artifacts);
+    invoke(claims, evidence, artifacts,
+        /^reject: source direct obligation at \[\d+,\d+\): claimed parameter type differs from the source annotation for (?:a closure in )?'[^']*'/m);
   }
   process.stdout.write("a call through `function` and a construction through `class`, forged at a signature: refused\n");
 });
@@ -1217,7 +1235,8 @@ control(async (): Promise<void> => {
     const detail = searched.stdout + searched.stderr;
     assert.equal(searched.status, 1, detail);
     assert.ok(detail.includes(at), detail);
-    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source direct obligation at \[\d+,\d+\): quantified call does not satisfy the closure's bound: cannot establish object ≤ null \| true \| false \||source refusal at \[\d+,\d+\): resolution certificate does not establish its input, observation and stable result)/m);
     assert.ok(checked.includes(at), checked);
   }
   {
@@ -1236,7 +1255,8 @@ control(async (): Promise<void> => {
     assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
     // The evidence for the allocation's own claim does not justify the
     // forged one, at the allocation.
-    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
     assert.ok(checked.includes(`source evidence refusal ${at}`), checked);
   }
   process.stdout.write("forged thenable instances: await, async return, Promise.resolve and new Promise at a callable then, and an allocation claimed as a promise, refused\n");
@@ -1282,7 +1302,8 @@ control(async (): Promise<void> => {
   const write = source.indexOf("d[k] = 1");
   refusedAt(growth, forged, "forged-tag-key",
     `source refusal at [${write},${write + "d[k] = 1".length}): a key-adding write at a key that may be \`Symbol.toStringTag\``);
-  invoke(forged, join(growth, "evidence.json"), growth);
+  invoke(forged, join(growth, "evidence.json"), growth,
+      /^reject: source refusal at \[\d+,\d+\): a key\-adding write at a key that may be `Symbol\.toStringTag`: no object the program makes holds the tag the native/m);
   process.stdout.write("forged tag key: a key-adding write claimed at a symbol key refused\n");
 });
 control(async (): Promise<void> => {
@@ -1304,7 +1325,8 @@ control(async (): Promise<void> => {
   // Refused at the key, `[awaitName]`, checked at its literal.
   assert.ok((searched.stdout + searched.stderr).includes(`[${start - 1},${start + "awaitName".length + 1})`),
     searched.stdout + searched.stderr);
-  invoke(forged, join(keyed, "evidence.json"), keyed);
+  invoke(forged, join(keyed, "evidence.json"), keyed,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   // A computed field's key is the one its checked literal converts to: with
   // the key claim unchanged, a field renamed (`"x"` for `"%Await%"`) or
   // spelled otherwise than the number's `ToString` (`"1.0"` for `1`) is
@@ -1335,7 +1357,7 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "reflect-required-list", forged);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /Reflect.apply/);
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, forged), /Reflect.apply/);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, /Reflect.apply/, forged);
   const arrays = run("reflect-apply");
   const claims = readClaims(arrays);
   const variable = must(claims.functions.find(f => f.name === "variable"), "variable");
@@ -1349,7 +1371,7 @@ control(async (): Promise<void> => {
   const refused = produceWith(arrays, nullable, "reflect-nullable-list");
   assert.equal(refused.status, 1, refused.stdout + refused.stderr);
   assert.match(refused.stdout + refused.stderr, /\.apply needs an array list/);
-  assert.match(invoke(nullable, join(arrays, "evidence.json"), arrays), /\.apply needs an array list/);
+  invoke(nullable, join(arrays, "evidence.json"), arrays, /\.apply needs an array list/);
   assert.equal(runExample("reflect-apply", "orderAll()"), 1234);
   assert.equal(runExample("invalid-reflect-apply-arguments", "wrong()"), 7);
   assert.equal(runExample("invalid-reflect-apply-receiver", "wrong()"), 7);
@@ -1373,7 +1395,8 @@ control(async (): Promise<void> => {
     writeFileSync(ast, fragment.replaceAll(from, to));
     const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, ast);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast);
+    invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing|source refusal at \[\d+,\d+\): Object\.assign onto a constructed target needs a constructor contract stating a fresh object)/m, ast);
   }
   const claims = readClaims(artifacts);
   const unit = must(claims.functions.find(f => f.name === "coded"), "coded");
@@ -1383,7 +1406,8 @@ control(async (): Promise<void> => {
   copy.type = [rowOf(claims, { refs: { first: [["code", [rowOf(claims, "num")]]], rest: [], views: [] } })];
   const forged = writeClaims(artifacts, "error-number-code", claims);
   refusedAt(artifacts, forged, "error-number-code", `[${start},`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   assert.equal(runExample("invalid-assign-constructor-alias",
     '(() => { const shared = {}; return changed(class { constructor() { return shared; } }); })()'), "ENOENT");
   process.stdout.write("Error copy: freshness, preservation, ordinary objects and copied field claims checked independently\n");
@@ -1412,7 +1436,8 @@ control(async (): Promise<void> => {
     made.type = [rowOf(claims, { refs: { first: fields(owned), rest: [], views: fields(viewed) } })];
     const forged = writeClaims(errors, name, claims);
     refusedAt(errors, forged, name, at);
-    invoke(forged, join(errors, "evidence.json"), errors);
+    invoke(forged, join(errors, "evidence.json"), errors,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
 });
@@ -1441,7 +1466,8 @@ control(async (): Promise<void> => {
       [rowOf(claims, "str")];
     const forged = writeClaims(patterns, name, claims);
     refusedAt(patterns, forged, name, at);
-    invoke(forged, join(patterns, "evidence.json"), patterns);
+    invoke(forged, join(patterns, "evidence.json"), patterns,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source refusal at \[\d+,\d+\): an array pattern requires an array contract)/m);
   }
   process.stdout.write("forged for-of patterns: the element's read and the step's value claimed at a string, refused\n");
 });
@@ -1459,7 +1485,8 @@ control(async (): Promise<void> => {
     [rowOf(claims, "str")];
   const forged = writeClaims(union, "forged-union-iteration-element", claims);
   refusedAt(union, forged, "forged-union-iteration-element", `[${element},${element + 1})`);
-  invoke(forged, join(union, "evidence.json"), union);
+  invoke(forged, join(union, "evidence.json"), union,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged union iteration: the element claimed at a string, refused\n");
   const indexed = run("blocker-gap-round-indexed-for-of");
   const indexedSource = readFileSync(sourceKey(indexed), "utf8");
@@ -1470,7 +1497,8 @@ control(async (): Promise<void> => {
     [rowOf(indexedClaims, "num")];
   const indexedForged = writeClaims(indexed, "forged-indexed-iteration-element", indexedClaims);
   refusedAt(indexed, indexedForged, "forged-indexed-iteration-element", `[${indexedElement},${indexedElement + 1})`);
-  invoke(indexedForged, join(indexed, "evidence.json"), indexed);
+  invoke(indexedForged, join(indexed, "evidence.json"), indexed,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged indexed iteration: the element claimed at a number, refused\n");
 });
 control(async (): Promise<void> => {
@@ -1504,7 +1532,7 @@ control(async (): Promise<void> => {
     refusedAt(artifacts, forged, name, at);
     // A negative case's run has no evidence of its refused unit.
     if (must(cases.find((c) => c.file === file), file).kind === "positive")
-      assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /does not establish this node's claim/);
+      invoke(forged, join(artifacts, "evidence.json"), artifacts, /does not establish this node's claim/);
   }
   process.stdout.write("forged unknown slices: a read claimed at fewer kinds than the tests leave, refused\n");
 });
@@ -1549,7 +1577,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(twin, claims, `forged-${key}`, fragment);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
-    assert.ok(invoke(claims, renamed("evidence.json"), twin, fragment).includes(at), key);
+    assert.ok(invoke(claims, renamed("evidence.json"), twin,
+        /^reject: source refusal at \[\d+,\d+\): a write at a key that may be `message`, `stack` or `cause` onto an object that may hold a prototype: an instance of the `Error`/m, fragment).includes(at), key);
   }
   process.stdout.write("forged reserved writes: each write form renamed to `stack`, refused at the write in search and check\n");
 });
@@ -1569,7 +1598,8 @@ control(async (): Promise<void> => {
   const searched = produceWith(nested, forged, "forged-arrow-optional-receiver");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.ok((searched.stdout + searched.stderr).includes(`[${paren},${paren + 1})`), searched.stdout + searched.stderr);
-  invoke(forged, join(nested, "evidence.json"), nested);
+  invoke(forged, join(nested, "evidence.json"), nested,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("forged optional method call in an arrow: the saved receiver claimed at undefined refused\n");
 });
 control(async (): Promise<void> => {
@@ -1587,7 +1617,8 @@ control(async (): Promise<void> => {
   read.type = [rowOf(claims, "undef")];
   const forged = writeClaims(generic, "forged-meet-member-object", claims);
   refusedAt(generic, forged, "forged-meet-member-object", `[${at},`);
-  invoke(forged, join(generic, "evidence.json"), generic);
+  invoke(forged, join(generic, "evidence.json"), generic,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("forged meet member: the method's object claimed at undefined refused\n");
 });
 control(async (): Promise<void> => {
@@ -1609,7 +1640,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(optional, forged, `forged-optional-${what}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(`[${at},${end})`), searched.stdout + searched.stderr);
-    invoke(forged, join(optional, "evidence.json"), optional);
+    invoke(forged, join(optional, "evidence.json"), optional,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   process.stdout.write("forged optional method call: either read of the saved object claimed at undefined refused\n");
 });
@@ -1632,7 +1664,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(wrapped, forged, `forged-wrapped-${what}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(`[${at},${end})`), searched.stdout + searched.stderr);
-    invoke(forged, join(wrapped, "evidence.json"), wrapped);
+    invoke(forged, join(wrapped, "evidence.json"), wrapped,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   process.stdout.write("forged wrapped member call: either read of the saved object claimed at undefined refused\n");
 });
@@ -1660,7 +1693,8 @@ control(async (): Promise<void> => {
   const start = at - "found".length;
   assert.ok(refused && Number(refused[1]) >= start && Number(refused[2]) <= at + "?.ok".length,
     searched.stdout + searched.stderr);
-  invoke(forged, join(chain, "evidence.json"), chain);
+  invoke(forged, join(chain, "evidence.json"), chain,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged chain test: the receiver read again claimed at the tested arm refused\n");
 });
 control(async (): Promise<void> => {
@@ -1691,7 +1725,8 @@ control(async (): Promise<void> => {
     // The honest evidence decodes against the forged claims, every row it
     // names still claimed elsewhere (`kept` reads `d` again on the branch),
     // and is refused at the entry where the test passed.
-    assert.ok(invoke(forged, join(good, "evidence.json"), good)
+    assert.ok(invoke(forged, join(good, "evidence.json"), good,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m)
       .includes(`reject: source evidence refusal at [${start},`), `${name}'s check refusal at ${start}`);
   }
   process.stdout.write("forged present slice: an arm the test admits dropped, and an arm dropped past a test undefined passes, refused in search and in checking\n");
@@ -1763,7 +1798,8 @@ control(async (): Promise<void> => {
   claim.type = [];
   const forged = writeClaims(good, "never-call", claims);
   refusedAt(good, forged, "never-call", `at [${start},${start + call.length})`);
-  invoke(forged, join(good, "evidence.json"), good);
+  invoke(forged, join(good, "evidence.json"), good,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged never call: a call of a function that returns claimed at the empty type refused\n");
 });
 control(async (): Promise<void> => {
@@ -1793,7 +1829,8 @@ control(async (): Promise<void> => {
   claim.type = [rowOf(claims, "str")];
   const forged = writeClaims(good, "guard-live-branch", claims);
   refusedAt(good, forged, "guard-live-branch", "evidence search failed");
-  invoke(forged, join(good, "evidence.json"), good);
+  invoke(forged, join(good, "evidence.json"), good,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged guard branch: a branch a guard that can hold leaves reachable is checked\n");
 });
 control(async (): Promise<void> => {
@@ -1825,7 +1862,8 @@ control(async (): Promise<void> => {
     writeFileSync(path, JSON.stringify(claims).replace(rows[arrow] ?? "", (rows[arrow] ?? "")
       .replace(`"arguments":[[${index}],`, `"arguments":[[${target}],`)));
     refusedAt(good, path, name, at);
-    const checked = invoke(path, join(good, "evidence.json"), good);
+    const checked = invoke(path, join(good, "evidence.json"), good,
+        /^reject: (?:source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
     assert.ok(checked.includes(checkedAt), checked);
   };
   const outside = "closure signature claim is outside the source annotation";
@@ -1863,7 +1901,8 @@ control(async (): Promise<void> => {
     writeFileSync(path, text.replace(never[0],
       `"arguments":[[{"decl":${never[1]},"args":[[${rowOf(claims, "undef")}]]}],`));
     refusedAt(instances, path, "contextual-record-absent-present", atAbsent);
-    const checked = invoke(path, join(instances, "evidence.json"), instances);
+    const checked = invoke(path, join(instances, "evidence.json"), instances,
+        /^reject: source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation/m);
     assert.ok(checked.includes(atAbsent), checked);
   }
   process.stdout.write("forged contextual records: a closure claimed outside its record (`Box<never>` at `Box<undefined>` included) refused at the closure, within it refused where map takes it (search) or at its closure's evidence (check)\n");
@@ -1879,7 +1918,8 @@ control(async (): Promise<void> => {
     assert.ok(start >= 0);
     const evidence = join(artifacts, "empty-growth-evidence.json");
     writeFileSync(evidence, "{}");
-    const refused = invoke(join(artifacts, "claims.json"), evidence, artifacts);
+    const refused = invoke(join(artifacts, "claims.json"), evidence, artifacts,
+        /^reject: source refusal at \[\d+,\d+\): a write of 'x', a key the object's type does not state, may add it to an object another reference holds, which would see/m);
     assert.ok(refused.includes(`at [${start},${start + "w.x = 1".length})`), refused);
     assert.match(refused, /a write of 'x'.*another reference holds/);
   }
@@ -1900,7 +1940,8 @@ control(async (): Promise<void> => {
     edit(must(claims.functions.find(f => f.name === "later"), "later"), claims);
     const forged = writeClaims(good, name, claims);
     refusedAt(good, forged, name, at);
-    invoke(forged, join(good, "evidence.json"), good);
+    invoke(forged, join(good, "evidence.json"), good,
+        /^reject: (?:no claimed storage contract for the early binding 'n' at 867|source direct obligation at \[\d+,\d+\): claimed storage contract differs from the source annotation for 'n'|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
   };
   forge("early-no-contract", fn => { fn.contracts = fn.contracts.filter(c => c.name !== "n"); },
     "no claimed storage contract for the early binding 'n'");
@@ -1921,7 +1962,8 @@ control(async (): Promise<void> => {
     c.type = [rowOf(claims, "str")];
     const path = writeClaims(good, "early-literal-contract", claims);
     refusedAt(good, path, "early-literal-contract", "the early binding 'wanted' needs its type stated");
-    invoke(path, join(good, "evidence.json"), good);
+    invoke(path, join(good, "evidence.json"), good,
+        /^reject: source refusal at \[\d+,\d+\): the early binding 'wanted' needs its type stated: an annotation, a `let`'s Boolean, number, string or bigint literal, or/m);
   }
   // An unannotated early `let` of a number literal has the literal's
   // primitive type, `number`, as its stated contract: `start`'s claimed at
@@ -1937,7 +1979,8 @@ control(async (): Promise<void> => {
       c.type = types.map(t => rowOf(claims, t));
       const forged = writeClaims(literal, name, claims);
       refusedAt(literal, forged, name, "claimed storage contract differs from the source annotation for 'start'");
-      invoke(forged, join(literal, "evidence.json"), literal);
+      invoke(forged, join(literal, "evidence.json"), literal,
+          /^reject: source direct obligation at \[\d+,\d+\): claimed storage contract differs from the source annotation for 'start'/m);
     }
   }
   // A function declaration a closure bound before it mentions is an early
@@ -1967,7 +2010,8 @@ control(async (): Promise<void> => {
       edit(must(claims.functions.find(f => f.name === "parity"), "parity"), claims);
       const path = writeClaims(declared, name, claims);
       refusedAt(declared, path, name, at);
-      invoke(path, join(declared, "evidence.json"), declared);
+      invoke(path, join(declared, "evidence.json"), declared,
+          /^reject: (?:no claimed storage contract for the early binding 'isOdd' at 890|source direct obligation at \[\d+,\d+\): claimed storage contract differs from the function literal's annotations for 'isOdd'|source refusal at \[\d+,\d+\): the early binding 'isOdd' needs its type stated: an annotation, a `let`'s Boolean, number, string or bigint literal, or)/m);
     }
   }
   // A property spelled as a later constant is no mention: the file lists no
@@ -1984,13 +2028,15 @@ control(async (): Promise<void> => {
     init.contracts = init.contracts.filter(c => c.name !== "count");
     const path = writeClaims(cells, "module-cell-no-contract", claims);
     refusedAt(cells, path, "module-cell-no-contract", "count");
-    invoke(path, join(cells, "evidence.json"), cells);
+    invoke(path, join(cells, "evidence.json"), cells,
+        /^reject: source refusal at \[\d+,\d+\): module cell 'count' has no claimed storage contract/m);
     const narrowed = readClaims(cells);
     const ninit = must(narrowed.init, "module-cells' initialization claims");
     for (const c of ninit.contracts) if (c.name === "count") c.type = [rowOf(narrowed, { numLit: { bits: "0" } })];
     const npath = writeClaims(cells, "module-cell-narrow-contract", narrowed);
     refusedAt(cells, npath, "module-cell-narrow-contract", "claimed storage contract differs from the source annotation for 'count'");
-    invoke(npath, join(cells, "evidence.json"), cells);
+    invoke(npath, join(cells, "evidence.json"), cells,
+        /^reject: source direct obligation at \[\d+,\d+\): claimed storage contract differs from the source annotation for 'count'/m);
     // A unit's entry knows nothing of a module cell's contents, and a call
     // may write it: a narrower entry claim, or a read after the call claimed
     // at the value written before it, is refused.
@@ -2001,7 +2047,8 @@ control(async (): Promise<void> => {
     for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
     const epath = writeClaims(cells, "module-cell-entry-fact", entry);
     refusedAt(cells, epath, "module-cell-entry-fact", "count");
-    invoke(epath, join(cells, "evidence.json"), cells);
+    invoke(epath, join(cells, "evidence.json"), cells,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
     const stale = readClaims(cells);
     const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
     const src = readFileSync(sourceKey(cells), "utf8");
@@ -2010,7 +2057,8 @@ control(async (): Promise<void> => {
     read.type = [rowOf(stale, { numLit: { bits: "4607182418800017408" } })];
     const spath = writeClaims(cells, "module-cell-stale-read", stale);
     refusedAt(cells, spath, "module-cell-stale-read", `at [${at},${at + "count".length})`);
-    invoke(spath, join(cells, "evidence.json"), cells);
+    invoke(spath, join(cells, "evidence.json"), cells,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   // An update's or a logical assignment's read of a module cell is its
   // checked access, at the cell's contract: `??=`'s read claimed without
@@ -2028,7 +2076,8 @@ control(async (): Promise<void> => {
       claim.type = [rowOf(claims, clause)];
       const path = writeClaims(updates, name, claims);
       refusedAt(updates, path, name, `at [${at},${at + length})`);
-      invoke(path, join(updates, "evidence.json"), updates);
+      invoke(path, join(updates, "evidence.json"), updates,
+          /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'use' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim)/m);
     };
     forged("retire", "reason ??= why", 0, "reason".length, "module-cell-nullish-read", "str");
     forged("name", "label ||= why", 0, "label".length, "module-cell-or-read", "num");
@@ -2044,7 +2093,8 @@ control(async (): Promise<void> => {
       claim.type = [claims.types.push(["num", "str"]) - 1];
       const path = writeClaims(updates, "module-cell-wider-write", claims);
       refusedAt(updates, path, "module-cell-wider-write", "storage-contract");
-      invoke(path, join(updates, "evidence.json"), updates);
+      invoke(path, join(updates, "evidence.json"), updates,
+          /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'use' is not established by its body/m);
     }
   }
   // A `const` an early closure writes: the parser's document with a `let`
@@ -2310,7 +2360,8 @@ control(async (): Promise<void> => {
     const name = `forged-function-to-string-${variant}`;
     const forged = writeClaims(artifacts, name, claims);
     refusedAt(artifacts, forged, name, `source expression obligation at [${call.pos[0]},${call.pos[1]})`);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   process.stdout.write("function toString: the call and the proposed signatures forged at number refused\n");
 });
@@ -2362,7 +2413,8 @@ control(async (): Promise<void> => {
   ] as const) {
     const c = structuredClone(original);
     mutate(c);
-    invoke(writeClaims(good, name, c), join(good, "evidence.json"), good);
+    invoke(writeClaims(good, name, c), join(good, "evidence.json"), good,
+        /^reject: (?:function claim count mismatch|source claim fingerprint mismatch)/m);
     process.stdout.write(`tampered ${name}: refused\n`);
   }
   // A missing claim is a located refusal, not prose disguised as a failed
@@ -2372,8 +2424,8 @@ control(async (): Promise<void> => {
   const claims = readClaims(generic);
   const fn = must(claims.functions.find((f) => f.name === "inferred"), "inferred");
   fn.expressions.pop();
-  const refusal = readDiagnostic(invoke(writeClaims(generic, "missing-generic-expression", claims),
-    join(generic, "evidence.json"), generic));
+  const refusal = readDiagnostic(invoke(writeClaims(generic, "missing-generic-expression", claims), join(generic, "evidence.json"), generic,
+      /^reject: source refusal at \[\d+,\d+\): no claimed type for the expression at \[\d+,\d+\)/m));
   assert(refusal?.kind === "source-refusal");
   assert.deepEqual(refusal.sourceMap.pos, fn.namePos);
   assert(!("judgment" in refusal));
@@ -2385,8 +2437,7 @@ control(async (): Promise<void> => {
   assert.ok(fragment && typeof fragment === "object" && json && typeof json === "object" && "declarations" in json);
   const forgedImport = join(good, "forged-import.json");
   writeFileSync(forgedImport, JSON.stringify({ ...fragment, declarations: json.declarations }));
-  assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, forgedImport),
-    /source evidence (does not justify|refusal at)/);
+  invoke(join(good, "claims.json"), join(good, "evidence.json"), good, /source evidence (does not justify|refusal at)/, forgedImport);
   process.stdout.write("forged import closure: refused\n");
 });
 control(async (): Promise<void> => {
@@ -2402,7 +2453,8 @@ control(async (): Promise<void> => {
     const forged = join(recursiveJson, `forged-label-${name}.json`);
     writeFileSync(forged, must(JSON.stringify({ ...claims, types: [...claims.types, ...row] },
       (_key, value: unknown) => value === param.type ? type : value), "the forged claims' text"));
-    return invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson);
+    return invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson,
+        /^reject: (?:invalid source claims: a producer's row is a clause row or a scheme row; binders and intersections are labels|invalid source claims: source claims: a declaration's label has one argument per parameter: Json has 0, given 1|invalid source claims: source claims: a declaration's label names no declaration: 1000|invalid source claims: source claims: a label list is in canonical order, each label once|invalid source claims: source claims: a meet has at least two parts|invalid source claims: source claims: a nullary declaration's label leaves its arguments out|source refusal at \[\d+,\d+\): the declarations required by this unit cannot be interpreted: unexpected fields: expected \[decl\], got \[decl, span\])/m);
   };
   for (const [name, type, refusal] of [
     ["unknown-field", [{ decl: nullary, span: [0, 0] }], /unexpected fields/],
@@ -2430,8 +2482,7 @@ control(async (): Promise<void> => {
   const clause = mixed[0];
   assert(typeof clause === "object" && "dict" in clause);
   clause.dict.views = [];
-  assert.match(invoke(writeClaims(indexed, "forged-missing-named-view", claims), join(indexed, "evidence.json"), indexed),
-    /claimed parameter type differs from the source annotation/);
+  invoke(writeClaims(indexed, "forged-missing-named-view", claims), join(indexed, "evidence.json"), indexed, /claimed parameter type differs from the source annotation/);
 });
 control(async (): Promise<void> => {
   // A `keyof` with a unique symbol names that one symbol: claims naming
@@ -2450,8 +2501,7 @@ control(async (): Promise<void> => {
       const [only] = row;
       if (typeof only === "object" && "symbolLit" in only) row[0] = clause(only.symbolLit.id);
     }
-    assert.match(invoke(writeClaims(keyed, `forged-${name}`, claims), join(keyed, "evidence.json"), keyed),
-      /claimed (return|parameter) type differs from the source annotation/, name);
+    invoke(writeClaims(keyed, `forged-${name}`, claims), join(keyed, "evidence.json"), keyed, /claimed (return|parameter) type differs from the source annotation/);
   }
   process.stdout.write("a keyof's unique symbol claimed as another symbol or every symbol: refused\n");
 });
@@ -2471,7 +2521,7 @@ control(async (): Promise<void> => {
       "ctors" in clause ? clause.ctors.signatures.map((s) => s.arguments) : []));
     const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
     must(params.at(-1), "a claimed parameter").unshift(3);
-    assert.match(invoke(writeClaims(artifacts, "forged-wider-domain", claims), join(artifacts, "evidence.json"), artifacts), refusal);
+    invoke(writeClaims(artifacts, "forged-wider-domain", claims), join(artifacts, "evidence.json"), artifacts, refusal);
   }
 });
 control(async (): Promise<void> => {
@@ -2486,8 +2536,7 @@ control(async (): Promise<void> => {
       ? clause.arrs.variadic ?? [] : []))
     .find((s) => s.arguments[0].length === 1), "the variadic signature `named` is offered");
   offered.arguments[0] = [];
-  assert.match(invoke(writeClaims(variadicOffer, "forged-variadic-offer", claims), join(variadicOffer, "evidence.json"), variadicOffer),
-    /closure signature claim is outside the source annotation/);
+  invoke(writeClaims(variadicOffer, "forged-variadic-offer", claims), join(variadicOffer, "evidence.json"), variadicOffer, /closure signature claim is outside the source annotation/);
 });
 control(async (): Promise<void> => {
   // The unannotated closure's body returns a number. Its claimed null result
@@ -2545,7 +2594,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-rest-result", claims);
   const body = source.indexOf("names.length");
   refusedAt(artifacts, forged, "forged-rest-result", `source expression obligation at [${body},`);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /reject:/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("forged inferred rest result: refused in search and checking\n");
 });
 
@@ -2566,7 +2616,7 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, forged, name);
     assert.notEqual(searched.status, 0, `${name}: forged graph point accepted by search`);
     assert.match(searched.stdout + searched.stderr, /expression claim names a foreign or missing execution point/);
-    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim names a foreign or missing execution point/);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /expression claim names a foreign or missing execution point/);
   }
   const duplicate = readClaims(artifacts);
   const fn = must(duplicate.functions[0], "the first function");
@@ -2575,14 +2625,17 @@ control(async (): Promise<void> => {
   const duplicated = produceWith(artifacts, forged, "duplicate-point");
   assert.notEqual(duplicated.status, 0);
   assert.match(duplicated.stdout + duplicated.stderr, /invalid source claims: duplicate identity/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /invalid source claims: duplicate identity/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /invalid source claims: duplicate identity/);
   // A lifetime contract is checked independently of its point observations.
   const retyped = readClaims(artifacts);
   const mutable = must(retyped.functions.find((f) => f.name === "mutable"), "mutable");
   must(mutable.contracts.find((c) => c.name === "value"), "value's storage contract").type = [1];
   const wrongContract = writeClaims(artifacts, "forged-storage-contract", retyped);
-  assert.notEqual(produceWith(artifacts, wrongContract, "forged-storage-contract").status, 0);
-  assert.match(invoke(wrongContract, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
+  const contractRefusal = /source direct obligation at \[\d+,\d+\): claimed storage contract differs from the source annotation for 'value'/;
+  const searchedContract = produceWith(artifacts, wrongContract, "forged-storage-contract");
+  assert.equal(searchedContract.status, 1);
+  assert.match(searchedContract.stdout + searchedContract.stderr, contractRefusal);
+  invoke(wrongContract, join(artifacts, "evidence.json"), artifacts, contractRefusal);
 });
 
 control(async (): Promise<void> => {
@@ -2596,8 +2649,17 @@ control(async (): Promise<void> => {
   assert.ok(nul >= 0, "a null type label");
   contract.type = [nul];
   const forged = writeClaims(artifacts, "forged-use-contract", claims);
-  assert.notEqual(produceWith(artifacts, forged, "forged-use-contract").status, 0);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /contract|claim|evidence/);
+  const write = "result = { head: l.head, tail: result }";
+  const at = readFileSync(sourceKey(artifacts), "utf8").indexOf(write);
+  const span = `[${at},${at + write.length})`;
+  const searched = produceWith(artifacts, forged, "forged-use-contract");
+  assert.equal(searched.status, 1);
+  assert.ok((searched.stdout + searched.stderr).includes(
+    `source expression obligation at ${span}: evidence search failed: no derivation of its storage-contract claim`),
+    searched.stdout + searched.stderr);
+  const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
+  assert.ok(checked.includes(`source evidence refusal at ${span}: the evidence does not establish this node's claim`), checked);
   process.stdout.write("evolving use contract: a forged contract refused at the write\n");
 });
 
@@ -2627,7 +2689,8 @@ control(async (): Promise<void> => {
   // `(` to its `)`.
   const read = source.indexOf("(", union.pos[0]);
   assert.ok(detail.includes(`source expression obligation at [${read},${union.pos[1]})`), detail);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /claim|evidence/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("bound next of a union of hosts: one host's result claimed alone refused\n");
 });
 
@@ -2690,7 +2753,8 @@ for (const signature of ["plain", "promise"] as const) control(async (): Promise
   const forged = writeClaims(artifacts, `guard-receiver-store-${signature}`, claims);
   const reread = source.indexOf("return x.f.length");
   refusedAt(artifacts, forged, `guard-receiver-store-${signature}`, `source incoming edge obligation at [${reread},`);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
   process.stdout.write(`a guard whose ${signature} signature may change its receiver's store: the field reread refused in search and in checking\n`);
 });
 
@@ -2729,7 +2793,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(real, "guard-field-saved-twin", claims);
   const reread = source.indexOf("return x.f.length");
   refusedAt(real, forged, "guard-field-saved-twin", `source incoming edge obligation at [${reread},`);
-  assert.match(invoke(forged, join(twin, "evidence.json"), real), /refusal/);
+  invoke(forged, join(twin, "evidence.json"), real,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("a comparison of a field's value saved before a callback: the reread after it refused\n");
 });
 
@@ -2848,7 +2913,8 @@ control(async (): Promise<void> => {
   const at = `source expression obligation at [${read},${read + "chain.at".length})`;
   const forged = writeClaims(real, "forged-intersection-discriminant-overlap", claims);
   refusedAt(real, forged, "forged-intersection-discriminant-overlap", at);
-  assert.ok(invoke(forged, join(twin, "evidence.json"), real).includes(
+  assert.ok(invoke(forged, join(twin, "evidence.json"), real,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m).includes(
     `source evidence refusal at [${read},${read + "chain.at".length}): the evidence does not establish this node's typing`));
   process.stdout.write("an intersection's discriminant another arm's tag set meets: that arm's missing field refused in search and check\n");
 });
@@ -2912,7 +2978,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "keeping-call-receiver-own", claims);
   const reread = source.indexOf("return n + x.args.length");
   refusedAt(artifacts, forged, "keeping-call-receiver-own", `source incoming edge obligation at [${reread},`);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body/m);
   process.stdout.write("a call excepting its receiver's own locations, with no receiver slot: the field reread refused\n");
 });
 
@@ -3008,7 +3075,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "guard-unrestricted-call", claims);
   const reread = source.indexOf("return n + x.args.length");
   refusedAt(artifacts, forged, "guard-unrestricted-call", `[${reread},`);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'size' is not established by its body/m);
   process.stdout.write("an unrestricted call between a guard and the field's reread: refused in search and in checking\n");
 });
 
@@ -3040,7 +3108,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "guard-native-unrestricted-callback", claims);
   const reread = source.indexOf("return t.optional.length");
   refusedAt(artifacts, forged, "guard-native-unrestricted-callback", `[${reread},`);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /refusal/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("a native's call at an unrestricted callback between a guard and the field's reread: refused in search and in checking\n");
 });
 
@@ -3077,7 +3146,8 @@ for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union
   assert.equal(searched.status, 1, detail);
   const read = source.indexOf("(", start);
   assert.ok(detail.includes(`source expression obligation at [${read},${end})`), detail);
-  const checked = invoke(forged, join(artifacts, `bound-${name}-effect-baseline-evidence.json`), artifacts);
+  const checked = invoke(forged, join(artifacts, `bound-${name}-effect-baseline-evidence.json`), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   assert.ok(checked.includes(`source evidence refusal at [${read},${end})`), checked);
   process.stdout.write(`bound next effect of ${name}: excess preservation refused in search and checking at the binding\n`);
 });
@@ -3149,7 +3219,8 @@ for (const name of ["countdown", "total"]) control(async (): Promise<void> => {
   assert.equal(searched.status, 1, detail);
   const read = source.indexOf("(", start);
   assert.ok(detail.includes(`source expression obligation at [${read},${end})`), detail);
-  const checked = invoke(forged, join(artifacts, `receiver-store-${name}-effect-baseline-evidence.json`), artifacts, fragment);
+  const checked = invoke(forged, join(artifacts, `receiver-store-${name}-effect-baseline-evidence.json`), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m, fragment);
   assert.ok(checked.includes(`source evidence refusal at [${read},${end})`), checked);
   process.stdout.write(`bound receiver-store effect of ${name}: excess preservation refused in search and checking at the binding\n`);
 });
@@ -3168,7 +3239,7 @@ control(async (): Promise<void> => {
   const deferred = produceWith(artifacts, forged, "deferred-at-creation");
   assert.notEqual(deferred.status, 0);
   assert.match(deferred.stdout + deferred.stderr, /expression claim at .*outside its execution point/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim at .*outside its execution point/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /expression claim at .*outside its execution point/);
 });
 control(async (): Promise<void> => {
   // A copied finalizer's source site belongs to each actual finalizer action.
@@ -3185,7 +3256,7 @@ control(async (): Promise<void> => {
   const finalizer = produceWith(artifacts, forged, "finalizer-at-other-point");
   assert.notEqual(finalizer.status, 0);
   assert.match(finalizer.stdout + finalizer.stderr, /expression claim at .*outside its execution point/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /expression claim at .*outside its execution point/);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /expression claim at .*outside its execution point/);
 });
 
 control(async (): Promise<void> => {
@@ -3360,9 +3431,7 @@ control(async (): Promise<void> => {
     return forgedAst;
   };
   for (const [artifacts, kind] of [[run("closure-result-contract"), "invoke"], [run("explicit-type-arguments"), "apply"]] as const)
-    assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
-      forgeTypeArgument(artifacts, kind)),
-      /the call's instance is not the one its explicit type arguments state/);
+    invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, /the call's instance is not the one its explicit type arguments state/, forgeTypeArgument(artifacts, kind));
 });
 control(async (): Promise<void> => {
   // A writable index is never met through an own-key bound: a callee holding
@@ -3420,8 +3489,7 @@ control(async (): Promise<void> => {
     const fn = must(claims.functions.find((f) => f.name === "inferred"), "inferred");
     if (site === "initializer") must(fn.expressions[0], "the initializer's claim").type = [1, 2];
     else must(fn.entries.flatMap((e) => e.bindings).find((b) => b.name === "saved"), "saved").type = [1, 2];
-    assert.match(invoke(writeClaims(generic, `forged-${site}`, claims), join(generic, "evidence.json"), generic),
-      /source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\))/);
+    invoke(writeClaims(generic, `forged-${site}`, claims), join(generic, "evidence.json"), generic, /source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\))/);
   }
 });
 control(async (): Promise<void> => {
@@ -3434,8 +3502,8 @@ control(async (): Promise<void> => {
   const declaration = must(fn.entries.find((e) => e.bindings.some((b) => b.name === "store") &&
     !e.bindings.some((b) => b.name === "read")), "the entry at the closure's declaration");
   must(declaration.bindings.find((b) => b.name === "store"), "store").type = [1, 2];
-  assert.match(invoke(writeClaims(captured, "forged-capture", claims), join(captured, "evidence.json"), captured),
-    /does not justify|evidence refusal at|evidence search failed/);
+  invoke(writeClaims(captured, "forged-capture", claims), join(captured, "evidence.json"), captured,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
 });
 control(async (): Promise<void> => {
   // A module function is reached at its own annotated signature, which Lean
@@ -3447,7 +3515,8 @@ control(async (): Promise<void> => {
   const callee = source.indexOf("id(id(x))");
   const site = must(fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2), "the outer callee's claim");
   site.type = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("x))", callee)), "the argument's claim").type;
-  invoke(writeClaims(moduleFunctions, "forged-callee", claims), join(moduleFunctions, "evidence.json"), moduleFunctions);
+  invoke(writeClaims(moduleFunctions, "forged-callee", claims), join(moduleFunctions, "evidence.json"), moduleFunctions,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
 });
 control(async (): Promise<void> => {
   // Only a module function without a rest parameter has its signature
@@ -3470,7 +3539,8 @@ control(async (): Promise<void> => {
   const source = readFileSync(sourceKey(moduleInit), "utf8");
   const init = must(claims.init, "the initialization unit's claims");
   must(init.expressions.find((e) => e.pos[0] === source.indexOf("true;")), "the initializer's claim").type = [0];
-  invoke(writeClaims(moduleInit, "forged-initializer", claims), join(moduleInit, "evidence.json"), moduleInit);
+  invoke(writeClaims(moduleInit, "forged-initializer", claims), join(moduleInit, "evidence.json"), moduleInit,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
 });
 control(async (): Promise<void> => {
   // A call's substitution is the elimination it proposes, so evidence produced
@@ -3492,21 +3562,24 @@ control(async (): Promise<void> => {
     const source = readFileSync(sourceKey(twoCalls), "utf8");
     const countCall = must(sites.find((e) => source.slice(e.pos[0], e.pos[1]) === "id(count)"), "the numeric call");
     mutate(must(countCall.instantiate, "the numeric substitution"));
-    invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls);
+    invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls,
+        /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 10|source refusal at \[\d+,\d+\): type arguments do not instantiate exactly the scheme's binders)/m);
   }
   const genericModule = run("generic-module-calls");
   const moduleClaims = readClaims(genericModule);
   const both = must(moduleClaims.functions.find((f) => f.name === "both"), "both");
   const call = must(both.expressions.find((e) => e.instantiate?.length)?.instantiate, "an instantiated call");
   must(call[0], "its type argument").type = [0];
-  invoke(writeClaims(genericModule, "forged-instance", moduleClaims), join(genericModule, "evidence.json"), genericModule);
+  invoke(writeClaims(genericModule, "forged-instance", moduleClaims), join(genericModule, "evidence.json"), genericModule,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   const callback = run("generic-callback");
   const callbackClaims = readClaims(callback);
   const through = must(callbackClaims.functions.find((f) => f.name === "throughCallback"), "throughCallback");
   const site = must(through.expressions.find((e) => e.instantiate?.some((i) => Array.isArray(i.type) && i.type.length === 2))
     ?.instantiate, "the call instantiated at boolean");
   must(site[0], "the callback substitution").type = [4];
-  invoke(writeClaims(callback, "forged-callback-instance", callbackClaims), join(callback, "evidence.json"), callback);
+  invoke(writeClaims(callback, "forged-callback-instance", callbackClaims), join(callback, "evidence.json"), callback,
+      /^reject: Verification\.EvidenceWire\.Document\.types: head 16 takes 1 arguments, given 0/m);
 });
 control(async (): Promise<void> => {
   // A graph certificate for the checked Boolean instance cannot validate a
@@ -3517,7 +3590,8 @@ control(async (): Promise<void> => {
     (e) => !Array.isArray(e.type) && "scheme" in e.type);
   assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
   schemePoint.type.scheme.result = [1, 2];
-  invoke(writeClaims(genericClosure, "forged-scheme", claims), join(genericClosure, "evidence.json"), genericClosure);
+  invoke(writeClaims(genericClosure, "forged-scheme", claims), join(genericClosure, "evidence.json"), genericClosure,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
 });
 control(async (): Promise<void> => {
   // A call of a generic closure is claimed at the instance its type arguments
@@ -3544,7 +3618,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(rows, forged, `forged-instance-${unit}`);
     assert.ifError(searched.error);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(rows, "evidence.json"), rows);
+    invoke(forged, join(rows, "evidence.json"), rows,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   // Per-arrow claims name a ground closure: given for the generic closure,
   // they are refused.
@@ -3553,8 +3628,7 @@ control(async (): Promise<void> => {
   const closure = must(boxed.expressions.find((e) => !Array.isArray(e.type) && "scheme" in e.type &&
     e.type.scheme.typeParams.length > 0 && e.pos[1] - e.pos[0] > "read".length), "the generic closure");
   boxed.arrows = [{ pos: closure.pos, rows: [{ contracts: [], expressions: [], entries: [] }] }];
-  assert.match(invoke(writeClaims(rows, "forged-generic-arrows", claims), join(rows, "evidence.json"), rows),
-    /per-arrow source claims are for ground closures, not quantified schemes/);
+  invoke(writeClaims(rows, "forged-generic-arrows", claims), join(rows, "evidence.json"), rows, /per-arrow source claims are for ground closures, not quantified schemes/);
   // The type predicate `marked` passes is a ground closure with a claim set
   // per signature, in a unit creating a generic closure. Each set is checked:
   // its parameter read claimed at `Plain`, where it is an `Entry`, is refused
@@ -3577,13 +3651,13 @@ control(async (): Promise<void> => {
     const searched = produceWith(rows, forged, "forged-arrow-row");
     assert.ifError(searched.error);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(rows, "evidence.json"), rows);
+    invoke(forged, join(rows, "evidence.json"), rows,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   }
   {
     const { claims, row } = rowClaims();
     must(row.expressions[0], "a site of the set").instantiate = [{ name: "N", type: [string], resolution: null }];
-    assert.match(invoke(writeClaims(rows, "forged-arrow-row-instance", claims), join(rows, "evidence.json"), rows),
-      /invalid source claims/);
+    invoke(writeClaims(rows, "forged-arrow-row-instance", claims), join(rows, "evidence.json"), rows, /invalid source claims/);
   }
 });
 control(async (): Promise<void> => {
@@ -3614,8 +3688,7 @@ control(async (): Promise<void> => {
   const outside = must(must(escaped.functions[0], "the containing function").expressions.find(
     (e) => e.pos[0] > outer.pos[1] && Array.isArray(e.type)), "an expression after the closure");
   outside.type = nested.type;
-  assert.match(invoke(writeClaims(returned, "forged-escape", escaped), join(returned, "evidence.json"), returned),
-    /is not in scope/);
+  invoke(writeClaims(returned, "forged-escape", escaped), join(returned, "evidence.json"), returned, /is not in scope/);
 });
 control(async (): Promise<void> => {
   // Each run reaches a field that is null or absent and throws there: where
@@ -3642,7 +3715,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-non-null-field", claims);
   refusedAt(artifacts, forged, "forged-non-null-field",
     `source incoming edge obligation at [${start},${start + "return 0;".length})`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence does not justify the extracted program and exact claims/m);
 
   // A pattern read's proposed result is independently checked at that read.
   const patternClaims = readClaims(artifacts);
@@ -3653,7 +3727,8 @@ control(async (): Promise<void> => {
   const badRead = writeClaims(artifacts, "forged-pattern-field-read", patternClaims);
   refusedAt(artifacts, badRead, "forged-pattern-field-read",
     `source expression obligation at [${read.pos[0]},${read.pos[1]})`);
-  invoke(badRead, join(artifacts, "evidence.json"), artifacts);
+  invoke(badRead, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
 });
 control(async (): Promise<void> => {
   const artifacts = run("optional-read-observations");
@@ -3668,7 +3743,8 @@ control(async (): Promise<void> => {
   object.current = [[["val"], [rowOf(claims, "num")]]];
   const forged = writeClaims(artifacts, "forged-optional-read-result", claims);
   refusedAt(artifacts, forged, "forged-optional-read-result", "source incoming edge obligation");
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence does not justify the extracted program and exact claims/m);
   assert.equal(runExample("invalid-optional-read-alias", "stale({ val: undefined })"), 1);
   assert.equal(runExample("invalid-optional-read-call",
     "(() => { const obj = { val: undefined }; return stale(obj, () => { obj.val = 1; }); })()"), 1);
@@ -3686,7 +3762,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-void-undefined", claims);
   refusedAt(artifacts, forged, "forged-void-undefined",
     `source expression obligation at [${at},${at + 4})`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
 });
 control(async (): Promise<void> => {
   // An unconstrained source generic admits unknown, but its independently
@@ -3704,7 +3781,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-source-generic-top", claims);
   refusedAt(artifacts, forged, "forged-source-generic-top",
     `source direct obligation at [${at},${at + "identity(value)".length})`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source direct obligation at \[\d+,\d+\): quantified call does not satisfy the closure's bound: cannot establish calculus top ≤ unknown/m);
 });
 control(async (): Promise<void> => {
   const artifacts = run("blocker-census-annotated-node-union");
@@ -3721,7 +3799,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, `annotated-union-${name}`, claims);
     const searched = produceWith(artifacts, forged, `annotated-union-${name}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:a member of a primitive is read from \[\[Number\.prototype\]\], which this unit does not see|per\-arrow interior claims do not match the claimed arrows)/m);
   }
   process.stdout.write("annotated union callback: missing signature claims and forged body types refused by both entry points\n");
 });
@@ -3751,7 +3830,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, `parent-walk-${name}`, claims);
     const searched = produceWith(artifacts, forged, `parent-walk-${name}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation|source effect refusal at \[\d+,\d+\): the footprint claimed for 'walk' is not established by its body)/m);
   }
   process.stdout.write("recursive callback: forged leading parameter and result refused in search and checking\n");
 });
@@ -3787,7 +3867,8 @@ control(async (): Promise<void> => {
     const name = `forged-object-parameter-${target}`;
     const forged = writeClaims(artifacts, name, claims);
     refusedAt(artifacts, forged, name, "evidence search failed");
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
   }
 });
 
@@ -3808,8 +3889,7 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-array-tojson", forged);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /intersection is empty/);
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, forged),
-    /intersection is empty/);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, /intersection is empty/, forged);
   process.stdout.write("an array owning toJSON, forged past the parser and the producer: refused by search and check\n");
 });
 
@@ -3869,8 +3949,7 @@ control(async (): Promise<void> => {
   // weakened program differs from this one only there, and its check accepts
   // the same evidence, so the refusal is the array's: at the write, whose
   // node the evidence claims otherwise.
-  assert.match(invoke(direct.claims, direct.evidence, direct.artifacts),
-    new RegExp(`^reject: source evidence refusal at \\[${at},${at + "xs.toJSON = f;".length}\\)`, "m"));
+  invoke(direct.claims, direct.evidence, direct.artifacts, new RegExp(`^reject: source evidence refusal at \\[${at},${at + "xs.toJSON = f;".length}\\)`, "m"));
   const view = borrow("invalid-array-tojson-view");
   const viewSource = readFileSync(sourceKey(view.artifacts), "utf8");
   const viewAt = viewSource.indexOf("alias.toJSON = f");
@@ -3878,7 +3957,8 @@ control(async (): Promise<void> => {
   const viewSearched = produceWith(view.artifacts, view.claims, "forged-array-tojson-view");
   assert.equal(viewSearched.status, 1, viewSearched.stdout + viewSearched.stderr);
   assert.ok((viewSearched.stdout + viewSearched.stderr).includes(refusal), viewSearched.stdout + viewSearched.stderr);
-  assert.ok(invoke(view.claims, view.evidence, view.artifacts).includes(refusal));
+  assert.ok(invoke(view.claims, view.evidence, view.artifacts,
+      /^reject: source refusal at \[\d+,\d+\): a write of 'toJSON', a key the object's type does not state, may add it to an object another reference holds, which/m).includes(refusal));
   process.stdout.write("an array given toJSON by a write, on borrowed claims and evidence: refused at the write, " +
     "directly and through a view\n");
 });
@@ -3922,7 +4002,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, claims, "forged-host");
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.equal(readDiagnostic(searched.stdout + searched.stderr)?.kind, "node-typing");
-    invoke(claims, join(artifacts, "weakened-host-evidence.json"), artifacts);
+    invoke(claims, join(artifacts, "weakened-host-evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'pathOf' is not established by its body|source effect refusal at \[\d+,\d+\): the footprint claimed for 'windowsPath' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
   }
 });
 
@@ -3964,7 +4045,8 @@ control(async (): Promise<void> => {
   assert.equal(failure?.kind, "node-typing");
   // The invoke is located at its callee, `process.on`.
   assert.deepEqual(failure?.source?.sourceMap?.pos, [at, at + "process.on".length]);
-  invoke(claims, evidence, artifacts);
+  invoke(claims, evidence, artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("a number listener at a signal, on borrowed claims and evidence: refused at the call and in checking\n");
 });
 
@@ -3981,7 +4063,8 @@ control(async (): Promise<void> => {
   const forged = writeClaims(artifacts, "forged-native-constructor-undefined", claims);
   refusedAt(artifacts, forged, "forged-native-constructor-undefined",
     `source expression obligation at [${at},${at + "p.constructor".length})`);
-  invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   // A fresh source object has no native promise prototype or identity.
   // Forging a native claim at its allocation must fail both verifier entries.
   const allocatedClaims = readClaims(artifacts);
@@ -3992,7 +4075,8 @@ control(async (): Promise<void> => {
   const allocated = writeClaims(artifacts, "forged-native-introduction", allocatedClaims);
   refusedAt(artifacts, allocated, "forged-native-introduction",
     `source expression obligation at [${allocatedAt},${allocatedAt + 2})`);
-  invoke(allocated, join(artifacts, "evidence.json"), artifacts);
+  invoke(allocated, join(artifacts, "evidence.json"), artifacts,
+      /^reject: Verification\.EvidenceWire\.Document\.types: application of unknown head 124/m);
   // A forged proposal for a direct write starts with a valid native input.
   // Borrow evidence from a weakened constructor contract, then require the
   // native contract to refuse it at its ordinary write obligation.
@@ -4025,7 +4109,8 @@ control(async (): Promise<void> => {
   const writeTerm = writeFailure?.sequent?.term;
   assert.ok(writeTerm?.kind === "writeAt");
   assert.equal(writeTerm.field, "constructor");
-  invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write);
+  invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write,
+      /^reject: Verification\.EvidenceWire\.Document\.types: head 38 takes 1 arguments, given 0/m);
   // The verifier interprets these impossible native input annotations before
   // consuming any evidence. It refuses them independently of producer choices.
   for (const file of ["invalid-native-promise-constructor-intersection", "invalid-native-promise-array-then"]) {
@@ -4033,8 +4118,7 @@ control(async (): Promise<void> => {
     const searched = produceWith(invalid, join(invalid, "claims.json"), "native-input-annotation");
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.match(searched.stdout + searched.stderr, /intersection is empty/);
-    assert.match(invoke(join(invalid, "claims.json"), join(artifacts, "evidence.json"), invalid),
-      /intersection is empty/);
+    invoke(join(invalid, "claims.json"), join(artifacts, "evidence.json"), invalid, /intersection is empty/);
   }
 });
 
@@ -4056,7 +4140,8 @@ control(async (): Promise<void> => {
   const at = source.indexOf("wrapper;", source.indexOf("function widenResult"));
   assert.ok((searched.stdout + searched.stderr).includes(
     `source expression obligation at [${at},${at + "wrapper".length})`), searched.stdout + searched.stderr);
-  invoke(claims, join(artifacts, "evidence.json"), artifacts, forged);
+  invoke(claims, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m, forged);
 });
 
 control(async (): Promise<void> => {
@@ -4086,7 +4171,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, `forged-finally-${part}`, claims);
     refusedAt(artifacts, forged, `forged-finally-${part}`,
       `source expression obligation at [${at},${at + "p.finally".length})`);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
   }
 });
 
@@ -4114,8 +4200,7 @@ control(async (): Promise<void> => {
     assert.equal(searched.status, 1, detail);
     assert.ok(detail.includes(`source refusal at [${site.pos[0]},${site.pos[1]})`), detail);
     assert.match(detail, /resolution certificate does not establish/);
-    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
-      /resolution certificate does not establish/);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /resolution certificate does not establish/);
   }
 });
 
@@ -4223,7 +4308,8 @@ control(async (): Promise<void> => {
       assert.equal(must(cases.find((c) => c.file === file), file).kind === "positive", consumed,
         `${file}: a consumed control needs the fixture's honest evidence, a production-only one has none`);
       if (consumed) {
-        const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+        const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+            /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for (?:a closure in )?'[^']*' is not established by its body/m);
         const refused = /source effect refusal at \[(\d+),(\d+)\): the footprint claimed for (a closure|')/.exec(checked);
         assert.ok(refused, checked);
         if (refused[3] === "a closure")
@@ -4263,7 +4349,8 @@ control(async (): Promise<void> => {
     const produced = produceWith(artifacts, input, `forged-${method}-readable-receiver`);
     assert.ifError(produced.error);
     assert.equal(produced.status, 1, produced.stdout + produced.stderr);
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/);
+    invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for a closure in 'lift' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
     process.stdout.write(`${method}: a sparse receiver forged readable refused in search and in checking\n`);
   }
 });
@@ -4286,7 +4373,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-split-separator");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m);
   process.stdout.write("forged split separator: a separator claimed at string refused in search and in checking\n");
 });
 
@@ -4311,7 +4399,8 @@ control(async (): Promise<void> => {
     const produce = produceWith(artifacts, input, `forged-split-tuple-${name}`);
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, `${name}: ${produce.stdout}${produce.stderr}`);
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/, name);
+    invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   }
   process.stdout.write("forged split tuple: shrunk, aliased and annotated results claimed non-empty refused in search and in checking\n");
 });
@@ -4334,7 +4423,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-nullish-receiver");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /source expression obligation|reject/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged nullish receiver: a receiver claimed without undefined refused in search and in checking\n");
 });
 
@@ -4360,8 +4450,7 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-fresh-result");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
-    /source effect refusal at \[\d+,\d+\): the footprint claimed for a closure/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts, /source effect refusal at \[\d+,\d+\): the footprint claimed for a closure/);
   process.stdout.write("forged fresh result: code returning its parameter refused in search and in checking\n");
 });
 
@@ -4389,7 +4478,8 @@ control(async (): Promise<void> => {
   assert.ok(failure && failure.kind === "node-typing", produce.stdout + produce.stderr);
   const pos = must(failure.source?.sourceMap?.pos, "the failed class's source location");
   assert.ok(within(pos), `refused at [${pos[0]},${pos[1]}), outside the classes`);
-  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   const refused = must(/source effect refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
   assert.ok(within([Number(refused[1]), Number(refused[2])]), checked);
   process.stdout.write("construct footprint claim {keep, keep}, class-constructor-effect: refused at the cell write\n");
@@ -4412,7 +4502,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-set-form");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged construct form: a string's set claimed at Set<number> refused in search and in checking\n");
 });
 
@@ -4433,7 +4524,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-set-copy-element-type");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged view form: a Set<number>'s copy claimed at Set<string> refused in search and in checking\n");
 });
 
@@ -4451,7 +4543,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-set-union-element-type");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   process.stdout.write("forged union form: a string set's copy claimed at Set<number> refused in search and in checking\n");
 });
 
@@ -4537,8 +4630,7 @@ control(async (): Promise<void> => {
   const failure = readDiagnostic(produce.stdout + produce.stderr);
   assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
   assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
-    /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
+  invoke(input, join(artifacts, "evidence.json"), artifacts, /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
   process.stdout.write("forged dispatch effect: a global regex's replacement refused in search and in checking\n");
 });
 
@@ -4580,7 +4672,8 @@ control(async (): Promise<void> => {
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, `${name}: ${produce.stdout}${produce.stderr}`);
     assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/, name);
+    invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'doubled' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
   }
   process.stdout.write("forged replacement callback: a preserving dispatch and a string capture refused in search and in checking\n");
 });
@@ -4603,7 +4696,8 @@ control(async (): Promise<void> => {
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
     // Search and checking both name a node of `collect`'s loop.
-    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)]) {
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'collect' is not established by its body/m)]) {
       const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'collect'/.exec(detail);
       assert.ok(refused, detail);
       const at = Number(refused[1]);
@@ -4640,7 +4734,8 @@ control(async (): Promise<void> => {
     const produce = produceWith(artifacts, input, name);
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'largest' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m)])
       assert.match(detail, at);
   }
   process.stdout.write("forged throw footprints: a caller of Math.max claimed on a throw, and a handler around a call claimed without, refused in search and in checking\n");
@@ -4656,7 +4751,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-rethrow-onthrow");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'changedOnThrow' is not established by its body/m)])
     assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'changedOnThrow'/);
   process.stdout.write("forged rethrow footprint: an exceptional guarantee refused in production and checking\n");
 });
@@ -4708,7 +4804,8 @@ mutationControl(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, name);
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  invoke(input, forgedEvidence(artifacts, input, name, "empty"), artifacts);
+  invoke(input, forgedEvidence(artifacts, input, name, "empty"), artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for a closure in 'members' is not established by its body/m);
   process.stdout.write("forged no-return node at a non-empty type: gate.fail typed string in a callback claimed at {keep, keep} refused in search and in checking, certified only without the emptiness decision\n");
 });
 
@@ -4761,7 +4858,8 @@ mutationControl(async (): Promise<void> => {
     // without the check (a new effect type renumbers the store the honest
     // evidence refers to).
     const generated = forgedEvidence(artifacts, input, name, "async");
-    for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts,
+        /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for (?:a closure in )?'[^']*' is not `top`, and an async definition's is/m)])
       assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for .* is not `top`, and an async definition's is/, name);
   }
   process.stdout.write("forged async footprints: an async function, an async arrow and an async recursive constant reaching no completion, claimed at {keep, keep}, refused in search and in checking, certified only without the async check\n");
@@ -4782,7 +4880,8 @@ mutationControl(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, name);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const generated = forgedEvidence(artifacts, input, name, "stated");
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'third' is not within the effect its result annotation states/m)])
     assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'third' is not within the effect its result annotation states/);
   process.stdout.write("forged stated declaration: a claim above its statement refused in search and in checking, certified only without the stated check\n");
 });
@@ -4802,7 +4901,8 @@ mutationControl(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, name);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const generated = forgedEvidence(artifacts, input, name, "stated");
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, generated, artifacts,
+      /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'isUnit' is not within the effect its result annotation states/m)])
     assert.match(detail, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'isUnit' is not within the effect its result annotation states/);
   process.stdout.write("forged stated guard: a guard's claim wider than the statement at its predicate's type refused in search and in checking, certified only without the stated check\n");
 });
@@ -4834,7 +4934,8 @@ mutationControl(async (): Promise<void> => {
   const produce = produceWith(weaker.artifacts, weaker.input, "forged-stated-weaker");
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const generated = forgedEvidence(weaker.artifacts, weaker.input, "forged-stated-weaker", "stated");
-  for (const detail of [produce.stdout + produce.stderr, invoke(weaker.input, generated, weaker.artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(weaker.input, generated, weaker.artifacts,
+      /^reject: source refusal at \[\d+,\d+\): a stated closure's claim must offer its stated effect over its annotated parameters/m)])
     assert.match(detail, refusal);
   const tru = 1, fls = 2;
   const narrowed = forge("invalid-method-effect-narrowed", /\(\s*xs: number\[\],\s*flag/, "forged-stated-narrowed", s => {
@@ -4930,7 +5031,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-field-contents-exclusion");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
     assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
   // The numeric field alike: after `op` failed 1, `{ op: 1 | 2 }` may still
   // hold 2. The arm claimed excluded at the test for 2 is refused.
@@ -4945,7 +5047,8 @@ control(async (): Promise<void> => {
   const numericProduce = produceWith(artifacts, numericInput, "forged-numeric-field-contents-exclusion");
   assert.ifError(numericProduce.error);
   assert.equal(numericProduce.status, 1, numericProduce.stdout + numericProduce.stderr);
-  for (const detail of [numericProduce.stdout + numericProduce.stderr, invoke(numericInput, join(artifacts, "evidence.json"), artifacts)])
+  for (const detail of [numericProduce.stdout + numericProduce.stderr, invoke(numericInput, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
     assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
   process.stdout.write("forged field contents: an arm excluded before its field failed every value, a string's or a number's, refused in search and in checking\n");
 });
@@ -4971,7 +5074,8 @@ control(async (): Promise<void> => {
     const produce = produceWith(artifacts, input, "forged-field-tag-before");
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
       assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
     // Past the aliasing write and past the call, the honest claims read the
     // field at its type; claims keeping the test's fact there are refused.
@@ -4993,7 +5097,8 @@ control(async (): Promise<void> => {
       const produce = produceWith(artifacts, input, `forged-field-tag-${name}`);
       assert.ifError(produce.error);
       assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-      for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+      for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+          /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
         assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
     }
   }
@@ -5017,7 +5122,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-typed-cell");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)])
     assert.match(detail, /reject: source (incoming edge obligation|evidence does not justify|evidence refusal at)/);
   process.stdout.write("forged typed cells: a fact of a field narrower than an entering arm's field type, refused in search and in checking\n");
 });
@@ -5040,7 +5146,8 @@ control(async (): Promise<void> => {
   const produce = produceWith(artifacts, input, "forged-field-equality-before");
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence does not justify the extracted program and exact claims/m)])
     assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
   process.stdout.write("forged field equality fact: claimed before the test refused in search and in checking\n");
 });
@@ -5059,7 +5166,8 @@ control(async (): Promise<void> => {
     const input = writeClaims(artifacts, `forged-guard-effect-${name}`, claims);
     const refusal = `the footprint claimed for '${guard.name}' is not established by its body`;
     refusedAt(artifacts, input, `forged-guard-effect-${name}`, refusal);
-    if (consumed) assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+    if (consumed) assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'isText' is not established by its body/m).includes(refusal));
   }
   process.stdout.write("forged guard effects: a guard claimed within the empty footprint refused at the declaration, in search and in checking\n");
 });
@@ -5080,7 +5188,7 @@ control(async (): Promise<void> => {
     assert.ifError(searched.error);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.match(searched.stdout + searched.stderr, refusal);
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts, ast), checked);
+    invoke(input, join(artifacts, "evidence.json"), artifacts, checked, ast);
   };
   // A unit claimed within the empty footprint whose body pushes onto its
   // array: its module's run refuses it.
@@ -5247,7 +5355,8 @@ control(async (): Promise<void> => {
     const input = forge(name, footprint);
     const refusal = `the footprint claimed for '${name}' is not established by its body`;
     refusedAt(artifacts, input, `forged-element-write-${name}`, refusal);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for (?:a closure in )?'[^']*' is not established by its body/m).includes(refusal));
   }
   process.stdout.write("element writes: keep at a required position certified in search and checking, keep at an optional one and the empty footprint refused in search and in checking\n");
 });
@@ -5275,7 +5384,8 @@ control(async (): Promise<void> => {
     refusedAt(artifacts, input, name, refusal);
     // Checking the honest evidence refuses at a node of `bounded`, whose
     // claim the evidence states otherwise.
-    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
     const located = must(/source evidence refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
     assert.ok(Number(located[1]) >= from, checked);
   }
@@ -5305,7 +5415,8 @@ control(async (): Promise<void> => {
     ["forged-known-entry", "if ((c && x) || !c)", true]] as const) {
     const input = forge(name, statement, literal);
     refusedAt(artifacts, input, name, "evidence search failed");
-    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
     assert.ok(/source evidence refusal at \[\d+,\d+\)/.test(checked), checked);
   }
   process.stdout.write("known Boolean: an entry claimed past what only a pruned arm carries, and a known Boolean's entry claimed at a literal its edges do not establish, refused in search and in checking\n");
@@ -5326,7 +5437,8 @@ control(async (): Promise<void> => {
   truth.type = [2];
   const input = writeClaims(artifacts, "forged-boolean-return", claims);
   refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
-  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts)
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m)
     .includes(`reject: source evidence refusal at [${at},${at + 1}): the evidence does not establish this node's claim`));
   // The false return claimed `true`, and an arrow guard's true return, at
   // its `=>`, claimed `false`: each refused the same way.
@@ -5349,8 +5461,7 @@ control(async (): Promise<void> => {
     }
     const forgedInput = writeClaims(where, `forged-boolean-return-${name}`, forgedClaims);
     refusedAt(where, forgedInput, `forged-boolean-return-${name}`, "evidence search failed");
-    assert.match(invoke(forgedInput, join(where, "evidence.json"), where),
-      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this (node|obligation)'s claim)/);
+    invoke(forgedInput, join(where, "evidence.json"), where, /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this (node|obligation)'s claim)/);
   }
   process.stdout.write("guard Boolean return: the true return claimed false, the false one claimed true and an arrow's true one claimed false refused in search and in checking\n");
 });
@@ -5380,7 +5491,8 @@ control(async (): Promise<void> => {
   const input = writeClaims(artifacts, "forged-guard-closure-promise", claims);
   const refusal = "a guard closure's claim must offer its written promise over its annotated parameters";
   refusedAt(artifacts, input, "forged-guard-closure-promise", refusal);
-  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source refusal at \[\d+,\d+\): a guard closure's claim must offer its written promise over its annotated parameters/m).includes(refusal));
   // The callback's longer signature, a row of its own, claimed at a result
   // the body does not return, and the rows of interior claims one short of
   // the signatures: each refused where evidence is produced and where the
@@ -5410,7 +5522,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:per\-arrow interior claims do not match the claimed arrows|source effect refusal at \[\d+,\d+\): the footprint claimed for 'allPresent' is not established by its body)/m).includes(refusal));
   }
   process.stdout.write("guard closure callback: a claim without the promise, a longer row at an unjustified result and rows short of the signatures refused in search and in checking\n");
 });
@@ -5461,7 +5574,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source direct obligation at \[\d+,\d+\): closure signature claim is outside the source annotation|source effect refusal at \[\d+,\d+\): the footprint claimed for 'defined' is not established by its body|source effect refusal at \[\d+,\d+\): the footprint claimed for a closure in 'overwriting' is not established by its body)/m).includes(refusal));
   }
   process.stdout.write("filter guard closure: its longer promise signature without the promise, at an unestablished promise, a parameter outside its context and a writing closure's at a footprint keeping values and stores refused in search and in checking\n");
 });
@@ -5509,7 +5623,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for 'others' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m).includes("reject: "));
   }
   process.stdout.write("guard value callback: its claim without the promise, at a promise the guard does not state, and a plain function's at a promise refused in search and in checking\n");
 });
@@ -5566,7 +5681,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source effect refusal at \[\d+,\d+\): the footprint claimed for 'use' is not established by its body/m).includes("reject: "));
   }
   process.stdout.write("find guard closure: its longer promise signature at the top footprint and at an unestablished promise refused in search and in checking\n");
 });
@@ -5600,7 +5716,8 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes("reject: "), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes("reject: "));
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:Verification\.EvidenceWire\.Document\.types: head 131 takes 1 arguments, given 0|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m).includes("reject: "));
   }
   process.stdout.write("Object.entries's mixed overloads: the dictionary's call at the plain overload and the interface's at the dictionary's instance refused in search and in checking\n");
 });
@@ -5635,13 +5752,14 @@ control(async (): Promise<void> => {
   const grown = join(artifacts, "forged-footprint-value-grow.json");
   writeFileSync(grown, must(JSON.stringify(claims, (key, value: unknown) =>
     key === "footprint" && value === collect.footprint ? { value: "grow", store: "keep" } : value), "the forged claims' text"));
-  assert.match(invoke(grown, evidence, artifacts), /invalid footprint change 'grow'/);
+  invoke(grown, evidence, artifacts, /invalid footprint change 'grow'/);
   const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))[0], "a claimed arrow");
   const unpromised = join(artifacts, "forged-effect-without-promise.json");
   writeFileSync(unpromised, must(JSON.stringify(claims, (key, value: unknown) =>
     key === "effect" && value === arrow.effect ? { footprint: arrow.effect.footprint } : value), "the forged claims' text"));
-  assert.match(invoke(unpromised, evidence, artifacts), /promise/);
+  invoke(unpromised, evidence, artifacts,
+      /^reject: source refusal at \[\d+,\d+\): the declarations required by this unit cannot be interpreted: Verification\.CallEffects\.Contract\.effect: property not/m);
   process.stdout.write("footprints and effects other than the one spelling: refused\n");
 });
 
@@ -5695,7 +5813,8 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   const made = produceWith(artifacts, claims, name, weak);
   assert.equal(made.status, 0, made.stdout + made.stderr);
   refusedAt(artifacts, claims, `${name}-honest`, `obligation at [${at[0]},${at[1]})`);
-  invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
+  invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts,
+      /^reject: (?:Verification\.EvidenceWire\.Document\.types: application of unknown head 548|source direct obligation at \[\d+,\d+\): claimed return type differs from the source annotation|source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing)/m);
 };
 control(async (): Promise<void> => {
   // Parameters retains the callback's effect. Claims and evidence made
@@ -5773,7 +5892,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   refusedAt(artifacts, input, name, `obligation at ${at}`);
   // Checking the honest evidence refuses within the operation: at it, or at
   // an obligation of its operands, whose evidence states the honest claim.
-  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+      /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
   const located = must(/source evidence refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
   assert.ok(op <= Number(located[1]) && Number(located[2]) <= op + operation.length, checked);
 };
@@ -5818,7 +5938,8 @@ control(async (): Promise<void> => {
     const input = writeClaims(artifacts, `forged-self-${label}`, claims);
     const searched = produceWith(artifacts, input, `forged-self-${label}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source effect refusal at \[\d+,\d+\): the footprint claimed for a closure in 'writes' is not established by its body|source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/m);
     // Search refuses within the function. Checking the honest evidence
     // refuses there or in a later unit: with the forged row in use, the
     // honest certificate of a later unit claiming a footprint no longer
@@ -5977,7 +6098,8 @@ control(async (): Promise<void> => {
   const call = source.indexOf("isPresence(v)");
   assert.match(searched.stdout + searched.stderr,
     new RegExp(`source expression obligation at \\[${call},${call + "isPresence".length}\\): evidence search failed`));
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast), /obligation|evidence|claim/);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m, ast);
   process.stdout.write("unpromised guard call: its qualified read refused\n");
 });
 
@@ -6041,8 +6163,7 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-regexp-shape", ast);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /%RegExp:111%/);
-  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast),
-    /%RegExp:111%/);
+  invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, /%RegExp:111%/, ast);
   process.stdout.write("forged regex shape: a literal naming a shape no declaration lists refused\n");
 });
 control(async (): Promise<void> => {
@@ -6195,8 +6316,7 @@ control(async (): Promise<void> => {
     // checker names the first node whose evidence does not establish its
     // claim, or the evidence as a whole, not the forged claim. The guards'
     // own rules are reached by forged evidence (below).
-    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
-      /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts, /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
   }
   process.stdout.write("forged family claims: the excluded arm on a kind test's and on a guard's false edge, a guard value's promise at the shapes it excludes, a program allocation at a family type, a forEachChild callback's result at a node type it did not receive, the false edge of a re-exported guard and the node a guard's wrapper answers true of, each at the identifier shape, refused by the search at the forged claim and by the checker against the case's evidence\n");
 });
@@ -6234,7 +6354,8 @@ control(async (): Promise<void> => {
     writeFileSync(path, tabledEvidence(evidence));
     const start = text.indexOf(call);
     assert.ok(start >= 0, `${name}: the call`);
-    const refusal = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const refusal = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m);
     assert.match(refusal,
       new RegExp(`^reject: source evidence refusal at \\[${start},${start + call.length}\\): the evidence does not establish this node's typing`),
       `${name}: refused at the guard's call: ${refusal}`);
@@ -6297,7 +6418,8 @@ control(async (): Promise<void> => {
       const detail = searched.stdout + searched.stderr;
       assert.equal(searched.status, 1, detail);
       assert.ok(detail.includes(at), `${file}, ${variant} tags: the narrowed domain refused at the call in search: ${detail}`);
-      const refusal = invoke(claims, join(artifacts, "evidence.json"), artifacts, narrowed);
+      const refusal = invoke(claims, join(artifacts, "evidence.json"), artifacts,
+          /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m, narrowed);
       assert.ok(refusal.startsWith(
         `reject: source evidence refusal ${at}: the evidence does not establish this obligation's claim`),
         `${file}, ${variant} tags: the narrowed domain refused at the call by the checker: ${refusal}`);
@@ -6755,7 +6877,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, "forged-guard-false-edge", claims);
     const edge = `at [${conditional},${at + 1})`;
     refusedAt(artifacts, forged, "forged-guard-false-edge", edge);
-    assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts).includes(edge));
+    assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m).includes(edge));
     for (const [file, text] of [["invalid-undefined-false", "isNameType(t) ? UnitType.Name : t"],
         ["invalid-absent", "isNameOrAbsent(u) ? u : null"]] as const) {
       const refused = check(example(file), project);
@@ -6800,7 +6923,8 @@ control(async (): Promise<void> => {
   const present = writeClaims(artifacts, "forged-guard-handler", handler);
   const span = `at [${caught.at},${caught.at + "n.parent".length})`;
   refusedAt(artifacts, present, "forged-guard-handler", span);
-  assert.ok(invoke(present, join(artifacts, "evidence.json"), artifacts).includes(span));
+  assert.ok(invoke(present, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m).includes(span));
   const widened = readClaims(artifacts);
   const operand = claimAt(widened, "parentNamed", "n.parent", "return ts.isIdentifier(n.parent) &&");
   const text = rowOf(widened, "str");
@@ -6813,7 +6937,8 @@ control(async (): Promise<void> => {
   const at = `at [${call},${call + "ts.isIdentifier(n.parent)".length})`;
   const outside = writeClaims(artifacts, "forged-guard-domain", widened);
   refusedAt(artifacts, outside, "forged-guard-domain", at);
-  assert.ok(invoke(outside, join(artifacts, "evidence.json"), artifacts).includes(at));
+  assert.ok(invoke(outside, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m).includes(at));
   // `null` beside the argument's node or `undefined`: the audit is of
   // `undefined` alone, so the domain obligation refuses it.
   const nullable = readClaims(artifacts);
@@ -6825,7 +6950,8 @@ control(async (): Promise<void> => {
     ...before.filter((l) => typeof l !== "number")];
   const withNull = writeClaims(artifacts, "forged-guard-null", nullable);
   refusedAt(artifacts, withNull, "forged-guard-null", at);
-  assert.ok(invoke(withNull, join(artifacts, "evidence.json"), artifacts).includes(at));
+  assert.ok(invoke(withNull, join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim/m).includes(at));
   // The parser's document forged: every guard call's behaviour on
   // `undefined` stated `unadmitted`, refused at the domain obligation of a
   // call whose argument may be `undefined`; and left out, refused by the
@@ -6846,7 +6972,8 @@ control(async (): Promise<void> => {
     writeFileSync(path, text);
     const searched = produceWith(artifacts, join(artifacts, "claims.json"), name, path);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, path);
+    const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim|unexpected fields: expected \[k, pos, domain, field, tags, onUndefined, e\], got \[domain, e, field, k, pos, tags\])/m, path);
     return { searched: searched.stdout + searched.stderr, checked };
   };
   const unadmitted = forgeCalls("forged-guard-unadmitted", (c) => Reflect.set(c, "onUndefined", "unadmitted"));
@@ -7084,7 +7211,7 @@ control(async (): Promise<void> => {
       n.ordinary = null;
     })],
     ["no-step-no-derivation", at(referencing, (n) => { n.effect = null; n.ordinary = null; })],
-  ] as const) assert.match(invoke(join(aliases, "claims.json"), forge(name, change), aliases), spelling, name);
+  ] as const) invoke(join(aliases, "claims.json"), forge(name, change), aliases, spelling);
   // A step proof at another node's sequent beside the node's own derivation
   // written out: a well-spelled node whose step check refuses the proof.
   const otherRoot = check(forge("other-root", (e) => {
@@ -7198,7 +7325,8 @@ control(async (): Promise<void> => {
   for (const [name, change] of differing) {
     const checked = check(name, change);
     assert.equal(checked.status, 1, `${name}: ${checked.stdout}${checked.stderr}`);
-    assert.match(checked.stdout + checked.stderr, /^reject: source (evidence|incoming edge obligation|expression obligation)/m, name);
+    assert.match(checked.stdout + checked.stderr,
+        /^reject: source (evidence|incoming edge obligation|expression obligation)/m, name);
     assert.doesNotMatch(checked.stdout + checked.stderr, /entries it may name|Verification\.EvidenceWire\.Document\./, name);
   }
   const accepted: [string, (b: JsonObject) => void][] = [
@@ -7559,7 +7687,8 @@ control(async (): Promise<void> => {
     const forged = writeClaims(artifacts, name, claims);
     const searched = produceWith(artifacts, forged, name);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's claim/m);
   };
   const negation = '!(k.name === "a" || k.name === "b")';
   forge("forged-negated-disjunction-read", "rest", spanOf("k.name", 'k.name === "b"'), [{ strIn: { values: ["c", "d"] } }]);
@@ -7597,7 +7726,8 @@ mutationControl(async (): Promise<void> => {
   const path = join(artifacts, "forged-read-witness-ownership.json");
   writeFileSync(path, tabledEvidence(evidence));
   checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
-  const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+  const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m);
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const start = source.indexOf("node.expression", source.indexOf("export function optionalReuse"));
   assert.ok(checked.includes(`source evidence refusal at [${start},${start + "node.expression".length}): the evidence does not establish this node's typing`), checked);
@@ -7653,7 +7783,8 @@ mutationControl(async (): Promise<void> => {
     refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
     const checked = invoke(input, forgedEvidence(artifacts, input, `forged-witness-${name}`,
       name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" || name === "primitiveAfterCall" ? "links" :
-        name === "afterRoot" ? "links" : "coverage,links"), artifacts);
+        name === "afterRoot" ? "links" : "coverage,links"), artifacts,
+            /^reject: (?:source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 11, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 7, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 7, handler edge|source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 8, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 11, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 11, edge 1|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 24, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 36, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 51, edge 0)/m);
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
 
@@ -7698,7 +7829,8 @@ mutationControl(async (): Promise<void> => {
     writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const start = entry.start + "return ".length;
-    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 4, edge 0/m);
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
   // An alias link holds by an edge's mapping alone where the edge takes its
@@ -7735,7 +7867,8 @@ mutationControl(async (): Promise<void> => {
     const path = join(artifacts, "forged-mapped-alias-evidence.json");
     writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
-    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 4, edge 0/m);
     assert.ok(checked.includes("evidence fails heap knowledge"), checked);
   }
   process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage, an alias of slots from two sources isolates links\n");
@@ -7793,7 +7926,8 @@ mutationControl(async (): Promise<void> => {
     const path = join(artifacts, `forged-separation-${name}-evidence.json`);
     writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "separation");
-    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: (?:source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 27, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 28, edge 0)/m);
     assert.ok(checked.includes("evidence fails heap knowledge"), `${name}: ${checked}`);
   }
   // The cell's explicit fact, the residual the lowering states at each
@@ -7809,7 +7943,8 @@ mutationControl(async (): Promise<void> => {
       for (const k of [n.knowledge, n.output]) k.separation.facts = k.separation.facts.filter(f => !explicit(f));
     const path = join(artifacts, "forged-separation-residual-evidence.json");
     writeFileSync(path, tabledEvidence(evidence));
-    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m);
     assert.match(checked, /source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's/);
   }
   process.stdout.write("separation: an argument stated fresh, a level at its depth and a stale depth isolate the separation check; without its cell's explicit fact the body's evidence is refused\n");
@@ -7847,7 +7982,8 @@ mutationControl(async (): Promise<void> => {
     const input = writeClaims(artifacts, `forged-chain-${name}`, claims);
     const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
     refusedAt(artifacts, input, `forged-chain-${name}`, obligation);
-    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-chain-${name}`, mutations), artifacts);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-chain-${name}`, mutations), artifacts,
+        /^reject: (?:source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 7, edge 0|source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 11, edge 1)/m);
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
 
@@ -7898,7 +8034,8 @@ mutationControl(async (): Promise<void> => {
     writeFileSync(path, tabledEvidence(evidence));
     checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const start = entry.start + "return ".length;
-    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts,
+        /^reject: source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 4, edge 0/m);
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
   process.stdout.write("path chains: the honest document accepted; a forged predecessor refused by type coverage, a chain past a call and a second segment's wrong receiver or field by heap knowledge, each accepted with that check disabled\n");
@@ -7966,7 +8103,8 @@ for (const variant of ["covered", "kept", "taken"] as const) mutationControl(asy
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok([obligation, `source incoming edge obligation at [${truthy.start},${truthy.start + "return 0;".length})`]
       .some(o => (searched.stdout + searched.stderr).includes(o)), searched.stdout + searched.stderr);
-    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-false-set-${name}`, "coverage"), artifacts);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-false-set-${name}`, "coverage"), artifacts,
+        /^reject: source incoming edge obligation at \[\d+,\d+\): evidence fails type coverage from node 11, edge 1/m);
     assert.ok(checked.includes(`${obligation}: evidence fails type coverage from node `), checked);
   }
   process.stdout.write({
@@ -8072,7 +8210,8 @@ control(async (): Promise<void> => {
   const decoder = `invalid source claims: invalid current-contents field of 'node' at the entry at ${start}`;
   const missing = forge("forged-guard-kind-missing-arm", false);
   refusedAt(artifacts, missing, "forged-guard-kind-missing-arm", decoder);
-  assert.ok(invoke(missing, join(artifacts, "evidence.json"), artifacts).includes(decoder));
+  assert.ok(invoke(missing, join(artifacts, "evidence.json"), artifacts,
+      /^reject: invalid source claims: invalid current\-contents field of 'node' at the entry at 581: a field some arm of its type does not name, or an invalid path/m).includes(decoder));
   const neighbour = forge("guard-kind-stated-arm", true);
   const searched = produceWith(artifacts, neighbour, "guard-kind-stated-arm");
   assert.ok(!(searched.stdout + searched.stderr).includes(decoder), searched.stdout + searched.stderr);
@@ -8143,7 +8282,8 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-link", unstable);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/, searched.stdout + searched.stderr);
-  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
+  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m, unstable);
   assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
   process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
 });
@@ -8178,7 +8318,8 @@ control(async (): Promise<void> => {
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-optional", unstable);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/, searched.stdout + searched.stderr);
-  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
+  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts,
+      /^reject: source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing/m, unstable);
   assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
   process.stdout.write("stable optional members: the document without the optional members' stable keys refused in search and in checking, the honest one accepted\n");
 });
@@ -8270,7 +8411,8 @@ mutationControl(async (): Promise<void> => {
     assert.ok((searched.stdout + searched.stderr).includes(obligation), searched.stdout + searched.stderr);
     const evidencePath = forgedEvidence(artifacts, forged, `isolated-stable-${kind}`,
       kind === "catch" ? "handler" : "stable");
-    const checked = invoke(forged, evidencePath, artifacts);
+    const checked = invoke(forged, evidencePath, artifacts,
+        /^reject: (?:source evidence refusal at \[\d+,\d+\): the evidence does not establish this node's typing|source incoming edge obligation at \[\d+,\d+\): evidence fails heap knowledge from node 23, handler edge)/m);
     if (kind === "catch")
       assert.match(checked, /source incoming edge obligation at \[405,424\): evidence fails heap knowledge from node \d+, handler edge/);
     else {
