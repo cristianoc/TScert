@@ -1935,17 +1935,26 @@ Every edge is still checked by the independent consumer. -/
   -- node as before; then, while a round fails and leaves a cut whose
   -- entering edges all establish an implication it was not seeded with (a
   -- constant holding a guard's answer), another round with each such cut's
-  -- (`meetImplications`), at most four rounds. A round that fails at a node
-  -- goes on with the others, so the cuts after it are met; a successful
-  -- round keeps its evidence.
+  -- (`meetImplications`), at most four rounds. Where these fail and some
+  -- node carried an implication, at most two waiting rounds follow, in
+  -- which each cut also meets its entering edges once they are produced. A
+  -- round that fails at a node goes on with the others, so the cuts after
+  -- it are met; a successful round keeps its evidence, and a failure is the
+  -- first round's.
   let mut seeds : List (Nat × List (PromiseCalls.Implication ι)) := []
   -- A cut's elements atoms: likewise, those every entering edge carries.
   let mut elemSeeds : List (Nat × List HeapKnowledge.ElemAtom) := []
   let mut result : Option (Array (Option (NodeEvidence ι))) := none
   let mut failure : Option (Failure ι) := none
-  for _ in List.range (min (cuts.length + 1) 4) do
+  let seededRounds := min (cuts.length + 1) 4
+  let mut waiting := false
+  let mut waitingRounds := 0
+  let mut implicated := false
+  for round in List.range (seededRounds + 2) do
     let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
     let mut failed : Option (Failure ι) := none
+    -- Whether a loop head took implications its back edge had not yet met.
+    let mut guessed := false
     -- A node that failed in this round is not attempted again in it.
     let mut failedAt : Array Bool := Array.replicate P.length false
     -- A merge waits for its predecessors while some pass still makes
@@ -1964,6 +1973,31 @@ Every edge is still checked by the independent consumer. -/
         let mut implies : List (PromiseCalls.Implication ι) := (seeds.lookup l).getD []
         -- At the entry and at cuts, the argument slots every edge carries.
         let mut held := arguments.getD l []
+        -- In a waiting round, a cut waits for its entering edges and also
+        -- takes the implications every one establishes, as a merge does. A
+        -- cut some of whose edges wait on it (a loop's head, its back edge)
+        -- goes ahead, forced, alone, and takes, in the first waiting round,
+        -- those the produced edges stating any establish: a guess, which the
+        -- round's own edges into the cut confirm or refute; the second takes
+        -- only the seeds the edges then meet. Other rounds produce each cut
+        -- from its seeds alone.
+        if waiting && l != start && cuts.contains l && !handlerTargets.contains l then
+          let preds := incoming.getD l []
+          let ready := preds.all fun (pred,_,_) => (table.getD pred none).isSome
+          if !ready && !force then continue
+          if !ready then force := false
+          let carried := preds.filterMap fun (pred,index,target) => do
+            let previous ← table.getD pred none
+            let source ← nodes[pred]?
+            let o := ControlFlow.outFacts G previous
+            pure (edgeContextOf G previous source.continuation index o,
+              edgeImplicationsOf G previous source.continuation o, target.mapping)
+          let stating := carried.filter fun (_, xs, _) => !xs.isEmpty
+          let entering := if ready && !carried.isEmpty then meetImplications G carried c.context.length c.context
+            else if waitingRounds == 0 && !stating.isEmpty then meetImplications G stating c.context.length
+            else []
+          if !ready && !entering.isEmpty then guessed := true
+          implies := implies ++ entering.filter fun x => !implies.any fun y => y.test == x.test && y.target == x.target
         if l != start && !cuts.contains l then
           match incoming[l]? with
           | some [(pred,index,target)] =>
@@ -2025,7 +2059,7 @@ Every edge is still checked by the independent consumer. -/
           progress := true
         | .error e =>
           -- The first round fails as before where no cut's implications
-          -- could follow; a later one rethrows the last failure.
+          -- could follow; a later one rethrows the first round's failure.
           if seeds.isEmpty && cuts.isEmpty then throw e
           failed := failed <|> some e
           failedAt := failedAt.set! l true
@@ -2067,8 +2101,18 @@ Every edge is still checked by the independent consumer. -/
       break
     let grown := met.filter fun (l, xs) => (seeds.lookup l) != some xs
     let grownElems := metElems.filter fun (l, es) => (elemSeeds.lookup l) != some es
-    failure := failed
-    if grown.isEmpty && grownElems.isEmpty then break
+    -- A failure is reported as the first round met it.
+    if round == 0 then failure := failed
+    if waiting then
+      -- A waiting round whose guesses failed is followed by one without them.
+      waitingRounds := waitingRounds + 1
+      if !guessed || waitingRounds == 2 then break
+    else
+      implicated := implicated || table.any fun e => match e with
+        | some ev => !ev.implies.isEmpty
+        | none => false
+      if (grown.isEmpty && grownElems.isEmpty) || round + 1 == seededRounds then
+        if implicated then waiting := true else break
     seeds := grown ++ seeds.filter fun (l, _) => !grown.any (·.1 == l)
     elemSeeds := grownElems ++ elemSeeds.filter fun (l, _) => !grownElems.any (·.1 == l)
   if let some e := failure then throw e
