@@ -3018,7 +3018,12 @@ as an implication of its slot, $`b = \mathsf{true} \Rightarrow x : T`$, which
 an edge establishes by one of `impliesFollows`'s three alternatives: the
 source states it, the source holds $`x`$ within $`T`$, or the source's $`b`$
 never holds `true` (`impliesCheck_sound`). A branch on $`b`$ then yields
-$`x : T`$ where it answers `true`. A constant's binding holds the value at
+$`x : T`$ where it answers `true`, and the code that runs on that edge, the
+right operand of `b && e` included, is claimed in the narrowed context. The
+condition is read as its tests run it: an equality with an operand claimed
+at a singleton is that singleton's tag test, so $`T`$ is the slice the test
+leaves where it passes (`comparisonsExpr`,
+`blocker-pretext-constant-implication-conjunction`). A constant's binding holds the value at
 the type its path through the initializer states where that is a Boolean
 within the claim, so the `false` arm of `g(x) && e` binds `false`. The search
 proposes, at a merge or a cut every edge of which it has produced, the
