@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
+import { cases } from "../pipeline/cases.mts";
 
 // These source counterexamples exercise refused operations within the caller
 // contract: ordinary records, stable standard prototypes and native promises.
@@ -2915,4 +2916,147 @@ for (const [file, call] of [
   assert.equal(runExample("invalid-round-conditional-path-call",
     '(() => { const node={expression:{kind:"property",name:{text:"call"}}}; return typeof wrong(node,()=>{node.expression=undefined}); })()'),
     "undefined", "a growth-preserving value write can invalidate the tested field");
+}
+
+{
+  // The cases whose description or header states what Node does with them:
+  // each run here, its case still of the kind the observation is for (a
+  // negative's program is unsafe as Node shows it; a positive runs as its
+  // types say).
+  const ofKind = (file: string, kind: "positive" | "negative"): string => {
+    assert.equal(cases.find((c) => c.file === file)?.kind, kind, `${file} is a ${kind} case`);
+    return file;
+  };
+  const negative = (file: string): string => ofKind(file, "negative");
+  const ast = fileURLToPath(new URL("../tools/node_modules/typescript/dist/ast/index.js", import.meta.url));
+  const compilerApi = { "typescript/unstable/ast": ast };
+  const thrown = (expression: string): string =>
+    `(() => { try { ${expression}; return "returned"; } catch (e) { return e.constructor.name; } })()`;
+  // A value of the example's own realm, compared as data.
+  const runPlain = (file: string, expression: string): unknown => {
+    const text = JSON.stringify(runExample(file, expression));
+    assert.ok(text !== undefined, `${file}: ${expression} gives a JSON value`);
+    return JSON.parse(text);
+  };
+  const hole = (call: string): string => `(() => { const r = ${call}; return [r.length, 1 in r]; })()`;
+
+  // Construction and data contracts.
+  assert.equal(runExample(negative("invalid-round-compiler-identity-overlap"), "typeof wrong().unobserved"), "string",
+    "the overlapping field holds a string where the intersection also requires a Boolean");
+  assert.equal(runExample(negative("invalid-round-compiler-identity-indexes"), "typeof wrong().unobserved"), "string",
+    "the field holds a string where the index at Boolean requires a Boolean");
+  assert.equal(runExample(negative("invalid-round-compiler-identity-hook"), "typeof current()"), "undefined",
+    "the toJSON key makes JSON.stringify return undefined, no string");
+  assert.equal(runNode(negative("invalid-census-nested-field-json"),
+    "console.log(typeof encode({ n: 1, toJSON: () => undefined }));").stdout, "undefined",
+    "an existing record with a toJSON hook serializes to undefined, no string");
+  assert.equal(runExample(negative("invalid-round-optional-dictionary-read"), 'typeof bound({}, "toString")'), "function",
+    "an absent own key reads the inherited toString");
+  assert.equal(runExample(negative("invalid-round-imported-find-shape"), "signature(false)"), false,
+    "false && … returns false, no string");
+  assert.equal(runExample(negative("invalid-json-stringify-undefined"), "typeof wrong()"), "undefined",
+    "JSON.stringify(undefined) is undefined");
+  assert.equal(runExample(negative("invalid-array-record-length-cast"), 'size({ length: "two" })'), 1,
+    "a record's string length passes the numeric test");
+  assert.equal(runExample(negative("invalid-decoder-closing-assertion"), 'typeof first("[1]")'), "string",
+    "the decoded list holds the string written into the parsed one");
+  assert.equal(runNode(negative("invalid-optional-write-alias"), `console.log(${thrown("unsafe()")});`).stdout, "TypeError",
+    "the string view's optional key holds a number");
+  assert.deepEqual(runPlain(negative("invalid-error-subclass-computed-write"),
+    '(() => { const e = new Decline(); set(e, "stack"); return [e.stack, Object.keys(e).includes("stack")]; })()'),
+    ["s", false], "a string key writes the instance's stack, which stays non-enumerable");
+  assert.deepEqual(JSON.parse(runNode(negative("invalid-get-prototype-array-prototype"),
+    "const n = f(); const read = [,][0]; delete Array.prototype[0]; Array.prototype.length = 0; console.log(JSON.stringify([n, read]));").stdout),
+    [1, 1], "the push writes Array.prototype[0], which another array's hole then reads");
+  assert.equal(runExample(negative("invalid-open-read-inherited-getter"), "counted()"), 2,
+    "the inherited getter runs on each read");
+
+  // Narrowings and promises a later write or call invalidates.
+  assert.equal(runExample(negative("invalid-array-from-string-callback"), 'typeof kept({ value: "a" }, "w")'), "undefined",
+    "Array.from's callback writes the narrowed field");
+  for (const file of ["invalid-guard-field-assertion-later-write", "invalid-guard-field-assertion-reread"])
+    assert.equal(runExample(negative(file), "typeof size({ args: [1] })"), "undefined",
+      "the asserted field holds the written number, whose length is undefined");
+  assert.equal(runExample(negative("invalid-in-test-closure-alias"), '(() => { const o = { name: "x" }; return typeof name([o], [o])[0]; })()'),
+    "undefined", "the alias writes undefined between the test and the read");
+  assert.equal(runExample(negative("invalid-closure-contextual-library-interface"), "poison([new Map()])"), 1,
+    "the map typed Map<string, string> holds a number");
+  assert.equal(runExample(negative("blocker-prep-alias-expression-after-call"),
+    thrown('(() => { const d = { expression: { k: "atom" } }; return meaning(d, () => { d.expression = null; return true; }, (t) => t); })()')),
+    "TypeError", "the classifier replaces the tested expression with null before its read");
+  assert.equal(runNode(negative("invalid-async-return-literal-thenable"), "adopt().then((v) => console.log(v));").stdout, "42",
+    "the async function's promise adopts the literal's then");
+
+  // Footprints a callback or handler breaks: a shrunk store, a hole.
+  for (const c of ["catch", "finally"])
+    assert.deepEqual(runPlain(negative(`invalid-normal-return-${c}`), "(() => { const xs = [1]; return [wrong(xs), xs.length]; })()"),
+      [0, 0], `a ${c} returns normally after the store shrinks`);
+  assert.deepEqual(runPlain(negative("invalid-normal-return-nested"),
+    "(() => { const xs = [1]; return [wrong(xs, () => { throw 1; }), xs.length]; })()"), [0, 0],
+    "the outer catch returns normally after the inner handler shrinks the store");
+  assert.equal(runExample(negative("invalid-normal-return-onthrow"),
+    "(() => { const xs = [1]; try { wrong(xs, () => { throw 1; }); } catch {} return xs.length; })()"), 0,
+    "the rethrowing handler shrinks the store");
+  assert.deepEqual(runPlain(negative("invalid-json-stringify-sparse-hook"),
+    hole('(() => { const xs = [1, 2]; return wrong(xs, [[{ toJSON() { xs.pop(); return "x"; } }]]); })()')), [2, false],
+    "the nested hook shrinks the mapped array: the result has a hole");
+  assert.deepEqual(runPlain(negative("invalid-sparse-join-coercion"), 'wrong(["a", "b"], () => ({ toString: (n) => typeof n }))'),
+    "undefined, undefined", "join calls each object's own toString");
+  assert.deepEqual(runPlain(negative("invalid-string-value-object"),
+    hole('(() => { const xs = [{}, {}]; xs[0].toString = () => { xs.pop(); return "a"; }; return texts(xs); })()')), [2, false],
+    "String calls the object's toString, which shrinks the mapped array");
+  assert.equal(runExample(negative("invalid-find-guard-closure-shrink"), thrown("first()")), "TypeError",
+    "find calls the guard at the popped index, undefined");
+  assert.equal(runExample(negative("invalid-round-global-signature-matcher"), thrown("lookup()")), "TypeError",
+    "the matcher pops the searched array and find reads undefined");
+  const ref = (target: string, args: string): string => `{ k: "reference", reference: { target: "${target}" }, args: ${args}, span: [0, 0] }`;
+  assert.deepEqual(runPlain(negative("invalid-round-host-brand-footprint"),
+    `(() => { const t = ${ref("T", `[${ref("A", "[]")}, ${ref("B", "[]")}]`)}; const r = branded(t, (id) => { if (id === "A") t.args.pop(); return false; }); return [r.args.length, 1 in r.args]; })()`),
+    [2, false], "the brand callback pops the outer arguments: the mapped result has a hole");
+  for (const file of ["invalid-closure-offer-narrower-mutation", "invalid-closure-offer-narrower-rebound"])
+    assert.deepEqual(runPlain(negative(file), hole('wrong([{ k: "f", n: 1 }, { k: "f", n: 2 }])')), [2, false],
+      "the callback shrinks the mapped array: the result has a hole");
+  assert.equal(runExample(negative("invalid-closure-offer-narrower-parameter"),
+    'typeof wrong([{ k: "a", s: "x" }], { size(part) { return part.n; } })[0]'), "undefined",
+    "map hands the narrower function the other arm");
+  assert.equal(runNode(negative("invalid-closure-offer-narrower-this"), 'console.log(typeof wrong([{ k: "f", n: 1 }])[0]);').stdout,
+    "undefined", "map calls the function with an undefined receiver, which it returns");
+  assert.deepEqual(runPlain(negative("invalid-closure-offer-narrower-sparse"),
+    '(() => { const r = wrong([, { k: "f", n: 1 }]); return [r.length, 0 in r, typeof r[0]]; })()'), [2, false, "undefined"],
+    "map keeps the hole");
+
+  // The compiler API's guards and visitors, over nodes of the stated kinds.
+  assert.deepEqual(JSON.parse(runNode(negative("invalid-compiler-api-declaration-bindings-map"),
+    `import * as T from ${JSON.stringify(ast)}; const r = bindings([{ kind: T.SyntaxKind.Identifier }, { kind: T.SyntaxKind.Identifier }]); console.log(JSON.stringify([r.length, 1 in r]));`,
+    compilerApi).stdout), [2, false], "the visitor pops the mapped array: two identifiers leave a hole");
+  assert.equal(runNode(negative("blocker-compiler-api-type-node"),
+    `import * as T from ${JSON.stringify(ast)}; const n = { kind: T.SyntaxKind.ExpressionWithTypeArguments }; console.log(use(n) === n);`,
+    compilerApi).stdout, "true", "isTypeNode accepts an ExpressionWithTypeArguments, returned at TypeNode");
+  assert.equal(runNode(negative("invalid-compiler-api-guard-undefined-tag"), "console.log(additive(undefined));", compilerApi).stdout,
+    "false", "a tag guard answers false on undefined");
+  assert.equal(runNode(negative("invalid-compiler-api-guard-domain-null"), `console.log(${thrown("name(null)")});`, compilerApi).stdout,
+    "TypeError", "a node guard throws on null");
+  assert.equal(runNode(negative("blocker-client-prototype-forged"),
+    `const before = Object.getOwnPropertyNames(Array.prototype).length; console.log(JSON.stringify([${thrown("forge()")}, Object.getOwnPropertyNames(Array.prototype).length === before]));`,
+    { "../../tools/client-prototype.mts": fileURLToPath(new URL("../tools/client-prototype.mts", import.meta.url)) }).stdout,
+    '["Error",true]', "the boundary throws at its shape check before writing Array.prototype");
+
+  // Declaration lists and parameter defaults run in source order.
+  assert.equal(runExample(negative("invalid-declaration-list-patterns"), "typeof first([])"), "undefined",
+    "the pattern binds an absent position");
+  assert.equal(runEmitted(ofKind("declaration-list-order", "positive"), "order(new Steps([]))"), "next,return,second:s,s3",
+    "the pattern's iterator steps and closes, then the later initializer runs, then the default");
+  assert.deepEqual(runPlain(ofKind("declaration-list-forward-read", "positive"),
+    `[${thrown("forward([])")}, forward([2])]`), ["ReferenceError", 3], "the default reads the later binding before its initialization");
+  assert.equal(runExample(ofKind("declaration-list-capture", "positive"), "capture([])"), 4,
+    "the closure runs after the list, where the later binding holds 2");
+  assert.deepEqual(runPlain(ofKind("parameter-default-written", "positive"),
+    '[later(), side(), closure(), prototypeOf("string", ["a"], [{ name: "split", stated: ["b"] }])]'), [2, 2, "x!", 1],
+    "a later default's closure reads the assigned binding");
+  assert.equal(runExample(negative("invalid-parameter-pattern-assigned"), "f({ n: 1 })"), 2,
+    "the assigned pattern binding holds 2 beyond its annotation's 1");
+  assert.equal(runExample(negative("invalid-parameter-pattern-default-order"), "f({})"), 1,
+    "the later default reads the earlier binding before the body assigns it");
+  assert.equal(runExample(negative("invalid-logical-assign-value"), "(() => { set(2); return pick(); })()"), 2,
+    "||= keeps the truthy target 2, beyond the result 1");
 }
