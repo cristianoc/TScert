@@ -2588,9 +2588,7 @@ This is a safety and partial-correctness theorem, not a termination guarantee.
 
 The graph layer does not change the type-family or expression semantics. A
 closure body is a graph as a function body is, run by its own steps
-([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below. A primitive fragment with parameters
-is connected; broader source extraction remains integration work.
-[CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean) supplies
+([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below. The next section supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No completeness theorem is
 claimed for graph, program or edge evidence.
@@ -3261,7 +3259,7 @@ slots do not prove disjoint locations. `shift_holds` transports facts when a bin
 pushes a result. The finite `read` rule preserves facts. `write` conservatively
 drops all old facts and establishes the written value's predicate. `alloc` preserves shifted
 old facts and adds the fresh cell at the result slot. These are semantic rules;
-source compilation must still supply and check their graph-level use.
+their graph-level use is source compilation's to supply and check.
 
 #### Checked expression postconditions
 

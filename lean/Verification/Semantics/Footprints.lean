@@ -12,7 +12,7 @@ Composition across a sequence of actions reads each action's regions at the
 heap it starts in, and transports them to the invocation's entry heap
 (`transport`, `Post.compose`). Region containments that depend on the class of
 a location's contents are justified by evidence valid at the heap the
-including footprint is read at (`ClassOk`). Nothing uses this module yet. -/
+including footprint is read at (`ClassOk`). -/
 namespace Verification.Footprints
 
 /-! ## Changes -/
