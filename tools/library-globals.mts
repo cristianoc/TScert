@@ -27,10 +27,10 @@ import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, instanceOfMapName, instanceOfSetName, ownKeysName, promiseResolveName, prototypeIsObjectName, ownStringName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
-  symbolKeyForName, urlHrefName, newSegmenterName } from "./intrinsics.mts";
+  symbolKeyForName, typeOfDocumentName, typeOfNavigatorName, typeOfOffscreenCanvasName, urlHrefName, newSegmenterName } from "./intrinsics.mts";
 import { footprintEffect, emptyFootprint, emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
-import { buffer, bytes, definitions as stated, textDecoder, url } from "./library-types.mts";
+import { buffer, bytes, canvas, computedStyle, definitions as stated, documentType, element, navigatorType, textDecoder, url } from "./library-types.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -88,6 +88,13 @@ export type GlobalEntry = {
    * signature is the variable's declaration, and each reference reads it as
    * a value of the stated result's type. */
   constant?: true;
+  /** `typeof X` of the global, `X` a value some hosts define and others do
+   * not (the DOM's `document` in a worker), is a call of this intrinsic,
+   * answering the strings `typeof` answers of the value or of no binding:
+   * the comparison of it with a literal narrows nothing. Every other
+   * reference reads the value the host defines, and throws a
+   * `ReferenceError` in a host that defines none, an outcome. */
+  typeOf?: string;
   /** For a global only constructed: a read of `href` written directly on
    * the `new` expression, `new X(…).href`, is a call of this intrinsic with
    * the construct's arguments. No other code reaches the object the
@@ -411,6 +418,36 @@ const urlEntries: GlobalEntry[] = [
       result: url }, definitions: [stated.url] },
 ];
 
+/** The DOM's globals a client measures text with (SOURCE-CONTRACTS.md,
+ * "The DOM's canvas, document and navigator"), each tested by `typeof`
+ * before it is read, since a worker defines no `document` and Node no
+ * `OffscreenCanvas`. `new OffscreenCanvas(width, height)` converts its
+ * numbers by Web IDL's `[EnforceRange] unsigned long long`, which runs no
+ * code on a number and throws a `TypeError` outside the range, and makes a
+ * fresh canvas: it writes nothing it did not allocate. `document` and
+ * `navigator` are `Window`'s attributes, the first `[LegacyUnforgeable]`,
+ * each getter answering the one object the global holds, which no code
+ * replaces under the untampered-standard-objects policy: constants of
+ * their stated types. */
+const domEntries: GlobalEntry[] = [
+  { host: contract, global: "OffscreenCanvas", constructs: true, typeOf: typeOfOffscreenCanvasName, effect: emptyEffect,
+    signature: "OffscreenCanvas: {\n    prototype: OffscreenCanvas;\n    new(width: number, height: number): OffscreenCanvas;\n}",
+    stated: { binders: [], params: [atom("number"), atom("number")], result: canvas }, definitions: [stated.canvas] },
+  { host: contract, global: "document", signature: "document: Document", constant: true, typeOf: typeOfDocumentName,
+    stated: { binders: [], params: [], result: documentType }, definitions: [stated.document] },
+  { host: contract, global: "navigator", signature: "navigator: Navigator", constant: true, typeOf: typeOfNavigatorName,
+    stated: { binders: [], params: [], result: navigatorType }, definitions: [stated.navigator] },
+  // CSSOM's `getComputedStyle(element)`, of one argument: the element's
+  // resolved style, a declaration the host makes or reuses for it, whose
+  // readonly flag is set. It updates the document's style, which runs no
+  // code of the program's, and writes no location the model holds: the
+  // empty footprint.
+  { host: contract, global: "getComputedStyle",
+    signature: "declare function getComputedStyle(elt: Element, pseudoElt?: string | null): CSSStyleDeclaration;",
+    effect: emptyEffect, stated: { binders: [], params: [element], result: computedStyle },
+    definitions: [stated.element, stated.computedStyle] },
+];
+
 /** The name the entries of `import.meta`'s members are keyed by. No
  * identifier spells it. */
 export const importMetaName = "import.meta";
@@ -455,6 +492,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   ...typedArrayEntries,
   ...intlEntries,
   ...urlEntries,
+  ...domEntries,
   ...importMetaEntries,
   // Node's `console.log` and `console.error`, and the DOM's `console.error`,
   // as `console.log` below: each argument at a primitive, no effect stated.

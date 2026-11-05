@@ -246,19 +246,193 @@ export const segmenterDefinition: TypeDefinition = definitionOf(segmenterIdentit
   { k: "object", stringIndex: null, calls: [], host: segmenterMarker, span: at,
     fields: [field("segment", method([atom("string")], segments, emptyEffect))] });
 
+/** The DOM's host objects a client measures text with (SOURCE-CONTRACTS.md,
+ * "The DOM's canvas, document and navigator"), each a platform object of
+ * the HTML standard whose stated members are attributes, getters on its
+ * interface's prototype, and operations, data properties there: the
+ * members a client reads or calls, at the types the standard gives them,
+ * and no other. Each is a host object (HOST-FAMILIES.md, "Host objects"):
+ * no allocation of the program meets its type, and the steps that copy or
+ * expose an object's own properties refuse it. */
+const domIdentity = (name: string): DeclarationIdentity => ({ module: "tscert/dom", name, span: at });
+
+/** The marker of a `TextMetrics`. */
+export const textMetricsMarker = "dom:text-metrics";
+/** What `measureText` returns (HTML, "Drawing text to the bitmap"): a fresh
+ * `TextMetrics`, whose attributes are numbers the call computed,
+ *
+ *     type TextMetrics = host "dom:text-metrics" {
+ *       readonly width: number;
+ *       readonly actualBoundingBoxLeft: number;
+ *       readonly actualBoundingBoxRight: number };
+ *
+ * each getter returning the value it holds, which nothing changes. */
+const textMetricsIdentity = domIdentity("TextMetrics");
+export const textMetrics: TypeTerm = named(textMetricsIdentity);
+const textMetricsDefinition = definitionOf(textMetricsIdentity, { k: "object", stringIndex: null, calls: [],
+  host: textMetricsMarker, span: at, fields: ["width", "actualBoundingBoxLeft", "actualBoundingBoxRight"]
+    .map(name => field(name, atom("number"))) });
+
+/** The marker of a 2D context, a `CanvasRenderingContext2D` or an
+ * `OffscreenCanvasRenderingContext2D`. */
+export const canvasContextMarker = "dom:canvas-2d";
+/** A 2D context, of a canvas element or of an `OffscreenCanvas` (HTML,
+ * "The 2D rendering context"): the two interfaces share
+ * `CanvasTextDrawingStyles` and `CanvasText`, the member stated,
+ *
+ *     type CanvasRenderingContext2D = host "dom:canvas-2d" { measureText(text: string): TextMetrics };
+ *
+ * `measureText(text)` converts `text` by Web IDL's DOMString, which runs no
+ * code on a string, shapes it under the context's current state and returns
+ * a fresh `TextMetrics`: it writes no location the model holds, within the
+ * empty footprint. The context's text drawing state is the host's, which
+ * the model holds no location of: a read of an attribute the context
+ * states a getter for (`canvasGetters`) and a write of one it states a
+ * setter for (`canvasSetters`) are calls of their intrinsics, as an
+ * element of a view of bytes is read and written. Any other member, read or
+ * written, is refused. */
+const canvasContextIdentity = domIdentity("CanvasRenderingContext2D");
+export const canvasContext: TypeTerm = named(canvasContextIdentity);
+const canvasContextDefinition = definitionOf(canvasContextIdentity, { k: "object", stringIndex: null, calls: [],
+  host: canvasContextMarker, span: at, fields: [field("measureText", method([atom("string")], textMetrics, emptyEffect))] });
+
+/** A context's getters a client reads (HTML, `CanvasTextDrawingStyles`),
+ * each `o.k` of a value TypeScript types as 2D contexts only, written by the
+ * parser as a call of its intrinsic `%CanvasGet:k%(o)` (`intrinsics.mts`):
+ * `font` serializes the context's current font, a string, and
+ * `letterSpacing` its letter spacing, a string, or `undefined` in a host
+ * that predates the attribute (Safari before 18), where no object of the
+ * context's chain holds the key. Each runs no code and writes nothing. */
+export const canvasGetters: readonly { member: string; type: TypeTerm; intrinsic: string }[] = [
+  { member: "font", type: atom("string") },
+  { member: "letterSpacing", type: union(atom("string"), atom("undefined")) },
+].map(g => ({ ...g, intrinsic: `%CanvasGet:${g.member}%` }));
+
+/** A context's setters a client writes (HTML, `CanvasTextDrawingStyles`),
+ * each `o.k = v` of a value TypeScript types as 2D contexts only, an
+ * intersection with one among them (as `"lang" in o` narrows it), written
+ * by the parser as a call of its intrinsic `%CanvasSet:k%(o, v)`, at the
+ * type of the values it takes (`intrinsics.mts`): Web IDL converts `v` to a
+ * DOMString, which runs no code on a string, and the setter parses it and
+ * sets the context's state, ignoring a value it does not parse (a font, a
+ * letter spacing) or one no enumeration value names; in a host that
+ * predates the attribute, the assignment creates an own data property of
+ * the context at `v`, which no stated member reads. It changes the
+ * context's state alone, which the model holds no location of, and runs no
+ * other code. */
+export const canvasSetters: readonly { member: string; value: TypeTerm; intrinsic: string }[] = [
+  { member: "font", value: atom("string") },
+  { member: "letterSpacing", value: atom("string") },
+  { member: "lang", value: atom("string") },
+  { member: "fontKerning", value: union(text("auto"), text("normal"), text("none")) },
+  { member: "textRendering", value: union(text("auto"), text("optimizeSpeed"), text("optimizeLegibility"),
+    text("geometricPrecision")) },
+].map(s => ({ ...s, intrinsic: `%CanvasSet:${s.member}%` }));
+
+/** A canvas a 2D context is made from, an `OffscreenCanvas` or a canvas
+ * element (HTML, "The canvas element", "The OffscreenCanvas interface"),
+ *
+ *     type Canvas = host "dom:canvas" { getContext(id: "2d"): CanvasRenderingContext2D | null };
+ *
+ * `getContext("2d")` makes the canvas's 2D context the first time, returns
+ * it at every later call, and returns `null` where the canvas has a context
+ * of another kind: it runs no code and writes only the canvas's own slots,
+ * which the model holds no location of, within the empty footprint. A
+ * canvas element made in a document that is not an HTML document is an
+ * `Element` in no namespace, which has no `getContext`: the call throws a
+ * `TypeError`, an outcome. */
+export const canvasMarker = "dom:canvas";
+const canvasIdentity = domIdentity("OffscreenCanvas");
+export const canvas: TypeTerm = named(canvasIdentity);
+const canvasDefinition = definitionOf(canvasIdentity, { k: "object", stringIndex: null, calls: [],
+  host: canvasMarker, span: at, fields: [
+    field("getContext", method([text("2d")], union(canvasContext, atom("null")), emptyEffect))] });
+
+/** An element (DOM, "Interface Element"), at the member a client reads of
+ * any element, its root among them,
+ *
+ *     type Element = host "dom:element" { readonly lang: string | undefined };
+ *
+ * `lang` is `HTMLElement`'s attribute, the getter reflecting the content
+ * attribute, a string; an element of another namespace (an SVG document's
+ * root) has none on its chain and reads `undefined`. `HTMLElement` names
+ * this type, and so does `Element`: every member stated holds of every
+ * element. */
+export const elementMarker = "dom:element";
+const elementIdentity = domIdentity("Element");
+export const element: TypeTerm = named(elementIdentity);
+const elementDefinition = definitionOf(elementIdentity, { k: "object", stringIndex: null, calls: [],
+  host: elementMarker, span: at, fields: [field("lang", union(atom("string"), atom("undefined")))] });
+
+/** What `getComputedStyle(element)` returns (CSSOM, "Extensions to the
+ * Window interface"): the element's resolved style, a `CSSStyleDeclaration`
+ * whose readonly flag is set, at the member a client reads,
+ *
+ *     type ComputedStyle = host "dom:computed-style" { readonly width: string };
+ *
+ * `width` is `CSSStyleProperties`'s getter, the resolved value of the
+ * property serialized, a string: a length in `px` where the element has a
+ * box, its computed value, `auto`, where it has none. */
+export const computedStyleMarker = "dom:computed-style";
+const computedStyleIdentity = domIdentity("CSSStyleDeclaration");
+export const computedStyle: TypeTerm = named(computedStyleIdentity);
+const computedStyleDefinition = definitionOf(computedStyleIdentity, { k: "object", stringIndex: null, calls: [],
+  host: computedStyleMarker, span: at, fields: [field("width", atom("string"))] });
+
+/** The global `document` (HTML, `Window`'s `[LegacyUnforgeable] readonly
+ * attribute Document document`), at the members a client reads,
+ *
+ *     type Document = host "dom:document" {
+ *       readonly documentElement: Element | null;
+ *       createElement(localName: "canvas"): Canvas };
+ *
+ * `documentElement` is the getter answering the document's root element,
+ * `null` in a document with none. `createElement("canvas")` makes a fresh
+ * canvas element: the name is no valid custom element name, so no
+ * constructor of the program's runs, and it writes nothing the model holds,
+ * within the empty footprint. */
+export const documentMarker = "dom:document";
+const documentIdentity = domIdentity("Document");
+export const documentType: TypeTerm = named(documentIdentity);
+const documentDefinition = definitionOf(documentIdentity, { k: "object", stringIndex: null, calls: [],
+  host: documentMarker, span: at, fields: [field("documentElement", union(element, atom("null"))),
+    field("createElement", method([text("canvas")], canvas, emptyEffect))] });
+
+/** The global `navigator` (HTML, `Window`'s `readonly attribute Navigator
+ * navigator`, and `WorkerGlobalScope`'s), at the members a client reads,
+ *
+ *     type Navigator = host "dom:navigator" { readonly userAgent: string; readonly platform: string };
+ *
+ * `userAgent` and `platform` are `NavigatorID`'s getters answering the user
+ * agent string and the platform's name, strings. */
+export const navigatorMarker = "dom:navigator";
+const navigatorIdentity = domIdentity("Navigator");
+export const navigatorType: TypeTerm = named(navigatorIdentity);
+const navigatorDefinition = definitionOf(navigatorIdentity, { k: "object", stringIndex: null, calls: [],
+  host: navigatorMarker, span: at, fields: [field("userAgent", atom("string")), field("platform", atom("string"))] });
+
 export const definitions: { bytes: TypeDefinition; buffer: TypeDefinition; bigIntStats: TypeDefinition;
   dirent: TypeDefinition; textDecoder: TypeDefinition; url: TypeDefinition; segmenter: TypeDefinition;
-  segments: TypeDefinition } = { bytes: bytesDefinition, buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition,
-  dirent: direntDefinition, textDecoder: textDecoderDefinition, url: urlDefinition, segmenter: segmenterDefinition,
-  segments: segmentsDefinition };
+  segments: TypeDefinition; textMetrics: TypeDefinition; canvasContext: TypeDefinition; canvas: TypeDefinition;
+  element: TypeDefinition; document: TypeDefinition; navigator: TypeDefinition; computedStyle: TypeDefinition } = {
+  bytes: bytesDefinition, buffer: bufferDefinition, bigIntStats: bigIntStatsDefinition, dirent: direntDefinition,
+  textDecoder: textDecoderDefinition, url: urlDefinition, segmenter: segmenterDefinition, segments: segmentsDefinition,
+  textMetrics: textMetricsDefinition, canvasContext: canvasContextDefinition, canvas: canvasDefinition,
+  element: elementDefinition, document: documentDefinition, navigator: navigatorDefinition,
+  computedStyle: computedStyleDefinition };
 
 /** The overlay's definitions a definition names, which join the document
  * with it: a `Buffer`'s `set` takes any view, a segmenter's `segment`
- * returns a `Segments`, whose iteration yields `SegmentData`. */
+ * returns a `Segments`, whose iteration yields `SegmentData`, a context's
+ * `measureText` returns a `TextMetrics`, a canvas's `getContext` a context,
+ * and the document's members an element and a canvas. */
 export function namedDefinitions(definition: TypeDefinition): TypeDefinition[] {
   return definition === bufferDefinition ? [bytesDefinition]
     : definition === segmenterDefinition ? [segmentsDefinition]
-    : definition === segmentsDefinition ? [segmentDataDefinition] : [];
+    : definition === segmentsDefinition ? [segmentDataDefinition]
+    : definition === canvasContextDefinition ? [textMetricsDefinition]
+    : definition === canvasDefinition ? [canvasContextDefinition]
+    : definition === documentDefinition ? [elementDefinition, canvasDefinition] : [];
 }
 
 const node = "@types/node";
@@ -293,6 +467,25 @@ export const typesOverlay: readonly TypeEntry[] = [
   { name: "Segmenter", definition: segmenterDefinition, parts: [{ origin: library, heading: "interface Segmenter {" }] },
   { name: "Segments", definition: segmentsDefinition, parts: [{ origin: library, heading: "interface Segments {" }] },
   { name: "SegmentData", definition: segmentDataDefinition, parts: [{ origin: library, heading: "interface SegmentData {" }] },
+  // The DOM library's 2D contexts, one type, a `TextMetrics`, and the two
+  // canvases a context is made from, one type.
+  { name: "CanvasRenderingContext2D", definition: canvasContextDefinition, parts: [{ origin: library, heading:
+    "interface CanvasRenderingContext2D extends CanvasCompositing, CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, " +
+    "CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasSettings, " +
+    "CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform, CanvasUserInterface {" }] },
+  { name: "OffscreenCanvasRenderingContext2D", definition: canvasContextDefinition, parts: [{ origin: library, heading:
+    "interface OffscreenCanvasRenderingContext2D extends CanvasCompositing, CanvasDrawImage, CanvasDrawPath, " +
+    "CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, " +
+    "CanvasRect, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform {" }] },
+  { name: "TextMetrics", definition: textMetricsDefinition, parts: [{ origin: library, heading: "interface TextMetrics {" }] },
+  { name: "OffscreenCanvas", definition: canvasDefinition, parts: [
+    { origin: library, heading: "interface OffscreenCanvas extends EventTarget {" }] },
+  { name: "HTMLCanvasElement", definition: canvasDefinition, parts: [
+    { origin: library, heading: "interface HTMLCanvasElement extends HTMLElement {" }] },
+  { name: "Element", definition: elementDefinition, parts: [{ origin: library, heading:
+    "interface Element extends Node, ARIAMixin, Animatable, ChildNode, NonDocumentTypeChildNode, ParentNode, Slottable {" }] },
+  { name: "HTMLElement", definition: elementDefinition, parts: [{ origin: library, heading:
+    "interface HTMLElement extends Element, ElementCSSInlineStyle, ElementContentEditable, GlobalEventHandlers, HTMLOrSVGElement {" }] },
 ];
 
 /** The entry stating `name`, where every part TypeScript binds it to as a
