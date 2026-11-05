@@ -12,6 +12,22 @@ designed in a draft of its own (§6).
 **Cited** names inspected code. **Proved** names a Lean theorem.
 **Conjectured** marks a design claim, a proof obligation or an estimate.
 
+## The existing mechanism this extends
+
+Each place of §3 is a representation its owner already states, with its
+decision procedure: heap knowledge is the
+[heap state assertions](../PROGRAM-TYPING.md#heap-state-and-assertions) and
+their [stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read);
+types, observations and evidence are
+[positive types](../POSITIVE-TYPES.md#covered-pairs) compared by
+[structure-directed comparison](../UNION-SHAPES.md#3-the-catalogue); the
+producer's and the front end's tables are their inputs on the wire; stored
+stage results are [keys by content](../STAGE-STORE.md#keys) (cited). This
+draft keeps each place's representation and meaning, and states one
+property every place meets, contextual canonicity (§1.2): a normalizer per
+place whose results decide the place's equivalence. Each place's normal
+form is designed in the draft of its own (§6).
+
 ## 1. The property
 
 ### 1.1 What a place fixes

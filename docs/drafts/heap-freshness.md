@@ -8,6 +8,17 @@ separation facts; its status and measurements are the Certificate size row of
 labelled **proved** (with the Lean name) or **cited** (with the document
 and its scope).
 
+## The existing mechanism this extends
+
+The [heap state assertions](../PROGRAM-TYPING.md#heap-state-and-assertions)
+checked on every incoming edge, whose knowledge holds cell facts, value
+facts and read and alias links
+([stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read);
+cited). A separation fact is one more kind of entry of that knowledge,
+stated in the [evidence document](../REQUEST-PROTOCOL.md#evidence-document)'s
+tables as the other entries are, and read by a write as the other facts
+are.
+
 ## 1. The representation
 
 Heap knowledge is cell facts, value facts, read and alias links, and a
@@ -82,7 +93,7 @@ namespace `HeapSeparation`, unless named otherwise).
 7. Reassignment: the operations mention the graph only through
    `contractFields`; the existing reassignment proofs hold unchanged.
 
-`SourceClaimJson.checkJson_safe` keeps its premise and conclusion:
+`SourceClaimJson.checkUnitJson_safe` keeps its premise and conclusion:
 knowledge holds at every node by `checkStep_sound` and the edge lemmas, with
 the separation a fourth conjunct of `HeapKnowledge.Holds`. The producer's
 projection and join carry no proof; that the edges they build are accepted

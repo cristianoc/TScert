@@ -14,6 +14,17 @@ the remaining steps (§5) need.
 Lean theorem. **Conjectured** marks a design claim, a proof obligation or an
 estimate; every lemma below that no theorem names needs a Lean proof.
 
+## The existing mechanism this extends
+
+Structure-directed comparison: the covered-pairs relation and its engine
+([positive types](../POSITIVE-TYPES.md#covered-pairs)), the
+[catalogue of selection rules](../UNION-SHAPES.md#3-the-catalogue), and
+instantiation of parameterized equations
+([recursive equations](../RECURSIVE-EQUATIONS.md#4-subtyping)) (cited).
+Every comparison the procedure establishes carries its proof
+(`CheckedComparison`), which the checker reads; this draft orders and
+shares the work of finding those proofs, for search and checking alike.
+
 ## 1. The engine
 
 One procedure for search and checking, untrusted for soundness: every
@@ -186,7 +197,7 @@ dependency representation of §1, a valid closed family in the reach of
 today's discovery, its coverings by candidates, is found by the depth-first
 form — is the condition for replacing discovery and deletion by it.
 
-**Unchanged:** `SourceClaimJson.checkJson_safe`, its premise and its
+**Unchanged:** `SourceClaimJson.checkUnitJson_safe`, its premise and its
 conclusion; `FamilyValid` but for `Same`; R1–R5 and their lemmas. Generic
 definitions carry `@[nospecialize]`; no `sorry`, no axioms.
 

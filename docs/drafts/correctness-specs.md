@@ -12,6 +12,23 @@ limits of this design, each refused where it is written: postconditions
 over the entry heap's contents (old values), frames of nested objects,
 contracts of generic and of overloaded signatures (§2).
 
+## The existing mechanism this extends
+
+The [effect-qualified call contract](../SEMANTICS.md#effect-qualified-call-contracts)
+of a signature, written as a [stated effect](../SOURCE-ELABORATION.md#stated-effects)
+and proved from the callee's code by the declaration-effect check
+([inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)),
+over the [checked control-flow graph](../PROGRAM-TYPING.md#checked-control-flow-graphs)
+a unit lowers to, with its promise in the language of
+[stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)
+(cited). A guard's and an assertion's promise are such contracts; a source
+contract (§1) is the same contract with a precondition, a postcondition
+and a frame written by the program, the frame a closed footprint
+([footprints](../FOOTPRINTS.md#changes-and-footprints)). What the design
+adds to these mechanisms is the knowledge contract a unit exports (§3), the
+atoms its promises state beyond the existing ones (§4), and the proof routes
+and the acceptance conjunct that certify a contract (§5).
+
 ## 1. The contract
 
 A unit $`f`$ lowers to a graph $`P`$ with input context $`\Gamma`$, entry
@@ -391,7 +408,7 @@ Two integration obligations come with it:
   binds to stays the parser's trusted name resolution.
 - **Axioms.** The registry's proofs are covered by
   [AxiomCheck.lean](../../lean/Verification/Tests/AxiomCheck.lean), which
-  checks the axioms `checkJson_safe` depends on, only once the checker's
+  checks the axioms `checkUnitJson_safe` depends on, only once the checker's
   soundness proof uses each entry's `valid` field, so that the registry
   constant is in that dependency closure. A control adds an entry resting
   on a project axiom and requires the build to fail.

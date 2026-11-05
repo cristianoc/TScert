@@ -18,6 +18,18 @@ measurements are the Certificate size row of [WORK](../../WORK.md#status).
 **Conjectured** identifies proposed designs, proof obligations and estimates.
 Every proposed lemma below requires a Lean proof.
 
+## The existing mechanism this extends
+
+The [evidence document](../REQUEST-PROTOCOL.md#evidence-document) and its
+strict decoders (`decodeStrict`, `EvidenceWire.lean`; cited), which accept
+exactly the current shape of each document, and the
+[heap state assertions](../PROGRAM-TYPING.md#heap-state-and-assertions)
+the evidence carries, with their
+[separation facts](../PROGRAM-TYPING.md#separation-facts) (cited). The
+structural decoder below accepts the same shapes in one traversal; the
+fact arena stores the same facts once, referred to by index, as the
+evidence document's tables store node headers and read summaries.
+
 ## Strict structural decoding
 
 **Conjectured — representation.** Replace `decodeStrict`'s `fromJson`/`toJson`/

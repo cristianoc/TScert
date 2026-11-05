@@ -11,6 +11,17 @@ they state ([§4](canonicity.md#4-resource-bounds)).
 **Cited** names inspected code. **Proved** names a Lean theorem.
 **Conjectured** marks a design claim, a proof obligation or an estimate.
 
+## The existing mechanism this extends
+
+The [heap state assertions](../PROGRAM-TYPING.md#heap-state-and-assertions)
+and their [stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)
+(cited): Lean's `Knowledge`, built by the search, written into the evidence
+and checked edge by edge. This draft keeps raw knowledge and every
+operation on it, with its soundness theorem, and adds the normal forms of
+places V, K, L and S that
+[canonical representations](canonicity.md#31-lean-heap-knowledge) requires
+of it.
+
 ## 1. Scope and structure
 
 Heap knowledge is built by the search (`CertificateProducer.lean`), written

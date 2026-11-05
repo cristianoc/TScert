@@ -5,6 +5,17 @@ on it are in [WORK](../../WORK.md#class-methods-effects). Base: TScert main at f
 Claims are labelled **proved** (with the Lean name), **cited** (with the
 document and its scope) or **conjectured**.
 
+## The existing mechanism this extends
+
+Effect-qualified signatures
+([inferred call effects](../SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification);
+cited): a call consumes the effect its callee's contract states, an effect
+is a closed footprint ([footprints](../FOOTPRINTS.md#changes-and-footprints)),
+and a [stated effect](../SOURCE-ELABORATION.md#stated-effects) is proved
+from the callee's code before a call consumes it. This draft gives a class
+method's declaration a stated effect, consumed at a call through the
+member's location as a function's is (§3).
+
 ## 1. The problem, at the level of the judgment
 
 A call `e.m(v⃗)` consumes the contract of the location the callee is read
@@ -38,7 +49,7 @@ effect of code the checker can see at the call.
 The effect a receiver's type promises is part of that type's meaning, and
 the meaning of a written annotation must be the same in every run: a
 unit's theorem assumes its inputs at their annotations (`EnvOk` in the
-premise of `checkJson_safe`), and a producer-chosen effect in an input
+premise of `checkUnitJson_safe`), and a producer-chosen effect in an input
 type would make "verified at its annotation" depend on a proposal. Three
 ways to fix it:
 
@@ -376,7 +387,7 @@ fields hold their initialisers.
 - **L4 (coverage).** Member and field coverage compare effects
   (`Effect.covers`, proved sound). No new theorem.
 
-**`checkJson_safe`.** The premise stays the exact CLI success condition;
+**`checkUnitJson_safe`.** The premise stays the exact CLI success condition;
 it now includes L2's check. The conclusions are unchanged: the second
 gives each unit claiming a footprint other than `top` that footprint, so
 each stated unit its statement by L2's lemma. The inputs' `EnvOk` is at the
