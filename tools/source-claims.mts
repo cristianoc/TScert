@@ -1,12 +1,18 @@
 /*
- * The producer-independent claims document, described once.
+ * The claims document, described in TypeScript.
  *
  * A producer states, for one source file, what it believes at every site the
  * lowering visits; the verifier asks whether those beliefs are derivable.
- * SOURCE-CLAIMS.md specifies the format in prose; this is the same thing for
- * the tools that write and read it, so the producer and the consumer cannot
- * drift apart silently. A document either has exactly this shape, which every
- * decoder requires field by field, or it is rejected.
+ * SOURCE-CLAIMS.md specifies the format in prose. The OCaml producer
+ * (`ocaml-producer/claims.ml`) writes the document and the verifier's Lean
+ * decoder (`Claims/Wire.lean`) reads it, requiring every field and refusing
+ * any other. This description types the pipeline's TypeScript code that
+ * reads a document the producer wrote, or forges one in a control
+ * (`readClaimsFile` in `pipeline/verify-source.mts`, which checks the JSON is
+ * well formed and decodes no field). It is tied to the writer and the reader
+ * by field names only (`tests/json-field-names.mts`): a shape that differs
+ * under the same names is reported where Lean decodes a document, and no
+ * check compares the producer's output with these types.
  */
 
 import type { Span } from "./span.mts";
@@ -28,10 +34,9 @@ type Label =
   | { array: Label[]; readonly: boolean }
   | { binder: string };
 /*
- * Every type below is generic in its label, the wire's `Label` by default. A
- * producer that names only rows of its own table, as the tsc producer does,
- * writes the `number` instance, and a reader of such a
- * document reads that instance.
+ * Every type below is generic in its label, the wire's `Label` by default; a
+ * document whose labels are all rows of its own table is the `number`
+ * instance.
  */
 
 /** A quantified callable. Parameter references inside it are resolved
