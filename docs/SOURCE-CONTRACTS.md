@@ -155,8 +155,10 @@ annotation's $`A`$ (`within`) when
 \frac{\mathrm{check}(G,C,A,p)=\mathsf{true}}{C\sqsubseteq_G A},
 ```
 
-and $`C\sqsubseteq_G A`$ implies $`⟦C⟧_G\subseteq⟦A⟧_G`$
-(by `check_sound`; the first rule compares rows with identical clauses). A
+and $`C\sqsubseteq_G A`$ implies $`⟦C⟧_G\subseteq⟦A⟧_G`$ at every
+assignment of the parameter rows (proved:
+`CertificateProducer.comparisonUsing_sound`, the comparison `within`
+accepts; the first rule compares rows with identical clauses). A
 top-level function's claimed parameter and result types are the
 annotation's (`sameMeaning`):
 

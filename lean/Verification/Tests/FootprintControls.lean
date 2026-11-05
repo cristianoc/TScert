@@ -10,8 +10,9 @@ import Verification.Types.PositiveNormalization
 found against an earlier statement is a theorem refuting that statement, so a
 definition changed back to the false form fails here. The file ends with the
 axiom check of every footprint theorem. The acceptance path uses the
-closed-footprint theorems (their composition, `Closed.Holds.trans`, and order,
-through `GraphCode.goto_bounded` and `checkUnitJson_safe`), whose axioms
+closed-footprint theorems (their composition below a cutoff,
+`Closed.Holds.trans_on`, and their order, `Closed.Holds.mono`, through
+`GraphCode.goto_bounded` and `checkUnitJson_safe`), whose axioms
 `AxiomCheck.lean` also checks. -/
 namespace Verification.Footprints.Controls
 

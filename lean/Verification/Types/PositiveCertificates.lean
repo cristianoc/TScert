@@ -1205,7 +1205,10 @@ structure TargetClauses (ι : Type) where
     (a : Clause (List ι)) : List (Clause (List ι)) :=
   t.clauses.filter fun b => !ClauseSelection.excludes G a b
 
-/-- `demandPairs` with the target's clauses read once. -/
+/-- The pairs coverage of `X` by `Y` demands, `Y`'s clauses `t` read once:
+for each clause of `X` that `t` does not hold itself, the pairs it demands of
+each candidate clause of `t` (of each clause when `select` is false), then the
+pairs of the two sides' scheme components. -/
 @[nospecialize] def demandPairsIn [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
     (select : Bool) (t : TargetClauses ι) : List (List ι × List ι) :=
   -- A clause the target holds itself is covered as it is (`Same`): it
@@ -1383,7 +1386,7 @@ such a pair, nor expand such a row's demand, with or without selection. -/
 @[nospecialize] def structurallyHopeless [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Bool :=
   structurallyHopelessIn G S (TargetClauses.of G T)
 
-/-- The pairs a row's coverage compares (`demandPairs`), and quantified
+/-- The pairs a row's coverage compares (`demandPairsIn`), and quantified
 members after renaming. -/
 @[nospecialize] def reachedPairs [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (known : Known ι) (p : List ι × List ι) (t : TargetClauses ι) : List (List ι × List ι) :=
