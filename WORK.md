@@ -90,7 +90,7 @@ each item's design and evidence, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Structure-directed comparison's lemmas](#union-shapes-lemmas) | open: proved outside the repository against 84b326a | the lemmas UNION-SHAPES states are Lean modules of `lean/Verification/Types/`, checked by the build |
 | [Selected discovery and the rerun](#union-shapes-discovery) | open | the selected search is proved to find every certificate the full search finds, and the rerun is removed where that theorem applies |
-| [Selection rules the data names](#union-shapes-candidates) | open | R6, R7, open target arms and shared literals each have a rule with its lemma, or a measurement shows it unneeded |
+| [Selection rules the data names](#union-shapes-candidates) | open | open target arms and shared literals each have a rule with its lemma, or a measurement shows it unneeded |
 | [Observed stages beyond macOS](#observed-stages-beyond-macos) | open: the parse and TypeScript's diagnostics replay on macOS only | the compiler's reads are confined and observed on Linux, and the stages replay there |
 | [Certificate size](docs/drafts/certificate-sharing.md) | open: stages 1 to 4 landed (node headers and the wire-text scan, read summaries, the evidence document's tables, separation facts). Last measurement, stage 4, census slices on executed stages, median of 3 serial runs, before (ec59551) → after: evidence `moduleFunction` 5.82→5.17, `inertRead` 5.31→5.31, `resolve` 2.69→2.69, `collect` 77.50→4.35 and `closeStatements` 51.50→3.87 MB; search CPU 29.3→28.4, 21.1→20.5, 20.5→19.8, 8.6→1.6 and 5.0→1.1 s; check CPU 5.0→4.8, 3.6→3.5, 3.4→3.3, 4.5→1.0 and 3.0→0.7 s; all five verified before and after (2026-10-23). Stage 1's structural decoder awaits the owner's choice of a reference: the decoder it must equal is built from the derived codecs and `sameJson`, partial definitions without defining equations a proof can use, so a proof needs total reference codecs, audited against them; the re-encode and comparison are 36% of `collect`'s check samples; stage 5 waits on residual cost | the five stages land, each with its proofs and controls, and `moduleFunction`, `inertRead`, `resolve`, `collect` and `closeStatements` verify with their search and check CPU measured before and after |
 
@@ -761,11 +761,12 @@ Fragment, claims and flow documents, a `tsconfig.json`'s object), which
 ### Structure-directed comparison
 
 [UNION-SHAPES](docs/UNION-SHAPES.md) states the comparison and its
-selection rules R1–R7, of which the structural engine implements R1–R5.
+selection rules R1–R7: the structural engine's candidate selection is R1–R5,
+and R6 and R7 are the [tag sets](docs/HOST-FAMILIES.md#tag-sets).
 
 <a id="union-shapes-lemmas"></a>
 **The lemmas in the repository.** The lemmas UNION-SHAPES states of its
-rules (`covers_shape`, `str_excluded`, `str_included`, `views_exclude`,
+rules (`str_excluded`, `str_included`, `views_exclude`,
 `fields_exclude`, the `refs_exclude` family, `dict_needs_among`,
 `separation`, `numSlice_sound` and `numSlice_exact`, and the `valid'`
 lemmas) were checked in a file outside the repository against the library
@@ -791,11 +792,9 @@ unestablished is then removed where the preservation theorem applies, and
 kept elsewhere.
 
 <a id="union-shapes-candidates"></a>
-**Selection rules the data names.** R6 (decomposition of a source spanning
-cells) and R7 (compact cell sets, which represent `statementsOnPath`'s
-number-literal tables as one atom) are specified and not implemented; with
-evidence sharing they are ranked by what remains of `statementsOnPath`'s
-run. Two candidates have no rule yet: open target arms, a record source
+**Selection rules the data names.** Two candidates have no rule yet, ranked
+with evidence sharing by what remains of `statementsOnPath`'s run: open
+target arms, a record source
 whose literal keys a target arm leaves open, which needs a fact that the
 arm cannot hold the source's literal (an own-key bound excluding the key);
 and shared literals, arms sharing a literal, which a second discriminant
