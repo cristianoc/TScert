@@ -181,14 +181,15 @@ function identify(at: Installation): Identification & JsonObject {
     return { unobserved: "the compiler's own reads are confined on macOS (sandbox-exec) and on Linux (bubblewrap) only" };
   const packageDigest = treeDigest(at.package), executableDigest = treeDigest(at.executablePackage);
   if (packageDigest === null || executableDigest === null) return { unobserved: "the compiler's installation is missing" };
-  const identity: { [field: string]: string | boolean } = { executable: at.executable, packagePath: at.package,
-    package: packageDigest, executablePackage: executableDigest, caseSensitive: !installed(swapCase(at.executable)) };
-  if (macOS) identity["profile"] = profile(at.executablePackage, "<launcher>", "<directory>", userInfo().homedir);
-  else {
-    identity["confinement"] = confinement(at.executablePackage, "<directory>").join(" ");
-    identity["bubblewrap"] = treeDigest(bubblewrap) ?? "missing";
-  }
-  return { identity };
+  const caseSensitive = !installed(swapCase(at.executable));
+  if (macOS)
+    return { identity: { executable: at.executable, packagePath: at.package, package: packageDigest,
+      executablePackage: executableDigest, caseSensitive,
+      profile: profile(at.executablePackage, "<launcher>", "<directory>", userInfo().homedir) } };
+  return { identity: { executable: at.executable, packagePath: at.package, package: packageDigest,
+    executablePackage: executableDigest, caseSensitive,
+    confinement: confinement(at.executablePackage, "<directory>").join(" "),
+    bubblewrap: treeDigest(bubblewrap) ?? "missing" } };
 }
 /** The installation in use, its implementation and its launcher. */
 type Current = { installation: Installation; implementation: CompilerImplementation; launcher: string | null };
