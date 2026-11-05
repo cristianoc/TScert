@@ -1652,6 +1652,20 @@ closure of `init`, `cond`, `update` or `S` mentions a name a `let` of `init` dec
      {\Gamma\vdash_R\ \mathsf{for}\ (\mathit{init};c;\mathit{update})\ S}\ \textsf{for}
 ```
 
+`do S while (c)` is `while (true) { ℓ: { S } if (c) {} else break; }`, with
+$`\ell`$ a label no source spells: the body runs before the test, a
+`continue` of the loop is a `break` of $`\ell`$, which goes to the test, a
+`break` leaves the loop without it, and the test is outside the body's
+scope, as JavaScript's DoWhileStatement runs it:
+
+```math
+\frac{\Gamma\le\Gamma_h\quad
+      \Gamma_h\vdash_R S\ \text{with}\ \mathsf{continue}\mapsto\Gamma_c\quad
+      \Gamma_c\vdash c:\mathsf{boolean}\quad
+      \Gamma_c\wedge c\le\Gamma_h}
+     {\Gamma\vdash_R\ \mathsf{do}\ S\ \mathsf{while}\ (c)}\ \textsf{do-while}
+```
+
 `switch (d) { … }` is a labeled block per clause, nested in source order
 inside one for the whole switch: the innermost holds the dispatch, each case
 label in order `if (d === l) break` to the end of its clause's block, and

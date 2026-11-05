@@ -179,6 +179,32 @@ control(async (): Promise<void> => {
       /^reject: source evidence does not justify the extracted program and exact claims/m);
   }
   process.stdout.write("module cells apart: a cell read past a writing call claimed at its old contents, and an entry knowing more than the cells' separation, refused\n");
+  // A `do...while` runs its body before its test: claims stating the test's
+  // narrowing (`x` a string) at the body's entry and at its read of `x`, as
+  // if the test ran first, are refused in search and checking.
+  const artifacts = run("do-while");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "lengthOf"), "lengthOf's claims");
+  const body = source.indexOf("do {", source.indexOf("function lengthOf"));
+  const end = source.indexOf("} while", body);
+  const read = source.indexOf("typeof x ===", body) + "typeof ".length;
+  const str = rowOf(claims, "str");
+  const claim = must(fn.expressions.find(e => e.pos[0] === read && e.pos[1] === read + 1), "the body's read of x");
+  claim.type = [str];
+  let entries = 0;
+  for (const entry of fn.entries)
+    if (entry.start > body && entry.start < end)
+      for (const b of entry.bindings) if (b.name === "x") { b.type = [str]; entries++; }
+  assert.ok(entries > 0, "an entry of the body binds x");
+  const forged = writeClaims(artifacts, "forged-do-while-test-first", claims);
+  const searched = produceWith(artifacts, forged, "forged-do-while-test-first");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal/m);
+  process.stdout.write("do...while: the test's narrowing claimed before the body's first run is refused\n");
+});
+
+control(async (): Promise<void> => {
   // A closure is offered a longer visitor signature only where its own
   // parameters take that signature's (`from_context`). Forged at the
   // visitor's signature, whose first position may be undefined, the
