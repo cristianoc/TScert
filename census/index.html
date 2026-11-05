@@ -1,52 +1,32 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Census 44e9c278e</title>
+<title>Census 4ffa514ef</title>
 <style>body{font:14px/1.45 system-ui,sans-serif;margin:24px auto;max-width:1100px;padding:0 16px}pre{overflow-x:auto;background:#f6f8fa;padding:12px}</style>
-<h1>Census of tools/ at <a href="https://github.com/cristianoc/TScert/commit/44e9c278ea747118c3255f7d5dcc688e199db131">44e9c278e</a></h1>
-<p><a href="history.tsv">every census</a> · <a href="https://github.com/cristianoc/TScert/actions/runs/42077685958">the run</a>, with the record and the refusals ranked as artifacts</p>
-<h2>Movement since 64eb9fbf7</h2><pre>
-shallow verified: 657 of 704 → 657 of 704
+<h1>Census of tools/ at <a href="https://github.com/cristianoc/TScert/commit/4ffa514efc06d6904fec1be8085a0504f4c0a1ad">4ffa514ef</a></h1>
+<p><a href="history.tsv">every census</a> · <a href="https://github.com/cristianoc/TScert/actions/runs/42086078069">the run</a>, with the record and the refusals ranked as artifacts</p>
+<h2>Movement since 44e9c278e</h2><pre>
+shallow verified: 657 of 704 → 662 of 710
+  gained (5): fragment-statements.mts#loopBody, fragment-support.mts#continueBlock, fragment-support.mts#continueTarget, fragment-support.mts#labeled, fragment-support.mts#labeledTarget
+  lost (0): 
+deep verified: 41 of 704 → 41 of 710
   gained (0): 
   lost (0): 
-deep verified: 41 of 704 → 41 of 704
-  gained (0): 
-  lost (0): 
-own results changed (0):
-shallow: verified statement coverage: 56.3% (10272 of 18252) → 56.3% (10272 of 18252); denominator +0
+own results changed (1):
+  fragment-statements.mts#overloadedDecl: unverified/search reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:256","kind":"node-typing","names":[[1,"Array&lt;row 1154&gt;"],[ → unverified/search reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:256","kind":"node-typing","names":[[1,"Array&lt;row 1178&gt;"],[
+shallow: verified statement coverage: 56.3% (10272 of 18252) → 56.2% (10327 of 18369); denominator +117
 matched statements (file, function, kind, ordinal):
-  V → V                    10272
-  not V → not V            7980
-counted statements: deleted 0; added 0
-all inventory statements (including uncounted): deleted 0; added 0
-deep: verified statement coverage: 5.4% (986 of 18252) → 5.4% (986 of 18252); denominator +0
+  V → V                    10271
+  not V → not V            7979
+counted statements: deleted 2; added 119
+all inventory statements (including uncounted): deleted 2; added 119
+deep: verified statement coverage: 5.4% (986 of 18252) → 5.4% (986 of 18369); denominator +117
 matched statements (file, function, kind, ordinal):
   V → V                    986
-  not V → not V            17266
-counted statements: deleted 0; added 0
-all inventory statements (including uncounted): deleted 0; added 0
+  not V → not V            17264
+counted statements: deleted 2; added 119
+all inventory statements (including uncounted): deleted 2; added 119
 before:
-stage cost (each result's producing execution, each result once; seconds, peak MB):
-  stage          ran replay │        CPU    med    p90     max │    elapsed    med    p90     max │ peak med   p90   max
-  search          81      0 │     7519.9  14.30 316.52  711.85 │     7605.0  14.68 316.73  720.50 │      144  2129  6151
-  check           66      0 │     2820.6   4.73 118.42  430.79 │     2853.2   4.77 118.79  435.01 │      161   769  2792
-  propose        199      6 │      873.9   0.77  12.38   77.57 │      892.0   0.81  12.58   78.35 │       50   142   626
-  module          72      7 │      223.7   2.34   4.79   27.66 │      207.1   2.09   4.45   27.05 │      302   336   336
-  explain         33      0 │      212.5   0.28  13.78  125.27 │      213.9   0.30  13.88  125.38 │       22   142   537
-  parse           92      0 │      209.2   1.23   4.50   29.68 │      430.4   1.40  12.03   69.50 │      216   333   336
-  plan            75      0 │       43.4   0.38   1.20    4.50 │       49.2   0.45   1.30    4.64 │       99   227   599
-  lower          139      5 │       33.7   0.13   0.48    2.31 │       40.5   0.18   0.53    2.47 │       37    87   389
-  assemble        81      0 │        1.9   0.02   0.03    0.22 │        3.3   0.04   0.05    0.18 │      216   333   336
-files by CPU (top 10; seconds, peak MB):
-      1691.8 CPU   1727.6 elapsed  2034 MB  declaration-graph.mts: 87 of 92 units accepted
-      1639.0 CPU   1671.2 elapsed  2752 MB  fragment-expressions.mts: 36 of 37 units accepted
-      1503.5 CPU   1570.4 elapsed  2910 MB  fragment-parse.mts: 19 of 25 units accepted
-      1478.2 CPU   1505.0 elapsed  2443 MB  fragment-statements.mts: 55 of 56 units accepted
-      1179.9 CPU   1194.9 elapsed   333 MB  files.mts: 47 of 47 units accepted
-       884.2 CPU    897.2 elapsed  1441 MB  type-term.mts: 44 of 45 units accepted
-       683.1 CPU    703.8 elapsed  2162 MB  fragment-classes.mts: 22 of 23 units accepted
-       511.5 CPU    522.9 elapsed   769 MB  fragment-support.mts: 38 of 38 units accepted
-       238.9 CPU    246.7 elapsed   385 MB  written-applications.mts: 20 of 21 units accepted
-       201.5 CPU    220.6 elapsed   500 MB  unchecked.mts: 20 of 21 units accepted
-after:
 stage cost (each result's producing execution, each result once; seconds, peak MB):
   stage          ran replay │        CPU    med    p90     max │    elapsed    med    p90     max │ peak med   p90   max
   search          81      0 │     4306.4   7.65 192.05  409.97 │     4337.6   7.77 192.40  412.06 │      144  2128  6146
@@ -69,9 +49,32 @@ files by CPU (top 10; seconds, peak MB):
        289.7 CPU    292.9 elapsed   768 MB  fragment-support.mts: 38 of 38 units accepted
        154.6 CPU    161.8 elapsed   386 MB  written-applications.mts: 20 of 21 units accepted
        106.4 CPU    126.2 elapsed   499 MB  unchecked.mts: 20 of 21 units accepted
+after:
+stage cost (each result's producing execution, each result once; seconds, peak MB):
+  stage          ran replay │        CPU    med    p90     max │    elapsed    med    p90     max │ peak med   p90   max
+  search          25     56 │     6141.4  11.34 260.22  664.33 │     6213.8  11.54 262.60  670.07 │      144  2138  6150
+  check           17     49 │     1972.8   3.02 121.83  369.23 │     1992.5   3.05 122.14  373.22 │      162   794  2801
+  propose        201      4 │      876.1   0.74  12.31   73.75 │      899.8   0.78  12.67   75.30 │       50   142   625
+  explain         33      0 │      223.4   0.28   9.27  130.48 │      225.0   0.30   9.34  130.59 │       22   144   538
+  module          73      6 │      204.3   2.13   4.36   25.45 │      190.4   1.92   4.07   24.74 │      261   333   333
+  parse           92      0 │      189.1   1.10   3.93   27.08 │      392.8   1.30  11.12   63.22 │      238   303   333
+  plan            33     42 │       36.6   0.29   1.16    4.91 │       41.3   0.36   1.24    5.12 │       98   225   600
+  lower           50     94 │       25.9   0.09   0.40    2.23 │       32.1   0.13   0.45    2.33 │       37    87   392
+  assemble        81      0 │        2.0   0.02   0.03    0.24 │        4.0   0.04   0.06    0.21 │      287   303   333
+files by CPU (top 10; seconds, peak MB):
+      1519.4 CPU   1552.1 elapsed  2758 MB  fragment-expressions.mts: 36 of 37 units accepted
+      1439.9 CPU   1468.8 elapsed  2504 MB  fragment-statements.mts: 56 of 58 units accepted
+      1425.8 CPU   1485.0 elapsed  2920 MB  fragment-parse.mts: 19 of 25 units accepted
+      1027.8 CPU   1057.5 elapsed  2024 MB  declaration-graph.mts: 87 of 92 units accepted
+       793.6 CPU    803.9 elapsed   331 MB  files.mts: 47 of 47 units accepted
+       679.4 CPU    699.0 elapsed  2158 MB  fragment-classes.mts: 22 of 23 units accepted
+       512.4 CPU    526.1 elapsed   794 MB  fragment-support.mts: 42 of 42 units accepted
+       503.6 CPU    509.4 elapsed  1440 MB  type-term.mts: 44 of 45 units accepted
+       179.0 CPU    189.1 elapsed   579 MB  computed-types.mts: 23 of 23 units accepted
+       173.7 CPU    180.0 elapsed   386 MB  written-applications.mts: 20 of 21 units accepted
 </pre>
 <h2>Report</h2><pre>
-functions: 704; shallow verified 657; own results {"unsupported/proposal":1,"verified/check":657,"unverified/search":35,"unsupported/source":11}
+functions: 710; shallow verified 662; own results {"unsupported/proposal":1,"verified/check":662,"unverified/search":36,"unsupported/source":11}
 deep status (computed, not a headline figure): 41 deep verified
    3 reject: source effect refusal
    3 gate: createRequire of node:module is a value no entry of the overlay of library modules reviews 
@@ -123,7 +126,9 @@ obligation-diagnostic: {"fuel":12,"id":"node:174","kind":"node-typing","names":[
    1 reject: source expression obligation
 obligation-diagnostic: {"fuel":12,"id":"node:55","kind":"node-typing","names":[[22,"Array&lt;literal array
    1 reject: source expression obligation
-obligation-diagnostic: {"fuel":12,"id":"node:256","kind":"node-typing","names":[[1,"Array&lt;row 1154&gt;"],[
+obligation-diagnostic: {"fuel":12,"id":"node:221","kind":"node-typing","names":[[11,"Token&lt;number set&gt;"
+   1 reject: source expression obligation
+obligation-diagnostic: {"fuel":12,"id":"node:256","kind":"node-typing","names":[[1,"Array&lt;row 1178&gt;"],[
    1 reject: source expression obligation
 obligation-diagnostic: {"fuel":12,"id":"node:154","kind":"node-typing","names":[[0,"Array&lt;literal array
    1 gate: a computed key in an object literal with a spread is outside the fragment 
@@ -149,10 +154,10 @@ obligation-diagnostic: {"fuel":0,"id":"subtype:16619:binding-annotation","judgme
 initializations blocking deep status (functions blocked first by each):
    151  type-graph.mts#:init  unsupported/source: gate: the global DataView is declared in typescript/lib/lib.es5.d.ts (library), an origin no reviewed entry admits 
     90  compiler-api.mts#:init  unsupported/source: gate: the namespace import ts is used only through member reads and qualified type names 
-    81  fragment-parse.mts#:init  unsupported/source: gate: top-level statement outside the fragment (IfStatement) 
     74  files.mts#:init  unverified/search: reject: source expression obligation
-    61  library-globals.mts#:init  unverified/search: reject: source expression obligation
+    65  library-globals.mts#:init  unverified/search: reject: source expression obligation
 obligation-diagnostic: {"fuel":12,"id":"node:3","kind":"node-typing","names":[[10,"Array&lt;literal tuple 
+    57  fragment-parse.mts#:init  unsupported/source: gate: top-level statement outside the fragment (IfStatement) 
     52  thrown.mts#:init  unsupported/source: gate: RangeError as the right operand of instanceof is not in the reviewed overlay of library globals: RangeError: RangeErrorConstructor 
     18  claim-text.mts#:init  unsupported/source: gate: top-level statement outside the fragment (ExportAssignment) 
     15  unchecked.mts#:init  unsupported/source: gate: top-level statement outside the fragment (IfStatement) 
@@ -165,30 +170,30 @@ obligation-diagnostic: {"fuel":12,"id":"node:5747","kind":"node-typing","names":
      2  client-prototype.mts#:init  unsupported/source: gate: Object.getPrototypeOf is read only compared with Object.prototype 
 stage cost (each result's producing execution, each result once; seconds, peak MB):
   stage          ran replay │        CPU    med    p90     max │    elapsed    med    p90     max │ peak med   p90   max
-  search          81      0 │     4306.4   7.65 192.05  409.97 │     4337.6   7.77 192.40  412.06 │      144  2128  6146
-  check           66      0 │     1562.2   2.77  80.13  221.39 │     1579.4   2.81  80.54  225.24 │      161   768  2796
-  propose        201      4 │      465.9   0.42   6.41   46.98 │      476.2   0.45   6.46   47.41 │       50   142   628
-  parse           13     79 │      195.2   1.20   3.80   32.70 │      294.6   1.32   8.02   32.16 │      216   333   360
-  explain         33      0 │      127.8   0.16   7.45   80.21 │      129.1   0.18   7.91   80.29 │       22   143   537
-  module          16     26 │       86.5   1.58   3.05   15.13 │       79.8   1.45   2.87   14.39 │      308   360   360
-  plan            75      0 │       26.0   0.22   0.73    2.66 │       29.7   0.24   0.79    2.76 │       99   227   599
-  lower          140      4 │       19.7   0.07   0.28    1.40 │       25.2   0.10   0.32    1.63 │       37    87   391
-  assemble        25     56 │        1.5   0.01   0.02    0.18 │        2.7   0.03   0.05    0.11 │      216   333   360
+  search          25     56 │     6141.4  11.34 260.22  664.33 │     6213.8  11.54 262.60  670.07 │      144  2138  6150
+  check           17     49 │     1972.8   3.02 121.83  369.23 │     1992.5   3.05 122.14  373.22 │      162   794  2801
+  propose        201      4 │      876.1   0.74  12.31   73.75 │      899.8   0.78  12.67   75.30 │       50   142   625
+  explain         33      0 │      223.4   0.28   9.27  130.48 │      225.0   0.30   9.34  130.59 │       22   144   538
+  module          73      6 │      204.3   2.13   4.36   25.45 │      190.4   1.92   4.07   24.74 │      261   333   333
+  parse           92      0 │      189.1   1.10   3.93   27.08 │      392.8   1.30  11.12   63.22 │      238   303   333
+  plan            33     42 │       36.6   0.29   1.16    4.91 │       41.3   0.36   1.24    5.12 │       98   225   600
+  lower           50     94 │       25.9   0.09   0.40    2.23 │       32.1   0.13   0.45    2.33 │       37    87   392
+  assemble        81      0 │        2.0   0.02   0.03    0.24 │        4.0   0.04   0.06    0.21 │      287   303   333
 files by CPU (top 10; seconds, peak MB):
-       967.2 CPU    980.9 elapsed  2753 MB  fragment-expressions.mts: 36 of 37 units accepted
-       957.1 CPU    969.0 elapsed  2024 MB  declaration-graph.mts: 87 of 92 units accepted
-       898.9 CPU    927.5 elapsed  2912 MB  fragment-parse.mts: 19 of 25 units accepted
-       845.4 CPU    856.1 elapsed  2443 MB  fragment-statements.mts: 55 of 56 units accepted
-       577.7 CPU    581.9 elapsed   319 MB  files.mts: 47 of 47 units accepted
-       499.1 CPU    504.9 elapsed  1440 MB  type-term.mts: 44 of 45 units accepted
-       400.5 CPU    404.4 elapsed  2157 MB  fragment-classes.mts: 22 of 23 units accepted
-       289.7 CPU    292.9 elapsed   768 MB  fragment-support.mts: 38 of 38 units accepted
-       154.6 CPU    161.8 elapsed   386 MB  written-applications.mts: 20 of 21 units accepted
-       106.4 CPU    126.2 elapsed   499 MB  unchecked.mts: 20 of 21 units accepted
+      1519.4 CPU   1552.1 elapsed  2758 MB  fragment-expressions.mts: 36 of 37 units accepted
+      1439.9 CPU   1468.8 elapsed  2504 MB  fragment-statements.mts: 56 of 58 units accepted
+      1425.8 CPU   1485.0 elapsed  2920 MB  fragment-parse.mts: 19 of 25 units accepted
+      1027.8 CPU   1057.5 elapsed  2024 MB  declaration-graph.mts: 87 of 92 units accepted
+       793.6 CPU    803.9 elapsed   331 MB  files.mts: 47 of 47 units accepted
+       679.4 CPU    699.0 elapsed  2158 MB  fragment-classes.mts: 22 of 23 units accepted
+       512.4 CPU    526.1 elapsed   794 MB  fragment-support.mts: 42 of 42 units accepted
+       503.6 CPU    509.4 elapsed  1440 MB  type-term.mts: 44 of 45 units accepted
+       179.0 CPU    189.1 elapsed   579 MB  computed-types.mts: 23 of 23 units accepted
+       173.7 CPU    180.0 elapsed   386 MB  written-applications.mts: 20 of 21 units accepted
 shallow:
 statement coverage of tools/ (verified statements of every unit):
-   56.3%  10272 of 18252 statements · functions 657 of 704 verified
-  not verified, by the owning unit's outcome: unverified/search 4215, unsupported/source 3751, unsupported/proposal 13, error/search 1
+   56.2%  10327 of 18369 statements · functions 662 of 710 verified
+  not verified, by the owning unit's outcome: unverified/search 4275, unsupported/source 3753, unsupported/proposal 13, error/search 1
 per file:
   array-prototype.mts        6.6%     23 of 346   statements · functions 5 of 10 verified
   calculus.mts             100.0%    275 of 275   statements · functions 21 of 21 verified
@@ -211,10 +216,10 @@ per file:
   fragment-classes.mts      39.9%    236 of 591   statements · functions 18 of 19 verified
   fragment-expressions.mts  99.4%   1242 of 1249  statements · functions 31 of 32 verified
   fragment-guards.mts      100.0%     12 of 12    statements · functions 2 of 2 verified
-  fragment-parse.mts        10.2%    156 of 1527  statements · functions 11 of 16 verified
+  fragment-parse.mts        10.2%    156 of 1529  statements · functions 11 of 16 verified
   fragment-parts.mts       100.0%    140 of 140   statements · functions 15 of 15 verified
-  fragment-statements.mts   98.1%   1128 of 1150  statements · functions 49 of 50 verified
-  fragment-support.mts     100.0%    420 of 420   statements · functions 34 of 34 verified
+  fragment-statements.mts   93.3%   1150 of 1232  statements · functions 50 of 52 verified
+  fragment-support.mts     100.0%    453 of 453   statements · functions 38 of 38 verified
   fragment.mts             100.0%      2 of 2     statements · functions 0 of 0 verified
   guard-closure.mts        100.0%     77 of 77    statements · functions 1 of 1 verified
   host-families.mts          6.5%     21 of 325   statements · functions 1 of 2 verified
@@ -243,8 +248,8 @@ per file:
   written-applications.mts  20.8%     82 of 395   statements · functions 18 of 19 verified
 deep:
 statement coverage of tools/ (verified statements of every unit):
-    5.4%    986 of 18252 statements · functions 41 of 704 verified
-  not verified, by the owning unit's outcome: blocked/deep 9286, unverified/search 4215, unsupported/source 3751, unsupported/proposal 13, error/search 1
+    5.4%    986 of 18369 statements · functions 41 of 710 verified
+  not verified, by the owning unit's outcome: blocked/deep 9341, unverified/search 4275, unsupported/source 3753, unsupported/proposal 13, error/search 1
 per file:
   array-prototype.mts        0.0%      0 of 346   statements · functions 0 of 10 verified
   calculus.mts             100.0%    275 of 275   statements · functions 21 of 21 verified
@@ -267,10 +272,10 @@ per file:
   fragment-classes.mts       0.0%      0 of 591   statements · functions 0 of 19 verified
   fragment-expressions.mts   0.0%      0 of 1249  statements · functions 0 of 32 verified
   fragment-guards.mts        0.0%      0 of 12    statements · functions 0 of 2 verified
-  fragment-parse.mts         0.0%      0 of 1527  statements · functions 0 of 16 verified
+  fragment-parse.mts         0.0%      0 of 1529  statements · functions 0 of 16 verified
   fragment-parts.mts         0.0%      0 of 140   statements · functions 0 of 15 verified
-  fragment-statements.mts    0.0%      0 of 1150  statements · functions 0 of 50 verified
-  fragment-support.mts       0.0%      0 of 420   statements · functions 0 of 34 verified
+  fragment-statements.mts    0.0%      0 of 1232  statements · functions 0 of 52 verified
+  fragment-support.mts       0.0%      0 of 453   statements · functions 0 of 38 verified
   fragment.mts               0.0%      0 of 2     statements · functions 0 of 0 verified
   guard-closure.mts        100.0%     77 of 77    statements · functions 1 of 1 verified
   host-families.mts          0.0%      0 of 325   statements · functions 0 of 2 verified
@@ -297,5 +302,5 @@ per file:
   url-strings.mts          100.0%      2 of 2     statements · functions 2 of 2 verified
   wire-strings.mts           0.0%      0 of 49    statements · functions 0 of 8 verified
   written-applications.mts   0.0%      0 of 395   statements · functions 0 of 19 verified
-elapsed: 1926 s
+elapsed: 2616 s
 </pre>
