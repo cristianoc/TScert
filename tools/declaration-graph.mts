@@ -818,6 +818,10 @@ export interface OperationAnswers {
   globalConstruct?: (span: Span) => void;
   /** Told each reviewed Reflect.apply call lowered as receiver application. */
   globalReceiverApply?: (span: Span) => void;
+  /** Told each tagged template whose tag the reviewed overlay reads as
+   * `String.raw`, by the tagged template's span: the parser writes it as
+   * the template of its raw strings (`GlobalEntry.templateTag`). */
+  globalRawTemplate?: (span: Span) => void;
   /** A program iterable is reported with the well-known `Symbol.iterator`'s index
    * among the symbols, which its protocol reads the iterator method by. */
   iterable?: (span: Span, intrinsic: string, iteratorSymbol: number | null) => void;
@@ -3434,6 +3438,7 @@ export function collectDeclarations(file: string, options: DeclarationOptions = 
           },
           construct: span => operationAnswers.globalConstruct?.(span),
           receiverApply: span => operationAnswers.globalReceiverApply?.(span),
+          rawTemplate: span => operationAnswers.globalRawTemplate?.(span),
           library: (name, args) => libraryReference(emptyDeclarationReading, name, args), view: (kind, args) => collectionView(emptyDeclarationReading, kind, args),
           define: defineOverlay });
         if (!selection) continue;
@@ -4758,6 +4763,9 @@ type SelectionContext = {
   /** Told each call the overlay reads as the global's construct. */
   construct: (span: Span) => void;
   receiverApply: (span: Span) => void;
+  /** Told each tagged template whose tag the overlay reads as `String.raw`
+   * (`GlobalEntry.templateTag`), by the tagged template's span. */
+  rawTemplate: (span: Span) => void;
   /** Given each declaration a read entry's statement names that no library
    * declares (`GlobalEntry.definitions`). */
   define: (definition: TypeDefinition) => void;
@@ -5364,6 +5372,17 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       const chosen = new Map<ts.MethodSignatureDeclaration, ts.CallExpression[]>();
       for (const access of accesses) {
         const call = access.parent;
+        // `X.m\`…\`` where the overlay reads the member only as a template
+        // tag (`GlobalEntry.templateTag`): the tagged template is reported,
+        // and the member joins no value for it.
+        if (ts.isTaggedTemplateExpression(call) && call.tag === access) {
+          const [declared, ...others] = methods;
+          if (!declared || others.length || reviewedForms(key, declared, what)?.templateTag !== "raw" ||
+              call.typeArguments?.length || call.questionDotToken)
+            throw Error(`${what} is not read as a template tag`);
+          context.rawTemplate(spanOf(call));
+          continue;
+        }
         if (!ts.isCallExpression(call) || call.expression !== access || call.questionDotToken)
           throw Error(`the method ${what} is only called, on its host`);
         const overload = resolvedAmong(call, methods);
@@ -5382,6 +5401,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       const selected = [...chosen].flatMap(([overload, calls]): (FunctionTerm | Extract<TypeTerm, { k: "scheme" }>)[] => {
         const entry = reviewedForms(key, overload, what);
         if (entry?.prototypeTest) throw Error(`${what} is read only compared with ${name}.prototype`);
+        if (entry?.templateTag) throw Error(`${what} is read only as a template tag`);
         // A test of the calculus: each call is reported, and the member
         // joins no value.
         if (entry?.test) {

@@ -3117,6 +3117,18 @@ for (const [file, call] of [
     "fill from index 1 leaves index 0 a hole, read as undefined");
   assert.throws(() => runExample(negative("invalid-array-fill-range"), "digits(2)"), /TypeError/,
     "fill below index 1 leaves index 1 a hole, read as undefined");
+  // `String.raw` as a tag: the raw strings, each substitution converted
+  // between them, the substitutions run in order; an object substitution's
+  // `toString` runs and replaces the narrowed `let`.
+  assert.equal(runExample(ofKind("string-raw-tag", "positive"), `(() => {
+    const log = [];
+    return JSON.stringify([mark, joined(1.5, "s", undefined, true, 2n), escapes(), ordered(log), log]);
+  })()`), JSON.stringify(["^\\p{M}$", "n=1.5\\ts\\nundefined|true|2", ["\\u{", "\\`", "\\${x}", "a\\\nb", ""], "a1-b22", ["a", "b"]]),
+    "string-raw-tag: the raw strings and the converted substitutions, in order");
+  assert.equal(runExample(negative("invalid-string-raw-object-substitution"), "typeof shown()"), "string",
+    "an object substitution's toString writes the narrowed let, returned as a number");
+  assert.equal(runExample(ofKind("blocker-pretext-string-raw", "positive"), "source()"), "[ぁ-ヿ]",
+    "blocker-pretext-string-raw: the raw string");
   assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
     '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
 }

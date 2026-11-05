@@ -86,6 +86,8 @@ export function expr(this: Gate, node: Expression): Within<{ value: "any"; store
   if (ts.isNoSubstitutionTemplateLiteral(node))
     return { k: "lit", pos: gate.span(node), lit: { a: "stringlit", v: node.text } };
   if (ts.isTemplateExpression(node)) return gate.template(node);
+  if (ts.isTaggedTemplateExpression(node) && gate.globalRawTemplates.has(gate.span(node).join(":")))
+    return gate.rawTemplate(node);
 
   if (ts.isIdentifier(node)) {
     // `undefined` is the value where TypeScript binds it to the global; a
@@ -1569,10 +1571,11 @@ export function update(this: Gate,
  * Each partial concatenation spans from the template's start to the end of
  * its last part, so every node has a span of its own and the whole has the
  * template's. */
-export function template(this: Gate, node: ts.TemplateExpression): Within<{ value: "any"; store: "grow" }, Expr> {
+export function template(this: Gate, node: ts.TemplateExpression,
+    text: (part: ts.TemplateLiteralLikeNode) => string = part => part.text): Within<{ value: "any"; store: "grow" }, Expr> {
   const gate: Gate = this;
   const start = node.getStart(gate.file);
-  const head: Expr = { k: "lit", pos: gate.span(node.head), lit: { a: "stringlit", v: node.head.text } };
+  const head: Expr = { k: "lit", pos: gate.span(node.head), lit: { a: "stringlit", v: text(node.head) } };
   return node.templateSpans.reduce((acc: Expr, part): Expr => {
     const value: Expr = { k: "arith", pos: [start, part.expression.end], op: "add", l: acc, r: gate.expr(part.expression) };
     return {
@@ -1580,9 +1583,37 @@ export function template(this: Gate, node: ts.TemplateExpression): Within<{ valu
       pos: [start, part.literal.end],
       op: "add",
       l: value,
-      r: { k: "lit", pos: gate.span(part.literal), lit: { a: "stringlit", v: part.literal.text } },
+      r: { k: "lit", pos: gate.span(part.literal), lit: { a: "stringlit", v: text(part.literal) } },
     };
   }, head);
+}
+
+/** A part's raw string, ECMA-262's TRV: the source text between its
+ * delimiters (`` ` `` or `}` before, `` ` `` or `${` after), each CR LF
+ * and CR a LF. */
+function rawString(this: Gate, part: ts.TemplateLiteralLikeNode | ts.NoSubstitutionTemplateLiteral): Within<{ value: "any"; store: "grow" }, string> {
+  const gate: Gate = this;
+  const token = gate.file.text.slice(part.getStart(gate.file), part.end);
+  const close = ts.isTemplateHead(part) || ts.isTemplateMiddle(part) ? 2 : 1;
+  return token.slice(1, token.length - close).replace(/\r\n?/g, "\n");
+}
+
+/** `String.raw` as a tag, where the overlay reads it so
+ * (`GlobalEntry.templateTag`): the template of the raw strings,
+ * `` String.raw`h${a}t` `` the concatenation `(h' + a) + t'` of the raw
+ * strings `h'` and `t'` and the substitution, by `template`
+ * (SOURCE-CONTRACTS.md, "String.raw as a tag"). The tagged template
+ * evaluates every substitution before `String.raw` converts any; the
+ * concatenation converts each after its own evaluation, and admits only a
+ * primitive, whose conversion runs no code and does not throw, so the two
+ * orders agree. */
+export function rawTemplate(this: Gate, node: ts.TaggedTemplateExpression): Within<{ value: "any"; store: "grow" }, Expr> {
+  const gate: Gate = this;
+  const written = node.template;
+  if (ts.isNoSubstitutionTemplateLiteral(written))
+    return { k: "lit", pos: gate.span(node), lit: { a: "stringlit", v: rawString.call(gate, written) } };
+  const value = gate.template(written, part => rawString.call(gate, part));
+  return { ...value, pos: gate.span(node) };
 }
 
 /** Whether an `instanceof` right operand names a class of this file that

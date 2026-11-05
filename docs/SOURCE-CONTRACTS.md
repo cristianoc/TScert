@@ -3596,6 +3596,48 @@ The cases are `array-fill` and `blocker-pretext-new-array-fill`; a control
 forges the instance of `%ArrayFilled%` at a type the value does not meet and
 checks the lowering's order.
 
+#### `String.raw` as a tag
+
+`String.raw` is read only as the tag of a tagged template, written as
+`` String.raw`…` `` with no type argument, its declaration the standard
+library's one
+`raw(template: { raw: readonly string[] | ArrayLike<string>; }, ...substitutions: any[]): string;`
+alone (the entry's `templateTag`, `"raw"`). The tagged template is the
+template literal of its raw strings: with $`h_0,\ldots,h_n`$ its parts'
+raw strings, ECMA-262's TRV (the source text between the delimiters, each
+CR LF and CR a LF) and $`e_1,\ldots,e_n`$ its substitutions,
+
+```math
+\frac{x\ \text{the global}\ \mathtt{String}\quad \omega\in\Omega\quad \omega.\mathit{templateTag}=\mathtt{raw}\quad \omega.\mathit{text}=\mathsf{text}(\mathtt{raw})}
+     {x\mathtt{.raw}\,\text{`}h_0\$\{e_1\}h_1\cdots\$\{e_n\}h_n\text{`}\;\equiv\;(\cdots((h_0+e_1)+h_1)\cdots+e_n)+h_n}\ \textsf{raw-template}
+```
+
+with each $`h_i`$ a string literal of the calculus, so the right side is a
+template literal's concatenation over the raw strings
+([operators](PROGRAM-TYPING.md#operators)); with no
+substitution it is the string $`h_0`$. The host's steps (ECMA-262,
+TaggedTemplate evaluation and `String.raw`): `Get(String, "raw")`, which finds
+the standard function under the approved policy that standard objects are
+not tampered with ([trust surface](DESIGN.md#trust-surface));
+GetTemplateObject, a frozen array the engine makes, whose own `raw` is the
+frozen array of $`h_0,\ldots,h_n`$, cached per site and handed to no code
+but `String.raw`, which keeps no reference to it; $`e_1,\ldots,e_n`$ in order;
+then `String.raw` reads `raw`, its `length` and each element, strings that
+ToString returns as they are, and appends between $`h_{i-1}`$ and $`h_i`$
+the ToString of $`e_i`$'s value. The lowering converts each $`e_i`$ right
+after evaluating it, before $`e_{i+1}`$ runs. The concatenation rule admits
+a string concatenated only with a primitive other than a symbol, whose
+ToString runs no code and does not throw, so converting it earlier changes
+no observation; an object substitution, whose ToString runs its methods,
+and a symbol, whose ToString throws, are refused by the same rule
+(`invalid-string-raw-object-substitution`, run under Node;
+`string-raw-symbol-refused`). Every other use of `String.raw`, a call
+among them, is refused (`string-raw-call-refused`), as is a tagged
+template of any other tag (`string-raw-shadowed-refused`). The cases are
+`string-raw-tag`, whose raw strings hold escapes a cooked template reads
+otherwise or refuses and whose substitutions run in order (run under
+Node), and `blocker-pretext-string-raw`.
+
 #### Collections passing `instanceof`
 
 The reading view of a host collection states the members of the `Set<T>`
