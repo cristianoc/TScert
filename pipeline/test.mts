@@ -111,6 +111,30 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
+  // A write keeps what is known of the other keys of its own object alone
+  // (`write-sibling`): past a write of the same key through a parameter that
+  // may hold the same object, the narrowed field's read claimed at the
+  // narrowing the write would have kept is refused where evidence is
+  // searched and where it is checked.
+  const artifacts = run("invalid-sibling-field-alias");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const read = source.indexOf("state.context;", source.indexOf("other.context = null;"));
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "aliased"), "aliased's claims");
+  const claim = must(fn.expressions.find(e => e.pos[0] === read && e.pos[1] === read + "state.context".length),
+    "the read after the aliased write");
+  const narrowed = must(fn.expressions.find(e => e.pos[0] === source.indexOf("state.context === null") &&
+    e.pos[1] === source.indexOf("state.context === null") + "state.context".length), "the tested read");
+  assert.ok(Array.isArray(claim.type) && claim.type.length === 2, "the read at the field's contract, two arms");
+  claim.type = claim.type.filter(label => label !== rowOf(claims, "nul"));
+  assert.ok(narrowed.type !== claim.type);
+  const forged = writeClaims(artifacts, "sibling-field-alias", claims);
+  refusedAt(artifacts, forged, "sibling-field-alias", `at [${read},${read + "state.context".length})`);
+  invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence /m);
+  process.stdout.write("sibling field: a narrowing kept past an aliased write of its key refused in search and checking\n");
+});
+
+control(async (): Promise<void> => {
   // An arm's read claim may refine a callable only where the incoming
   // edge establishes it. The known identity closure has its checked
   // numeric signatures; an additional string-result signature is false.

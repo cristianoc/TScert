@@ -224,6 +224,21 @@ let path_through member declarations env n =
        in walk root [] fields
      | _ -> false)
   | _ -> false
+(* Whether every record arm states the field a required writable field, an
+   invariant field (Lean's `ownedField`): its location belongs to its key
+   alone, so a write of it keeps what is known of the object's other keys. *)
+let owned_field declarations t field =
+  let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
+    | Some (Atoms (_::_ as atoms)) -> List.for_all (function
+        | Shape {fields;calls=[];elements=None;indexes=[]} | Exact fields ->
+          List.exists (fun (f:Semantic.field) ->
+            f.name = Name field && not f.optional && f.write <> None && not f.host) fields
+        | Named (id,args) when not (List.mem id seen) ->
+          (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
+        | _ -> false) atoms
+    | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
+    | _ -> false in
+  has [] t
 (* Whether a path entry survives a step that may write cells: each member
    of the path stable (Lean's stable links, `HeapExpressionRules.withStable`). *)
 let stable_path declarations env n = path_through stable_member declarations env n

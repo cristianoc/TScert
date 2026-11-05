@@ -687,8 +687,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hbag : recT (ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))) k' V
         (.objAt (slots heap.length (codeField :: parts.map Prod.fst)) .absent
           (heap.length + (.nul :: args).length)) := by
-      obtain ⟨flds, oid, he', hall⟩ := hrec
-      refine ⟨flds, oid, he', fun f T hm => hall f T ?_⟩
+      obtain ⟨flds, oid, he', hown, hall⟩ := hrec
+      refine ⟨flds, oid, he', fun f T hm => hown f T ?_, fun f T hm => hall f T ?_⟩
+      · rw [hfam] at hm
+        simp only [List.zip_cons_cons]
+        exact List.mem_cons_of_mem _ hm
       rw [hfam] at hm
       simp only [List.zip_cons_cons]
       exact List.mem_cons_of_mem _ hm
@@ -1072,7 +1075,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
         fun y hy => hcell y (List.mem_append_right _ hy)⟩,
-      ⟨_, _, rfl, fun _ _ _ => hnp, fun o ho l hl => by
+      ⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, fun _ _ _ => hnp, fun o ho l hl => by
         obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl

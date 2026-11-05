@@ -1,6 +1,9 @@
 (* Lean owns the order and conditional execution of expression operations. *)
 type saved = { id: int; name: string; source: Json.t; role: string }
+(* A write of a field of an object (`FieldWrite`, the target expression) may
+   write any location but the other keys of that object. *)
 type impact = None_ | Havoc | CellWrite of string * Json.t | CellUpdate of string * Json.t
+  | FieldWrite of Json.t
 type result = Unknown | Boolean of bool | Saved of string * bool
 type operation = { source: Json.t; impact: impact; result: result }
 type test = Truthy | Nullish | Defined
@@ -41,8 +44,11 @@ let operation j =
    | "snapshotObject" -> ignore (saved (Json.field "value" j)); None_
    | "referenceRead" -> ignore (reference (Json.field "reference" j)); None_
    | "referenceWrite" ->
-     let reference=reference (Json.field "reference" j) and value=saved (Json.field "value" j) in
-     (match reference with Some name -> CellWrite (name,value.source) | None -> Havoc)
+     let target=Json.field "reference" j in
+     let reference=reference target and value=saved (Json.field "value" j) in
+     (match reference with
+      | Some name -> CellWrite (name,value.source)
+      | None -> FieldWrite (Json.field "source" target))
    | "updateSaved" ->
      let reference=reference (Json.field "reference" j) in
      ignore (saved (Json.field "previous" j));

@@ -1167,6 +1167,46 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
       congr 1
       omega
 
+/-- A fresh object's locations are its positions from `base`, each once. -/
+theorem slots_snd (base : Nat) : ∀ ns : List PropKey, (slots base ns).map Prod.snd = List.range' base ns.length
+  | [] => rfl
+  | _ :: ns => by simp [slots, slots_snd (base + 1) ns, List.range'_succ]
+
+theorem slots_nodup (base : Nat) (ns : List PropKey) : ((slots base ns).map Prod.snd).Nodup := by
+  rw [slots_snd]; exact List.nodup_range'
+
+/-- The location `l` belongs to the own key `f` alone: no other key of the
+field map `flds` finds it. -/
+def Owned (flds : List (PropKey × Nat)) (f : PropKey) (l : Nat) : Prop :=
+  ∀ g, flds.lookup g = some l → g = f
+
+theorem lookup_mem_pair : ∀ {flds : List (PropKey × Nat)} {f : PropKey} {l : Nat},
+    flds.lookup f = some l → (f, l) ∈ flds
+  | [], _, _, h => by simp at h
+  | (k, v) :: rest, f, l, h => by
+    simp only [List.lookup] at h
+    split at h
+    · rename_i hk; cases h; simp at hk; subst hk; simp
+    · exact List.mem_cons_of_mem _ (lookup_mem_pair h)
+
+theorem pair_unique_of_nodup : ∀ {flds : List (PropKey × Nat)}, (flds.map Prod.snd).Nodup →
+    ∀ {f g : PropKey} {l : Nat}, (f, l) ∈ flds → (g, l) ∈ flds → g = f
+  | [], _, _, _, _, hf, _ => by simp at hf
+  | (k, v) :: rest, hnd, f, g, l, hf, hg => by
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    simp only [List.mem_cons, Prod.mk.injEq] at hf hg
+    rcases hf with ⟨hfk, hfv⟩ | hf <;> rcases hg with ⟨hgk, hgv⟩ | hg
+    · exact hgk.trans hfk.symm
+    · exact absurd (List.mem_map.mpr ⟨_, hg, hfv⟩) hnd.1
+    · exact absurd (List.mem_map.mpr ⟨_, hf, hgv⟩) hnd.1
+    · exact pair_unique_of_nodup hnd.2 hf hg
+
+/-- A field map whose locations are distinct gives each key's location to
+that key alone. -/
+theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd).Nodup)
+    {f : PropKey} {l : Nat} (h : flds.lookup f = some l) : Owned flds f l :=
+  fun _ hg => pair_unique_of_nodup hnd (lookup_mem_pair h) (lookup_mem_pair hg)
+
 /-- Term induction exposing the body stored inside a call descriptor. -/
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
     (var : ∀ i, P (.var i))

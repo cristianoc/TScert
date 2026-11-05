@@ -56,12 +56,17 @@ theorem famsOf_flatten_ne {ι : Type} {X : ι → Fam} {a : List (PropKey × ι)
 theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     recT (famsOf X a) n W v ↔ recT (famsOf Y a) n W v := by
-  constructor <;> rintro ⟨flds, oid, rfl, hfs⟩ <;> refine ⟨flds, oid, rfl, ?_⟩ <;>
-      intro f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-  · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
-  · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
+  constructor <;> rintro ⟨flds, oid, rfl, hown, hfs⟩
+  · refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩ <;>
+      obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
+    · exact hown f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+      exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
+  · refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩ <;>
+      obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
+    · exact hown f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+      exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
 
 theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (PropKey × ι)) :
     famsOf X (a ++ b) = famsOf X a ++ famsOf X b := List.map_append ..
@@ -99,8 +104,10 @@ theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (OptionalField 
     optT (a.map (·.map X)) n W v ↔ optT (a.map (·.map Y)) n W v := by
   have side : ∀ (X Y : ι → Fam), (∀ i j (hj : j < n) (W' : WorldT j) u, X i j W' u ↔ Y i j W' u) →
       optT (a.map (·.map X)) n W v → optT (a.map (·.map Y)) n W v := by
-    rintro X Y h ⟨flds, oid, rfl, hp, hv⟩
-    refine ⟨flds, oid, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+    rintro X Y h ⟨flds, oid, rfl, hw, hp, hv⟩
+    refine ⟨flds, oid, rfl, fun o hm hro l hl => ?_, fun o hm hl => ?_, fun o hm l hl => ?_⟩
+    · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
+      exact hw (p.map X) (List.mem_map_of_mem hpa) hro l hl
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
       exact hp (p.map X) (List.mem_map_of_mem hpa) hl
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
@@ -134,12 +141,17 @@ both says exactly what the two say. -/
 theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
     recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
   constructor
-  · rintro ⟨flds, oid, rfl, h⟩
-    exact ⟨⟨flds, oid, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, oid, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
-  · rintro ⟨⟨flds, oid, rfl, ha⟩, ⟨flds', oid', he, hc⟩⟩
+  · rintro ⟨flds, oid, rfl, hown, h⟩
+    exact ⟨⟨flds, oid, rfl, fun f T hm => hown f T (List.mem_append_left _ hm),
+        fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, oid, rfl, fun f T hm => hown f T (List.mem_append_right _ hm),
+        fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, oid, rfl, hoa, ha⟩, ⟨flds', oid', he, hoc, hc⟩⟩
     cases he
-    refine ⟨flds, oid, rfl, fun f T hm => ?_⟩
+    refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩
+    · rcases List.mem_append.mp hm with h | h
+      · exact hoa f T h
+      · exact hoc f T h
     rcases List.mem_append.mp hm with h | h
     · exact ha f T h
     · exact hc f T h

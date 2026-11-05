@@ -206,7 +206,8 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
         obtain ⟨-, rfl⟩ := hT
         exact fun _ _ _ _ => Iff.rfl
     simp only [classDict, semWithArgs]
-    refine ⟨⟨⟨_, _, rfl, fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
+    refine ⟨⟨⟨_, _, rfl, fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+          fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
         by simp [ReferenceConjunctions.famsOf]⟩,
       fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => ?_, fun y hy => ?_⟩, by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
