@@ -3508,6 +3508,61 @@ Node), as is every other function of `Reflect` (`invalid-reflect-unreviewed`,
   guard of its operand within the empty footprint, promising the
   collection's [reading view](#collections-passing-instanceof).
 
+#### `new Array` filled at once
+
+`new Array<T>(n)` makes `n` holes, which a readable `T[]` admits only where
+`undefined` meets `T` ([arrays](SOURCE-MODEL.md#arrays)), so its construct
+signature `new <T>(arrayLength: number): T[]` is read only in one form: the
+construct written directly as the receiver of a call of `fill` of one
+argument, which TypeScript resolves to the standard library's
+`fill(value: T, start?: number, end?: number): this` of `Array<T>`. There is
+no parenthesis around the construct, no optional chain at the read or the
+call, no spread and no type argument of the call (the entry's `filled`,
+`fillCall` in `declaration-graph.mts`). The two calls are the two intrinsics:
+
+```math
+\mathtt{new\ Array}\langle T\rangle(e_1)\mathtt{.fill}(e_2)\;\equiv\;\%\mathsf{ArrayFilled}\%(\%\mathsf{ArrayLength}\%(e_1),\ e_2)
+```
+
+```math
+\%\mathsf{ArrayLength}\%:(\mathtt{number})\Rightarrow_\emptyset\mathtt{number}
+\qquad
+\%\mathsf{ArrayFilled}\%:\forall T.\ (\mathtt{number},\ T)\Rightarrow_\emptyset\mathtt{dense}\ T[\,]
+```
+
+`%ArrayLength%` is ArrayCreate's check: a RangeError where
+$`\mathrm{ToUint32}(n)\ne n`$, otherwise $`n`$. `%ArrayFilled%` makes an
+array of that length whose every index holds the value, a fresh store (the
+effect's `fresh`); each element is the value itself, so an object value is
+one object all indices share, at its own contract. Neither states its
+footprint on a throw: building the RangeError is the engine's.
+
+The host's steps (ECMA-262, ArrayCreate and `Array.prototype.fill`): $`e_1`$,
+the length check, `Get(A, "fill")`, which finds `Array.prototype.fill` under
+the approved policy that standard objects and prototypes are not tampered
+with ([trust surface](DESIGN.md#trust-surface)), $`e_2`$, then `fill`: it
+reads `A`'s own `length`, takes 0 and the length for the omitted bounds
+without converting anything, and sets each index to the value. `A` owns no
+index and neither `Array.prototype` nor `Object.prototype` owns a numeric key
+(the assumption `%ElementAt%` states), so each set defines a data property of
+`A`, an ordinary extensible array, and `fill` returns `A`. The lowering runs
+$`e_1`$, the check and $`e_2`$ in that order, and allocates the array after
+$`e_2`$: no code holds `A` before `fill` returns it, so no program step
+observes when it was allocated. An invalid length throws before $`e_2`$ is
+evaluated (`array-fill`, run under Node).
+
+The form is a restriction ([source fragment](SOURCE-FRAGMENT.md)): the
+construct bound before its `fill` has holes another statement can read
+(`invalid-array-fill-read-before`), and `fill(v, start)` or
+`fill(v, start, end)` leaves holes outside the range
+(`invalid-array-fill-partial`, `invalid-array-fill-range`), each run under
+Node; a parenthesized construct is refused too
+(`array-fill-parenthesized`), and `new Array(n)` without a type argument is
+TypeScript's `any[]` construct, refused as before (`invalid-array-length`).
+The cases are `array-fill` and `blocker-pretext-new-array-fill`; a control
+forges the instance of `%ArrayFilled%` at a type the value does not meet and
+checks the lowering's order.
+
 #### Collections passing `instanceof`
 
 The reading view of a host collection states the members of the `Set<T>`

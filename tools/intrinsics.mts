@@ -192,6 +192,14 @@ export const importMetaResolveName = "%ImportMeta:resolve%";
  * code, so its `href` getter is `URL.prototype`'s and serializes the parsed
  * record. The construction's effect is the entry's: empty on normal return
  * for `new URL`, none stated for `pathToFileURL`. */
+/** `new Array<T>(n).fill(v)`, the construct written directly as the
+ * receiver of a `fill` of one argument (SOURCE-CONTRACTS.md, "`new Array`
+ * filled at once"): `%ArrayFilled%(%ArrayLength%(n), v)`. `%ArrayLength%` is
+ * ArrayCreate's check of the length, a RangeError where `n` is no array
+ * length, and otherwise `n`; `%ArrayFilled%` allocates the array and defines
+ * each of its indices as `v`, a fresh dense array no code reached before. */
+export const arrayLengthName = "%ArrayLength%";
+export const arrayFilledName = "%ArrayFilled%";
 export const urlHrefName = "%URL:href%";
 export const pathToFileHrefName = "%PathToFileURL:href%";
 
@@ -598,6 +606,15 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [importMetaDirnameName]: () => ({ typeParams: [], type: fn([], atom("unknown")) }),
     [importMetaFilenameName]: () => ({ typeParams: [], type: fn([], atom("unknown")) }),
     [importMetaResolveName]: () => ({ typeParams: [], type: fn([atom("string")], atom("unknown")) }),
+    // ArrayCreate's check runs no code: a number either is an array length
+    // (ToUint32(n) = n) or a RangeError is thrown. It writes nothing.
+    [arrayLengthName]: () => ({ typeParams: [], type: { ...fn([atom("number")], atom("number")), effect: emptyEffect } }),
+    // A fresh array whose every index below the length holds the value: it
+    // stores the value without reading it, and writes nothing it did not
+    // allocate; its store is the call's.
+    [arrayFilledName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
+      type: { ...fn([atom("number"), binder], { k: "array", presence: "dense", readonly: false, element: binder, span }),
+        effect: footprintEffect(emptyFootprint, { fresh: true }) } }),
     [urlHrefName]: () => ({ typeParams: [],
       type: { ...fn([atom("string"), either(atom("string"), atom("undefined"))], atom("string")), effect: emptyEffect } }),
     [pathToFileHrefName]: () => ({ typeParams: [], type: fn([atom("string")], atom("string")) }),

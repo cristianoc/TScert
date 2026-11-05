@@ -5036,6 +5036,31 @@ function hrefRead(made: Node): ts.PropertyAccessExpression | null {
   return access;
 }
 
+/** The call of `fill` written directly on `made`, `new Array<T>(n).fill(v)`:
+ * a plain read of `fill` on the construct itself (no parentheses, no
+ * optional chain at the read or the call), called with one argument, no
+ * spread and no type argument, which TypeScript resolves to the standard
+ * library's `fill` of `Array<T>`, exactly as reviewed. Null otherwise. */
+function fillCall(checker: Checker, made: ts.NewExpression, libraryFile: (file: SourceFile) => boolean):
+    ts.CallExpression | null {
+  const access = made.parent;
+  if (!access || !ts.isPropertyAccessExpression(access) || access.expression !== made || access.questionDotToken ||
+      !ts.isIdentifier(access.name) || access.name.text !== "fill")
+    return null;
+  const call = access.parent;
+  if (!call || !ts.isCallExpression(call) || call.expression !== access || call.questionDotToken ||
+      call.typeArguments?.length || call.arguments.length !== 1 || call.arguments.some(ts.isSpreadElement))
+    return null;
+  const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+  if (!resolved || !ts.isMethodSignatureDeclaration(resolved)) return null;
+  const owner = resolved.parent;
+  const source = resolved.getSourceFile();
+  if (!ts.isInterfaceDeclaration(owner) || owner.name.text !== "Array" || !libraryFile(source) ||
+      resolved.getText(source).trim() !== "fill(value: T, start?: number, end?: number): this;")
+    return null;
+  return call;
+}
+
 /** The read `?.value` written directly on `call`, where it initializes a
  * `const`, unannotated (TypeScript's `any`) or annotated `unknown`, that no
  * export names and whose every reference in the file is the operand of
@@ -5524,6 +5549,26 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if (expression.arguments?.some(ts.isSpreadElement))
           throw Error(`${whatNew} is read as an intrinsic, constructed without spreads`);
         context.intrinsic(spanOf(expression), entry.intrinsic);
+      }
+      return [];
+    }
+    // A construct of a length filled at once, `new Array<T>(n).fill(v)`:
+    // the construct is a call of the length check at `n`, and the call of
+    // `fill` a call of the filling intrinsic at it and `v`; both are
+    // reported once every construct is found of that form, and join no
+    // value. Any other construct of this signature is refused.
+    if (entry?.filled) {
+      const filled = entry.filled;
+      const reads = expressions.map(expression => {
+        const call = fillCall(checker, expression, context.libraryFile);
+        if (!call || expression.arguments?.length !== 1 || expression.arguments.some(ts.isSpreadElement))
+          throw Error(`${whatNew} of a length makes holes: it is read only as the receiver of the standard ` +
+            "`fill(v)`, of one argument, called directly on it");
+        return { expression, call };
+      });
+      for (const { expression, call } of reads) {
+        context.intrinsic(spanOf(expression), filled.length);
+        context.intrinsic(spanOf(call), filled.fill);
       }
       return [];
     }
