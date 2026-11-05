@@ -366,6 +366,9 @@ export class Gate {
   /** Calls the reviewed overlay reads as the global's construct, `Error(m)`,
    * by span. */
   readonly globalConstructs: Set<string> = new Set();
+  /** Tagged templates whose tag the overlay reads as `String.raw`, by span:
+   * each is the template of its raw strings (`rawTemplate`). */
+  readonly globalRawTemplates: Set<string> = new Set();
   readonly globalReceiverApplies: Set<string> = new Set();
   /** The file's enums by name (SOURCE-CONTRACTS.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
@@ -1011,6 +1014,7 @@ export class Gate {
   update: typeof expressions.update = expressions.update;
 
   template: typeof expressions.template = expressions.template;
+  rawTemplate: typeof expressions.rawTemplate = expressions.rawTemplate;
 
   hasInstanceClass: typeof expressions.hasInstanceClass = expressions.hasInstanceClass;
 
@@ -2323,6 +2327,7 @@ function lowerFile(file: string, carriesContext: boolean,
         assertionCall: ([start, end]) => gate.assertionCalls.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
         globalConstruct: ([start, end]) => gate.globalConstructs.add(`${start}:${end}`),
+        globalRawTemplate: ([start, end]) => gate.globalRawTemplates.add(`${start}:${end}`),
         globalReceiverApply: ([start, end]) => gate.globalReceiverApplies.add(`${start}:${end}`),
         enums: enumNodes.map(node => gate.span(node)),
         enumMember: ([start, end], value) => {

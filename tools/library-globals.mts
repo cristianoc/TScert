@@ -120,6 +120,12 @@ export type GlobalEntry = {
   ownString?: string;
   /** Reflect.apply: invoke the target with its receiver and array-like list. */
   receiverApply?: true;
+  /** The member is read only as the tag of a tagged template, never called
+   * or read otherwise, and names the lowering: `"raw"`, ECMA-262's
+   * `String.raw`, whose tagged template the parser writes as the template
+   * of the source's raw strings (SOURCE-CONTRACTS.md, "String.raw as a
+   * tag"). The member joins no value. */
+  templateTag?: "raw";
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
@@ -592,6 +598,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // code unit, which never throws.
   { host: contract, global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
+  // `String.raw` as a tag, `String.raw\`h${a}t\``: the tagged template
+  // makes the frozen template object, whose own `raw` is the frozen array of
+  // the raw strings, evaluates each substitution in order, then calls
+  // `String.raw`, which reads `raw`'s `length` and each element, strings,
+  // and converts each substitution by ToString between two of them. It runs
+  // no code of the client's but the conversions, which the template of the
+  // raw strings makes at its own `+` (`templateTag`). Read nowhere else.
+  { host: contract, global: "String", member: "raw", templateTag: "raw", effect: emptyEffect,
+    signature: "raw(template: { raw: readonly string[] | ArrayLike<string>; }, ...substitutions: any[]): string;" },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They
   // write nothing.

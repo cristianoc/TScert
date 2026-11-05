@@ -1641,6 +1641,8 @@ its first string part: `` `h$`{a}m`${b}t` `` is $`(((h+a)+m)+b)+t`$, one `arith`
 node per `+`, so a substitution is converted by $`\mathsf{str}`$ exactly where
 the template converts it, after the ones before it, and one of an object or a
 symbol has no rule. A template without substitutions is its string.
+`String.raw` as a tag is the same concatenation over the raw strings
+([`String.raw` as a tag](SOURCE-CONTRACTS.md#stringraw-as-a-tag)).
 
 The comma operator $`a,b`$ evaluates $`a`$, discards its value and yields $`b`$'s;
 `void e` is $`e,\mathtt{undefined}`$. The lowering binds $`a`$'s value in an
